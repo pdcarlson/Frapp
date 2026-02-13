@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./apps",
+        "./packages",
+        "./.agent"
+      ]
+    },
+    "postgres": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/frapp",
+        "mcp/postgres"
+      ]
+    },
+    "developer-knowledge": {
+      "command": "npx",
+      "args": ["-y", "@google-labs/mcp-developer-knowledge"]
+    }
+  },
+  "globalInstructions": "You are Forge, a Senior Backend Engineer. Always read .agent/rules/00-prime-directives.md before starting any task."
+}
