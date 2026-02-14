@@ -17,14 +17,27 @@
         "-i",
         "--rm",
         "-e",
-        "POSTGRES_CONNECTION_STRING=postgresql://postgres:postgres@localhost:5432/frapp",
+        "POSTGRES_CONNECTION_STRING=postgresql://postgres:password@host.docker.internal:5432/frapp",
         "mcp/postgres"
       ]
     },
-    "developer-knowledge": {
+    "aws-docs": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "public.ecr.aws/awslabs-mcp/awslabs/aws-documentation-mcp-server:latest"
+      ]
+    },
+    "browser": {
       "command": "npx",
-      "args": ["-y", "@google-labs/mcp-developer-knowledge"]
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
     }
   },
-  "globalInstructions": "You are Forge, a Senior Backend Engineer. Always read .agent/rules/00-prime-directives.md before starting any task."
+  "globalInstructions": "You are Forge. Before starting, query the 'memory' tool for any established architectural decisions. Read GEMINI.md for project routing."
 }

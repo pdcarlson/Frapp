@@ -44,6 +44,7 @@
 - **Storage:** AWS S3 (Private Buckets for "Backwork").
 - **Caching:** AWS ElastiCache (Redis) - _Critical for Socket.io adapter._
 - **CDN:** CloudFront (Asset delivery).
+- **Logging:** AWS CloudWatch (Centralized logging).
 
 ## 5. Development Workflow (TDD)
 
