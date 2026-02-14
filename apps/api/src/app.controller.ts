@@ -24,4 +24,9 @@ export class AppController {
   getChapterProtected(): string {
     return 'You have access to this chapter!';
   }
+
+  @Get('health')
+  getHealth(): { status: string } {
+    return { status: 'ok' };
+  }
 }
