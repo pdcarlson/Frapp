@@ -6,3 +6,5 @@ This file tracks all major tracks for the project. Each track has its own detail
 
 - [x] **Track: Initial API and Database Setup**
   *Link: [./tracks/api_db_setup_20260214/](./tracks/api_db_setup_20260214/)*
+- [ ] **Track: Clerk Webhooks & User Synchronization**
+  *Link: [./tracks/clerk_webhooks_sync_20260214/](./tracks/clerk_webhooks_sync_20260214/)*
