@@ -1,12 +1,12 @@
 # Implementation Plan: Clerk Webhooks & User Synchronization
 
-## Phase 1: Core Architecture Expansion
+## Phase 1: Core Architecture Expansion [checkpoint: 7a5542f]
 
-- [ ] **Task:** Install dependencies: `class-validator`, `class-transformer`, `@nestjs/swagger`, `svix`.
-- [ ] **Task:** Refactor `apps/api` folder structure to follow layered architecture (`interface`, `application`, `infrastructure`, `domain`).
-- [ ] **Task:** Define the `chapters` table in Drizzle schema and push to database.
-- [ ] **Task:** Create repository interfaces in the `domain` layer and Drizzle implementations in `infrastructure`.
-- [ ] **Task:** Conductor - User Manual Verification 'Core Architecture'
+- [x] **Task:** Install dependencies: `class-validator`, `class-transformer`, `@nestjs/swagger`, `svix`. b36da23
+- [x] **Task:** Refactor `apps/api` folder structure to follow layered architecture (`interface`, `application`, `infrastructure`, `domain`). 86855c1
+- [x] **Task:** Define the `chapters` table in Drizzle schema and push to database. 5e81bc4
+- [x] **Task:** Create repository interfaces in the `domain` layer and Drizzle implementations in `infrastructure`. 82bea5c
+- [x] **Task:** Conductor - User Manual Verification 'Core Architecture' 7a5542f
 
 ## Phase 2: Webhook Endpoint & Security
 
