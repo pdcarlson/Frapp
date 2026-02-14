@@ -4,8 +4,8 @@ This plan outlines the tasks required to set up the API and database for the Fra
 
 ## Phase 1: Database Setup
 
-- [ ] **Task:** Create `docker-compose.yml` file to define the PostgreSQL database service.
-- [ ] **Task:** Configure the database service with the necessary environment variables (e.g., `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`).
+- [x] **Task:** Create `docker-compose.yml` file to define the PostgreSQL database service. 7e1f0ec
+- [x] **Task:** Configure the database service with the necessary environment variables (e.g., `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`). 7e1f0ec
 - [ ] **Task:** Start the database container and verify the connection.
 - [ ] **Task:** Conductor - User Manual Verification 'Database Setup' (Protocol in workflow.md)
 
