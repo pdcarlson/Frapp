@@ -11,7 +11,6 @@ jest.mock('@clerk/backend', () => ({
 
 describe('ClerkAuthGuard', () => {
   let guard: ClerkAuthGuard;
-  let configService: ConfigService;
 
   const mockExecutionContext = {
     switchToHttp: jest.fn().mockReturnThis(),
@@ -27,7 +26,8 @@ describe('ClerkAuthGuard', () => {
           useValue: {
             get: jest.fn((key: string) => {
               if (key === 'CLERK_SECRET_KEY') return 'test_secret_key';
-              if (key === 'CLERK_PUBLISHABLE_KEY') return 'test_publishable_key';
+              if (key === 'CLERK_PUBLISHABLE_KEY')
+                return 'test_publishable_key';
               return null;
             }),
           },
@@ -36,7 +36,6 @@ describe('ClerkAuthGuard', () => {
     }).compile();
 
     guard = module.get<ClerkAuthGuard>(ClerkAuthGuard);
-    configService = module.get<ConfigService>(ConfigService);
     jest.clearAllMocks();
   });
 
@@ -51,12 +50,17 @@ describe('ClerkAuthGuard', () => {
           authorization: 'Bearer valid_token',
         },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
       (verifyToken as jest.Mock).mockResolvedValue({ sub: 'user_123' });
 
       const result = await guard.canActivate(mockExecutionContext);
       expect(result).toBe(true);
-      expect(verifyToken).toHaveBeenCalledWith('valid_token', expect.any(Object));
+      expect(verifyToken).toHaveBeenCalledWith(
+        'valid_token',
+        expect.any(Object),
+      );
       // Verify request has user attached
       expect(mockRequest['user']).toEqual({ sub: 'user_123' });
     });
@@ -65,9 +69,13 @@ describe('ClerkAuthGuard', () => {
       const mockRequest = {
         headers: {},
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should deny access if authorization header is malformed', async () => {
@@ -76,9 +84,13 @@ describe('ClerkAuthGuard', () => {
           authorization: 'InvalidFormat',
         },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should deny access if token is invalid', async () => {
@@ -87,10 +99,14 @@ describe('ClerkAuthGuard', () => {
           authorization: 'Bearer invalid_token',
         },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
       (verifyToken as jest.Mock).mockRejectedValue(new Error('Invalid token'));
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

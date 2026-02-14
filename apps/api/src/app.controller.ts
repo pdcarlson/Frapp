@@ -2,6 +2,7 @@ import { Controller, Get, UseGuards, Request } from '@nestjs/common';
 import { AppService } from './app.service';
 import { ClerkAuthGuard } from './auth/guards/clerk-auth.guard';
 import { ChapterGuard } from './auth/guards/chapter.guard';
+import type { RequestWithUser } from './auth/auth.types';
 
 @Controller()
 export class AppController {
@@ -14,7 +15,7 @@ export class AppController {
 
   @Get('protected')
   @UseGuards(ClerkAuthGuard)
-  getProtected(@Request() req): string {
+  getProtected(@Request() req: RequestWithUser): string {
     return `Hello ${req.user.sub}, you are authenticated!`;
   }
 

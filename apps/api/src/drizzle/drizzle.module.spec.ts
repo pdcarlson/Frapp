@@ -12,19 +12,24 @@ describe('DrizzleModule', () => {
         ConfigModule.forRoot({
           isGlobal: true,
           ignoreEnvFile: true,
-          load: [() => ({ DATABASE_URL: 'postgresql://test:test@localhost:5432/test' })],
+          load: [
+            () => ({
+              DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+            }),
+          ],
         }),
         DrizzleModule,
       ],
     }).compile();
   });
 
-  it('should compile the module', async () => {
+  it('should compile the module', () => {
     expect(moduleRef).toBeDefined();
   });
 
-  it('should provide DRIZZLE_DB', async () => {
-    const db = moduleRef.get(DRIZZLE_DB);
+  it('should provide DRIZZLE_DB', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const db = moduleRef.get<any>(DRIZZLE_DB);
     expect(db).toBeDefined();
   });
 });

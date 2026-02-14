@@ -1,9 +1,17 @@
-import { ExecutionContext, UnauthorizedException, ForbiddenException, BadRequestException } from '@nestjs/common';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+import {
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterGuard } from './chapter.guard';
 import { DRIZZLE_DB } from '../../drizzle/drizzle.provider';
 import { users, members } from '../../drizzle/schema';
-import { eq, and } from 'drizzle-orm';
 
 describe('ChapterGuard', () => {
   let guard: ChapterGuard;
@@ -26,7 +34,7 @@ describe('ChapterGuard', () => {
     };
 
     // Make the query builder awaitable
-    (queryBuilder as any).then = (resolve: any) => resolve([]); 
+    (queryBuilder as any).then = (resolve: any) => resolve([]);
 
     dbMock = {
       select: jest.fn(() => queryBuilder),
@@ -56,18 +64,26 @@ describe('ChapterGuard', () => {
         headers: {},
         user: { sub: 'user_123' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(BadRequestException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should deny access if user is not authenticated (no user object)', async () => {
       const mockRequest = {
         headers: { 'x-chapter-id': 'chapter_1' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should deny access if user does not belong to the chapter', async () => {
@@ -75,7 +91,9 @@ describe('ChapterGuard', () => {
         headers: { 'x-chapter-id': 'chapter_1' },
         user: { sub: 'user_123' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
       // Mock DB query to return empty array (user not found in chapter)
       const queryBuilder = dbMock.select();
@@ -83,7 +101,9 @@ describe('ChapterGuard', () => {
       // Make the builder awaitable for direct await usage
       queryBuilder.then = (resolve: any) => resolve([]);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(ForbiddenException);
+      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should allow access if user belongs to the chapter', async () => {
@@ -91,7 +111,9 @@ describe('ChapterGuard', () => {
         headers: { 'x-chapter-id': 'chapter_1' },
         user: { sub: 'user_123' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
       // Mock DB query to return user record
       const queryBuilder = dbMock.select();
@@ -101,12 +123,15 @@ describe('ChapterGuard', () => {
 
       const result = await guard.canActivate(mockExecutionContext);
       expect(result).toBe(true);
-      
+
       // Verify DB was queried with correct parameters
       expect(dbMock.select).toHaveBeenCalled();
       // We expect a join between users and members
       expect(queryBuilder.from).toHaveBeenCalledWith(users);
-      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(members, expect.anything());
+      expect(queryBuilder.innerJoin).toHaveBeenCalledWith(
+        members,
+        expect.anything(),
+      );
       expect(queryBuilder.where).toHaveBeenCalledWith(expect.anything());
     });
   });
