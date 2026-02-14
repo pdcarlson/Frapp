@@ -2,12 +2,12 @@
 
 This plan outlines the tasks required to set up the API and database for the Frapp project.
 
-## Phase 1: Database Setup
+## Phase 1: Database Setup [checkpoint: c124a58]
 
 - [x] **Task:** Create `docker-compose.yml` file to define the PostgreSQL database service. 7e1f0ec
 - [x] **Task:** Configure the database service with the necessary environment variables (e.g., `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`). 7e1f0ec
 - [x] **Task:** Start the database container and verify the connection. df2e3be
-- [ ] **Task:** Conductor - User Manual Verification 'Database Setup' (Protocol in workflow.md)
+- [x] **Task:** Conductor - User Manual Verification 'Database Setup' (Protocol in workflow.md) c124a58
 
 ## Phase 2: API Setup
 
