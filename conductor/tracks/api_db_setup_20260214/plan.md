@@ -16,13 +16,13 @@ This plan outlines the tasks required to set up the API and database for the Fra
 - [x] **Task:** Configure the database connection in the NestJS application. c9a9da3
 - [x] **Task:** Conductor - User Manual Verification 'API Setup' (Protocol in workflow.md) 42be34c
 
-## Phase 3: Authentication and Authorization
+## Phase 3: Authentication and Authorization [checkpoint: 3ddc746]
 
-- [ ] **Task:** Write Tests for `ClerkAuthGuard`.
-- [ ] **Task:** Implement `ClerkAuthGuard` to validate JWTs from Clerk.
-- [ ] **Task:** Write Tests for `ChapterGuard`.
-- [ ] **Task:** Implement `ChapterGuard` to enforce multi-tenancy based on the `x-chapter-id` header.
-- [ ] **Task:** Conductor - User Manual Verification 'Authentication and Authorization' (Protocol in workflow.md)
+- [x] **Task:** Write Tests for `ClerkAuthGuard`. d15d5dc
+- [x] **Task:** Implement `ClerkAuthGuard` to validate JWTs from Clerk. 235fdbb
+- [x] **Task:** Write Tests for `ChapterGuard`. 8f380c2
+- [x] **Task:** Implement `ChapterGuard` to enforce multi-tenancy based on the `x-chapter-id` header. c4b326a
+- [x] **Task:** Conductor - User Manual Verification 'Authentication and Authorization' (Protocol in workflow.md) 3ddc746
 
 ## Phase 4: Initial Schema and Testing
 
