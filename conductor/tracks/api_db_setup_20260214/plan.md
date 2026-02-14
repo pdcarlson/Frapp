@@ -11,9 +11,9 @@ This plan outlines the tasks required to set up the API and database for the Fra
 
 ## Phase 2: API Setup
 
-- [ ] **Task:** Initialize a new NestJS application in the `apps/api` directory.
-- [ ] **Task:** Install necessary dependencies, including `@nestjs/config`, `drizzle-orm`, and `pg`.
-- [ ] **Task:** Configure the database connection in the NestJS application.
+- [x] **Task:** Initialize a new NestJS application in the `apps/api` directory. 6a2d71c
+- [x] **Task:** Install necessary dependencies, including `@nestjs/config`, `drizzle-orm`, and `pg`. 8bfc9e4
+- [x] **Task:** Configure the database connection in the NestJS application. c9a9da3
 - [ ] **Task:** Conductor - User Manual Verification 'API Setup' (Protocol in workflow.md)
 
 ## Phase 3: Authentication and Authorization
