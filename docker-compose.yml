@@ -1,0 +1,94 @@
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database (For Drizzle ORM)
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: frapp_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-frapp}
+    ports:
+      - "5432:5432"
+    volumes:
+      - frapp_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-frapp}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - frapp_network
+
+  # ---------------------------------------------------------------------------
+  # Redis (For Socket.io and BullMQ/Queues)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: frapp_redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - frapp_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - frapp_network
+
+  # ---------------------------------------------------------------------------
+  # MinIO (S3 Compatible Object Storage)
+  # ---------------------------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    container_name: frapp_minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - frapp_minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - frapp_network
+
+  # ---------------------------------------------------------------------------
+  # Create Buckets (One-off initialization)
+  # ---------------------------------------------------------------------------
+  createbuckets:
+    image: minio/mc
+    container_name: frapp_createbuckets
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin};
+      /usr/bin/mc mb myminio/frapp-uploads;
+      /usr/bin/mc anonymous set public myminio/frapp-uploads;
+      exit 0;
+      "
+    networks:
+      - frapp_network
+
+volumes:
+  frapp_pg_data:
+  frapp_redis_data:
+  frapp_minio_data:
+
+networks:
+  frapp_network:
+    driver: bridge
