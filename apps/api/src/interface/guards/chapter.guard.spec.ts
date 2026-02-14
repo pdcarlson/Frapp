@@ -10,8 +10,8 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterGuard } from './chapter.guard';
-import { DRIZZLE_DB } from '../../drizzle/drizzle.provider';
-import { users, members } from '../../drizzle/schema';
+import { DRIZZLE_DB } from '../../infrastructure/database/drizzle.provider';
+import { users, members } from '../../infrastructure/database/schema';
 
 describe('ChapterGuard', () => {
   let guard: ChapterGuard;

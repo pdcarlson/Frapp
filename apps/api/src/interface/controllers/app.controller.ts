@@ -1,8 +1,8 @@
 import { Controller, Get, UseGuards, Request } from '@nestjs/common';
-import { AppService } from './app.service';
-import { ClerkAuthGuard } from './auth/guards/clerk-auth.guard';
-import { ChapterGuard } from './auth/guards/chapter.guard';
-import type { RequestWithUser } from './auth/auth.types';
+import { AppService } from '../../application/services/app.service';
+import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import type { RequestWithUser } from '../auth.types';
 
 @Controller()
 export class AppController {

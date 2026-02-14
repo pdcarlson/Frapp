@@ -7,11 +7,11 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
-import { DRIZZLE_DB } from '../../drizzle/drizzle.provider';
-import { users, members } from '../../drizzle/schema';
+import { DRIZZLE_DB } from '../../infrastructure/database/drizzle.provider';
+import { users, members } from '../../infrastructure/database/schema';
 import { eq, and } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '../../drizzle/schema';
+import * as schema from '../../infrastructure/database/schema';
 import { RequestWithUser } from '../auth.types';
 
 @Injectable()
