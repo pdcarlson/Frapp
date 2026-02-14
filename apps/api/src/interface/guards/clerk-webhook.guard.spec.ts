@@ -8,7 +8,6 @@ jest.mock('svix');
 
 describe('ClerkWebhookGuard', () => {
   let guard: ClerkWebhookGuard;
-  let configService: ConfigService;
 
   const mockExecutionContext = {
     switchToHttp: jest.fn().mockReturnThis(),
@@ -32,7 +31,6 @@ describe('ClerkWebhookGuard', () => {
     }).compile();
 
     guard = module.get<ClerkWebhookGuard>(ClerkWebhookGuard);
-    configService = module.get<ConfigService>(ConfigService);
     jest.clearAllMocks();
   });
 
@@ -41,7 +39,7 @@ describe('ClerkWebhookGuard', () => {
   });
 
   describe('canActivate', () => {
-    it('should allow access with valid svix headers and signature', async () => {
+    it('should allow access with valid svix headers and signature', () => {
       const mockRequest = {
         headers: {
           'svix-id': 'id_123',
@@ -50,14 +48,16 @@ describe('ClerkWebhookGuard', () => {
         },
         body: { type: 'test' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
-      
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
+
       const verifySpy = jest.fn();
       (Webhook as jest.Mock).mockImplementation(() => ({
         verify: verifySpy,
       }));
 
-      const result = await guard.canActivate(mockExecutionContext);
+      const result = guard.canActivate(mockExecutionContext);
       expect(result).toBe(true);
       expect(verifySpy).toHaveBeenCalledWith(JSON.stringify(mockRequest.body), {
         'svix-id': 'id_123',
@@ -66,17 +66,21 @@ describe('ClerkWebhookGuard', () => {
       });
     });
 
-    it('should deny access if headers are missing', async () => {
+    it('should deny access if headers are missing', () => {
       const mockRequest = {
         headers: {},
         body: {},
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      expect(() => guard.canActivate(mockExecutionContext)).toThrow(
+        UnauthorizedException,
+      );
     });
 
-    it('should deny access if signature is invalid', async () => {
+    it('should deny access if signature is invalid', () => {
       const mockRequest = {
         headers: {
           'svix-id': 'id_123',
@@ -85,7 +89,9 @@ describe('ClerkWebhookGuard', () => {
         },
         body: { type: 'test' },
       };
-      (mockExecutionContext.switchToHttp().getRequest as jest.Mock).mockReturnValue(mockRequest);
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
 
       (Webhook as jest.Mock).mockImplementation(() => ({
         verify: jest.fn(() => {
@@ -93,7 +99,9 @@ describe('ClerkWebhookGuard', () => {
         }),
       }));
 
-      await expect(guard.canActivate(mockExecutionContext)).rejects.toThrow(UnauthorizedException);
+      expect(() => guard.canActivate(mockExecutionContext)).toThrow(
+        UnauthorizedException,
+      );
     });
   });
 });

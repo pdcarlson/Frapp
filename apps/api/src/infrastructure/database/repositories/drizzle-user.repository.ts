@@ -18,17 +18,20 @@ export class DrizzleUserRepository implements IUserRepository {
     return this.mapToDomain(result);
   }
 
-  async update(clerkId: string, data: Partial<{ email: string }>): Promise<User> {
+  async update(
+    clerkId: string,
+    data: Partial<{ email: string }>,
+  ): Promise<User> {
     const [result] = await this.db
       .update(users)
       .set({ ...data, updatedAt: new Date() })
       .where(eq(users.clerkId, clerkId))
       .returning();
-    
+
     if (!result) {
       throw new Error(`User with clerkId ${clerkId} not found`);
     }
-    
+
     return this.mapToDomain(result);
   }
 
@@ -40,7 +43,7 @@ export class DrizzleUserRepository implements IUserRepository {
     const result = await this.db.query.users.findFirst({
       where: eq(users.clerkId, clerkId),
     });
-    
+
     return result ? this.mapToDomain(result) : null;
   }
 

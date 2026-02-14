@@ -32,13 +32,13 @@ describe('ClerkWebhookController', () => {
   });
 
   describe('handleWebhook', () => {
-    it('should return received: true', async () => {
+    it('should return received: true', () => {
       const payload = {
         data: { id: 'user_123' },
         object: 'event',
         type: 'user.created',
       };
-      const result = await controller.handleWebhook(payload);
+      const result = controller.handleWebhook(payload);
       expect(result).toEqual({ received: true });
     });
   });

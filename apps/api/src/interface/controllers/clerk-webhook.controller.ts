@@ -22,7 +22,7 @@ export class ClerkWebhookController {
   @ApiOperation({ summary: 'Handle webhooks from Clerk' })
   @ApiResponse({ status: 200, description: 'Webhook received' })
   @ApiResponse({ status: 401, description: 'Invalid signature' })
-  async handleWebhook(@Body() payload: ClerkWebhookDto) {
+  handleWebhook(@Body() payload: ClerkWebhookDto) {
     this.logger.log(`Received Clerk webhook: ${payload.type}`);
     // Logic for handling different event types will go here
     return { received: true };

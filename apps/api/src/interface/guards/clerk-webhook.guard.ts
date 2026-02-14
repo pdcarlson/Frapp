@@ -3,11 +3,11 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Webhook } from 'svix';
+import { RequestWithHeaders } from '../auth.types';
 
 @Injectable()
 export class ClerkWebhookGuard implements CanActivate {
@@ -15,14 +15,14 @@ export class ClerkWebhookGuard implements CanActivate {
 
   constructor(private readonly configService: ConfigService) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest<RequestWithHeaders>();
     const headers = request.headers;
     const payload = JSON.stringify(request.body);
 
-    const svix_id = headers['svix-id'] as string;
-    const svix_timestamp = headers['svix-timestamp'] as string;
-    const svix_signature = headers['svix-signature'] as string;
+    const svix_id = headers['svix-id'];
+    const svix_timestamp = headers['svix-timestamp'];
+    const svix_signature = headers['svix-signature'];
 
     if (!svix_id || !svix_timestamp || !svix_signature) {
       this.logger.error('Missing Svix headers');
