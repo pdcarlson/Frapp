@@ -1,7 +1,6 @@
-GEMINI.md
 .gemini/
-.agent/
-mcp_config.json
+GEMINI.md
+conductor/
 
 # Dependencies
 node_modules
