@@ -9,12 +9,12 @@ This plan outlines the tasks required to set up the API and database for the Fra
 - [x] **Task:** Start the database container and verify the connection. df2e3be
 - [x] **Task:** Conductor - User Manual Verification 'Database Setup' (Protocol in workflow.md) c124a58
 
-## Phase 2: API Setup
+## Phase 2: API Setup [checkpoint: 42be34c]
 
 - [x] **Task:** Initialize a new NestJS application in the `apps/api` directory. 6a2d71c
 - [x] **Task:** Install necessary dependencies, including `@nestjs/config`, `drizzle-orm`, and `pg`. 8bfc9e4
 - [x] **Task:** Configure the database connection in the NestJS application. c9a9da3
-- [ ] **Task:** Conductor - User Manual Verification 'API Setup' (Protocol in workflow.md)
+- [x] **Task:** Conductor - User Manual Verification 'API Setup' (Protocol in workflow.md) 42be34c
 
 ## Phase 3: Authentication and Authorization
 
