@@ -24,10 +24,10 @@ This plan outlines the tasks required to set up the API and database for the Fra
 - [x] **Task:** Implement `ChapterGuard` to enforce multi-tenancy based on the `x-chapter-id` header. c4b326a
 - [x] **Task:** Conductor - User Manual Verification 'Authentication and Authorization' (Protocol in workflow.md) 3ddc746
 
-## Phase 4: Initial Schema and Testing
+## Phase 4: Initial Schema and Testing [checkpoint: 489d28c]
 
-- [ ] **Task:** Write Tests for the initial database schema.
-- [ ] **Task:** Create the initial database schema using Drizzle ORM, including the `Users` and `Members` tables.
-- [ ] **Task:** Write Tests for basic API functionality.
-- [ ] **Task:** Create a simple health check endpoint to verify that the API is running.
-- [ ] **Task:** Conductor - User Manual Verification 'Initial Schema and Testing' (Protocol in workflow.md)
+- [x] **Task:** Write Tests for the initial database schema. 528d062
+- [x] **Task:** Create the initial database schema using Drizzle ORM, including the `Users` and `Members` tables. 03fad69
+- [x] **Task:** Write Tests for basic API functionality. 9a5c134
+- [x] **Task:** Create a simple health check endpoint to verify that the API is running. 33b6d92
+- [x] **Task:** Conductor - User Manual Verification 'Initial Schema and Testing' (Protocol in workflow.md) 489d28c
