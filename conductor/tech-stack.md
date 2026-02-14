@@ -3,7 +3,7 @@
 ## 1. High-Level Stack
 
 - **Monorepo Manager:** Turborepo
-- **Package Manager:** pnpm
+- **Package Manager:** npm
 - **Cloud Provider:** AWS (Elastic Container Service)
 
 ## 2. Applications (`/apps`)
