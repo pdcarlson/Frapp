@@ -10,11 +10,11 @@
 
 ## Phase 2: Billing Infrastructure (The Adapter)
 
-- [ ] **Task:** Define `IBillingProvider` interface in `domain/adapters`.
-- [ ] **Task:** Implement `StripeService` in `infrastructure/billing` using the `stripe` SDK.
-- [ ] **Task:** Register `StripeModule` and export the provider.
-- [ ] **Task:** Write unit tests for `StripeService` (mocking the external SDK).
-- [ ] **Task:** Conductor - User Manual Verification 'Billing Infrastructure'
+- [x] **Task:** Define `IBillingProvider` interface in `domain/adapters`. 673af59
+- [x] **Task:** Implement `StripeService` in `infrastructure/billing` using the `stripe` SDK. 673af59
+- [x] **Task:** Register `StripeModule` and export the provider. 673af59
+- [x] **Task:** Write unit tests for `StripeService` (mocking the external SDK). 673af59
+- [x] **Task:** Conductor - User Manual Verification 'Billing Infrastructure' 673af59
 
 ## Phase 3: Onboarding API (The Payment Flow)
 
