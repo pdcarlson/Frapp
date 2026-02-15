@@ -15,9 +15,35 @@ export class DrizzleChapterRepository implements IChapterRepository {
 
   async create(data: {
     name: string;
+    university?: string;
     clerkOrganizationId?: string;
+    stripeCustomerId?: string;
+    subscriptionStatus?: string;
+    subscriptionId?: string;
   }): Promise<Chapter> {
     const [result] = await this.db.insert(chapters).values(data).returning();
+    return this.mapToDomain(result);
+  }
+
+  async update(
+    id: string,
+    data: Partial<{
+      name: string;
+      university: string;
+      subscriptionStatus: string;
+      subscriptionId: string;
+    }>,
+  ): Promise<Chapter> {
+    const [result] = await this.db
+      .update(chapters)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(chapters.id, id))
+      .returning();
+
+    if (!result) {
+      throw new Error(`Chapter with id ${id} not found`);
+    }
+
     return this.mapToDomain(result);
   }
 
@@ -41,7 +67,11 @@ export class DrizzleChapterRepository implements IChapterRepository {
     return new Chapter(
       row.id,
       row.name,
+      row.university,
       row.clerkOrganizationId,
+      row.stripeCustomerId,
+      row.subscriptionStatus,
+      row.subscriptionId,
       row.createdAt,
       row.updatedAt,
     );
