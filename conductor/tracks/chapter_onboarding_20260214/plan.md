@@ -22,10 +22,10 @@
     - 3.1: Define `OnboardingInitDto` and validation rules. fa54051
     - 3.2: Implement `initiateOnboarding` with atomic creation logic. fa54051
     - 3.3: Implement `handleBillingWebhook` to process `BillingEvent` from the adapter. fa54051
-- [~] **Task:** Create `OnboardingController` with `/init` endpoint.
-- [ ] **Task:** Implement `StripeWebhookController` and `StripeWebhookGuard`.
-- [ ] **Task:** Write E2E test for the onboarding flow (mocking Stripe response).
-- [ ] **Task:** Conductor - User Manual Verification 'Onboarding Flow'
+- [x] **Task:** Create `OnboardingController` with `/init` endpoint. f1320f9
+- [x] **Task:** Implement `StripeWebhookController` and `StripeWebhookGuard`. f1320f9
+- [x] **Task:** Write E2E test for the onboarding flow (mocking Stripe response). f1320f9
+- [x] **Task:** Conductor - User Manual Verification 'Onboarding Flow' f1320f9
 
 ## Phase 4: Invite System (The Growth)
 
