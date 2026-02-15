@@ -1,0 +1,7 @@
+{
+  "id": "notifications_20260214",
+  "name": "Notification System",
+  "description": "Foundational multi-tenant notification system with Expo Push support.",
+  "status": "completed",
+  "created_at": "2026-02-14T23:55:00Z"
+}

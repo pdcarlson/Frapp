@@ -147,3 +147,69 @@ export const eventAttendance = pgTable(
     unq: unique().on(t.eventId, t.userId),
   }),
 );
+
+export const pushTokens = pgTable('push_tokens', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  token: text('token').notNull().unique(),
+  deviceName: text('device_name'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const notifications = pgTable('notifications', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  title: text('title').notNull(),
+  body: text('body').notNull(),
+  data: jsonb('data'),
+  readAt: timestamp('read_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    category: text('category').notNull(), // e.g., 'CHAT', 'POINTS', 'EVENTS'
+    isEnabled: boolean('is_enabled').default(true).notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    unq: unique().on(t.userId, t.category),
+  }),
+);
+
+export const chatChannels = pgTable('chat_channels', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  name: text('name').notNull(),
+  description: text('description'),
+  type: text('type').default('PUBLIC').notNull(), // PUBLIC, PRIVATE, ROLE_GATED
+  allowedRoleIds: text('allowed_role_ids').array(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const chatMessages = pgTable('chat_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  channelId: uuid('channel_id')
+    .notNull()
+    .references(() => chatChannels.id),
+  senderId: uuid('sender_id')
+    .notNull()
+    .references(() => users.id),
+  content: text('content').notNull(),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

@@ -14,3 +14,7 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/backwork_20260214/](./tracks/backwork_20260214/)*
 - [x] **Track: Internal Ledger & Attendance**
   *Link: [./tracks/ledger_attendance_20260214/](./tracks/ledger_attendance_20260214/)*
+- [x] **Track: Notification System**
+  *Link: [./tracks/notifications_20260214/](./tracks/notifications_20260214/)*
+- [x] **Track: Real-time Chat System**
+  *Link: [./tracks/chat_20260214/](./tracks/chat_20260214/)*

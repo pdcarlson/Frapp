@@ -15,6 +15,8 @@ import { StorageModule } from './modules/storage/storage.module';
 import { UserModule } from './modules/user/user.module';
 import { PointsModule } from './modules/points/points.module';
 import { EventModule } from './modules/event/event.module';
+import { NotificationModule } from './modules/notification/notification.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { EventModule } from './modules/event/event.module';
     UserModule,
     PointsModule,
     EventModule,
+    NotificationModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [
