@@ -7,6 +7,9 @@ import { ClerkWebhookController } from './interface/controllers/clerk-webhook.co
 import { ClerkWebhookGuard } from './interface/guards/clerk-webhook.guard';
 import { UserSyncService } from './application/services/user-sync.service';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
+import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 
 @Module({
   imports: [
@@ -20,6 +23,18 @@ import { ThrottlerModule } from '@nestjs/throttler';
     ]),
   ],
   controllers: [AppController, ClerkWebhookController],
-  providers: [AppService, ClerkWebhookGuard, UserSyncService],
+  providers: [
+    AppService,
+    ClerkWebhookGuard,
+    UserSyncService,
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
+  ],
 })
 export class AppModule {}
