@@ -31,9 +31,9 @@
 - [x] **Task:** Prepare a `docker-compose` override or script for local webhook testing (e.g., using `svix-cli` or `ngrok`). 33b6d92
 - [x] **Task:** Conductor - User Manual Verification 'Observability' d523677
 
-## Phase 5: Final Verification & TDD Cleanup
+## Phase 5: Final Verification & TDD Cleanup [checkpoint: c80feb7]
 
-- [ ] **Task:** Ensure >80% test coverage for all new modules.
-- [ ] **Task:** Verify rate-limiting readiness (Throttler setup).
-- [ ] **Task:** Run final build, lint, and type checks.
-- [ ] **Task:** Conductor - Final Track Verification
+- [x] **Task:** Ensure >80% test coverage for all new modules. c80feb7
+- [x] **Task:** Verify rate-limiting readiness (Throttler setup). c80feb7
+- [x] **Task:** Run final build, lint, and type checks. c80feb7
+- [x] **Task:** Conductor - Final Track Verification c80feb7
