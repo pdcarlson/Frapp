@@ -1,12 +1,12 @@
 # Implementation Plan: Chapter Onboarding & Stripe Integration
 
-## Phase 1: Modularization & Schema Foundation
+## Phase 1: Modularization & Schema Foundation [checkpoint: 1e3acfc]
 
 - [x] **Task:** Create `src/modules` directory and define `AuthModule`, `DatabaseModule`, and `ConfigModule` to refactor `AppModule`. c0a3f3f
 - [x] **Task:** Update `schema.ts` to include `invites` table and expand `chapters` with Stripe fields. 9559ec7
 - [x] **Task:** Run migration/push to update Postgres database. 9559ec7
-- [~] **Task:** Update `DrizzleChapterRepository` to support new fields.
-- [ ] **Task:** Conductor - User Manual Verification 'Modularization'
+- [x] **Task:** Update `DrizzleChapterRepository` to support new fields. f577fbf
+- [x] **Task:** Conductor - User Manual Verification 'Modularization' 1e3acfc
 
 ## Phase 2: Billing Infrastructure (The Adapter)
 
