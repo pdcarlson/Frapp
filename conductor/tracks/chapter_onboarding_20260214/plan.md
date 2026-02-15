@@ -31,9 +31,9 @@
 
 - [x] **Task:** Create `InviteRepository` in `infrastructure`. 7abe0a4
 - [x] **Task:** Add `createInvite` method to `ChapterService`. 7abe0a4
-- [~] **Task:** Implement `POST /chapters/:id/invites` endpoint.
-- [~] **Task:** Implement `POST /onboarding/join` endpoint to process tokens.
-- [ ] **Task:** Conductor - User Manual Verification 'Invite System'
+- [x] **Task:** Implement `POST /chapters/:id/invites` endpoint. a8c2b7c
+- [x] **Task:** Implement `POST /onboarding/join` endpoint to process tokens. a8c2b7c
+- [x] **Task:** Conductor - User Manual Verification 'Invite System' a8c2b7c
 
 ## Phase 5: Final Polish & Documentation
 

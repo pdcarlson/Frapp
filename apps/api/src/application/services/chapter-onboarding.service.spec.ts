@@ -13,6 +13,7 @@ import {
 } from '../../domain/adapters/billing.interface';
 import { ConfigService } from '@nestjs/config';
 import { Chapter } from '../../domain/entities/chapter.entity';
+import { Logger } from '@nestjs/common';
 
 describe('ChapterOnboardingService', () => {
   let service: ChapterOnboardingService;
@@ -120,6 +121,42 @@ describe('ChapterOnboardingService', () => {
         subscriptionStatus: 'active',
         subscriptionId: 'sub_123',
       });
+    });
+
+    it('should warn and return if chapter is not found for stripeCustomerId', async () => {
+      const loggerSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation();
+      const event = {
+        type: 'subscription.created' as any,
+        stripeCustomerId: 'unknown_cus',
+        subscriptionId: 'sub_123',
+        status: BillingStatus.ACTIVE,
+      };
+
+      chapterRepo.findByStripeCustomerId.mockResolvedValue(null);
+
+      await service.handleBillingWebhook(event);
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Received billing event for unknown customer'),
+      );
+    });
+
+    it('should throw InternalServerErrorException if update fails', async () => {
+      const event = {
+        type: 'subscription.created' as any,
+        stripeCustomerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        status: BillingStatus.ACTIVE,
+      };
+
+      chapterRepo.findByStripeCustomerId.mockResolvedValue(mockChapter);
+      chapterRepo.update.mockRejectedValue(new Error('Update failed'));
+
+      await expect(service.handleBillingWebhook(event)).rejects.toThrow(
+        'Webhook processing failed',
+      );
     });
   });
 });

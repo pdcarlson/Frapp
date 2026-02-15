@@ -63,6 +63,13 @@ describe('UserSyncService', () => {
       });
     });
 
+    it('should throw error if email is missing', async () => {
+      const data = { id: 'user_123', email_addresses: [] };
+      await expect(service.handleUserCreated(data)).rejects.toThrow(
+        'Invalid payload',
+      );
+    });
+
     it('should log an error if creation fails', async () => {
       const loggerSpy = jest
         .spyOn(Logger.prototype, 'error')
@@ -116,6 +123,13 @@ describe('UserSyncService', () => {
       await service.handleUserDeleted(data);
 
       expect(repository.delete).toHaveBeenCalledWith('user_123');
+    });
+
+    it('should throw if id is missing', async () => {
+      const data = {};
+      await expect(service.handleUserDeleted(data)).rejects.toThrow(
+        'Invalid payload',
+      );
     });
   });
 });

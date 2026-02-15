@@ -103,5 +103,29 @@ describe('ClerkWebhookGuard', () => {
         UnauthorizedException,
       );
     });
+
+    it('should throw Error if secret is not configured', () => {
+      const mockRequest = {
+        headers: {
+          'svix-id': 'id_123',
+          'svix-timestamp': '123456789',
+          'svix-signature': 'v1,signature',
+        },
+        body: { type: 'test' },
+      };
+      (
+        mockExecutionContext.switchToHttp().getRequest as jest.Mock
+      ).mockReturnValue(mockRequest);
+
+      // Re-setup guard with missing secret
+      const configServiceMock = {
+        get: jest.fn().mockReturnValue(null),
+      };
+      const guardWithNoSecret = new ClerkWebhookGuard(configServiceMock as any);
+
+      expect(() => guardWithNoSecret.canActivate(mockExecutionContext)).toThrow(
+        'Webhook secret not configured',
+      );
+    });
   });
 });

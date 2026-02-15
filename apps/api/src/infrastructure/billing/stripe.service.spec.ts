@@ -92,4 +92,83 @@ describe('StripeService', () => {
       );
     });
   });
+
+  describe('verifyWebhook', () => {
+    it('should map subscription events correctly', () => {
+      const mockEvent = {
+        type: 'customer.subscription.created',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'active',
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+
+      const result = service.verifyWebhook('payload', 'sig', 'secret');
+
+      expect(result).toEqual({
+        type: 'subscription.created',
+        stripeCustomerId: 'cus_123',
+        subscriptionId: 'sub_123',
+        status: 'active',
+      });
+    });
+
+    it('should map subscription status past_due correctly', () => {
+      const mockEvent = {
+        type: 'customer.subscription.updated',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'past_due',
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+
+      const result = service.verifyWebhook('payload', 'sig', 'secret');
+
+      expect(result?.status).toBe('past_due');
+    });
+
+    it('should map subscription status canceled correctly', () => {
+      const mockEvent = {
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            id: 'sub_123',
+            customer: 'cus_123',
+            status: 'canceled',
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+
+      const result = service.verifyWebhook('payload', 'sig', 'secret');
+
+      expect(result?.status).toBe('canceled');
+      expect(result?.type).toBe('subscription.deleted');
+    });
+
+    it('should return null for unhandled events', () => {
+      const mockEvent = { type: 'other.event' };
+      stripeMock.webhooks.constructEvent.mockReturnValue(mockEvent);
+
+      const result = service.verifyWebhook('payload', 'sig', 'secret');
+
+      expect(result).toBeNull();
+    });
+
+    it('should throw error if signature is invalid', () => {
+      stripeMock.webhooks.constructEvent.mockImplementation(() => {
+        throw new Error('Invalid');
+      });
+
+      expect(() => service.verifyWebhook('p', 's', 'sec')).toThrow('Invalid');
+    });
+  });
 });
