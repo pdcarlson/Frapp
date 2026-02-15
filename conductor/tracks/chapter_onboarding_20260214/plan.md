@@ -29,8 +29,8 @@
 
 ## Phase 4: Invite System (The Growth)
 
-- [ ] **Task:** Create `InviteRepository` in `infrastructure`.
-- [ ] **Task:** Add `createInvite` method to `ChapterService`.
+- [~] **Task:** Create `InviteRepository` in `infrastructure`.
+- [~] **Task:** Add `createInvite` method to `ChapterService`.
 - [ ] **Task:** Implement `POST /chapters/:id/invites` endpoint.
 - [ ] **Task:** Implement `POST /onboarding/join` endpoint to process tokens.
 - [ ] **Task:** Conductor - User Manual Verification 'Invite System'

@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { ChapterModule } from './modules/chapter/chapter.module';
 import { CommonModule } from './modules/common/common.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { InviteModule } from './modules/invite/invite.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { BillingModule } from './modules/billing/billing.module';
     AuthModule,
     ChapterModule,
     BillingModule,
+    InviteModule,
   ],
   controllers: [AppController],
   providers: [
