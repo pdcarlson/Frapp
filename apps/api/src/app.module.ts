@@ -8,9 +8,16 @@ import { DatabaseModule } from './modules/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ChapterModule } from './modules/chapter/chapter.module';
 import { CommonModule } from './modules/common/common.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
-  imports: [CommonModule, DatabaseModule, AuthModule, ChapterModule],
+  imports: [
+    CommonModule,
+    DatabaseModule,
+    AuthModule,
+    ChapterModule,
+    BillingModule,
+  ],
   controllers: [AppController],
   providers: [
     AppService,
