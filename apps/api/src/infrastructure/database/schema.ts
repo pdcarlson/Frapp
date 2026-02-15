@@ -213,3 +213,34 @@ export const chatMessages = pgTable('chat_messages', {
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const studyGeofences = pgTable('study_geofences', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  name: text('name').notNull(),
+  coordinates: jsonb('coordinates').notNull(), // Array of {lat, lng}
+  isActive: boolean('is_active').default(true).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const studySessions = pgTable('study_sessions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  geofenceId: uuid('geofence_id')
+    .notNull()
+    .references(() => studyGeofences.id),
+  status: text('status').notNull(), // 'ACTIVE', 'COMPLETED', 'EXPIRED'
+  startTime: timestamp('start_time').notNull(),
+  endTime: timestamp('end_time'),
+  lastHeartbeatAt: timestamp('last_heartbeat_at').notNull(),
+  totalMinutes: integer('total_minutes').default(0).notNull(),
+  pointsAwarded: boolean('points_awarded').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

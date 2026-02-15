@@ -17,6 +17,7 @@ import { PointsModule } from './modules/points/points.module';
 import { EventModule } from './modules/event/event.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { StudyModule } from './modules/study/study.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ChatModule } from './modules/chat/chat.module';
     EventModule,
     NotificationModule,
     ChatModule,
+    StudyModule,
   ],
   controllers: [AppController],
   providers: [

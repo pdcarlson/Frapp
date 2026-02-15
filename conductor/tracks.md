@@ -18,3 +18,5 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/notifications_20260214/](./tracks/notifications_20260214/)*
 - [x] **Track: Real-time Chat System**
   *Link: [./tracks/chat_20260214/](./tracks/chat_20260214/)*
+- [x] **Track: Location Tracking & Study Hours**
+  *Link: [./tracks/location_study_20260214/](./tracks/location_study_20260214/)*
