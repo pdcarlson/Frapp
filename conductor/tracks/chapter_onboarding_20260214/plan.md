@@ -18,11 +18,11 @@
 
 ## Phase 3: Onboarding API (The Payment Flow)
 
-- [ ] **Task:** Implement `ChapterOnboardingService` in `application`.
-    - 3.1: Define `OnboardingInitDto` and validation rules.
-    - 3.2: Implement `initiateOnboarding` with atomic creation logic.
-    - 3.3: Implement `handleBillingWebhook` to process `BillingEvent` from the adapter.
-- [ ] **Task:** Create `OnboardingController` with `/init` endpoint.
+- [x] **Task:** Implement `ChapterOnboardingService` in `application`. fa54051
+    - 3.1: Define `OnboardingInitDto` and validation rules. fa54051
+    - 3.2: Implement `initiateOnboarding` with atomic creation logic. fa54051
+    - 3.3: Implement `handleBillingWebhook` to process `BillingEvent` from the adapter. fa54051
+- [~] **Task:** Create `OnboardingController` with `/init` endpoint.
 - [ ] **Task:** Implement `StripeWebhookController` and `StripeWebhookGuard`.
 - [ ] **Task:** Write E2E test for the onboarding flow (mocking Stripe response).
 - [ ] **Task:** Conductor - User Manual Verification 'Onboarding Flow'

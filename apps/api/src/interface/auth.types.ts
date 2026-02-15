@@ -1,5 +1,6 @@
 import { Request } from 'express';
 import { IncomingHttpHeaders } from 'http';
+import { BillingEvent } from '../domain/adapters/billing.interface';
 
 export interface RequestWithHeaders extends Request {
   headers: IncomingHttpHeaders & {
@@ -8,7 +9,9 @@ export interface RequestWithHeaders extends Request {
     'svix-id'?: string;
     'svix-timestamp'?: string;
     'svix-signature'?: string;
+    'stripe-signature'?: string;
   };
+  billingEvent?: BillingEvent;
 }
 
 export interface RequestWithUser extends RequestWithHeaders {
