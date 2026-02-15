@@ -121,7 +121,9 @@ describe('ClerkWebhookGuard', () => {
       const configServiceMock = {
         get: jest.fn().mockReturnValue(null),
       };
-      const guardWithNoSecret = new ClerkWebhookGuard(configServiceMock as any);
+      const guardWithNoSecret = new ClerkWebhookGuard(
+        configServiceMock as unknown as ConfigService,
+      );
 
       expect(() => guardWithNoSecret.canActivate(mockExecutionContext)).toThrow(
         'Webhook secret not configured',

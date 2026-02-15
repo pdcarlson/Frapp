@@ -1,0 +1,7 @@
+{
+  "id": "backwork_20260214",
+  "name": "Backwork (Academic Library)",
+  "description": "Multi-tenant academic repository with S3 presigned URLs and elastic metadata.",
+  "status": "completed",
+  "created_at": "2026-02-14T10:05:00Z"
+}

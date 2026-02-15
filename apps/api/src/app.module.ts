@@ -10,6 +10,11 @@ import { ChapterModule } from './modules/chapter/chapter.module';
 import { CommonModule } from './modules/common/common.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { InviteModule } from './modules/invite/invite.module';
+import { BackworkModule } from './modules/backwork/backwork.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { UserModule } from './modules/user/user.module';
+import { PointsModule } from './modules/points/points.module';
+import { EventModule } from './modules/event/event.module';
 
 @Module({
   imports: [
@@ -19,6 +24,11 @@ import { InviteModule } from './modules/invite/invite.module';
     ChapterModule,
     BillingModule,
     InviteModule,
+    BackworkModule,
+    StorageModule,
+    UserModule,
+    PointsModule,
+    EventModule,
   ],
   controllers: [AppController],
   providers: [

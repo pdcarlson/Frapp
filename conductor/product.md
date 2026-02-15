@@ -1,21 +1,28 @@
-# Initial Concept
-
-This is a Turborepo starter project, intended to be used as a template for creating new monorepo projects with Next.js and TypeScript.
-
-# Product Definition
+# Product Definition: Frapp (Fraternity App)
 
 ## 1. Overview
+Frapp is a multi-tenant SaaS platform designed to manage the operations of fraternity chapters. It provides a unified experience for identity, academics, financials, communications, and location-based study tracking.
 
-This document outlines the product definition for a business-to-business (B2B) service. The project is built on a Turborepo starter, utilizing a monorepo architecture with Next.js, React, and TypeScript.
+## 2. Core Domains
 
-## 2. Target Audience
+### A. Identity & Access (IAM)
+- **Multi-Tenancy:** Users are linked to chapters. Access is strictly scoped by `chapter_id`.
+- **RBAC:** Roles like President, Treasurer, Member, and Alumni control granular permissions.
 
-The primary target audience for this service is other businesses. The specific segment of the business market will be further defined as the product evolves.
+### B. The "Backwork" Library (Academic Repository)
+- **Storage:** AWS S3 for academic materials.
+- **Metadata:** Elastic tagging system for courses and professors.
 
-## 3. Goals
+### C. Communications (Chat & Notifications)
+- **Real-time Chat:** Custom Socket.io implementation with role-gated channels (e.g., #exec-board).
+- **Notifications:** Push notifications via Expo for mentions and assignments.
 
-The main goal is to provide a valuable service that addresses a specific need for business customers. This involves creating a robust, scalable, and user-friendly platform.
+### D. Financials & Points (Ledger)
+- **SaaS Billing:** Chapter-level subscriptions managed via Stripe.
+- **Internal Ledger:** A double-entry point system. "House Points" awarded for attendance, academics, and service.
+- **Attendance:** QR-code or location-based check-ins for meetings and events.
 
-## 4. Features
-
-The initial feature set will be focused on delivering the core value proposition of the service. Future features will be developed based on user feedback and market research.
+### E. Location & Study Hours
+- **Active Tracking:** Opt-in geofenced study sessions.
+- **Geofencing:** Server-side validation of user location within predefined polygons (e.g., Library).
+- **Automation:** Automatic point accrual based on validated study time.

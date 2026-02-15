@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { LoggingInterceptor } from './logging.interceptor';
 import { ExecutionContext, CallHandler } from '@nestjs/common';
@@ -29,7 +30,8 @@ describe('LoggingInterceptor', () => {
   });
 
   it('should intercept and log the request', (done) => {
-    interceptor.intercept(mockExecutionContext, mockCallHandler).subscribe({
+    const intercept = interceptor.intercept.bind(interceptor);
+    intercept(mockExecutionContext, mockCallHandler).subscribe({
       next: () => {
         expect(mockCallHandler.handle).toHaveBeenCalled();
         done();

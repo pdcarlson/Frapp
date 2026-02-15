@@ -3,23 +3,24 @@
 ## 1. High-Level Stack
 
 - **Monorepo Manager:** Turborepo
-- **Package Manager:** pnpm
+- **Package Manager:** npm
 - **Cloud Provider:** AWS (Elastic Container Service)
 
 ## 2. Applications (`/apps`)
 
 ### `apps/api` (The Brain)
 
-- **Framework:** NestJS (Node.js).
+- **Framework:** NestJS 11 (Node.js).
 - **Language:** TypeScript (Strict).
 - **Role:** REST API + WebSocket Gateway.
+- **Real-time:** Socket.io with Redis Adapter.
 - **Security:**
   - `ClerkAuthGuard`: Validates JWT.
   - `ChapterGuard`: Enforces `x-chapter-id` header matches User's permissions.
 
 ### `apps/web` (The Admin Console)
 
-- **Framework:** Next.js 15 (App Router).
+- **Framework:** Next.js 16 (App Router).
 - **UI Library:** Tailwind CSS + ShadCN UI.
 - **Role:** High-density dashboards for Treasurers/Presidents.
 

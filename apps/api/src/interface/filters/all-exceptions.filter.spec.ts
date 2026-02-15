@@ -5,7 +5,6 @@ import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 
 describe('AllExceptionsFilter', () => {
   let filter: AllExceptionsFilter;
-  let adapterHost: HttpAdapterHost;
 
   const mockHttpAdapter = {
     getRequestUrl: jest.fn(() => '/test'),
@@ -30,7 +29,6 @@ describe('AllExceptionsFilter', () => {
     }).compile();
 
     filter = module.get<AllExceptionsFilter>(AllExceptionsFilter);
-    adapterHost = module.get<HttpAdapterHost>(HttpAdapterHost);
   });
 
   it('should be defined', () => {

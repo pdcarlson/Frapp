@@ -13,6 +13,7 @@
 - **Framework:** NestJS (Node.js).
 - **Language:** TypeScript (Strict).
 - **Role:** REST API + WebSocket Gateway.
+- **Real-time:** Socket.io with Redis Adapter.
 - **Security:**
   - `ClerkAuthGuard`: Validates JWT.
   - `ChapterGuard`: Enforces `x-chapter-id` header matches User's permissions.

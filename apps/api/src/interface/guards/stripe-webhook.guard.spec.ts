@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { StripeWebhookGuard } from './stripe-webhook.guard';
 import {
   BILLING_PROVIDER,
+  BillingEvent,
+  BillingStatus,
   IBillingProvider,
 } from '../../domain/adapters/billing.interface';
 import { ConfigService } from '@nestjs/config';
@@ -46,24 +48,24 @@ describe('StripeWebhookGuard', () => {
   });
 
   describe('canActivate', () => {
-    it('should allow access with valid stripe signature', async () => {
+    it('should allow access with valid stripe signature', () => {
       const mockRequest = {
         headers: { 'stripe-signature': 'sig_123' },
         body: 'raw_payload',
-      };
+      } as Record<string, unknown>;
       (
         mockExecutionContext.switchToHttp().getRequest as jest.Mock
       ).mockReturnValue(mockRequest);
 
-      const mockEvent = {
+      const mockEvent: BillingEvent = {
         type: 'subscription.created',
         stripeCustomerId: 'cus_123',
         subscriptionId: 'sub_123',
-        status: 'active',
+        status: BillingStatus.ACTIVE,
       };
-      billingProvider.verifyWebhook.mockReturnValue(mockEvent as any);
+      billingProvider.verifyWebhook.mockReturnValue(mockEvent);
 
-      const result = await guard.canActivate(mockExecutionContext);
+      const result = guard.canActivate(mockExecutionContext);
 
       expect(result).toBe(true);
       expect(mockRequest['billingEvent']).toEqual(mockEvent);
@@ -95,7 +97,7 @@ describe('StripeWebhookGuard', () => {
       };
       const guardWithNoSecret = new StripeWebhookGuard(
         billingProvider,
-        configServiceMock as any,
+        configServiceMock as unknown as ConfigService,
       );
 
       expect(() => guardWithNoSecret.canActivate(mockExecutionContext)).toThrow(
@@ -103,17 +105,17 @@ describe('StripeWebhookGuard', () => {
       );
     });
 
-    it('should return false if event is invalid/unhandled', async () => {
+    it('should return false if event is invalid/unhandled', () => {
       const mockRequest = {
         headers: { 'stripe-signature': 'sig_123' },
         body: 'raw_payload',
-      };
+      } as Record<string, unknown>;
       (
         mockExecutionContext.switchToHttp().getRequest as jest.Mock
       ).mockReturnValue(mockRequest);
       billingProvider.verifyWebhook.mockReturnValue(null);
 
-      const result = await guard.canActivate(mockExecutionContext);
+      const result = guard.canActivate(mockExecutionContext);
       expect(result).toBe(false);
     });
   });

@@ -23,20 +23,24 @@ export class AllExceptionsFilter implements ExceptionFilter {
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const message =
+    const exceptionResponse =
       exception instanceof HttpException
-        ? (exception.getResponse() as string | { message: string })
+        ? exception.getResponse()
         : 'Internal server error';
 
-    const messageText = typeof message === 'string' ? message : message.message;
+    const messageText =
+      typeof exceptionResponse === 'string'
+        ? exceptionResponse
+        : (exceptionResponse as Record<string, unknown>).message ||
+          'Internal server error';
 
     const responseBody = {
       statusCode: httpStatus,
       timestamp: new Date().toISOString(),
       path: httpAdapter.getRequestUrl(
         ctx.getRequest<Record<string, unknown>>(),
-      ),
-      message: messageText,
+      ) as string,
+      message: messageText as string,
     };
 
     // Centralized Logging

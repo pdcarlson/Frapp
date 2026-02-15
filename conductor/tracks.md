@@ -10,3 +10,7 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/clerk_webhooks_sync_20260214/](./tracks/clerk_webhooks_sync_20260214/)*
 - [x] **Track: Chapter Onboarding & Stripe Integration**
   *Link: [./tracks/chapter_onboarding_20260214/](./tracks/chapter_onboarding_20260214/)*
+- [x] **Track: Backwork (Academic Library)**
+  *Link: [./tracks/backwork_20260214/](./tracks/backwork_20260214/)*
+- [x] **Track: Internal Ledger & Attendance**
+  *Link: [./tracks/ledger_attendance_20260214/](./tracks/ledger_attendance_20260214/)*
