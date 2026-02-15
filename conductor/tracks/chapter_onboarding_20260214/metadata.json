@@ -1,0 +1,7 @@
+{
+  "id": "chapter_onboarding_20260214",
+  "name": "Chapter Onboarding & Stripe Integration",
+  "description": "Implement the end-to-end flow for creating a chapter, processing payments via Stripe, and inviting members.",
+  "created_at": "2026-02-14T19:45:00Z",
+  "status": "pending"
+}
