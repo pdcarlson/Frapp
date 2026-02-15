@@ -1,5 +1,5 @@
 import { getTableConfig } from 'drizzle-orm/pg-core';
-import { users, members, chapters } from './schema';
+import { users, members, chapters, invites } from './schema';
 
 describe('Drizzle Schema', () => {
   describe('users table', () => {
@@ -30,9 +30,33 @@ describe('Drizzle Schema', () => {
       const columnNames = config.columns.map((c) => c.name);
       expect(columnNames).toContain('id');
       expect(columnNames).toContain('name');
+      expect(columnNames).toContain('university');
       expect(columnNames).toContain('clerk_organization_id');
+      expect(columnNames).toContain('stripe_customer_id');
+      expect(columnNames).toContain('subscription_status');
+      expect(columnNames).toContain('subscription_id');
       expect(columnNames).toContain('created_at');
       expect(columnNames).toContain('updated_at');
+    });
+  });
+
+  describe('invites table', () => {
+    it('should have the correct table name', () => {
+      const config = getTableConfig(invites);
+      expect(config.name).toBe('invites');
+    });
+
+    it('should have the correct columns', () => {
+      const config = getTableConfig(invites);
+      const columnNames = config.columns.map((c) => c.name);
+      expect(columnNames).toContain('id');
+      expect(columnNames).toContain('token');
+      expect(columnNames).toContain('chapter_id');
+      expect(columnNames).toContain('role');
+      expect(columnNames).toContain('expires_at');
+      expect(columnNames).toContain('created_by');
+      expect(columnNames).toContain('used_at');
+      expect(columnNames).toContain('created_at');
     });
   });
 
