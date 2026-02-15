@@ -24,12 +24,12 @@
 - [x] **Task:** Implement `user.deleted` event logic (Soft or hard delete). a4171d1
 - [x] **Task:** Conductor - User Manual Verification 'Synchronization Logic' 6569b6a
 
-## Phase 4: Observability & Documentation
+## Phase 4: Observability & Documentation [checkpoint: d523677]
 
-- [ ] **Task:** Configure Swagger in `apps/api/main.ts` to document endpoints.
-- [ ] **Task:** Add logging to webhook processing using the `Logger` service.
-- [ ] **Task:** Prepare a `docker-compose` override or script for local webhook testing (e.g., using `svix-cli` or `ngrok`).
-- [ ] **Task:** Conductor - User Manual Verification 'Observability'
+- [x] **Task:** Configure Swagger in `apps/api/main.ts` to document endpoints. 33b6d92
+- [x] **Task:** Add logging to webhook processing using the `Logger` service. 33b6d92
+- [x] **Task:** Prepare a `docker-compose` override or script for local webhook testing (e.g., using `svix-cli` or `ngrok`). 33b6d92
+- [x] **Task:** Conductor - User Manual Verification 'Observability' d523677
 
 ## Phase 5: Final Verification & TDD Cleanup
 
