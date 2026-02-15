@@ -19,12 +19,15 @@ export interface IChapterRepository {
       university: string;
       subscriptionStatus: string;
       subscriptionId: string;
+      stripeCustomerId: string;
     }>,
   ): Promise<Chapter>;
 
   findByClerkOrganizationId(
     clerkOrganizationId: string,
   ): Promise<Chapter | null>;
+
+  findByStripeCustomerId(stripeCustomerId: string): Promise<Chapter | null>;
 
   findById(id: string): Promise<Chapter | null>;
 }

@@ -32,6 +32,7 @@ export class DrizzleChapterRepository implements IChapterRepository {
       university: string;
       subscriptionStatus: string;
       subscriptionId: string;
+      stripeCustomerId: string;
     }>,
   ): Promise<Chapter> {
     const [result] = await this.db
@@ -52,6 +53,15 @@ export class DrizzleChapterRepository implements IChapterRepository {
   ): Promise<Chapter | null> {
     const result = await this.db.query.chapters.findFirst({
       where: eq(chapters.clerkOrganizationId, clerkOrganizationId),
+    });
+    return result ? this.mapToDomain(result) : null;
+  }
+
+  async findByStripeCustomerId(
+    stripeCustomerId: string,
+  ): Promise<Chapter | null> {
+    const result = await this.db.query.chapters.findFirst({
+      where: eq(chapters.stripeCustomerId, stripeCustomerId),
     });
     return result ? this.mapToDomain(result) : null;
   }

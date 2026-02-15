@@ -114,4 +114,26 @@ describe('DrizzleChapterRepository', () => {
       expect(result?.clerkOrganizationId).toBe('org_123');
     });
   });
+
+  describe('findByStripeCustomerId', () => {
+    it('should return chapter if found by stripe customer id', async () => {
+      const dbResult = {
+        id: 'uuid_123',
+        name: 'Alpha Beta',
+        university: 'OSU',
+        clerkOrganizationId: 'org_123',
+        stripeCustomerId: 'cus_123',
+        subscriptionStatus: 'active',
+        subscriptionId: 'sub_123',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      dbMock.query.chapters.findFirst.mockResolvedValue(dbResult);
+
+      const result = await repository.findByStripeCustomerId('cus_123');
+
+      expect(result).toBeInstanceOf(Chapter);
+      expect(result?.stripeCustomerId).toBe('cus_123');
+    });
+  });
 });

@@ -48,39 +48,40 @@ export interface IBillingProvider {
 | `created_by` | `uuid` | FK -> users.id (Audit trail) |
 | `used_at` | `timestamp` | Nullable. If set, token is dead. |
 
-## 4. API Contract
+## 4. Onboarding Logic & State Machine
 
-### A. Initiate Onboarding
-**POST** `/v1/onboarding/init`
-- **Body:** `{ "name": "Sigma Chi", "university": "OSU" }`
-- **Logic:**
-  1.  Creates `Chapter` in DB (Status: `incomplete`).
-  2.  Creates Stripe Customer.
-  3.  Generates Stripe Checkout Session URL.
-- **Response:** `{ "checkoutUrl": "https://stripe.com/..." }`
+### Chapter Life Cycle (Status)
+1.  **`incomplete`**: Chapter record created, but Stripe payment not yet confirmed.
+2.  **`active`**: Subscription is paid and current. Full access granted.
+3.  **`past_due`**: Payment failed. 3-day grace period (Soft Lock).
+4.  **`canceled`**: Subscription ended. Data preserved but read-only (Hard Lock).
 
-### B. Stripe Webhook
-**POST** `/v1/webhooks/stripe`
-- **Headers:** `stripe-signature`
-- **Logic:**
-  1.  Verifies signature.
-  2.  On `checkout.session.completed`: Updates Chapter status to `active`.
-  3.  On `invoice.payment_failed`: Updates Chapter status to `past_due`.
+### The "Initiate" Sequence (POST /v1/onboarding/init)
+1.  **Atomic DB Create:** Create Chapter with `incomplete` status.
+2.  **Billing Sync:** Create Stripe Customer.
+3.  **Linkage:** Update Chapter with `stripe_customer_id`.
+4.  **Session:** Generate Stripe Checkout URL with `chapter_id` in the `client_reference_id` or `metadata`. This is critical for matching the webhook back to our DB.
+5.  **Response:** Return URL to frontend.
 
-### C. Create Invite
-**POST** `/v1/chapters/:id/invites`
-- **Guard:** `ChapterGuard` (Admin only)
-- **Response:** `{ "token": "abc-123", "url": "https://frapp.app/join/abc-123" }`
+### Webhook Reliability (POST /v1/webhooks/stripe)
+- **Problem:** Webhooks can arrive out of order or multiple times.
+- **Solution:** 
+  - Use `stripe_event_id` to prevent processing the same event twice (Idempotency).
+  - Every update must be timestamp-aware (don't overwrite newer data with older data).
 
-### D. Accept Invite
-**POST** `/v1/onboarding/join`
-- **Body:** `{ "token": "abc-123" }`
-- **Logic:**
-  1.  Validates token (exists, not expired, not used).
-  2.  Adds current User to Chapter `members` table.
-  3.  Marks token as used.
+## 5. Implementation Consistency Patterns
 
-## 5. Security & Constraints
-- **Idempotency:** Stripe webhooks must handle duplicate events gracefully.
-- **RBAC:** Only `admin` role can generate invites (We need to add `role` to `members` table).
-- **Secrets:** `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` must be validated on startup.
+### Error Handling
+All errors in the `ChapterOnboardingService` must follow the established logging pattern:
+- **Log Format:** `[Context] Message | Detail: { ... } | Error: Stack`
+- **User Safety:** Catch all internal errors and throw `InternalServerErrorException` only after logging, ensuring no DB details leak.
+
+### Decoupling (The Adapter)
+The `ChapterOnboardingService` will **never** talk to the Stripe SDK directly. It will only talk to the `IBillingProvider` interface. This ensures that if we need to switch providers, we only implement a new adapter class.
+
+## 6. Edge Case Analysis
+| Scenario | Handling Strategy |
+| :--- | :--- |
+| User pays but browser crashes before redirect | Webhook (`checkout.session.completed`) is the source of truth. It will activate the chapter regardless of the frontend redirect. |
+| Stripe is down during `/init` | Throw `503 Service Unavailable`. Do not create the Chapter in our DB if we can't create the Stripe customer. |
+| Webhook arrives before DB commit | Implement a short retry logic or "Upsert" logic in the webhook handler. |
