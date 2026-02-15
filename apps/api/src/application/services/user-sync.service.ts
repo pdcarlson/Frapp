@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 
-interface ClerkUser {
+export interface ClerkUser {
   id: string;
   email_addresses?: Array<{ email_address: string }>;
 }

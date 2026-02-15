@@ -62,6 +62,41 @@ describe('DrizzleUserRepository', () => {
     });
   });
 
+  describe('update', () => {
+    it('should update a user and return domain entity', async () => {
+      const dbResult = {
+        id: 'uuid_123',
+        clerkId: 'clerk_123',
+        email: 'updated@example.com',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      dbMock.returning.mockResolvedValue([dbResult]);
+
+      const result = await repository.update('clerk_123', {
+        email: 'updated@example.com',
+      });
+
+      expect(result.email).toBe('updated@example.com');
+      expect(dbMock.update).toHaveBeenCalled();
+    });
+
+    it('should throw error if update returns no result', async () => {
+      dbMock.returning.mockResolvedValue([]);
+
+      await expect(
+        repository.update('non_existent', { email: 'test@test.com' }),
+      ).rejects.toThrow('User with clerkId non_existent not found');
+    });
+  });
+
+  describe('delete', () => {
+    it('should call delete on the database', async () => {
+      await repository.delete('clerk_123');
+      expect(dbMock.delete).toHaveBeenCalled();
+    });
+  });
+
   describe('findByClerkId', () => {
     it('should return user if found', async () => {
       const dbResult = {
