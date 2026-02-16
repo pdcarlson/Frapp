@@ -4,7 +4,10 @@ import { eq, desc } from 'drizzle-orm';
 import * as schema from '../schema';
 import { DRIZZLE_DB } from '../drizzle.provider';
 import { IFinancialRepository } from '../../../domain/repositories/financial.repository.interface';
-import { FinancialInvoice, FinancialTransaction } from '../../../domain/entities/financial.entity';
+import {
+  FinancialInvoice,
+  FinancialTransaction,
+} from '../../../domain/entities/financial.entity';
 
 @Injectable()
 export class DrizzleFinancialRepository implements IFinancialRepository {
@@ -13,7 +16,9 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     private readonly db: NodePgDatabase<typeof schema>,
   ) {}
 
-  async createInvoice(invoice: Omit<FinancialInvoice, 'id' | 'createdAt'>): Promise<FinancialInvoice> {
+  async createInvoice(
+    invoice: Omit<FinancialInvoice, 'id' | 'createdAt'>,
+  ): Promise<FinancialInvoice> {
     const [result] = await this.db
       .insert(schema.financialInvoices)
       .values({
@@ -32,7 +37,10 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     return this.mapInvoice(result);
   }
 
-  async updateInvoice(id: string, updates: Partial<FinancialInvoice>): Promise<FinancialInvoice> {
+  async updateInvoice(
+    id: string,
+    updates: Partial<FinancialInvoice>,
+  ): Promise<FinancialInvoice> {
     const [result] = await this.db
       .update(schema.financialInvoices)
       .set({ ...updates })
@@ -72,7 +80,9 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     return results.map(this.mapInvoice.bind(this));
   }
 
-  async createTransaction(transaction: Omit<FinancialTransaction, 'id' | 'createdAt'>): Promise<FinancialTransaction> {
+  async createTransaction(
+    transaction: Omit<FinancialTransaction, 'id' | 'createdAt'>,
+  ): Promise<FinancialTransaction> {
     const [result] = await this.db
       .insert(schema.financialTransactions)
       .values({
@@ -87,7 +97,9 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     return this.mapTransaction(result);
   }
 
-  async findTransactionsByInvoice(invoiceId: string): Promise<FinancialTransaction[]> {
+  async findTransactionsByInvoice(
+    invoiceId: string,
+  ): Promise<FinancialTransaction[]> {
     const results = await this.db
       .select()
       .from(schema.financialTransactions)
@@ -97,7 +109,9 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     return results.map(this.mapTransaction.bind(this));
   }
 
-  private mapInvoice(row: typeof schema.financialInvoices.$inferSelect): FinancialInvoice {
+  private mapInvoice(
+    row: typeof schema.financialInvoices.$inferSelect,
+  ): FinancialInvoice {
     return new FinancialInvoice(
       row.id,
       row.chapterId,
@@ -113,7 +127,9 @@ export class DrizzleFinancialRepository implements IFinancialRepository {
     );
   }
 
-  private mapTransaction(row: typeof schema.financialTransactions.$inferSelect): FinancialTransaction {
+  private mapTransaction(
+    row: typeof schema.financialTransactions.$inferSelect,
+  ): FinancialTransaction {
     return new FinancialTransaction(
       row.id,
       row.chapterId,

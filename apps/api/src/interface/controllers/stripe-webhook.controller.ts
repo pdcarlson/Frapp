@@ -44,9 +44,14 @@ export class StripeWebhookController {
     if (event.type === 'invoice.payment_succeeded') {
       const invoiceId = event.metadata?.invoiceId;
       if (invoiceId && event.paymentIntentId) {
-        await this.financialService.processPayment(invoiceId, event.paymentIntentId);
+        await this.financialService.processPayment(
+          invoiceId,
+          event.paymentIntentId,
+        );
       } else {
-        this.logger.warn('Missing invoiceId or paymentIntentId in payment event');
+        this.logger.warn(
+          'Missing invoiceId or paymentIntentId in payment event',
+        );
       }
     } else {
       await this.onboardingService.handleBillingWebhook(event);

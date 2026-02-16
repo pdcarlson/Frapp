@@ -4,9 +4,11 @@ import { InviteController } from '../../interface/controllers/invite.controller'
 import { AuthModule } from '../auth/auth.module';
 import { DatabaseModule } from '../database/database.module';
 import { ChapterModule } from '../chapter/chapter.module';
+import { RbacModule } from '../rbac/rbac.module';
+import { UserModule } from '../user/user.module';
 
 @Module({
-  imports: [AuthModule, DatabaseModule, ChapterModule],
+  imports: [AuthModule, DatabaseModule, ChapterModule, RbacModule, UserModule],
   controllers: [InviteController],
   providers: [InviteService],
   exports: [InviteService],

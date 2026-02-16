@@ -274,3 +274,14 @@ export const financialTransactions = pgTable('financial_transactions', {
   stripeChargeId: text('stripe_charge_id'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const roles = pgTable('roles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  name: text('name').notNull(),
+  permissions: text('permissions').array().default([]).notNull(),
+  isSystem: boolean('is_system').default(false).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

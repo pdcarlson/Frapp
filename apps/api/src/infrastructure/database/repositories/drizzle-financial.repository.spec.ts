@@ -29,7 +29,9 @@ describe('DrizzleFinancialRepository', () => {
       ],
     }).compile();
 
-    repository = module.get<DrizzleFinancialRepository>(DrizzleFinancialRepository);
+    repository = module.get<DrizzleFinancialRepository>(
+      DrizzleFinancialRepository,
+    );
   });
 
   it('should be defined', () => {

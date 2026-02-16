@@ -6,9 +6,15 @@ import { FinancialService } from '../../application/services/financial.service';
 import { DrizzleFinancialRepository } from '../../infrastructure/database/repositories/drizzle-financial.repository';
 import { FINANCIAL_REPOSITORY } from '../../domain/repositories/financial.repository.interface';
 import { FinancialController } from '../../interface/controllers/financial.controller';
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
-  imports: [DatabaseModule, UserModule, forwardRef(() => BillingModule)],
+  imports: [
+    DatabaseModule,
+    UserModule,
+    forwardRef(() => BillingModule),
+    RbacModule,
+  ],
   controllers: [FinancialController],
   providers: [
     FinancialService,

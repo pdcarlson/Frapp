@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { FINANCIAL_REPOSITORY } from '../../domain/repositories/financial.repository.interface';
 import type { IFinancialRepository } from '../../domain/repositories/financial.repository.interface';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
@@ -40,7 +46,8 @@ export class FinancialService {
   ): Promise<string> {
     const invoice = await this.financialRepo.findInvoiceById(invoiceId);
     if (!invoice) throw new NotFoundException('Invoice not found');
-    if (invoice.status !== 'OPEN') throw new BadRequestException('Invoice is not open for payment');
+    if (invoice.status !== 'OPEN')
+      throw new BadRequestException('Invoice is not open for payment');
 
     return this.billingProvider.createInvoiceCheckout(
       stripeCustomerId,
@@ -52,7 +59,10 @@ export class FinancialService {
     );
   }
 
-  async processPayment(invoiceId: string, stripePaymentIntentId: string): Promise<void> {
+  async processPayment(
+    invoiceId: string,
+    stripePaymentIntentId: string,
+  ): Promise<void> {
     const invoice = await this.financialRepo.findInvoiceById(invoiceId);
     if (!invoice) {
       this.logger.error(`Received payment for unknown invoice ${invoiceId}`);

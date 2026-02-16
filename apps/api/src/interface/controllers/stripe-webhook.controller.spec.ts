@@ -6,8 +6,12 @@ import { StripeWebhookGuard } from '../guards/stripe-webhook.guard';
 
 describe('StripeWebhookController', () => {
   let controller: StripeWebhookController;
-  let onboardingService: any;
-  let financialService: any;
+  let onboardingService: {
+    handleBillingWebhook: jest.Mock;
+  };
+  let financialService: {
+    processPayment: jest.Mock;
+  };
 
   const mockOnboardingService = {
     handleBillingWebhook: jest.fn(),
@@ -34,8 +38,8 @@ describe('StripeWebhookController', () => {
       .compile();
 
     controller = module.get<StripeWebhookController>(StripeWebhookController);
-    onboardingService = module.get(ChapterOnboardingService);
-    financialService = module.get(FinancialService);
+    onboardingService = mockOnboardingService;
+    financialService = mockFinancialService;
     jest.clearAllMocks();
   });
 
@@ -48,7 +52,9 @@ describe('StripeWebhookController', () => {
       billingEvent: { type: 'subscription.created' },
     };
     await controller.handleWebhook(req as any);
-    expect(onboardingService.handleBillingWebhook).toHaveBeenCalledWith(req.billingEvent);
+    expect(onboardingService.handleBillingWebhook).toHaveBeenCalledWith(
+      req.billingEvent,
+    );
     expect(financialService.processPayment).not.toHaveBeenCalled();
   });
 
@@ -61,7 +67,10 @@ describe('StripeWebhookController', () => {
       },
     };
     await controller.handleWebhook(req as any);
-    expect(financialService.processPayment).toHaveBeenCalledWith('inv_123', 'pi_123');
+    expect(financialService.processPayment).toHaveBeenCalledWith(
+      'inv_123',
+      'pi_123',
+    );
     expect(onboardingService.handleBillingWebhook).not.toHaveBeenCalled();
   });
 });

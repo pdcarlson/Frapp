@@ -10,9 +10,16 @@ import { UserModule } from '../user/user.module';
 
 import { JwtModule } from '@nestjs/jwt';
 import { QrTokenService } from '../../application/services/qr-token.service';
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
-  imports: [DatabaseModule, PointsModule, UserModule, JwtModule.register({})],
+  imports: [
+    DatabaseModule,
+    PointsModule,
+    UserModule,
+    RbacModule,
+    JwtModule.register({}),
+  ],
   controllers: [EventController],
   providers: [
     EventService,

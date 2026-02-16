@@ -1,12 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { QrTokenService } from '../src/application/services/qr-token.service';
 
 describe('QR Attendance (e2e)', () => {
   let app: INestApplication;
-  let qrTokenService: QrTokenService;
 
   beforeEach(async () => {
     process.env.STRIPE_SECRET_KEY = 'test_secret';
@@ -22,7 +19,6 @@ describe('QR Attendance (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    qrTokenService = moduleFixture.get<QrTokenService>(QrTokenService);
     await app.init();
   });
 
