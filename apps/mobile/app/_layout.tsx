@@ -16,11 +16,11 @@ import { useColorScheme } from '@/components/useColorScheme';
 
 const queryClient = new QueryClient();
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
+const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
-if (!publishableKey) {
-  throw new Error(
-    "Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env"
+if (!publishableKey && !process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY) {
+  console.warn(
+    "Missing Publishable Key. Please set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY in your .env.local"
   );
 }
 
@@ -91,6 +91,7 @@ function InitialLayout() {
 }
 
 function RootLayoutNav() {
+  if (!publishableKey) return null;
   return (
     <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
       <ClerkLoaded>
