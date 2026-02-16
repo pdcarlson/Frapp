@@ -4,10 +4,10 @@ import { CreateRoleSchema } from '@repo/validation';
 
 export class CreateRoleDto extends createZodDto(CreateRoleSchema) {
   @ApiProperty({ example: 'Social Chair' })
-  name: string;
+  declare name: string;
 
   @ApiProperty({ example: ['events:create', 'events:update'] })
-  permissions: string[];
+  declare permissions: string[];
 }
 
 export class RoleResponseDto {

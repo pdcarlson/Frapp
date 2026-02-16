@@ -6,7 +6,7 @@ export class UpdateMemberRolesDto extends createZodDto(
   UpdateMemberRolesSchema,
 ) {
   @ApiProperty({ example: ['role-uuid-1', 'role-uuid-2'] })
-  roleIds: string[];
+  declare roleIds: string[];
 }
 
 export class MemberResponseDto {
