@@ -19,12 +19,15 @@ import { UserService } from '../../application/services/user.service';
 import { CreateEventDto, QrCheckInDto } from '../dtos/event.dto';
 import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { PERMISSIONS } from '../../domain/constants/permissions';
 import type { RequestWithUser } from '../auth.types';
 import { QrTokenService } from '../../application/services/qr-token.service';
 
 @ApiTags('events')
 @Controller('events')
-@UseGuards(ClerkAuthGuard, ChapterGuard)
+@UseGuards(ClerkAuthGuard, ChapterGuard, PermissionsGuard)
 @ApiBearerAuth()
 @ApiHeader({ name: 'x-chapter-id', required: true })
 export class EventController {
@@ -36,10 +39,10 @@ export class EventController {
   ) {}
 
   @Get(':id/qr')
-  @ApiOperation({ summary: 'Get a dynamic QR token for an event (Admin Only)' })
+  @ApiOperation({ summary: 'Get a dynamic QR token for an event' })
+  @RequirePermissions(PERMISSIONS.EVENTS_UPDATE) // Or a specific QR permission if added
   async getQrToken(@Req() req: RequestWithUser, @Param('id') id: string) {
     const chapterId = req.headers['x-chapter-id'] as string;
-    // TODO: RBAC check
     const token = await Promise.resolve(
       this.qrTokenService.generateToken(id, chapterId),
     );
@@ -54,12 +57,12 @@ export class EventController {
     @Body() dto: QrCheckInDto,
   ) {
     const user = await this.userService.findByClerkId(req.user.sub);
-    // Note: The token contains eventId, but we also pass it in URL for consistency/logging
     return this.attendanceService.processQrCheckIn(user.id, dto.token);
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new event (Admin Only - TODO: RBAC)' })
+  @ApiOperation({ summary: 'Create a new event' })
+  @RequirePermissions(PERMISSIONS.EVENTS_CREATE)
   async createEvent(@Req() req: RequestWithUser, @Body() dto: CreateEventDto) {
     const chapterId = req.headers['x-chapter-id'] as string;
     return this.eventService.createEvent({
@@ -73,6 +76,7 @@ export class EventController {
 
   @Get()
   @ApiOperation({ summary: 'Get all events for the chapter' })
+  @RequirePermissions(PERMISSIONS.EVENTS_VIEW)
   async getEvents(@Req() req: RequestWithUser) {
     const chapterId = req.headers['x-chapter-id'] as string;
     return this.eventService.getChapterEvents(chapterId);
@@ -89,7 +93,8 @@ export class EventController {
   }
 
   @Get(':id/attendance')
-  @ApiOperation({ summary: 'Get attendance list for an event (Admin Only)' })
+  @ApiOperation({ summary: 'Get attendance list for an event' })
+  @RequirePermissions(PERMISSIONS.EVENTS_VIEW)
   async getAttendance(@Param('id') id: string) {
     return this.attendanceService.getAttendanceForEvent(id);
   }

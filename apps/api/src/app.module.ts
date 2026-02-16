@@ -19,6 +19,8 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { StudyModule } from './modules/study/study.module';
 import { FinancialModule } from './modules/financial/financial.module';
+import { RbacModule } from './modules/rbac/rbac.module';
+import { MemberModule } from './modules/member/member.module';
 
 @Module({
   imports: [
@@ -37,6 +39,8 @@ import { FinancialModule } from './modules/financial/financial.module';
     ChatModule,
     StudyModule,
     FinancialModule,
+    RbacModule,
+    MemberModule,
   ],
   controllers: [AppController],
   providers: [

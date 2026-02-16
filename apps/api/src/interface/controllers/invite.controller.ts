@@ -19,6 +19,9 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { CreateInviteDto, AcceptInviteDto } from '../dtos/invite.dto';
 import { InviteService } from '../../application/services/invite.service';
 import type { RequestWithUser } from '../auth.types';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { PERMISSIONS } from '../../domain/constants/permissions';
 
 @ApiTags('invites')
 @ApiBearerAuth()
@@ -29,9 +32,10 @@ export class InviteController {
   constructor(private readonly inviteService: InviteService) {}
 
   @Post('chapters/:id/invites')
-  @UseGuards(ClerkAuthGuard, ChapterGuard)
+  @UseGuards(ClerkAuthGuard, ChapterGuard, PermissionsGuard)
   @ApiHeader({ name: 'x-chapter-id', description: 'Chapter UUID' })
   @ApiOperation({ summary: 'Create a new member invite for a chapter' })
+  @RequirePermissions(PERMISSIONS.MEMBERS_INVITE)
   @ApiResponse({ status: 201, description: 'Invite created' })
   async create(
     @Param('id') chapterId: string,

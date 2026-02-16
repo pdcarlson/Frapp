@@ -19,4 +19,5 @@ export interface RequestWithUser extends RequestWithHeaders {
     sub: string;
     [key: string]: any;
   };
+  internalUserId?: string;
 }

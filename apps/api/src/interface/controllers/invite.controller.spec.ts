@@ -4,6 +4,7 @@ import { InviteController } from './invite.controller';
 import { InviteService } from '../../application/services/invite.service';
 import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequestWithUser } from '../auth.types';
 import { Invite } from '../../domain/entities/invite.entity';
 
@@ -44,6 +45,8 @@ describe('InviteController', () => {
       .overrideGuard(ClerkAuthGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(ChapterGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

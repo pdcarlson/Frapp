@@ -42,6 +42,8 @@ export class ChapterGuard implements CanActivate {
       throw new ForbiddenException('User does not have access to this chapter');
     }
 
+    request.internalUserId = result[0].id;
+
     return true;
   }
 }
