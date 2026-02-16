@@ -18,3 +18,5 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/notifications_20260214/](./tracks/notifications_20260214/)*
 - [x] **Track: Real-time Chat System**
   *Link: [./tracks/chat_20260214/](./tracks/chat_20260214/)*
+- [x] **Track: Member Dues & Financials**
+  *Link: [./tracks/member_dues_20260215/](./tracks/member_dues_20260215/)*

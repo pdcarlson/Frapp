@@ -64,6 +64,49 @@ export class StripeService implements IBillingProvider {
     }
   }
 
+  async createInvoiceCheckout(
+    customerId: string,
+    amount: number,
+    title: string,
+    successUrl: string,
+    cancelUrl: string,
+    metadata?: Record<string, string>,
+  ): Promise<string> {
+    try {
+      const session = await this.stripe.checkout.sessions.create({
+        customer: customerId,
+        line_items: [
+          {
+            price_data: {
+              currency: 'usd',
+              product_data: {
+                name: title,
+              },
+              unit_amount: amount,
+            },
+            quantity: 1,
+          },
+        ],
+        mode: 'payment',
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+        metadata: metadata,
+        payment_intent_data: {
+          metadata: metadata, // Propagate metadata to PaymentIntent for webhooks
+        },
+      });
+
+      if (!session.url) {
+        throw new Error('Stripe session URL is missing');
+      }
+
+      return session.url;
+    } catch (error) {
+      this.logger.error('Failed to create Stripe invoice checkout', error);
+      throw error;
+    }
+  }
+
   verifyWebhook(
     payload: string | Buffer,
     signature: string,
@@ -87,6 +130,19 @@ export class StripeService implements IBillingProvider {
             subscriptionId: subscription.id,
             status: this.mapStripeStatus(subscription.status),
           };
+        }
+        case 'checkout.session.completed': {
+          const session = event.data.object;
+          if (session.mode === 'payment' && session.payment_status === 'paid') {
+            return {
+              type: 'invoice.payment_succeeded',
+              stripeCustomerId: session.customer as string,
+              paymentIntentId: session.payment_intent as string,
+              status: BillingStatus.ACTIVE, // Paid
+              metadata: session.metadata || undefined,
+            };
+          }
+          return null;
         }
         default:
           return null;

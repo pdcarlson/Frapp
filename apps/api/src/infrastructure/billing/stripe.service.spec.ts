@@ -93,6 +93,40 @@ describe('StripeService', () => {
     });
   });
 
+  describe('createInvoiceCheckout', () => {
+    it('should create a checkout session for payment', async () => {
+      stripeMock.checkout.sessions.create.mockResolvedValue({
+        url: 'https://checkout.stripe.com/invoice',
+      });
+
+      const result = await service.createInvoiceCheckout(
+        'cus_123',
+        5000,
+        'Dues',
+        'https://success',
+        'https://cancel',
+        { invoiceId: 'inv_123' },
+      );
+
+      expect(stripeMock.checkout.sessions.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customer: 'cus_123',
+          mode: 'payment',
+          line_items: [
+            expect.objectContaining({
+              price_data: expect.objectContaining({
+                unit_amount: 5000,
+                product_data: { name: 'Dues' },
+              }),
+            }),
+          ],
+          metadata: { invoiceId: 'inv_123' },
+        }),
+      );
+      expect(result).toBe('https://checkout.stripe.com/invoice');
+    });
+  });
+
   describe('verifyWebhook', () => {
     it('should map subscription events correctly', () => {
       const mockEvent = {

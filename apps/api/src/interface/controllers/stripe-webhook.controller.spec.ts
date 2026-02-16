@@ -1,58 +1,67 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { StripeWebhookController } from './stripe-webhook.controller';
 import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
+import { FinancialService } from '../../application/services/financial.service';
 import { StripeWebhookGuard } from '../guards/stripe-webhook.guard';
-import { BillingStatus } from '../../domain/adapters/billing.interface';
-import { RequestWithHeaders } from '../auth.types';
 
 describe('StripeWebhookController', () => {
   let controller: StripeWebhookController;
-  let onboardingService: jest.Mocked<ChapterOnboardingService>;
+  let onboardingService: any;
+  let financialService: any;
 
   const mockOnboardingService = {
     handleBillingWebhook: jest.fn(),
   };
 
-  const mockRequest = {
-    billingEvent: {
-      type: 'subscription.created',
-      stripeCustomerId: 'cus_123',
-      subscriptionId: 'sub_123',
-      status: BillingStatus.ACTIVE,
-    },
-  } as unknown as RequestWithHeaders;
+  const mockFinancialService = {
+    processPayment: jest.fn(),
+  };
+
+  const mockGuard = {
+    canActivate: jest.fn().mockReturnValue(true),
+  };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [StripeWebhookController],
       providers: [
-        {
-          provide: ChapterOnboardingService,
-          useValue: mockOnboardingService,
-        },
+        { provide: ChapterOnboardingService, useValue: mockOnboardingService },
+        { provide: FinancialService, useValue: mockFinancialService },
       ],
     })
       .overrideGuard(StripeWebhookGuard)
-      .useValue({ canActivate: () => true })
+      .useValue(mockGuard)
       .compile();
 
     controller = module.get<StripeWebhookController>(StripeWebhookController);
     onboardingService = module.get(ChapterOnboardingService);
+    financialService = module.get(FinancialService);
+    jest.clearAllMocks();
   });
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
   });
 
-  describe('handleWebhook', () => {
-    it('should call handleBillingWebhook with the event from request', async () => {
-      const result = await controller.handleWebhook(mockRequest);
+  it('should delegate subscription events to onboarding service', async () => {
+    const req = {
+      billingEvent: { type: 'subscription.created' },
+    };
+    await controller.handleWebhook(req as any);
+    expect(onboardingService.handleBillingWebhook).toHaveBeenCalledWith(req.billingEvent);
+    expect(financialService.processPayment).not.toHaveBeenCalled();
+  });
 
-      expect(result).toEqual({ received: true });
-      expect(onboardingService.handleBillingWebhook).toHaveBeenCalledWith(
-        mockRequest.billingEvent,
-      );
-    });
+  it('should delegate invoice events to financial service', async () => {
+    const req = {
+      billingEvent: {
+        type: 'invoice.payment_succeeded',
+        paymentIntentId: 'pi_123',
+        metadata: { invoiceId: 'inv_123' },
+      },
+    };
+    await controller.handleWebhook(req as any);
+    expect(financialService.processPayment).toHaveBeenCalledWith('inv_123', 'pi_123');
+    expect(onboardingService.handleBillingWebhook).not.toHaveBeenCalled();
   });
 });

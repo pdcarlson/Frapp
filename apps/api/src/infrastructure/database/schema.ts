@@ -244,3 +244,33 @@ export const studySessions = pgTable('study_sessions', {
   pointsAwarded: boolean('points_awarded').default(false).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const financialInvoices = pgTable('financial_invoices', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  title: text('title').notNull(),
+  description: text('description'),
+  amount: integer('amount').notNull(), // in cents
+  status: text('status').default('OPEN').notNull(), // DRAFT, OPEN, PAID, VOID
+  dueDate: timestamp('due_date').notNull(),
+  paidAt: timestamp('paid_at'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const financialTransactions = pgTable('financial_transactions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  chapterId: uuid('chapter_id')
+    .notNull()
+    .references(() => chapters.id),
+  invoiceId: uuid('invoice_id').references(() => financialInvoices.id),
+  amount: integer('amount').notNull(),
+  type: text('type').notNull(), // PAYMENT, REFUND, ADJUSTMENT
+  stripeChargeId: text('stripe_charge_id'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

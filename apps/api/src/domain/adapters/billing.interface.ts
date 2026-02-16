@@ -9,9 +9,12 @@ export interface BillingEvent {
   type:
     | 'subscription.created'
     | 'subscription.updated'
-    | 'subscription.deleted';
+    | 'subscription.deleted'
+    | 'invoice.payment_succeeded';
   stripeCustomerId: string;
-  subscriptionId: string;
+  subscriptionId?: string;
+  paymentIntentId?: string;
+  metadata?: Record<string, string>;
   status: BillingStatus;
 }
 
@@ -31,6 +34,18 @@ export interface IBillingProvider {
     priceId: string,
     successUrl: string,
     cancelUrl: string,
+  ): Promise<string>;
+
+  /**
+   * Generates a hosted checkout URL for a single invoice payment.
+   */
+  createInvoiceCheckout(
+    customerId: string,
+    amount: number, // in cents
+    title: string,
+    successUrl: string,
+    cancelUrl: string,
+    metadata?: Record<string, string>,
   ): Promise<string>;
 
   /**
