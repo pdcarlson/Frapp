@@ -22,7 +22,7 @@ export default function Home() {
       <nav className="relative flex items-center justify-between p-6 max-w-7xl mx-auto z-10">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center text-white font-black text-xl">F</div>
-          <span className="text-2xl font-bold tracking-tighter uppercase italic">Frapp</span>
+          <span className="text-2xl font-bold tracking-tighter uppercase italic">frapp.live</span>
         </div>
         <div className="flex items-center gap-6">
           <Link href="#features" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Platform</Link>
@@ -134,7 +134,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex items-center gap-2 opacity-50">
             <div className="w-6 h-6 bg-zinc-700 rounded flex items-center justify-center text-xs font-bold text-zinc-300">F</div>
-            <span className="text-sm font-bold tracking-tight uppercase italic">Frapp</span>
+            <span className="text-sm font-bold tracking-tight uppercase italic">frapp.live</span>
           </div>
           <div className="flex gap-8 text-xs font-mono text-zinc-500 uppercase tracking-widest">
             <span>Server: Stable</span>

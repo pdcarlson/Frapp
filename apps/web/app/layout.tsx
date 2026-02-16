@@ -6,8 +6,8 @@ import { FrappProvider } from "../components/providers/frapp-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Frapp | The Operating System for Greek Life",
-  description: "Manage your chapter's operations, financials, and events in one place.",
+  title: "Frapp.live | The Operating System for Greek Life",
+  description: "Manage your chapter's operations, financials, and events in real-time at frapp.live.",
 };
 
 export default function RootLayout({
