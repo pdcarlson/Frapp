@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --port 3005",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@repo/theme": "*",
     "@repo/ui": "*",
     "@tailwindcss/typography": "^0.5.19",
     "gray-matter": "^4.0.3",

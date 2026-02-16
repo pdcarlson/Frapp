@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancialService } from './financial.service';
 import { FINANCIAL_REPOSITORY } from '../../domain/repositories/financial.repository.interface';
@@ -6,8 +7,6 @@ import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('FinancialService', () => {
   let service: FinancialService;
-  let repo: any;
-  let billing: any;
 
   const mockRepo = {
     createInvoice: jest.fn(),
@@ -31,8 +30,6 @@ describe('FinancialService', () => {
     }).compile();
 
     service = module.get<FinancialService>(FinancialService);
-    repo = module.get(FINANCIAL_REPOSITORY);
-    billing = module.get(BILLING_PROVIDER);
     jest.clearAllMocks();
   });
 
@@ -50,11 +47,17 @@ describe('FinancialService', () => {
         description: 'Fall',
         dueDate: new Date(),
       };
-      mockRepo.createInvoice.mockResolvedValue({ id: 'i1', ...data, status: 'OPEN' });
+      mockRepo.createInvoice.mockResolvedValue({
+        id: 'i1',
+        ...data,
+        status: 'OPEN',
+      });
 
       const result = await service.createInvoice(data);
       expect(result.id).toBe('i1');
-      expect(mockRepo.createInvoice).toHaveBeenCalledWith(expect.objectContaining({ status: 'OPEN' }));
+      expect(mockRepo.createInvoice).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'OPEN' }),
+      );
     });
   });
 
@@ -72,7 +75,12 @@ describe('FinancialService', () => {
       // Mock billing provider
       mockBilling.createInvoiceCheckout.mockResolvedValue('https://checkout');
 
-      const url = await service.generatePaymentLink('i1', 'cus_123', 'https://s', 'https://c');
+      const url = await service.generatePaymentLink(
+        'i1',
+        'cus_123',
+        'https://s',
+        'https://c',
+      );
       expect(url).toBe('https://checkout');
       expect(mockBilling.createInvoiceCheckout).toHaveBeenCalledWith(
         'cus_123',
@@ -80,24 +88,33 @@ describe('FinancialService', () => {
         'Dues',
         'https://s',
         'https://c',
-        { invoiceId: 'i1' }
+        { invoiceId: 'i1' },
       );
     });
 
     it('should throw if invoice not found', async () => {
       mockRepo.findInvoiceById.mockResolvedValue(null);
-      await expect(service.generatePaymentLink('i1', 'c', 's', 'c')).rejects.toThrow(NotFoundException);
+      await expect(
+        service.generatePaymentLink('i1', 'c', 's', 'c'),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should throw if invoice is already PAID', async () => {
       mockRepo.findInvoiceById.mockResolvedValue({ status: 'PAID' });
-      await expect(service.generatePaymentLink('i1', 'c', 's', 'c')).rejects.toThrow(BadRequestException);
+      await expect(
+        service.generatePaymentLink('i1', 'c', 's', 'c'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('processPayment', () => {
     it('should update invoice and create transaction', async () => {
-      const invoice = { id: 'i1', status: 'OPEN', amount: 5000, chapterId: 'c1' };
+      const invoice = {
+        id: 'i1',
+        status: 'OPEN',
+        amount: 5000,
+        chapterId: 'c1',
+      };
       mockRepo.findInvoiceById.mockResolvedValue(invoice);
       mockRepo.updateInvoice.mockResolvedValue({ ...invoice, status: 'PAID' });
 

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -62,7 +63,7 @@ describe('ClerkAuthGuard', () => {
         expect.any(Object),
       );
       // Verify request has user attached
-      expect(mockRequest['user']).toEqual({ sub: 'user_123' });
+      expect((mockRequest as any).user).toEqual({ sub: 'user_123' });
     });
 
     it('should deny access if no authorization header is present', async () => {

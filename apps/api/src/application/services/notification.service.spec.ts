@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotificationService } from './notification.service';
+import { NotificationService, NotifyPayload } from './notification.service';
 import { NOTIFICATION_REPOSITORY } from '../../domain/repositories/notification.repository.interface';
 import { NOTIFICATION_PROVIDER } from '../../domain/adapters/notification.interface';
 
@@ -47,7 +47,11 @@ describe('NotificationService', () => {
     it('should save history and send push if tokens exist', async () => {
       const userId = 'u1';
       const chapterId = 'c1';
-      const payload = { title: 'Hello', body: 'World', category: 'CHAT' };
+      const payload: NotifyPayload = {
+        title: 'Hello',
+        body: 'World',
+        category: 'CHAT',
+      };
 
       repo.findTokensByUserId.mockResolvedValue([{ token: 't1' }]);
       repo.getPreferences.mockResolvedValue([
@@ -67,7 +71,11 @@ describe('NotificationService', () => {
     it('should not send push if category is disabled in preferences', async () => {
       const userId = 'u1';
       const chapterId = 'c1';
-      const payload = { title: 'Hello', body: 'World', category: 'CHAT' };
+      const payload: NotifyPayload = {
+        title: 'Hello',
+        body: 'World',
+        category: 'CHAT',
+      };
 
       repo.findTokensByUserId.mockResolvedValue([{ token: 't1' }]);
       repo.getPreferences.mockResolvedValue([

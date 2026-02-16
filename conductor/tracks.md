@@ -18,3 +18,11 @@ This file tracks all major tracks for the project. Each track has its own detail
   *Link: [./tracks/notifications_20260214/](./tracks/notifications_20260214/)*
 - [x] **Track: Real-time Chat System**
   *Link: [./tracks/chat_20260214/](./tracks/chat_20260214/)*
+- [x] **Track: RBAC Refinement**
+  *Link: [./tracks/rbac_refinement_20260215/](./tracks/rbac_refinement_20260215/)*
+- [x] **Track: Frontend Bridge**
+  *Link: [./tracks/frontend_bridge_20260216/](./tracks/frontend_bridge_20260216/)*
+- [x] **Track: Mobile Launch**
+  *Link: [./tracks/mobile_launch_20260216/](./tracks/mobile_launch_20260216/)*
+- [x] **Track: Web Revamp**
+  *Link: [./tracks/web_revamp_20260216/](./tracks/web_revamp_20260216/)*
