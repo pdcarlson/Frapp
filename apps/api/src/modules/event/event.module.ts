@@ -8,12 +8,16 @@ import { DatabaseModule } from '../database/database.module';
 import { PointsModule } from '../points/points.module';
 import { UserModule } from '../user/user.module';
 
+import { JwtModule } from '@nestjs/jwt';
+import { QrTokenService } from '../../application/services/qr-token.service';
+
 @Module({
-  imports: [DatabaseModule, PointsModule, UserModule],
+  imports: [DatabaseModule, PointsModule, UserModule, JwtModule.register({})],
   controllers: [EventController],
   providers: [
     EventService,
     AttendanceService,
+    QrTokenService,
     {
       provide: EVENT_REPOSITORY,
       useClass: DrizzleEventRepository,

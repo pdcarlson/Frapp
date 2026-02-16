@@ -35,3 +35,10 @@ export class CreateEventDto {
   @IsBoolean()
   isMandatory: boolean;
 }
+
+export class QrCheckInDto {
+  @ApiProperty({ example: 'jwt-token-string' })
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+}

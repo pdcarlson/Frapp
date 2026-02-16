@@ -4,6 +4,8 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import { PointsService } from './points.service';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 
+import { QrTokenService } from './qr-token.service';
+
 describe('AttendanceService', () => {
   let service: AttendanceService;
   let pointsService: Record<string, any>;
@@ -18,12 +20,17 @@ describe('AttendanceService', () => {
     awardPoints: jest.fn(),
   };
 
+  const mockQrTokenService = {
+    validateToken: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendanceService,
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: PointsService, useValue: mockPointsService },
+        { provide: QrTokenService, useValue: mockQrTokenService },
       ],
     }).compile();
 
@@ -33,6 +40,31 @@ describe('AttendanceService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('processQrCheckIn', () => {
+    it('should validate token and call checkIn', async () => {
+      const token = 'valid-token';
+      const userId = 'u1';
+      const eventId = 'e1';
+      const chapterId = 'c1';
+
+      mockQrTokenService.validateToken.mockReturnValue({ eventId, chapterId });
+      // Mock internal checkIn logic by mocking repos directly as checkIn calls them
+      const mockEvent = {
+        id: eventId,
+        chapterId,
+        pointValue: 10,
+        name: 'Event',
+      };
+      mockEventRepo.findById.mockResolvedValue(mockEvent);
+      mockEventRepo.findAttendance.mockResolvedValue(null);
+
+      await service.processQrCheckIn(userId, token);
+
+      expect(mockQrTokenService.validateToken).toHaveBeenCalledWith(token);
+      expect(mockEventRepo.upsertAttendance).toHaveBeenCalled();
+    });
   });
 
   describe('checkIn', () => {

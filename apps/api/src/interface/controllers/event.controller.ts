@@ -16,10 +16,11 @@ import {
 import { EventService } from '../../application/services/event.service';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { UserService } from '../../application/services/user.service';
-import { CreateEventDto } from '../dtos/event.dto';
+import { CreateEventDto, QrCheckInDto } from '../dtos/event.dto';
 import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import type { RequestWithUser } from '../auth.types';
+import { QrTokenService } from '../../application/services/qr-token.service';
 
 @ApiTags('events')
 @Controller('events')
@@ -31,7 +32,31 @@ export class EventController {
     private readonly eventService: EventService,
     private readonly attendanceService: AttendanceService,
     private readonly userService: UserService,
+    private readonly qrTokenService: QrTokenService,
   ) {}
+
+  @Get(':id/qr')
+  @ApiOperation({ summary: 'Get a dynamic QR token for an event (Admin Only)' })
+  async getQrToken(@Req() req: RequestWithUser, @Param('id') id: string) {
+    const chapterId = req.headers['x-chapter-id'] as string;
+    // TODO: RBAC check
+    const token = await Promise.resolve(
+      this.qrTokenService.generateToken(id, chapterId),
+    );
+    return { token, expiresIn: 30 };
+  }
+
+  @Post(':id/qr-check-in')
+  @ApiOperation({ summary: 'Check in via QR code' })
+  async qrCheckIn(
+    @Req() req: RequestWithUser,
+    @Param('id') id: string,
+    @Body() dto: QrCheckInDto,
+  ) {
+    const user = await this.userService.findByClerkId(req.user.sub);
+    // Note: The token contains eventId, but we also pass it in URL for consistency/logging
+    return this.attendanceService.processQrCheckIn(user.id, dto.token);
+  }
 
   @Post()
   @ApiOperation({ summary: 'Create a new event (Admin Only - TODO: RBAC)' })

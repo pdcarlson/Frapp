@@ -8,6 +8,7 @@ import {
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
 import { PointsService } from './points.service';
+import { QrTokenService } from './qr-token.service';
 import { EventAttendance } from '../../domain/entities/event.entity';
 
 @Injectable()
@@ -18,7 +19,16 @@ export class AttendanceService {
     @Inject(EVENT_REPOSITORY)
     private readonly eventRepo: IEventRepository,
     private readonly pointsService: PointsService,
+    private readonly qrTokenService: QrTokenService,
   ) {}
+
+  async processQrCheckIn(
+    userId: string,
+    token: string,
+  ): Promise<EventAttendance> {
+    const payload = this.qrTokenService.validateToken(token);
+    return this.checkIn(userId, payload.chapterId, payload.eventId);
+  }
 
   async checkIn(
     userId: string,
