@@ -11,16 +11,24 @@ import {
 export class StripeService implements IBillingProvider {
   private readonly stripe: Stripe;
   private readonly logger = new Logger(StripeService.name);
+  private readonly isConfigured: boolean;
 
   constructor(private readonly configService: ConfigService) {
     const secretKey = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (!secretKey) {
-      throw new Error('STRIPE_SECRET_KEY is not defined');
+      this.logger.warn(
+        'STRIPE_SECRET_KEY is not defined. Stripe features will not work.',
+      );
+      this.isConfigured = false;
+      this.stripe = new Stripe('');
+    } else {
+      this.isConfigured = true;
+      this.stripe = new Stripe(secretKey);
     }
-    this.stripe = new Stripe(secretKey);
   }
 
   async createCustomer(email: string, name: string): Promise<string> {
+    this.ensureStripe();
     try {
       const customer = await this.stripe.customers.create({
         email,
@@ -39,6 +47,7 @@ export class StripeService implements IBillingProvider {
     successUrl: string,
     cancelUrl: string,
   ): Promise<string> {
+    this.ensureStripe();
     try {
       const session = await this.stripe.checkout.sessions.create({
         customer: customerId,
@@ -72,6 +81,7 @@ export class StripeService implements IBillingProvider {
     cancelUrl: string,
     metadata?: Record<string, string>,
   ): Promise<string> {
+    this.ensureStripe();
     try {
       const session = await this.stripe.checkout.sessions.create({
         customer: customerId,
@@ -112,6 +122,7 @@ export class StripeService implements IBillingProvider {
     signature: string,
     secret: string,
   ): BillingEvent | null {
+    this.ensureStripe();
     try {
       const event = this.stripe.webhooks.constructEvent(
         payload,
@@ -174,5 +185,11 @@ export class StripeService implements IBillingProvider {
     if (type.includes('created')) return 'subscription.created';
     if (type.includes('updated')) return 'subscription.updated';
     return 'subscription.deleted';
+  }
+
+  private ensureStripe() {
+    if (!this.isConfigured) {
+      throw new Error('Stripe is not configured. Missing STRIPE_SECRET_KEY.');
+    }
   }
 }
