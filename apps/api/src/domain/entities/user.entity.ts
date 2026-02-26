@@ -1,9 +1,13 @@
-export class User {
-  constructor(
-    public readonly id: string,
-    public readonly clerkId: string,
-    public readonly email: string,
-    public readonly createdAt: Date,
-    public readonly updatedAt: Date,
-  ) {}
+export interface User {
+  id: string;
+  supabase_auth_id: string;
+  email: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  graduation_year: number | null;
+  current_city: string | null;
+  current_company: string | null;
+  created_at: string;
+  updated_at: string;
 }

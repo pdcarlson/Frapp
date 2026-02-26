@@ -3,59 +3,38 @@ import {
   ExecutionContext,
   Injectable,
   UnauthorizedException,
-  Logger,
-  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
-import type { IBillingProvider } from '../../domain/adapters/billing.interface';
-import { RequestWithHeaders } from '../auth.types';
+import Stripe from 'stripe';
 
 @Injectable()
 export class StripeWebhookGuard implements CanActivate {
-  private readonly logger = new Logger(StripeWebhookGuard.name);
+  private readonly stripe: Stripe;
+  private readonly webhookSecret: string;
 
-  constructor(
-    @Inject(BILLING_PROVIDER)
-    private readonly billingProvider: IBillingProvider,
-    private readonly configService: ConfigService,
-  ) {}
+  constructor(private readonly config: ConfigService) {
+    this.stripe = new Stripe(config.getOrThrow('STRIPE_SECRET_KEY'));
+    this.webhookSecret = config.getOrThrow('STRIPE_WEBHOOK_SECRET');
+  }
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<RequestWithHeaders>();
+    const request = context.switchToHttp().getRequest();
     const signature = request.headers['stripe-signature'];
 
     if (!signature) {
-      this.logger.error('Missing stripe-signature header');
-      throw new UnauthorizedException('Missing stripe-signature header');
-    }
-
-    const secret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
-    if (!secret) {
-      this.logger.error('STRIPE_WEBHOOK_SECRET is not configured');
-      throw new Error('Webhook secret not configured');
+      throw new UnauthorizedException('Missing Stripe signature');
     }
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const payload = request.body;
-      const event = this.billingProvider.verifyWebhook(
-        payload,
+      const event = this.stripe.webhooks.constructEvent(
+        request.rawBody,
         signature,
-        secret,
+        this.webhookSecret,
       );
-
-      if (!event) {
-        this.logger.warn('Received unhandled or invalid Stripe event type');
-        return false;
-      }
-
-      // Attach normalized event to request for the controller
-      request.billingEvent = event;
+      request.stripeEvent = event;
       return true;
-    } catch (err) {
-      this.logger.error('Stripe Webhook verification failed', err);
-      throw new UnauthorizedException('Invalid signature');
+    } catch {
+      throw new UnauthorizedException('Invalid Stripe signature');
     }
   }
 }

@@ -1,35 +1,39 @@
-import fs from 'fs';
-import path from 'path';
-import matter from 'gray-matter';
+import fs from "fs";
+import path from "path";
 
-const docsDirectory = path.join(process.cwd(), '../../docs');
+const specDirectory = path.join(process.cwd(), "../../spec");
 
 export function getDocBySlug(slug: string) {
-  const realSlug = slug.replace(/\.md$/, '');
-  const fullPath = path.join(docsDirectory, `${realSlug}.md`);
-  
+  const realSlug = slug.replace(/\.md$/, "");
+  const fullPath = path.join(specDirectory, `${realSlug}.md`);
+
   if (!fs.existsSync(fullPath)) {
     return null;
   }
-  
-  const fileContents = fs.readFileSync(fullPath, 'utf8');
-  const { data, content } = matter(fileContents);
 
-  return { slug: realSlug, meta: data, content };
+  const fileContents = fs.readFileSync(fullPath, "utf8");
+  const firstLine = fileContents.split("\n").find((l) => l.startsWith("# "));
+  const title = firstLine ? firstLine.replace(/^#\s+/, "") : realSlug;
+
+  return { slug: realSlug, title, content: fileContents };
 }
 
 export function getAllDocs() {
-  const files = fs.readdirSync(docsDirectory);
+  if (!fs.existsSync(specDirectory)) return [];
+
+  const files = fs.readdirSync(specDirectory);
   return files
-    .filter(file => file.endsWith('.md'))
-    .map(file => {
-      const slug = file.replace(/\.md$/, '');
-      const fullPath = path.join(docsDirectory, file);
-      const fileContents = fs.readFileSync(fullPath, 'utf8');
-      const { data } = matter(fileContents);
-      return {
-        slug,
-        title: data.title || slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-      };
+    .filter((file) => file.endsWith(".md"))
+    .map((file) => {
+      const slug = file.replace(/\.md$/, "");
+      const fullPath = path.join(specDirectory, file);
+      const fileContents = fs.readFileSync(fullPath, "utf8");
+      const firstLine = fileContents
+        .split("\n")
+        .find((l) => l.startsWith("# "));
+      const title =
+        firstLine?.replace(/^#\s+/, "") ||
+        slug.replace(/-/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+      return { slug, title };
     });
 }

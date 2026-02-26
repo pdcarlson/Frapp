@@ -1,60 +1,101 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { RBAC_REPOSITORY } from '../../domain/repositories/rbac.repository.interface';
-import type { IRbacRepository } from '../../domain/repositories/rbac.repository.interface';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { Role } from '../../domain/entities/rbac.entity';
+import { Role } from '../../domain/entities/role.entity';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 @Injectable()
 export class RbacService {
-  private readonly logger = new Logger(RbacService.name);
-
   constructor(
-    @Inject(RBAC_REPOSITORY)
-    private readonly rbacRepo: IRbacRepository,
-    @Inject(MEMBER_REPOSITORY)
-    private readonly memberRepo: IMemberRepository,
+    @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
   ) {}
 
-  async getPermissionsForUser(
-    userId: string,
-    chapterId: string,
-  ): Promise<Set<string>> {
-    const member = await this.memberRepo.findByUserAndChapter(
-      userId,
-      chapterId,
-    );
-    if (!member || !member.roleIds || member.roleIds.length === 0) {
-      return new Set();
-    }
-
-    const roles = await this.rbacRepo.findRolesByIds(member.roleIds);
-    const permissions = new Set<string>();
-
-    for (const role of roles) {
-      for (const permission of role.permissions) {
-        permissions.add(permission);
-      }
-    }
-
-    return permissions;
+  async findByChapter(chapterId: string): Promise<Role[]> {
+    return this.roleRepo.findByChapter(chapterId);
   }
 
-  async createRole(
-    chapterId: string,
-    name: string,
-    permissions: string[],
-  ): Promise<Role> {
-    this.logger.log(`Creating role ${name} for chapter ${chapterId}`);
-    return this.rbacRepo.createRole({
-      chapterId,
-      name,
-      permissions,
-      isSystem: false,
+  async create(chapterId: string, data: Partial<Role>): Promise<Role> {
+    const existing = await this.roleRepo.findByChapterAndName(chapterId, data.name!);
+    if (existing) throw new ConflictException('Role name already exists in this chapter');
+
+    return this.roleRepo.create({
+      ...data,
+      chapter_id: chapterId,
+      is_system: false,
     });
   }
 
-  async getRolesForChapter(chapterId: string): Promise<Role[]> {
-    return this.rbacRepo.findRolesByChapter(chapterId);
+  async update(roleId: string, data: Partial<Role>): Promise<Role> {
+    const role = await this.roleRepo.findById(roleId);
+    if (!role) throw new NotFoundException('Role not found');
+
+    if (data.name && data.name !== role.name) {
+      const existing = await this.roleRepo.findByChapterAndName(role.chapter_id, data.name);
+      if (existing) throw new ConflictException('Role name already exists in this chapter');
+    }
+
+    return this.roleRepo.update(roleId, data);
+  }
+
+  async delete(roleId: string): Promise<void> {
+    const role = await this.roleRepo.findById(roleId);
+    if (!role) throw new NotFoundException('Role not found');
+    if (role.is_system) throw new ForbiddenException('Cannot delete system roles');
+
+    await this.roleRepo.delete(roleId);
+  }
+
+  async transferPresidency(
+    chapterId: string,
+    currentMemberId: string,
+    targetMemberId: string,
+  ): Promise<void> {
+    const currentMember = await this.memberRepo.findById(currentMemberId);
+    const targetMember = await this.memberRepo.findById(targetMemberId);
+
+    if (!currentMember || !targetMember) {
+      throw new NotFoundException('Member not found');
+    }
+
+    if (targetMember.chapter_id !== chapterId) {
+      throw new BadRequestException('Target member is not in this chapter');
+    }
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+    const presidentRole = roles.find(
+      (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
+    );
+
+    if (!presidentRole) {
+      throw new NotFoundException('President role not found');
+    }
+
+    const currentHasPresident = currentMember.role_ids.includes(presidentRole.id);
+    if (!currentHasPresident) {
+      throw new ForbiddenException('Only the current President can transfer presidency');
+    }
+
+    const newCurrentRoles = currentMember.role_ids.filter((id) => id !== presidentRole.id);
+    const newTargetRoles = [...new Set([...targetMember.role_ids, presidentRole.id])];
+
+    await this.memberRepo.update(currentMember.id, { role_ids: newCurrentRoles });
+    await this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles });
+  }
+
+  getPermissionsCatalog() {
+    return Object.entries(SystemPermissions).map(([key, value]) => ({
+      key,
+      permission: value,
+    }));
   }
 }

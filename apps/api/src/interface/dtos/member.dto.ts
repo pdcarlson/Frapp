@@ -1,30 +1,15 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { createZodDto } from 'nestjs-zod';
-import { UpdateMemberRolesSchema } from '@repo/validation';
+import { IsArray, IsBoolean, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class UpdateMemberRolesDto extends createZodDto(
-  UpdateMemberRolesSchema,
-) {
-  @ApiProperty({ example: ['role-uuid-1', 'role-uuid-2'] })
-  declare roleIds: string[];
+export class UpdateMemberRolesDto {
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
+  role_ids: string[];
 }
 
-export class MemberResponseDto {
+export class UpdateOnboardingDto {
   @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  userId: string;
-
-  @ApiProperty()
-  chapterId: string;
-
-  @ApiProperty({ type: [String] })
-  roleIds: string[];
-
-  @ApiProperty()
-  createdAt: string;
-
-  @ApiProperty()
-  updatedAt: string;
+  @IsBoolean()
+  has_completed_onboarding: boolean;
 }

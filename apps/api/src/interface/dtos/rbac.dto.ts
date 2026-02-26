@@ -1,31 +1,54 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { createZodDto } from 'nestjs-zod';
-import { CreateRoleSchema } from '@repo/validation';
+import { IsArray, IsInt, IsOptional, IsString, Matches, Min } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class CreateRoleDto extends createZodDto(CreateRoleSchema) {
-  @ApiProperty({ example: 'Social Chair' })
-  declare name: string;
-
-  @ApiProperty({ example: ['events:create', 'events:update'] })
-  declare permissions: string[];
-}
-
-export class RoleResponseDto {
+export class CreateRoleDto {
   @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  chapterId: string;
-
-  @ApiProperty()
+  @IsString()
   name: string;
 
-  @ApiProperty()
+  @ApiProperty({ type: [String] })
+  @IsArray()
+  @IsString({ each: true })
   permissions: string[];
 
-  @ApiProperty()
-  isSystem: boolean;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order?: number;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'color must be a valid hex color' })
+  color?: string;
+}
+
+export class UpdateRoleDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  permissions?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  display_order?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'color must be a valid hex color' })
+  color?: string;
+}
+
+export class TransferPresidencyDto {
   @ApiProperty()
-  createdAt: string;
+  @IsString()
+  target_member_id: string;
 }

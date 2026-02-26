@@ -1,13 +1,15 @@
-export class Chapter {
-  constructor(
-    public readonly id: string,
-    public readonly name: string,
-    public readonly university: string | null,
-    public readonly clerkOrganizationId: string | null,
-    public readonly stripeCustomerId: string | null,
-    public readonly subscriptionStatus: string,
-    public readonly subscriptionId: string | null,
-    public readonly createdAt: Date,
-    public readonly updatedAt: Date,
-  ) {}
+export type SubscriptionStatus = 'incomplete' | 'active' | 'past_due' | 'canceled';
+
+export interface Chapter {
+  id: string;
+  name: string;
+  university: string;
+  stripe_customer_id: string | null;
+  subscription_status: SubscriptionStatus;
+  subscription_id: string | null;
+  accent_color: string | null;
+  logo_path: string | null;
+  donation_url: string | null;
+  created_at: string;
+  updated_at: string;
 }

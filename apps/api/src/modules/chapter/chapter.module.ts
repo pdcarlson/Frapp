@@ -1,13 +1,25 @@
 import { Module } from '@nestjs/common';
-import { ChapterGuard } from '../../interface/guards/chapter.guard';
-import { OnboardingController } from '../../interface/controllers/onboarding.controller';
-import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
+import { ChapterService } from '../../application/services/chapter.service';
+import { ChapterController } from '../../interface/controllers/chapter.controller';
+import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
+import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
+import { SupabaseRoleRepository } from '../../infrastructure/supabase/repositories/supabase-role.repository';
+import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [AuthModule],
-  controllers: [OnboardingController],
-  providers: [ChapterGuard, ChapterOnboardingService],
-  exports: [ChapterGuard, ChapterOnboardingService],
+  controllers: [ChapterController],
+  providers: [
+    AuthSyncInterceptor,
+    ChapterService,
+    { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
+    { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
+    { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
+  ],
+  exports: [ChapterService, CHAPTER_REPOSITORY, ROLE_REPOSITORY, MEMBER_REPOSITORY],
 })
 export class ChapterModule {}

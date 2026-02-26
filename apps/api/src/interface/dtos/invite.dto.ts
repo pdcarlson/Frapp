@@ -1,19 +1,26 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsInt, Min, Max } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateInviteDto {
-  @ApiProperty({
-    description: 'The role assigned to the new member',
-    example: 'member',
-  })
+  @ApiProperty({ description: 'Role name to assign to invited member' })
   @IsString()
-  @IsNotEmpty()
   role: string;
 }
 
-export class AcceptInviteDto {
-  @ApiProperty({ description: 'The secure token from the invite' })
+export class BatchCreateInvitesDto {
+  @ApiProperty({ description: 'Role name to assign' })
   @IsString()
-  @IsNotEmpty()
+  role: string;
+
+  @ApiProperty({ description: 'Number of invites to generate' })
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  count: number;
+}
+
+export class RedeemInviteDto {
+  @ApiProperty()
+  @IsString()
   token: string;
 }

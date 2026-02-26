@@ -6,15 +6,16 @@ import { User } from '../../domain/entities/user.entity';
 @Injectable()
 export class UserService {
   constructor(
-    @Inject(USER_REPOSITORY)
-    private readonly userRepository: IUserRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
   ) {}
 
-  async findByClerkId(clerkId: string): Promise<User> {
-    const user = await this.userRepository.findByClerkId(clerkId);
-    if (!user) {
-      throw new NotFoundException(`User with Clerk ID ${clerkId} not found`);
-    }
+  async findById(id: string): Promise<User> {
+    const user = await this.userRepo.findById(id);
+    if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  async update(id: string, data: Partial<User>): Promise<User> {
+    return this.userRepo.update(id, data);
   }
 }

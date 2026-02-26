@@ -1,59 +1,59 @@
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { RedisIoAdapter } from './infrastructure/gateways/redis-io.adapter';
-import { ZodValidationPipe } from 'nestjs-zod';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
+import { RequestIdInterceptor } from './interface/interceptors/request-id.interceptor';
+import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
-    logger: ['error', 'warn', 'log', 'debug'], // Detailed logging
+  const app = await NestFactory.create(AppModule);
+
+  app.enableCors({
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:3002',
+      /\.frapp\.live$/,
+    ],
+    credentials: true,
   });
 
-  // WebSocket Adapter (Redis)
-  const redisIoAdapter = new RedisIoAdapter(app);
-  await redisIoAdapter.connectToRedis();
-  app.useWebSocketAdapter(redisIoAdapter);
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  // Security: Enable CORS for our frontend/mobile apps
-  app.enableCors();
-
-  // API Versioning (e.g., /v1/health)
-  app.enableVersioning({
-    type: VersioningType.URI,
-    defaultVersion: '1',
-  });
-
-  // Validation
   app.useGlobalPipes(
-    new ZodValidationPipe(),
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
+      transformOptions: { enableImplicitConversion: true },
     }),
   );
 
-  // Swagger Documentation
-  const config = new DocumentBuilder()
+  app.useGlobalInterceptors(
+    new RequestIdInterceptor(),
+    new LoggingInterceptor(),
+  );
+
+  app.useGlobalFilters(new AllExceptionsFilter());
+
+  const swaggerConfig = new DocumentBuilder()
     .setTitle('Frapp API')
-    .setDescription('The Operating System for Greek Life - Backend API')
+    .setDescription('The Operating System for Greek Life')
     .setVersion('1.0')
-    .addTag('frapp')
     .addBearerAuth()
-    .addGlobalParameters({
-      name: 'x-chapter-id',
-      in: 'header',
-      description: 'The Chapter ID for multi-tenancy',
-      required: false,
-    })
+    .addApiKey(
+      { type: 'apiKey', name: 'x-chapter-id', in: 'header' },
+      'chapter-id',
+    )
     .build();
-  const document = SwaggerModule.createDocument(app, config);
+
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('docs', app, document);
 
-  const port = process.env.PORT ?? 3001;
+  const port = process.env.PORT || 3001;
   await app.listen(port);
-  console.log(`🚀 Application is running on: http://localhost:${port}/v1`);
-  console.log(`📖 Documentation: http://localhost:${port}/docs`);
+  console.log(`Frapp API running on http://localhost:${port}`);
+  console.log(`Swagger docs at http://localhost:${port}/docs`);
 }
-void bootstrap();
+
+bootstrap();

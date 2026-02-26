@@ -1,66 +1,61 @@
-import {
-  Controller,
-  Post,
-  Body,
-  UseGuards,
-  Request,
-  Param,
-  Logger,
-} from '@nestjs/common';
-import {
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-  ApiBearerAuth,
-  ApiHeader,
-} from '@nestjs/swagger';
-import { ClerkAuthGuard } from '../guards/clerk-auth.guard';
-import { ChapterGuard } from '../guards/chapter.guard';
-import { CreateInviteDto, AcceptInviteDto } from '../dtos/invite.dto';
+import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
-import type { RequestWithUser } from '../auth.types';
+import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { PERMISSIONS } from '../../domain/constants/permissions';
+import { CurrentUser, CurrentChapterId } from '../decorators/current-user.decorator';
+import { CreateInviteDto, BatchCreateInvitesDto, RedeemInviteDto } from '../dtos/invite.dto';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
-@ApiTags('invites')
+@ApiTags('Invites')
 @ApiBearerAuth()
-@Controller()
+@UseGuards(SupabaseAuthGuard)
+@UseInterceptors(AuthSyncInterceptor)
+@Controller('invites')
 export class InviteController {
-  private readonly logger = new Logger(InviteController.name);
-
   constructor(private readonly inviteService: InviteService) {}
 
-  @Post('chapters/:id/invites')
-  @UseGuards(ClerkAuthGuard, ChapterGuard, PermissionsGuard)
-  @ApiHeader({ name: 'x-chapter-id', description: 'Chapter UUID' })
-  @ApiOperation({ summary: 'Create a new member invite for a chapter' })
-  @RequirePermissions(PERMISSIONS.MEMBERS_INVITE)
-  @ApiResponse({ status: 201, description: 'Invite created' })
+  @Post()
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({ summary: 'Generate an invite token' })
   async create(
-    @Param('id') chapterId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: CreateInviteDto,
-    @Request() req: RequestWithUser,
   ) {
-    this.logger.log(
-      `User ${req.user.sub} creating invite for chapter ${chapterId}`,
-    );
-    return this.inviteService.createInvite({
-      chapterId,
-      role: dto.role,
-      createdBy: req.user.sub,
-    });
+    return this.inviteService.create(chapterId, userId, dto.role);
   }
 
-  @Post('onboarding/join')
-  @UseGuards(ClerkAuthGuard)
-  @ApiOperation({ summary: 'Accept an invite token to join a chapter' })
-  @ApiResponse({ status: 200, description: 'Invite accepted' })
-  @ApiResponse({ status: 404, description: 'Token not found' })
-  async accept(@Body() dto: AcceptInviteDto, @Request() req: RequestWithUser) {
-    this.logger.log(
-      `User ${req.user.sub} accepting invite with token ${dto.token}`,
-    );
-    return this.inviteService.acceptInvite(dto.token, req.user.sub);
+  @Post('batch')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({ summary: 'Generate multiple invite tokens' })
+  async createBatch(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: BatchCreateInvitesDto,
+  ) {
+    return this.inviteService.createBatch(chapterId, userId, dto.role, dto.count);
+  }
+
+  @Post('redeem')
+  @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
+  async redeem(
+    @CurrentUser('id') userId: string,
+    @Body() dto: RedeemInviteDto,
+  ) {
+    return this.inviteService.redeem(dto.token, userId);
+  }
+
+  @Get()
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({ summary: 'List chapter invites' })
+  async list(@CurrentChapterId() chapterId: string) {
+    return this.inviteService.findByChapter(chapterId);
   }
 }

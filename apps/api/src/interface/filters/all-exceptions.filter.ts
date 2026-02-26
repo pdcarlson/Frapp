@@ -1,54 +1,53 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
   Logger,
 } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger('ExceptionFilter');
 
-  constructor(private readonly httpAdapterHost: HttpAdapterHost) {}
-
   catch(exception: unknown, host: ArgumentsHost): void {
-    const { httpAdapter } = this.httpAdapterHost;
     const ctx = host.switchToHttp();
+    const response = ctx.getResponse();
+    const request = ctx.getRequest();
 
-    const httpStatus =
+    const status =
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const exceptionResponse =
+    const message =
       exception instanceof HttpException
-        ? exception.getResponse()
+        ? exception.message
         : 'Internal server error';
 
-    const messageText =
-      typeof exceptionResponse === 'string'
-        ? exceptionResponse
-        : (exceptionResponse as Record<string, unknown>).message ||
-          'Internal server error';
+    const requestId = request.requestId || 'unknown';
 
-    const responseBody = {
-      statusCode: httpStatus,
-      timestamp: new Date().toISOString(),
-      path: httpAdapter.getRequestUrl(
-        ctx.getRequest<Record<string, unknown>>(),
-      ) as string,
-      message: messageText as string,
-    };
+    if (status >= 500) {
+      this.logger.error(
+        JSON.stringify({
+          requestId,
+          userId: request.appUser?.id,
+          chapterId: request.chapterId,
+          method: request.method,
+          path: request.url,
+          statusCode: status,
+          error:
+            exception instanceof Error ? exception.stack : String(exception),
+        }),
+      );
+    }
 
-    // Centralized Logging
-    this.logger.error(
-      `HTTP Error: ${httpStatus} | Path: ${responseBody.path}`,
-      exception instanceof Error ? exception.stack : exception,
-    );
-
-    httpAdapter.reply(ctx.getResponse(), responseBody, httpStatus);
+    response.status(status).json({
+      statusCode: status,
+      error: HttpStatus[status] || 'Error',
+      message,
+      requestId,
+    });
   }
 }

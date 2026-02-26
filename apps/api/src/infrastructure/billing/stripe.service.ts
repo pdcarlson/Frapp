@@ -1,195 +1,45 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-import {
+import type {
   IBillingProvider,
-  BillingEvent,
-  BillingStatus,
+  CreateCheckoutParams,
 } from '../../domain/adapters/billing.interface';
 
 @Injectable()
-export class StripeService implements IBillingProvider {
+export class StripeBillingService implements IBillingProvider {
   private readonly stripe: Stripe;
-  private readonly logger = new Logger(StripeService.name);
-  private readonly isConfigured: boolean;
+  private readonly priceId: string;
 
-  constructor(private readonly configService: ConfigService) {
-    const secretKey = this.configService.get<string>('STRIPE_SECRET_KEY');
-    if (!secretKey) {
-      this.logger.warn(
-        'STRIPE_SECRET_KEY is not defined. Stripe features will not work.',
-      );
-      this.isConfigured = false;
-      this.stripe = new Stripe('');
-    } else {
-      this.isConfigured = true;
-      this.stripe = new Stripe(secretKey);
-    }
+  constructor(private readonly config: ConfigService) {
+    this.stripe = new Stripe(config.getOrThrow('STRIPE_SECRET_KEY'));
+    this.priceId = config.getOrThrow('STRIPE_PRICE_ID');
   }
 
   async createCustomer(email: string, name: string): Promise<string> {
-    this.ensureStripe();
-    try {
-      const customer = await this.stripe.customers.create({
-        email,
-        name,
-      });
-      return customer.id;
-    } catch (error) {
-      this.logger.error('Failed to create Stripe customer', error);
-      throw error;
-    }
+    const customer = await this.stripe.customers.create({ email, name });
+    return customer.id;
   }
 
-  async createCheckoutSession(
-    customerId: string,
-    priceId: string,
-    successUrl: string,
-    cancelUrl: string,
-  ): Promise<string> {
-    this.ensureStripe();
-    try {
-      const session = await this.stripe.checkout.sessions.create({
-        customer: customerId,
-        line_items: [
-          {
-            price: priceId,
-            quantity: 1,
-          },
-        ],
-        mode: 'subscription',
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-      });
-
-      if (!session.url) {
-        throw new Error('Stripe session URL is missing');
-      }
-
-      return session.url;
-    } catch (error) {
-      this.logger.error('Failed to create Stripe checkout session', error);
-      throw error;
-    }
+  async createCheckoutSession(params: CreateCheckoutParams): Promise<string> {
+    const session = await this.stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer_email: params.customerEmail,
+      line_items: [{ price: this.priceId, quantity: 1 }],
+      success_url: params.successUrl,
+      cancel_url: params.cancelUrl,
+      metadata: { chapter_id: params.chapterId },
+    });
+    return session.url!;
   }
 
-  async createInvoiceCheckout(
-    customerId: string,
-    amount: number,
-    title: string,
-    successUrl: string,
-    cancelUrl: string,
-    metadata?: Record<string, string>,
-  ): Promise<string> {
-    this.ensureStripe();
-    try {
-      const session = await this.stripe.checkout.sessions.create({
-        customer: customerId,
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: {
-                name: title,
-              },
-              unit_amount: amount,
-            },
-            quantity: 1,
-          },
-        ],
-        mode: 'payment',
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        metadata: metadata,
-        payment_intent_data: {
-          metadata: metadata, // Propagate metadata to PaymentIntent for webhooks
-        },
-      });
-
-      if (!session.url) {
-        throw new Error('Stripe session URL is missing');
-      }
-
-      return session.url;
-    } catch (error) {
-      this.logger.error('Failed to create Stripe invoice checkout', error);
-      throw error;
-    }
+  async getSubscriptionStatus(subscriptionId: string): Promise<string> {
+    const subscription =
+      await this.stripe.subscriptions.retrieve(subscriptionId);
+    return subscription.status;
   }
 
-  verifyWebhook(
-    payload: string | Buffer,
-    signature: string,
-    secret: string,
-  ): BillingEvent | null {
-    this.ensureStripe();
-    try {
-      const event = this.stripe.webhooks.constructEvent(
-        payload,
-        signature,
-        secret,
-      );
-
-      switch (event.type) {
-        case 'customer.subscription.created':
-        case 'customer.subscription.updated':
-        case 'customer.subscription.deleted': {
-          const subscription = event.data.object;
-          return {
-            type: this.mapStripeType(event.type),
-            stripeCustomerId: subscription.customer as string,
-            subscriptionId: subscription.id,
-            status: this.mapStripeStatus(subscription.status),
-          };
-        }
-        case 'checkout.session.completed': {
-          const session = event.data.object;
-          if (session.mode === 'payment' && session.payment_status === 'paid') {
-            return {
-              type: 'invoice.payment_succeeded',
-              stripeCustomerId: session.customer as string,
-              paymentIntentId: session.payment_intent as string,
-              status: BillingStatus.ACTIVE, // Paid
-              metadata: session.metadata || undefined,
-            };
-          }
-          return null;
-        }
-        default:
-          return null;
-      }
-    } catch (error) {
-      this.logger.error('Webhook signature verification failed', error);
-      throw error;
-    }
-  }
-
-  private mapStripeStatus(status: Stripe.Subscription.Status): BillingStatus {
-    switch (status) {
-      case 'active':
-        return BillingStatus.ACTIVE;
-      case 'past_due':
-      case 'unpaid':
-        return BillingStatus.PAST_DUE;
-      case 'canceled':
-      case 'incomplete_expired':
-        return BillingStatus.CANCELED;
-      default:
-        return BillingStatus.INCOMPLETE;
-    }
-  }
-
-  private mapStripeType(
-    type: string,
-  ): 'subscription.created' | 'subscription.updated' | 'subscription.deleted' {
-    if (type.includes('created')) return 'subscription.created';
-    if (type.includes('updated')) return 'subscription.updated';
-    return 'subscription.deleted';
-  }
-
-  private ensureStripe() {
-    if (!this.isConfigured) {
-      throw new Error('Stripe is not configured. Missing STRIPE_SECRET_KEY.');
-    }
+  async cancelSubscription(subscriptionId: string): Promise<void> {
+    await this.stripe.subscriptions.cancel(subscriptionId);
   }
 }

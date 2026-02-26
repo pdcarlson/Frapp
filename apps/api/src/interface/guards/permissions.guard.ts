@@ -1,21 +1,20 @@
 import {
   CanActivate,
   ExecutionContext,
-  Injectable,
   ForbiddenException,
+  Inject,
+  Injectable,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { RbacService } from '../../application/services/rbac.service';
-import { UserService } from '../../application/services/user.service';
-import { RequestWithUser } from '../auth.types';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
-    private reflector: Reflector,
-    private rbacService: RbacService,
-    private userService: UserService,
+    private readonly reflector: Reflector,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -28,31 +27,33 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const user = request.user;
-    const chapterId = request.headers['x-chapter-id'] as string;
+    const request = context.switchToHttp().getRequest();
+    const member = request.member;
 
-    if (!user || !user.sub || !chapterId) {
-      return false;
+    if (!member?.role_ids?.length) {
+      throw new ForbiddenException('No roles assigned');
     }
 
-    let internalUserId = request.internalUserId;
-    if (!internalUserId) {
-      const internalUser = await this.userService.findByClerkId(user.sub);
-      internalUserId = internalUser.id;
+    const { data: roles } = await this.supabase
+      .from('roles')
+      .select('permissions')
+      .in('id', member.role_ids);
+
+    if (!roles?.length) {
+      throw new ForbiddenException('No valid roles found');
     }
 
-    const userPermissions = await this.rbacService.getPermissionsForUser(
-      internalUserId,
-      chapterId,
-    );
+    const userPermissions = new Set(roles.flatMap((r) => r.permissions));
 
-    const hasPermission = requiredPermissions.every((permission) =>
-      userPermissions.has(permission),
-    );
+    if (userPermissions.has('*')) {
+      return true;
+    }
 
-    if (!hasPermission) {
-      throw new ForbiddenException('Insufficient permissions');
+    const hasAll = requiredPermissions.every((p) => userPermissions.has(p));
+    if (!hasAll) {
+      throw new ForbiddenException(
+        `Missing required permissions: ${requiredPermissions.filter((p) => !userPermissions.has(p)).join(', ')}`,
+      );
     }
 
     return true;

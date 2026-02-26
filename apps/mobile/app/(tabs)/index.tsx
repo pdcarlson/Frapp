@@ -1,18 +1,16 @@
-import { Text, View } from 'react-native';
-import { useUser } from "@clerk/clerk-expo";
-import { Screen } from "@/components/Screen";
+import { View, Text, StyleSheet } from 'react-native';
 
 export default function HomeScreen() {
-  const { user } = useUser();
-
   return (
-    <Screen>
-      <View className="items-center justify-center flex-1">
-        <Text className="text-2xl font-bold text-primary-600">Frapp Home</Text>
-        <View className="h-px w-4/5 bg-gray-200 my-8" />
-        <Text className="text-gray-600">Logged in as:</Text>
-        <Text className="text-lg font-medium">{user?.primaryEmailAddress?.emailAddress}</Text>
-      </View>
-    </Screen>
+    <View style={styles.container}>
+      <Text style={styles.title}>Activity Feed</Text>
+      <Text style={styles.subtitle}>Coming soon</Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
+  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
+  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
+});

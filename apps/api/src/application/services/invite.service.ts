@@ -1,70 +1,90 @@
 import {
+  ConflictException,
+  GoneException,
+  HttpException,
+  HttpStatus,
   Inject,
   Injectable,
-  Logger,
-  NotFoundException,
-  BadRequestException,
 } from '@nestjs/common';
+import { v4 as uuidv4 } from 'uuid';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
+import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
+import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
-import { randomBytes } from 'crypto';
 
 @Injectable()
 export class InviteService {
-  private readonly logger = new Logger(InviteService.name);
-
   constructor(
-    @Inject(INVITE_REPOSITORY)
-    private readonly inviteRepo: IInviteRepository,
+    @Inject(INVITE_REPOSITORY) private readonly inviteRepo: IInviteRepository,
+    @Inject(CHAPTER_REPOSITORY) private readonly chapterRepo: IChapterRepository,
+    @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
   ) {}
 
-  /**
-   * Generates a new secure invite token.
-   */
-  async createInvite(data: {
-    chapterId: string;
-    role: string;
-    createdBy: string;
-  }): Promise<Invite> {
-    const token = randomBytes(16).toString('hex');
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24); // 24hr expiration
+  async create(chapterId: string, createdBy: string, role: string): Promise<Invite> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (chapter?.subscription_status !== 'active') {
+      throw new HttpException('Chapter subscription is not active', HttpStatus.PAYMENT_REQUIRED);
+    }
 
-    this.logger.log(`Creating invite for chapter ${data.chapterId}`);
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
 
     return this.inviteRepo.create({
-      ...data,
-      token,
-      expiresAt,
+      token: uuidv4(),
+      chapter_id: chapterId,
+      role,
+      expires_at: expiresAt.toISOString(),
+      created_by: createdBy,
     });
   }
 
-  /**
-   * Validates and processes an invite acceptance.
-   * Note: The actual "Adding to Chapter" logic will be handled by membership repository later.
-   */
-  async acceptInvite(token: string, userId: string): Promise<Invite> {
+  async createBatch(
+    chapterId: string,
+    createdBy: string,
+    role: string,
+    count: number,
+  ): Promise<Invite[]> {
+    const invites: Invite[] = [];
+    for (let i = 0; i < count; i++) {
+      invites.push(await this.create(chapterId, createdBy, role));
+    }
+    return invites;
+  }
+
+  async redeem(token: string, userId: string): Promise<{ chapterId: string; memberId: string }> {
     const invite = await this.inviteRepo.findByToken(token);
 
-    if (!invite) {
-      this.logger.warn(`Failed invite attempt: Token ${token} not found`);
-      throw new NotFoundException('Invite token not found');
+    if (!invite) throw new GoneException('Invite not found');
+    if (invite.used_at) throw new GoneException('Invite already used');
+    if (new Date(invite.expires_at) < new Date()) throw new GoneException('Invite expired');
+
+    const existingMember = await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id);
+    if (existingMember) throw new ConflictException('Already a member of this chapter');
+
+    const roles = await this.roleRepo.findByChapter(invite.chapter_id);
+    let targetRole = roles.find((r) => r.name === invite.role);
+    if (!targetRole) {
+      targetRole = roles.find((r) => r.name === 'Member');
     }
 
-    if (invite.usedAt) {
-      throw new BadRequestException('Invite has already been used');
-    }
+    const member = await this.memberRepo.create({
+      user_id: userId,
+      chapter_id: invite.chapter_id,
+      role_ids: targetRole ? [targetRole.id] : [],
+    });
 
-    if (invite.expiresAt < new Date()) {
-      throw new BadRequestException('Invite has expired');
-    }
+    await this.inviteRepo.markUsed(invite.id);
 
-    this.logger.log(
-      `User ${userId} accepted invite for chapter ${invite.chapterId}`,
-    );
+    return { chapterId: invite.chapter_id, memberId: member.id };
+  }
 
-    await this.inviteRepo.markAsUsed(invite.id);
-    return invite;
+  async findByChapter(chapterId: string): Promise<Invite[]> {
+    return this.inviteRepo.findByChapter(chapterId);
   }
 }

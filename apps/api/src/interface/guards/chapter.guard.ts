@@ -1,48 +1,58 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Inject,
   Injectable,
-  UnauthorizedException,
-  ForbiddenException,
-  BadRequestException,
 } from '@nestjs/common';
-import { DRIZZLE_DB } from '../../infrastructure/database/drizzle.provider';
-import { users, members } from '../../infrastructure/database/schema';
-import { eq, and } from 'drizzle-orm';
-import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '../../infrastructure/database/schema';
-import { RequestWithUser } from '../auth.types';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 @Injectable()
 export class ChapterGuard implements CanActivate {
-  constructor(@Inject(DRIZZLE_DB) private db: NodePgDatabase<typeof schema>) {}
+  constructor(
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<RequestWithUser>();
-    const chapterId = request.headers['x-chapter-id'] as string;
-    const user = request.user;
-
-    if (!user || !user.sub) {
-      throw new UnauthorizedException('User not authenticated');
-    }
+    const request = context.switchToHttp().getRequest();
+    const chapterId = request.headers['x-chapter-id'];
 
     if (!chapterId) {
-      throw new BadRequestException('Missing x-chapter-id header');
+      throw new ForbiddenException('Missing x-chapter-id header');
     }
 
-    const result = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(members, eq(users.id, members.userId))
-      .where(and(eq(users.clerkId, user.sub), eq(members.chapterId, chapterId)))
-      .limit(1);
-
-    if (result.length === 0) {
-      throw new ForbiddenException('User does not have access to this chapter');
+    const supabaseUser = request.supabaseUser;
+    if (!supabaseUser) {
+      throw new ForbiddenException(
+        'Authentication required before chapter check',
+      );
     }
 
-    request.internalUserId = result[0].id;
+    const { data: appUser } = await this.supabase
+      .from('users')
+      .select('id')
+      .eq('supabase_auth_id', supabaseUser.id)
+      .single();
+
+    if (!appUser) {
+      throw new ForbiddenException('User profile not found');
+    }
+
+    const { data: member } = await this.supabase
+      .from('members')
+      .select('id, role_ids')
+      .eq('user_id', appUser.id)
+      .eq('chapter_id', chapterId)
+      .single();
+
+    if (!member) {
+      throw new ForbiddenException('Not a member of this chapter');
+    }
+
+    request.appUser = appUser;
+    request.member = member;
+    request.chapterId = chapterId;
 
     return true;
   }

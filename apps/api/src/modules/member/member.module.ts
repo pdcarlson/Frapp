@@ -1,11 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MemberService } from '../../application/services/member.service';
 import { MemberController } from '../../interface/controllers/member.controller';
-import { RbacModule } from '../rbac/rbac.module';
-import { UserModule } from '../user/user.module';
+import { ChapterModule } from '../chapter/chapter.module';
 
 @Module({
-  imports: [RbacModule, UserModule],
+  imports: [ChapterModule],
   controllers: [MemberController],
   providers: [MemberService],
   exports: [MemberService],
