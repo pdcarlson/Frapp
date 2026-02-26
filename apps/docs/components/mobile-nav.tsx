@@ -1,17 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { navSections } from "./navigation";
 
 export function MobileNav() {
-  const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  // Remount on navigation so the drawer always closes without an effect.
+  return <MobileNavInner key={pathname ?? "root"} pathname={pathname ?? "/"} />;
+}
 
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+function MobileNavInner({ pathname }: { pathname: string }) {
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     document.body.style.overflow = open ? "hidden" : "";
