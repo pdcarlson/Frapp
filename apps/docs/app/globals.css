@@ -1,1 +1,77 @@
 @import "@repo/theme/globals.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply min-h-screen bg-background text-foreground antialiased;
+    @apply selection:bg-primary/25 selection:text-foreground;
+  }
+
+  * {
+    @apply border-border;
+  }
+}
+
+@layer components {
+  /* Markdown / MDX content styling */
+  .prose-docs {
+    @apply prose prose-invert max-w-none
+      prose-headings:tracking-tight prose-headings:text-foreground
+      prose-p:text-foreground/85 prose-p:leading-relaxed
+      prose-li:text-foreground/85
+      prose-strong:text-foreground
+      prose-hr:border-white/[0.06]
+      prose-blockquote:border-primary/30 prose-blockquote:text-foreground/70;
+  }
+
+  .prose-docs a {
+    @apply text-primary no-underline transition-colors hover:text-primary/80;
+  }
+
+  .prose-docs code {
+    @apply rounded-md border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[0.82em] font-medium text-foreground;
+  }
+
+  .prose-docs pre {
+    @apply overflow-x-auto rounded-lg border border-white/[0.06] bg-[hsl(200,6%,7%)] p-4 text-[13px] leading-relaxed;
+  }
+
+  .prose-docs pre code {
+    @apply border-0 bg-transparent p-0 text-inherit;
+  }
+
+  .prose-docs table {
+    @apply w-full border-collapse;
+  }
+
+  .prose-docs thead {
+    @apply border-b border-white/[0.08];
+  }
+
+  .prose-docs th {
+    @apply px-3 py-2 text-left text-sm font-semibold text-foreground;
+  }
+
+  .prose-docs td {
+    @apply border-b border-white/[0.06] px-3 py-2 text-sm text-foreground/85;
+  }
+
+  .prose-docs ul > li::marker,
+  .prose-docs ol > li::marker {
+    @apply text-muted-foreground;
+  }
+
+  .prose-docs h2 {
+    @apply mt-10 mb-4 text-xl font-semibold tracking-tight;
+  }
+
+  .prose-docs h3 {
+    @apply mt-8 mb-3 text-base font-semibold;
+  }
+}

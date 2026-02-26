@@ -1,0 +1,109 @@
+import { Callout } from "../../../components/callout";
+
+# Getting Started with Frapp
+
+This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase.
+
+## Prerequisites
+
+- **Node.js** 20+
+- **npm** 10+
+- **Docker Desktop** (for Supabase)
+- **Supabase CLI**: `npm install -g supabase` or `npx supabase --version`
+- **Git**
+
+## 1. Clone and install
+
+```bash
+git clone git@github.com:pdcar/Frapp.git
+cd Frapp
+npm install
+```
+
+## 2. Start local Supabase
+
+From the repo root:
+
+```bash
+npx supabase start
+```
+
+This spins up the local Supabase stack (Postgres, Auth, Storage, Realtime, Studio) using Docker and applies our migrations from `supabase/migrations/`.
+
+You can open Supabase Studio at:
+
+- `http://127.0.0.1:54323`
+
+<Callout type="info">
+  The `supabase/` directory in the repo is the single source of truth for the
+  database schema and seed data. Never edit tables manually in Studio without
+  also adding a migration.
+</Callout>
+
+## 3. Configure environment variables
+
+When `supabase start` finishes, it prints the local project URL and keys:
+
+- `API URL`
+- `anon key`
+- `service_role key`
+
+Create `apps/api/.env.local` and set:
+
+```bash
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_ANON_KEY=...
+PORT=3001
+NODE_ENV=development
+```
+
+Create `apps/web/.env.local` and `apps/landing/.env.local` with:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_API_URL=http://localhost:3001
+```
+
+For the mobile app, create `apps/mobile/.env.local`:
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+EXPO_PUBLIC_API_URL=http://localhost:3001
+```
+
+<Callout type="warning">
+  Never commit `.env.local` files. They contain real secrets. Only
+  `.env.example` files live in Git.
+</Callout>
+
+## 4. Run the dev servers
+
+In separate terminals from the repo root:
+
+```bash
+npm run dev -w apps/api
+npm run dev -w apps/web
+npm run dev -w apps/landing
+npm run dev -w apps/docs
+```
+
+For mobile:
+
+```bash
+npm run dev -w apps/mobile
+```
+
+Then open the Expo QR code in Expo Go on your phone.
+
+## 5. Verify everything is healthy
+
+- **API health check**: `http://localhost:3001/health`
+- **Web app**: `http://localhost:3000`
+- **Landing**: `http://localhost:3002`
+- **Docs**: `http://localhost:3005`
+- **Supabase Studio**: `http://127.0.0.1:54323`
+
+If `/health` responds with a JSON status and no errors appear in the API logs, your local environment is ready.

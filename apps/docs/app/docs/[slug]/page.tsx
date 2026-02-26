@@ -1,15 +1,15 @@
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { getDocBySlug } from '../../../lib/docs';
-import Link from 'next/link';
-import { notFound } from 'next/navigation';
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { getDocBySlug } from "../../../lib/docs";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 
-interface PageProps {
-  params: Promise<{ slug: string }>;
-}
+type PageProps = {
+  params: { slug: string };
+};
 
-export default async function DocPage({ params }: PageProps) {
-  const { slug } = await params;
+export default function DocPage({ params }: PageProps) {
+  const { slug } = params;
   const doc = getDocBySlug(slug);
 
   if (!doc) {
@@ -17,17 +17,20 @@ export default async function DocPage({ params }: PageProps) {
   }
 
   return (
-    <div className="max-w-4xl mx-auto py-12 px-4">
-      <div className="mb-8">
-        <Link href="/" className="text-blue-600 hover:underline">
-          ← Back to index
+    <div className="space-y-8">
+      <div className="flex items-center gap-3">
+        <Link
+          href="/"
+          className="text-[13px] font-medium text-muted-foreground transition-colors hover:text-primary"
+        >
+          Docs
         </Link>
+        <span className="text-muted-foreground/40">/</span>
+        <span className="text-[13px] font-medium text-foreground/70">Spec</span>
       </div>
-      
-      <article className="prose prose-blue lg:prose-xl max-w-none prose-headings:font-bold prose-headings:tracking-tight prose-a:text-blue-600 prose-code:text-blue-600 prose-code:bg-blue-50 prose-code:px-1 prose-code:rounded">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {doc.content}
-        </ReactMarkdown>
+
+      <article className="prose-docs">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.content}</ReactMarkdown>
       </article>
     </div>
   );
