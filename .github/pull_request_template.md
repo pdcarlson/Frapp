@@ -1,18 +1,18 @@
 ## Summary
 
-- 
+-
 
 ## Changes
 
-- 
+-
 
 ## Docs / Spec impact
 
 - **Docs impact**: (None / Updated / Follow-up)
 - **Spec impact**: (None / Updated / Follow-up)
 - **Links**:
-  - Docs page(s): 
-  - Spec section(s): 
+  - Docs page(s):
+  - Spec section(s):
 
 ## Test plan
 
