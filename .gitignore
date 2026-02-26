@@ -38,3 +38,6 @@ supabase/.branches/
 # Misc
 .DS_Store
 *.pem
+
+# Cursor
+.cursor
