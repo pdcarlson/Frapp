@@ -13,7 +13,10 @@ import { InviteModule } from './modules/invite/invite.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: ['.env.local', '.env'],
+    }),
     ThrottlerModule.forRoot([
       { name: 'read', ttl: 60_000, limit: 100 },
       { name: 'write', ttl: 60_000, limit: 30 },
