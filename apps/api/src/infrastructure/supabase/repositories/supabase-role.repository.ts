@@ -6,10 +6,16 @@ import { Role } from '../../../domain/entities/role.entity';
 
 @Injectable()
 export class SupabaseRoleRepository implements IRoleRepository {
-  constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
+  constructor(
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+  ) {}
 
   async findById(id: string): Promise<Role | null> {
-    const { data } = await this.supabase.from('roles').select('*').eq('id', id).single();
+    const { data } = await this.supabase
+      .from('roles')
+      .select('*')
+      .eq('id', id)
+      .single();
     return data;
   }
 
@@ -23,11 +29,17 @@ export class SupabaseRoleRepository implements IRoleRepository {
   }
 
   async findByIds(ids: string[]): Promise<Role[]> {
-    const { data } = await this.supabase.from('roles').select('*').in('id', ids);
+    const { data } = await this.supabase
+      .from('roles')
+      .select('*')
+      .in('id', ids);
     return data || [];
   }
 
-  async findByChapterAndName(chapterId: string, name: string): Promise<Role | null> {
+  async findByChapterAndName(
+    chapterId: string,
+    name: string,
+  ): Promise<Role | null> {
     const { data } = await this.supabase
       .from('roles')
       .select('*')
@@ -38,13 +50,22 @@ export class SupabaseRoleRepository implements IRoleRepository {
   }
 
   async create(roleData: Partial<Role>): Promise<Role> {
-    const { data, error } = await this.supabase.from('roles').insert(roleData).select().single();
+    const { data, error } = await this.supabase
+      .from('roles')
+      .insert(roleData)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }
 
   async update(id: string, roleData: Partial<Role>): Promise<Role> {
-    const { data, error } = await this.supabase.from('roles').update(roleData).eq('id', id).select().single();
+    const { data, error } = await this.supabase
+      .from('roles')
+      .update(roleData)
+      .eq('id', id)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }

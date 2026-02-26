@@ -91,7 +91,10 @@ describe('RbacService', () => {
       display_order: 10,
     });
 
-    expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledWith('ch-1', 'Custom');
+    expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledWith(
+      'ch-1',
+      'Custom',
+    );
     expect(mockRoleRepo.create).toHaveBeenCalledWith({
       name: 'Custom',
       permissions: ['members:view'],
@@ -179,12 +182,12 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existingOther);
 
-    await expect(
-      service.update('role-1', { name: 'Other' }),
-    ).rejects.toThrow(ConflictException);
-    await expect(
-      service.update('role-1', { name: 'Other' }),
-    ).rejects.toThrow('Role name already exists in this chapter');
+    await expect(service.update('role-1', { name: 'Other' })).rejects.toThrow(
+      ConflictException,
+    );
+    await expect(service.update('role-1', { name: 'Other' })).rejects.toThrow(
+      'Role name already exists in this chapter',
+    );
   });
 
   it('should delete custom role', async () => {
@@ -220,7 +223,9 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
 
     await expect(service.delete('role-1')).rejects.toThrow(ForbiddenException);
-    await expect(service.delete('role-1')).rejects.toThrow('Cannot delete system roles');
+    await expect(service.delete('role-1')).rejects.toThrow(
+      'Cannot delete system roles',
+    );
     expect(mockRoleRepo.delete).not.toHaveBeenCalled();
   });
 
@@ -300,7 +305,11 @@ describe('RbacService', () => {
     };
     mockMemberRepo.findById.mockImplementation((id) =>
       Promise.resolve(
-        id === 'member-1' ? currentMember : id === 'member-2' ? targetMember : null,
+        id === 'member-1'
+          ? currentMember
+          : id === 'member-2'
+            ? targetMember
+            : null,
       ),
     );
     mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
@@ -323,6 +332,8 @@ describe('RbacService', () => {
         permission: value,
       })),
     );
-    expect(result.some((r) => r.key === 'WILDCARD' && r.permission === '*')).toBe(true);
+    expect(
+      result.some((r) => r.key === 'WILDCARD' && r.permission === '*'),
+    ).toBe(true);
   });
 });

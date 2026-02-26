@@ -7,7 +7,9 @@ describe('SupabaseAuthGuard', () => {
   let guard: SupabaseAuthGuard;
   let mockGetUser: jest.Mock;
 
-  const mockExecutionContext = (headers: Record<string, string> = {}): ExecutionContext => {
+  const mockExecutionContext = (
+    headers: Record<string, string> = {},
+  ): ExecutionContext => {
     const request = { headers, supabaseUser: undefined as unknown };
     return {
       switchToHttp: () => ({
@@ -43,7 +45,10 @@ describe('SupabaseAuthGuard', () => {
   });
 
   it('should throw UnauthorizedException when token is invalid', async () => {
-    mockGetUser.mockResolvedValue({ data: { user: null }, error: new Error('invalid') });
+    mockGetUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error('invalid'),
+    });
     const ctx = mockExecutionContext({ authorization: 'Bearer bad-token' });
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
@@ -54,7 +59,7 @@ describe('SupabaseAuthGuard', () => {
 
     const ctx = mockExecutionContext({ authorization: 'Bearer valid-token' });
     const result = await guard.canActivate(ctx);
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const request = ctx.switchToHttp().getRequest();
 
     expect(result).toBe(true);
     expect(request.supabaseUser).toEqual(fakeUser);

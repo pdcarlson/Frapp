@@ -16,7 +16,9 @@ describe('ChapterGuard', () => {
     ...overrides,
   });
 
-  const mockExecutionContext = (request: ReturnType<typeof buildRequest>): ExecutionContext =>
+  const mockExecutionContext = (
+    request: ReturnType<typeof buildRequest>,
+  ): ExecutionContext =>
     ({
       switchToHttp: () => ({
         getRequest: () => request,

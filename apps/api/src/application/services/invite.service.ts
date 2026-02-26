@@ -21,15 +21,23 @@ import { Invite } from '../../domain/entities/invite.entity';
 export class InviteService {
   constructor(
     @Inject(INVITE_REPOSITORY) private readonly inviteRepo: IInviteRepository,
-    @Inject(CHAPTER_REPOSITORY) private readonly chapterRepo: IChapterRepository,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
   ) {}
 
-  async create(chapterId: string, createdBy: string, role: string): Promise<Invite> {
+  async create(
+    chapterId: string,
+    createdBy: string,
+    role: string,
+  ): Promise<Invite> {
     const chapter = await this.chapterRepo.findById(chapterId);
     if (chapter?.subscription_status !== 'active') {
-      throw new HttpException('Chapter subscription is not active', HttpStatus.PAYMENT_REQUIRED);
+      throw new HttpException(
+        'Chapter subscription is not active',
+        HttpStatus.PAYMENT_REQUIRED,
+      );
     }
 
     const expiresAt = new Date();
@@ -57,15 +65,23 @@ export class InviteService {
     return invites;
   }
 
-  async redeem(token: string, userId: string): Promise<{ chapterId: string; memberId: string }> {
+  async redeem(
+    token: string,
+    userId: string,
+  ): Promise<{ chapterId: string; memberId: string }> {
     const invite = await this.inviteRepo.findByToken(token);
 
     if (!invite) throw new GoneException('Invite not found');
     if (invite.used_at) throw new GoneException('Invite already used');
-    if (new Date(invite.expires_at) < new Date()) throw new GoneException('Invite expired');
+    if (new Date(invite.expires_at) < new Date())
+      throw new GoneException('Invite expired');
 
-    const existingMember = await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id);
-    if (existingMember) throw new ConflictException('Already a member of this chapter');
+    const existingMember = await this.memberRepo.findByUserAndChapter(
+      userId,
+      invite.chapter_id,
+    );
+    if (existingMember)
+      throw new ConflictException('Already a member of this chapter');
 
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
     let targetRole = roles.find((r) => r.name === invite.role);

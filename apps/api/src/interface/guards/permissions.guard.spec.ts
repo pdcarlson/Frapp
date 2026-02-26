@@ -9,7 +9,9 @@ describe('PermissionsGuard', () => {
   let reflector: Reflector;
   let mockFrom: jest.Mock;
 
-  const mockExecutionContext = (member?: { role_ids: string[] }): ExecutionContext => {
+  const mockExecutionContext = (member?: {
+    role_ids: string[];
+  }): ExecutionContext => {
     const request = { member };
     return {
       switchToHttp: () => ({
@@ -45,13 +47,17 @@ describe('PermissionsGuard', () => {
   });
 
   it('should throw ForbiddenException when member has no roles', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['events:create']);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue(['events:create']);
     const ctx = mockExecutionContext({ role_ids: [] });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
 
   it('should allow access with wildcard permission', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['events:create']);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue(['events:create']);
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({
@@ -65,7 +71,9 @@ describe('PermissionsGuard', () => {
   });
 
   it('should allow access when user has all required permissions', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['events:create', 'events:update']);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue(['events:create', 'events:update']);
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({
@@ -82,7 +90,9 @@ describe('PermissionsGuard', () => {
   });
 
   it('should deny access when user is missing required permissions', async () => {
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(['events:create', 'billing:manage']);
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockReturnValue(['events:create', 'billing:manage']);
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({

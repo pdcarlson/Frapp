@@ -1,11 +1,22 @@
-import { Body, Controller, Delete, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId, CurrentMember } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentMember,
+} from '../decorators/current-user.decorator';
 import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -41,7 +52,10 @@ export class MemberController {
     @CurrentMember() member: { id: string },
     @Body() dto: UpdateOnboardingDto,
   ) {
-    return this.memberService.updateOnboarding(member.id, dto.has_completed_onboarding);
+    return this.memberService.updateOnboarding(
+      member.id,
+      dto.has_completed_onboarding,
+    );
   }
 
   @Delete(':id')

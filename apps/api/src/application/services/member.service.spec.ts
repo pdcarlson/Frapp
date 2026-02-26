@@ -62,7 +62,10 @@ describe('MemberService', () => {
 
     const result = await service.findByUserAndChapter('user-1', 'chapter-1');
 
-    expect(mockRepo.findByUserAndChapter).toHaveBeenCalledWith('user-1', 'chapter-1');
+    expect(mockRepo.findByUserAndChapter).toHaveBeenCalledWith(
+      'user-1',
+      'chapter-1',
+    );
     expect(result).toEqual(member);
   });
 

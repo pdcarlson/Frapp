@@ -1,7 +1,12 @@
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, GoneException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  ConflictException,
+  GoneException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
@@ -145,8 +150,12 @@ describe('InviteService', () => {
     };
     mockChapterRepo.findById.mockResolvedValue(chapter);
 
-    await expect(service.create('ch-1', 'user-1', 'Member')).rejects.toThrow(HttpException);
-    await expect(service.create('ch-1', 'user-1', 'Member')).rejects.toMatchObject({
+    await expect(service.create('ch-1', 'user-1', 'Member')).rejects.toThrow(
+      HttpException,
+    );
+    await expect(
+      service.create('ch-1', 'user-1', 'Member'),
+    ).rejects.toMatchObject({
       status: HttpStatus.PAYMENT_REQUIRED,
       message: 'Chapter subscription is not active',
     });
@@ -227,7 +236,10 @@ describe('InviteService', () => {
     const result = await service.redeem('test-uuid', 'user-2');
 
     expect(mockInviteRepo.findByToken).toHaveBeenCalledWith('test-uuid');
-    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
+    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+      'user-2',
+      'ch-1',
+    );
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-2',
       chapter_id: 'ch-1',
@@ -296,8 +308,12 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(GoneException);
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow('Invite expired');
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      GoneException,
+    );
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      'Invite expired',
+    );
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 
@@ -314,8 +330,12 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(GoneException);
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow('Invite already used');
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      GoneException,
+    );
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      'Invite already used',
+    );
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 
@@ -342,7 +362,9 @@ describe('InviteService', () => {
     mockInviteRepo.findByToken.mockResolvedValue(invite);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(ConflictException);
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      ConflictException,
+    );
     await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
       'Already a member of this chapter',
     );
