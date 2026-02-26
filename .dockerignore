@@ -1,0 +1,46 @@
+# Git
+.git
+.gitignore
+
+# IDE and tooling
+.cursor
+.vscode
+.idea
+
+# Spec and documentation (not needed in image)
+spec/
+supabase/
+
+# Frontend apps (not built in this image)
+apps/web
+apps/mobile
+apps/landing
+apps/docs
+
+# Packages not used by the API
+packages/ui
+packages/hooks
+packages/api-sdk
+packages/theme
+packages/eslint-config
+packages/database
+
+# Build artifacts and caches
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+
+# Environment files
+**/.env
+**/.env.*
+**/.env.local
+
+# Test files
+**/*.spec.ts
+**/test/
+
+# Misc
+**/*.md
+**/LICENSE
+turbo.json
