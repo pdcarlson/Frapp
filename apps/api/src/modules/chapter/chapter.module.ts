@@ -20,6 +20,11 @@ import { AuthModule } from '../auth/auth.module';
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
-  exports: [ChapterService, CHAPTER_REPOSITORY, ROLE_REPOSITORY, MEMBER_REPOSITORY],
+  exports: [
+    ChapterService,
+    CHAPTER_REPOSITORY,
+    ROLE_REPOSITORY,
+    MEMBER_REPOSITORY,
+  ],
 })
 export class ChapterModule {}

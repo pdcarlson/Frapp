@@ -24,7 +24,9 @@ export class UpdateChapterDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'accent_color must be a valid hex color' })
+  @Matches(/^#[0-9A-Fa-f]{6}$/, {
+    message: 'accent_color must be a valid hex color',
+  })
   accent_color?: string;
 
   @ApiPropertyOptional()

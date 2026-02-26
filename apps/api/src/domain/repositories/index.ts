@@ -3,3 +3,6 @@ export * from './chapter.repository.interface';
 export * from './member.repository.interface';
 export * from './role.repository.interface';
 export * from './invite.repository.interface';
+export * from './event.repository.interface';
+export * from './attendance.repository.interface';
+export * from './point-transaction.repository.interface';

@@ -6,34 +6,60 @@ import { Member } from '../../../domain/entities/member.entity';
 
 @Injectable()
 export class SupabaseMemberRepository implements IMemberRepository {
-  constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
+  constructor(
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+  ) {}
 
   async findById(id: string): Promise<Member | null> {
-    const { data, error } = await this.supabase.from('members').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
     if (error) throw error;
     return data;
   }
 
-  async findByUserAndChapter(userId: string, chapterId: string): Promise<Member | null> {
-    const { data, error } = await this.supabase.from('members').select('*').eq('user_id', userId).eq('chapter_id', chapterId).maybeSingle();
+  async findByUserAndChapter(
+    userId: string,
+    chapterId: string,
+  ): Promise<Member | null> {
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
     if (error) throw error;
     return data;
   }
 
   async findByChapter(chapterId: string): Promise<Member[]> {
-    const { data, error } = await this.supabase.from('members').select('*').eq('chapter_id', chapterId);
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('*')
+      .eq('chapter_id', chapterId);
     if (error) throw error;
     return data || [];
   }
 
   async create(memberData: Partial<Member>): Promise<Member> {
-    const { data, error } = await this.supabase.from('members').insert(memberData).select().single();
+    const { data, error } = await this.supabase
+      .from('members')
+      .insert(memberData)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }
 
   async update(id: string, memberData: Partial<Member>): Promise<Member> {
-    const { data, error } = await this.supabase.from('members').update(memberData).eq('id', id).select().single();
+    const { data, error } = await this.supabase
+      .from('members')
+      .update(memberData)
+      .eq('id', id)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }

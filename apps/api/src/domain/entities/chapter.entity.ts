@@ -1,4 +1,8 @@
-export type SubscriptionStatus = 'incomplete' | 'active' | 'past_due' | 'canceled';
+export type SubscriptionStatus =
+  | 'incomplete'
+  | 'active'
+  | 'past_due'
+  | 'canceled';
 
 export interface Chapter {
   id: string;

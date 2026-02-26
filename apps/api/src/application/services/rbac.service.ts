@@ -25,8 +25,12 @@ export class RbacService {
   }
 
   async create(chapterId: string, data: Partial<Role>): Promise<Role> {
-    const existing = await this.roleRepo.findByChapterAndName(chapterId, data.name!);
-    if (existing) throw new ConflictException('Role name already exists in this chapter');
+    const existing = await this.roleRepo.findByChapterAndName(
+      chapterId,
+      data.name!,
+    );
+    if (existing)
+      throw new ConflictException('Role name already exists in this chapter');
 
     return this.roleRepo.create({
       ...data,
@@ -40,8 +44,12 @@ export class RbacService {
     if (!role) throw new NotFoundException('Role not found');
 
     if (data.name && data.name !== role.name) {
-      const existing = await this.roleRepo.findByChapterAndName(role.chapter_id, data.name);
-      if (existing) throw new ConflictException('Role name already exists in this chapter');
+      const existing = await this.roleRepo.findByChapterAndName(
+        role.chapter_id,
+        data.name,
+      );
+      if (existing)
+        throw new ConflictException('Role name already exists in this chapter');
     }
 
     return this.roleRepo.update(roleId, data);
@@ -50,7 +58,8 @@ export class RbacService {
   async delete(roleId: string): Promise<void> {
     const role = await this.roleRepo.findById(roleId);
     if (!role) throw new NotFoundException('Role not found');
-    if (role.is_system) throw new ForbiddenException('Cannot delete system roles');
+    if (role.is_system)
+      throw new ForbiddenException('Cannot delete system roles');
 
     await this.roleRepo.delete(roleId);
   }
@@ -80,15 +89,25 @@ export class RbacService {
       throw new NotFoundException('President role not found');
     }
 
-    const currentHasPresident = currentMember.role_ids.includes(presidentRole.id);
+    const currentHasPresident = currentMember.role_ids.includes(
+      presidentRole.id,
+    );
     if (!currentHasPresident) {
-      throw new ForbiddenException('Only the current President can transfer presidency');
+      throw new ForbiddenException(
+        'Only the current President can transfer presidency',
+      );
     }
 
-    const newCurrentRoles = currentMember.role_ids.filter((id) => id !== presidentRole.id);
-    const newTargetRoles = [...new Set([...targetMember.role_ids, presidentRole.id])];
+    const newCurrentRoles = currentMember.role_ids.filter(
+      (id) => id !== presidentRole.id,
+    );
+    const newTargetRoles = [
+      ...new Set([...targetMember.role_ids, presidentRole.id]),
+    ];
 
-    await this.memberRepo.update(currentMember.id, { role_ids: newCurrentRoles });
+    await this.memberRepo.update(currentMember.id, {
+      role_ids: newCurrentRoles,
+    });
     await this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles });
   }
 

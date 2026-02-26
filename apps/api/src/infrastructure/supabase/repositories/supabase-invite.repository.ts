@@ -6,10 +6,16 @@ import { Invite } from '../../../domain/entities/invite.entity';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
-  constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
+  constructor(
+    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+  ) {}
 
   async findByToken(token: string): Promise<Invite | null> {
-    const { data, error } = await this.supabase.from('invites').select('*').eq('token', token).maybeSingle();
+    const { data, error } = await this.supabase
+      .from('invites')
+      .select('*')
+      .eq('token', token)
+      .maybeSingle();
     if (error) throw error;
     return data;
   }
@@ -25,7 +31,11 @@ export class SupabaseInviteRepository implements IInviteRepository {
   }
 
   async create(inviteData: Partial<Invite>): Promise<Invite> {
-    const { data, error } = await this.supabase.from('invites').insert(inviteData).select().single();
+    const { data, error } = await this.supabase
+      .from('invites')
+      .insert(inviteData)
+      .select()
+      .single();
     if (error) throw error;
     return data;
   }

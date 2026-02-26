@@ -8,7 +8,10 @@ export class AuthService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
   ) {}
 
-  async syncUser(supabaseAuthId: string, email: string): Promise<{ id: string }> {
+  async syncUser(
+    supabaseAuthId: string,
+    email: string,
+  ): Promise<{ id: string }> {
     const existing = await this.userRepo.findBySupabaseAuthId(supabaseAuthId);
     if (existing) return { id: existing.id };
 

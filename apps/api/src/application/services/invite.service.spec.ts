@@ -1,7 +1,12 @@
 jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConflictException, GoneException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  ConflictException,
+  GoneException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';

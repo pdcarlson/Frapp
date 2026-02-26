@@ -8,7 +8,10 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { DEFAULT_SYSTEM_ROLES, DEFAULT_CHANNELS } from '../../domain/constants/permissions';
+import {
+  DEFAULT_SYSTEM_ROLES,
+  DEFAULT_CHANNELS,
+} from '../../domain/constants/permissions';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';

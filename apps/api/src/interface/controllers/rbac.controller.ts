@@ -1,12 +1,28 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId, CurrentMember } from '../decorators/current-user.decorator';
-import { CreateRoleDto, UpdateRoleDto, TransferPresidencyDto } from '../dtos/rbac.dto';
+import {
+  CurrentChapterId,
+  CurrentMember,
+} from '../decorators/current-user.decorator';
+import {
+  CreateRoleDto,
+  UpdateRoleDto,
+  TransferPresidencyDto,
+} from '../dtos/rbac.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Roles & Permissions')

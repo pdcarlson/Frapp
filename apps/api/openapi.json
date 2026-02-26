@@ -1,0 +1,1270 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Health check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/v1/users/me": {
+      "get": {
+        "operationId": "UserController_getMe_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get current user profile",
+        "tags": [
+          "Users"
+        ]
+      },
+      "patch": {
+        "operationId": "UserController_updateMe_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update current user profile",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/v1/chapters": {
+      "post": {
+        "operationId": "ChapterController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChapterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a new chapter",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters/current": {
+      "get": {
+        "operationId": "ChapterController_getCurrent_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get current chapter",
+        "tags": [
+          "Chapters"
+        ]
+      },
+      "patch": {
+        "operationId": "ChapterController_update_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChapterDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update current chapter settings",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/members": {
+      "get": {
+        "operationId": "MemberController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter members",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/{id}/roles": {
+      "patch": {
+        "operationId": "MemberController_updateRoles_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateMemberRolesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update member roles",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/me/onboarding": {
+      "patch": {
+        "operationId": "MemberController_updateOnboarding_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOnboardingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update onboarding status",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/{id}": {
+      "delete": {
+        "operationId": "MemberController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove member from chapter",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "RbacController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter roles",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "post": {
+        "operationId": "RbacController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/permissions-catalog": {
+      "get": {
+        "operationId": "RbacController_catalog_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get system permissions catalog",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/{id}": {
+      "patch": {
+        "operationId": "RbacController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "delete": {
+        "operationId": "RbacController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/transfer-presidency": {
+      "post": {
+        "operationId": "RbacController_transferPresidency_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferPresidencyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Transfer presidency to another member",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/invites": {
+      "post": {
+        "operationId": "InviteController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate an invite token",
+        "tags": [
+          "Invites"
+        ]
+      },
+      "get": {
+        "operationId": "InviteController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter invites",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
+    "/v1/invites/batch": {
+      "post": {
+        "operationId": "InviteController_createBatch_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchCreateInvitesDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate multiple invite tokens",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
+    "/v1/invites/redeem": {
+      "post": {
+        "operationId": "InviteController_redeem_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RedeemInviteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Redeem an invite token to join a chapter",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "EventController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter events",
+        "tags": [
+          "Events"
+        ]
+      },
+      "post": {
+        "operationId": "EventController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{id}": {
+      "get": {
+        "operationId": "EventController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get event by id",
+        "tags": [
+          "Events"
+        ]
+      },
+      "patch": {
+        "operationId": "EventController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update an event",
+        "tags": [
+          "Events"
+        ]
+      },
+      "delete": {
+        "operationId": "EventController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in": {
+      "post": {
+        "operationId": "AttendanceController_checkIn_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance": {
+      "get": {
+        "operationId": "AttendanceController_list_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List attendance for an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/{userId}": {
+      "patch": {
+        "operationId": "AttendanceController_updateStatus_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAttendanceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update attendance status for a member",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/points/me": {
+      "get": {
+        "operationId": "PointsController_getMe_v1",
+        "parameters": [
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get current user point summary",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/leaderboard": {
+      "get": {
+        "operationId": "PointsController_getLeaderboard_v1",
+        "parameters": [
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get chapter leaderboard",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/members/{userId}": {
+      "get": {
+        "operationId": "PointsController_getMember_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get point summary for a member",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/adjust": {
+      "post": {
+        "operationId": "PointsController_adjust_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustPointsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Manually adjust member points",
+        "tags": [
+          "Points"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Frapp API",
+    "description": "The Operating System for Greek Life",
+    "version": "1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http"
+      },
+      "chapter-id": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-chapter-id"
+      }
+    },
+    "schemas": {
+      "UpdateUserDto": {
+        "type": "object",
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string"
+          },
+          "graduation_year": {
+            "type": "number"
+          },
+          "current_city": {
+            "type": "string"
+          },
+          "current_company": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateChapterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "university"
+        ]
+      },
+      "UpdateChapterDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "university": {
+            "type": "string"
+          },
+          "accent_color": {
+            "type": "string"
+          },
+          "donation_url": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateMemberRolesDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
+      },
+      "UpdateOnboardingDto": {
+        "type": "object",
+        "properties": {
+          "has_completed_onboarding": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_completed_onboarding"
+        ]
+      },
+      "CreateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_order": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ]
+      },
+      "UpdateRoleDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "display_order": {
+            "type": "number"
+          },
+          "color": {
+            "type": "string"
+          }
+        }
+      },
+      "TransferPresidencyDto": {
+        "type": "object",
+        "properties": {
+          "target_member_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_member_id"
+        ]
+      },
+      "CreateInviteDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role name to assign to invited member"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "BatchCreateInvitesDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "Role name to assign"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of invites to generate"
+          }
+        },
+        "required": [
+          "role",
+          "count"
+        ]
+      },
+      "RedeemInviteDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "CreateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number",
+            "default": 10
+          },
+          "is_mandatory": {
+            "type": "boolean",
+            "default": false
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
+          },
+          "required_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "UpdateEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "start_time": {
+            "type": "string"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "point_value": {
+            "type": "number"
+          },
+          "is_mandatory": {
+            "type": "boolean"
+          },
+          "recurrence_rule": {
+            "type": "string",
+            "description": "Recurrence rule (e.g. WEEKLY, BIWEEKLY, MONTHLY)"
+          },
+          "required_role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "CheckInDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PRESENT",
+              "EXCUSED",
+              "ABSENT",
+              "LATE"
+            ]
+          },
+          "excuse_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AdjustPointsDto": {
+        "type": "object",
+        "properties": {
+          "target_user_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "FINE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_user_id",
+          "amount",
+          "category",
+          "reason"
+        ]
+      }
+    }
+  }
+}

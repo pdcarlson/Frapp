@@ -10,6 +10,9 @@ import { ChapterModule } from './modules/chapter/chapter.module';
 import { MemberModule } from './modules/member/member.module';
 import { RbacModule } from './modules/rbac/rbac.module';
 import { InviteModule } from './modules/invite/invite.module';
+import { EventModule } from './modules/event/event.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
+import { PointsModule } from './modules/points/points.module';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { InviteModule } from './modules/invite/invite.module';
     MemberModule,
     RbacModule,
     InviteModule,
+    EventModule,
+    AttendanceModule,
+    PointsModule,
   ],
 })
 export class AppModule {}

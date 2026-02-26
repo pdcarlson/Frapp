@@ -52,6 +52,22 @@ export const UpdateUserSchema = z.object({
   current_company: z.string().max(100).optional(),
 });
 
+export const UpdateAttendanceSchema = z.object({
+  status: z.enum(["PRESENT", "EXCUSED", "ABSENT", "LATE"]),
+  excuse_reason: z.string().optional(),
+});
+
+export const PointsWindowSchema = z.object({
+  window: z.enum(["all", "semester", "month"]).optional(),
+});
+
+export const AdjustPointsSchema = z.object({
+  target_user_id: z.string().uuid(),
+  amount: z.number().int(),
+  category: z.enum(["MANUAL", "FINE"]),
+  reason: z.string().min(1),
+});
+
 export type Chapter = z.infer<typeof ChapterSchema>;
 export type CreateChapter = z.infer<typeof CreateChapterSchema>;
 export type CreateRole = z.infer<typeof CreateRoleSchema>;
@@ -59,3 +75,6 @@ export type UpdateMemberRoles = z.infer<typeof UpdateMemberRolesSchema>;
 export type CreateInvite = z.infer<typeof CreateInviteSchema>;
 export type RedeemInvite = z.infer<typeof RedeemInviteSchema>;
 export type UpdateUser = z.infer<typeof UpdateUserSchema>;
+export type UpdateAttendance = z.infer<typeof UpdateAttendanceSchema>;
+export type PointsWindow = z.infer<typeof PointsWindowSchema>;
+export type AdjustPoints = z.infer<typeof AdjustPointsSchema>;

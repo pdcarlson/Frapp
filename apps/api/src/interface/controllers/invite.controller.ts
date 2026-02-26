@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
@@ -6,8 +13,15 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentUser, CurrentChapterId } from '../decorators/current-user.decorator';
-import { CreateInviteDto, BatchCreateInvitesDto, RedeemInviteDto } from '../dtos/invite.dto';
+import {
+  CurrentUser,
+  CurrentChapterId,
+} from '../decorators/current-user.decorator';
+import {
+  CreateInviteDto,
+  BatchCreateInvitesDto,
+  RedeemInviteDto,
+} from '../dtos/invite.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Invites')
@@ -39,7 +53,12 @@ export class InviteController {
     @CurrentUser('id') userId: string,
     @Body() dto: BatchCreateInvitesDto,
   ) {
-    return this.inviteService.createBatch(chapterId, userId, dto.role, dto.count);
+    return this.inviteService.createBatch(
+      chapterId,
+      userId,
+      dto.role,
+      dto.count,
+    );
   }
 
   @Post('redeem')
