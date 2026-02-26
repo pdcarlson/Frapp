@@ -95,6 +95,9 @@ Frapp/
 - **Content source:** Authored content (how-to guides, FAQ). May reference `spec/` for domain definitions.
 - **Design:** Inspired by Stripe Docs / Vercel Docs. Clean sidebar navigation, search, dark mode, polished typography.
 - **Deployment:** Vercel at docs.frapp.live.
+- **Sync rule:** Documentation is treated as part of the product. When behavior, architecture, or workflows change, the corresponding pages in `apps/docs` and the specs in `spec/` **must** be updated in the same change set. Divergence between docs and implementation is considered a bug.
+  - **Enforcement:** CI fails PRs that change product code (e.g. `apps/api/`, `packages/`, `supabase/`, or app shells) without also updating `apps/docs/` and/or `spec/`.
+  - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
 ---
 
