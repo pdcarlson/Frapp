@@ -13,3 +13,4 @@ export * from './chat.repository.interface';
 export * from './task.repository.interface';
 export * from './service-entry.repository.interface';
 export * from './notification.repository.interface';
+export * from './study.repository.interface';

@@ -20,6 +20,7 @@ import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
 import { NotificationModule } from './modules/notification/notification.module';
+import { StudyModule } from './modules/study/study.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     ServiceEntryModule,
     TaskModule,
     NotificationModule,
+    StudyModule,
   ],
 })
 export class AppModule {}
