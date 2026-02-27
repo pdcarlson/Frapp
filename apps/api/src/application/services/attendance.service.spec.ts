@@ -349,4 +349,147 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('markAutoAbsent', () => {
+    const pastEvent: Event = {
+      ...baseEvent,
+      is_mandatory: true,
+      start_time: '2020-01-01T10:00:00.000Z',
+      end_time: '2020-01-01T11:00:00.000Z',
+    };
+
+    const members: Member[] = [
+      {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'member-2',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'member-3',
+        user_id: 'user-3',
+        chapter_id: 'ch-1',
+        role_ids: ['role-exec'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+    ];
+
+    it('should mark ABSENT for mandatory event (members without attendance)', async () => {
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(3);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(3);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-1' }),
+      );
+    });
+
+    it('should mark ABSENT for role-targeted event (only required role members)', async () => {
+      const roleEvent: Event = {
+        ...pastEvent,
+        is_mandatory: false,
+        required_role_ids: ['role-exec'],
+      };
+      mockEventRepo.findById.mockResolvedValue(roleEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      // Only user-3 has role-exec
+      expect(result.marked).toBe(1);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      );
+    });
+
+    it('should skip members who already checked in (PRESENT)', async () => {
+      const presentRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-1',
+        status: 'PRESENT',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([presentRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      // user-1 is skipped; user-2, user-3 are marked absent
+      expect(result.marked).toBe(2);
+    });
+
+    it('should skip members who are EXCUSED', async () => {
+      const excusedRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-2',
+        status: 'EXCUSED',
+        excuse_reason: 'Family emergency',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([excusedRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(2);
+      // user-2 should not have been marked
+      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
+        (c) => c[0].user_id,
+      );
+      expect(createdUserIds).not.toContain('user-2');
+    });
+
+    it('should reject if called before grace period ends', async () => {
+      const futureEvent: Event = {
+        ...baseEvent,
+        is_mandatory: true,
+        start_time: '2099-01-01T10:00:00.000Z',
+        end_time: '2099-01-01T11:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(futureEvent);
+
+      await expect(
+        service.markAutoAbsent('evt-1', 'ch-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should do nothing for optional events', async () => {
+      const optionalEvent: Event = {
+        ...pastEvent,
+        is_mandatory: false,
+        required_role_ids: null,
+      };
+      mockEventRepo.findById.mockResolvedValue(optionalEvent);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(0);
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+    });
+  });
 });

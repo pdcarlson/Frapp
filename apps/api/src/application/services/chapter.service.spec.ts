@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ChapterService } from './chapter.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -7,6 +7,7 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   DEFAULT_SYSTEM_ROLES,
@@ -21,9 +22,19 @@ describe('ChapterService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockStorageProvider: {
+    getSignedUploadUrl: jest.Mock;
+    getSignedDownloadUrl: jest.Mock;
+    deleteFile: jest.Mock;
+  };
   let mockSupabase: { from: jest.Mock };
 
   beforeEach(async () => {
+    mockStorageProvider = {
+      getSignedUploadUrl: jest.fn().mockResolvedValue('https://signed-upload.url'),
+      getSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed-download.url'),
+      deleteFile: jest.fn().mockResolvedValue(undefined),
+    };
     mockChapterRepo = {
       findById: jest.fn(),
       findByStripeCustomerId: jest.fn(),
@@ -61,6 +72,7 @@ describe('ChapterService', () => {
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
       ],
     }).compile();
@@ -272,7 +284,7 @@ describe('ChapterService', () => {
     }
   });
 
-  it('should update chapter data', async () => {
+  it('should update chapter data with valid WCAG accent color', async () => {
     const updatedChapter: Chapter = {
       id: 'ch-1',
       name: 'Alpha Updated',
@@ -280,7 +292,7 @@ describe('ChapterService', () => {
       stripe_customer_id: null,
       subscription_status: 'active',
       subscription_id: null,
-      accent_color: '#FF0000',
+      accent_color: '#1E293B',
       logo_path: null,
       donation_url: null,
       created_at: '2024-01-01',
@@ -290,13 +302,131 @@ describe('ChapterService', () => {
 
     const result = await service.update('ch-1', {
       name: 'Alpha Updated',
-      accent_color: '#FF0000',
+      accent_color: '#1E293B',
     });
 
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
       name: 'Alpha Updated',
-      accent_color: '#FF0000',
+      accent_color: '#1E293B',
     });
     expect(result).toEqual(updatedChapter);
+  });
+
+  it('should reject accent_color that fails WCAG contrast', async () => {
+    await expect(
+      service.update('ch-1', { accent_color: '#E2E8F0' }),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.update('ch-1', { accent_color: '#E2E8F0' }),
+    ).rejects.toThrow(/WCAG AA contrast/);
+    expect(mockChapterRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('should generate logo upload URL', async () => {
+    const result = await service.requestLogoUploadUrl(
+      'ch-1',
+      'logo.png',
+      'image/png',
+    );
+
+    expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
+      'branding',
+      'chapters/ch-1/branding/logo.png',
+      'image/png',
+    );
+    expect(result).toEqual({
+      signedUrl: 'https://signed-upload.url',
+      storage_path: 'chapters/ch-1/branding/logo.png',
+    });
+  });
+
+  it('should confirm logo upload and update logo_path', async () => {
+    const updatedChapter: Chapter = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: 'chapters/ch-1/branding/logo.png',
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-02',
+    };
+    mockChapterRepo.update.mockResolvedValue(updatedChapter);
+
+    const result = await service.confirmLogoUpload(
+      'ch-1',
+      'chapters/ch-1/branding/logo.png',
+    );
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      logo_path: 'chapters/ch-1/branding/logo.png',
+    });
+    expect(result).toEqual(updatedChapter);
+  });
+
+  it('should reject confirm logo with invalid storage path', async () => {
+    await expect(
+      service.confirmLogoUpload('ch-1', 'chapters/other-chapter/branding/logo.png'),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockChapterRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('should delete logo and clear logo_path', async () => {
+    const chapterWithLogo: Chapter = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: 'chapters/ch-1/branding/logo.png',
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    const updatedChapter = { ...chapterWithLogo, logo_path: null };
+    mockChapterRepo.findById.mockResolvedValue(chapterWithLogo);
+    mockChapterRepo.update.mockResolvedValue(updatedChapter);
+
+    const result = await service.deleteLogo('ch-1');
+
+    expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
+      'branding',
+      'chapters/ch-1/branding/logo.png',
+    );
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      logo_path: null,
+    });
+    expect(result.logo_path).toBeNull();
+  });
+
+  it('should delete logo when chapter has no logo (no-op)', async () => {
+    const chapterWithoutLogo: Chapter = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: null,
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockChapterRepo.findById.mockResolvedValue(chapterWithoutLogo);
+    mockChapterRepo.update.mockResolvedValue(chapterWithoutLogo);
+
+    const result = await service.deleteLogo('ch-1');
+
+    expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      logo_path: null,
+    });
+    expect(result.logo_path).toBeNull();
   });
 });

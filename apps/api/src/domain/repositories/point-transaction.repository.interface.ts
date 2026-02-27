@@ -6,4 +6,9 @@ export interface IPointTransactionRepository {
   create(data: Partial<PointTransaction>): Promise<PointTransaction>;
   findByUser(chapterId: string, userId: string): Promise<PointTransaction[]>;
   findByChapter(chapterId: string): Promise<PointTransaction[]>;
+  countRecentAdjustments(
+    adminUserId: string,
+    chapterId: string,
+    since: Date,
+  ): Promise<number>;
 }

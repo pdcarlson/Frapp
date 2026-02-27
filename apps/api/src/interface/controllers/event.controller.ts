@@ -3,12 +3,15 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { EventService } from '../../application/services/event.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -61,6 +64,22 @@ export class EventController {
     @Body() dto: UpdateEventDto,
   ) {
     return this.eventService.update(id, chapterId, dto);
+  }
+
+  @Get(':id/ics')
+  @ApiOperation({ summary: 'Download .ics calendar file for an event' })
+  @ApiProduces('text/calendar')
+  async getIcs(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const ics = await this.eventService.generateIcs(id, chapterId);
+    res.set({
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${id}.ics"`,
+    });
+    res.send(ics);
   }
 
   @Delete(':id')

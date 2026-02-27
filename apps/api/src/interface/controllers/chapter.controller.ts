@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -17,7 +18,12 @@ import {
   CurrentUser,
   CurrentChapterId,
 } from '../decorators/current-user.decorator';
-import { CreateChapterDto, UpdateChapterDto } from '../dtos/chapter.dto';
+import {
+  CreateChapterDto,
+  UpdateChapterDto,
+  LogoUploadUrlDto,
+  ConfirmLogoDto,
+} from '../dtos/chapter.dto';
 
 @ApiTags('Chapters')
 @ApiBearerAuth()
@@ -51,5 +57,36 @@ export class ChapterController {
     @Body() dto: UpdateChapterDto,
   ) {
     return this.chapterService.update(chapterId, dto);
+  }
+
+  @Post('current/logo-url')
+  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Generate signed upload URL for chapter logo' })
+  async requestLogoUploadUrl(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: LogoUploadUrlDto,
+  ) {
+    return this.chapterService.requestLogoUploadUrl(
+      chapterId,
+      dto.filename,
+      dto.content_type,
+    );
+  }
+
+  @Post('current/logo')
+  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Confirm logo upload and update chapter' })
+  async confirmLogoUpload(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ConfirmLogoDto,
+  ) {
+    return this.chapterService.confirmLogoUpload(chapterId, dto.storage_path);
+  }
+
+  @Delete('current/logo')
+  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Remove chapter logo' })
+  async deleteLogo(@CurrentChapterId() chapterId: string) {
+    return this.chapterService.deleteLogo(chapterId);
   }
 }

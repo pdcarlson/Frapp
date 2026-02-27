@@ -5,9 +5,10 @@ import {
   Get,
   Param,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -33,6 +34,32 @@ export class MemberController {
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   async list(@CurrentChapterId() chapterId: string) {
     return this.memberService.findByChapter(chapterId);
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Search members by name' })
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @ApiQuery({ name: 'q', required: true, description: 'Search query (name)' })
+  async search(
+    @CurrentChapterId() chapterId: string,
+    @Query('q') query: string,
+  ) {
+    return this.memberService.searchByChapterAndName(
+      chapterId,
+      query ?? '',
+    );
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get member profile by ID' })
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    return this.memberService.findProfileById(id, chapterId);
   }
 
   @Patch(':id/roles')

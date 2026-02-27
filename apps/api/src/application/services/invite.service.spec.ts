@@ -2,10 +2,12 @@ jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   HttpException,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
@@ -20,6 +22,7 @@ import type { Invite } from '../../domain/entities/invite.entity';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
+import { NotificationService } from './notification.service';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -27,9 +30,11 @@ describe('InviteService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   beforeEach(async () => {
     mockInviteRepo = {
+      findById: jest.fn(),
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
@@ -63,6 +68,11 @@ describe('InviteService', () => {
       delete: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InviteService,
@@ -70,6 +80,7 @@ describe('InviteService', () => {
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -377,5 +388,123 @@ describe('InviteService', () => {
 
     expect(mockInviteRepo.findByChapter).toHaveBeenCalledWith('ch-1');
     expect(result).toEqual(invites);
+  });
+
+  it('should notify chapter when invite is redeemed', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const memberRole: Role = {
+      id: 'role-member',
+      chapter_id: 'ch-1',
+      name: 'Member',
+      permissions: [],
+      is_system: true,
+      display_order: 3,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const member: Member = {
+      id: 'member-1',
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: [memberRole.id],
+      has_completed_onboarding: false,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
+    mockMemberRepo.create.mockResolvedValue(member);
+
+    await service.redeem('test-uuid', 'user-2');
+
+    expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+      'ch-1',
+      expect.objectContaining({
+        title: 'New Member Joined',
+        priority: 'NORMAL',
+        category: 'admin',
+      }),
+    );
+  });
+
+  describe('revoke', () => {
+    it('should mark invite as used', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+      mockInviteRepo.markUsed.mockResolvedValue(undefined);
+
+      await service.revoke('inv-1', 'ch-1');
+
+      expect(mockInviteRepo.findById).toHaveBeenCalledWith('inv-1');
+      expect(mockInviteRepo.markUsed).toHaveBeenCalledWith('inv-1');
+    });
+
+    it('should reject already-used invite', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: '2024-01-02',
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        'Invite has already been used',
+      );
+      expect(mockInviteRepo.markUsed).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when invite does not exist', async () => {
+      mockInviteRepo.findById.mockResolvedValue(null);
+
+      await expect(service.revoke('inv-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException when invite belongs to different chapter', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-2',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 });

@@ -10,6 +10,7 @@ describe('AuthService', () => {
   beforeEach(async () => {
     mockRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),

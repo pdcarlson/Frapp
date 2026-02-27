@@ -68,6 +68,73 @@ export const AdjustPointsSchema = z.object({
   reason: z.string().min(1),
 });
 
+// ── Billing ──────────────────────────────────────────────────────────────────
+
+export const CreateCheckoutSchema = z.object({
+  customer_email: z.string().email(),
+  success_url: z.string().url(),
+  cancel_url: z.string().url(),
+});
+
+export const CreatePortalSchema = z.object({
+  return_url: z.string().url(),
+});
+
+// ── Financial Invoices ───────────────────────────────────────────────────────
+
+export const CreateFinancialInvoiceSchema = z.object({
+  user_id: z.string().uuid(),
+  title: z.string().min(1).max(255),
+  description: z.string().optional(),
+  amount: z.number().int().positive(),
+  due_date: z.string(),
+});
+
+export const UpdateFinancialInvoiceSchema = z.object({
+  title: z.string().min(1).max(255).optional(),
+  description: z.string().optional(),
+  amount: z.number().int().positive().optional(),
+  due_date: z.string().optional(),
+});
+
+export const TransitionInvoiceStatusSchema = z.object({
+  status: z.enum(["OPEN", "PAID", "VOID"]),
+});
+
+// ── Backwork ─────────────────────────────────────────────────────────────────
+
+export const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;
+export const ASSIGNMENT_TYPES = [
+  "Exam", "Midterm", "Final Exam", "Quiz", "Homework",
+  "Lab", "Project", "Study Guide", "Notes", "Other",
+] as const;
+export const DOCUMENT_VARIANTS = [
+  "Student Copy", "Blank Copy", "Answer Key",
+] as const;
+
+export const RequestUploadUrlSchema = z.object({
+  filename: z.string().min(1).max(255),
+  content_type: z.string().min(1),
+});
+
+export const ConfirmUploadSchema = z.object({
+  storage_path: z.string().min(1),
+  file_hash: z.string().min(1),
+  title: z.string().max(255).optional(),
+  department_code: z.string().max(20).optional(),
+  course_number: z.string().max(20).optional(),
+  professor_name: z.string().max(255).optional(),
+  year: z.number().int().min(1900).optional(),
+  semester: z.enum(SEMESTERS).optional(),
+  assignment_type: z.enum(ASSIGNMENT_TYPES).optional(),
+  assignment_number: z.number().int().min(1).optional(),
+  document_variant: z.enum(DOCUMENT_VARIANTS).optional(),
+  tags: z.array(z.string()).optional(),
+  is_redacted: z.boolean().optional(),
+});
+
+// ── Type Exports ─────────────────────────────────────────────────────────────
+
 export type Chapter = z.infer<typeof ChapterSchema>;
 export type CreateChapter = z.infer<typeof CreateChapterSchema>;
 export type CreateRole = z.infer<typeof CreateRoleSchema>;
@@ -78,3 +145,10 @@ export type UpdateUser = z.infer<typeof UpdateUserSchema>;
 export type UpdateAttendance = z.infer<typeof UpdateAttendanceSchema>;
 export type PointsWindow = z.infer<typeof PointsWindowSchema>;
 export type AdjustPoints = z.infer<typeof AdjustPointsSchema>;
+export type CreateCheckout = z.infer<typeof CreateCheckoutSchema>;
+export type CreatePortal = z.infer<typeof CreatePortalSchema>;
+export type CreateFinancialInvoice = z.infer<typeof CreateFinancialInvoiceSchema>;
+export type UpdateFinancialInvoice = z.infer<typeof UpdateFinancialInvoiceSchema>;
+export type TransitionInvoiceStatus = z.infer<typeof TransitionInvoiceStatusSchema>;
+export type RequestUploadUrl = z.infer<typeof RequestUploadUrlSchema>;
+export type ConfirmUpload = z.infer<typeof ConfirmUploadSchema>;

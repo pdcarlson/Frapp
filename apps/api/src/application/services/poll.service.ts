@@ -1,0 +1,244 @@
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
+import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
+import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
+import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
+import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
+import type { ChatMessage } from '../../domain/entities/chat.entity';
+import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
+
+const MIN_OPTIONS = 2;
+const MAX_OPTIONS = 10;
+
+export interface CreatePollInput {
+  channelId: string;
+  chapterId: string;
+  senderId: string;
+  question: string;
+  options: string[];
+  expiresAt?: string | null;
+  choiceMode?: 'single' | 'multi';
+}
+
+export interface PollWithResults {
+  id: string;
+  channel_id: string;
+  sender_id: string;
+  content: string;
+  type: 'POLL';
+  metadata: PollMetadata;
+  created_at: string;
+  isExpired: boolean;
+  results: { optionIndex: number; optionText: string; voteCount: number }[];
+  userVotes?: number[];
+}
+
+@Injectable()
+export class PollService {
+  constructor(
+    @Inject(CHAT_MESSAGE_REPOSITORY)
+    private readonly messageRepo: IChatMessageRepository,
+    @Inject(CHAT_CHANNEL_REPOSITORY)
+    private readonly channelRepo: IChatChannelRepository,
+    @Inject(POLL_VOTE_REPOSITORY)
+    private readonly voteRepo: IPollVoteRepository,
+  ) {}
+
+  async createPoll(input: CreatePollInput): Promise<ChatMessage> {
+    const channel = await this.channelRepo.findById(
+      input.channelId,
+      input.chapterId,
+    );
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    if (
+      input.options.length < MIN_OPTIONS ||
+      input.options.length > MAX_OPTIONS
+    ) {
+      throw new BadRequestException(
+        `Poll must have between ${MIN_OPTIONS} and ${MAX_OPTIONS} options`,
+      );
+    }
+
+    const metadata: PollMetadata = {
+      question: input.question,
+      options: input.options,
+      expires_at: input.expiresAt ?? undefined,
+      choice_mode: input.choiceMode ?? 'single',
+    };
+
+    return this.messageRepo.create({
+      channel_id: input.channelId,
+      sender_id: input.senderId,
+      content: input.question,
+      type: 'POLL',
+      metadata,
+    });
+  }
+
+  async vote(
+    messageId: string,
+    userId: string,
+    chapterId: string,
+    optionIndexes: number[],
+  ): Promise<void> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Poll not found');
+    }
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
+
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    const metadata = message.metadata as PollMetadata;
+    const isExpired = this.isPollExpired(metadata);
+    if (isExpired) {
+      throw new BadRequestException('Poll has expired');
+    }
+
+    const options = metadata.options ?? [];
+    for (const idx of optionIndexes) {
+      if (idx < 0 || idx >= options.length) {
+        throw new BadRequestException(`Invalid option index: ${idx}`);
+      }
+    }
+
+    if (metadata.choice_mode === 'single') {
+      if (optionIndexes.length !== 1) {
+        throw new BadRequestException(
+          'Single-choice poll requires exactly one option',
+        );
+      }
+      await this.voteRepo.deleteByMessageAndUser(messageId, userId);
+      await this.voteRepo.create({
+        message_id: messageId,
+        user_id: userId,
+        option_index: optionIndexes[0],
+      });
+    } else {
+      const existing = await this.voteRepo.findByMessageAndUser(
+        messageId,
+        userId,
+      );
+      for (const v of existing) {
+        await this.voteRepo.deleteByMessageUserAndOption(
+          messageId,
+          userId,
+          v.option_index,
+        );
+      }
+      for (const idx of optionIndexes) {
+        await this.voteRepo.create({
+          message_id: messageId,
+          user_id: userId,
+          option_index: idx,
+        });
+      }
+    }
+  }
+
+  async removeVote(
+    messageId: string,
+    userId: string,
+    chapterId: string,
+  ): Promise<void> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Poll not found');
+    }
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
+
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    const metadata = message.metadata as PollMetadata;
+    if (this.isPollExpired(metadata)) {
+      throw new BadRequestException('Poll has expired');
+    }
+
+    await this.voteRepo.deleteByMessageAndUser(messageId, userId);
+  }
+
+  async getPoll(
+    messageId: string,
+    chapterId: string,
+    userId?: string,
+  ): Promise<PollWithResults> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Poll not found');
+    }
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
+
+    const channel = await this.channelRepo.findById(
+      message.channel_id,
+      chapterId,
+    );
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+
+    const metadata = message.metadata as PollMetadata;
+    const options = metadata.options ?? [];
+    const votes = await this.voteRepo.findByMessage(messageId);
+
+    const results = options.map((optionText, optionIndex) => ({
+      optionIndex,
+      optionText,
+      voteCount: votes.filter((v) => v.option_index === optionIndex).length,
+    }));
+
+    let userVotes: number[] | undefined;
+    if (userId) {
+      const userVoteList = await this.voteRepo.findByMessageAndUser(
+        messageId,
+        userId,
+      );
+      userVotes = userVoteList.map((v) => v.option_index);
+    }
+
+    return {
+      id: message.id,
+      channel_id: message.channel_id,
+      sender_id: message.sender_id,
+      content: message.content,
+      type: 'POLL',
+      metadata,
+      created_at: message.created_at,
+      isExpired: this.isPollExpired(metadata),
+      results,
+      userVotes,
+    };
+  }
+
+  private isPollExpired(metadata: PollMetadata): boolean {
+    const expiresAt = metadata.expires_at;
+    if (!expiresAt) return false;
+    return new Date(expiresAt) <= new Date();
+  }
+}

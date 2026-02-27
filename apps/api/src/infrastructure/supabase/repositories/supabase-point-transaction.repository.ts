@@ -44,4 +44,19 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
     if (error) throw error;
     return (data as PointTransaction[]) || [];
   }
+
+  async countRecentAdjustments(
+    adminUserId: string,
+    chapterId: string,
+    since: Date,
+  ): Promise<number> {
+    const { count, error } = await this.supabase
+      .from('point_transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('chapter_id', chapterId)
+      .eq('metadata->>adjusted_by', adminUserId)
+      .gte('created_at', since.toISOString());
+    if (error) throw error;
+    return count ?? 0;
+  }
 }

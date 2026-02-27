@@ -1,39 +1,91 @@
 # Next Steps Plan
 
-## Current Progress Snapshot (as of 2026-02-27)
-
-## What is already implemented
-- **Core backend foundation (Phase 1 style scope):** auth sync, users, chapters, members, roles/permissions, invites, health endpoint.
-- **Database schema foundation:** `supabase/migrations/00000000000000_initial_schema.sql` defines core + advanced domain tables (events, points, chat, study, billing, service, tasks, docs, semester archives, etc.).
-- **API test coverage for foundation modules:** unit test suite currently passes for the implemented core modules.
-
-## What is not yet implemented in this branch
-- **Web app:** currently a placeholder shell ("Authentication and dashboard coming soon").
-- **Mobile app:** current tab screens are placeholders ("Coming soon").
-- **Landing site spec gaps:** legal pages (`/terms`, `/privacy`, `/ferpa`) and full marketing sections are not yet present.
-- **Large backend domain surface from spec:** Backwork, chat, notifications, study hours, service hours, tasks, chapter documents, reports, semester rollover, and alumni features are not yet wired in this branch.
-
-## Branch divergence note
-- **Resolved:** `origin/develop` Phase 2 events/attendance/points work has been integrated into this branch.
+> Last updated: 2026-02-27
+> See [ROLLOUT_STRATEGY.md](ROLLOUT_STRATEGY.md) for the comprehensive master rollout plan.
 
 ---
 
-## Immediate Next Step (P0)
+## Current Progress Snapshot
 
-**Status: Completed on this branch.**
-1. Brought `22c83a2` (events/attendance/points API) from `origin/develop`.
-2. Resolved conflicts while preserving newer invite/repository safety behavior.
-3. Regenerated/validated API contract outputs (`apps/api/openapi.json`, `packages/api-sdk` types).
+### API (`apps/api`) — ✅ PHASE 1 COMPLETE (~95% of spec domains)
 
-### Why this was the right step
-- It removes duplicated implementation risk across divergent branches.
-- It advances a spec-critical domain (events + attendance + points) that is central to Frapp’s value.
-- It creates a stronger backend base for the first real web/mobile workflows.
+**23 controllers, 22 services, 29 repositories, 297 passing tests across 26 suites.**
+
+| Domain | Status | Tests |
+|--------|--------|-------|
+| Auth/User Sync | ✅ | 3 |
+| Users | ✅ | 3 |
+| Chapters | ✅ | 5 |
+| Members | ✅ | 4 |
+| Roles/RBAC | ✅ | 10 |
+| Invites | ✅ | 12 |
+| Events | ✅ | 8 |
+| Attendance | ✅ | 11 |
+| Points | ✅ | 10 |
+| Billing (Stripe) | ✅ | 19 |
+| Financial Invoices | ✅ | 19 |
+| Backwork | ✅ | 15 |
+| Chat (channels, messages, reactions, pins) | ✅ | 25 |
+| Notifications | ✅ | 18 |
+| Service Hours | ✅ | 20 |
+| Tasks | ✅ | 25 |
+| Study Hours (geofences, sessions) | ✅ | 27 |
+| Chapter Documents | ✅ | 8 |
+| Polls | ✅ | 14 |
+| Semester Rollover | ✅ | 8 |
+| Reports & Export | ✅ | 8 |
+| Global Search | ✅ | 4 |
+| Health | ✅ | 0 (e2e) |
+| Guards/Interceptors | ✅ | 21 |
+
+**Shared packages:**
+- `@repo/api-sdk` — ✅ Regenerated with all endpoints
+- `@repo/validation` — ✅ Zod schemas for all domains
+- `@repo/theme` — ✅ Complete
+- `@repo/eslint-config`, `@repo/typescript-config` — ✅ Complete
+
+**Database:** ✅ All tables in `supabase/migrations/` match implemented domains.
 
 ---
 
-## Current Next Step (P1)
+## Priority Order (Updated)
 
-**Deliver first end-to-end onboarding flow (web + API):**
-- Sign in -> create chapter -> complete terms/privacy acceptance -> create first invite.
-- This unlocks real manual QA and gives a usable vertical slice instead of placeholders.
+```
+✅ DONE ─► Phase 1: Complete the API
+NOW ──────► Phase 2: Landing Page (sales-ready marketing site)
+            Phase 3: Web Dashboard (admin experience)
+            Phase 4: Mobile App (member experience)
+            Phase 5: Integration, Polish, Launch
+```
+
+---
+
+## Immediate Next Actions (P0)
+
+1. **Start Phase 2: Landing Page** — See `ROLLOUT_STRATEGY.md` § Phase 2
+   - Hero section, feature highlights, pricing, testimonials
+   - Legal pages (/terms, /privacy, /ferpa)
+   - "Modern Ivy" design with Navy + Royal Blue + Emerald palette
+   - No backend dependency — pure UI
+
+2. **Start Phase 3: Web Dashboard Foundation** (can run in parallel)
+   - Supabase Auth integration
+   - Layout shell with sidebar navigation
+   - Dashboard home page
+   - First admin screens (Members, Roles, Events)
+
+---
+
+## Completed Milestones
+
+| Milestone | Date | Description |
+|-----------|------|-------------|
+| Ground-up rebuild | 2026-02 | Migrated to Supabase, spec-driven architecture |
+| Phase 1 Foundation | 2026-02 | Auth, Users, Chapters, Members, Roles, Invites |
+| Phase 2 Events/Points | 2026-02 | Events, Attendance, Points |
+| Full codebase audit | 2026-02-27 | Comprehensive audit and rollout strategy |
+| Sprint 1: Financials + Backwork | 2026-02-27 | Billing, Member Invoices, Backwork |
+| Sprint 2: Chat | 2026-02-27 | Channels, Messages, Reactions, Pins, Read Receipts |
+| Sprint 3: Notifications + Tasks | 2026-02-27 | Notifications, Service Hours, Tasks |
+| Sprint 4: Remaining Domains | 2026-02-27 | Study Hours, Documents, Polls, Semester, Reports, Search |
+| **Phase 1 Complete** | **2026-02-27** | **All 21 API domains implemented, 297 tests** |

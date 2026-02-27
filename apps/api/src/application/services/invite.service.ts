@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
@@ -16,6 +18,7 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
+import { NotificationService } from './notification.service';
 
 @Injectable()
 export class InviteService {
@@ -25,6 +28,7 @@ export class InviteService {
     private readonly chapterRepo: IChapterRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async create(
@@ -98,10 +102,34 @@ export class InviteService {
       role_ids: targetRole ? [targetRole.id] : [],
     });
 
+    try {
+      await this.notificationService.notifyChapter(invite.chapter_id, {
+        title: 'New Member Joined',
+        body: 'A new member has joined the chapter',
+        priority: 'NORMAL',
+        category: 'admin',
+        data: { target: { screen: 'members' } },
+      });
+    } catch {}
+
     return { chapterId: invite.chapter_id, memberId: member.id };
   }
 
   async findByChapter(chapterId: string): Promise<Invite[]> {
     return this.inviteRepo.findByChapter(chapterId);
+  }
+
+  async revoke(id: string, chapterId: string): Promise<void> {
+    const invite = await this.inviteRepo.findById(id);
+
+    if (!invite || invite.chapter_id !== chapterId) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.used_at) {
+      throw new BadRequestException('Invite has already been used');
+    }
+
+    await this.inviteRepo.markUsed(id);
   }
 }

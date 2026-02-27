@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Post,
   UseGuards,
   UseInterceptors,
@@ -76,5 +78,17 @@ export class InviteController {
   @ApiOperation({ summary: 'List chapter invites' })
   async list(@CurrentChapterId() chapterId: string) {
     return this.inviteService.findByChapter(chapterId);
+  }
+
+  @Delete(':id')
+  @UseGuards(ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @ApiOperation({ summary: 'Revoke an invite' })
+  async revoke(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    await this.inviteService.revoke(id, chapterId);
+    return { success: true };
   }
 }

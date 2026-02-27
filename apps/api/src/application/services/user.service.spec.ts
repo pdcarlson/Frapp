@@ -3,24 +3,35 @@ import { NotFoundException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 
 describe('UserService', () => {
   let service: UserService;
   let mockRepo: jest.Mocked<IUserRepository>;
+  let mockStorageProvider: jest.Mocked<IStorageProvider>;
 
   beforeEach(async () => {
     mockRepo = {
       findById: jest.fn(),
+      findByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
 
+    mockStorageProvider = {
+      getSignedUploadUrl: jest.fn(),
+      getSignedDownloadUrl: jest.fn(),
+      deleteFile: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
         { provide: USER_REPOSITORY, useValue: mockRepo },
+        { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
       ],
     }).compile();
 
@@ -88,5 +99,32 @@ describe('UserService', () => {
       graduation_year: 2024,
     });
     expect(result).toEqual(updatedUser);
+  });
+
+  describe('requestAvatarUploadUrl', () => {
+    it('should return signed URL and storage path for profile photo', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.supabase.co/profiles/upload/signed',
+      );
+
+      const result = await service.requestAvatarUploadUrl(
+        'ch-1',
+        'user-1',
+        'avatar.jpg',
+        'image/jpeg',
+      );
+
+      expect(result.signedUrl).toBe(
+        'https://storage.supabase.co/profiles/upload/signed',
+      );
+      expect(result.storagePath).toBe(
+        'chapters/ch-1/profiles/user-1/avatar.jpg',
+      );
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
+        'profiles',
+        'chapters/ch-1/profiles/user-1/avatar.jpg',
+        'image/jpeg',
+      );
+    });
   });
 });

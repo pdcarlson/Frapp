@@ -6,9 +6,10 @@ import { SupabaseInviteRepository } from '../../infrastructure/supabase/reposito
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-  imports: [ChapterModule, AuthModule],
+  imports: [ChapterModule, AuthModule, NotificationModule],
   controllers: [InviteController],
   providers: [
     InviteService,

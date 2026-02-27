@@ -160,4 +160,68 @@ export class AttendanceService {
       marked_by: markedBy,
     });
   }
+
+  async markAutoAbsent(
+    eventId: string,
+    chapterId: string,
+  ): Promise<{ marked: number }> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const end = new Date(event.end_time);
+    const graceEnd = new Date(
+      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
+    );
+    if (new Date() < graceEnd) {
+      throw new BadRequestException(
+        'Cannot mark auto-absent before the grace period ends',
+      );
+    }
+
+    if (!event.is_mandatory && (!event.required_role_ids || event.required_role_ids.length === 0)) {
+      return { marked: 0 };
+    }
+
+    const allMembers = await this.memberRepo.findByChapter(chapterId);
+
+    let requiredMembers: typeof allMembers;
+    if (event.required_role_ids && event.required_role_ids.length > 0) {
+      requiredMembers = allMembers.filter((m) =>
+        m.role_ids.some((r) => event.required_role_ids!.includes(r)),
+      );
+    } else {
+      requiredMembers = allMembers;
+    }
+
+    const existingRecords = await this.attendanceRepo.findByEvent(eventId);
+    const checkedInOrExcused = new Set(
+      existingRecords
+        .filter((r) => r.status === 'PRESENT' || r.status === 'EXCUSED' || r.status === 'LATE')
+        .map((r) => r.user_id),
+    );
+
+    let marked = 0;
+    for (const member of requiredMembers) {
+      if (!checkedInOrExcused.has(member.user_id)) {
+        const existing = existingRecords.find(
+          (r) => r.user_id === member.user_id,
+        );
+        if (!existing) {
+          await this.attendanceRepo.create({
+            event_id: eventId,
+            user_id: member.user_id,
+            status: 'ABSENT',
+            check_in_time: null,
+            excuse_reason: null,
+            marked_by: null,
+          });
+          marked++;
+        }
+      }
+    }
+
+    return { marked };
+  }
 }

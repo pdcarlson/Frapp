@@ -10,6 +10,16 @@ export class SupabaseInviteRepository implements IInviteRepository {
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
 
+  async findById(id: string): Promise<Invite | null> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async findByToken(token: string): Promise<Invite | null> {
     const { data, error } = await this.supabase
       .from('invites')
