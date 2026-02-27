@@ -8,3 +8,4 @@ export * from './attendance.repository.interface';
 export * from './point-transaction.repository.interface';
 export * from './financial-invoice.repository.interface';
 export * from './financial-transaction.repository.interface';
+export * from './backwork.repository.interface';

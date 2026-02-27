@@ -8,3 +8,4 @@ export * from './event-attendance.entity';
 export * from './point-transaction.entity';
 export * from './financial-invoice.entity';
 export * from './financial-transaction.entity';
+export * from './backwork.entity';

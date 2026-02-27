@@ -15,6 +15,7 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { FinancialInvoiceModule } from './modules/financial-invoice/financial-invoice.module';
+import { BackworkModule } from './modules/backwork/backwork.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { FinancialInvoiceModule } from './modules/financial-invoice/financial-in
     PointsModule,
     BillingModule,
     FinancialInvoiceModule,
+    BackworkModule,
   ],
 })
 export class AppModule {}
