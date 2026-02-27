@@ -21,8 +21,8 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import {
-  RequestUploadUrlDto,
-  ConfirmUploadDto,
+  RequestBackworkUploadUrlDto,
+  ConfirmBackworkUploadDto,
   UpdateDepartmentDto,
 } from '../dtos/backwork.dto';
 
@@ -39,7 +39,7 @@ export class BackworkController {
   @ApiOperation({ summary: 'Request a signed upload URL' })
   async requestUploadUrl(
     @CurrentChapterId() chapterId: string,
-    @Body() dto: RequestUploadUrlDto,
+    @Body() dto: RequestBackworkUploadUrlDto,
   ) {
     return this.backworkService.requestUploadUrl({
       chapterId,
@@ -55,7 +55,7 @@ export class BackworkController {
   async confirmUpload(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: ConfirmUploadDto,
+    @Body() dto: ConfirmBackworkUploadDto,
   ) {
     return this.backworkService.confirmUpload({
       chapter_id: chapterId,

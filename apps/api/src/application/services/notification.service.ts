@@ -106,9 +106,11 @@ export class NotificationService {
     payload: NotifyPayload,
   ): Promise<void> {
     const members = await this.memberRepo.findByChapter(chapterId);
-    for (const member of members) {
-      await this.notifyUser(member.user_id, chapterId, payload);
-    }
+    await Promise.allSettled(
+      members.map((member) =>
+        this.notifyUser(member.user_id, chapterId, payload),
+      ),
+    );
   }
 
   private isInQuietHours(settings: UserSettings | null): boolean {

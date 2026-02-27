@@ -231,9 +231,17 @@ export class StudyService {
 
     const now = new Date();
     const lastHeartbeat = new Date(session.last_heartbeat_at);
-    const finalMinutes = Math.floor(
-      (now.getTime() - lastHeartbeat.getTime()) / MS_PER_MINUTE,
-    );
+    const staleMinutes =
+      (now.getTime() - lastHeartbeat.getTime()) / MS_PER_MINUTE;
+
+    if (staleMinutes > HEARTBEAT_STALE_MINUTES) {
+      return this.sessionRepo.update(session.id, {
+        status: 'EXPIRED',
+        end_time: now.toISOString(),
+      });
+    }
+
+    const finalMinutes = Math.floor(staleMinutes);
     const totalMinutes = session.total_foreground_minutes + finalMinutes;
 
     let points = 0;

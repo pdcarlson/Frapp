@@ -296,9 +296,18 @@ describe('FinancialInvoiceService', () => {
 
   describe('getInvoiceTransactions', () => {
     it('should return transactions for a specific invoice', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
       mockTransactionRepo.findByInvoice.mockResolvedValue([]);
-      const result = await service.getInvoiceTransactions('inv-1');
+      const result = await service.getInvoiceTransactions('inv-1', 'ch-1');
+      expect(mockInvoiceRepo.findById).toHaveBeenCalledWith('inv-1', 'ch-1');
       expect(result).toEqual([]);
+    });
+
+    it('should throw if invoice does not belong to chapter', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(null);
+      await expect(
+        service.getInvoiceTransactions('inv-1', 'ch-other'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

@@ -29,7 +29,7 @@ const DOCUMENT_VARIANTS = [
   'Answer Key',
 ] as const;
 
-export class RequestUploadUrlDto {
+export class RequestBackworkUploadUrlDto {
   @ApiProperty({ description: 'Original filename' })
   @IsString()
   @MaxLength(255)
@@ -40,7 +40,7 @@ export class RequestUploadUrlDto {
   content_type: string;
 }
 
-export class ConfirmUploadDto {
+export class ConfirmBackworkUploadDto {
   @ApiProperty({ description: 'Storage path returned from upload-url' })
   @IsString()
   storage_path: string;

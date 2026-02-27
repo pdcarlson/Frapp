@@ -1,7 +1,7 @@
 import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
-export class RequestUploadUrlDto {
+export class RequestDocumentUploadUrlDto {
   @ApiProperty({ description: 'Original filename' })
   @IsString()
   @MaxLength(255)
@@ -12,7 +12,7 @@ export class RequestUploadUrlDto {
   content_type: string;
 }
 
-export class ConfirmUploadDto {
+export class ConfirmDocumentUploadDto {
   @ApiProperty({ description: 'Storage path returned from upload-url' })
   @IsString()
   storage_path: string;
