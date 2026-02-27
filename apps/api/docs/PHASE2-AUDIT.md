@@ -64,7 +64,7 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 ### 3.5 Modules and App
 
-- **EventModule**, **AttendanceModule**, **PointsModule** registered in **AppModule**. AttendanceModule provides EVENT_REPOSITORY and POINT_TRANSACTION_REPOSITORY for its service (no circular dependency; EventModule does not depend on Attendance/Points).
+- **EventModule**, **AttendanceModule**, **PointsModule** registered in **AppModule**. AttendanceModule provides EVENT_REPOSITORY, POINT_TRANSACTION_REPOSITORY, and MEMBER_REPOSITORY for its service (no circular dependency; EventModule does not depend on Attendance/Points).
 
 ---
 
@@ -108,10 +108,10 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 ### 5.1 Unit Tests
 
 - **EventService:** 8 tests — findById, not found, list, create, invalid date range, update, invalid update times, delete.
-- **AttendanceService:** 8 tests — checkIn success (with fake time), event not found, outside time window, duplicate check-in (wide-window event), getAttendance success/not found, updateStatus success/event not found/attendance not found.
+- **AttendanceService:** 11 tests — checkIn success, grace-period check-in, role-target rejection, rollback on points failure, event-not-found, outside-window, duplicate check-in, getAttendance success/not found, updateStatus success/event not found/attendance not found.
 - **PointsService:** 10 tests — getUserSummary (with data, empty, month window), getLeaderboard (sorted, empty), adjustPoints (success, metadata), empty reason, self-adjustment Forbidden, flagged for |amount| ≥ 100.
 
-**Total:** 26 unit tests for Phase 2 services; 81 total API unit tests passing.
+**Total:** 29 unit tests for Phase 2 services; 84 total API unit tests passing.
 
 ### 5.2 E2E Tests
 
@@ -139,7 +139,7 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 ## 7. Permissions and Validation
 
-- **Permissions:** `points:adjust`, `points:view_all` in `domain/constants/permissions.ts`. Used in PointsController. Default roles (Treasurer, etc.) include these where appropriate. No new permission constant for “mark attendance”; PATCH attendance uses `members:remove`.
+- **Permissions:** `points:adjust`, `points:view_all` in `domain/constants/permissions.ts`. Used in PointsController. Attendance admin actions are gated by `events:update`, which aligns with the events management surface.
 - **Zod:** `UpdateAttendanceSchema`, `PointsWindowSchema`, `AdjustPointsSchema` in `packages/validation/src/index.ts`; types exported for use by clients.
 
 ---
@@ -148,7 +148,6 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 | Priority | Gap                                                          | Recommendation                                                                                                 |
 | -------- | ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| High     | OpenAPI export script missing; SDK not regenerated           | Add `export-openapi.ts`, generate openapi.json, regenerate api-sdk types.                                      |
 | Medium   | Rate limit on POST /v1/points/adjust (spec: 50/hour default) | Add throttling (e.g. per chapter + admin user) or document as follow-up.                                       |
 | Medium   | Check-in not in single DB transaction                        | Document; consider Supabase RPC or server-side function for atomic insert of attendance + point row if needed. |
 | Low      | Anomaly threshold configurable per chapter                   | Currently 100; could move to chapter settings.                                                                 |
