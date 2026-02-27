@@ -12,3 +12,4 @@ export * from './backwork.entity';
 export * from './chat.entity';
 export * from './task.entity';
 export * from './service-entry.entity';
+export * from './notification.entity';

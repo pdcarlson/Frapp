@@ -19,6 +19,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
 import { TaskModule } from './modules/task/task.module';
+import { NotificationModule } from './modules/notification/notification.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { TaskModule } from './modules/task/task.module';
     ChatModule,
     ServiceEntryModule,
     TaskModule,
+    NotificationModule,
   ],
 })
 export class AppModule {}

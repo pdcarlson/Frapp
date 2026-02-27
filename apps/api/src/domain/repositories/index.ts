@@ -12,3 +12,4 @@ export * from './backwork.repository.interface';
 export * from './chat.repository.interface';
 export * from './task.repository.interface';
 export * from './service-entry.repository.interface';
+export * from './notification.repository.interface';
