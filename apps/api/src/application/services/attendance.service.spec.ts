@@ -349,4 +349,292 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('markAutoAbsent', () => {
+    const pastEvent: Event = {
+      ...baseEvent,
+      is_mandatory: true,
+      start_time: '2020-01-01T10:00:00.000Z',
+      end_time: '2020-01-01T11:00:00.000Z',
+    };
+
+    const members: Member[] = [
+      {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'member-2',
+        user_id: 'user-2',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+      {
+        id: 'member-3',
+        user_id: 'user-3',
+        chapter_id: 'ch-1',
+        role_ids: ['role-exec'],
+        has_completed_onboarding: true,
+        created_at: '2020-01-01T00:00:00.000Z',
+        updated_at: '2020-01-01T00:00:00.000Z',
+      },
+    ];
+
+    it('should mark ABSENT for mandatory event (members without attendance)', async () => {
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(3);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(3);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-1' }),
+      );
+    });
+
+    it('should mark ABSENT for role-targeted event (only required role members)', async () => {
+      const roleEvent: Event = {
+        ...pastEvent,
+        is_mandatory: false,
+        required_role_ids: ['role-exec'],
+      };
+      mockEventRepo.findById.mockResolvedValue(roleEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      // Only user-3 has role-exec
+      expect(result.marked).toBe(1);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      );
+    });
+
+    it('should skip members who already checked in (PRESENT)', async () => {
+      const presentRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-1',
+        status: 'PRESENT',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([presentRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      // user-1 is skipped; user-2, user-3 are marked absent
+      expect(result.marked).toBe(2);
+    });
+
+    it('should skip members who are EXCUSED', async () => {
+      const excusedRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-2',
+        status: 'EXCUSED',
+        excuse_reason: 'Family emergency',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([excusedRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(2);
+      // user-2 should not have been marked
+      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
+        (c) => c[0].user_id,
+      );
+      expect(createdUserIds).not.toContain('user-2');
+    });
+
+    it('should reject if called before grace period ends', async () => {
+      const futureEvent: Event = {
+        ...baseEvent,
+        is_mandatory: true,
+        start_time: '2099-01-01T10:00:00.000Z',
+        end_time: '2099-01-01T11:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(futureEvent);
+
+      await expect(
+        service.markAutoAbsent('evt-1', 'ch-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should do nothing for optional events', async () => {
+      const optionalEvent: Event = {
+        ...pastEvent,
+        is_mandatory: false,
+        required_role_ids: null,
+      };
+      mockEventRepo.findById.mockResolvedValue(optionalEvent);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(0);
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should skip members who are marked LATE', async () => {
+      const lateRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-1',
+        status: 'LATE',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([lateRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      // user-1 should be skipped because marked LATE; user-2 and user-3 marked absent
+      expect(result.marked).toBe(2);
+      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
+        (c) => c[0].user_id,
+      );
+      expect(createdUserIds).not.toContain('user-1');
+      expect(createdUserIds).toContain('user-2');
+      expect(createdUserIds).toContain('user-3');
+    });
+  });
+
+  describe('checkIn edge cases', () => {
+    it('should handle event with invalid date strings gracefully', async () => {
+      const invalidEvent: Event = {
+        ...baseEvent,
+        start_time: 'invalid-date',
+        end_time: '2026-02-26T19:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(invalidEvent);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Event times are invalid',
+      );
+    });
+
+    it('should reject check-in before event starts', async () => {
+      const futureEvent: Event = {
+        ...baseEvent,
+        start_time: '2099-01-01T18:00:00.000Z',
+        end_time: '2099-01-01T19:00:00.000Z',
+      };
+      mockEventRepo.findById.mockResolvedValue(futureEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Check-in is only allowed during the event time window',
+      );
+    });
+
+    it('should reject check-in after grace period expires', async () => {
+      const pastGracePeriod = new Date('2026-02-26T19:20:00.000Z'); // 20 minutes after end
+      jest.useFakeTimers();
+      jest.setSystemTime(pastGracePeriod);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+
+      jest.useRealTimers();
+    });
+
+    it('should allow check-in for role-targeted event when member has required role', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      const roleTargetedEvent: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-exec'],
+      };
+      const member: Member = {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-exec', 'role-member'],
+        has_completed_onboarding: true,
+        created_at: '2026-02-01T00:00:00.000Z',
+        updated_at: '2026-02-01T00:00:00.000Z',
+      };
+
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+      mockEventRepo.findById.mockResolvedValue(roleTargetedEvent);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+
+      const result = await service.checkIn('evt-1', 'user-1', 'ch-1');
+
+      expect(result).toEqual(baseAttendance);
+      expect(mockAttendanceRepo.create).toHaveBeenCalled();
+      expect(mockPointTxnRepo.create).toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('should reject role-targeted event when user is not a member', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      const roleTargetedEvent: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-exec'],
+      };
+
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+      mockEventRepo.findById.mockResolvedValue(roleTargetedEvent);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'You are not a member of this chapter',
+      );
+      jest.useRealTimers();
+    });
+
+    it('should handle rollback failure gracefully', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockPointTxnRepo.create.mockRejectedValue(new Error('points write failed'));
+      mockAttendanceRepo.delete.mockRejectedValue(new Error('rollback failed'));
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'points write failed',
+      );
+      // Should still attempt rollback even though it fails
+      expect(mockAttendanceRepo.delete).toHaveBeenCalledWith('att-1');
+      jest.useRealTimers();
+    });
+  });
 });
