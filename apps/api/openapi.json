@@ -64,6 +64,36 @@
         ]
       }
     },
+    "/v1/users/me/avatar-url": {
+      "post": {
+        "operationId": "UserController_requestAvatarUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestAvatarUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URL for profile photo",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/chapters": {
       "post": {
         "operationId": "ChapterController_create_v1",
@@ -142,6 +172,84 @@
         ]
       }
     },
+    "/v1/chapters/current/logo-url": {
+      "post": {
+        "operationId": "ChapterController_requestLogoUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate signed upload URL for chapter logo",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
+    "/v1/chapters/current/logo": {
+      "post": {
+        "operationId": "ChapterController_confirmLogoUpload_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmLogoDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm logo upload and update chapter",
+        "tags": [
+          "Chapters"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterController_deleteLogo_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove chapter logo",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
     "/v1/members": {
       "get": {
         "operationId": "MemberController_list_v1",
@@ -157,6 +265,92 @@
           }
         ],
         "summary": "List chapter members",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/search": {
+      "get": {
+        "operationId": "MemberController_search_v1",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Search query (name)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search members by name",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
+    "/v1/members/{id}": {
+      "get": {
+        "operationId": "MemberController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get member profile by ID",
+        "tags": [
+          "Members"
+        ]
+      },
+      "delete": {
+        "operationId": "MemberController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove member from chapter",
         "tags": [
           "Members"
         ]
@@ -231,14 +425,33 @@
         ]
       }
     },
-    "/v1/members/{id}": {
-      "delete": {
-        "operationId": "MemberController_remove_v1",
+    "/v1/alumni": {
+      "get": {
+        "operationId": "AlumniController_list_v1",
         "parameters": [
           {
-            "name": "id",
-            "required": true,
-            "in": "path",
+            "name": "graduation_year",
+            "required": false,
+            "in": "query",
+            "description": "Filter by graduation year",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "city",
+            "required": false,
+            "in": "query",
+            "description": "Filter by current city (partial match)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company",
+            "required": false,
+            "in": "query",
+            "description": "Filter by current company (partial match)",
             "schema": {
               "type": "string"
             }
@@ -254,9 +467,9 @@
             "bearer": []
           }
         ],
-        "summary": "Remove member from chapter",
+        "summary": "List alumni members",
         "tags": [
-          "Members"
+          "Alumni"
         ]
       }
     },
@@ -532,6 +745,257 @@
         ]
       }
     },
+    "/v1/invites/{id}": {
+      "delete": {
+        "operationId": "InviteController_revoke_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke an invite",
+        "tags": [
+          "Invites"
+        ]
+      }
+    },
+    "/v1/push-tokens": {
+      "post": {
+        "operationId": "NotificationController_registerPushToken_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register push token",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/push-tokens/{id}": {
+      "delete": {
+        "operationId": "NotificationController_removePushToken_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove push token",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "operationId": "NotificationController_listNotifications_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List in-app notifications for current user",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications/{id}/read": {
+      "patch": {
+        "operationId": "NotificationController_markRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark notification as read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications/preferences": {
+      "get": {
+        "operationId": "NotificationController_getPreferences_v1",
+        "parameters": [
+          {
+            "name": "chapterId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get notification preferences",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "NotificationController_updatePreference_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update notification preferences",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/settings": {
+      "get": {
+        "operationId": "NotificationController_getSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get user settings",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "NotificationController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update user settings (quiet hours, theme)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventController_list_v1",
@@ -673,6 +1137,35 @@
         ]
       }
     },
+    "/v1/events/{id}/ics": {
+      "get": {
+        "operationId": "EventController_getIcs_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Download .ics calendar file for an event",
+        "tags": [
+          "Events"
+        ]
+      }
+    },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
         "operationId": "AttendanceController_checkIn_v1",
@@ -783,6 +1276,35 @@
           }
         ],
         "summary": "Update attendance status for a member",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/auto-absent": {
+      "post": {
+        "operationId": "AttendanceController_markAutoAbsent_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trigger auto-absent marking for an event",
         "tags": [
           "Attendance"
         ]
@@ -1087,6 +1609,26 @@
           }
         ],
         "summary": "Create a member invoice",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/overdue": {
+      "get": {
+        "operationId": "FinancialInvoiceController_listOverdue_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List overdue invoices (OPEN past due_date)",
         "tags": [
           "Financial Invoices"
         ]
@@ -2121,6 +2663,45 @@
         ]
       }
     },
+    "/v1/channels/{id}/upload-url": {
+      "post": {
+        "operationId": "ChatController_requestUploadUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestChatUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate a signed upload URL for a chat file attachment",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}/read": {
       "post": {
         "operationId": "ChatController_markRead_v1",
@@ -2511,228 +3092,6 @@
         "summary": "Reject task completion (revert to IN_PROGRESS)",
         "tags": [
           "Tasks"
-        ]
-      }
-    },
-    "/v1/push-tokens": {
-      "post": {
-        "operationId": "NotificationController_registerPushToken_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RegisterPushTokenDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Register push token",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
-    "/v1/push-tokens/{id}": {
-      "delete": {
-        "operationId": "NotificationController_removePushToken_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Remove push token",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
-    "/v1/notifications": {
-      "get": {
-        "operationId": "NotificationController_listNotifications_v1",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List in-app notifications for current user",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
-    "/v1/notifications/{id}/read": {
-      "patch": {
-        "operationId": "NotificationController_markRead_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Mark notification as read",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
-    "/v1/notifications/preferences": {
-      "get": {
-        "operationId": "NotificationController_getPreferences_v1",
-        "parameters": [
-          {
-            "name": "chapterId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get notification preferences",
-        "tags": [
-          "Notifications"
-        ]
-      },
-      "patch": {
-        "operationId": "NotificationController_updatePreference_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateNotificationPreferenceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update notification preferences",
-        "tags": [
-          "Notifications"
-        ]
-      }
-    },
-    "/v1/settings": {
-      "get": {
-        "operationId": "NotificationController_getSettings_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get user settings",
-        "tags": [
-          "Notifications"
-        ]
-      },
-      "patch": {
-        "operationId": "NotificationController_updateSettings_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUserSettingsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update user settings (quiet hours, theme)",
-        "tags": [
-          "Notifications"
         ]
       }
     },
@@ -3280,7 +3639,16 @@
     "/v1/reports/attendance": {
       "post": {
         "operationId": "ReportController_attendance_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3310,7 +3678,16 @@
     "/v1/reports/points": {
       "post": {
         "operationId": "ReportController_points_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3340,7 +3717,16 @@
     "/v1/reports/roster": {
       "post": {
         "operationId": "ReportController_roster_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -3360,7 +3746,16 @@
     "/v1/reports/service": {
       "post": {
         "operationId": "ReportController_service_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "format",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -3463,6 +3858,23 @@
           }
         }
       },
+      "RequestAvatarUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename for the avatar image"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/jpeg, image/png)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
       "CreateChapterDto": {
         "type": "object",
         "properties": {
@@ -3494,6 +3906,35 @@
             "type": "string"
           }
         }
+      },
+      "LogoUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (e.g. logo.png)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/png)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "ConfirmLogoDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from logo-url"
+          }
+        },
+        "required": [
+          "storage_path"
+        ]
       },
       "UpdateMemberRolesDto": {
         "type": "object",
@@ -3614,6 +4055,70 @@
         "required": [
           "token"
         ]
+      },
+      "RegisterPushTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Expo push token"
+          },
+          "device_name": {
+            "type": "string",
+            "description": "Device name for display"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "UpdateNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "description": "Chapter ID"
+          },
+          "category": {
+            "type": "string",
+            "description": "Notification category (e.g. chat, events)"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "description": "Whether notifications for this category are enabled"
+          }
+        },
+        "required": [
+          "chapter_id",
+          "category",
+          "is_enabled"
+        ]
+      },
+      "UpdateUserSettingsDto": {
+        "type": "object",
+        "properties": {
+          "quiet_hours_start": {
+            "type": "string",
+            "description": "Quiet hours start (HH:mm format, e.g. 22:00)"
+          },
+          "quiet_hours_end": {
+            "type": "string",
+            "description": "Quiet hours end (HH:mm format, e.g. 08:00)"
+          },
+          "quiet_hours_tz": {
+            "type": "string",
+            "description": "Timezone for quiet hours (e.g. America/New_York)"
+          },
+          "theme": {
+            "type": "string",
+            "description": "Theme preference",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          }
+        }
       },
       "CreateEventDto": {
         "type": "object",
@@ -4055,6 +4560,23 @@
           "emoji"
         ]
       },
+      "RequestChatUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. image/png)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
       "CreateServiceEntryDto": {
         "type": "object",
         "properties": {
@@ -4153,70 +4675,6 @@
           "comment": {
             "type": "string",
             "description": "Optional comment for rejection"
-          }
-        }
-      },
-      "RegisterPushTokenDto": {
-        "type": "object",
-        "properties": {
-          "token": {
-            "type": "string",
-            "description": "Expo push token"
-          },
-          "device_name": {
-            "type": "string",
-            "description": "Device name for display"
-          }
-        },
-        "required": [
-          "token"
-        ]
-      },
-      "UpdateNotificationPreferenceDto": {
-        "type": "object",
-        "properties": {
-          "chapter_id": {
-            "type": "string",
-            "description": "Chapter ID"
-          },
-          "category": {
-            "type": "string",
-            "description": "Notification category (e.g. chat, events)"
-          },
-          "is_enabled": {
-            "type": "boolean",
-            "description": "Whether notifications for this category are enabled"
-          }
-        },
-        "required": [
-          "chapter_id",
-          "category",
-          "is_enabled"
-        ]
-      },
-      "UpdateUserSettingsDto": {
-        "type": "object",
-        "properties": {
-          "quiet_hours_start": {
-            "type": "string",
-            "description": "Quiet hours start (HH:mm format, e.g. 22:00)"
-          },
-          "quiet_hours_end": {
-            "type": "string",
-            "description": "Quiet hours end (HH:mm format, e.g. 08:00)"
-          },
-          "quiet_hours_tz": {
-            "type": "string",
-            "description": "Timezone for quiet hours (e.g. America/New_York)"
-          },
-          "theme": {
-            "type": "string",
-            "description": "Theme preference",
-            "enum": [
-              "light",
-              "dark",
-              "system"
-            ]
           }
         }
       },

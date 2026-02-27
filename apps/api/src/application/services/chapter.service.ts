@@ -83,7 +83,7 @@ export class ChapterService {
   }
 
   async update(id: string, data: Partial<Chapter>): Promise<Chapter> {
-    if (data.accent_color !== undefined) {
+    if (data.accent_color) {
       if (!checkWcagContrast(data.accent_color, LIGHT_MODE_BACKGROUND)) {
         throw new BadRequestException(
           'accent_color does not meet WCAG AA contrast requirements (4.5:1) against the light mode background (#F8FAFC). Please choose a darker color.',

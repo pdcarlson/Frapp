@@ -2,8 +2,8 @@
  * Converts an array of objects to a CSV string per RFC 4180.
  * Properly escapes values containing commas, quotes, or newlines.
  */
-export function toCSV(
-  rows: Record<string, unknown>[],
+export function toCSV<T extends Record<string, any>>(
+  rows: T[],
   columns: { key: string; header: string }[],
 ): string {
   const escape = (value: unknown): string => {

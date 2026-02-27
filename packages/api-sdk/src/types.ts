@@ -39,6 +39,23 @@ export interface paths {
         patch: operations["UserController_updateMe_v1"];
         trace?: never;
     };
+    "/v1/users/me/avatar-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URL for profile photo */
+        post: operations["UserController_requestAvatarUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapters": {
         parameters: {
             query?: never;
@@ -74,6 +91,41 @@ export interface paths {
         patch: operations["ChapterController_update_v1"];
         trace?: never;
     };
+    "/v1/chapters/current/logo-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate signed upload URL for chapter logo */
+        post: operations["ChapterController_requestLogoUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapters/current/logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm logo upload and update chapter */
+        post: operations["ChapterController_confirmLogoUpload_v1"];
+        /** Remove chapter logo */
+        delete: operations["ChapterController_deleteLogo_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members": {
         parameters: {
             query?: never;
@@ -86,6 +138,41 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search members by name */
+        get: operations["MemberController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get member profile by ID */
+        get: operations["MemberController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Remove member from chapter */
+        delete: operations["MemberController_remove_v1"];
         options?: never;
         head?: never;
         patch?: never;
@@ -125,18 +212,18 @@ export interface paths {
         patch: operations["MemberController_updateOnboarding_v1"];
         trace?: never;
     };
-    "/v1/members/{id}": {
+    "/v1/alumni": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List alumni members */
+        get: operations["AlumniController_list_v1"];
         put?: never;
         post?: never;
-        /** Remove member from chapter */
-        delete: operations["MemberController_remove_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -264,6 +351,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke an invite */
+        delete: operations["InviteController_revoke_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/push-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register push token */
+        post: operations["NotificationController_registerPushToken_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/push-tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove push token */
+        delete: operations["NotificationController_removePushToken_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List in-app notifications for current user */
+        get: operations["NotificationController_listNotifications_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Mark notification as read */
+        patch: operations["NotificationController_markRead_v1"];
+        trace?: never;
+    };
+    "/v1/notifications/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get notification preferences */
+        get: operations["NotificationController_getPreferences_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update notification preferences */
+        patch: operations["NotificationController_updatePreference_v1"];
+        trace?: never;
+    };
+    "/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get user settings */
+        get: operations["NotificationController_getSettings_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update user settings (quiet hours, theme) */
+        patch: operations["NotificationController_updateSettings_v1"];
+        trace?: never;
+    };
     "/v1/events": {
         parameters: {
             query?: never;
@@ -299,6 +507,23 @@ export interface paths {
         head?: never;
         /** Update an event */
         patch: operations["EventController_update_v1"];
+        trace?: never;
+    };
+    "/v1/events/{id}/ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download .ics calendar file for an event */
+        get: operations["EventController_getIcs_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/events/{eventId}/attendance/check-in": {
@@ -350,6 +575,23 @@ export interface paths {
         head?: never;
         /** Update attendance status for a member */
         patch: operations["AttendanceController_updateStatus_v1"];
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/auto-absent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger auto-absent marking for an event */
+        post: operations["AttendanceController_markAutoAbsent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/points/me": {
@@ -500,6 +742,23 @@ export interface paths {
         put?: never;
         /** Create a member invoice */
         post: operations["FinancialInvoiceController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invoices/overdue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List overdue invoices (OPEN past due_date) */
+        get: operations["FinancialInvoiceController_listOverdue_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -874,6 +1133,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/{id}/upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate a signed upload URL for a chat file attachment */
+        post: operations["ChatController_requestUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}/read": {
         parameters: {
             query?: never;
@@ -1029,110 +1305,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/v1/push-tokens": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Register push token */
-        post: operations["NotificationController_registerPushToken_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/push-tokens/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Remove push token */
-        delete: operations["NotificationController_removePushToken_v1"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List in-app notifications for current user */
-        get: operations["NotificationController_listNotifications_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/notifications/{id}/read": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Mark notification as read */
-        patch: operations["NotificationController_markRead_v1"];
-        trace?: never;
-    };
-    "/v1/notifications/preferences": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get notification preferences */
-        get: operations["NotificationController_getPreferences_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update notification preferences */
-        patch: operations["NotificationController_updatePreference_v1"];
-        trace?: never;
-    };
-    "/v1/settings": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get user settings */
-        get: operations["NotificationController_getSettings_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update user settings (quiet hours, theme) */
-        patch: operations["NotificationController_updateSettings_v1"];
         trace?: never;
     };
     "/v1/geofences": {
@@ -1475,6 +1647,12 @@ export interface components {
             current_city?: string;
             current_company?: string;
         };
+        RequestAvatarUploadUrlDto: {
+            /** @description Original filename for the avatar image */
+            filename: string;
+            /** @description MIME content type (e.g. image/jpeg, image/png) */
+            content_type: string;
+        };
         CreateChapterDto: {
             name: string;
             university: string;
@@ -1484,6 +1662,16 @@ export interface components {
             university?: string;
             accent_color?: string;
             donation_url?: string;
+        };
+        LogoUploadUrlDto: {
+            /** @description Original filename (e.g. logo.png) */
+            filename: string;
+            /** @description MIME content type (e.g. image/png) */
+            content_type: string;
+        };
+        ConfirmLogoDto: {
+            /** @description Storage path returned from logo-url */
+            storage_path: string;
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
@@ -1518,6 +1706,33 @@ export interface components {
         };
         RedeemInviteDto: {
             token: string;
+        };
+        RegisterPushTokenDto: {
+            /** @description Expo push token */
+            token: string;
+            /** @description Device name for display */
+            device_name?: string;
+        };
+        UpdateNotificationPreferenceDto: {
+            /** @description Chapter ID */
+            chapter_id: string;
+            /** @description Notification category (e.g. chat, events) */
+            category: string;
+            /** @description Whether notifications for this category are enabled */
+            is_enabled: boolean;
+        };
+        UpdateUserSettingsDto: {
+            /** @description Quiet hours start (HH:mm format, e.g. 22:00) */
+            quiet_hours_start?: string;
+            /** @description Quiet hours end (HH:mm format, e.g. 08:00) */
+            quiet_hours_end?: string;
+            /** @description Timezone for quiet hours (e.g. America/New_York) */
+            quiet_hours_tz?: string;
+            /**
+             * @description Theme preference
+             * @enum {string}
+             */
+            theme?: "light" | "dark" | "system";
         };
         CreateEventDto: {
             name: string;
@@ -1663,6 +1878,12 @@ export interface components {
             /** @description Emoji string (e.g. "👍") */
             emoji: string;
         };
+        RequestChatUploadUrlDto: {
+            /** @description Original filename */
+            filename: string;
+            /** @description MIME content type (e.g. image/png) */
+            content_type: string;
+        };
         CreateServiceEntryDto: {
             /** @description Date of service (YYYY-MM-DD) */
             date: string;
@@ -1699,33 +1920,6 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
-        };
-        RegisterPushTokenDto: {
-            /** @description Expo push token */
-            token: string;
-            /** @description Device name for display */
-            device_name?: string;
-        };
-        UpdateNotificationPreferenceDto: {
-            /** @description Chapter ID */
-            chapter_id: string;
-            /** @description Notification category (e.g. chat, events) */
-            category: string;
-            /** @description Whether notifications for this category are enabled */
-            is_enabled: boolean;
-        };
-        UpdateUserSettingsDto: {
-            /** @description Quiet hours start (HH:mm format, e.g. 22:00) */
-            quiet_hours_start?: string;
-            /** @description Quiet hours end (HH:mm format, e.g. 08:00) */
-            quiet_hours_end?: string;
-            /** @description Timezone for quiet hours (e.g. America/New_York) */
-            quiet_hours_tz?: string;
-            /**
-             * @description Theme preference
-             * @enum {string}
-             */
-            theme?: "light" | "dark" | "system";
         };
         GeofenceCoordinateDto: {
             lat: number;
@@ -1888,6 +2082,27 @@ export interface operations {
             };
         };
     };
+    UserController_requestAvatarUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestAvatarUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ChapterController_create_v1: {
         parameters: {
             query?: never;
@@ -1947,11 +2162,128 @@ export interface operations {
             };
         };
     };
+    ChapterController_requestLogoUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LogoUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_confirmLogoUpload_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmLogoDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_deleteLogo_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     MemberController_list_v1: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_search_v1: {
+        parameters: {
+            query: {
+                /** @description Search query (name) */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -2008,13 +2340,18 @@ export interface operations {
             };
         };
     };
-    MemberController_remove_v1: {
+    AlumniController_list_v1: {
         parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
+            query?: {
+                /** @description Filter by graduation year */
+                graduation_year?: string;
+                /** @description Filter by current city (partial match) */
+                city?: string;
+                /** @description Filter by current company (partial match) */
+                company?: string;
             };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;
@@ -2225,6 +2562,181 @@ export interface operations {
             };
         };
     };
+    InviteController_revoke_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_registerPushToken_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterPushTokenDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_removePushToken_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_listNotifications_v1: {
+        parameters: {
+            query: {
+                limit: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_markRead_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_getPreferences_v1: {
+        parameters: {
+            query: {
+                chapterId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_updatePreference_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNotificationPreferenceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_getSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    NotificationController_updateSettings_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateUserSettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     EventController_list_v1: {
         parameters: {
             query?: never;
@@ -2324,6 +2836,25 @@ export interface operations {
             };
         };
     };
+    EventController_getIcs_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AttendanceController_checkIn_v1: {
         parameters: {
             query?: never;
@@ -2383,6 +2914,25 @@ export interface operations {
         };
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_markAutoAbsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2581,6 +3131,23 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FinancialInvoiceController_listOverdue_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3243,6 +3810,29 @@ export interface operations {
             };
         };
     };
+    ChatController_requestUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestChatUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ChatController_markRead_v1: {
         parameters: {
             query?: never;
@@ -3498,162 +4088,6 @@ export interface operations {
         };
         responses: {
             201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_registerPushToken_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RegisterPushTokenDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_removePushToken_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_listNotifications_v1: {
-        parameters: {
-            query: {
-                limit: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_markRead_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_getPreferences_v1: {
-        parameters: {
-            query: {
-                chapterId: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_updatePreference_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateNotificationPreferenceDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_getSettings_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    NotificationController_updateSettings_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateUserSettingsDto"];
-            };
-        };
-        responses: {
-            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4040,7 +4474,9 @@ export interface operations {
     };
     ReportController_attendance_v1: {
         parameters: {
-            query?: never;
+            query: {
+                format: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4061,7 +4497,9 @@ export interface operations {
     };
     ReportController_points_v1: {
         parameters: {
-            query?: never;
+            query: {
+                format: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4082,7 +4520,9 @@ export interface operations {
     };
     ReportController_roster_v1: {
         parameters: {
-            query?: never;
+            query: {
+                format: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -4099,7 +4539,9 @@ export interface operations {
     };
     ReportController_service_v1: {
         parameters: {
-            query?: never;
+            query: {
+                format: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
