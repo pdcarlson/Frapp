@@ -30,6 +30,7 @@ import {
   SendMessageDto,
   EditMessageDto,
   ReactionDto,
+  RequestChatUploadUrlDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
 
@@ -256,6 +257,23 @@ export class ChatController {
   @ApiOperation({ summary: 'Get reactions for a message' })
   async getReactions(@Param('messageId') messageId: string) {
     return this.chatService.getReactions(messageId);
+  }
+
+  // ── File Upload ────────────────────────────────────────────────────
+
+  @Post(':id/upload-url')
+  @ApiOperation({ summary: 'Generate a signed upload URL for a chat file attachment' })
+  async requestUploadUrl(
+    @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestChatUploadUrlDto,
+  ) {
+    return this.chatService.requestChatUploadUrl(
+      channelId,
+      chapterId,
+      dto.filename,
+      dto.content_type,
+    );
   }
 
   // ── Read Receipts ────────────────────────────────────────────────────

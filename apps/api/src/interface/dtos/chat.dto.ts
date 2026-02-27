@@ -147,3 +147,15 @@ export class ReactionDto {
   @MaxLength(50)
   emoji: string;
 }
+
+export class RequestChatUploadUrlDto {
+  @ApiProperty({ description: 'Original filename' })
+  @IsString()
+  @MaxLength(255)
+  filename: string;
+
+  @ApiProperty({ description: 'MIME content type (e.g. image/png)' })
+  @IsString()
+  @MaxLength(255)
+  content_type: string;
+}

@@ -69,4 +69,15 @@ export class AttendanceController {
       adminId,
     );
   }
+
+  @Post('auto-absent')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
+  @ApiOperation({ summary: 'Trigger auto-absent marking for an event' })
+  async markAutoAbsent(
+    @Param('eventId') eventId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.attendanceService.markAutoAbsent(eventId, chapterId);
+  }
 }

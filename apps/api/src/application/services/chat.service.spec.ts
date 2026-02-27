@@ -19,6 +19,8 @@ import type {
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import type {
   ChatChannel,
   ChatMessage,
@@ -33,6 +35,7 @@ describe('ChatService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
+  let mockStorageProvider: jest.Mocked<IStorageProvider>;
 
   const baseChannel: ChatChannel = {
     id: 'ch-chan-1',
@@ -100,6 +103,12 @@ describe('ChatService', () => {
       upsert: jest.fn(),
     };
 
+    mockStorageProvider = {
+      getSignedUploadUrl: jest.fn(),
+      getSignedDownloadUrl: jest.fn(),
+      deleteFile: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatService,
@@ -111,6 +120,7 @@ describe('ChatService', () => {
           provide: CHANNEL_READ_RECEIPT_REPOSITORY,
           useValue: mockReadReceiptRepo,
         },
+        { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
       ],
     }).compile();
 
@@ -441,6 +451,93 @@ describe('ChatService', () => {
 
       const result = await service.markChannelRead('ch-chan-1', 'user-1');
       expect(result.channel_id).toBe('ch-chan-1');
+    });
+  });
+
+  // ── File Upload ─────────────────────────────────────────────────────
+
+  describe('requestChatUploadUrl', () => {
+    it('should generate a signed upload URL for an allowed content type', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.example.com/signed-url',
+      );
+
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'photo.png',
+        'image/png',
+      );
+
+      expect(result.signedUrl).toBe('https://storage.example.com/signed-url');
+      expect(result.storagePath).toContain('chapters/ch-1/chat/ch-chan-1/');
+      expect(result.storagePath).toContain('/photo.png');
+      expect(result.messageId).toBeDefined();
+      expect(mockStorageProvider.getSignedUploadUrl).toHaveBeenCalledWith(
+        'chat',
+        expect.stringContaining('chapters/ch-1/chat/ch-chan-1/'),
+        'image/png',
+      );
+    });
+
+    it('should reject blocked executable content types', async () => {
+      await expect(
+        service.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'virus.exe',
+          'application/x-msdownload',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject blocked .sh files', async () => {
+      await expect(
+        service.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'script.sh',
+          'application/x-sh',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject blocked .bat files', async () => {
+      await expect(
+        service.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'run.bat',
+          'application/x-bat',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject disallowed content type even with allowed extension', async () => {
+      await expect(
+        service.requestChatUploadUrl(
+          'ch-chan-1',
+          'ch-1',
+          'file.zip',
+          'application/zip',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should accept PDF content type', async () => {
+      mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
+        'https://storage.example.com/signed-url',
+      );
+
+      const result = await service.requestChatUploadUrl(
+        'ch-chan-1',
+        'ch-1',
+        'document.pdf',
+        'application/pdf',
+      );
+
+      expect(result.signedUrl).toBeDefined();
+      expect(result.storagePath).toContain('/document.pdf');
     });
   });
 });

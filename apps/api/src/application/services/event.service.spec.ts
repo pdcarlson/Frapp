@@ -148,4 +148,131 @@ describe('EventService', () => {
 
     expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
   });
+
+  // ── Recurring Instance Generation ───────────────────────────────────
+
+  describe('recurring instances', () => {
+    it('should generate 12 instances for WEEKLY recurrence', async () => {
+      const weeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+      };
+      mockEventRepo.create.mockResolvedValue(weeklyEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+      });
+
+      // 1 parent + 12 instances = 13 total create calls
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
+
+      // Verify first instance has correct parent_event_id and null recurrence_rule
+      const secondCall = mockEventRepo.create.mock.calls[1][0];
+      expect(secondCall.parent_event_id).toBe('evt-1');
+      expect(secondCall.recurrence_rule).toBeNull();
+
+      // Verify start_time is 7 days after parent for the first instance
+      const parentStart = new Date(baseEvent.start_time);
+      const expectedStart = new Date(parentStart);
+      expectedStart.setDate(expectedStart.getDate() + 7);
+      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+    });
+
+    it('should generate 6 instances for BIWEEKLY recurrence', async () => {
+      const biweeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'BIWEEKLY',
+      };
+      mockEventRepo.create.mockResolvedValue(biweeklyEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'BIWEEKLY',
+      });
+
+      // 1 parent + 6 instances = 7 total create calls
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+
+      const secondCall = mockEventRepo.create.mock.calls[1][0];
+      expect(secondCall.parent_event_id).toBe('evt-1');
+      expect(secondCall.recurrence_rule).toBeNull();
+
+      // Verify start_time is 14 days after parent for the first instance
+      const parentStart = new Date(baseEvent.start_time);
+      const expectedStart = new Date(parentStart);
+      expectedStart.setDate(expectedStart.getDate() + 14);
+      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+    });
+
+    it('should generate 6 instances for MONTHLY recurrence', async () => {
+      const monthlyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'MONTHLY',
+      };
+      mockEventRepo.create.mockResolvedValue(monthlyEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'MONTHLY',
+      });
+
+      // 1 parent + 6 instances = 7 total create calls
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+
+      const secondCall = mockEventRepo.create.mock.calls[1][0];
+      expect(secondCall.parent_event_id).toBe('evt-1');
+      expect(secondCall.recurrence_rule).toBeNull();
+
+      // Verify start_time is 1 month after parent for the first instance
+      const parentStart = new Date(baseEvent.start_time);
+      const expectedStart = new Date(parentStart);
+      expectedStart.setMonth(expectedStart.getMonth() + 1);
+      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+    });
+
+    it('each instance should have correct parent_event_id and null recurrence_rule', async () => {
+      const weeklyEvent: Event = {
+        ...baseEvent,
+        recurrence_rule: 'WEEKLY',
+      };
+      mockEventRepo.create.mockResolvedValue(weeklyEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        recurrence_rule: 'WEEKLY',
+      });
+
+      for (let i = 1; i <= 12; i++) {
+        const call = mockEventRepo.create.mock.calls[i][0];
+        expect(call.parent_event_id).toBe('evt-1');
+        expect(call.recurrence_rule).toBeNull();
+      }
+    });
+
+    it('should not generate instances when no recurrence_rule is set', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+    });
+  });
 });

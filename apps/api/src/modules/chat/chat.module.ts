@@ -13,6 +13,8 @@ import {
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
 } from '../../domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 
 @Module({
   controllers: [ChatController],
@@ -38,6 +40,7 @@ import {
       provide: CHANNEL_READ_RECEIPT_REPOSITORY,
       useClass: SupabaseReadReceiptRepository,
     },
+    { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
   exports: [ChatService],
 })

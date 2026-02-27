@@ -19,6 +19,8 @@ import type {
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
+import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
+import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import type {
   ChatChannel,
   ChatChannelCategory,
@@ -28,6 +30,22 @@ import type {
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
+const CHAT_BUCKET = 'chat';
+
+const ALLOWED_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+]);
+
+const BLOCKED_EXTENSIONS = new Set(['.exe', '.sh', '.bat', '.cmd']);
 
 export interface CreateChannelInput {
   chapter_id: string;
@@ -71,6 +89,8 @@ export class ChatService {
     private readonly reactionRepo: IMessageReactionRepository,
     @Inject(CHANNEL_READ_RECEIPT_REPOSITORY)
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storageProvider: IStorageProvider,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -329,5 +349,41 @@ export class ChatService {
       userId,
       new Date().toISOString(),
     );
+  }
+
+  // ── File Upload ─────────────────────────────────────────────────────
+
+  async requestChatUploadUrl(
+    channelId: string,
+    chapterId: string,
+    filename: string,
+    contentType: string,
+  ) {
+    const ext = filename.includes('.')
+      ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+      : '';
+
+    if (BLOCKED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(
+        'File type is not allowed: executable files are blocked',
+      );
+    }
+
+    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+      throw new BadRequestException(
+        `Content type "${contentType}" is not allowed`,
+      );
+    }
+
+    const messageId = crypto.randomUUID();
+    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${filename}`;
+
+    const signedUrl = await this.storageProvider.getSignedUploadUrl(
+      CHAT_BUCKET,
+      storagePath,
+      contentType,
+    );
+
+    return { signedUrl, storagePath, messageId };
   }
 }

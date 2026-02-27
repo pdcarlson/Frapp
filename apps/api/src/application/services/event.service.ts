@@ -67,7 +67,7 @@ export class EventService {
       throw new BadRequestException('end_time must be after start_time');
     }
 
-    return this.eventRepo.create({
+    const parent = await this.eventRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
       description: input.description ?? null,
@@ -81,6 +81,66 @@ export class EventService {
       required_role_ids: input.required_role_ids ?? null,
       notes: input.notes ?? null,
     });
+
+    if (parent.recurrence_rule) {
+      await this.generateRecurringInstances(parent);
+    }
+
+    return parent;
+  }
+
+  private async generateRecurringInstances(parent: Event): Promise<void> {
+    const rule = parent.recurrence_rule;
+    if (!rule) return;
+
+    const start = new Date(parent.start_time);
+    const end = new Date(parent.end_time);
+
+    let count: number;
+    switch (rule) {
+      case 'WEEKLY':
+        count = 12;
+        break;
+      case 'BIWEEKLY':
+        count = 6;
+        break;
+      case 'MONTHLY':
+        count = 6;
+        break;
+      default:
+        return;
+    }
+
+    for (let i = 1; i <= count; i++) {
+      const instanceStart = new Date(start);
+      const instanceEnd = new Date(end);
+
+      if (rule === 'WEEKLY') {
+        instanceStart.setDate(instanceStart.getDate() + i * 7);
+        instanceEnd.setDate(instanceEnd.getDate() + i * 7);
+      } else if (rule === 'BIWEEKLY') {
+        instanceStart.setDate(instanceStart.getDate() + i * 14);
+        instanceEnd.setDate(instanceEnd.getDate() + i * 14);
+      } else if (rule === 'MONTHLY') {
+        instanceStart.setMonth(instanceStart.getMonth() + i);
+        instanceEnd.setMonth(instanceEnd.getMonth() + i);
+      }
+
+      await this.eventRepo.create({
+        chapter_id: parent.chapter_id,
+        name: parent.name,
+        description: parent.description,
+        location: parent.location,
+        start_time: instanceStart.toISOString(),
+        end_time: instanceEnd.toISOString(),
+        point_value: parent.point_value,
+        is_mandatory: parent.is_mandatory,
+        recurrence_rule: null,
+        parent_event_id: parent.id,
+        required_role_ids: parent.required_role_ids,
+        notes: parent.notes,
+      });
+    }
   }
 
   async update(
