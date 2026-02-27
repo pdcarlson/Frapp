@@ -6,10 +6,12 @@ import {
   IPointTransactionRepository,
 } from '../../domain/repositories/point-transaction.repository.interface';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import { NotificationService } from './notification.service';
 
 describe('PointsService', () => {
   let service: PointsService;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const txn1: PointTransaction = {
     id: 'pt-1',
@@ -51,10 +53,16 @@ describe('PointsService', () => {
       findByChapter: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PointsService,
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -246,6 +254,72 @@ describe('PointsService', () => {
       expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({ flagged: true }),
+        }),
+      );
+    });
+
+    it('should notify user when points are awarded', async () => {
+      const created: PointTransaction = {
+        id: 'pt-new',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 50,
+        category: 'MANUAL',
+        description: 'Good work',
+        metadata: { adjusted_by: 'admin-1', reason: 'Good work' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+
+      await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 50,
+        category: 'MANUAL',
+        reason: 'Good work',
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Points Awarded',
+          priority: 'NORMAL',
+          category: 'points',
+        }),
+      );
+    });
+
+    it('should notify user when points are deducted (fine)', async () => {
+      const created: PointTransaction = {
+        id: 'pt-new',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: -25,
+        category: 'FINE',
+        description: 'Late to meeting',
+        metadata: { adjusted_by: 'admin-1', reason: 'Late to meeting' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+
+      await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: -25,
+        category: 'FINE',
+        reason: 'Late to meeting',
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Points Deducted',
+          priority: 'NORMAL',
+          category: 'points',
         }),
       );
     });

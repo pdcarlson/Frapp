@@ -7,6 +7,7 @@ import {
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
+import { NotificationService } from './notification.service';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -39,6 +40,7 @@ export interface UpdateEventInput {
 export class EventService {
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Event> {
@@ -85,6 +87,16 @@ export class EventService {
     if (parent.recurrence_rule) {
       await this.generateRecurringInstances(parent);
     }
+
+    try {
+      await this.notificationService.notifyChapter(input.chapter_id, {
+        title: 'New Event',
+        body: `${parent.name} has been scheduled`,
+        priority: 'SILENT',
+        category: 'events',
+        data: { target: { screen: 'events', eventId: parent.id } },
+      });
+    } catch {}
 
     return parent;
   }
@@ -165,9 +177,23 @@ export class EventService {
       }
     }
 
-    return this.eventRepo.update(id, chapterId, {
+    const updated = await this.eventRepo.update(id, chapterId, {
       ...input,
     });
+
+    if (input.start_time || input.end_time || input.location !== undefined) {
+      try {
+        await this.notificationService.notifyChapter(chapterId, {
+          title: 'Event Updated',
+          body: `${updated.name} has been updated`,
+          priority: 'NORMAL',
+          category: 'events',
+          data: { target: { screen: 'events', eventId: updated.id } },
+        });
+      } catch {}
+    }
+
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

@@ -16,6 +16,7 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
+import { NotificationService } from './notification.service';
 
 @Injectable()
 export class InviteService {
@@ -25,6 +26,7 @@ export class InviteService {
     private readonly chapterRepo: IChapterRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async create(
@@ -97,6 +99,16 @@ export class InviteService {
       chapter_id: invite.chapter_id,
       role_ids: targetRole ? [targetRole.id] : [],
     });
+
+    try {
+      await this.notificationService.notifyChapter(invite.chapter_id, {
+        title: 'New Member Joined',
+        body: 'A new member has joined the chapter',
+        priority: 'NORMAL',
+        category: 'admin',
+        data: { target: { screen: 'members' } },
+      });
+    } catch {}
 
     return { chapterId: invite.chapter_id, memberId: member.id };
   }

@@ -5,8 +5,10 @@ import { SupabaseFinancialInvoiceRepository } from '../../infrastructure/supabas
 import { SupabaseFinancialTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-financial-transaction.repository';
 import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
+  imports: [NotificationModule],
   controllers: [FinancialInvoiceController],
   providers: [
     FinancialInvoiceService,

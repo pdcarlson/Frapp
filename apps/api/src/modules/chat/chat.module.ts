@@ -15,8 +15,10 @@ import {
 } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
+  imports: [NotificationModule],
   controllers: [ChatController],
   providers: [
     ChatService,

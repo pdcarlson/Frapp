@@ -27,6 +27,7 @@ import type {
   ChatMessage,
   ChannelType,
 } from '../../domain/entities/chat.entity';
+import { NotificationService } from './notification.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -91,6 +92,7 @@ export class ChatService {
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    private readonly notificationService: NotificationService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -219,7 +221,7 @@ export class ChatService {
       throw new BadRequestException('Message content cannot be empty');
     }
 
-    return this.messageRepo.create({
+    const message = await this.messageRepo.create({
       channel_id: input.channel_id,
       sender_id: input.sender_id,
       content: input.content,
@@ -227,6 +229,50 @@ export class ChatService {
       reply_to_id: input.reply_to_id ?? null,
       metadata: input.metadata ?? {},
     });
+
+    try {
+      await this.sendMessageNotification(input, message);
+    } catch {}
+
+    return message;
+  }
+
+  private async sendMessageNotification(
+    input: SendMessageInput,
+    message: ChatMessage,
+  ): Promise<void> {
+    const channel = await this.channelRepo.findById(input.channel_id, '');
+    if (!channel) return;
+
+    const isAnnouncement =
+      channel.name.toLowerCase().includes('announcements');
+
+    if (isAnnouncement) {
+      await this.notificationService.notifyChapter(channel.chapter_id, {
+        title: 'New Announcement',
+        body: input.content.slice(0, 200),
+        priority: 'URGENT',
+        category: 'announcements',
+        data: { target: { screen: 'chat', channelId: channel.id } },
+      });
+    } else if (channel.type === 'DM' || channel.type === 'GROUP_DM') {
+      const recipientIds = (channel.member_ids ?? []).filter(
+        (id) => id !== input.sender_id,
+      );
+      for (const recipientId of recipientIds) {
+        await this.notificationService.notifyUser(
+          recipientId,
+          channel.chapter_id,
+          {
+            title: 'New Message',
+            body: input.content.slice(0, 200),
+            priority: 'NORMAL',
+            category: 'chat',
+            data: { target: { screen: 'chat', channelId: channel.id } },
+          },
+        );
+      }
+    }
   }
 
   async editMessage(

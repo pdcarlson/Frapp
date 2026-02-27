@@ -12,6 +12,7 @@ import type { IPointTransactionRepository } from '../../domain/repositories/poin
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { Task, TaskStatus } from '../../domain/entities/task.entity';
+import { NotificationService } from './notification.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   TODO: ['IN_PROGRESS'],
@@ -56,6 +57,7 @@ export class TaskService {
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Task> {
@@ -101,7 +103,7 @@ export class TaskService {
       throw new BadRequestException('Assignee must be a member of the chapter');
     }
 
-    return this.taskRepo.create({
+    const task = await this.taskRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
       description: input.description ?? null,
@@ -114,6 +116,22 @@ export class TaskService {
       completed_at: null,
       confirmed_at: null,
     });
+
+    try {
+      await this.notificationService.notifyUser(
+        input.assignee_id,
+        input.chapter_id,
+        {
+          title: 'Task Assigned',
+          body: `You have been assigned: ${task.title}`,
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks', taskId: task.id } },
+        },
+      );
+    } catch {}
+
+    return task;
   }
 
   async updateStatus(
@@ -192,6 +210,21 @@ export class TaskService {
     }
 
     const updated = await this.taskRepo.update(id, chapterId, updateData);
+
+    try {
+      await this.notificationService.notifyUser(
+        task.assignee_id,
+        chapterId,
+        {
+          title: 'Task Confirmed',
+          body: `Your task "${task.title}" has been confirmed`,
+          priority: 'NORMAL',
+          category: 'tasks',
+          data: { target: { screen: 'tasks', taskId: task.id } },
+        },
+      );
+    } catch {}
+
     return toDisplayStatus(updated);
   }
 

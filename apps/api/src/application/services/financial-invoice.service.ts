@@ -12,6 +12,7 @@ import type {
   FinancialInvoice,
   InvoiceStatus,
 } from '../../domain/entities/financial-invoice.entity';
+import { NotificationService } from './notification.service';
 
 export interface CreateInvoiceInput {
   chapter_id: string;
@@ -43,6 +44,7 @@ export class FinancialInvoiceService {
     private readonly invoiceRepo: IFinancialInvoiceRepository,
     @Inject(FINANCIAL_TRANSACTION_REPOSITORY)
     private readonly transactionRepo: IFinancialTransactionRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async findById(
@@ -144,6 +146,22 @@ export class FinancialInvoiceService {
         amount: invoice.amount,
         type: 'PAYMENT',
       });
+    }
+
+    if (invoice.status === 'DRAFT' && newStatus === 'OPEN') {
+      try {
+        await this.notificationService.notifyUser(
+          invoice.user_id,
+          chapterId,
+          {
+            title: 'New Invoice',
+            body: `You have a new invoice: ${invoice.title}`,
+            priority: 'NORMAL',
+            category: 'billing',
+            data: { target: { screen: 'billing' } },
+          },
+        );
+      } catch {}
     }
 
     return updated;

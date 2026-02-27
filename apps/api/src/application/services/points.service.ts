@@ -10,6 +10,7 @@ import type {
   PointTransaction,
   PointCategory,
 } from '../../domain/entities/point-transaction.entity';
+import { NotificationService } from './notification.service';
 
 export type PointsWindow = 'all' | 'semester' | 'month';
 
@@ -27,6 +28,7 @@ export class PointsService {
   constructor(
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   private filterByWindow(
@@ -111,7 +113,7 @@ export class PointsService {
       metadata.flagged = true;
     }
 
-    return this.pointTxnRepo.create({
+    const txn = await this.pointTxnRepo.create({
       chapter_id: input.chapterId,
       user_id: input.targetUserId,
       amount: input.amount,
@@ -119,5 +121,24 @@ export class PointsService {
       description: input.reason,
       metadata,
     });
+
+    try {
+      const isFine = input.category === 'FINE' || input.amount < 0;
+      await this.notificationService.notifyUser(
+        input.targetUserId,
+        input.chapterId,
+        {
+          title: isFine ? 'Points Deducted' : 'Points Awarded',
+          body: isFine
+            ? `You were fined ${Math.abs(input.amount)} points: ${input.reason}`
+            : `You received ${input.amount} points: ${input.reason}`,
+          priority: 'NORMAL',
+          category: 'points',
+          data: { target: { screen: 'points' } },
+        },
+      );
+    } catch {}
+
+    return txn;
   }
 }

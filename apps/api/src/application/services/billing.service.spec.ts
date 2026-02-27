@@ -9,12 +9,20 @@ import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import type { IBillingProvider, WebhookEvent } from '../../domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
+import { NotificationService } from './notification.service';
 
 describe('BillingService', () => {
   let service: BillingService;
   let mockBillingProvider: jest.Mocked<IBillingProvider>;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
+  let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const baseChapter: Chapter = {
     id: 'ch-1',
@@ -48,11 +56,38 @@ describe('BillingService', () => {
       update: jest.fn(),
     };
 
+    mockMemberRepo = {
+      findById: jest.fn(),
+      findByUserAndChapter: jest.fn(),
+      findByChapter: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    mockRoleRepo = {
+      findById: jest.fn(),
+      findByChapter: jest.fn(),
+      findByIds: jest.fn(),
+      findByChapterAndName: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
         { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -452,6 +487,121 @@ describe('BillingService', () => {
 
       await expect(service.handleWebhookEvent(event)).resolves.not.toThrow();
       expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should notify chapter president on subscription status change', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_update_notify',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+            status: 'past_due',
+          },
+        },
+      };
+
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'past_due',
+      });
+      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+        id: 'role-pres',
+        chapter_id: 'ch-1',
+        name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
+      });
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        {
+          id: 'member-pres',
+          user_id: 'user-pres',
+          chapter_id: 'ch-1',
+          role_ids: ['role-pres'],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-pres',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Subscription Status Changed',
+          priority: 'URGENT',
+          category: 'billing',
+        }),
+      );
+    });
+
+    it('should notify chapter president on subscription deletion', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_delete_notify',
+        type: 'customer.subscription.deleted',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+          },
+        },
+      };
+
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'canceled',
+      });
+      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+        id: 'role-pres',
+        chapter_id: 'ch-1',
+        name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
+      });
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        {
+          id: 'member-pres',
+          user_id: 'user-pres',
+          chapter_id: 'ch-1',
+          role_ids: ['role-pres'],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-pres',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Subscription Status Changed',
+          priority: 'URGENT',
+          category: 'billing',
+        }),
+      );
     });
   });
 });

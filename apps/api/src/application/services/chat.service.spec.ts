@@ -27,6 +27,7 @@ import type {
   ChatChannelCategory,
   MessageReaction,
 } from '../../domain/entities/chat.entity';
+import { NotificationService } from './notification.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -36,6 +37,7 @@ describe('ChatService', () => {
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const baseChannel: ChatChannel = {
     id: 'ch-chan-1',
@@ -109,6 +111,11 @@ describe('ChatService', () => {
       deleteFile: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatService,
@@ -121,6 +128,7 @@ describe('ChatService', () => {
           useValue: mockReadReceiptRepo,
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -538,6 +546,80 @@ describe('ChatService', () => {
 
       expect(result.signedUrl).toBeDefined();
       expect(result.storagePath).toContain('/document.pdf');
+    });
+  });
+
+  // ── Notification triggers ──────────────────────────────────────────
+
+  describe('sendMessage notifications', () => {
+    it('should notify DM recipients', async () => {
+      const dmChannel: ChatChannel = {
+        ...baseChannel,
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-2',
+        'ch-1',
+        expect.objectContaining({
+          title: 'New Message',
+          priority: 'NORMAL',
+          category: 'chat',
+        }),
+      );
+    });
+
+    it('should notify chapter for announcement messages', async () => {
+      const announcementChannel: ChatChannel = {
+        ...baseChannel,
+        name: 'announcements',
+        type: 'PUBLIC',
+      };
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(announcementChannel);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Important update!',
+      });
+
+      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          title: 'New Announcement',
+          priority: 'URGENT',
+          category: 'announcements',
+        }),
+      );
+    });
+
+    it('should not fail if notification throws on sendMessage', async () => {
+      const dmChannel: ChatChannel = {
+        ...baseChannel,
+        type: 'DM',
+        member_ids: ['user-1', 'user-2'],
+      };
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+      mockNotificationService.notifyUser.mockRejectedValue(new Error('push failed'));
+
+      const result = await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello!',
+      });
+
+      expect(result).toEqual(baseMessage);
     });
   });
 });

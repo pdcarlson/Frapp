@@ -8,9 +8,10 @@ import { SupabasePointTransactionRepository } from '../../infrastructure/supabas
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { RbacModule } from '../rbac/rbac.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-  imports: [RbacModule],
+  imports: [RbacModule, NotificationModule],
   controllers: [TaskController],
   providers: [
     TaskService,

@@ -10,6 +10,7 @@ import type { IServiceEntryRepository } from '../../domain/repositories/service-
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
+import { NotificationService } from './notification.service';
 
 /** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
 const DEFAULT_MINUTES_PER_POINT = 60;
@@ -35,6 +36,7 @@ export class ServiceEntryService {
     private readonly serviceEntryRepo: IServiceEntryRepository,
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTransactionRepo: IPointTransactionRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry> {
@@ -127,12 +129,24 @@ export class ServiceEntryService {
       });
     }
 
-    return this.serviceEntryRepo.update(id, chapterId, {
+    const updated = await this.serviceEntryRepo.update(id, chapterId, {
       status: 'APPROVED',
       reviewed_by: reviewerId,
       review_comment: reviewComment ?? null,
       points_awarded: pointsToAward > 0,
     });
+
+    try {
+      await this.notificationService.notifyUser(entry.user_id, chapterId, {
+        title: 'Service Hours Approved',
+        body: `Your service entry "${entry.description}" has been approved`,
+        priority: 'NORMAL',
+        category: 'service',
+        data: { target: { screen: 'service' } },
+      });
+    } catch {}
+
+    return updated;
   }
 
   async reject(
@@ -149,11 +163,23 @@ export class ServiceEntryService {
       );
     }
 
-    return this.serviceEntryRepo.update(id, chapterId, {
+    const updated = await this.serviceEntryRepo.update(id, chapterId, {
       status: 'REJECTED',
       reviewed_by: reviewerId,
       review_comment: reviewComment ?? null,
     });
+
+    try {
+      await this.notificationService.notifyUser(entry.user_id, chapterId, {
+        title: 'Service Hours Rejected',
+        body: `Your service entry "${entry.description}" has been rejected`,
+        priority: 'NORMAL',
+        category: 'service',
+        data: { target: { screen: 'service' } },
+      });
+    } catch {}
+
+    return updated;
   }
 
   async delete(

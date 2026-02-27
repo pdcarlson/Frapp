@@ -14,6 +14,11 @@ import {
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import type { Chapter, SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
+import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { NotificationService } from './notification.service';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -44,6 +49,11 @@ export class BillingService {
     private readonly billingProvider: IBillingProvider,
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
+    @Inject(ROLE_REPOSITORY)
+    private readonly roleRepo: IRoleRepository,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getChapterBillingStatus(chapterId: string) {
@@ -199,6 +209,8 @@ export class BillingService {
       subscription_status: newStatus,
     });
 
+    await this.notifyChapterPresident(chapter.id, newStatus);
+
     this.logger.log(
       `Chapter ${chapter.id} subscription updated to ${newStatus}`,
     );
@@ -212,6 +224,8 @@ export class BillingService {
     await this.chapterRepo.update(chapter.id, {
       subscription_status: 'canceled',
     });
+
+    await this.notifyChapterPresident(chapter.id, 'canceled');
 
     this.logger.log(`Chapter ${chapter.id} subscription canceled`);
   }
@@ -245,6 +259,41 @@ export class BillingService {
       );
     }
     return chapter;
+  }
+
+  private async notifyChapterPresident(
+    chapterId: string,
+    newStatus: string,
+  ): Promise<void> {
+    try {
+      const presidentRole = await this.roleRepo.findByChapterAndName(
+        chapterId,
+        'President',
+      );
+      if (!presidentRole) return;
+
+      const members = await this.memberRepo.findByChapter(chapterId);
+      const president = members.find((m) =>
+        m.role_ids.includes(presidentRole.id),
+      );
+      if (!president) return;
+
+      await this.notificationService.notifyUser(
+        president.user_id,
+        chapterId,
+        {
+          title: 'Subscription Status Changed',
+          body: `Your chapter subscription is now ${newStatus}`,
+          priority: 'URGENT',
+          category: 'billing',
+          data: { target: { screen: 'billing' } },
+        },
+      );
+    } catch {
+      this.logger.warn(
+        `Failed to notify president for chapter ${chapterId}`,
+      );
+    }
   }
 
   private mapStripeStatus(stripeStatus: string): SubscriptionStatus | null {

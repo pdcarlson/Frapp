@@ -6,11 +6,13 @@ import type { IFinancialInvoiceRepository } from '../../domain/repositories/fina
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
 import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
 import type { FinancialInvoice } from '../../domain/entities/financial-invoice.entity';
+import { NotificationService } from './notification.service';
 
 describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
   let mockInvoiceRepo: jest.Mocked<IFinancialInvoiceRepository>;
   let mockTransactionRepo: jest.Mocked<IFinancialTransactionRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const baseInvoice: FinancialInvoice = {
     id: 'inv-1',
@@ -41,6 +43,11 @@ describe('FinancialInvoiceService', () => {
       create: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancialInvoiceService,
@@ -52,6 +59,7 @@ describe('FinancialInvoiceService', () => {
           provide: FINANCIAL_TRANSACTION_REPOSITORY,
           useValue: mockTransactionRepo,
         },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -290,6 +298,51 @@ describe('FinancialInvoiceService', () => {
       mockTransactionRepo.findByInvoice.mockResolvedValue([]);
       const result = await service.getInvoiceTransactions('inv-1');
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('notifications', () => {
+    it('should notify user when invoice transitions from DRAFT to OPEN', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...baseInvoice,
+        status: 'OPEN',
+      });
+
+      await service.transitionStatus('inv-1', 'ch-1', 'OPEN');
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'New Invoice',
+          priority: 'NORMAL',
+          category: 'billing',
+        }),
+      );
+    });
+
+    it('should not notify on non DRAFT→OPEN transitions', async () => {
+      const openInvoice = { ...baseInvoice, status: 'OPEN' as const };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        status: 'PAID',
+        paid_at: '2026-09-10T00:00:00.000Z',
+      });
+      mockTransactionRepo.create.mockResolvedValue({
+        id: 'txn-1',
+        chapter_id: 'ch-1',
+        invoice_id: 'inv-1',
+        amount: 15000,
+        type: 'PAYMENT',
+        stripe_charge_id: null,
+        created_at: '2026-09-10T00:00:00.000Z',
+      });
+
+      await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
   });
 });

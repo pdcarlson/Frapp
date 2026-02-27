@@ -6,9 +6,10 @@ import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entr
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
 import { RbacModule } from '../rbac/rbac.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-  imports: [RbacModule],
+  imports: [RbacModule, NotificationModule],
   controllers: [ServiceEntryController],
   providers: [
     ServiceEntryService,

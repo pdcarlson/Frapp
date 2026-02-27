@@ -6,10 +6,12 @@ import {
   IEventRepository,
 } from '../../domain/repositories/event.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
+import { NotificationService } from './notification.service';
 
 describe('EventService', () => {
   let service: EventService;
   let mockEventRepo: jest.Mocked<IEventRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   beforeEach(async () => {
     mockEventRepo = {
@@ -20,10 +22,16 @@ describe('EventService', () => {
       delete: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EventService,
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -273,6 +281,83 @@ describe('EventService', () => {
       });
 
       expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('notifications', () => {
+    it('should notify chapter when event is created', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+      });
+
+      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          title: 'New Event',
+          priority: 'SILENT',
+          category: 'events',
+        }),
+      );
+    });
+
+    it('should notify chapter when event time is updated', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockEventRepo.update.mockResolvedValue({
+        ...baseEvent,
+        end_time: '2026-02-26T20:00:00.000Z',
+      });
+
+      await service.update('evt-1', 'ch-1', {
+        end_time: '2026-02-26T20:00:00.000Z',
+      });
+
+      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          title: 'Event Updated',
+          priority: 'NORMAL',
+          category: 'events',
+        }),
+      );
+    });
+
+    it('should notify chapter when event location is updated', async () => {
+      mockEventRepo.update.mockResolvedValue({
+        ...baseEvent,
+        location: 'New Location',
+      });
+
+      await service.update('evt-1', 'ch-1', {
+        location: 'New Location',
+      });
+
+      expect(mockNotificationService.notifyChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          title: 'Event Updated',
+          priority: 'NORMAL',
+          category: 'events',
+        }),
+      );
+    });
+
+    it('should not fail if notification throws on create', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockNotificationService.notifyChapter.mockRejectedValue(new Error('push failed'));
+
+      const result = await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+      });
+
+      expect(result).toEqual(baseEvent);
     });
   });
 });

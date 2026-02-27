@@ -14,12 +14,14 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import type { Task } from '../../domain/entities/task.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import { NotificationService } from './notification.service';
 
 describe('TaskService', () => {
   let service: TaskService;
   let mockTaskRepo: jest.Mocked<ITaskRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const baseTask: Task = {
     id: 'task-1',
@@ -83,12 +85,18 @@ describe('TaskService', () => {
       delete: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TaskService,
         { provide: TASK_REPOSITORY, useValue: mockTaskRepo },
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -542,6 +550,60 @@ describe('TaskService', () => {
         NotFoundException,
       );
       expect(mockTaskRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notifications', () => {
+    it('should notify assignee when task is created', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2026-03-15',
+        point_reward: 10,
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Task Assigned',
+          priority: 'NORMAL',
+          category: 'tasks',
+        }),
+      );
+    });
+
+    it('should notify assignee when task completion is confirmed', async () => {
+      const completed: Task = {
+        ...baseTask,
+        status: 'COMPLETED',
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+      const confirmed: Task = {
+        ...completed,
+        confirmed_at: '2026-02-26T19:00:00.000Z',
+        points_awarded: true,
+      };
+      mockTaskRepo.findById.mockResolvedValue(completed);
+      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockTaskRepo.update.mockResolvedValue(confirmed);
+
+      await service.confirmCompletion('task-1', 'ch-1');
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Task Confirmed',
+          priority: 'NORMAL',
+          category: 'tasks',
+        }),
+      );
     });
   });
 });

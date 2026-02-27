@@ -11,11 +11,13 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import { NotificationService } from './notification.service';
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
   let mockServiceEntryRepo: jest.Mocked<IServiceEntryRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
+  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
 
   const baseEntry: ServiceEntry = {
     id: 'se-1',
@@ -59,6 +61,11 @@ describe('ServiceEntryService', () => {
       findByChapter: jest.fn(),
     };
 
+    mockNotificationService = {
+      notifyUser: jest.fn().mockResolvedValue(undefined),
+      notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServiceEntryService,
@@ -67,6 +74,7 @@ describe('ServiceEntryService', () => {
           provide: POINT_TRANSACTION_REPOSITORY,
           useValue: mockPointTxnRepo,
         },
+        { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
 
@@ -432,6 +440,55 @@ describe('ServiceEntryService', () => {
         service.delete('se-1', 'ch-1', 'user-1', false),
       ).rejects.toThrow('Only PENDING entries can be deleted');
       expect(mockServiceEntryRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('notifications', () => {
+    it('should notify user when service hours are approved', async () => {
+      const approved = {
+        ...baseEntry,
+        status: 'APPROVED' as const,
+        reviewed_by: 'admin-1',
+        points_awarded: true,
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockServiceEntryRepo.update.mockResolvedValue(approved);
+
+      await service.approve('se-1', 'ch-1', 'admin-1', null);
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Service Hours Approved',
+          priority: 'NORMAL',
+          category: 'service',
+        }),
+      );
+    });
+
+    it('should notify user when service hours are rejected', async () => {
+      const rejected = {
+        ...baseEntry,
+        status: 'REJECTED' as const,
+        reviewed_by: 'admin-1',
+        review_comment: 'Insufficient proof',
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.update.mockResolvedValue(rejected);
+
+      await service.reject('se-1', 'ch-1', 'admin-1', 'Insufficient proof');
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          title: 'Service Hours Rejected',
+          priority: 'NORMAL',
+          category: 'service',
+        }),
+      );
     });
   });
 });
