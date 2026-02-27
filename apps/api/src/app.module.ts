@@ -24,6 +24,8 @@ import { StudyModule } from './modules/study/study.module';
 import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
 import { PollModule } from './modules/poll/poll.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
+import { ReportModule } from './modules/report/report.module';
+import { SearchModule } from './modules/search/search.module';
 
 @Module({
   imports: [
@@ -58,6 +60,8 @@ import { SemesterRolloverModule } from './modules/semester-rollover/semester-rol
     ChapterDocumentModule,
     PollModule,
     SemesterRolloverModule,
+    ReportModule,
+    SearchModule,
   ],
 })
 export class AppModule {}
