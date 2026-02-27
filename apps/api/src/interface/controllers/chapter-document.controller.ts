@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -83,10 +88,7 @@ export class ChapterDocumentController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get document with download URL' })
-  async getOne(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.chapterDocumentService.findById(id, chapterId);
   }
 
@@ -94,10 +96,7 @@ export class ChapterDocumentController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Delete a document' })
-  async delete(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     await this.chapterDocumentService.delete(id, chapterId);
     return { success: true };
   }

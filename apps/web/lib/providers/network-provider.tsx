@@ -60,6 +60,11 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   }, [failureCount]);
 
   useEffect(() => {
+    const interval = setInterval(checkHealth, 30_000);
+    return () => clearInterval(interval);
+  }, [checkHealth]);
+
+  useEffect(() => {
     const handleOnline = () => {
       setState("ONLINE");
       setFailureCount(0);

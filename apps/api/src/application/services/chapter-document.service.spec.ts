@@ -67,9 +67,7 @@ describe('ChapterDocumentService', () => {
       expect(result.signedUrl).toBe(
         'https://storage.supabase.co/upload/signed',
       );
-      expect(result.storagePath).toContain(
-        'chapters/ch-1/documents/',
-      );
+      expect(result.storagePath).toContain('chapters/ch-1/documents/');
       expect(result.storagePath).toContain('bylaws.pdf');
       expect(result.documentId).toBeDefined();
     });

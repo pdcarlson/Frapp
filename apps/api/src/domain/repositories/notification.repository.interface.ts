@@ -13,7 +13,10 @@ export const USER_SETTINGS_REPOSITORY = 'USER_SETTINGS_REPOSITORY';
 
 export interface INotificationRepository {
   create(data: Partial<Notification>): Promise<Notification>;
-  findByUser(userId: string, options?: { limit?: number }): Promise<Notification[]>;
+  findByUser(
+    userId: string,
+    options?: { limit?: number },
+  ): Promise<Notification[]>;
   findById(id: string): Promise<Notification | null>;
   markRead(id: string, userId: string): Promise<Notification>;
 }
@@ -32,7 +35,9 @@ export interface INotificationPreferenceRepository {
     userId: string,
     chapterId: string,
   ): Promise<NotificationPreference[]>;
-  upsert(data: Partial<NotificationPreference>): Promise<NotificationPreference>;
+  upsert(
+    data: Partial<NotificationPreference>,
+  ): Promise<NotificationPreference>;
   findByUserChapterCategory(
     userId: string,
     chapterId: string,

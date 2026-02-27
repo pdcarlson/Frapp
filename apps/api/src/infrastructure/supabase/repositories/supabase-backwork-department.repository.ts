@@ -5,9 +5,7 @@ import type { IBackworkDepartmentRepository } from '../../../domain/repositories
 import { BackworkDepartment } from '../../../domain/entities/backwork.entity';
 
 @Injectable()
-export class SupabaseBackworkDepartmentRepository
-  implements IBackworkDepartmentRepository
-{
+export class SupabaseBackworkDepartmentRepository implements IBackworkDepartmentRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
@@ -36,9 +34,7 @@ export class SupabaseBackworkDepartmentRepository
     return data as BackworkDepartment | null;
   }
 
-  async create(
-    data: Partial<BackworkDepartment>,
-  ): Promise<BackworkDepartment> {
+  async create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment> {
     const { data: created, error } = await this.supabase
       .from('backwork_departments')
       .insert(data)

@@ -13,7 +13,10 @@ import { NotificationModule } from '../notification/notification.module';
   controllers: [ServiceEntryController],
   providers: [
     ServiceEntryService,
-    { provide: SERVICE_ENTRY_REPOSITORY, useClass: SupabaseServiceEntryRepository },
+    {
+      provide: SERVICE_ENTRY_REPOSITORY,
+      useClass: SupabaseServiceEntryRepository,
+    },
     {
       provide: POINT_TRANSACTION_REPOSITORY,
       useClass: SupabasePointTransactionRepository,

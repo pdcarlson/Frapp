@@ -128,7 +128,16 @@ export class ChatService {
   async updateChannel(
     id: string,
     chapterId: string,
-    data: Partial<Pick<ChatChannel, 'name' | 'description' | 'required_permissions' | 'category_id' | 'is_read_only'>>,
+    data: Partial<
+      Pick<
+        ChatChannel,
+        | 'name'
+        | 'description'
+        | 'required_permissions'
+        | 'category_id'
+        | 'is_read_only'
+      >
+    >,
   ): Promise<ChatChannel> {
     await this.getChannel(id, chapterId);
     return this.channelRepo.update(id, chapterId, data);
@@ -141,9 +150,7 @@ export class ChatService {
 
   async getOrCreateDm(input: CreateDmInput): Promise<ChatChannel> {
     if (input.member_ids.length !== 2) {
-      throw new BadRequestException(
-        'A DM requires exactly 2 members',
-      );
+      throw new BadRequestException('A DM requires exactly 2 members');
     }
 
     const existing = await this.channelRepo.findDm(
@@ -244,8 +251,7 @@ export class ChatService {
     const channel = await this.channelRepo.findById(input.channel_id, '');
     if (!channel) return;
 
-    const isAnnouncement =
-      channel.name.toLowerCase().includes('announcements');
+    const isAnnouncement = channel.name.toLowerCase().includes('announcements');
 
     if (isAnnouncement) {
       await this.notificationService.notifyChapter(channel.chapter_id, {
@@ -364,11 +370,7 @@ export class ChatService {
   // ── Reactions ────────────────────────────────────────────────────────
 
   async toggleReaction(messageId: string, userId: string, emoji: string) {
-    const existing = await this.reactionRepo.findOne(
-      messageId,
-      userId,
-      emoji,
-    );
+    const existing = await this.reactionRepo.findOne(messageId, userId, emoji);
 
     if (existing) {
       await this.reactionRepo.delete(messageId, userId, emoji);

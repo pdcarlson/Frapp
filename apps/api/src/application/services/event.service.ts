@@ -137,13 +137,21 @@ export class EventService {
         const targetStartMonth = start.getMonth() + i;
         instanceStart.setDate(1);
         instanceStart.setMonth(targetStartMonth);
-        const maxStartDay = new Date(instanceStart.getFullYear(), instanceStart.getMonth() + 1, 0).getDate();
+        const maxStartDay = new Date(
+          instanceStart.getFullYear(),
+          instanceStart.getMonth() + 1,
+          0,
+        ).getDate();
         instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
 
         const targetEndMonth = end.getMonth() + i;
         instanceEnd.setDate(1);
         instanceEnd.setMonth(targetEndMonth);
-        const maxEndDay = new Date(instanceEnd.getFullYear(), instanceEnd.getMonth() + 1, 0).getDate();
+        const maxEndDay = new Date(
+          instanceEnd.getFullYear(),
+          instanceEnd.getMonth() + 1,
+          0,
+        ).getDate();
         instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
@@ -219,7 +227,11 @@ export class EventService {
         .replace(/\.\d{3}/, '');
 
     const escapeText = (text: string): string =>
-      text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+      text
+        .replace(/\\/g, '\\\\')
+        .replace(/;/g, '\\;')
+        .replace(/,/g, '\\,')
+        .replace(/\n/g, '\\n');
 
     const lines = [
       'BEGIN:VCALENDAR',
@@ -238,11 +250,7 @@ export class EventService {
       lines.push(`LOCATION:${escapeText(event.location)}`);
     }
 
-    lines.push(
-      `UID:${event.id}@frapp.live`,
-      'END:VEVENT',
-      'END:VCALENDAR',
-    );
+    lines.push(`UID:${event.id}@frapp.live`, 'END:VEVENT', 'END:VCALENDAR');
 
     return lines.join('\r\n');
   }

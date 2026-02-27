@@ -23,7 +23,10 @@ import { ChapterModule } from '../chapter/chapter.module';
   providers: [
     AuthSyncInterceptor,
     NotificationService,
-    { provide: NOTIFICATION_REPOSITORY, useClass: SupabaseNotificationRepository },
+    {
+      provide: NOTIFICATION_REPOSITORY,
+      useClass: SupabaseNotificationRepository,
+    },
     { provide: PUSH_TOKEN_REPOSITORY, useClass: SupabasePushTokenRepository },
     {
       provide: NOTIFICATION_PREFERENCE_REPOSITORY,

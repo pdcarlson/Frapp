@@ -11,7 +11,9 @@ import { NotificationService } from './notification.service';
 describe('EventService', () => {
   let service: EventService;
   let mockEventRepo: jest.Mocked<IEventRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   beforeEach(async () => {
     mockEventRepo = {
@@ -384,7 +386,9 @@ describe('EventService', () => {
 
     it('should not fail if notification throws on create', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);
-      mockNotificationService.notifyChapter.mockRejectedValue(new Error('push failed'));
+      mockNotificationService.notifyChapter.mockRejectedValue(
+        new Error('push failed'),
+      );
 
       const result = await service.create({
         chapter_id: 'ch-1',

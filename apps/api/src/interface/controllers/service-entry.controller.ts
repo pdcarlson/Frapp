@@ -10,7 +10,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -137,7 +142,9 @@ export class ServiceEntryController {
     SystemPermissions.SERVICE_LOG,
     SystemPermissions.SERVICE_APPROVE,
   )
-  @ApiOperation({ summary: 'Delete a PENDING service entry (own or any for admins)' })
+  @ApiOperation({
+    summary: 'Delete a PENDING service entry (own or any for admins)',
+  })
   async delete(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,

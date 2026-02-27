@@ -31,10 +31,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return (data as ServiceEntry[]) || [];
   }
 
-  async findByUser(
-    chapterId: string,
-    userId: string,
-  ): Promise<ServiceEntry[]> {
+  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
     const { data, error } = await this.supabase
       .from('service_entries')
       .select('*')

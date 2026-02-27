@@ -19,19 +19,25 @@ export class AttendanceReportDto {
 }
 
 export class PointsReportDto {
-  @ApiPropertyOptional({ description: 'Filter by user ID (omit for chapter-wide)' })
+  @ApiPropertyOptional({
+    description: 'Filter by user ID (omit for chapter-wide)',
+  })
   @IsOptional()
   @IsUUID()
   user_id?: string;
 
-  @ApiPropertyOptional({ description: 'Time window (e.g. semester identifier)' })
+  @ApiPropertyOptional({
+    description: 'Time window (e.g. semester identifier)',
+  })
   @IsOptional()
   @IsString()
   window?: string;
 }
 
 export class ServiceReportDto {
-  @ApiPropertyOptional({ description: 'Filter by user ID (omit for chapter-wide)' })
+  @ApiPropertyOptional({
+    description: 'Filter by user ID (omit for chapter-wide)',
+  })
   @IsOptional()
   @IsUUID()
   user_id?: string;

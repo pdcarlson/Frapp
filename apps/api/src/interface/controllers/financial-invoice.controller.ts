@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -30,9 +35,7 @@ import {
 @UseGuards(SupabaseAuthGuard, ChapterGuard)
 @Controller('invoices')
 export class FinancialInvoiceController {
-  constructor(
-    private readonly invoiceService: FinancialInvoiceService,
-  ) {}
+  constructor(private readonly invoiceService: FinancialInvoiceService) {}
 
   @Get()
   @ApiOperation({ summary: 'List invoices (admin: all, member: own)' })
@@ -58,10 +61,7 @@ export class FinancialInvoiceController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get invoice by ID' })
-  async getOne(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.invoiceService.findById(id, chapterId);
   }
 

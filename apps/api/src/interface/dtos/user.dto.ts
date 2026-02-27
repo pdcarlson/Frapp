@@ -1,4 +1,11 @@
-import { IsOptional, IsString, IsInt, Min, Max, MaxLength } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsInt,
+  Min,
+  Max,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestAvatarUploadUrlDto {
@@ -7,7 +14,9 @@ export class RequestAvatarUploadUrlDto {
   @MaxLength(255)
   filename: string;
 
-  @ApiProperty({ description: 'MIME content type (e.g. image/jpeg, image/png)' })
+  @ApiProperty({
+    description: 'MIME content type (e.g. image/jpeg, image/png)',
+  })
   @IsString()
   content_type: string;
 }

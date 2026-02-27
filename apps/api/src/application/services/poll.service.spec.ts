@@ -1,8 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PollService } from './poll.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
@@ -325,9 +322,9 @@ describe('PollService', () => {
     it('should throw NotFoundException when poll not found', async () => {
       mockMessageRepo.findById.mockResolvedValue(null);
 
-      await expect(
-        service.getPoll('msg-x', 'ch-1', 'user-2'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getPoll('msg-x', 'ch-1', 'user-2')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });

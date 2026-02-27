@@ -24,7 +24,9 @@ export interface WebhookEvent {
 export interface IBillingProvider {
   createCustomer(email: string, name: string): Promise<string>;
   createCheckoutSession(params: CreateCheckoutParams): Promise<string>;
-  createCustomerPortalSession(params: CreateCustomerPortalParams): Promise<string>;
+  createCustomerPortalSession(
+    params: CreateCustomerPortalParams,
+  ): Promise<string>;
   getSubscriptionStatus(subscriptionId: string): Promise<string>;
   cancelSubscription(subscriptionId: string): Promise<void>;
   constructWebhookEvent(payload: Buffer, signature: string): WebhookEvent;

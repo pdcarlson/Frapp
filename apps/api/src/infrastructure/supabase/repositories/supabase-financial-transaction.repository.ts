@@ -5,9 +5,7 @@ import { IFinancialTransactionRepository } from '../../../domain/repositories/fi
 import { FinancialTransaction } from '../../../domain/entities/financial-transaction.entity';
 
 @Injectable()
-export class SupabaseFinancialTransactionRepository
-  implements IFinancialTransactionRepository
-{
+export class SupabaseFinancialTransactionRepository implements IFinancialTransactionRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

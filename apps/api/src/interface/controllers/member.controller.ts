@@ -8,7 +8,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -45,20 +50,14 @@ export class MemberController {
     @CurrentChapterId() chapterId: string,
     @Query('q') query: string,
   ) {
-    return this.memberService.searchByChapterAndName(
-      chapterId,
-      query ?? '',
-    );
+    return this.memberService.searchByChapterAndName(chapterId, query ?? '');
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get member profile by ID' })
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
-  async getOne(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.memberService.findProfileById(id, chapterId);
   }
 

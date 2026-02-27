@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsUrl, Matches, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUrl,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class LogoUploadUrlDto {

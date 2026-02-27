@@ -10,15 +10,13 @@ export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
 export const CHAT_CATEGORY_REPOSITORY = 'CHAT_CATEGORY_REPOSITORY';
 export const CHAT_MESSAGE_REPOSITORY = 'CHAT_MESSAGE_REPOSITORY';
 export const MESSAGE_REACTION_REPOSITORY = 'MESSAGE_REACTION_REPOSITORY';
-export const CHANNEL_READ_RECEIPT_REPOSITORY = 'CHANNEL_READ_RECEIPT_REPOSITORY';
+export const CHANNEL_READ_RECEIPT_REPOSITORY =
+  'CHANNEL_READ_RECEIPT_REPOSITORY';
 
 export interface IChatChannelRepository {
   findById(id: string, chapterId: string): Promise<ChatChannel | null>;
   findByChapter(chapterId: string): Promise<ChatChannel[]>;
-  findDm(
-    chapterId: string,
-    memberIds: string[],
-  ): Promise<ChatChannel | null>;
+  findDm(chapterId: string, memberIds: string[]): Promise<ChatChannel | null>;
   create(data: Partial<ChatChannel>): Promise<ChatChannel>;
   update(
     id: string,

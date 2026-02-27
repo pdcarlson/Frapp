@@ -37,12 +37,14 @@ export class SearchService {
 
     const pattern = PATTERN(q);
 
-    const [backworkRes, eventsRes, membersRes, messagesRes] = await Promise.all([
-      this.searchBackwork(chapterId, pattern),
-      this.searchEvents(chapterId, pattern),
-      this.searchMembers(chapterId, pattern),
-      this.searchMessages(chapterId, pattern),
-    ]);
+    const [backworkRes, eventsRes, membersRes, messagesRes] = await Promise.all(
+      [
+        this.searchBackwork(chapterId, pattern),
+        this.searchEvents(chapterId, pattern),
+        this.searchMembers(chapterId, pattern),
+        this.searchMessages(chapterId, pattern),
+      ],
+    );
 
     return {
       backwork: backworkRes,
@@ -105,7 +107,10 @@ export class SearchService {
     if (!users?.length) return [];
 
     const userMap = new Map(
-      users.map((u) => [u.id, { display_name: u.display_name, email: u.email }]),
+      users.map((u) => [
+        u.id,
+        { display_name: u.display_name, email: u.email },
+      ]),
     );
     const memberMap = new Map(members.map((m) => [m.user_id, m]));
 

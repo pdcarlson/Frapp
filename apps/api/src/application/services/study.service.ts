@@ -143,8 +143,10 @@ export class StudyService {
       throw new BadRequestException('Location is outside the geofence');
     }
 
-    const activeSession =
-      await this.sessionRepo.findActiveByUserAndChapter(userId, chapterId);
+    const activeSession = await this.sessionRepo.findActiveByUserAndChapter(
+      userId,
+      chapterId,
+    );
     if (activeSession) {
       throw new ConflictException(
         'You already have an active study session. Stop it before starting a new one.',
@@ -171,8 +173,10 @@ export class StudyService {
     lat: number,
     lng: number,
   ): Promise<StudySession> {
-    const session =
-      await this.sessionRepo.findActiveByUserAndChapter(userId, chapterId);
+    const session = await this.sessionRepo.findActiveByUserAndChapter(
+      userId,
+      chapterId,
+    );
     if (!session) {
       throw new NotFoundException('No active study session found');
     }
@@ -215,8 +219,10 @@ export class StudyService {
   }
 
   async stopSession(userId: string, chapterId: string): Promise<StudySession> {
-    const session =
-      await this.sessionRepo.findActiveByUserAndChapter(userId, chapterId);
+    const session = await this.sessionRepo.findActiveByUserAndChapter(
+      userId,
+      chapterId,
+    );
     if (!session) {
       throw new NotFoundException('No active study session found');
     }
@@ -245,7 +251,10 @@ export class StudyService {
     const totalMinutes = session.total_foreground_minutes + finalMinutes;
 
     let points = 0;
-    if (totalMinutes >= geofence.min_session_minutes && !session.points_awarded) {
+    if (
+      totalMinutes >= geofence.min_session_minutes &&
+      !session.points_awarded
+    ) {
       points =
         Math.floor(totalMinutes / geofence.minutes_per_point) *
         geofence.points_per_interval;

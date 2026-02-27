@@ -12,7 +12,9 @@ describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
   let mockInvoiceRepo: jest.Mocked<IFinancialInvoiceRepository>;
   let mockTransactionRepo: jest.Mocked<IFinancialTransactionRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const baseInvoice: FinancialInvoice = {
     id: 'inv-1',

@@ -133,7 +133,7 @@ export class MemberService {
     const users = await this.userRepo.findByIds(userIds);
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    let results: MemberProfile[] = [];
+    const results: MemberProfile[] = [];
     for (const member of alumniMembers) {
       const user = userMap.get(member.user_id);
       if (user) {
@@ -158,10 +158,9 @@ export class MemberService {
       return false;
     }
     if (filter.city !== undefined) {
-      const cityMatch =
-        profile.current_city
-          ?.toLowerCase()
-          .includes(filter.city.toLowerCase());
+      const cityMatch = profile.current_city
+        ?.toLowerCase()
+        .includes(filter.city.toLowerCase());
       if (!cityMatch) return false;
     }
     if (filter.company !== undefined) {

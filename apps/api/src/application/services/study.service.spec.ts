@@ -4,10 +4,7 @@ import {
   ConflictException,
   NotFoundException,
 } from '@nestjs/common';
-import {
-  StudyService,
-  pointInPolygon,
-} from './study.service';
+import { StudyService, pointInPolygon } from './study.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
@@ -37,7 +34,12 @@ describe('pointInPolygon', () => {
   it('returns false for empty or insufficient polygon', () => {
     expect(pointInPolygon(5, 5, [])).toBe(false);
     expect(pointInPolygon(5, 5, [{ lat: 0, lng: 0 }])).toBe(false);
-    expect(pointInPolygon(5, 5, [{ lat: 0, lng: 0 }, { lat: 1, lng: 1 }])).toBe(false);
+    expect(
+      pointInPolygon(5, 5, [
+        { lat: 0, lng: 0 },
+        { lat: 1, lng: 1 },
+      ]),
+    ).toBe(false);
   });
 
   it('handles complex polygon', () => {
@@ -172,7 +174,10 @@ describe('StudyService', () => {
       await expect(
         service.createGeofence('ch-1', {
           name: 'Bad',
-          coordinates: [{ lat: 0, lng: 0 }, { lat: 1, lng: 1 }],
+          coordinates: [
+            { lat: 0, lng: 0 },
+            { lat: 1, lng: 1 },
+          ],
         }),
       ).rejects.toThrow(BadRequestException);
       expect(mockGeofenceRepo.create).not.toHaveBeenCalled();
@@ -189,11 +194,9 @@ describe('StudyService', () => {
         name: 'Updated Library',
       });
 
-      expect(mockGeofenceRepo.update).toHaveBeenCalledWith(
-        'geo-1',
-        'ch-1',
-        { name: 'Updated Library' },
-      );
+      expect(mockGeofenceRepo.update).toHaveBeenCalledWith('geo-1', 'ch-1', {
+        name: 'Updated Library',
+      });
       expect(result).toEqual(updated);
     });
 
@@ -375,9 +378,9 @@ describe('StudyService', () => {
     it('throws NotFoundException when no active session', async () => {
       mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
 
-      await expect(
-        service.heartbeat('user-1', 'ch-1', 5, 5),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.heartbeat('user-1', 'ch-1', 5, 5)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -430,7 +433,9 @@ describe('StudyService', () => {
         total_foreground_minutes: 5,
         last_heartbeat_at: '2026-02-26T10:05:00.000Z',
       };
-      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(shortSession);
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+        shortSession,
+      );
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
 
       const completed = {
@@ -459,7 +464,9 @@ describe('StudyService', () => {
         total_foreground_minutes: 60,
         points_awarded: true,
       };
-      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(alreadyAwarded);
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+        alreadyAwarded,
+      );
       mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
 
       const completed = {
