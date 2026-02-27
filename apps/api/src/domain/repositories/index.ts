@@ -9,3 +9,4 @@ export * from './point-transaction.repository.interface';
 export * from './financial-invoice.repository.interface';
 export * from './financial-transaction.repository.interface';
 export * from './backwork.repository.interface';
+export * from './chat.repository.interface';

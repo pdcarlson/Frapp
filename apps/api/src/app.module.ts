@@ -16,6 +16,7 @@ import { PointsModule } from './modules/points/points.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { FinancialInvoiceModule } from './modules/financial-invoice/financial-invoice.module';
 import { BackworkModule } from './modules/backwork/backwork.module';
+import { ChatModule } from './modules/chat/chat.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { BackworkModule } from './modules/backwork/backwork.module';
     BillingModule,
     FinancialInvoiceModule,
     BackworkModule,
+    ChatModule,
   ],
 })
 export class AppModule {}

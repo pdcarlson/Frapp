@@ -9,3 +9,4 @@ export * from './point-transaction.entity';
 export * from './financial-invoice.entity';
 export * from './financial-transaction.entity';
 export * from './backwork.entity';
+export * from './chat.entity';
