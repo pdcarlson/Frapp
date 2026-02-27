@@ -1,17 +1,30 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import {
+  STORAGE_PROVIDER,
+  type IStorageProvider,
+} from '../../domain/adapters/storage.interface';
 import { Chapter } from '../../domain/entities/chapter.entity';
+import { checkWcagContrast } from '../../domain/utils/wcag';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
 } from '../../domain/constants/permissions';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+
+const BRANDING_BUCKET = 'branding';
+const LIGHT_MODE_BACKGROUND = '#F8FAFC';
 
 @Injectable()
 export class ChapterService {
@@ -20,6 +33,7 @@ export class ChapterService {
     private readonly chapterRepo: IChapterRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(STORAGE_PROVIDER) private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
 
@@ -69,6 +83,53 @@ export class ChapterService {
   }
 
   async update(id: string, data: Partial<Chapter>): Promise<Chapter> {
+    if (data.accent_color !== undefined) {
+      if (!checkWcagContrast(data.accent_color, LIGHT_MODE_BACKGROUND)) {
+        throw new BadRequestException(
+          'accent_color does not meet WCAG AA contrast requirements (4.5:1) against the light mode background (#F8FAFC). Please choose a darker color.',
+        );
+      }
+    }
     return this.chapterRepo.update(id, data);
+  }
+
+  async requestLogoUploadUrl(
+    chapterId: string,
+    filename: string,
+    contentType: string,
+  ): Promise<{ signedUrl: string; storage_path: string }> {
+    const ext = filename.includes('.')
+      ? filename.split('.').pop()?.toLowerCase() ?? 'png'
+      : 'png';
+    const storagePath = `chapters/${chapterId}/branding/logo.${ext}`;
+
+    const signedUrl = await this.storageProvider.getSignedUploadUrl(
+      BRANDING_BUCKET,
+      storagePath,
+      contentType,
+    );
+
+    return { signedUrl, storage_path: storagePath };
+  }
+
+  async confirmLogoUpload(
+    chapterId: string,
+    storagePath: string,
+  ): Promise<Chapter> {
+    if (!storagePath.startsWith(`chapters/${chapterId}/branding/`)) {
+      throw new BadRequestException(
+        'storage_path must be within the chapter branding folder',
+      );
+    }
+    return this.chapterRepo.update(chapterId, { logo_path: storagePath });
+  }
+
+  async deleteLogo(chapterId: string): Promise<Chapter> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (!chapter) throw new NotFoundException('Chapter not found');
+    if (chapter.logo_path) {
+      await this.storageProvider.deleteFile(BRANDING_BUCKET, chapter.logo_path);
+    }
+    return this.chapterRepo.update(chapterId, { logo_path: null });
   }
 }
