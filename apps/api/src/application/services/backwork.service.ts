@@ -46,10 +46,10 @@ export interface ConfirmUploadInput {
   course_number?: string | null;
   professor_name?: string | null;
   year?: number | null;
-  semester?: Semester | null;
-  assignment_type?: AssignmentType | null;
+  semester?: string | null;
+  assignment_type?: string | null;
   assignment_number?: number | null;
-  document_variant?: DocumentVariant | null;
+  document_variant?: string | null;
   tags?: string[];
   is_redacted?: boolean;
 }
@@ -118,10 +118,10 @@ export class BackworkService {
       course_number: input.course_number ?? null,
       professor_id: professorId,
       year: input.year ?? null,
-      semester: input.semester ?? null,
-      assignment_type: input.assignment_type ?? null,
+      semester: (input.semester as Semester) ?? null,
+      assignment_type: (input.assignment_type as AssignmentType) ?? null,
       assignment_number: input.assignment_number ?? null,
-      document_variant: input.document_variant ?? null,
+      document_variant: (input.document_variant as DocumentVariant) ?? null,
       tags: input.tags ?? [],
       is_redacted: input.is_redacted ?? false,
     });

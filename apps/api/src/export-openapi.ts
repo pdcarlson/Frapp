@@ -5,11 +5,17 @@ import { writeFileSync } from 'fs';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
-// Allow export without real Supabase env (only used to build Swagger doc)
+// Allow export without real env vars (only used to build Swagger doc)
 if (!process.env.SUPABASE_URL)
   process.env.SUPABASE_URL = 'https://placeholder.supabase.co';
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder-key';
+if (!process.env.STRIPE_SECRET_KEY)
+  process.env.STRIPE_SECRET_KEY = 'openapi_export_stub'; // pragma: allowlist secret
+if (!process.env.STRIPE_WEBHOOK_SECRET)
+  process.env.STRIPE_WEBHOOK_SECRET = 'openapi_export_stub'; // pragma: allowlist secret
+if (!process.env.STRIPE_PRICE_ID)
+  process.env.STRIPE_PRICE_ID = 'openapi_export_stub'; // pragma: allowlist secret
 
 async function exportOpenApi() {
   const app = await NestFactory.create(AppModule, { logger: false });
