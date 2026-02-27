@@ -1,6 +1,6 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+## Cursor Cloud-specific instructions
 
 ### Project overview
 
@@ -20,7 +20,7 @@ Frapp is a Turborepo + npm workspaces monorepo with 5 apps and 7 shared packages
 
 ### Starting the dev environment
 
-1. Docker must be running before Supabase can start: `sudo dockerd &>/tmp/dockerd.log &` (wait ~3s), then `sudo chmod 666 /var/run/docker.sock`.
+1. Docker must be running before Supabase can start: `sudo dockerd &>/tmp/dockerd.log &` (wait ~3s). Grant socket access by adding your user to the docker group (`sudo usermod -aG docker $USER`) and re-logging, or by starting dockerd via the system service (`sudo systemctl start docker`). The `chmod 666 /var/run/docker.sock` shortcut should only be used in ephemeral, isolated CI/test VMs.
 2. Start Supabase: `npx supabase start` (pulls images on first run, takes ~90s; subsequent starts are ~10s).
 3. Create `.env.local` files for each app using keys from `npx supabase status -o env`. See `spec/environments.md` for the full variable list per app.
 4. Start individual services with workspace commands above, or all at once with `npm run dev` (uses turbo persistent mode).
