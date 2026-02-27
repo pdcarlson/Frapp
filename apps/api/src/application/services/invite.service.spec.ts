@@ -221,16 +221,16 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
     const result = await service.redeem('test-uuid', 'user-2');
 
     expect(mockInviteRepo.findByToken).toHaveBeenCalledWith('test-uuid');
-    expect(mockInviteRepo.markUsedAtomically).toHaveBeenCalledWith('inv-1');
     expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
+    expect(mockInviteRepo.markUsedAtomically).toHaveBeenCalledWith('inv-1');
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-2',
       chapter_id: 'ch-1',
@@ -270,8 +270,8 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
 
@@ -344,12 +344,12 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
-    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
 
     const promise = service.redeem('test-uuid', 'user-2');
     await expect(promise).rejects.toThrow(ConflictException);
     await expect(promise).rejects.toThrow('Already a member of this chapter');
+    expect(mockInviteRepo.markUsedAtomically).not.toHaveBeenCalled();
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 
