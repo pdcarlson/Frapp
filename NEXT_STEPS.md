@@ -7,60 +7,72 @@
 
 ## Current Progress Snapshot
 
-### What is implemented
+### API (`apps/api`) — ✅ PHASE 1 COMPLETE (~95% of spec domains)
 
-**API (apps/api) — ~38% of spec domains:**
-- Auth sync, Users, Chapters, Members, Roles/RBAC, Invites, Events, Attendance, Points, Health
-- 9 controllers, 9 services, 8 repositories, 84 passing unit tests
-- OpenAPI export + auto-generated TypeScript SDK
-- Guards: SupabaseAuth, Chapter, Permissions (full chain)
-- Observability: RequestId, Logging, AllExceptionsFilter
+**23 controllers, 22 services, 29 repositories, 297 passing tests across 26 suites.**
 
-**Database — 100%:**
-- All 25+ tables defined in `supabase/migrations/` (ahead of API implementation)
+| Domain | Status | Tests |
+|--------|--------|-------|
+| Auth/User Sync | ✅ | 3 |
+| Users | ✅ | 3 |
+| Chapters | ✅ | 5 |
+| Members | ✅ | 4 |
+| Roles/RBAC | ✅ | 10 |
+| Invites | ✅ | 12 |
+| Events | ✅ | 8 |
+| Attendance | ✅ | 11 |
+| Points | ✅ | 10 |
+| Billing (Stripe) | ✅ | 19 |
+| Financial Invoices | ✅ | 19 |
+| Backwork | ✅ | 15 |
+| Chat (channels, messages, reactions, pins) | ✅ | 25 |
+| Notifications | ✅ | 18 |
+| Service Hours | ✅ | 20 |
+| Tasks | ✅ | 25 |
+| Study Hours (geofences, sessions) | ✅ | 27 |
+| Chapter Documents | ✅ | 8 |
+| Polls | ✅ | 14 |
+| Semester Rollover | ✅ | 8 |
+| Reports & Export | ✅ | 8 |
+| Global Search | ✅ | 4 |
+| Health | ✅ | 0 (e2e) |
+| Guards/Interceptors | ✅ | 21 |
 
-**Shared packages — ~75%:**
-- api-sdk, theme, validation, eslint-config, typescript-config: ✅ Complete
-- hooks, ui: ⚠️ Stubs/minimal
+**Shared packages:**
+- `@repo/api-sdk` — ✅ Regenerated with all endpoints
+- `@repo/validation` — ✅ Zod schemas for all domains
+- `@repo/theme` — ✅ Complete
+- `@repo/eslint-config`, `@repo/typescript-config` — ✅ Complete
 
-**Web, Mobile, Landing — Placeholder shells only (~1–5%).**
-
-### What is NOT implemented
-
-**API domains not yet built (12 remaining):**
-- Backwork, Chat, Notifications, Study Hours, Financials (endpoints), Service Hours, Tasks, Chapter Documents, Semester Rollover, Reports & Export, Global Search, Polls
-
-**Frontends:**
-- Web: No auth, no routes, no components
-- Mobile: Placeholder tabs only
-- Landing: Basic hero only; no features section, pricing, legal pages
+**Database:** ✅ All tables in `supabase/migrations/` match implemented domains.
 
 ---
 
-## Priority Order
+## Priority Order (Updated)
 
 ```
-NOW ─► Phase 1: Complete the API (12 remaining domains)
-       Phase 2: Landing Page (sales-ready, parallel with API)
-       Phase 3: Web Dashboard (admin experience)
-       Phase 4: Mobile App (member experience)
-       Phase 5: Integration, Polish, Launch
+✅ DONE ─► Phase 1: Complete the API
+NOW ──────► Phase 2: Landing Page (sales-ready marketing site)
+            Phase 3: Web Dashboard (admin experience)
+            Phase 4: Mobile App (member experience)
+            Phase 5: Integration, Polish, Launch
 ```
-
-**Rationale:** The API is only 38% complete. Building frontends without backend endpoints produces throwaway code. API-first ensures every frontend feature has a working backend to call.
 
 ---
 
 ## Immediate Next Actions (P0)
 
-1. **Start API Sprint 1:** Billing endpoints + Backwork domain
-   - Billing: Checkout flow, webhook handler, subscription status, member invoices
-   - Backwork: Upload (signed URLs), browse with filters, auto-vivification, duplicate prevention
-   - See `ROLLOUT_STRATEGY.md` § Phase 1, Sprint 1 for full checklist
+1. **Start Phase 2: Landing Page** — See `ROLLOUT_STRATEGY.md` § Phase 2
+   - Hero section, feature highlights, pricing, testimonials
+   - Legal pages (/terms, /privacy, /ferpa)
+   - "Modern Ivy" design with Navy + Royal Blue + Emerald palette
+   - No backend dependency — pure UI
 
-2. **Start Landing Page design** (can run in parallel)
-   - Hero section, feature highlights, pricing, footer, legal pages
-   - See `ROLLOUT_STRATEGY.md` § Phase 2 for full checklist
+2. **Start Phase 3: Web Dashboard Foundation** (can run in parallel)
+   - Supabase Auth integration
+   - Layout shell with sidebar navigation
+   - Dashboard home page
+   - First admin screens (Members, Roles, Events)
 
 ---
 
@@ -68,8 +80,12 @@ NOW ─► Phase 1: Complete the API (12 remaining domains)
 
 | Milestone | Date | Description |
 |-----------|------|-------------|
-| Ground-up rebuild | 2026-02 | Migrated from Clerk/Drizzle to Supabase, spec-driven architecture |
-| Phase 1: Foundation | 2026-02 | Auth, Users, Chapters, Members, Roles, Invites, Health |
-| Phase 2: Events/Points | 2026-02 | Events, Attendance, Points with tests and OpenAPI/SDK |
-| Branch integration | 2026-02-27 | Merged Phase 2 work, resolved conflicts |
-| Full codebase audit | 2026-02-27 | Comprehensive audit and rollout strategy created |
+| Ground-up rebuild | 2026-02 | Migrated to Supabase, spec-driven architecture |
+| Phase 1 Foundation | 2026-02 | Auth, Users, Chapters, Members, Roles, Invites |
+| Phase 2 Events/Points | 2026-02 | Events, Attendance, Points |
+| Full codebase audit | 2026-02-27 | Comprehensive audit and rollout strategy |
+| Sprint 1: Financials + Backwork | 2026-02-27 | Billing, Member Invoices, Backwork |
+| Sprint 2: Chat | 2026-02-27 | Channels, Messages, Reactions, Pins, Read Receipts |
+| Sprint 3: Notifications + Tasks | 2026-02-27 | Notifications, Service Hours, Tasks |
+| Sprint 4: Remaining Domains | 2026-02-27 | Study Hours, Documents, Polls, Semester, Reports, Search |
+| **Phase 1 Complete** | **2026-02-27** | **All 21 API domains implemented, 297 tests** |

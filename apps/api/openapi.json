@@ -1503,6 +1503,1919 @@
           "Backwork"
         ]
       }
+    },
+    "/v1/channels": {
+      "get": {
+        "operationId": "ChatController_listChannels_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter channels",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatController_createChannel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChannelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}": {
+      "get": {
+        "operationId": "ChatController_getChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get channel by ID",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "patch": {
+        "operationId": "ChatController_updateChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChannelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a channel",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/dm": {
+      "post": {
+        "operationId": "ChatController_getOrCreateDm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDmDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get or create a 1-on-1 DM channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/group-dm": {
+      "post": {
+        "operationId": "ChatController_createGroupDm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGroupDmDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a group DM channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/list": {
+      "get": {
+        "operationId": "ChatController_listCategories_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List channel categories",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories": {
+      "post": {
+        "operationId": "ChatController_createCategory_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a channel category",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/categories/{id}": {
+      "patch": {
+        "operationId": "ChatController_updateCategory_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a channel category",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteCategory_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a channel category",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/messages": {
+      "get": {
+        "operationId": "ChatController_getMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "Cursor for pagination (ISO timestamp)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get channel message history",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "post": {
+        "operationId": "ChatController_sendMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}": {
+      "patch": {
+        "operationId": "ChatController_editMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Edit a message (own only)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_deleteMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a message (soft delete)",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/pins": {
+      "get": {
+        "operationId": "ChatController_getPinnedMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get pinned messages in a channel",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/pin": {
+      "post": {
+        "operationId": "ChatController_pinMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pin a message",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "delete": {
+        "operationId": "ChatController_unpinMessage_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unpin a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/reactions": {
+      "post": {
+        "operationId": "ChatController_toggleReaction_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Toggle reaction (add/remove)",
+        "tags": [
+          "Chat"
+        ]
+      },
+      "get": {
+        "operationId": "ChatController_getReactions_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get reactions for a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/{id}/read": {
+      "post": {
+        "operationId": "ChatController_markRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark channel as read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/service-entries": {
+      "get": {
+        "operationId": "ServiceEntryController_list_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": false,
+            "in": "query",
+            "description": "Filter by user (admins with service:approve only)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List service entries (own or all for admins)",
+        "tags": [
+          "Service Entries"
+        ]
+      },
+      "post": {
+        "operationId": "ServiceEntryController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceEntryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Log a service entry",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/{id}": {
+      "get": {
+        "operationId": "ServiceEntryController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get service entry by id",
+        "tags": [
+          "Service Entries"
+        ]
+      },
+      "delete": {
+        "operationId": "ServiceEntryController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a PENDING service entry (own or any for admins)",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/{id}/review": {
+      "patch": {
+        "operationId": "ServiceEntryController_review_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewServiceEntryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Approve or reject a service entry",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/tasks": {
+      "get": {
+        "operationId": "TaskController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List tasks (own or all for admins)",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "post": {
+        "operationId": "TaskController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a task",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}": {
+      "get": {
+        "operationId": "TaskController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get task by id",
+        "tags": [
+          "Tasks"
+        ]
+      },
+      "delete": {
+        "operationId": "TaskController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a task",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/status": {
+      "patch": {
+        "operationId": "TaskController_updateStatus_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateTaskStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update task status (assignee or admin)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/confirm": {
+      "post": {
+        "operationId": "TaskController_confirmCompletion_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm task completion and award points",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/reject": {
+      "post": {
+        "operationId": "TaskController_rejectCompletion_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectTaskCompletionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reject task completion (revert to IN_PROGRESS)",
+        "tags": [
+          "Tasks"
+        ]
+      }
+    },
+    "/v1/push-tokens": {
+      "post": {
+        "operationId": "NotificationController_registerPushToken_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterPushTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Register push token",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/push-tokens/{id}": {
+      "delete": {
+        "operationId": "NotificationController_removePushToken_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove push token",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications": {
+      "get": {
+        "operationId": "NotificationController_listNotifications_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List in-app notifications for current user",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications/{id}/read": {
+      "patch": {
+        "operationId": "NotificationController_markRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mark notification as read",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/notifications/preferences": {
+      "get": {
+        "operationId": "NotificationController_getPreferences_v1",
+        "parameters": [
+          {
+            "name": "chapterId",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get notification preferences",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "NotificationController_updatePreference_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPreferenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update notification preferences",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/settings": {
+      "get": {
+        "operationId": "NotificationController_getSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get user settings",
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "NotificationController_updateSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateUserSettingsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update user settings (quiet hours, theme)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/v1/geofences": {
+      "get": {
+        "operationId": "StudyGeofenceController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter geofences",
+        "tags": [
+          "Study Hours"
+        ]
+      },
+      "post": {
+        "operationId": "StudyGeofenceController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGeofenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create geofence (admin)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/geofences/{id}": {
+      "patch": {
+        "operationId": "StudyGeofenceController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateGeofenceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update geofence (admin)",
+        "tags": [
+          "Study Hours"
+        ]
+      },
+      "delete": {
+        "operationId": "StudyGeofenceController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete geofence (admin)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions/start": {
+      "post": {
+        "operationId": "StudySessionController_start_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartStudySessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Start study session (with lat/lng)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions/heartbeat": {
+      "post": {
+        "operationId": "StudySessionController_heartbeat_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySessionHeartbeatDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Send heartbeat (with lat/lng)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions/stop": {
+      "post": {
+        "operationId": "StudySessionController_stop_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stop session and calculate points",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions": {
+      "get": {
+        "operationId": "StudySessionController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List own study sessions",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/documents/upload-url": {
+      "post": {
+        "operationId": "ChapterDocumentController_requestUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URL",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents": {
+      "post": {
+        "operationId": "ChapterDocumentController_confirmUpload_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmUploadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm upload with metadata",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "get": {
+        "operationId": "ChapterDocumentController_list_v1",
+        "parameters": [
+          {
+            "name": "folder",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List documents (optional folder filter)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/{id}": {
+      "get": {
+        "operationId": "ChapterDocumentController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get document with download URL",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/channels/{channelId}/polls": {
+      "post": {
+        "operationId": "PollController_createPoll_v1",
+        "parameters": [
+          {
+            "name": "channelId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePollDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a poll in a channel",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
+    "/v1/polls/{messageId}/vote": {
+      "post": {
+        "operationId": "PollController_vote_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cast vote on a poll",
+        "tags": [
+          "Polls"
+        ]
+      },
+      "delete": {
+        "operationId": "PollController_removeVote_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Remove vote from a poll",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
+    "/v1/polls/{messageId}": {
+      "get": {
+        "operationId": "PollController_getPoll_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get poll with results",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
+    "/v1/chapters/current/rollover": {
+      "post": {
+        "operationId": "SemesterRolloverController_rollover_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RolloverDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trigger semester rollover",
+        "tags": [
+          "Semesters"
+        ]
+      }
+    },
+    "/v1/semesters": {
+      "get": {
+        "operationId": "SemesterRolloverController_listSemesters_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List archived semesters",
+        "tags": [
+          "Semesters"
+        ]
+      }
+    },
+    "/v1/reports/attendance": {
+      "post": {
+        "operationId": "ReportController_attendance_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttendanceReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate attendance report data",
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/v1/reports/points": {
+      "post": {
+        "operationId": "ReportController_points_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointsReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate points report data",
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/v1/reports/roster": {
+      "post": {
+        "operationId": "ReportController_roster_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate member roster data",
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/v1/reports/service": {
+      "post": {
+        "operationId": "ReportController_service_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServiceReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate service hours report data",
+        "tags": [
+          "Reports"
+        ]
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "operationId": "SearchController_search_v1",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cross-domain search (backwork, events, members, messages)",
+        "tags": [
+          "Search"
+        ]
+      }
     }
   },
   "info": {
@@ -1961,77 +3874,22 @@
             "type": "string",
             "description": "Storage path returned from upload-url"
           },
-          "file_hash": {
-            "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
-          },
           "title": {
-            "type": "string"
-          },
-          "department_code": {
             "type": "string",
-            "description": "Department code (e.g. \"CS\")"
+            "description": "Document title"
           },
-          "course_number": {
+          "description": {
             "type": "string",
-            "description": "Course number (e.g. \"101\")"
+            "description": "Document description"
           },
-          "professor_name": {
+          "folder": {
             "type": "string",
-            "description": "Professor name"
-          },
-          "year": {
-            "type": "number"
-          },
-          "semester": {
-            "type": "string",
-            "enum": [
-              "Spring",
-              "Summer",
-              "Fall",
-              "Winter"
-            ]
-          },
-          "assignment_type": {
-            "type": "string",
-            "enum": [
-              "Exam",
-              "Midterm",
-              "Final Exam",
-              "Quiz",
-              "Homework",
-              "Lab",
-              "Project",
-              "Study Guide",
-              "Notes",
-              "Other"
-            ]
-          },
-          "assignment_number": {
-            "type": "number"
-          },
-          "document_variant": {
-            "type": "string",
-            "enum": [
-              "Student Copy",
-              "Blank Copy",
-              "Answer Key"
-            ]
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "is_redacted": {
-            "type": "boolean",
-            "default": false
+            "description": "Folder name (one level, flat structure)"
           }
         },
         "required": [
           "storage_path",
-          "file_hash"
+          "title"
         ]
       },
       "UpdateDepartmentDto": {
@@ -2040,6 +3898,559 @@
           "name": {
             "type": "string",
             "description": "Full department name"
+          }
+        }
+      },
+      "CreateChannelDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "PUBLIC",
+              "PRIVATE",
+              "ROLE_GATED"
+            ]
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": "string"
+          },
+          "is_read_only": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ]
+      },
+      "UpdateChannelDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "required_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "category_id": {
+            "type": "string"
+          },
+          "is_read_only": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateDmDto": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "description": "The other member user ID"
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "CreateGroupDmDto": {
+        "type": "object",
+        "properties": {
+          "member_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_ids"
+        ]
+      },
+      "CreateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_order": {
+            "type": "number",
+            "default": 0
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateCategoryDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "display_order": {
+            "type": "number"
+          }
+        }
+      },
+      "SendMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "reply_to_id": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "EditMessageDto": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ]
+      },
+      "ReactionDto": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "Emoji string (e.g. \"👍\")"
+          }
+        },
+        "required": [
+          "emoji"
+        ]
+      },
+      "CreateServiceEntryDto": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Date of service (YYYY-MM-DD)"
+          },
+          "duration_minutes": {
+            "type": "number",
+            "description": "Duration in minutes",
+            "minimum": 1,
+            "example": 60
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the service performed"
+          },
+          "proof_path": {
+            "type": "string",
+            "description": "Storage path to proof file (e.g. from upload)"
+          }
+        },
+        "required": [
+          "date",
+          "duration_minutes",
+          "description"
+        ]
+      },
+      "ReviewServiceEntryDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "review_comment": {
+            "type": "string",
+            "description": "Optional comment for the member (especially on rejection)"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "CreateTaskDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "User ID of the assignee"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (YYYY-MM-DD)"
+          },
+          "point_reward": {
+            "type": "number",
+            "description": "Points to award on completion"
+          }
+        },
+        "required": [
+          "title",
+          "assignee_id",
+          "due_date"
+        ]
+      },
+      "UpdateTaskStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "TODO",
+              "IN_PROGRESS",
+              "COMPLETED",
+              "OVERDUE"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "RejectTaskCompletionDto": {
+        "type": "object",
+        "properties": {
+          "comment": {
+            "type": "string",
+            "description": "Optional comment for rejection"
+          }
+        }
+      },
+      "RegisterPushTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Expo push token"
+          },
+          "device_name": {
+            "type": "string",
+            "description": "Device name for display"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "UpdateNotificationPreferenceDto": {
+        "type": "object",
+        "properties": {
+          "chapter_id": {
+            "type": "string",
+            "description": "Chapter ID"
+          },
+          "category": {
+            "type": "string",
+            "description": "Notification category (e.g. chat, events)"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "description": "Whether notifications for this category are enabled"
+          }
+        },
+        "required": [
+          "chapter_id",
+          "category",
+          "is_enabled"
+        ]
+      },
+      "UpdateUserSettingsDto": {
+        "type": "object",
+        "properties": {
+          "quiet_hours_start": {
+            "type": "string",
+            "description": "Quiet hours start (HH:mm format, e.g. 22:00)"
+          },
+          "quiet_hours_end": {
+            "type": "string",
+            "description": "Quiet hours end (HH:mm format, e.g. 08:00)"
+          },
+          "quiet_hours_tz": {
+            "type": "string",
+            "description": "Timezone for quiet hours (e.g. America/New_York)"
+          },
+          "theme": {
+            "type": "string",
+            "description": "Theme preference",
+            "enum": [
+              "light",
+              "dark",
+              "system"
+            ]
+          }
+        }
+      },
+      "GeofenceCoordinateDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "CreateGeofenceDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "is_active": {
+            "type": "boolean",
+            "default": true
+          },
+          "minutes_per_point": {
+            "type": "number",
+            "default": 30
+          },
+          "points_per_interval": {
+            "type": "number",
+            "default": 1
+          },
+          "min_session_minutes": {
+            "type": "number",
+            "default": 15
+          }
+        },
+        "required": [
+          "name",
+          "coordinates"
+        ]
+      },
+      "UpdateGeofenceDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "coordinates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "minutes_per_point": {
+            "type": "number"
+          },
+          "points_per_interval": {
+            "type": "number"
+          },
+          "min_session_minutes": {
+            "type": "number"
+          }
+        }
+      },
+      "StartStudySessionDto": {
+        "type": "object",
+        "properties": {
+          "geofence_id": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "geofence_id",
+          "lat",
+          "lng"
+        ]
+      },
+      "StudySessionHeartbeatDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "CreatePollDto": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Poll question"
+          },
+          "options": {
+            "description": "Poll options (2-10)",
+            "example": [
+              "Option A",
+              "Option B"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "Expiration time (ISO 8601)"
+          },
+          "choice_mode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "multi"
+            ],
+            "default": "single"
+          }
+        },
+        "required": [
+          "question",
+          "options"
+        ]
+      },
+      "VoteDto": {
+        "type": "object",
+        "properties": {
+          "option_indexes": {
+            "description": "Option index(es) to vote for. Single choice: [0]. Multi choice: [0, 1].",
+            "example": [
+              0
+            ],
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "option_indexes"
+        ]
+      },
+      "RolloverDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string",
+            "description": "Semester label (e.g. \"Fall 2025\")"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date (ISO date)",
+            "example": "2025-08-01"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date (ISO date)",
+            "example": "2025-12-15"
+          }
+        },
+        "required": [
+          "label",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "AttendanceReportDto": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Filter by event ID"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date (YYYY-MM-DD)"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date (YYYY-MM-DD)"
+          }
+        }
+      },
+      "PointsReportDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Filter by user ID (omit for chapter-wide)"
+          },
+          "window": {
+            "type": "string",
+            "description": "Time window (e.g. semester identifier)"
+          }
+        }
+      },
+      "ServiceReportDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Filter by user ID (omit for chapter-wide)"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Start date (YYYY-MM-DD)"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "End date (YYYY-MM-DD)"
           }
         }
       }
