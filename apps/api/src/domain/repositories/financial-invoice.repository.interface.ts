@@ -6,6 +6,7 @@ export interface IFinancialInvoiceRepository {
   findById(id: string, chapterId: string): Promise<FinancialInvoice | null>;
   findByChapter(chapterId: string): Promise<FinancialInvoice[]>;
   findByUser(userId: string, chapterId: string): Promise<FinancialInvoice[]>;
+  findOverdue(chapterId: string): Promise<FinancialInvoice[]>;
   create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice>;
   update(
     id: string,

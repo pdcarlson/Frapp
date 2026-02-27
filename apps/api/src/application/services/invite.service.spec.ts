@@ -2,10 +2,12 @@ jest.mock('uuid', () => ({ v4: () => 'test-uuid' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   HttpException,
   HttpStatus,
+  NotFoundException,
 } from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
@@ -32,6 +34,7 @@ describe('InviteService', () => {
 
   beforeEach(async () => {
     mockInviteRepo = {
+      findById: jest.fn(),
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
@@ -433,5 +436,75 @@ describe('InviteService', () => {
         category: 'admin',
       }),
     );
+  });
+
+  describe('revoke', () => {
+    it('should mark invite as used', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+      mockInviteRepo.markUsed.mockResolvedValue(undefined);
+
+      await service.revoke('inv-1', 'ch-1');
+
+      expect(mockInviteRepo.findById).toHaveBeenCalledWith('inv-1');
+      expect(mockInviteRepo.markUsed).toHaveBeenCalledWith('inv-1');
+    });
+
+    it('should reject already-used invite', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-1',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: '2024-01-02',
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        'Invite has already been used',
+      );
+      expect(mockInviteRepo.markUsed).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when invite does not exist', async () => {
+      mockInviteRepo.findById.mockResolvedValue(null);
+
+      await expect(service.revoke('inv-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw NotFoundException when invite belongs to different chapter', async () => {
+      const invite: Invite = {
+        id: 'inv-1',
+        token: 'test-uuid',
+        chapter_id: 'ch-2',
+        role: 'Member',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        created_by: 'user-1',
+        used_at: null,
+        created_at: '2024-01-01',
+      };
+      mockInviteRepo.findById.mockResolvedValue(invite);
+
+      await expect(service.revoke('inv-1', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
   });
 });

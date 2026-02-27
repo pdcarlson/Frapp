@@ -199,4 +199,42 @@ export class EventService {
   async delete(id: string, chapterId: string): Promise<void> {
     await this.eventRepo.delete(id, chapterId);
   }
+
+  async generateIcs(eventId: string, chapterId: string): Promise<string> {
+    const event = await this.findById(eventId, chapterId);
+
+    const formatDate = (iso: string): string =>
+      new Date(iso)
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace(/\.\d{3}/, '');
+
+    const escapeText = (text: string): string =>
+      text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Frapp//Events//EN',
+      'BEGIN:VEVENT',
+      `DTSTART:${formatDate(event.start_time)}`,
+      `DTEND:${formatDate(event.end_time)}`,
+      `SUMMARY:${escapeText(event.name)}`,
+    ];
+
+    if (event.description) {
+      lines.push(`DESCRIPTION:${escapeText(event.description)}`);
+    }
+    if (event.location) {
+      lines.push(`LOCATION:${escapeText(event.location)}`);
+    }
+
+    lines.push(
+      `UID:${event.id}@frapp.live`,
+      'END:VEVENT',
+      'END:VCALENDAR',
+    );
+
+    return lines.join('\r\n');
+  }
 }

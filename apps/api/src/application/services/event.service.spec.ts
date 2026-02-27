@@ -284,6 +284,42 @@ describe('EventService', () => {
     });
   });
 
+  describe('generateIcs', () => {
+    it('should generate ICS with correct dates, title, and wrapping', async () => {
+      const event: Event = {
+        ...baseEvent,
+        name: 'Chapter Meeting',
+        location: 'Chapter House',
+        description: 'Weekly meeting',
+      };
+      mockEventRepo.findById.mockResolvedValue(event);
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).toContain('BEGIN:VCALENDAR');
+      expect(ics).toContain('END:VCALENDAR');
+      expect(ics).toContain('BEGIN:VEVENT');
+      expect(ics).toContain('END:VEVENT');
+      expect(ics).toContain('SUMMARY:Chapter Meeting');
+      expect(ics).toContain('LOCATION:Chapter House');
+      expect(ics).toContain('DESCRIPTION:Weekly meeting');
+      expect(ics).toContain('UID:evt-1@frapp.live');
+      expect(ics).toContain('DTSTART:');
+      expect(ics).toContain('DTEND:');
+      expect(ics).toContain('VERSION:2.0');
+      expect(ics).toContain('PRODID:-//Frapp//Events//EN');
+    });
+
+    it('should omit DESCRIPTION and LOCATION when null', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+
+      const ics = await service.generateIcs('evt-1', 'ch-1');
+
+      expect(ics).not.toContain('DESCRIPTION:');
+      expect(ics).not.toContain('LOCATION:');
+    });
+  });
+
   describe('notifications', () => {
     it('should notify chapter when event is created', async () => {
       mockEventRepo.create.mockResolvedValue(baseEvent);

@@ -33,6 +33,7 @@ describe('FinancialInvoiceService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       findByUser: jest.fn(),
+      findOverdue: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -297,6 +298,32 @@ describe('FinancialInvoiceService', () => {
     it('should return transactions for a specific invoice', async () => {
       mockTransactionRepo.findByInvoice.mockResolvedValue([]);
       const result = await service.getInvoiceTransactions('inv-1');
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('findOverdue', () => {
+    it('should return overdue invoices from repository', async () => {
+      const overdueInvoice: FinancialInvoice = {
+        ...baseInvoice,
+        id: 'inv-overdue',
+        status: 'OPEN',
+        due_date: '2026-01-01',
+      };
+      mockInvoiceRepo.findOverdue.mockResolvedValue([overdueInvoice]);
+
+      const result = await service.findOverdue('ch-1');
+
+      expect(mockInvoiceRepo.findOverdue).toHaveBeenCalledWith('ch-1');
+      expect(result).toHaveLength(1);
+      expect(result[0].status).toBe('OPEN');
+    });
+
+    it('should exclude PAID and VOID invoices (handled by repository)', async () => {
+      mockInvoiceRepo.findOverdue.mockResolvedValue([]);
+
+      const result = await service.findOverdue('ch-1');
+
       expect(result).toEqual([]);
     });
   });

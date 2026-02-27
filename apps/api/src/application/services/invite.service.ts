@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
@@ -115,5 +117,19 @@ export class InviteService {
 
   async findByChapter(chapterId: string): Promise<Invite[]> {
     return this.inviteRepo.findByChapter(chapterId);
+  }
+
+  async revoke(id: string, chapterId: string): Promise<void> {
+    const invite = await this.inviteRepo.findById(id);
+
+    if (!invite || invite.chapter_id !== chapterId) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.used_at) {
+      throw new BadRequestException('Invite has already been used');
+    }
+
+    await this.inviteRepo.markUsed(id);
   }
 }

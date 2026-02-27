@@ -69,6 +69,10 @@ export class FinancialInvoiceService {
     return this.invoiceRepo.findByUser(userId, chapterId);
   }
 
+  async findOverdue(chapterId: string): Promise<FinancialInvoice[]> {
+    return this.invoiceRepo.findOverdue(chapterId);
+  }
+
   async create(input: CreateInvoiceInput): Promise<FinancialInvoice> {
     if (input.amount <= 0) {
       throw new BadRequestException('Amount must be a positive integer (cents)');

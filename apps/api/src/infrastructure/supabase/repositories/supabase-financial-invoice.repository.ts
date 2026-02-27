@@ -50,6 +50,19 @@ export class SupabaseFinancialInvoiceRepository
     return (data as FinancialInvoice[]) || [];
   }
 
+  async findOverdue(chapterId: string): Promise<FinancialInvoice[]> {
+    const today = new Date().toISOString().split('T')[0];
+    const { data, error } = await this.supabase
+      .from('financial_invoices')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('status', 'OPEN')
+      .lt('due_date', today)
+      .order('due_date', { ascending: true });
+    if (error) throw error;
+    return (data as FinancialInvoice[]) || [];
+  }
+
   async create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice> {
     const { data: created, error } = await this.supabase
       .from('financial_invoices')

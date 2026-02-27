@@ -48,6 +48,14 @@ export class FinancialInvoiceController {
     return this.invoiceService.findByChapter(chapterId);
   }
 
+  @Get('overdue')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.BILLING_VIEW)
+  @ApiOperation({ summary: 'List overdue invoices (OPEN past due_date)' })
+  async listOverdue(@CurrentChapterId() chapterId: string) {
+    return this.invoiceService.findOverdue(chapterId);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get invoice by ID' })
   async getOne(

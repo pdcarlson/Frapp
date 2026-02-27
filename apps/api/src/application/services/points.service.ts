@@ -3,9 +3,13 @@ import {
   Injectable,
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import type {
   PointTransaction,
   PointCategory,
@@ -28,25 +32,30 @@ export class PointsService {
   constructor(
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
+    @Inject(SEMESTER_ARCHIVE_REPOSITORY)
+    private readonly semesterArchiveRepo: ISemesterArchiveRepository,
     private readonly notificationService: NotificationService,
   ) {}
 
   private filterByWindow(
     transactions: PointTransaction[],
     window: PointsWindow = 'all',
+    semesterRange?: { start: Date; end: Date },
   ): PointTransaction[] {
     if (window === 'all') return transactions;
 
     const now = new Date();
     let from: Date;
+    let to: Date = now;
 
     if (window === 'month') {
       from = new Date(now);
       from.setMonth(from.getMonth() - 1);
+    } else if (semesterRange) {
+      from = semesterRange.start;
+      to = semesterRange.end;
     } else {
-      // semester: use a 6-month rolling window as an approximation
-      from = new Date(now);
-      from.setMonth(from.getMonth() - 6);
+      return transactions;
     }
 
     return transactions.filter((txn) => {
@@ -54,9 +63,21 @@ export class PointsService {
       return (
         !Number.isNaN(createdAt.getTime()) &&
         createdAt >= from &&
-        createdAt <= now
+        createdAt <= to
       );
     });
+  }
+
+  private async getSemesterRange(
+    chapterId: string,
+  ): Promise<{ start: Date; end: Date } | undefined> {
+    const archive =
+      await this.semesterArchiveRepo.findLatestByChapter(chapterId);
+    if (!archive) return undefined;
+    return {
+      start: new Date(archive.start_date),
+      end: new Date(archive.end_date),
+    };
   }
 
   async getUserSummary(
@@ -65,7 +86,11 @@ export class PointsService {
     window: PointsWindow = 'all',
   ): Promise<{ balance: number; transactions: PointTransaction[] }> {
     const txns = await this.pointTxnRepo.findByUser(chapterId, userId);
-    const filtered = this.filterByWindow(txns, window);
+    const semesterRange =
+      window === 'semester'
+        ? await this.getSemesterRange(chapterId)
+        : undefined;
+    const filtered = this.filterByWindow(txns, window, semesterRange);
     const balance = filtered.reduce((sum, txn) => sum + txn.amount, 0);
 
     return { balance, transactions: filtered };
@@ -81,7 +106,11 @@ export class PointsService {
     }[]
   > {
     const txns = await this.pointTxnRepo.findByChapter(chapterId);
-    const filtered = this.filterByWindow(txns, window);
+    const semesterRange =
+      window === 'semester'
+        ? await this.getSemesterRange(chapterId)
+        : undefined;
+    const filtered = this.filterByWindow(txns, window, semesterRange);
 
     const totals = new Map<string, number>();
     for (const txn of filtered) {
@@ -94,6 +123,9 @@ export class PointsService {
       .sort((a, b) => b.total - a.total);
   }
 
+  private static readonly RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+  private static readonly RATE_LIMIT_MAX = 50;
+
   async adjustPoints(input: AdjustPointsInput): Promise<PointTransaction> {
     if (!input.reason || input.reason.trim().length === 0) {
       throw new BadRequestException('Reason is required for point adjustments');
@@ -101,6 +133,19 @@ export class PointsService {
 
     if (input.adminUserId === input.targetUserId) {
       throw new ForbiddenException('Admins cannot adjust their own points');
+    }
+
+    const since = new Date(Date.now() - PointsService.RATE_LIMIT_WINDOW_MS);
+    const recentCount = await this.pointTxnRepo.countRecentAdjustments(
+      input.adminUserId,
+      input.chapterId,
+      since,
+    );
+    if (recentCount >= PointsService.RATE_LIMIT_MAX) {
+      throw new HttpException(
+        'Rate limit exceeded: maximum 50 point adjustments per hour',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
 
     const metadata: Record<string, unknown> = {
