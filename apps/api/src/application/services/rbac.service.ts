@@ -117,4 +117,20 @@ export class RbacService {
       permission: value,
     }));
   }
+
+  async memberHasAnyPermission(
+    chapterId: string,
+    userId: string,
+    permissions: string[],
+  ): Promise<boolean> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member?.role_ids?.length) return false;
+    const roles = await this.roleRepo.findByIds(member.role_ids);
+    const userPermissions = new Set(roles.flatMap((r) => r.permissions));
+    if (userPermissions.has('*')) return true;
+    return permissions.some((p) => userPermissions.has(p));
+  }
 }

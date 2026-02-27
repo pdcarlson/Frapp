@@ -10,3 +10,5 @@ export * from './financial-invoice.repository.interface';
 export * from './financial-transaction.repository.interface';
 export * from './backwork.repository.interface';
 export * from './chat.repository.interface';
+export * from './task.repository.interface';
+export * from './service-entry.repository.interface';

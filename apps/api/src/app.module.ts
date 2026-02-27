@@ -17,6 +17,8 @@ import { BillingModule } from './modules/billing/billing.module';
 import { FinancialInvoiceModule } from './modules/financial-invoice/financial-invoice.module';
 import { BackworkModule } from './modules/backwork/backwork.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ServiceEntryModule } from './modules/service-entry/service-entry.module';
+import { TaskModule } from './modules/task/task.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { ChatModule } from './modules/chat/chat.module';
     FinancialInvoiceModule,
     BackworkModule,
     ChatModule,
+    ServiceEntryModule,
+    TaskModule,
   ],
 })
 export class AppModule {}

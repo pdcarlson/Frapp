@@ -10,3 +10,5 @@ export * from './financial-invoice.entity';
 export * from './financial-transaction.entity';
 export * from './backwork.entity';
 export * from './chat.entity';
+export * from './task.entity';
+export * from './service-entry.entity';

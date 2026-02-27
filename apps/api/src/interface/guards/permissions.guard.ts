@@ -8,7 +8,10 @@ import {
 import { Reflector } from '@nestjs/core';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import {
+  PERMISSIONS_KEY,
+  PERMISSIONS_ANY_KEY,
+} from '../decorators/permissions.decorator';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -22,8 +25,17 @@ export class PermissionsGuard implements CanActivate {
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const anyOfPermissions = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_ANY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
-    if (!requiredPermissions || requiredPermissions.length === 0) {
+    const permissionsToCheck = requiredPermissions?.length
+      ? requiredPermissions
+      : anyOfPermissions;
+    const requireAll = !!requiredPermissions?.length;
+
+    if (!permissionsToCheck || permissionsToCheck.length === 0) {
       return true;
     }
 
@@ -49,10 +61,15 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const hasAll = requiredPermissions.every((p) => userPermissions.has(p));
-    if (!hasAll) {
+    const hasAccess = requireAll
+      ? permissionsToCheck.every((p) => userPermissions.has(p))
+      : permissionsToCheck.some((p) => userPermissions.has(p));
+
+    if (!hasAccess) {
       throw new ForbiddenException(
-        `Missing required permissions: ${requiredPermissions.filter((p) => !userPermissions.has(p)).join(', ')}`,
+        requireAll
+          ? `Missing required permissions: ${permissionsToCheck.filter((p) => !userPermissions.has(p)).join(', ')}`
+          : `Missing one of required permissions: ${permissionsToCheck.join(', ')}`,
       );
     }
 
