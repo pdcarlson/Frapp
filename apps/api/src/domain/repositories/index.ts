@@ -14,3 +14,6 @@ export * from './task.repository.interface';
 export * from './service-entry.repository.interface';
 export * from './notification.repository.interface';
 export * from './study.repository.interface';
+export * from './chapter-document.repository.interface';
+export * from './poll-vote.repository.interface';
+export * from './semester-archive.repository.interface';

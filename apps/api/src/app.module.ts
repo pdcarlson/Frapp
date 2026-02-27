@@ -21,6 +21,9 @@ import { ServiceEntryModule } from './modules/service-entry/service-entry.module
 import { TaskModule } from './modules/task/task.module';
 import { NotificationModule } from './modules/notification/notification.module';
 import { StudyModule } from './modules/study/study.module';
+import { ChapterDocumentModule } from './modules/chapter-document/chapter-document.module';
+import { PollModule } from './modules/poll/poll.module';
+import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 
 @Module({
   imports: [
@@ -52,6 +55,9 @@ import { StudyModule } from './modules/study/study.module';
     TaskModule,
     NotificationModule,
     StudyModule,
+    ChapterDocumentModule,
+    PollModule,
+    SemesterRolloverModule,
   ],
 })
 export class AppModule {}

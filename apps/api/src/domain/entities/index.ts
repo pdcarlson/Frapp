@@ -14,3 +14,6 @@ export * from './task.entity';
 export * from './service-entry.entity';
 export * from './notification.entity';
 export * from './study.entity';
+export * from './chapter-document.entity';
+export * from './poll-vote.entity';
+export * from './semester-archive.entity';
