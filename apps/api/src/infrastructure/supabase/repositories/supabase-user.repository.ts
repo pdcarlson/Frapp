@@ -20,6 +20,16 @@ export class SupabaseUserRepository implements IUserRepository {
     return data;
   }
 
+  async findByIds(ids: string[]): Promise<User[]> {
+    if (!ids.length) return [];
+    const { data, error } = await this.supabase
+      .from('users')
+      .select('*')
+      .in('id', ids);
+    if (error) throw error;
+    return (data as User[]) ?? [];
+  }
+
   async findBySupabaseAuthId(authId: string): Promise<User | null> {
     const { data, error } = await this.supabase
       .from('users')
