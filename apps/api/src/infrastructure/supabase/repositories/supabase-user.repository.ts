@@ -11,29 +11,32 @@ export class SupabaseUserRepository implements IUserRepository {
   ) {}
 
   async findById(id: string): Promise<User | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('users')
       .select('*')
       .eq('id', id)
-      .single();
+      .maybeSingle();
+    if (error) throw error;
     return data;
   }
 
   async findBySupabaseAuthId(authId: string): Promise<User | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('users')
       .select('*')
       .eq('supabase_auth_id', authId)
-      .single();
+      .maybeSingle();
+    if (error) throw error;
     return data;
   }
 
   async findByEmail(email: string): Promise<User | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('users')
       .select('*')
       .eq('email', email)
-      .single();
+      .maybeSingle();
+    if (error) throw error;
     return data;
   }
 

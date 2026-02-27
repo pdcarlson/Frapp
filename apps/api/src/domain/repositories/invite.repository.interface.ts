@@ -7,4 +7,5 @@ export interface IInviteRepository {
   findByChapter(chapterId: string): Promise<Invite[]>;
   create(data: Partial<Invite>): Promise<Invite>;
   markUsed(id: string): Promise<void>;
+  markUsedAtomically(id: string): Promise<boolean>;
 }

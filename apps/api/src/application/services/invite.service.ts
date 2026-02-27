@@ -67,6 +67,9 @@ export class InviteService {
     const existingMember = await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id);
     if (existingMember) throw new ConflictException('Already a member of this chapter');
 
+    const claimed = await this.inviteRepo.markUsedAtomically(invite.id);
+    if (!claimed) throw new GoneException('Invite already used');
+
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
     let targetRole = roles.find((r) => r.name === invite.role);
     if (!targetRole) {
@@ -78,8 +81,6 @@ export class InviteService {
       chapter_id: invite.chapter_id,
       role_ids: targetRole ? [targetRole.id] : [],
     });
-
-    await this.inviteRepo.markUsed(invite.id);
 
     return { chapterId: invite.chapter_id, memberId: member.id };
   }

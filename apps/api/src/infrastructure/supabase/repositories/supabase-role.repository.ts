@@ -9,31 +9,35 @@ export class SupabaseRoleRepository implements IRoleRepository {
   constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
 
   async findById(id: string): Promise<Role | null> {
-    const { data } = await this.supabase.from('roles').select('*').eq('id', id).single();
+    const { data, error } = await this.supabase.from('roles').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
     return data;
   }
 
   async findByChapter(chapterId: string): Promise<Role[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('roles')
       .select('*')
       .eq('chapter_id', chapterId)
       .order('display_order', { ascending: true });
+    if (error) throw error;
     return data || [];
   }
 
   async findByIds(ids: string[]): Promise<Role[]> {
-    const { data } = await this.supabase.from('roles').select('*').in('id', ids);
+    const { data, error } = await this.supabase.from('roles').select('*').in('id', ids);
+    if (error) throw error;
     return data || [];
   }
 
   async findByChapterAndName(chapterId: string, name: string): Promise<Role | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('roles')
       .select('*')
       .eq('chapter_id', chapterId)
       .eq('name', name)
-      .single();
+      .maybeSingle();
+    if (error) throw error;
     return data;
   }
 
