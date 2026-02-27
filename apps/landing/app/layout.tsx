@@ -1,8 +1,31 @@
-import type { Metadata } from 'next';
+import "./globals.css";
+import type { Metadata } from "next";
+import localFont from "next/font/local";
+
+const geistSans = localFont({
+  src: "./fonts/GeistVF.woff2",
+  variable: "--font-geist-sans",
+  weight: "100 900",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: 'Frapp - The Operating System for Greek Life',
-  description: 'Replace Discord, OmegaFi, and Life360 with a single platform built for fraternity and sorority chapters.',
+  title: "Frapp — The Operating System for Greek Life",
+  description:
+    "Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters.",
+  openGraph: {
+    title: "Frapp — The Operating System for Greek Life",
+    description:
+      "One platform for chat, events, study hours, points, backwork, and billing.",
+    type: "website",
+    url: "https://frapp.live",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Frapp — The Operating System for Greek Life",
+    description:
+      "One platform for chat, events, study hours, points, backwork, and billing.",
+  },
 };
 
 export default function RootLayout({
@@ -11,10 +34,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body style={{ margin: 0, fontFamily: 'system-ui, -apple-system, sans-serif' }}>
-        {children}
-      </body>
+    <html lang="en" className={geistSans.variable}>
+      <body className="font-sans antialiased">{children}</body>
     </html>
   );
 }
