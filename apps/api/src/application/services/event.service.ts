@@ -134,8 +134,17 @@ export class EventService {
         instanceStart.setDate(instanceStart.getDate() + i * 14);
         instanceEnd.setDate(instanceEnd.getDate() + i * 14);
       } else if (rule === 'MONTHLY') {
-        instanceStart.setMonth(instanceStart.getMonth() + i);
-        instanceEnd.setMonth(instanceEnd.getMonth() + i);
+        const targetStartMonth = start.getMonth() + i;
+        instanceStart.setDate(1);
+        instanceStart.setMonth(targetStartMonth);
+        const maxStartDay = new Date(instanceStart.getFullYear(), instanceStart.getMonth() + 1, 0).getDate();
+        instanceStart.setDate(Math.min(start.getDate(), maxStartDay));
+
+        const targetEndMonth = end.getMonth() + i;
+        instanceEnd.setDate(1);
+        instanceEnd.setMonth(targetEndMonth);
+        const maxEndDay = new Date(instanceEnd.getFullYear(), instanceEnd.getMonth() + 1, 0).getDate();
+        instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
       await this.eventRepo.create({

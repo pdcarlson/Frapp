@@ -20,8 +20,8 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import {
-  RequestUploadUrlDto,
-  ConfirmUploadDto,
+  RequestDocumentUploadUrlDto,
+  ConfirmDocumentUploadDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -39,7 +39,7 @@ export class ChapterDocumentController {
   @ApiOperation({ summary: 'Get signed upload URL' })
   async requestUploadUrl(
     @CurrentChapterId() chapterId: string,
-    @Body() dto: RequestUploadUrlDto,
+    @Body() dto: RequestDocumentUploadUrlDto,
   ) {
     return this.chapterDocumentService.requestUploadUrl({
       chapterId,
@@ -55,7 +55,7 @@ export class ChapterDocumentController {
   async confirmUpload(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Body() dto: ConfirmUploadDto,
+    @Body() dto: ConfirmDocumentUploadDto,
   ) {
     return this.chapterDocumentService.confirmUpload({
       chapter_id: chapterId,

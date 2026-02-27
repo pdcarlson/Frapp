@@ -107,7 +107,10 @@ export class FinancialInvoiceController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'Get transactions for an invoice' })
-  async getInvoiceTransactions(@Param('id') id: string) {
-    return this.invoiceService.getInvoiceTransactions(id);
+  async getInvoiceTransactions(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    return this.invoiceService.getInvoiceTransactions(id, chapterId);
   }
 }
