@@ -13,6 +13,7 @@ import { InviteModule } from './modules/invite/invite.module';
 import { EventModule } from './modules/event/event.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { PointsModule } from './modules/points/points.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PointsModule } from './modules/points/points.module';
     EventModule,
     AttendanceModule,
     PointsModule,
+    BillingModule,
   ],
 })
 export class AppModule {}
