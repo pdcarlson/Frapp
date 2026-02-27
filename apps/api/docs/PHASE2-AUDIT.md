@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary
 
-Phase 2 backend delivers **Events**, **Event Attendance**, and **Points** APIs as specified in the plan and aligned with `spec/behavior.md` (§4 Points, §9 Events & Attendance) and `spec/architecture.md` (data model). Unit and e2e tests have been added; all tests pass. **Gaps:** OpenAPI export and SDK regeneration are not yet wired for Phase 2 (placeholder SDK only); one spec gap (rate limit on `points/adjust`); attendance check-in uses best-effort rollback rather than a single DB transaction; optional grace period after event end_time and role-targeted check-in are not implemented.
+Phase 2 backend delivers **Events**, **Event Attendance**, and **Points** APIs as specified in the plan and aligned with `spec/behavior.md` (§4 Points, §9 Events & Attendance) and `spec/architecture.md` (data model). Unit and e2e tests have been added; all tests pass. **Remaining gaps:** rate limit on `points/adjust`; attendance check-in still uses best-effort rollback rather than a single DB transaction.
 
 ---
 
@@ -24,16 +24,12 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 | PATCH  | `/v1/events/:id`                          | Yes  | `events:update`   | Update event                     |
 | DELETE | `/v1/events/:id`                          | Yes  | `events:delete`   | Delete event                     |
 | POST   | `/v1/events/:eventId/attendance/check-in` | Yes  | (member)          | Self check-in                    |
-| GET    | `/v1/events/:eventId/attendance`          | Yes  | `members:view`    | List attendance for event        |
-| PATCH  | `/v1/events/:eventId/attendance/:userId`  | Yes  | `members:remove`  | Update attendance status (admin) |
+| GET    | `/v1/events/:eventId/attendance`          | Yes  | `events:update`   | List attendance for event        |
+| PATCH  | `/v1/events/:eventId/attendance/:userId`  | Yes  | `events:update`   | Update attendance status (admin) |
 | GET    | `/v1/points/me`                           | Yes  | (member)          | Current user point summary       |
 | GET    | `/v1/points/leaderboard`                  | Yes  | (member)          | Chapter leaderboard              |
 | GET    | `/v1/points/members/:userId`              | Yes  | `points:view_all` | Member point summary             |
 | POST   | `/v1/points/adjust`                       | Yes  | `points:adjust`   | Manually adjust points           |
-
-**Note:** PATCH attendance is currently gated by `members:remove`. Spec suggests “members:view or a dedicated permission” for marking attendance; consider adding `events:manage_attendance` or documenting the current choice.
-
----
 
 ## 3. Implementation Summary
 
@@ -47,7 +43,7 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 - **EventService:** findById, findByChapter, create (date validation), update (date validation), delete. Chapter-scoped.
 - **AttendanceService:**
-  - `checkIn(eventId, userId, chapterId)`: Validates event, time window (start_time ≤ now ≤ end_time), no duplicate (event_id, user_id). Creates `event_attendance` (PRESENT) then `point_transactions` (ATTENDANCE). On point failure, best-effort rollback (attendance set to ABSENT).
+  - `checkIn(eventId, userId, chapterId)`: Validates event, time window (start_time ≤ now ≤ end_time + 15 minute grace period), role-target eligibility (when `required_role_ids` is set), and no duplicate (event_id, user_id). Creates `event_attendance` (PRESENT) then `point_transactions` (ATTENDANCE). On point failure, best-effort rollback (delete newly-created attendance row).
   - `getAttendance(eventId, chapterId)`: Returns all attendance for event (event must exist in chapter).
   - `updateStatus(eventId, userId, chapterId, status, excuseReason, markedBy)`: Admin only; updates status, excuse_reason, marked_by.
 - **PointsService:**
@@ -93,12 +89,12 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 | Requirement                                               | Status | Notes                                                             |
 | --------------------------------------------------------- | ------ | ----------------------------------------------------------------- |
-| Check-in only during event time window                    | ✅     | start_time ≤ now ≤ end_time.                                      |
-| Configurable grace period after end_time                  | ❌     | Not implemented; check-in strictly within [start, end].           |
+| Check-in only during event time window                    | ✅     | start_time ≤ now ≤ end_time + grace.                              |
+| Configurable grace period after end_time                  | ✅     | Implemented with a 15-minute default grace period.                |
 | One attendance per (event, user), 409 on duplicate        | ✅     | Enforced.                                                         |
-| Atomic attendance + points (single transaction)           | ⚠️     | Best-effort rollback only; no Supabase app-level transaction.     |
-| Role-targeted events: only matching roles can check in    | ❌     | required_role_ids not enforced at check-in.                       |
-| Admins view attendance; excuse workflow (EXCUSED, reason) | ✅     | GET attendance (members:view), PATCH with status + excuse_reason. |
+| Atomic attendance + points (single transaction)           | ⚠️     | Best-effort rollback via delete; no Supabase app-level transaction. |
+| Role-targeted events: only matching roles can check in    | ✅     | required_role_ids enforced at check-in with 403 on mismatch.      |
+| Admins view attendance; excuse workflow (EXCUSED, reason) | ✅     | GET/PATCH attendance gated by events:update.                      |
 | Marking ABSENT does not reverse points                    | ✅     | No automatic point reversal; admin would use points/adjust.       |
 
 ### 4.3 Architecture (Data Model)
@@ -155,9 +151,6 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 | High     | OpenAPI export script missing; SDK not regenerated           | Add `export-openapi.ts`, generate openapi.json, regenerate api-sdk types.                                      |
 | Medium   | Rate limit on POST /v1/points/adjust (spec: 50/hour default) | Add throttling (e.g. per chapter + admin user) or document as follow-up.                                       |
 | Medium   | Check-in not in single DB transaction                        | Document; consider Supabase RPC or server-side function for atomic insert of attendance + point row if needed. |
-| Low      | Grace period after event end_time                            | Add optional config (e.g. 15 min) and extend check-in window in AttendanceService.                             |
-| Low      | Role-targeted check-in (required_role_ids)                   | Validate user’s roles against event.required_role_ids before allowing check-in; return 403 if not allowed.     |
-| Low      | Attendance admin permission                                  | Consider `events:manage_attendance` and use it for PATCH attendance instead of `members:remove`.               |
 | Low      | Anomaly threshold configurable per chapter                   | Currently 100; could move to chapter settings.                                                                 |
 
 ---
@@ -183,4 +176,4 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 ## 10. Conclusion
 
-Phase 2 backend is **implemented and tested**. Unit and e2e tests are in place and passing. Behavior and architecture are largely met, with known gaps (rate limit, atomic transaction, grace period, role-targeted check-in). **OpenAPI export and SDK:** The export script is in place; `openapi.json` is generated and `@repo/api-sdk` has been regenerated, so web and mobile can call Phase 2 endpoints with typed clients. Optional follow-ups: rate limiting on adjust, atomic check-in transaction, grace period, role-targeted check-in, and docs/CI contract checks.
+Phase 2 backend is **implemented and tested**. Unit and e2e tests are in place and passing. Behavior and architecture are largely met, with known gaps (rate limit, full DB transaction for check-in + points). **OpenAPI export and SDK:** The export script is in place; `openapi.json` is generated and `@repo/api-sdk` has been regenerated, so web and mobile can call Phase 2 endpoints with typed clients. Optional follow-ups: rate limiting on adjust, true DB transaction semantics (RPC/SQL function), and docs/CI contract checks.

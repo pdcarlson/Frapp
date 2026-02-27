@@ -25,23 +25,23 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
     chapterId: string,
     userId: string,
   ): Promise<PointTransaction[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('point_transactions')
       .select('*')
       .eq('chapter_id', chapterId)
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-
+    if (error) throw error;
     return (data as PointTransaction[]) || [];
   }
 
   async findByChapter(chapterId: string): Promise<PointTransaction[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('point_transactions')
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
-
+    if (error) throw error;
     return (data as PointTransaction[]) || [];
   }
 }

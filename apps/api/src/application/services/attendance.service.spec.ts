@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
@@ -11,15 +12,19 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { Event } from '../../domain/entities/event.entity';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
+import type { Member } from '../../domain/entities/member.entity';
 
 describe('AttendanceService', () => {
   let service: AttendanceService;
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
+  let mockMemberRepo: jest.Mocked<IMemberRepository>;
 
   const baseEvent: Event = {
     id: 'evt-1',
@@ -67,6 +72,7 @@ describe('AttendanceService', () => {
       findByEventAndUser: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      delete: jest.fn(),
     };
 
     mockEventRepo = {
@@ -83,12 +89,22 @@ describe('AttendanceService', () => {
       findByChapter: jest.fn(),
     };
 
+    mockMemberRepo = {
+      findById: jest.fn(),
+      findByUserAndChapter: jest.fn(),
+      findByChapter: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendanceService,
         { provide: ATTENDANCE_REPOSITORY, useValue: mockAttendanceRepo },
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       ],
     }).compile();
 
@@ -132,6 +148,68 @@ describe('AttendanceService', () => {
       });
       expect(result).toEqual(baseAttendance);
 
+      jest.useRealTimers();
+    });
+
+    it('should allow check-in within the grace period after event end', async () => {
+      const justAfterEnd = new Date('2026-02-26T19:10:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(justAfterEnd);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      jest.useRealTimers();
+    });
+
+    it('should reject role-targeted event check-in when member lacks required role', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      const roleTargetedEvent: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-exec'],
+      };
+      const member: Member = {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2026-02-01T00:00:00.000Z',
+        updated_at: '2026-02-01T00:00:00.000Z',
+      };
+
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+      mockEventRepo.findById.mockResolvedValue(roleTargetedEvent);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      jest.useRealTimers();
+    });
+
+    it('should rollback attendance row when points creation fails', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockPointTxnRepo.create.mockRejectedValue(new Error('points write failed'));
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'points write failed',
+      );
+      expect(mockAttendanceRepo.delete).toHaveBeenCalledWith('att-1');
       jest.useRealTimers();
     });
 

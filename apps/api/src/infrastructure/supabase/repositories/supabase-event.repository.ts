@@ -11,23 +11,23 @@ export class SupabaseEventRepository implements IEventRepository {
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Event | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('events')
       .select('*')
       .eq('id', id)
       .eq('chapter_id', chapterId)
-      .single();
-
+      .maybeSingle();
+    if (error) throw error;
     return data as Event | null;
   }
 
   async findByChapter(chapterId: string): Promise<Event[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('events')
       .select('*')
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: true });
-
+    if (error) throw error;
     return (data as Event[]) || [];
   }
 

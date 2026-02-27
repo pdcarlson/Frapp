@@ -11,21 +11,21 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
   ) {}
 
   async findById(id: string): Promise<EventAttendance | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('event_attendance')
       .select('*')
       .eq('id', id)
-      .single();
-
+      .maybeSingle();
+    if (error) throw error;
     return data as EventAttendance | null;
   }
 
   async findByEvent(eventId: string): Promise<EventAttendance[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('event_attendance')
       .select('*')
       .eq('event_id', eventId);
-
+    if (error) throw error;
     return (data as EventAttendance[]) || [];
   }
 
@@ -33,13 +33,13 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     eventId: string,
     userId: string,
   ): Promise<EventAttendance | null> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('event_attendance')
       .select('*')
       .eq('event_id', eventId)
       .eq('user_id', userId)
-      .single();
-
+      .maybeSingle();
+    if (error) throw error;
     return data as EventAttendance | null;
   }
 
@@ -67,5 +67,13 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
 
     if (error) throw error;
     return updated as EventAttendance;
+  }
+
+  async delete(id: string): Promise<void> {
+    const { error } = await this.supabase
+      .from('event_attendance')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
   }
 }

@@ -11,4 +11,5 @@ export interface IAttendanceRepository {
   ): Promise<EventAttendance | null>;
   create(data: Partial<EventAttendance>): Promise<EventAttendance>;
   update(id: string, data: Partial<EventAttendance>): Promise<EventAttendance>;
+  delete(id: string): Promise<void>;
 }

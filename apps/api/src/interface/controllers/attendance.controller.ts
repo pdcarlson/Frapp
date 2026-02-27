@@ -40,7 +40,7 @@ export class AttendanceController {
 
   @Get()
   @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'List attendance for an event' })
   async list(
     @Param('eventId') eventId: string,
@@ -51,7 +51,7 @@ export class AttendanceController {
 
   @Patch(':userId')
   @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update attendance status for a member' })
   async updateStatus(
     @Param('eventId') eventId: string,

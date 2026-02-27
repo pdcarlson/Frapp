@@ -7,6 +7,8 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import { SupabaseEventRepository } from '../../infrastructure/supabase/repositories/supabase-event.repository';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import { SupabasePointTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-point-transaction.repository';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 
 @Module({
   controllers: [AttendanceController],
@@ -18,6 +20,7 @@ import { SupabasePointTransactionRepository } from '../../infrastructure/supabas
       provide: POINT_TRANSACTION_REPOSITORY,
       useClass: SupabasePointTransactionRepository,
     },
+    { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },
   ],
   exports: [AttendanceService, ATTENDANCE_REPOSITORY],
 })

@@ -14,25 +14,25 @@
 - **Large backend domain surface from spec:** Backwork, chat, notifications, study hours, service hours, tasks, chapter documents, reports, semester rollover, and alumni features are not yet wired in this branch.
 
 ## Branch divergence note
-- `origin/develop` contains a **Phase 2 events/attendance/points API commit** (`22c83a2`) that is not present on this branch.
+- **Resolved:** `origin/develop` Phase 2 events/attendance/points work has been integrated into this branch.
 
 ---
 
 ## Immediate Next Step (P0)
 
-**Unify branch baseline before new feature work:**
-1. Bring `22c83a2` (events/attendance/points API) from `origin/develop` into the active line of work.
-2. Resolve conflicts and re-run API tests.
-3. Regenerate/commit API contract outputs (`apps/api/openapi.json`, `packages/api-sdk` types) so frontend integration can start from an updated contract.
+**Status: Completed on this branch.**
+1. Brought `22c83a2` (events/attendance/points API) from `origin/develop`.
+2. Resolved conflicts while preserving newer invite/repository safety behavior.
+3. Regenerated/validated API contract outputs (`apps/api/openapi.json`, `packages/api-sdk` types).
 
-### Why this is the right next step
+### Why this was the right step
 - It removes duplicated implementation risk across divergent branches.
 - It advances a spec-critical domain (events + attendance + points) that is central to Frapp’s value.
 - It creates a stronger backend base for the first real web/mobile workflows.
 
 ---
 
-## Next Step After P0 (P1)
+## Current Next Step (P1)
 
 **Deliver first end-to-end onboarding flow (web + API):**
 - Sign in -> create chapter -> complete terms/privacy acceptance -> create first invite.

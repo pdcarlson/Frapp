@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -11,7 +12,11 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
+
+const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
 
 @Injectable()
 export class AttendanceService {
@@ -22,6 +27,8 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
   ) {}
 
   async checkIn(
@@ -37,15 +44,35 @@ export class AttendanceService {
     const now = new Date();
     const start = new Date(event.start_time);
     const end = new Date(event.end_time);
+    const graceWindowEnd = new Date(
+      end.getTime() + CHECK_IN_GRACE_PERIOD_MINUTES * 60 * 1000,
+    );
 
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException('Event times are invalid');
     }
 
-    if (now < start || now > end) {
+    if (now < start || now > graceWindowEnd) {
       throw new BadRequestException(
         'Check-in is only allowed during the event time window',
       );
+    }
+
+    // If the event targets specific roles, only members with matching roles can check in.
+    if (event.required_role_ids && event.required_role_ids.length > 0) {
+      const member = await this.memberRepo.findByUserAndChapter(userId, chapterId);
+      if (!member) {
+        throw new ForbiddenException('You are not a member of this chapter');
+      }
+
+      const hasRequiredRole = event.required_role_ids.some((roleId) =>
+        member.role_ids.includes(roleId),
+      );
+      if (!hasRequiredRole) {
+        throw new ForbiddenException(
+          'You are not eligible to check in for this event',
+        );
+      }
     }
 
     const existing = await this.attendanceRepo.findByEventAndUser(
@@ -85,9 +112,7 @@ export class AttendanceService {
       // Best-effort rollback of attendance if points creation fails.
       if (attendance) {
         try {
-          await this.attendanceRepo.update(attendance.id, {
-            status: 'ABSENT',
-          });
+          await this.attendanceRepo.delete(attendance.id);
         } catch {
           // swallow rollback error
         }
