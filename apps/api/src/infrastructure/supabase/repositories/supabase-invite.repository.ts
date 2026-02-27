@@ -9,16 +9,18 @@ export class SupabaseInviteRepository implements IInviteRepository {
   constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
 
   async findByToken(token: string): Promise<Invite | null> {
-    const { data } = await this.supabase.from('invites').select('*').eq('token', token).single();
+    const { data, error } = await this.supabase.from('invites').select('*').eq('token', token).maybeSingle();
+    if (error) throw error;
     return data;
   }
 
   async findByChapter(chapterId: string): Promise<Invite[]> {
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('invites')
       .select('*')
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
+    if (error) throw error;
     return data || [];
   }
 
@@ -34,5 +36,16 @@ export class SupabaseInviteRepository implements IInviteRepository {
       .update({ used_at: new Date().toISOString() })
       .eq('id', id);
     if (error) throw error;
+  }
+
+  async markUsedAtomically(id: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .update({ used_at: new Date().toISOString() })
+      .eq('id', id)
+      .is('used_at', null)
+      .select('id');
+    if (error) throw error;
+    return Array.isArray(data) && data.length > 0;
   }
 }

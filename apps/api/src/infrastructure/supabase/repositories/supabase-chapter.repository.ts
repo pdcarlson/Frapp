@@ -9,12 +9,14 @@ export class SupabaseChapterRepository implements IChapterRepository {
   constructor(@Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient) {}
 
   async findById(id: string): Promise<Chapter | null> {
-    const { data } = await this.supabase.from('chapters').select('*').eq('id', id).single();
+    const { data, error } = await this.supabase.from('chapters').select('*').eq('id', id).maybeSingle();
+    if (error) throw error;
     return data;
   }
 
   async findByStripeCustomerId(customerId: string): Promise<Chapter | null> {
-    const { data } = await this.supabase.from('chapters').select('*').eq('stripe_customer_id', customerId).single();
+    const { data, error } = await this.supabase.from('chapters').select('*').eq('stripe_customer_id', customerId).maybeSingle();
+    if (error) throw error;
     return data;
   }
 

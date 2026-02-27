@@ -29,6 +29,7 @@ describe('InviteService', () => {
       findByChapter: jest.fn(),
       create: jest.fn(),
       markUsed: jest.fn(),
+      markUsedAtomically: jest.fn(),
     };
 
     mockChapterRepo = {
@@ -145,8 +146,9 @@ describe('InviteService', () => {
     };
     mockChapterRepo.findById.mockResolvedValue(chapter);
 
-    await expect(service.create('ch-1', 'user-1', 'Member')).rejects.toThrow(HttpException);
-    await expect(service.create('ch-1', 'user-1', 'Member')).rejects.toMatchObject({
+    const promise = service.create('ch-1', 'user-1', 'Member');
+    await expect(promise).rejects.toThrow(HttpException);
+    await expect(promise).rejects.toMatchObject({
       status: HttpStatus.PAYMENT_REQUIRED,
       message: 'Chapter subscription is not active',
     });
@@ -219,21 +221,21 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
-    mockInviteRepo.markUsed.mockResolvedValue(undefined);
 
     const result = await service.redeem('test-uuid', 'user-2');
 
     expect(mockInviteRepo.findByToken).toHaveBeenCalledWith('test-uuid');
+    expect(mockInviteRepo.markUsedAtomically).toHaveBeenCalledWith('inv-1');
     expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-2',
       chapter_id: 'ch-1',
       role_ids: [memberRole.id],
     });
-    expect(mockInviteRepo.markUsed).toHaveBeenCalledWith('inv-1');
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
   });
 
@@ -268,10 +270,10 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
     mockRoleRepo.findByChapter.mockResolvedValue([memberRole]);
     mockMemberRepo.create.mockResolvedValue(member);
-    mockInviteRepo.markUsed.mockResolvedValue(undefined);
 
     const result = await service.redeem('test-uuid', 'user-2');
 
@@ -296,8 +298,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(GoneException);
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow('Invite expired');
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(GoneException);
+    await expect(promise).rejects.toThrow('Invite expired');
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 
@@ -314,8 +317,9 @@ describe('InviteService', () => {
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(GoneException);
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow('Invite already used');
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(GoneException);
+    await expect(promise).rejects.toThrow('Invite already used');
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 
@@ -340,12 +344,12 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
     mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
 
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(ConflictException);
-    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
-      'Already a member of this chapter',
-    );
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(ConflictException);
+    await expect(promise).rejects.toThrow('Already a member of this chapter');
     expect(mockMemberRepo.create).not.toHaveBeenCalled();
   });
 

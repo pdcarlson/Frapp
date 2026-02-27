@@ -64,6 +64,9 @@ export class InviteService {
     if (invite.used_at) throw new GoneException('Invite already used');
     if (new Date(invite.expires_at) < new Date()) throw new GoneException('Invite expired');
 
+    const claimed = await this.inviteRepo.markUsedAtomically(invite.id);
+    if (!claimed) throw new GoneException('Invite already used');
+
     const existingMember = await this.memberRepo.findByUserAndChapter(userId, invite.chapter_id);
     if (existingMember) throw new ConflictException('Already a member of this chapter');
 
@@ -78,8 +81,6 @@ export class InviteService {
       chapter_id: invite.chapter_id,
       role_ids: targetRole ? [targetRole.id] : [],
     });
-
-    await this.inviteRepo.markUsed(invite.id);
 
     return { chapterId: invite.chapter_id, memberId: member.id };
   }

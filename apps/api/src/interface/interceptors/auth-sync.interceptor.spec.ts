@@ -12,7 +12,7 @@ describe('AuthSyncInterceptor', () => {
     handle: () => of({ result: 'ok' }),
   };
 
-  const mockExecutionContext = (supabaseUser?: { id: string; email: string }): ExecutionContext => {
+  const mockExecutionContext = (supabaseUser?: { id: string; email: string | null }): ExecutionContext => {
     const request = { supabaseUser, appUser: undefined as unknown };
     return {
       switchToHttp: () => ({
@@ -67,7 +67,7 @@ describe('AuthSyncInterceptor', () => {
   it('should use empty string for email when supabaseUser email is null', async () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-2' });
 
-    const ctx = mockExecutionContext({ id: 'auth-456', email: undefined as unknown as string });
+    const ctx = mockExecutionContext({ id: 'auth-456', email: null });
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
 
     expect(mockAuthService.syncUser).toHaveBeenCalledWith('auth-456', '');
