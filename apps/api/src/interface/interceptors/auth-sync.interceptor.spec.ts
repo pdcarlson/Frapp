@@ -12,7 +12,10 @@ describe('AuthSyncInterceptor', () => {
     handle: () => of({ result: 'ok' }),
   };
 
-  const mockExecutionContext = (supabaseUser?: { id: string; email: string | null }): ExecutionContext => {
+  const mockExecutionContext = (supabaseUser?: {
+    id: string;
+    email: string | null | undefined;
+  }): ExecutionContext => {
     const request = { supabaseUser, appUser: undefined as unknown };
     return {
       switchToHttp: () => ({
@@ -39,12 +42,18 @@ describe('AuthSyncInterceptor', () => {
   it('should sync user and set appUser on request', async () => {
     mockAuthService.syncUser.mockResolvedValue({ id: 'user-1' });
 
-    const ctx = mockExecutionContext({ id: 'auth-123', email: 'test@example.com' });
+    const ctx = mockExecutionContext({
+      id: 'auth-123',
+      email: 'test@example.com',
+    });
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
 
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const request = ctx.switchToHttp().getRequest();
     expect(request.appUser).toEqual({ id: 'user-1' });
-    expect(mockAuthService.syncUser).toHaveBeenCalledWith('auth-123', 'test@example.com');
+    expect(mockAuthService.syncUser).toHaveBeenCalledWith(
+      'auth-123',
+      'test@example.com',
+    );
 
     await new Promise<void>((resolve) => {
       result$.subscribe({ complete: resolve });
@@ -55,7 +64,7 @@ describe('AuthSyncInterceptor', () => {
     const ctx = mockExecutionContext(undefined);
     const result$ = await interceptor.intercept(ctx, mockCallHandler);
 
-    const request = ctx.switchToHttp().getRequest() as Record<string, unknown>;
+    const request = ctx.switchToHttp().getRequest();
     expect(request.appUser).toBeUndefined();
     expect(mockAuthService.syncUser).not.toHaveBeenCalled();
 

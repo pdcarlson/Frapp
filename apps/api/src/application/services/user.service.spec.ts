@@ -52,8 +52,12 @@ describe('UserService', () => {
   it('should throw NotFoundException when user not found', async () => {
     mockRepo.findById.mockResolvedValue(null);
 
-    await expect(service.findById('nonexistent')).rejects.toThrow(NotFoundException);
-    await expect(service.findById('nonexistent')).rejects.toThrow('User not found');
+    await expect(service.findById('nonexistent')).rejects.toThrow(
+      NotFoundException,
+    );
+    await expect(service.findById('nonexistent')).rejects.toThrow(
+      'User not found',
+    );
   });
 
   it('should update user profile data', async () => {

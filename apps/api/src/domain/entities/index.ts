@@ -3,3 +3,6 @@ export * from './chapter.entity';
 export * from './member.entity';
 export * from './role.entity';
 export * from './invite.entity';
+export * from './event.entity';
+export * from './event-attendance.entity';
+export * from './point-transaction.entity';

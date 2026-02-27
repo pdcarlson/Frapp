@@ -6,14 +6,18 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { Chapter } from '../../domain/entities/chapter.entity';
-import { DEFAULT_SYSTEM_ROLES, DEFAULT_CHANNELS } from '../../domain/constants/permissions';
+import {
+  DEFAULT_SYSTEM_ROLES,
+  DEFAULT_CHANNELS,
+} from '../../domain/constants/permissions';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 @Injectable()
 export class ChapterService {
   constructor(
-    @Inject(CHAPTER_REPOSITORY) private readonly chapterRepo: IChapterRepository,
+    @Inject(CHAPTER_REPOSITORY)
+    private readonly chapterRepo: IChapterRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
@@ -25,7 +29,10 @@ export class ChapterService {
     return chapter;
   }
 
-  async create(userId: string, data: { name: string; university: string }): Promise<Chapter> {
+  async create(
+    userId: string,
+    data: { name: string; university: string },
+  ): Promise<Chapter> {
     const chapter = await this.chapterRepo.create(data);
 
     const roles = [];

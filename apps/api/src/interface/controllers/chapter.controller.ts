@@ -1,11 +1,22 @@
-import { Body, Controller, Get, Patch, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ChapterService } from '../../application/services/chapter.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
-import { CurrentUser, CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentUser,
+  CurrentChapterId,
+} from '../decorators/current-user.decorator';
 import { CreateChapterDto, UpdateChapterDto } from '../dtos/chapter.dto';
 
 @ApiTags('Chapters')

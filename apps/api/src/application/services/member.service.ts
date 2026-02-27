@@ -13,8 +13,14 @@ export class MemberService {
     return this.memberRepo.findByChapter(chapterId);
   }
 
-  async findByUserAndChapter(userId: string, chapterId: string): Promise<Member> {
-    const member = await this.memberRepo.findByUserAndChapter(userId, chapterId);
+  async findByUserAndChapter(
+    userId: string,
+    chapterId: string,
+  ): Promise<Member> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
     if (!member) throw new NotFoundException('Member not found');
     return member;
   }
@@ -23,8 +29,13 @@ export class MemberService {
     return this.memberRepo.update(memberId, { role_ids: roleIds });
   }
 
-  async updateOnboarding(memberId: string, completed: boolean): Promise<Member> {
-    return this.memberRepo.update(memberId, { has_completed_onboarding: completed });
+  async updateOnboarding(
+    memberId: string,
+    completed: boolean,
+  ): Promise<Member> {
+    return this.memberRepo.update(memberId, {
+      has_completed_onboarding: completed,
+    });
   }
 
   async remove(memberId: string): Promise<void> {
