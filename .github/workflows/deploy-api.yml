@@ -2,21 +2,27 @@ name: Deploy API
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - "apps/api/**"
       - "packages/validation/**"
       - "packages/typescript-config/**"
 
 jobs:
-  deploy:
+  deploy-staging:
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
+    environment: staging
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Trigger Render staging deploy
+        if: secrets.RENDER_DEPLOY_HOOK_URL_STAGING != ''
+        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}"
 
-      - name: Deploy to Render
-        if: env.RENDER_DEPLOY_HOOK_URL != ''
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Render production deploy
+        if: secrets.RENDER_DEPLOY_HOOK_URL != ''
         run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}

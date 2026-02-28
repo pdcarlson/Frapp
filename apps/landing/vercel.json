@@ -4,6 +4,7 @@
   "installCommand": "npm install",
   "buildCommand": "cd ../.. && npx turbo run build --filter=landing...",
   "outputDirectory": ".next",
+  "ignoreCommand": "cd ../.. && npx turbo-ignore landing",
   "headers": [
     {
       "source": "/(.*)",

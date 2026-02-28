@@ -1,0 +1,54 @@
+services:
+  # ─── Production API ───────────────────────────────────────────
+  - type: web
+    name: frapp-api-prod
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    branch: main
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
+
+  # ─── Staging API ──────────────────────────────────────────────
+  - type: web
+    name: frapp-api-staging
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    branch: develop
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "3001"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRICE_ID
+        sync: false
