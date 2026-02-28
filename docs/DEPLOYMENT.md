@@ -125,8 +125,13 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 | **Project Name** | `frapp-web` | `frapp-landing` | `frapp-docs` |
 | **Framework** | Next.js (auto-detected) | Next.js | Next.js |
 | **Root Directory** | `apps/web` | `apps/landing` | `apps/docs` |
-| **Build Command** | (leave default — `vercel.json` handles it) | (default) | (default) |
-| **Output Directory** | (leave default) | (default) | (default) |
+
+**Build and Output Settings:** Leave all toggles OFF. Vercel auto-detects the correct commands for Turborepo monorepos:
+- **Install:** `npm install --prefix=../..` (installs from monorepo root)
+- **Build:** `turbo run build` (auto-scoped to the current workspace)
+- **Output:** Next.js default (`.next`)
+
+The `vercel.json` in each app adds `turbo-ignore` (skip rebuilds when files haven't changed) and security headers — no command overrides needed.
 
 ### 4.2 Environment Variables per Project
 
