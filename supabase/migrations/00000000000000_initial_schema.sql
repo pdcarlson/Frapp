@@ -446,9 +446,15 @@ create table semester_archives (
 create index idx_semester_archives_chapter on semester_archives (chapter_id);
 
 -- ============================================================================
--- Row Level Security (basic tenant scoping)
+-- Row Level Security
 -- ============================================================================
+-- RLS enabled with no permissive policies = default deny.
+-- The service_role key (used by the API) bypasses RLS and has full access.
+-- The anon key (used by frontends for auth only) gets zero rows back.
+-- Fine-grained access control is handled at the API layer.
 
+alter table users enable row level security;
+alter table chapters enable row level security;
 alter table members enable row level security;
 alter table roles enable row level security;
 alter table invites enable row level security;
@@ -464,8 +470,10 @@ alter table chat_messages enable row level security;
 alter table message_reactions enable row level security;
 alter table channel_read_receipts enable row level security;
 alter table poll_votes enable row level security;
+alter table push_tokens enable row level security;
 alter table notifications enable row level security;
 alter table notification_preferences enable row level security;
+alter table user_settings enable row level security;
 alter table study_geofences enable row level security;
 alter table study_sessions enable row level security;
 alter table financial_invoices enable row level security;
@@ -474,10 +482,6 @@ alter table service_entries enable row level security;
 alter table tasks enable row level security;
 alter table chapter_documents enable row level security;
 alter table semester_archives enable row level security;
-
--- Service role bypasses RLS; these policies allow the API (using service_role key)
--- to access all data. Fine-grained access control is handled at the API layer.
--- Client-side Supabase access (anon key) is not used for data queries.
 
 -- ============================================================================
 -- Updated_at trigger function
