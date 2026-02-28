@@ -32,7 +32,7 @@ services:
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    branch: develop
+    branch: preview
     plan: free
     healthCheckPath: /health
     envVars:

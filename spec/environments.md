@@ -116,10 +116,10 @@ npm run generate -w packages/api-sdk
 ## 3. Staging
 
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
-- **Git branch:** `develop` — pushes trigger staging deployments.
+- **Git branch:** `preview` — pushes trigger staging deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), tied to the `develop` branch.
-- **API:** Render staging service (`frapp-api-staging`), auto-deploys from `develop`, pointing at Supabase staging.
+- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `preview` branch.
+- **API:** Render staging service (`frapp-api-staging`), auto-deploys from `preview`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
@@ -144,7 +144,7 @@ npm run generate -w packages/api-sdk
 
 ## 5. Continuous Integration (CI)
 
-On every PR to `develop` or `main`, a GitHub Actions workflow runs:
+On every PR to `preview` or `main`, a GitHub Actions workflow runs:
 
 1. **Install:** `npm ci`
 2. **Lint:** `turbo run lint`
@@ -161,7 +161,7 @@ If any step fails, the PR cannot be merged.
 ### Web, Landing, Docs (Vercel)
 
 - Push to `main` triggers **production** Vercel deployments (custom domains).
-- Push to `develop` triggers **preview** Vercel deployments (staging domains).
+- Push to `preview` triggers **preview** Vercel deployments (staging domains).
 - PRs get ephemeral preview URLs automatically.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
@@ -169,7 +169,7 @@ If any step fails, the PR cannot be merged.
 ### API (Render)
 
 - Push to `main` triggers GitHub Actions → Render production deploy hook.
-- Push to `develop` triggers GitHub Actions → Render staging deploy hook.
+- Push to `preview` triggers GitHub Actions → Render staging deploy hook.
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations are applied manually before deploy: `npx supabase db push --project-ref <REF>`.
 - See `render.yaml` for the infrastructure-as-code definition.

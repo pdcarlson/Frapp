@@ -2,7 +2,7 @@ name: Deploy API
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, preview]
     paths:
       - "apps/api/**"
       - "packages/validation/**"
@@ -10,7 +10,7 @@ on:
 
 jobs:
   deploy-staging:
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/preview'
     runs-on: ubuntu-latest
     environment: staging
     steps:
