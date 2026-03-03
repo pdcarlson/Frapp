@@ -52,7 +52,7 @@ npm run dev
 **Web App (`apps/web/.env.local`)**
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
 NEXT_PUBLIC_API_URL=http://localhost:3001/v1
 ```
@@ -60,7 +60,7 @@ NEXT_PUBLIC_API_URL=http://localhost:3001/v1
 **Mobile App (`apps/mobile/.env.local`)**
 
 ```env
-EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
 EXPO_PUBLIC_API_URL=http://localhost:3001/v1
 ```
@@ -68,7 +68,7 @@ EXPO_PUBLIC_API_URL=http://localhost:3001/v1
 **API (`apps/api/.env.local`)**
 
 ```env
-SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_URL=[REDACTED]
 SUPABASE_SERVICE_ROLE_KEY=<from supabase start output>
 
 STRIPE_SECRET_KEY=sk_test_...
@@ -116,31 +116,35 @@ npm run generate -w packages/api-sdk
 ## 3. Staging
 
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
+- **Git branch:** `preview` — pushes trigger staging deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing / Docs:** Vercel preview deployments or dedicated staging subdomains.
-- **API:** Deployed to a staging instance (Render, Railway, or AWS App Runner) pointing at the Supabase staging project.
-- **Mobile:** EAS internal distribution builds (`eas build --profile staging`).
-- **Stripe:** Test mode keys.
+- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `preview` branch.
+- **API:** Render staging service (`frapp-api-staging`), auto-deploys from `preview`, pointing at Supabase staging.
+- **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
+- **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
 
 ---
 
 ## 4. Production
 
+- **Git branch:** `main` — pushes trigger production deployments.
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
-- **Web App:** app.frapp.live (Vercel).
-- **Landing:** frapp.live (Vercel).
-- **Docs:** docs.frapp.live (Vercel).
-- **API:** Production instance with environment variables pointing at Supabase production + Stripe live keys.
+- **Web App:** `app.frapp.live` (Vercel, production deploy from `main`).
+- **Landing:** `frapp.live` (Vercel, production deploy from `main`).
+- **Docs:** `docs.frapp.live` (Vercel, production deploy from `main`).
+- **API:** Render production service (`frapp-api-prod`), auto-deploys from `main`, pointing at Supabase production + Stripe live keys.
 - **Mobile:** App Store and Google Play via EAS Submit.
-- **Stripe:** Live mode. Requires business verification (KYC) before launch.
+- **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
+
+> **Full setup walkthrough:** See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
 ## 5. Continuous Integration (CI)
 
-On every PR to `develop` or `main`, a GitHub Actions workflow runs:
+On every PR to `preview` or `main`, a GitHub Actions workflow runs:
 
 1. **Install:** `npm ci`
 2. **Lint:** `turbo run lint`
@@ -156,20 +160,24 @@ If any step fails, the PR cannot be merged.
 
 ### Web, Landing, Docs (Vercel)
 
-- Push to `main` triggers automatic Vercel deployments.
-- Vercel detects the monorepo structure and builds the appropriate app.
-- Custom domains configured per app.
+- Push to `main` triggers **production** Vercel deployments (custom domains).
+- Push to `preview` triggers **preview** Vercel deployments (staging domains).
+- PRs get ephemeral preview URLs automatically.
+- Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
+- Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 
-### API
+### API (Render)
 
-- Push to `main` triggers a GitHub Actions workflow:
-  1. Build Docker image for `apps/api`.
-  2. Run database migrations (`npx supabase db push` against the target Supabase project).
-  3. Deploy container with zero-downtime swap.
+- Push to `main` triggers GitHub Actions → Render production deploy hook.
+- Push to `preview` triggers GitHub Actions → Render staging deploy hook.
+- Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
+- Database migrations are applied manually before deploy: `npx supabase db push --project-ref <REF>`.
+- See `render.yaml` for the infrastructure-as-code definition.
 
 ### Mobile (EAS)
 
 - **Production build:** `eas build --platform all --profile production`.
+- **Preview build (staging):** `eas build --platform all --profile preview`.
 - **OTA updates:** For JS-only changes, use `eas update` to push directly to users without App Store review.
 - **Native changes:** Full build + App Store / Google Play submission via `eas submit`.
 

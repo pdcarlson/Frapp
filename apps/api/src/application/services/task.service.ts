@@ -147,12 +147,18 @@ export class TaskService {
     }
 
     if (task.assignee_id !== userId && !isAdmin) {
-      throw new ForbiddenException('Only the assignee or an admin can update task status');
+      throw new ForbiddenException(
+        'Only the assignee or an admin can update task status',
+      );
     }
 
     const allowed = VALID_ASSIGNEE_TRANSITIONS[task.status];
     if (!allowed?.includes(newStatus)) {
-      if (isAdmin && newStatus === 'IN_PROGRESS' && task.status === 'COMPLETED') {
+      if (
+        isAdmin &&
+        newStatus === 'IN_PROGRESS' &&
+        task.status === 'COMPLETED'
+      ) {
         // Admin can revert (reject) - handled in rejectCompletion
         throw new BadRequestException(
           'Use the reject completion endpoint to revert a completed task',
@@ -172,10 +178,7 @@ export class TaskService {
     return toDisplayStatus(updated);
   }
 
-  async confirmCompletion(
-    id: string,
-    chapterId: string,
-  ): Promise<Task> {
+  async confirmCompletion(id: string, chapterId: string): Promise<Task> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -188,7 +191,9 @@ export class TaskService {
     }
 
     if (task.points_awarded) {
-      throw new BadRequestException('Points have already been awarded for this task');
+      throw new BadRequestException(
+        'Points have already been awarded for this task',
+      );
     }
 
     const updateData: Partial<Task> = {
@@ -212,17 +217,13 @@ export class TaskService {
     const updated = await this.taskRepo.update(id, chapterId, updateData);
 
     try {
-      await this.notificationService.notifyUser(
-        task.assignee_id,
-        chapterId,
-        {
-          title: 'Task Confirmed',
-          body: `Your task "${task.title}" has been confirmed`,
-          priority: 'NORMAL',
-          category: 'tasks',
-          data: { target: { screen: 'tasks', taskId: task.id } },
-        },
-      );
+      await this.notificationService.notifyUser(task.assignee_id, chapterId, {
+        title: 'Task Confirmed',
+        body: `Your task "${task.title}" has been confirmed`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      });
     } catch {}
 
     return toDisplayStatus(updated);
@@ -239,9 +240,7 @@ export class TaskService {
     }
 
     if (task.status !== 'COMPLETED') {
-      throw new BadRequestException(
-        'Only completed tasks can be rejected',
-      );
+      throw new BadRequestException('Only completed tasks can be rejected');
     }
 
     if (task.points_awarded) {

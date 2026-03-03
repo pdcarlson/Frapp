@@ -28,7 +28,9 @@ export class ConfirmDocumentUploadDto {
   @MaxLength(1000)
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Folder name (one level, flat structure)' })
+  @ApiPropertyOptional({
+    description: 'Folder name (one level, flat structure)',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)

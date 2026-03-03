@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ForbiddenException, HttpException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+} from '@nestjs/common';
 import { PointsService } from './points.service';
 import {
   POINT_TRANSACTION_REPOSITORY,
@@ -16,7 +20,9 @@ describe('PointsService', () => {
   let service: PointsService;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockSemesterArchiveRepo: jest.Mocked<ISemesterArchiveRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const txn1: PointTransaction = {
     id: 'pt-1',
@@ -74,7 +80,10 @@ describe('PointsService', () => {
       providers: [
         PointsService,
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
-        { provide: SEMESTER_ARCHIVE_REPOSITORY, useValue: mockSemesterArchiveRepo },
+        {
+          provide: SEMESTER_ARCHIVE_REPOSITORY,
+          useValue: mockSemesterArchiveRepo,
+        },
         { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
@@ -425,7 +434,9 @@ describe('PointsService', () => {
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
-      expect(mockSemesterArchiveRepo.findLatestByChapter).toHaveBeenCalledWith('ch-1');
+      expect(mockSemesterArchiveRepo.findLatestByChapter).toHaveBeenCalledWith(
+        'ch-1',
+      );
       expect(result).toHaveLength(1);
       expect(result[0].user_id).toBe('user-1');
       expect(result[0].total).toBe(10);

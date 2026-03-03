@@ -5,9 +5,7 @@ import type { IChatCategoryRepository } from '../../../domain/repositories/chat.
 import { ChatChannelCategory } from '../../../domain/entities/chat.entity';
 
 @Injectable()
-export class SupabaseChatCategoryRepository
-  implements IChatCategoryRepository
-{
+export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

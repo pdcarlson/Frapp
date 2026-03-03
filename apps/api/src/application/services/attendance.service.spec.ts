@@ -204,7 +204,9 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
       mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
-      mockPointTxnRepo.create.mockRejectedValue(new Error('points write failed'));
+      mockPointTxnRepo.create.mockRejectedValue(
+        new Error('points write failed'),
+      );
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         'points write failed',
@@ -472,9 +474,9 @@ describe('AttendanceService', () => {
       };
       mockEventRepo.findById.mockResolvedValue(futureEvent);
 
-      await expect(
-        service.markAutoAbsent('evt-1', 'ch-1'),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.markAutoAbsent('evt-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should do nothing for optional events', async () => {

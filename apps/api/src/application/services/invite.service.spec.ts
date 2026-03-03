@@ -30,7 +30,9 @@ describe('InviteService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   beforeEach(async () => {
     mockInviteRepo = {
@@ -245,7 +247,10 @@ describe('InviteService', () => {
     const result = await service.redeem('test-uuid', 'user-2');
 
     expect(mockInviteRepo.findByToken).toHaveBeenCalledWith('test-uuid');
-    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
+    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+      'user-2',
+      'ch-1',
+    );
     expect(mockInviteRepo.markUsedAtomically).toHaveBeenCalledWith('inv-1');
     expect(mockMemberRepo.create).toHaveBeenCalledWith({
       user_id: 'user-2',

@@ -26,7 +26,9 @@ describe('SearchService', () => {
 
   beforeEach(async () => {
     mockSupabase = {
-      from: jest.fn().mockImplementation(() => makeChain({ data: [], error: null })),
+      from: jest
+        .fn()
+        .mockImplementation(() => makeChain({ data: [], error: null })),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -84,9 +86,7 @@ describe('SearchService', () => {
         error: null,
       });
       const membersChain = makeChain({
-        data: [
-          { id: 'm-1', user_id: 'u-1', chapter_id: 'ch-1' },
-        ],
+        data: [{ id: 'm-1', user_id: 'u-1', chapter_id: 'ch-1' }],
         error: null,
       });
       const usersChain = makeChain({
@@ -126,8 +126,7 @@ describe('SearchService', () => {
       (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
         fromCalls.push(table);
         // Return non-empty channels so searchMessages proceeds to chat_messages
-        const data =
-          table === 'chat_channels' ? [{ id: 'c1' }] : [];
+        const data = table === 'chat_channels' ? [{ id: 'c1' }] : [];
         return makeChain({ data, error: null });
       });
 

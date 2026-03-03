@@ -4,10 +4,7 @@ export const POLL_VOTE_REPOSITORY = 'POLL_VOTE_REPOSITORY';
 
 export interface IPollVoteRepository {
   findByMessage(messageId: string): Promise<PollVote[]>;
-  findByMessageAndUser(
-    messageId: string,
-    userId: string,
-  ): Promise<PollVote[]>;
+  findByMessageAndUser(messageId: string, userId: string): Promise<PollVote[]>;
   create(data: Partial<PollVote>): Promise<PollVote>;
   deleteByMessageAndUser(messageId: string, userId: string): Promise<void>;
   deleteByMessageUserAndOption(

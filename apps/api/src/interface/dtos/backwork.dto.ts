@@ -23,11 +23,7 @@ const ASSIGNMENT_TYPES = [
   'Notes',
   'Other',
 ] as const;
-const DOCUMENT_VARIANTS = [
-  'Student Copy',
-  'Blank Copy',
-  'Answer Key',
-] as const;
+const DOCUMENT_VARIANTS = ['Student Copy', 'Blank Copy', 'Answer Key'] as const;
 
 export class RequestBackworkUploadUrlDto {
   @ApiProperty({ description: 'Original filename' })

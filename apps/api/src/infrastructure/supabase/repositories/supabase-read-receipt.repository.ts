@@ -5,9 +5,7 @@ import type { IChannelReadReceiptRepository } from '../../../domain/repositories
 import { ChannelReadReceipt } from '../../../domain/entities/chat.entity';
 
 @Injectable()
-export class SupabaseReadReceiptRepository
-  implements IChannelReadReceiptRepository
-{
+export class SupabaseReadReceiptRepository implements IChannelReadReceiptRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

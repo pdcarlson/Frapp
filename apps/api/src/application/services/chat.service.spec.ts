@@ -37,7 +37,9 @@ describe('ChatService', () => {
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const baseChannel: ChatChannel = {
     id: 'ch-chan-1',
@@ -225,18 +227,19 @@ describe('ChatService', () => {
       };
       mockChannelRepo.create.mockResolvedValue(groupDm);
 
-      const result = await service.createGroupDm(
-        'ch-1',
-        ['user-1', 'user-2', 'user-3'],
-      );
+      const result = await service.createGroupDm('ch-1', [
+        'user-1',
+        'user-2',
+        'user-3',
+      ]);
       expect(result.type).toBe('GROUP_DM');
     });
 
     it('should reject group DM exceeding 10 members', async () => {
       const memberIds = Array.from({ length: 11 }, (_, i) => `user-${i}`);
-      await expect(
-        service.createGroupDm('ch-1', memberIds),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.createGroupDm('ch-1', memberIds)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -251,9 +254,9 @@ describe('ChatService', () => {
 
     it('should throw if channel not found', async () => {
       mockChannelRepo.findById.mockResolvedValue(null);
-      await expect(
-        service.deleteChannel('ch-chan-x', 'ch-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.deleteChannel('ch-chan-x', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -297,7 +300,7 @@ describe('ChatService', () => {
       expect(result.edited_at).toBeTruthy();
     });
 
-    it('should reject editing another user\'s message', async () => {
+    it("should reject editing another user's message", async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
@@ -611,7 +614,9 @@ describe('ChatService', () => {
       };
       mockMessageRepo.create.mockResolvedValue(baseMessage);
       mockChannelRepo.findById.mockResolvedValue(dmChannel);
-      mockNotificationService.notifyUser.mockRejectedValue(new Error('push failed'));
+      mockNotificationService.notifyUser.mockRejectedValue(
+        new Error('push failed'),
+      );
 
       const result = await service.sendMessage({
         channel_id: 'ch-chan-1',

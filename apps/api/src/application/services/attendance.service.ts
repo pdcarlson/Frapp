@@ -60,7 +60,10 @@ export class AttendanceService {
 
     // If the event targets specific roles, only members with matching roles can check in.
     if (event.required_role_ids && event.required_role_ids.length > 0) {
-      const member = await this.memberRepo.findByUserAndChapter(userId, chapterId);
+      const member = await this.memberRepo.findByUserAndChapter(
+        userId,
+        chapterId,
+      );
       if (!member) {
         throw new ForbiddenException('You are not a member of this chapter');
       }
@@ -180,7 +183,10 @@ export class AttendanceService {
       );
     }
 
-    if (!event.is_mandatory && (!event.required_role_ids || event.required_role_ids.length === 0)) {
+    if (
+      !event.is_mandatory &&
+      (!event.required_role_ids || event.required_role_ids.length === 0)
+    ) {
       return { marked: 0 };
     }
 
@@ -198,7 +204,12 @@ export class AttendanceService {
     const existingRecords = await this.attendanceRepo.findByEvent(eventId);
     const checkedInOrExcused = new Set(
       existingRecords
-        .filter((r) => r.status === 'PRESENT' || r.status === 'EXCUSED' || r.status === 'LATE')
+        .filter(
+          (r) =>
+            r.status === 'PRESENT' ||
+            r.status === 'EXCUSED' ||
+            r.status === 'LATE',
+        )
         .map((r) => r.user_id),
     );
 

@@ -43,7 +43,8 @@ export class CreatePollDto {
 
 export class VoteDto {
   @ApiProperty({
-    description: 'Option index(es) to vote for. Single choice: [0]. Multi choice: [0, 1].',
+    description:
+      'Option index(es) to vote for. Single choice: [0]. Multi choice: [0, 1].',
     type: [Number],
     example: [0],
   })

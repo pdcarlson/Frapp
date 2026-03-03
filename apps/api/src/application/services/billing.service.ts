@@ -13,7 +13,10 @@ import {
 } from '../../domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
-import type { Chapter, SubscriptionStatus } from '../../domain/entities/chapter.entity';
+import type {
+  Chapter,
+  SubscriptionStatus,
+} from '../../domain/entities/chapter.entity';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -76,7 +79,9 @@ export class BillingService {
     }
 
     if (chapter.subscription_status === 'active') {
-      throw new BadRequestException('Chapter already has an active subscription');
+      throw new BadRequestException(
+        'Chapter already has an active subscription',
+      );
     }
 
     try {
@@ -242,21 +247,16 @@ export class BillingService {
       await this.chapterRepo.update(chapter.id, {
         subscription_status: 'active',
       });
-      this.logger.log(
-        `Chapter ${chapter.id} reactivated via invoice payment`,
-      );
+      this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
   }
 
   private async findChapterBySubscription(
     subscriptionId: string,
   ): Promise<Chapter | null> {
-    const chapter =
-      await this.chapterRepo.findBySubscriptionId(subscriptionId);
+    const chapter = await this.chapterRepo.findBySubscriptionId(subscriptionId);
     if (!chapter) {
-      this.logger.warn(
-        `No chapter found for subscription: ${subscriptionId}`,
-      );
+      this.logger.warn(`No chapter found for subscription: ${subscriptionId}`);
     }
     return chapter;
   }
@@ -278,21 +278,15 @@ export class BillingService {
       );
       if (!president) return;
 
-      await this.notificationService.notifyUser(
-        president.user_id,
-        chapterId,
-        {
-          title: 'Subscription Status Changed',
-          body: `Your chapter subscription is now ${newStatus}`,
-          priority: 'URGENT',
-          category: 'billing',
-          data: { target: { screen: 'billing' } },
-        },
-      );
+      await this.notificationService.notifyUser(president.user_id, chapterId, {
+        title: 'Subscription Status Changed',
+        body: `Your chapter subscription is now ${newStatus}`,
+        priority: 'URGENT',
+        category: 'billing',
+        data: { target: { screen: 'billing' } },
+      });
     } catch {
-      this.logger.warn(
-        `Failed to notify president for chapter ${chapterId}`,
-      );
+      this.logger.warn(`Failed to notify president for chapter ${chapterId}`);
     }
   }
 

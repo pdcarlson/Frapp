@@ -7,7 +7,9 @@
  * Converts a hex color (#RRGGBB) to RGB values 0-255.
  */
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const match = hex.replace(/^#/, '').match(/^([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
+  const match = hex
+    .replace(/^#/, '')
+    .match(/^([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})([0-9A-Fa-f]{2})$/);
   if (!match) {
     throw new Error(`Invalid hex color: ${hex}`);
   }

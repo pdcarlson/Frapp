@@ -47,10 +47,7 @@ export class FinancialInvoiceService {
     private readonly notificationService: NotificationService,
   ) {}
 
-  async findById(
-    id: string,
-    chapterId: string,
-  ): Promise<FinancialInvoice> {
+  async findById(id: string, chapterId: string): Promise<FinancialInvoice> {
     const invoice = await this.invoiceRepo.findById(id, chapterId);
     if (!invoice) {
       throw new NotFoundException('Invoice not found');
@@ -75,7 +72,9 @@ export class FinancialInvoiceService {
 
   async create(input: CreateInvoiceInput): Promise<FinancialInvoice> {
     if (input.amount <= 0) {
-      throw new BadRequestException('Amount must be a positive integer (cents)');
+      throw new BadRequestException(
+        'Amount must be a positive integer (cents)',
+      );
     }
 
     const dueDate = new Date(input.due_date);
@@ -108,7 +107,9 @@ export class FinancialInvoiceService {
     }
 
     if (input.amount !== undefined && input.amount <= 0) {
-      throw new BadRequestException('Amount must be a positive integer (cents)');
+      throw new BadRequestException(
+        'Amount must be a positive integer (cents)',
+      );
     }
 
     if (input.due_date !== undefined) {
@@ -154,17 +155,13 @@ export class FinancialInvoiceService {
 
     if (invoice.status === 'DRAFT' && newStatus === 'OPEN') {
       try {
-        await this.notificationService.notifyUser(
-          invoice.user_id,
-          chapterId,
-          {
-            title: 'New Invoice',
-            body: `You have a new invoice: ${invoice.title}`,
-            priority: 'NORMAL',
-            category: 'billing',
-            data: { target: { screen: 'billing' } },
-          },
-        );
+        await this.notificationService.notifyUser(invoice.user_id, chapterId, {
+          title: 'New Invoice',
+          body: `You have a new invoice: ${invoice.title}`,
+          priority: 'NORMAL',
+          category: 'billing',
+          data: { target: { screen: 'billing' } },
+        });
       } catch {}
     }
 

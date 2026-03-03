@@ -84,10 +84,7 @@ export class InviteController {
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @ApiOperation({ summary: 'Revoke an invite' })
-  async revoke(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async revoke(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     await this.inviteService.revoke(id, chapterId);
     return { success: true };
   }

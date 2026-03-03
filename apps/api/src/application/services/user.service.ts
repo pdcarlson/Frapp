@@ -13,7 +13,8 @@ const PROFILES_BUCKET = 'profiles';
 export class UserService {
   constructor(
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
-    @Inject(STORAGE_PROVIDER) private readonly storageProvider: IStorageProvider,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storageProvider: IStorageProvider,
   ) {}
 
   async findById(id: string): Promise<User> {

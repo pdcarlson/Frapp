@@ -25,7 +25,9 @@ describe('ReportService', () => {
 
   beforeEach(async () => {
     mockSupabase = {
-      from: jest.fn().mockImplementation(() => makeChain({ data: [], error: null })),
+      from: jest
+        .fn()
+        .mockImplementation(() => makeChain({ data: [], error: null })),
     };
 
     const module: TestingModule = await Test.createTestingModule({

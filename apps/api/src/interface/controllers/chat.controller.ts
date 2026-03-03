@@ -9,7 +9,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ChatService } from '../../application/services/chat.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -173,7 +178,11 @@ export class ChatController {
   @Get(':id/messages')
   @ApiOperation({ summary: 'Get channel message history' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiQuery({ name: 'before', required: false, description: 'Cursor for pagination (ISO timestamp)' })
+  @ApiQuery({
+    name: 'before',
+    required: false,
+    description: 'Cursor for pagination (ISO timestamp)',
+  })
   async getMessages(
     @Param('id') channelId: string,
     @Query('limit') limit?: number,
@@ -262,7 +271,9 @@ export class ChatController {
   // ── File Upload ────────────────────────────────────────────────────
 
   @Post(':id/upload-url')
-  @ApiOperation({ summary: 'Generate a signed upload URL for a chat file attachment' })
+  @ApiOperation({
+    summary: 'Generate a signed upload URL for a chat file attachment',
+  })
   async requestUploadUrl(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,

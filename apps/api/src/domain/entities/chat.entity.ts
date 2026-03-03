@@ -1,4 +1,9 @@
-export type ChannelType = 'PUBLIC' | 'PRIVATE' | 'ROLE_GATED' | 'DM' | 'GROUP_DM';
+export type ChannelType =
+  | 'PUBLIC'
+  | 'PRIVATE'
+  | 'ROLE_GATED'
+  | 'DM'
+  | 'GROUP_DM';
 export type MessageType = 'TEXT' | 'POLL';
 
 export interface ChatChannelCategory {

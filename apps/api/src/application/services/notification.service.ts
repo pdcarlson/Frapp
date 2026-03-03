@@ -1,9 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-  Logger,
-} from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { NOTIFICATION_REPOSITORY } from '../../domain/repositories/notification.repository.interface';
 import type { INotificationRepository } from '../../domain/repositories/notification.repository.interface';
 import { PUSH_TOKEN_REPOSITORY } from '../../domain/repositories/notification.repository.interface';
@@ -68,10 +63,7 @@ export class NotificationService {
 
     const settings = await this.settingsRepo.findByUser(userId);
     let effectivePriority = payload.priority ?? 'NORMAL';
-    if (
-      effectivePriority !== 'URGENT' &&
-      this.isInQuietHours(settings)
-    ) {
+    if (effectivePriority !== 'URGENT' && this.isInQuietHours(settings)) {
       effectivePriority = 'SILENT';
     }
 
@@ -226,13 +218,20 @@ export class NotificationService {
 
   async updateSettings(
     userId: string,
-    data: Partial<Pick<UserSettings, 'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'>>,
+    data: Partial<
+      Pick<
+        UserSettings,
+        'quiet_hours_start' | 'quiet_hours_end' | 'quiet_hours_tz' | 'theme'
+      >
+    >,
   ): Promise<UserSettings> {
     const existing = await this.settingsRepo.findByUser(userId);
     return this.settingsRepo.upsert({
       user_id: userId,
-      quiet_hours_start: data.quiet_hours_start ?? existing?.quiet_hours_start ?? null,
-      quiet_hours_end: data.quiet_hours_end ?? existing?.quiet_hours_end ?? null,
+      quiet_hours_start:
+        data.quiet_hours_start ?? existing?.quiet_hours_start ?? null,
+      quiet_hours_end:
+        data.quiet_hours_end ?? existing?.quiet_hours_end ?? null,
       quiet_hours_tz: data.quiet_hours_tz ?? existing?.quiet_hours_tz ?? null,
       theme: data.theme ?? existing?.theme ?? 'system',
     });

@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  ConflictException,
-} from '@nestjs/common';
+import { Inject, Injectable, ConflictException } from '@nestjs/common';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
 import type { SemesterArchive } from '../../domain/entities/semester-archive.entity';

@@ -8,9 +8,7 @@ import type {
 import { BackworkResource } from '../../../domain/entities/backwork.entity';
 
 @Injectable()
-export class SupabaseBackworkResourceRepository
-  implements IBackworkResourceRepository
-{
+export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

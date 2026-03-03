@@ -5,9 +5,7 @@ import type { INotificationPreferenceRepository } from '../../../domain/reposito
 import type { NotificationPreference } from '../../../domain/entities/notification.entity';
 
 @Injectable()
-export class SupabaseNotificationPreferenceRepository
-  implements INotificationPreferenceRepository
-{
+export class SupabaseNotificationPreferenceRepository implements INotificationPreferenceRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

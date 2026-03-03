@@ -39,7 +39,10 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data || [];
   }
 
-  async findByChapterAndName(chapterId: string, name: string): Promise<Role | null> {
+  async findByChapterAndName(
+    chapterId: string,
+    name: string,
+  ): Promise<Role | null> {
     const { data, error } = await this.supabase
       .from('roles')
       .select('*')

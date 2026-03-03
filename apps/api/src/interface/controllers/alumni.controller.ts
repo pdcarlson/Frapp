@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -39,8 +44,11 @@ export class AlumniController {
     @Query('city') city?: string,
     @Query('company') company?: string,
   ) {
-    const filter: { graduation_year?: number; city?: string; company?: string } =
-      {};
+    const filter: {
+      graduation_year?: number;
+      city?: string;
+      company?: string;
+    } = {};
     if (graduationYear !== undefined && graduationYear !== '') {
       const year = parseInt(graduationYear, 10);
       if (!isNaN(year)) filter.graduation_year = year;
