@@ -1,4 +1,8 @@
-import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  VersioningType,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { createSupabaseMock } from './supabase-mock.factory';

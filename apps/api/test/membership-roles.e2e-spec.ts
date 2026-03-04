@@ -49,9 +49,9 @@ describe('Membership + roles (e2e)', () => {
         name: 'President',
       },
     ]),
-    getPermissionsCatalog: jest.fn().mockReturnValue([
-      { key: 'ROLES_MANAGE', permission: 'roles:manage' },
-    ]),
+    getPermissionsCatalog: jest
+      .fn()
+      .mockReturnValue([{ key: 'ROLES_MANAGE', permission: 'roles:manage' }]),
     create: jest.fn().mockResolvedValue({
       id: 'role-scholarship',
       chapter_id: 'chapter-1',
