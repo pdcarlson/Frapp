@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { ITaskRepository } from '../../../domain/repositories/task.repository.interface';
 import { Task } from '../../../domain/entities/task.entity';
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Task | null> {

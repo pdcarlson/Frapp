@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
 import { ServiceEntry } from '../../../domain/entities/service-entry.entity';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry | null> {

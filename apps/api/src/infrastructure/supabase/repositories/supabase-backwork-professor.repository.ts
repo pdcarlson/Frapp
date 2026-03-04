@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IBackworkProfessorRepository } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkProfessor } from '../../../domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<BackworkProfessor[]> {

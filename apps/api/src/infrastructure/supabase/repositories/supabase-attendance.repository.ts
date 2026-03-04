@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IAttendanceRepository } from '../../../domain/repositories/attendance.repository.interface';
 import { EventAttendance } from '../../../domain/entities/event-attendance.entity';
 
 @Injectable()
 export class SupabaseAttendanceRepository implements IAttendanceRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<EventAttendance | null> {

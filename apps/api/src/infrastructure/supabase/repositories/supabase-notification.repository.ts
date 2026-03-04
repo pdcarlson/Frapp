@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { INotificationRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { Notification } from '../../../domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseNotificationRepository implements INotificationRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async create(data: Partial<Notification>): Promise<Notification> {

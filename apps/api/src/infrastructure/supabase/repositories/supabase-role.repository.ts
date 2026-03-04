@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IRoleRepository } from '../../../domain/repositories/role.repository.interface';
 import { Role } from '../../../domain/entities/role.entity';
 
 @Injectable()
 export class SupabaseRoleRepository implements IRoleRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<Role | null> {

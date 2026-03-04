@@ -253,7 +253,7 @@ export class ChatService {
         messageId: message.id,
         channelId: input.channel_id,
         chapterId: input.chapter_id,
-        error,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatMessage } from '../../../domain/entities/chat.entity';
 
@@ -9,7 +9,8 @@ const DEFAULT_MESSAGE_LIMIT = 50;
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<ChatMessage | null> {

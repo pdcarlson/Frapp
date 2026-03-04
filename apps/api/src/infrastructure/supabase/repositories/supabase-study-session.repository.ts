@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IStudySessionRepository } from '../../../domain/repositories/study.repository.interface';
 import type { StudySession } from '../../../domain/entities/study.entity';
 
 @Injectable()
 export class SupabaseStudySessionRepository implements IStudySessionRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<StudySession | null> {

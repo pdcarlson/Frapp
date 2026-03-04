@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IInviteRepository } from '../../../domain/repositories/invite.repository.interface';
 import { Invite } from '../../../domain/entities/invite.entity';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<Invite | null> {

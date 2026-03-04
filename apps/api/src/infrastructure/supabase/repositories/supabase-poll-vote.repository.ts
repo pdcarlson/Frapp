@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IPollVoteRepository } from '../../../domain/repositories/poll-vote.repository.interface';
 import type { PollVote } from '../../../domain/entities/poll-vote.entity';
 
 @Injectable()
 export class SupabasePollVoteRepository implements IPollVoteRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByMessage(messageId: string): Promise<PollVote[]> {

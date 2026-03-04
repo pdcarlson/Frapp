@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IUserSettingsRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { UserSettings } from '../../../domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByUser(userId: string): Promise<UserSettings | null> {
