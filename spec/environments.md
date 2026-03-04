@@ -157,7 +157,7 @@ On every PR to `preview` or `main`, a GitHub Actions workflow runs:
 1. **Install:** `npm ci`
 2. **Build shared packages:** `npx turbo run build --filter='./packages/*'`
 3. **Type check:** `npm run check-types`
-4. **Lint:** web, landing, and docs apps
+4. **Lint:** `npm run lint`
 5. **Test:** `npm run test -w apps/api`
 6. **Build:** `npm run build`
 
