@@ -19,11 +19,19 @@ Last updated: 2026-03-04
 
 ## API deployment pending checklist
 
-- [ ] Confirm Render staging service and env vars
-- [ ] Confirm Render production service and env vars
+- [ ] Confirm Render staging service env matrix (Supabase + Stripe + Sentry)
+- [ ] Confirm Render production service env matrix (Supabase + Stripe + Sentry)
 - [ ] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
-- [ ] Run smoke checks after first deploy (`/health`, key auth-protected endpoint)
-- [ ] Wire deploy hook secrets for both environments
+- [ ] Validate fail-fast startup checks (missing required env vars fail boot)
+- [ ] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
+- [ ] Verify staging Stripe webhook routing/secret (`/v1/webhooks/stripe`)
+- [ ] Wire deploy hook + healthcheck URL secrets for both environments
+
+## Database promotion discipline checklist
+
+- [ ] Promotion follows `DB_PROMOTION_RUNBOOK.md`
+- [ ] Rollback plan documented in `DB_ROLLBACK_PLAYBOOK.md`
+- [ ] Migration safety checks pass in CI/deploy workflows
 
 ## Mobile deployment pending checklist
 

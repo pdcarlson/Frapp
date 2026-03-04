@@ -333,7 +333,7 @@ Configurable alerts via the monitoring provider:
 - **Source of truth:** NestJS controllers with `@nestjs/swagger` decorators produce an OpenAPI spec.
 - **Export:** `npm run openapi:export -w apps/api` generates `openapi.json` in `apps/api/`. Re-run when the API surface changes so the SDK stays in sync.
 - **SDK generation:** `npm run generate -w packages/api-sdk` generates TypeScript client from the OpenAPI spec.
-- **Contract testing:** CI verifies that `openapi.json` is up to date and that `@repo/api-sdk` compiles against it.
+- **Contract testing:** CI runs `npm run check:api-contract` to verify that `openapi.json` and `packages/api-sdk/src/types.ts` are in sync with source controllers.
 
 **Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), and Points (me, leaderboard, members, adjust) are implemented and included in the OpenAPI spec. The export script runs without real Supabase credentials (uses placeholders when env is missing).
 

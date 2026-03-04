@@ -1,0 +1,59 @@
+# DB Rollback Playbook
+
+## When to trigger rollback
+
+Trigger rollback procedures if any of the following occurs after migration promotion:
+
+- sustained API 5xx increase tied to schema errors
+- failing health checks caused by DB query errors
+- webhook processing failures caused by missing/changed columns
+- severe latency/regression from new indexes/queries
+
+## Decision matrix
+
+### 1) Fast forward-fix (preferred)
+
+Use when:
+- issue is contained and can be fixed with additive SQL,
+- no data corruption occurred,
+- service can stay online.
+
+Action:
+1. Create new migration: `npx supabase migration new <hotfix_name>`
+2. Apply to staging first.
+3. Promote to production once verified.
+
+### 2) Full rollback to backup/snapshot
+
+Use when:
+- destructive migration caused data loss/corruption,
+- service remains broken after attempted forward-fix,
+- unacceptable blast radius.
+
+Action:
+1. Freeze writes (maintenance mode if needed).
+2. Restore latest verified backup/snapshot in Supabase.
+3. Re-deploy API once DB state is consistent.
+4. Execute incident postmortem.
+
+## Immediate response steps
+
+1. Announce incident in engineering channel.
+2. Capture failing SQL/error logs and request IDs.
+3. Identify failing migration file(s) and affected tables/indexes/policies.
+4. Choose recovery strategy (forward-fix vs restore) using matrix above.
+
+## Verification after rollback/recovery
+
+- [ ] `GET /health` reports DB connected
+- [ ] critical API routes pass smoke checks
+- [ ] Stripe webhook endpoint processes signed test event
+- [ ] no ongoing elevated error alerts (Sentry/logs)
+
+## Documentation requirements
+
+After any rollback event:
+
+- update `docs/internal/DEPLOYMENT_STATUS.md` with incident notes
+- create/update postmortem entry with timeline and root cause
+- add preventive checks to migration or CI workflow
