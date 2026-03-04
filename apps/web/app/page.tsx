@@ -1,18 +1,29 @@
+import { Button } from "@repo/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo/ui/card";
+
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8">
-      <h1 className="text-4xl font-bold mb-4">Frapp Admin Dashboard</h1>
-      <p className="text-lg text-gray-600 mb-8">
-        The Operating System for Greek Life
-      </p>
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 max-w-md w-full">
-        <p className="text-center text-gray-500">
-          Authentication and dashboard coming soon.
-        </p>
-        <p className="text-center text-sm text-gray-400 mt-4">
-          Supabase Auth integration pending setup.
-        </p>
-      </div>
+    <main className="flex min-h-screen items-center justify-center p-8">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <CardTitle>Frapp Admin Dashboard</CardTitle>
+          <CardDescription>
+            The operating system for Greek Life chapter operations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <p className="text-sm text-muted-foreground">
+            Dashboard foundation is active. Authentication and first admin workflows are
+            being rolled out incrementally.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Button disabled>Sign in (in progress)</Button>
+            <Button variant="secondary" disabled>
+              Dashboard routes (in progress)
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </main>
   );
 }
