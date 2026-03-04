@@ -8,7 +8,7 @@
 | ------------ | --------------------------------- | ---------------------------------------- | ------------------------------------- |
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live      | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live  | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render / Railway / AWS (staging)         | Render / Railway / AWS (production)   |
+| **API**      | localhost:3001                    | Render (`preview` branch service)         | Render (`main` branch service)         |
 | **Docs**     | localhost:3005                    | Vercel preview / docs.staging.frapp.live | docs.frapp.live                       |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution                | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                 | Supabase production project           |
@@ -18,6 +18,14 @@
 | **Push**     | Expo Go (dev)                     | EAS internal builds                      | Production builds                     |
 
 Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys.
+
+### Branch-to-environment mapping
+
+| Branch | Purpose | Deployment behavior |
+| ------ | ------- | ------------------- |
+| `main` | Production | Triggers production deployments |
+| `preview` | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
+| `feature/*` | Short-lived feature work | PR preview deployments only; merged into `preview` |
 
 ---
 
@@ -116,7 +124,7 @@ npm run generate -w packages/api-sdk
 ## 3. Staging
 
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
-- **Git branch:** `preview` — pushes trigger staging deployments.
+- **Git branch:** `preview` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
 - **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `preview` branch.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `preview`, pointing at Supabase staging.
@@ -187,7 +195,7 @@ If any step fails, the PR cannot be merged.
 
 - **Local:** `.env.local` files (never committed; in `.gitignore`).
 - **CI/CD:** GitHub Actions secrets or Vercel environment variables.
-- **Staging / Production:** Environment variables set in the hosting provider (Vercel, Render/Railway, EAS). Consider a secret manager (Infisical, Doppler) for centralized management as the team grows.
+- **Staging / Production:** Environment variables set in the hosting provider (Vercel, Render, EAS). Consider a secret manager (Infisical, Doppler) for centralized management as the team grows.
 
 **Rule:** Never commit secrets. Never log secrets. Rotate keys immediately if exposed.
 

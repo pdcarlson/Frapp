@@ -68,11 +68,13 @@ Two long-lived branches map to environments:
 feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (production)
 ```
 
-1. Feature branches are created from `main`.
+1. Feature branches are typically created from `preview`.
 2. Feature PRs target `preview`. Merging triggers staging deployments.
 3. Test on staging domains (e.g. `app.staging.frapp.live`).
-4. When ready for production, PR from `preview` → `main`.
+4. When ready for production, open a promotion PR from `preview` → `main`.
 5. Merging to `main` triggers production deployments.
+
+> `develop` is not used. `preview` is the active staging integration branch.
 
 **Vercel environment mapping:**
 
