@@ -47,3 +47,4 @@ Standard commands from `package.json` scripts (run from repo root):
 - Only promotion PRs from `preview` into `main` are allowed.
 - Direct feature/hotfix PRs into `main` are not allowed.
 - Branch protection automation runbook: `docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`.
+- CodeRabbit trigger/ops runbook: `docs/internal/CODERABBIT_RUNBOOK.md`.

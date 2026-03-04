@@ -1,4 +1,5 @@
 reviews:
+  review_status: true
   auto_review:
     enabled: true
     drafts: false
