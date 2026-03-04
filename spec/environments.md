@@ -180,8 +180,6 @@ If any step fails, the PR cannot be merged.
 - Push to `main` triggers GitHub Actions → Render production deploy hook.
 - Push to `preview` triggers GitHub Actions → Render staging deploy hook.
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
-- Deploy workflows run migration safety and API contract checks before triggering Render.
-- Deploy workflows run optional post-deploy health smoke checks via configured healthcheck URLs.
 - Database migrations are applied manually before deploy: `npx supabase db push --project-ref <REF>`.
 - See `render.yaml` for the infrastructure-as-code definition.
 
@@ -207,8 +205,6 @@ If any step fails, the PR cannot be merged.
 ## 8. Database Migrations
 
 - Managed via Supabase CLI: `npx supabase migration new <name>` to create, `npx supabase db push --local` to apply locally (or omit `--local` after `supabase link` for remote projects).
-- Two workflows exist for pushing migrations to remote projects. Use `npx supabase db push --project-ref <REF>` for one-shot or CI/CD scripts where no persistent link is desired. Use `npx supabase link --project-ref <REF>` followed by `npx supabase db push` when working repeatedly against the same remote project (the link persists in `.supabase/`). See `docs/DEPLOYMENT.md` for the link-then-push pattern and section 6 above for the `--project-ref` usage in Render deploys.
 - Migration files live in `supabase/migrations/`.
 - Migrations are version-controlled and applied in order.
-- Promotion follows `docs/internal/DB_PROMOTION_RUNBOOK.md` and rollback follows `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
