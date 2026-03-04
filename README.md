@@ -57,7 +57,7 @@ Run each app command below in its own terminal (they are long-running dev server
 ```bash
 npm install
 npx supabase start
-npx supabase db push
+npx supabase db push --local
 npm run start:dev -w apps/api
 npm run dev -w apps/web
 npm run dev -w apps/landing

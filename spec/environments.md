@@ -48,8 +48,8 @@ npm install
 # 2. Start Supabase local (Postgres, Auth, Storage, Realtime)
 npx supabase start
 
-# 3. Apply database migrations
-npx supabase db push
+# 3. Apply database migrations (--local targets the local Supabase instance)
+npx supabase db push --local
 
 # 4. Start all apps
 npm run dev
@@ -204,7 +204,8 @@ If any step fails, the PR cannot be merged.
 
 ## 8. Database Migrations
 
-- Managed via Supabase CLI: `npx supabase migration new <name>` to create, `npx supabase db push` to apply.
+- Managed via Supabase CLI: `npx supabase migration new <name>` to create, `npx supabase db push --local` to apply locally (or omit `--local` after `supabase link` for remote projects).
+- Two workflows exist for pushing migrations to remote projects. Use `npx supabase db push --project-ref <REF>` for one-shot or CI/CD scripts where no persistent link is desired. Use `npx supabase link --project-ref <REF>` followed by `npx supabase db push` when working repeatedly against the same remote project (the link persists in `.supabase/`). See `docs/DEPLOYMENT.md` for the link-then-push pattern and section 6 above for the `--project-ref` usage in Render deploys.
 - Migration files live in `supabase/migrations/`.
 - Migrations are version-controlled and applied in order.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
