@@ -232,6 +232,11 @@ export class ChatService {
       throw new BadRequestException('Message content cannot be empty');
     }
 
+    const channel = await this.validateChannelForChapter(
+      input.channel_id,
+      input.chapter_id,
+    );
+
     const message = await this.messageRepo.create({
       channel_id: input.channel_id,
       sender_id: input.sender_id,
@@ -242,7 +247,7 @@ export class ChatService {
     });
 
     try {
-      await this.sendMessageNotification(input);
+      await this.sendMessageNotification(input, channel);
     } catch (error) {
       this.logger.warn('Failed to send message notification', {
         messageId: message.id,
@@ -257,13 +262,8 @@ export class ChatService {
 
   private async sendMessageNotification(
     input: SendMessageInput,
+    channel: ChatChannel,
   ): Promise<void> {
-    const channel = await this.channelRepo.findById(
-      input.channel_id,
-      input.chapter_id,
-    );
-    if (!channel) return;
-
     const isAnnouncement = channel.name.toLowerCase().includes('announcements');
 
     if (isAnnouncement) {
@@ -292,6 +292,17 @@ export class ChatService {
         );
       }
     }
+  }
+
+  private async validateChannelForChapter(
+    channelId: string,
+    chapterId: string,
+  ): Promise<ChatChannel> {
+    const channel = await this.channelRepo.findById(channelId, chapterId);
+    if (!channel) {
+      throw new NotFoundException('Channel not found');
+    }
+    return channel;
   }
 
   async editMessage(

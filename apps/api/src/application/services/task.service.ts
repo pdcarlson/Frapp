@@ -132,6 +132,7 @@ export class TaskService {
         data: { target: { screen: 'tasks', taskId: task.id } },
       },
       task.id,
+      'assignment',
     );
 
     return task;
