@@ -195,10 +195,12 @@ export class ChatController {
   @ApiOperation({ summary: 'Send a message' })
   async sendMessage(
     @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: SendMessageDto,
   ) {
     return this.chatService.sendMessage({
+      chapter_id: chapterId,
       channel_id: channelId,
       sender_id: userId,
       content: dto.content,

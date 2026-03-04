@@ -718,7 +718,7 @@ Ordered by admin workflow priority:
 - OpenAPI export script and auto-generated TypeScript SDK
 - Supabase migration covering all 25+ tables
 - Shared packages: theme, validation, eslint-config, typescript-config
-- Phase 2 audit document (`PHASE2-AUDIT.md`)
+- Phase 2 audit document (`../audits/PHASE2_AUDIT.md`)
 - `AGENTS.md` for development environment
 - Pull request template with docs/spec impact section
 

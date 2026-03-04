@@ -1,4 +1,4 @@
-import { IsEmail, IsString, IsUrl } from 'class-validator';
+import { IsEmail, IsUrl } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateCheckoutDto {

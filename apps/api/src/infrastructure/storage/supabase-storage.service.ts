@@ -12,8 +12,9 @@ export class SupabaseStorageService implements IStorageProvider {
   async getSignedUploadUrl(
     bucket: string,
     path: string,
-    _contentType: string,
+    contentType: string,
   ): Promise<string> {
+    void contentType;
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(path);

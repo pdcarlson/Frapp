@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
@@ -13,6 +14,7 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { Task, TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
+import type { NotifyPayload } from './notification.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   TODO: ['IN_PROGRESS'],
@@ -52,6 +54,8 @@ export interface UpdateTaskStatusInput {
 
 @Injectable()
 export class TaskService {
+  private readonly logger = new Logger(TaskService.name);
+
   constructor(
     @Inject(TASK_REPOSITORY) private readonly taskRepo: ITaskRepository,
     @Inject(POINT_TRANSACTION_REPOSITORY)
@@ -117,19 +121,19 @@ export class TaskService {
       confirmed_at: null,
     });
 
-    try {
-      await this.notificationService.notifyUser(
-        input.assignee_id,
-        input.chapter_id,
-        {
-          title: 'Task Assigned',
-          body: `You have been assigned: ${task.title}`,
-          priority: 'NORMAL',
-          category: 'tasks',
-          data: { target: { screen: 'tasks', taskId: task.id } },
-        },
-      );
-    } catch {}
+    await this.safeNotifyUser(
+      input.assignee_id,
+      input.chapter_id,
+      {
+        title: 'Task Assigned',
+        body: `You have been assigned: ${task.title}`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      },
+      task.id,
+      'assignment',
+    );
 
     return task;
   }
@@ -216,15 +220,19 @@ export class TaskService {
 
     const updated = await this.taskRepo.update(id, chapterId, updateData);
 
-    try {
-      await this.notificationService.notifyUser(task.assignee_id, chapterId, {
+    await this.safeNotifyUser(
+      task.assignee_id,
+      chapterId,
+      {
         title: 'Task Confirmed',
         body: `Your task "${task.title}" has been confirmed`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
-      });
-    } catch {}
+      },
+      task.id,
+      'confirmation',
+    );
 
     return toDisplayStatus(updated);
   }
@@ -232,7 +240,7 @@ export class TaskService {
   async rejectCompletion(
     id: string,
     chapterId: string,
-    _comment?: string | null,
+    comment?: string | null,
   ): Promise<Task> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
@@ -253,7 +261,41 @@ export class TaskService {
       status: 'IN_PROGRESS',
       completed_at: null,
     });
+
+    await this.safeNotifyUser(
+      task.assignee_id,
+      chapterId,
+      {
+        title: 'Task Completion Rejected',
+        body: comment
+          ? `Your task "${task.title}" was rejected: ${comment}`
+          : `Your task "${task.title}" was rejected and moved back to in progress.`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      },
+      task.id,
+      'rejection',
+    );
+
     return toDisplayStatus(updated);
+  }
+
+  private async safeNotifyUser(
+    assigneeId: string,
+    chapterId: string,
+    payload: NotifyPayload,
+    taskId: string,
+    notificationContext = 'update',
+  ): Promise<void> {
+    try {
+      await this.notificationService.notifyUser(assigneeId, chapterId, payload);
+    } catch (error) {
+      this.logger.warn(
+        `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

@@ -33,8 +33,9 @@ export class AttendanceController {
     @Param('eventId') eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
-    @Body() _dto: CheckInDto,
+    @Body() dto: CheckInDto,
   ) {
+    void dto;
     return this.attendanceService.checkIn(eventId, userId, chapterId);
   }
 

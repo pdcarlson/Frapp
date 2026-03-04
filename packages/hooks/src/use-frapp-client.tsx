@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useMemo } from "react";
+import React, { createContext, useContext } from "react";
 import { createFrappClient } from "@repo/api-sdk";
 
 type FrappClient = ReturnType<typeof createFrappClient>;

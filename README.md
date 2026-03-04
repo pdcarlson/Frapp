@@ -9,7 +9,7 @@ apps/
   api/        — NestJS backend (REST + WebSockets)
   web/        — Next.js admin dashboard (app.frapp.live)
   mobile/     — Expo mobile app (iOS + Android)
-  landing/    — Next.js marketing site (frapp.live)        [planned]
+  landing/    — Next.js marketing site (frapp.live)
   docs/       — Next.js documentation site (docs.frapp.live)
 packages/
   api-sdk/    — Generated TypeScript API client
@@ -20,7 +20,7 @@ packages/
   eslint-config/      — Shared ESLint configuration
   typescript-config/  — Shared tsconfig
 spec/         — Product spec, behavior spec, architecture, environments
-supabase/     — Supabase project config + migrations       [planned]
+supabase/     — Supabase project config + migrations
 ```
 
 ## Tech Stack
@@ -52,11 +52,16 @@ The spec is the single source of truth. Implementation follows the spec.
 
 ## Quick Start
 
+Run each app command below in its own terminal (they are long-running dev servers).
+
 ```bash
 npm install
 npx supabase start
 npx supabase db push
-npm run dev
+npm run start:dev -w apps/api
+npm run dev -w apps/web
+npm run dev -w apps/landing
+npm run dev -w apps/docs
 ```
 
 | Service         | URL                        |

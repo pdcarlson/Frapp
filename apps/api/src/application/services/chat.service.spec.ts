@@ -264,9 +264,11 @@ describe('ChatService', () => {
 
   describe('sendMessage', () => {
     it('should send a message', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(baseMessage);
 
       const result = await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello world',
@@ -278,11 +280,27 @@ describe('ChatService', () => {
     it('should reject empty content', async () => {
       await expect(
         service.sendMessage({
+          chapter_id: 'ch-1',
           channel_id: 'ch-chan-1',
           sender_id: 'user-1',
           content: '   ',
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject when channel is not found for chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-missing',
+          sender_id: 'user-1',
+          content: 'Hello world',
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
   });
 
@@ -565,6 +583,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(dmChannel);
 
       await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello!',
@@ -591,6 +610,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(announcementChannel);
 
       await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Important update!',
@@ -619,6 +639,7 @@ describe('ChatService', () => {
       );
 
       const result = await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello!',
