@@ -4,18 +4,21 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { Observable } from 'rxjs';
 import { v4 as uuidv4 } from 'uuid';
+import { getHeaderValue, RequestContext } from '../types/request-context.types';
 
 @Injectable()
 export class RequestIdInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
-    const response = context.switchToHttp().getResponse();
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const request = context.switchToHttp().getRequest<RequestContext>();
+    const response = context.switchToHttp().getResponse<Response>();
 
-    const requestId = request.headers['x-request-id'] || `req_${uuidv4()}`;
-    request.requestId = requestId;
-    response.setHeader('x-request-id', requestId);
+    const requestId = getHeaderValue(request.headers, 'x-request-id');
+    const resolvedRequestId = requestId ?? `req_${uuidv4()}`;
+    request.requestId = resolvedRequestId;
+    response.setHeader('x-request-id', resolvedRequestId);
 
     return next.handle();
   }

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
+import { RequestContext, getHeaderValue } from '../types/request-context.types';
 
 @Injectable()
 export class StripeWebhookGuard implements CanActivate {
@@ -18,11 +19,15 @@ export class StripeWebhookGuard implements CanActivate {
   }
 
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest();
-    const signature = request.headers['stripe-signature'];
+    const request = context.switchToHttp().getRequest<RequestContext>();
+    const signature = getHeaderValue(request.headers, 'stripe-signature');
 
     if (!signature) {
       throw new UnauthorizedException('Missing Stripe signature');
+    }
+
+    if (!request.rawBody) {
+      throw new UnauthorizedException('Missing raw request body');
     }
 
     try {

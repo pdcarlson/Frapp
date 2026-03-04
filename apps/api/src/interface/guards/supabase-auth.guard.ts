@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { RequestContext, getHeaderValue } from '../types/request-context.types';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
@@ -15,8 +16,8 @@ export class SupabaseAuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const authHeader = request.headers.authorization;
+    const request = context.switchToHttp().getRequest<RequestContext>();
+    const authHeader = getHeaderValue(request.headers, 'authorization');
 
     if (!authHeader?.startsWith('Bearer ')) {
       throw new UnauthorizedException(

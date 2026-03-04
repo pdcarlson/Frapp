@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { RequestContext, getHeaderValue } from '../types/request-context.types';
 
 @Injectable()
 export class ChapterGuard implements CanActivate {
@@ -15,8 +16,8 @@ export class ChapterGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const chapterId = request.headers['x-chapter-id'];
+    const request = context.switchToHttp().getRequest<RequestContext>();
+    const chapterId = getHeaderValue(request.headers, 'x-chapter-id');
 
     if (!chapterId) {
       throw new ForbiddenException('Missing x-chapter-id header');

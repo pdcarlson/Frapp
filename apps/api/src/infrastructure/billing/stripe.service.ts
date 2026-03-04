@@ -74,6 +74,14 @@ export class StripeBillingService implements IBillingProvider {
       signature,
       this.webhookSecret,
     );
-    return event as unknown as WebhookEvent;
+
+    return {
+      id: event.id,
+      type: event.type,
+      created: event.created,
+      data: {
+        object: event.data.object as Record<string, unknown>,
+      },
+    };
   }
 }

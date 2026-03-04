@@ -12,14 +12,38 @@ export interface CreateCustomerPortalParams {
   returnUrl: string;
 }
 
-export interface WebhookEvent {
+interface BaseWebhookEvent<TType extends string, TObject> {
   id: string;
-  type: string;
+  type: TType;
   created: number;
   data: {
-    object: Record<string, any>;
+    object: TObject;
   };
 }
+
+export interface CheckoutSessionWebhookObject {
+  metadata?: {
+    chapter_id?: string;
+  };
+  subscription?: string | null;
+  customer?: string | null;
+}
+
+export interface SubscriptionWebhookObject {
+  id: string;
+  status?: string;
+}
+
+export interface InvoiceWebhookObject {
+  subscription?: string | null;
+}
+
+export type WebhookEvent =
+  | BaseWebhookEvent<'checkout.session.completed', CheckoutSessionWebhookObject>
+  | BaseWebhookEvent<'customer.subscription.updated', SubscriptionWebhookObject>
+  | BaseWebhookEvent<'customer.subscription.deleted', SubscriptionWebhookObject>
+  | BaseWebhookEvent<'invoice.paid', InvoiceWebhookObject>
+  | BaseWebhookEvent<string, Record<string, unknown>>;
 
 export interface IBillingProvider {
   createCustomer(email: string, name: string): Promise<string>;
