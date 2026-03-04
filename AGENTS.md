@@ -40,3 +40,9 @@ Standard commands from `package.json` scripts (run from repo root):
 - API lint warnings mostly reflect strict type-safety checks around request context/repository boundaries; lint passes, but warnings can be incrementally hardened over time.
 - The mobile app (`apps/mobile`) requires Expo Go on a physical device or emulator; it cannot be tested in a headless cloud VM.
 - `npx supabase db push` requires `--local` flag when running against local dev (no linked project). Without it, the CLI errors with "Cannot find project ref".
+
+### Pull request targeting policy
+
+- Agent-created implementation PRs must target `preview`.
+- Only promotion PRs from `preview` into `main` are allowed.
+- Direct feature/hotfix PRs into `main` are not allowed.
