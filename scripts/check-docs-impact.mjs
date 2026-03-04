@@ -39,7 +39,7 @@ const triggers = [
   "apps/landing/",
 ];
 
-const docsOrSpec = ["apps/docs/", "spec/"];
+const docsOrSpec = ["apps/docs/", "docs/", "spec/"];
 
 const touchedTrigger = changed.filter((p) =>
   triggers.some((t) => p.startsWith(t)),
