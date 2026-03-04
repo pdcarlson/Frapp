@@ -1,9 +1,6 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo/ui/card";
-
-function joinClassNames(...classes: Array<string | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+import { joinClassNames } from "@repo/ui/utils";
 
 export default function Home() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "/";

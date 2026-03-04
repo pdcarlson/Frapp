@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -80,6 +81,8 @@ export interface CreateCategoryInput {
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @Inject(CHAT_CHANNEL_REPOSITORY)
     private readonly channelRepo: IChatChannelRepository,
@@ -240,7 +243,14 @@ export class ChatService {
 
     try {
       await this.sendMessageNotification(input);
-    } catch {}
+    } catch (error) {
+      this.logger.warn('Failed to send message notification', {
+        messageId: message.id,
+        channelId: input.channel_id,
+        chapterId: input.chapter_id,
+        error,
+      });
+    }
 
     return message;
   }

@@ -14,6 +14,7 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { Task, TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
+import type { NotifyPayload } from './notification.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   TODO: ['IN_PROGRESS'],
@@ -120,24 +121,18 @@ export class TaskService {
       confirmed_at: null,
     });
 
-    try {
-      await this.notificationService.notifyUser(
-        input.assignee_id,
-        input.chapter_id,
-        {
-          title: 'Task Assigned',
-          body: `You have been assigned: ${task.title}`,
-          priority: 'NORMAL',
-          category: 'tasks',
-          data: { target: { screen: 'tasks', taskId: task.id } },
-        },
-      );
-    } catch (error) {
-      this.logger.warn(
-        `notifyUser failed for task ${task.id} / assignee ${input.assignee_id}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
+    await this.safeNotifyUser(
+      input.assignee_id,
+      input.chapter_id,
+      {
+        title: 'Task Assigned',
+        body: `You have been assigned: ${task.title}`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      },
+      task.id,
+    );
 
     return task;
   }
@@ -224,20 +219,19 @@ export class TaskService {
 
     const updated = await this.taskRepo.update(id, chapterId, updateData);
 
-    try {
-      await this.notificationService.notifyUser(task.assignee_id, chapterId, {
+    await this.safeNotifyUser(
+      task.assignee_id,
+      chapterId,
+      {
         title: 'Task Confirmed',
         body: `Your task "${task.title}" has been confirmed`,
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
-      });
-    } catch (error) {
-      this.logger.warn(
-        `notifyUser failed for task ${task.id} confirmation / assignee ${task.assignee_id}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
+      },
+      task.id,
+      'confirmation',
+    );
 
     return toDisplayStatus(updated);
   }
@@ -267,8 +261,10 @@ export class TaskService {
       completed_at: null,
     });
 
-    try {
-      await this.notificationService.notifyUser(task.assignee_id, chapterId, {
+    await this.safeNotifyUser(
+      task.assignee_id,
+      chapterId,
+      {
         title: 'Task Completion Rejected',
         body: comment
           ? `Your task "${task.title}" was rejected: ${comment}`
@@ -276,15 +272,29 @@ export class TaskService {
         priority: 'NORMAL',
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
-      });
+      },
+      task.id,
+      'rejection',
+    );
+
+    return toDisplayStatus(updated);
+  }
+
+  private async safeNotifyUser(
+    assigneeId: string,
+    chapterId: string,
+    payload: NotifyPayload,
+    taskId: string,
+    notificationContext = 'update',
+  ): Promise<void> {
+    try {
+      await this.notificationService.notifyUser(assigneeId, chapterId, payload);
     } catch (error) {
       this.logger.warn(
-        `notifyUser failed for task ${task.id} rejection / assignee ${task.assignee_id}`,
+        `notifyUser failed for task ${taskId} (${notificationContext}) / assignee ${assigneeId}`,
         error instanceof Error ? error.stack : String(error),
       );
     }
-
-    return toDisplayStatus(updated);
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

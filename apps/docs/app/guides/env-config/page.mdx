@@ -40,6 +40,8 @@ Staging/production:
 
 Local (`apps/web/.env.local`):
 
+Run `npx supabase status -o env` and copy values for `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` (using the variable names documented in `spec/environments.md`) when creating this file.
+
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
@@ -66,6 +68,8 @@ Staging/production:
 ### Mobile (`apps/mobile`)
 
 Local (`apps/mobile/.env.local`):
+
+Run `npx supabase status -o env` and copy values for `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` (using the variable names documented in `spec/environments.md`) when creating this file.
 
 ```bash
 EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
