@@ -31,6 +31,9 @@ npm run ios -w apps/mobile
 npm run android -w apps/mobile
 npm run web -w apps/mobile
 
+# Lint
+npm run lint -w apps/mobile
+
 # Type check
 npm run check-types -w apps/mobile
 ```

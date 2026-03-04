@@ -7,6 +7,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
@@ -40,7 +41,9 @@
     "tailwindcss": "^3.4.19"
   },
   "devDependencies": {
+    "@repo/eslint-config": "*",
     "@types/react": "~19.1.0",
+    "eslint": "^9.39.1",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2"
   },
