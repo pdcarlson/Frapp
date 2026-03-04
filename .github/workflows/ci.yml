@@ -26,6 +26,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check migration safety (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Check migration safety (push)
+        if: github.event_name == 'push'
+        run: npm run check:migration-safety
+
       - name: Build packages
         run: npx turbo run build --filter='./packages/*'
 
@@ -37,6 +45,9 @@ jobs:
 
       - name: Test (API)
         run: npm run test -w apps/api
+
+      - name: Check API contract drift
+        run: npm run check:api-contract
 
   build:
     needs: lint-typecheck-test

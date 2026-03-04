@@ -49,6 +49,12 @@ npm run lint -w apps/api
 
 # Export OpenAPI spec
 npm run openapi:export -w apps/api
+
+# Check OpenAPI + SDK drift
+npm run check:api-contract
+
+# Check migration filename/doc safety
+npm run check:migration-safety
 ```
 
 ## Related docs
