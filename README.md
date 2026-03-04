@@ -52,6 +52,8 @@ The spec is the single source of truth. Implementation follows the spec.
 
 ## Quick Start
 
+Run each app command below in its own terminal (they are long-running dev servers).
+
 ```bash
 npm install
 npx supabase start

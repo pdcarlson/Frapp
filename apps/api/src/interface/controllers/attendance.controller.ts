@@ -17,7 +17,7 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { UpdateAttendanceDto } from '../dtos/attendance.dto';
+import { CheckInDto, UpdateAttendanceDto } from '../dtos/attendance.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Attendance')
@@ -33,7 +33,9 @@ export class AttendanceController {
     @Param('eventId') eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
+    @Body() dto: CheckInDto,
   ) {
+    void dto;
     return this.attendanceService.checkIn(eventId, userId, chapterId);
   }
 

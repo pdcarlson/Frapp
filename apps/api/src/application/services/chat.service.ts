@@ -64,6 +64,7 @@ export interface CreateDmInput {
 }
 
 export interface SendMessageInput {
+  chapter_id: string;
   channel_id: string;
   sender_id: string;
   content: string;
@@ -247,7 +248,10 @@ export class ChatService {
   private async sendMessageNotification(
     input: SendMessageInput,
   ): Promise<void> {
-    const channel = await this.channelRepo.findById(input.channel_id, '');
+    const channel = await this.channelRepo.findById(
+      input.channel_id,
+      input.chapter_id,
+    );
     if (!channel) return;
 
     const isAnnouncement = channel.name.toLowerCase().includes('announcements');

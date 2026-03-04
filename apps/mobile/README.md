@@ -11,6 +11,7 @@ npm run start -w apps/mobile
 ```
 
 Then scan the QR code in Expo Go (same local network).
+This app cannot be tested in a headless cloud VM — it requires Expo Go on a physical device or a local emulator.
 
 ## Environment
 

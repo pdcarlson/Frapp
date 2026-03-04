@@ -17,11 +17,11 @@ export const navSections: NavSection[] = [
     label: "Development",
     items: [
       { title: "Deployment", href: "/guides/deployment" },
+      { title: "Env & Config", href: "/guides/env-config" },
       { title: "Docker (API)", href: "/guides/docker" },
       { title: "API Architecture", href: "/guides/api-architecture" },
       { title: "Database", href: "/guides/database" },
       { title: "Testing", href: "/guides/testing" },
-      { title: "Env & Config", href: "/guides/env-config" },
     ],
   },
   {

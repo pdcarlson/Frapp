@@ -267,6 +267,7 @@ describe('ChatService', () => {
       mockMessageRepo.create.mockResolvedValue(baseMessage);
 
       const result = await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello world',
@@ -278,6 +279,7 @@ describe('ChatService', () => {
     it('should reject empty content', async () => {
       await expect(
         service.sendMessage({
+          chapter_id: 'ch-1',
           channel_id: 'ch-chan-1',
           sender_id: 'user-1',
           content: '   ',
@@ -565,6 +567,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(dmChannel);
 
       await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello!',
@@ -591,6 +594,7 @@ describe('ChatService', () => {
       mockChannelRepo.findById.mockResolvedValue(announcementChannel);
 
       await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Important update!',
@@ -619,6 +623,7 @@ describe('ChatService', () => {
       );
 
       const result = await service.sendMessage({
+        chapter_id: 'ch-1',
         channel_id: 'ch-chan-1',
         sender_id: 'user-1',
         content: 'Hello!',

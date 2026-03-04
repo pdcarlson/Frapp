@@ -1,8 +1,19 @@
 import Link from "next/link";
-import { Button } from "@repo/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo/ui/card";
 
+function joinClassNames(...classes: Array<string | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 export default function Home() {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "/";
+  const loginUrl = process.env.NEXT_PUBLIC_APP_URL
+    ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}/login`
+    : "/login";
+
+  const baseCtaClassName =
+    "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring h-10 px-4 py-2";
+
   return (
     <main className="flex min-h-screen items-center justify-center p-8">
       <Card className="w-full max-w-2xl">
@@ -19,11 +30,23 @@ export default function Home() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-3">
-          <Link href={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}>
-            <Button>Get Started</Button>
+          <Link
+            href={appUrl}
+            className={joinClassNames(
+              baseCtaClassName,
+              "bg-primary text-primary-foreground hover:bg-primary/90",
+            )}
+          >
+            Get Started
           </Link>
-          <Link href={process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}>
-            <Button variant="secondary">Log In</Button>
+          <Link
+            href={loginUrl}
+            className={joinClassNames(
+              baseCtaClassName,
+              "border border-border bg-card text-card-foreground hover:bg-accent hover:text-accent-foreground",
+            )}
+          >
+            Log In
           </Link>
         </CardContent>
       </Card>

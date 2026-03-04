@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
@@ -52,6 +53,8 @@ export interface UpdateTaskStatusInput {
 
 @Injectable()
 export class TaskService {
+  private readonly logger = new Logger(TaskService.name);
+
   constructor(
     @Inject(TASK_REPOSITORY) private readonly taskRepo: ITaskRepository,
     @Inject(POINT_TRANSACTION_REPOSITORY)
@@ -129,7 +132,12 @@ export class TaskService {
           data: { target: { screen: 'tasks', taskId: task.id } },
         },
       );
-    } catch {}
+    } catch (error) {
+      this.logger.warn(
+        `notifyUser failed for task ${task.id} / assignee ${input.assignee_id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     return task;
   }
@@ -224,7 +232,12 @@ export class TaskService {
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
       });
-    } catch {}
+    } catch (error) {
+      this.logger.warn(
+        `notifyUser failed for task ${task.id} confirmation / assignee ${task.assignee_id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     return toDisplayStatus(updated);
   }
@@ -264,7 +277,12 @@ export class TaskService {
         category: 'tasks',
         data: { target: { screen: 'tasks', taskId: task.id } },
       });
-    } catch {}
+    } catch (error) {
+      this.logger.warn(
+        `notifyUser failed for task ${task.id} rejection / assignee ${task.assignee_id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     return toDisplayStatus(updated);
   }

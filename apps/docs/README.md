@@ -25,7 +25,7 @@ npm run lint -w apps/docs
 ## Content structure
 
 - `app/guides/*` — curated docs pages written as MDX.
-- `app/docs/[slug]` — renders markdown docs sourced from `spec/`.
+- `app/docs/[slug]` — renders Markdown docs sourced from `spec/`.
 - `components/navigation.ts` — sidebar and mobile nav structure.
 
 ## Deployment

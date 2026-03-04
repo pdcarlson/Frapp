@@ -18,6 +18,8 @@ We maintain three main environments:
 
 Local (`apps/api/.env.local`):
 
+Start local infrastructure with `npx supabase start`, then run `npx supabase status -o env` and copy the generated Supabase values into `apps/api/.env.local`.
+
 ```bash
 SUPABASE_URL=[REDACTED]
 SUPABASE_SERVICE_ROLE_KEY=...

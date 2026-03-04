@@ -52,14 +52,14 @@ if (touchedTrigger.length > 0 && touchedDocsOrSpec.length === 0) {
   console.error("Docs/spec sync check failed.");
   console.error("");
   console.error(
-    "You changed product code, but didn't update `apps/docs/` or `spec/` in the same PR.",
+    "You changed product code, but didn't update `apps/docs/`, `docs/`, or `spec/` in the same PR.",
   );
   console.error("");
   console.error("Triggering changes:");
   for (const p of touchedTrigger) console.error(`- ${p}`);
   console.error("");
   console.error(
-    "Fix: update the relevant guide(s) in `apps/docs/` and/or the specs in `spec/`.",
+    "Fix: update the relevant guide(s) in `apps/docs/` or `docs/` and/or the specs in `spec/`.",
   );
   process.exit(1);
 }
