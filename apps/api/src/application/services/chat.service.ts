@@ -238,7 +238,7 @@ export class ChatService {
     });
 
     try {
-      await this.sendMessageNotification(input, message);
+      await this.sendMessageNotification(input);
     } catch {}
 
     return message;
@@ -246,7 +246,6 @@ export class ChatService {
 
   private async sendMessageNotification(
     input: SendMessageInput,
-    message: ChatMessage,
   ): Promise<void> {
     const channel = await this.channelRepo.findById(input.channel_id, '');
     if (!channel) return;

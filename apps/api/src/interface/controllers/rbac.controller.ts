@@ -40,7 +40,7 @@ export class RbacController {
 
   @Get('permissions-catalog')
   @ApiOperation({ summary: 'Get system permissions catalog' })
-  async catalog() {
+  catalog() {
     return this.rbacService.getPermissionsCatalog();
   }
 

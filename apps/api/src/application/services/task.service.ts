@@ -232,7 +232,7 @@ export class TaskService {
   async rejectCompletion(
     id: string,
     chapterId: string,
-    _comment?: string | null,
+    comment?: string | null,
   ): Promise<Task> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
@@ -253,6 +253,19 @@ export class TaskService {
       status: 'IN_PROGRESS',
       completed_at: null,
     });
+
+    try {
+      await this.notificationService.notifyUser(task.assignee_id, chapterId, {
+        title: 'Task Completion Rejected',
+        body: comment
+          ? `Your task "${task.title}" was rejected: ${comment}`
+          : `Your task "${task.title}" was rejected and moved back to in progress.`,
+        priority: 'NORMAL',
+        category: 'tasks',
+        data: { target: { screen: 'tasks', taskId: task.id } },
+      });
+    } catch {}
+
     return toDisplayStatus(updated);
   }
 

@@ -28,7 +28,7 @@ Frapp is a Turborepo + npm workspaces monorepo with 5 apps and 7 shared packages
 ### Lint, test, build, type-check
 
 Standard commands from `package.json` scripts (run from repo root):
-- **Lint:** `npm run lint` (turbo, excludes `apps/api` due known pre-existing API lint debt). Run `npm run lint:api` to lint API directly.
+- **Lint:** `npm run lint` (turbo, all lint-enabled workspaces). Run `npm run lint:api` for API-only linting.
 - **Tests:** `npm run test -w apps/api` (55 Jest unit tests).
 - **Build:** `npm run build` (turbo, builds all packages/apps).
 - **Type-check:** `npm run check-types` (turbo).
@@ -37,5 +37,5 @@ Standard commands from `package.json` scripts (run from repo root):
 
 - The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Supabase local keys are deterministic JWTs output by `npx supabase status -o env`.
 - Stripe env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`) can be set to placeholders for local dev unless testing billing flows.
-- `apps/api` has pre-existing lint issues; monorepo lint intentionally excludes API until that debt is addressed.
+- API lint warnings mostly reflect strict type-safety checks around request context/repository boundaries; lint passes, but warnings can be incrementally hardened over time.
 - The mobile app (`apps/mobile`) requires Expo Go on a physical device or emulator; it cannot be tested in a headless cloud VM.

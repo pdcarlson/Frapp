@@ -35,13 +35,6 @@ export interface CreatePortalInput {
   returnUrl: string;
 }
 
-const VALID_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
-  'incomplete',
-  'active',
-  'past_due',
-  'canceled',
-];
-
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
