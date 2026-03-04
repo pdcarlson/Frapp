@@ -9,7 +9,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
-    "check:migration-safety": "node scripts/check-migration-safety.mjs"
+    "check:migration-safety": "node scripts/check-migration-safety.mjs",
+    "configure:branch-protection": "node scripts/configure-branch-protection.mjs"
   },
   "devDependencies": {
     "prettier": "^3.7.4",
