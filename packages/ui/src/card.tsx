@@ -1,8 +1,5 @@
 import type { HTMLAttributes } from "react";
-
-function joinClassNames(...classes: Array<string | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
+import { joinClassNames } from "./utils";
 
 export type CardProps = HTMLAttributes<HTMLDivElement>;
 

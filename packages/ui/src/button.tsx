@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { joinClassNames } from "./utils";
 
 type ButtonVariant = "primary" | "secondary" | "ghost";
 
@@ -16,10 +17,6 @@ const VARIANT_CLASSNAME: Record<ButtonVariant, string> = {
     "border border-border bg-card text-card-foreground hover:bg-accent hover:text-accent-foreground",
   ghost: "text-foreground hover:bg-accent hover:text-accent-foreground",
 };
-
-function joinClassNames(...classes: Array<string | undefined>) {
-  return classes.filter(Boolean).join(" ");
-}
 
 export function Button({
   children,
