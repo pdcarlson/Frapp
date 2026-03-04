@@ -17,7 +17,9 @@ describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
   let mockServiceEntryRepo: jest.Mocked<IServiceEntryRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const baseEntry: ServiceEntry = {
     id: 'se-1',
@@ -87,7 +89,10 @@ describe('ServiceEntryService', () => {
 
       const result = await service.findById('se-1', 'ch-1');
 
-      expect(mockServiceEntryRepo.findById).toHaveBeenCalledWith('se-1', 'ch-1');
+      expect(mockServiceEntryRepo.findById).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+      );
       expect(result).toEqual(baseEntry);
     });
 
@@ -156,7 +161,10 @@ describe('ServiceEntryService', () => {
     });
 
     it('should create entry with optional proof_path', async () => {
-      const withProof = { ...baseEntry, proof_path: 'chapters/ch-1/service/se-1/proof.pdf' };
+      const withProof = {
+        ...baseEntry,
+        proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+      };
       mockServiceEntryRepo.create.mockResolvedValue(withProof);
 
       await service.create({
@@ -255,12 +263,7 @@ describe('ServiceEntryService', () => {
       mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
       mockServiceEntryRepo.update.mockResolvedValue(approved);
 
-      const result = await service.approve(
-        'se-1',
-        'ch-1',
-        'admin-1',
-        null,
-      );
+      const result = await service.approve('se-1', 'ch-1', 'admin-1', null);
 
       expect(mockPointTxnRepo.create).toHaveBeenCalledWith({
         chapter_id: 'ch-1',
@@ -375,15 +378,11 @@ describe('ServiceEntryService', () => {
       );
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockServiceEntryRepo.update).toHaveBeenCalledWith(
-        'se-1',
-        'ch-1',
-        {
-          status: 'REJECTED',
-          reviewed_by: 'admin-1',
-          review_comment: 'Insufficient proof',
-        },
-      );
+      expect(mockServiceEntryRepo.update).toHaveBeenCalledWith('se-1', 'ch-1', {
+        status: 'REJECTED',
+        reviewed_by: 'admin-1',
+        review_comment: 'Insufficient proof',
+      });
       expect(result).toEqual(rejected);
     });
 

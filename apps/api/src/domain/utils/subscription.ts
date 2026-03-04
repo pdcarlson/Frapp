@@ -13,5 +13,7 @@ export function canPerformWriteAction(status: SubscriptionStatus): boolean {
  * Only fully canceled chapters lose read access.
  */
 export function canPerformReadAction(status: SubscriptionStatus): boolean {
-  return status === 'active' || status === 'past_due' || status === 'incomplete';
+  return (
+    status === 'active' || status === 'past_due' || status === 'incomplete'
+  );
 }

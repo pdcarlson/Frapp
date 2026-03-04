@@ -243,8 +243,24 @@ describe('NotificationService', () => {
   describe('notifyChapter', () => {
     it('should notify all chapter members', async () => {
       mockMemberRepo.findByChapter.mockResolvedValue([
-        { id: 'm-1', user_id: 'u-1', chapter_id: 'ch-1', role_ids: [], has_completed_onboarding: false, created_at: '', updated_at: '' },
-        { id: 'm-2', user_id: 'u-2', chapter_id: 'ch-1', role_ids: [], has_completed_onboarding: false, created_at: '', updated_at: '' },
+        {
+          id: 'm-1',
+          user_id: 'u-1',
+          chapter_id: 'ch-1',
+          role_ids: [],
+          has_completed_onboarding: false,
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 'm-2',
+          user_id: 'u-2',
+          chapter_id: 'ch-1',
+          role_ids: [],
+          has_completed_onboarding: false,
+          created_at: '',
+          updated_at: '',
+        },
       ]);
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
         basePreference,
@@ -255,7 +271,9 @@ describe('NotificationService', () => {
         .mockResolvedValueOnce({ ...baseNotification, user_id: 'u-2' });
       mockPushTokenRepo.findByUser
         .mockResolvedValueOnce([basePushToken])
-        .mockResolvedValueOnce([{ ...basePushToken, id: 'pt-2', user_id: 'u-2' }]);
+        .mockResolvedValueOnce([
+          { ...basePushToken, id: 'pt-2', user_id: 'u-2' },
+        ]);
 
       await service.notifyChapter('ch-1', {
         title: 'Chapter Announcement',
@@ -351,9 +369,9 @@ describe('NotificationService', () => {
         user_id: 'u-2',
       });
 
-      await expect(
-        service.markNotificationRead('n-1', 'u-1'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.markNotificationRead('n-1', 'u-1')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
-import type { IBillingProvider, WebhookEvent } from '../../domain/adapters/billing.interface';
+import type {
+  IBillingProvider,
+  WebhookEvent,
+} from '../../domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -22,7 +25,9 @@ describe('BillingService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const baseChapter: Chapter = {
     id: 'ch-1',

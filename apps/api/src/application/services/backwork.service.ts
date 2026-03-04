@@ -157,7 +157,10 @@ export class BackworkService {
       throw new NotFoundException('Backwork resource not found');
     }
 
-    await this.storageProvider.deleteFile(BACKWORK_BUCKET, resource.storage_path);
+    await this.storageProvider.deleteFile(
+      BACKWORK_BUCKET,
+      resource.storage_path,
+    );
     await this.resourceRepo.delete(id, chapterId);
   }
 

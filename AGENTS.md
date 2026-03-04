@@ -28,8 +28,8 @@ Frapp is a Turborepo + npm workspaces monorepo with 5 apps and 7 shared packages
 ### Lint, test, build, type-check
 
 Standard commands from `package.json` scripts (run from repo root):
-- **Lint:** `npm run lint` (turbo). Pre-existing lint errors exist in `apps/api` and missing eslint configs in `packages/validation` and `packages/api-sdk`.
-- **Tests:** `npm run test -w apps/api` (55 Jest unit tests).
+- **Lint:** `npm run lint` (turbo, all lint-enabled workspaces). Run `npm run lint:api` for API-only linting.
+- **Tests:** `npm run test -w apps/api` (377 Jest unit tests across 28 suites).
 - **Build:** `npm run build` (turbo, builds all packages/apps).
 - **Type-check:** `npm run check-types` (turbo).
 
@@ -37,5 +37,6 @@ Standard commands from `package.json` scripts (run from repo root):
 
 - The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Supabase local keys are deterministic JWTs output by `npx supabase status -o env`.
 - Stripe env vars (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`) can be set to placeholders for local dev unless testing billing flows.
-- `packages/validation` and `packages/api-sdk` lack `eslint.config.*` files, so `npm run lint` at the monorepo level will fail. Lint individual apps/packages that have configs.
+- API lint warnings mostly reflect strict type-safety checks around request context/repository boundaries; lint passes, but warnings can be incrementally hardened over time.
 - The mobile app (`apps/mobile`) requires Expo Go on a physical device or emulator; it cannot be tested in a headless cloud VM.
+- `npx supabase db push` requires `--local` flag when running against local dev (no linked project). Without it, the CLI errors with "Cannot find project ref".

@@ -2,20 +2,28 @@ import { Callout } from "../../../components/callout";
 
 # Contributing
 
-This guide defines how we work on Frapp: git workflow, commit messages, and the spec‑driven process.
+This guide defines how we work on Frapp: branch workflow, commit messages, and the spec-first development process.
 
 ## 1. Branching model
 
-We use a simple, trunk-focused flow:
+We use a two-environment branch model:
 
-- `main` — always deployable, contains the latest stable work
-- `feature/*` — short‑lived branches for individual features or fixes
+- `main` — production branch (deployed to production environments)
+- `preview` — pre-production integration branch (deployed to Vercel Preview domains and staging infrastructure)
+- `feature/*` — short-lived branches for individual features and fixes
 
-Example branch names:
+Typical flow:
+
+1. Branch from `preview` into `feature/*`.
+2. Open a PR from `feature/*` to `preview`.
+3. Validate behavior in staging/preview environments.
+4. Open a promotion PR from `preview` to `main` for production release.
+
+Example feature branch names:
 
 - `feature/backwork-redaction-ui`
 - `feature/events-rbac`
-- `feature/docs-overhaul`
+- `feature/docs-consistency-audit`
 
 ## 2. Commit messages
 
@@ -39,7 +47,7 @@ Types:
 - `docs` — documentation only
 - `chore` — tooling, config, or misc maintenance
 
-## 3. Spec‑driven development
+## 3. Spec-first development
 
 Frapp is explicitly **spec‑driven**:
 
@@ -68,20 +76,27 @@ When opening a PR:
 - Call out any follow‑up work or tech debt explicitly.
 - Fill out the **Docs / Spec impact** section (from the PR template). If you claim &quot;None&quot;, reviewers should treat that as a strong assertion.
 
+PR targets:
+
+- Feature work: `feature/*` → `preview`
+- Production promotion: `preview` → `main`
+
 ## 5. Linting, types, and tests
 
 Before pushing:
 
 ```bash
 npm run lint
-npm run typecheck   # if defined
+npm run lint:api    # optional API-only lint run
+npm run check-types
 npm test            # in apps/api
 ```
 
 In CI, we also run:
 
-- `turbo lint`
-- `turbo build`
+- `npm run lint`
+- `npm run check-types`
+- `npm run build`
 - API unit tests and (eventually) E2E against a fresh Supabase instance
 
 ## 6. Documentation obligations

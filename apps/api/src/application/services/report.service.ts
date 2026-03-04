@@ -116,11 +116,10 @@ export class ReportService {
       };
     });
 
-    rows.sort(
-      (a, b) =>
-        (a.event_date + a.member_name).localeCompare(
-          b.event_date + b.member_name,
-        ),
+    rows.sort((a, b) =>
+      (a.event_date + a.member_name).localeCompare(
+        b.event_date + b.member_name,
+      ),
     );
     return rows;
   }
@@ -159,7 +158,8 @@ export class ReportService {
       const entry = byUser.get(uid)!;
       entry.total += (t.amount as number) ?? 0;
       const cat = (t.category as string) ?? 'OTHER';
-      entry.byCategory[cat] = (entry.byCategory[cat] ?? 0) + (t.amount as number);
+      entry.byCategory[cat] =
+        (entry.byCategory[cat] ?? 0) + (t.amount as number);
     }
 
     const userIds = [...byUser.keys()];
@@ -237,8 +237,8 @@ export class ReportService {
 
     return members.map((m) => {
       const u = userMap.get(m.user_id);
-      const roleNames = (m.role_ids ?? []).map((rid: string) =>
-        roleMap.get(rid) ?? rid,
+      const roleNames = (m.role_ids ?? []).map(
+        (rid: string) => roleMap.get(rid) ?? rid,
       );
       return {
         name: (u?.display_name as string) ?? '',

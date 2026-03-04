@@ -21,7 +21,9 @@ describe('TaskService', () => {
   let mockTaskRepo: jest.Mocked<ITaskRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockNotificationService: jest.Mocked<Pick<NotificationService, 'notifyUser' | 'notifyChapter'>>;
+  let mockNotificationService: jest.Mocked<
+    Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
 
   const baseTask: Task = {
     id: 'task-1',
@@ -257,10 +259,22 @@ describe('TaskService', () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'other-user', false, 'IN_PROGRESS'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'other-user',
+          false,
+          'IN_PROGRESS',
+        ),
       ).rejects.toThrow(ForbiddenException);
       await expect(
-        service.updateStatus('task-1', 'ch-1', 'other-user', false, 'IN_PROGRESS'),
+        service.updateStatus(
+          'task-1',
+          'ch-1',
+          'other-user',
+          false,
+          'IN_PROGRESS',
+        ),
       ).rejects.toThrow('Only the assignee or an admin can update task status');
 
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
@@ -354,12 +368,12 @@ describe('TaskService', () => {
       };
       mockTaskRepo.findById.mockResolvedValue(alreadyConfirmed);
 
-      await expect(
-        service.confirmCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.confirmCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow('Points have already been awarded for this task');
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        'Points have already been awarded for this task',
+      );
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
@@ -368,12 +382,10 @@ describe('TaskService', () => {
     it('should reject confirmation when task not COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
-      await expect(
-        service.confirmCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.confirmCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
         'Task must be marked COMPLETED by assignee before confirmation',
       );
 
@@ -420,12 +432,10 @@ describe('TaskService', () => {
       };
       mockTaskRepo.findById.mockResolvedValue(confirmed);
 
-      await expect(
-        service.rejectCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.rejectCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(
+      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
         'Cannot reject a task that has already been confirmed and points awarded',
       );
 
@@ -435,12 +445,12 @@ describe('TaskService', () => {
     it('should reject when task is not COMPLETED', async () => {
       mockTaskRepo.findById.mockResolvedValue(baseTask);
 
-      await expect(
-        service.rejectCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.rejectCompletion('task-1', 'ch-1'),
-      ).rejects.toThrow('Only completed tasks can be rejected');
+      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.rejectCompletion('task-1', 'ch-1')).rejects.toThrow(
+        'Only completed tasks can be rejected',
+      );
 
       expect(mockTaskRepo.update).not.toHaveBeenCalled();
     });
@@ -463,7 +473,10 @@ describe('TaskService', () => {
 
       const result = await service.list('ch-1', 'user-1', false);
 
-      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith('ch-1', 'user-1');
+      expect(mockTaskRepo.findByAssignee).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
       expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
       expect(result[0]).toEqual(baseTask);

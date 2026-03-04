@@ -51,10 +51,7 @@ export class ServiceEntryService {
     return this.serviceEntryRepo.findByChapter(chapterId);
   }
 
-  async findByUser(
-    chapterId: string,
-    userId: string,
-  ): Promise<ServiceEntry[]> {
+  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
     return this.serviceEntryRepo.findByUser(chapterId, userId);
   }
 
@@ -76,7 +73,11 @@ export class ServiceEntryService {
       );
     }
 
-    if (!description || typeof description !== 'string' || !description.trim()) {
+    if (
+      !description ||
+      typeof description !== 'string' ||
+      !description.trim()
+    ) {
       throw new BadRequestException('description is required');
     }
 
@@ -103,15 +104,11 @@ export class ServiceEntryService {
     const entry = await this.findById(id, chapterId);
 
     if (entry.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING entries can be approved',
-      );
+      throw new BadRequestException('Only PENDING entries can be approved');
     }
 
     if (entry.points_awarded) {
-      throw new BadRequestException(
-        'Points already awarded for this entry',
-      );
+      throw new BadRequestException('Points already awarded for this entry');
     }
 
     const pointsToAward = Math.floor(
@@ -158,9 +155,7 @@ export class ServiceEntryService {
     const entry = await this.findById(id, chapterId);
 
     if (entry.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING entries can be rejected',
-      );
+      throw new BadRequestException('Only PENDING entries can be rejected');
     }
 
     const updated = await this.serviceEntryRepo.update(id, chapterId, {
@@ -191,9 +186,7 @@ export class ServiceEntryService {
     const entry = await this.findById(id, chapterId);
 
     if (entry.status !== 'PENDING') {
-      throw new BadRequestException(
-        'Only PENDING entries can be deleted',
-      );
+      throw new BadRequestException('Only PENDING entries can be deleted');
     }
 
     if (!isAdmin && entry.user_id !== userId) {

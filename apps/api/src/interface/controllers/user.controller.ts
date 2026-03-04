@@ -16,10 +16,7 @@ import {
   CurrentUser,
   CurrentChapterId,
 } from '../decorators/current-user.decorator';
-import {
-  UpdateUserDto,
-  RequestAvatarUploadUrlDto,
-} from '../dtos/user.dto';
+import { UpdateUserDto, RequestAvatarUploadUrlDto } from '../dtos/user.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()

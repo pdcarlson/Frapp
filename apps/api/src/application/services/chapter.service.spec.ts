@@ -31,8 +31,12 @@ describe('ChapterService', () => {
 
   beforeEach(async () => {
     mockStorageProvider = {
-      getSignedUploadUrl: jest.fn().mockResolvedValue('https://signed-upload.url'),
-      getSignedDownloadUrl: jest.fn().mockResolvedValue('https://signed-download.url'),
+      getSignedUploadUrl: jest
+        .fn()
+        .mockResolvedValue('https://signed-upload.url'),
+      getSignedDownloadUrl: jest
+        .fn()
+        .mockResolvedValue('https://signed-download.url'),
       deleteFile: jest.fn().mockResolvedValue(undefined),
     };
     mockChapterRepo = {
@@ -369,7 +373,10 @@ describe('ChapterService', () => {
 
   it('should reject confirm logo with invalid storage path', async () => {
     await expect(
-      service.confirmLogoUpload('ch-1', 'chapters/other-chapter/branding/logo.png'),
+      service.confirmLogoUpload(
+        'ch-1',
+        'chapters/other-chapter/branding/logo.png',
+      ),
     ).rejects.toThrow(BadRequestException);
     expect(mockChapterRepo.update).not.toHaveBeenCalled();
   });

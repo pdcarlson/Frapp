@@ -5,9 +5,7 @@ import type { ISemesterArchiveRepository } from '../../../domain/repositories/se
 import type { SemesterArchive } from '../../../domain/entities/semester-archive.entity';
 
 @Injectable()
-export class SupabaseSemesterArchiveRepository
-  implements ISemesterArchiveRepository
-{
+export class SupabaseSemesterArchiveRepository implements ISemesterArchiveRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

@@ -33,7 +33,8 @@ export class ChapterService {
     private readonly chapterRepo: IChapterRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
-    @Inject(STORAGE_PROVIDER) private readonly storageProvider: IStorageProvider,
+    @Inject(STORAGE_PROVIDER)
+    private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
 
@@ -99,7 +100,7 @@ export class ChapterService {
     contentType: string,
   ): Promise<{ signedUrl: string; storage_path: string }> {
     const ext = filename.includes('.')
-      ? filename.split('.').pop()?.toLowerCase() ?? 'png'
+      ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
       : 'png';
     const storagePath = `chapters/${chapterId}/branding/logo.${ext}`;
 

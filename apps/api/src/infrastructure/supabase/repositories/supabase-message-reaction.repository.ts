@@ -5,9 +5,7 @@ import type { IMessageReactionRepository } from '../../../domain/repositories/ch
 import { MessageReaction } from '../../../domain/entities/chat.entity';
 
 @Injectable()
-export class SupabaseMessageReactionRepository
-  implements IMessageReactionRepository
-{
+export class SupabaseMessageReactionRepository implements IMessageReactionRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

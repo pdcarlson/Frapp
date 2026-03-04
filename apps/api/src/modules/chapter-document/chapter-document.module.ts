@@ -2,9 +2,7 @@ import { Module } from '@nestjs/common';
 import { ChapterDocumentService } from '../../application/services/chapter-document.service';
 import { ChapterDocumentController } from '../../interface/controllers/chapter-document.controller';
 import { SupabaseChapterDocumentRepository } from '../../infrastructure/supabase/repositories/supabase-chapter-document.repository';
-import {
-  CHAPTER_DOCUMENT_REPOSITORY,
-} from '../../domain/repositories/chapter-document.repository.interface';
+import { CHAPTER_DOCUMENT_REPOSITORY } from '../../domain/repositories/chapter-document.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 

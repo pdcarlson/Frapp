@@ -9,7 +9,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { BackworkService } from '../../application/services/backwork.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -122,10 +127,7 @@ export class BackworkController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get resource detail with download URL' })
-  async getOne(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.backworkService.findById(id, chapterId);
   }
 
@@ -133,10 +135,7 @@ export class BackworkController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Delete a backwork resource' })
-  async delete(
-    @CurrentChapterId() chapterId: string,
-    @Param('id') id: string,
-  ) {
+  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     await this.backworkService.delete(id, chapterId);
     return { success: true };
   }

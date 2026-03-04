@@ -8,9 +8,7 @@ import type {
 import type { ChapterDocument } from '../../../domain/entities/chapter-document.entity';
 
 @Injectable()
-export class SupabaseChapterDocumentRepository
-  implements IChapterDocumentRepository
-{
+export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}

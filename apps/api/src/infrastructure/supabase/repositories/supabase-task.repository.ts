@@ -31,10 +31,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
     return (data as Task[]) || [];
   }
 
-  async findByAssignee(
-    chapterId: string,
-    assigneeId: string,
-  ): Promise<Task[]> {
+  async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
     const { data, error } = await this.supabase
       .from('tasks')
       .select('*')

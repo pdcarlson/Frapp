@@ -30,7 +30,9 @@ export class UpdateNotificationPreferenceDto {
   @MaxLength(100)
   category: string;
 
-  @ApiProperty({ description: 'Whether notifications for this category are enabled' })
+  @ApiProperty({
+    description: 'Whether notifications for this category are enabled',
+  })
   @IsBoolean()
   is_enabled: boolean;
 }

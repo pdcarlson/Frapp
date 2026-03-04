@@ -1,8 +1,8 @@
 import { Callout } from "../../../components/callout";
 
-# Docker & Deployment
+# Docker (API)
 
-This guide explains the Frapp API Dockerfile, local container testing, and deployment options.
+This guide explains the Frapp API Dockerfile and local container workflows.
 
 ## 1. API Dockerfile overview
 
@@ -96,29 +96,16 @@ Usage:
 docker compose up --build api
 ```
 
-## 5. Deployment options
+## 5. Production deployment target
 
-We design the Dockerfile to work on any container platform.
+The current target platform for the API is **Render**.
 
-### Railway (recommended to start)
+- Use `apps/api/Dockerfile`.
+- Set root build context to the monorepo root.
+- Configure required env vars in Render service settings.
+- Keep staging (`preview`) and production (`main`) services isolated.
 
-- Connect the GitHub repo.
-- Railway detects the Dockerfile automatically.
-- Configure environment variables in the Railway dashboard.
-- Scale horizontally by increasing replicas.
-
-### Render
-
-- Create a new **Web Service** pointing at `apps/api`.
-- Use the same Dockerfile and environment variables.
-- Choose instance size and replica count manually.
-
-### AWS ECS Fargate (future)
-
-- Push the built image to ECR.
-- Define an ECS Task using the image.
-- Put an Application Load Balancer in front of ECS tasks.
-- Use `/health` as the load balancer health check.
+For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/DEPLOYMENT.md`.
 
 <Callout type="info">
   We deliberately avoid containerizing the Next.js apps and Supabase. Next.js
