@@ -14,8 +14,18 @@ jobs:
   lint-typecheck-test:
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce pull request branch policy
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ "${{ github.base_ref }}" == "main" && "${{ github.head_ref }}" != "preview" ]]; then
+            echo "::error::PRs targeting main must use preview as the source branch."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -55,6 +65,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4

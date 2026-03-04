@@ -27,6 +27,7 @@
 
 - [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
 - [ ] If I changed API/domain/workflows, I updated docs/spec in the same change set.
+- [ ] If targeting `main`, this PR source branch is `preview` (policy gate).
 - [ ] If I changed `supabase/migrations/**`, I also updated promotion/rollback docs.
 - [ ] Schema indexes/policies impacted by this PR are explicitly versioned in migrations.
 - [ ] No secrets committed (`.env*`, credentials, private keys).
