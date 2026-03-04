@@ -2,6 +2,15 @@
 
 This guide walks through the complete deployment setup: Vercel for frontends, Render for the API, Supabase Cloud for the database, and EAS for mobile. It covers both **staging** and **production** environments.
 
+## Current rollout status
+
+- ✅ Landing, web, and docs are configured in Vercel with `preview` and `main` environments.
+- 🚧 API deployment is planned but not yet fully live in production.
+- 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
+
+Treat this guide as the target-state runbook plus current operational notes.
+For live rollout tracking, see `docs/internal/DEPLOYMENT_STATUS.md`.
+
 ---
 
 ## Architecture Overview

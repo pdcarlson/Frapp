@@ -10,7 +10,7 @@ We maintain three main environments:
 
 - **Local** — developer machine, Supabase CLI + Docker, `*.env.local` files
 - **Staging** — Supabase Cloud (staging project), containerized API, Vercel preview frontends
-- **Production** — Supabase Cloud (prod project), API with multiple replicas, Vercel prod frontends
+- **Production** — Supabase Cloud (prod project), API + frontends on production infrastructure
 
 ## 2. Environment variables by app
 
@@ -19,7 +19,7 @@ We maintain three main environments:
 Local (`apps/api/.env.local`):
 
 ```bash
-SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_URL=[REDACTED]
 SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_ANON_KEY=...
 STRIPE_SECRET_KEY=...
@@ -32,37 +32,48 @@ NODE_ENV=development
 Staging/production:
 
 - Same variable names as local.
-- Values are stored in the hosting platform&apos;s secret manager (Railway/Render/AWS).
+- Values are stored in provider-managed secrets (Render for API, Vercel for web/landing/docs, EAS for mobile builds).
 
-### Web (`apps/web`) and Landing (`apps/landing`)
+### Web (`apps/web`)
 
-Local (`.env.local`):
+Local (`apps/web/.env.local`):
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3001/v1
 ```
 
 Staging/production:
 
 - `NEXT_PUBLIC_SUPABASE_URL` points at the staging/prod Supabase project.
 - `NEXT_PUBLIC_API_URL` points at the deployed API base URL.
-- Configured in Vercel project settings.
 
-### Mobile (`apps/mobile`)
+### Landing (`apps/landing`)
 
-Local (`.env.local`):
+Local (`apps/landing/.env.local`):
 
 ```bash
-EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
-EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-EXPO_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 Staging/production:
 
-- Same env names, different values per EAS profile (`staging`, `production`).
+- `NEXT_PUBLIC_APP_URL` points at the corresponding web dashboard URL for each environment.
+
+### Mobile (`apps/mobile`)
+
+Local (`apps/mobile/.env.local`):
+
+```bash
+EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...
+EXPO_PUBLIC_API_URL=http://localhost:3001/v1
+```
+
+Staging/production:
+
+- Same env names, different values per EAS profile (`preview`, `production`).
 
 ## 3. Config module in the API
 

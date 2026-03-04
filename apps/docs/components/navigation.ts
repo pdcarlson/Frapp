@@ -16,7 +16,8 @@ export const navSections: NavSection[] = [
   {
     label: "Development",
     items: [
-      { title: "Docker & Deployment", href: "/guides/docker" },
+      { title: "Deployment", href: "/guides/deployment" },
+      { title: "Docker (API)", href: "/guides/docker" },
       { title: "API Architecture", href: "/guides/api-architecture" },
       { title: "Database", href: "/guides/database" },
       { title: "Testing", href: "/guides/testing" },

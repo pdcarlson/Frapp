@@ -15,7 +15,7 @@ This guide walks you through setting up the Frapp monorepo and running the full 
 ## 1. Clone and install
 
 ```bash
-git clone git@github.com:pdcar/Frapp.git
+git clone git@github.com:pdcarlson/Frapp.git
 cd Frapp
 npm install
 ```
@@ -51,27 +51,33 @@ When `supabase start` finishes, it prints the local project URL and keys:
 Create `apps/api/.env.local` and set:
 
 ```bash
-SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_URL=[REDACTED]
 SUPABASE_SERVICE_ROLE_KEY=...
 SUPABASE_ANON_KEY=...
 PORT=3001
 NODE_ENV=development
 ```
 
-Create `apps/web/.env.local` and `apps/landing/.env.local` with:
+Create `apps/web/.env.local` with:
 
 ```bash
-NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_API_URL=http://localhost:3001
+NEXT_PUBLIC_API_URL=http://localhost:3001/v1
+```
+
+Create `apps/landing/.env.local` with:
+
+```bash
+NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
 
 For the mobile app, create `apps/mobile/.env.local`:
 
 ```bash
-EXPO_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
 EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-EXPO_PUBLIC_API_URL=http://localhost:3001
+EXPO_PUBLIC_API_URL=http://localhost:3001/v1
 ```
 
 <Callout type="warning">
@@ -84,7 +90,7 @@ EXPO_PUBLIC_API_URL=http://localhost:3001
 In separate terminals from the repo root:
 
 ```bash
-npm run dev -w apps/api
+npm run start:dev -w apps/api
 npm run dev -w apps/web
 npm run dev -w apps/landing
 npm run dev -w apps/docs
@@ -93,7 +99,7 @@ npm run dev -w apps/docs
 For mobile:
 
 ```bash
-npm run dev -w apps/mobile
+npm run start -w apps/mobile
 ```
 
 Then open the Expo QR code in Expo Go on your phone.

@@ -27,10 +27,10 @@ const sections = [
         href: "/guides/database",
       },
       {
-        title: "Docker & Deployment",
+        title: "Deployment",
         description:
-          "Build the API container and deploy to Railway, Render, or AWS.",
-        href: "/guides/docker",
+          "Current rollout status, branch strategy, and staging/production runbook.",
+        href: "/guides/deployment",
       },
       {
         title: "Testing",
