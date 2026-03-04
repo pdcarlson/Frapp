@@ -20,7 +20,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
         title: data.title,
         body: data.body,
         data: data.data ?? {},
-      })
+      } as never)
       .select()
       .single();
 
@@ -61,7 +61,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   async markRead(id: string, userId: string): Promise<Notification> {
     const { data, error } = await this.supabase
       .from('notifications')
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: new Date().toISOString() } as never)
       .eq('id', id)
       .eq('user_id', userId)
       .select()

@@ -65,7 +65,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
   async create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice> {
     const { data: created, error } = await this.supabase
       .from('financial_invoices')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -79,7 +79,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
   ): Promise<FinancialInvoice> {
     const { data: updated, error } = await this.supabase
       .from('financial_invoices')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

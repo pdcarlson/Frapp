@@ -54,7 +54,7 @@ export class SupabaseUserRepository implements IUserRepository {
   async create(userData: Partial<User>): Promise<User> {
     const { data, error } = await this.supabase
       .from('users')
-      .insert(userData)
+      .insert(userData as never)
       .select()
       .single();
     if (error) throw error;
@@ -64,7 +64,7 @@ export class SupabaseUserRepository implements IUserRepository {
   async update(id: string, userData: Partial<User>): Promise<User> {
     const { data, error } = await this.supabase
       .from('users')
-      .update(userData)
+      .update(userData as never)
       .eq('id', id)
       .select()
       .single();

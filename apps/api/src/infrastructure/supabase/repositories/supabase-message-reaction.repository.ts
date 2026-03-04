@@ -40,7 +40,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
   async create(data: Partial<MessageReaction>): Promise<MessageReaction> {
     const { data: created, error } = await this.supabase
       .from('message_reactions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

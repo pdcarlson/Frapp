@@ -53,7 +53,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
   async create(data: Partial<StudySession>): Promise<StudySession> {
     const { data: created, error } = await this.supabase
       .from('study_sessions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -64,7 +64,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
   async update(id: string, data: Partial<StudySession>): Promise<StudySession> {
     const { data: updated, error } = await this.supabase
       .from('study_sessions')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

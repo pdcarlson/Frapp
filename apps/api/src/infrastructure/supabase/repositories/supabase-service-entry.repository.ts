@@ -46,7 +46,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   async create(data: Partial<ServiceEntry>): Promise<ServiceEntry> {
     const { data: created, error } = await this.supabase
       .from('service_entries')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -61,7 +61,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   ): Promise<ServiceEntry> {
     const { data: updated, error } = await this.supabase
       .from('service_entries')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

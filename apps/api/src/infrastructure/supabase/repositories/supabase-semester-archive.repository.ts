@@ -38,7 +38,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
   async create(data: Partial<SemesterArchive>): Promise<SemesterArchive> {
     const { data: created, error } = await this.supabase
       .from('semester_archives')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

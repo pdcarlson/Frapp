@@ -56,7 +56,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
   async create(data: Partial<ChatChannel>): Promise<ChatChannel> {
     const { data: created, error } = await this.supabase
       .from('chat_channels')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -70,7 +70,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
   ): Promise<ChatChannel> {
     const { data: updated, error } = await this.supabase
       .from('chat_channels')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

@@ -47,7 +47,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
   async create(memberData: Partial<Member>): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .insert(memberData)
+      .insert(memberData as never)
       .select()
       .single();
     if (error) throw error;
@@ -57,7 +57,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
   async update(id: string, memberData: Partial<Member>): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .update(memberData)
+      .update(memberData as never)
       .eq('id', id)
       .select()
       .single();

@@ -38,7 +38,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
   async create(data: Partial<BackworkProfessor>): Promise<BackworkProfessor> {
     const { data: created, error } = await this.supabase
       .from('backwork_professors')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

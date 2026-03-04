@@ -14,7 +14,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
   async create(data: Partial<PointTransaction>): Promise<PointTransaction> {
     const { data: created, error } = await this.supabase
       .from('point_transactions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 

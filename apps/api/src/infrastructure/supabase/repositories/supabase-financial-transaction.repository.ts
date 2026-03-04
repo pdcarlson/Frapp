@@ -36,7 +36,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
   ): Promise<FinancialTransaction> {
     const { data: created, error } = await this.supabase
       .from('financial_transactions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

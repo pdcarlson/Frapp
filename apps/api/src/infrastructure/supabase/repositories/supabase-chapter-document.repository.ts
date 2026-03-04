@@ -55,7 +55,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   async create(data: Partial<ChapterDocument>): Promise<ChapterDocument> {
     const { data: created, error } = await this.supabase
       .from('chapter_documents')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -74,7 +74,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   async moveToRoot(folder: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')
-      .update({ folder: null })
+      .update({ folder: null } as never)
       .eq('chapter_id', chapterId)
       .eq('folder', folder);
     if (error) throw error;

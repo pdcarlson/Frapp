@@ -47,7 +47,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
   async create(data: Partial<EventAttendance>): Promise<EventAttendance> {
     const { data: created, error } = await this.supabase
       .from('event_attendance')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -61,7 +61,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
   ): Promise<EventAttendance> {
     const { data: updated, error } = await this.supabase
       .from('event_attendance')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

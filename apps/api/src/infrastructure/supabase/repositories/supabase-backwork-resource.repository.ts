@@ -88,7 +88,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
   async create(data: Partial<BackworkResource>): Promise<BackworkResource> {
     const { data: created, error } = await this.supabase
       .from('backwork_resources')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

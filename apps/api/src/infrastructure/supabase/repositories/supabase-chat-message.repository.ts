@@ -67,7 +67,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   async create(data: Partial<ChatMessage>): Promise<ChatMessage> {
     const { data: created, error } = await this.supabase
       .from('chat_messages')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -77,7 +77,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
   async update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage> {
     const { data: updated, error } = await this.supabase
       .from('chat_messages')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

@@ -36,7 +36,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
   async create(data: Partial<PollVote>): Promise<PollVote> {
     const { data: created, error } = await this.supabase
       .from('poll_votes')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

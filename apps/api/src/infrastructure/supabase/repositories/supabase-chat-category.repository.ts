@@ -26,7 +26,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   ): Promise<ChatChannelCategory> {
     const { data: created, error } = await this.supabase
       .from('chat_channel_categories')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -39,7 +39,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   ): Promise<ChatChannelCategory> {
     const { data: updated, error } = await this.supabase
       .from('chat_channel_categories')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

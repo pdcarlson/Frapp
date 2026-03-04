@@ -54,7 +54,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
           category: data.category,
           is_enabled: data.is_enabled ?? true,
           updated_at: new Date().toISOString(),
-        },
+        } as never,
         {
           onConflict: 'user_id,chapter_id,category',
           ignoreDuplicates: false,

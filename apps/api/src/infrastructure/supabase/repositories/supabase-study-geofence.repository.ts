@@ -35,7 +35,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
   async create(data: Partial<StudyGeofence>): Promise<StudyGeofence> {
     const { data: created, error } = await this.supabase
       .from('study_geofences')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -50,7 +50,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
   ): Promise<StudyGeofence> {
     const { data: updated, error } = await this.supabase
       .from('study_geofences')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

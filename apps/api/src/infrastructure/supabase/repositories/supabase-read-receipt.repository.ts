@@ -37,7 +37,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
           channel_id: channelId,
           user_id: userId,
           last_read_at: lastReadAt,
-        },
+        } as never,
         { onConflict: 'channel_id,user_id' },
       )
       .select()

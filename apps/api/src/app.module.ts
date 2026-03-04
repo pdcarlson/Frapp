@@ -26,12 +26,14 @@ import { PollModule } from './modules/poll/poll.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
+import { validateEnv } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
+      validate: validateEnv,
     }),
     ThrottlerModule.forRoot([
       { name: 'read', ttl: 60_000, limit: 100 },

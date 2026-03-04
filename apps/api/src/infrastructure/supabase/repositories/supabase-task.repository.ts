@@ -46,7 +46,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
   async create(data: Partial<Task>): Promise<Task> {
     const { data: created, error } = await this.supabase
       .from('tasks')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -61,7 +61,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
   ): Promise<Task> {
     const { data: updated, error } = await this.supabase
       .from('tasks')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

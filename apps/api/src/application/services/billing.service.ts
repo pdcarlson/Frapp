@@ -164,10 +164,8 @@ export class BillingService {
     this.processedEventIds.add(event.id);
   }
 
-  private async handleCheckoutCompleted(
-    event: Extract<WebhookEvent, { type: 'checkout.session.completed' }>,
-  ): Promise<void> {
-    const session: CheckoutSessionWebhookObject = event.data.object;
+  private async handleCheckoutCompleted(event: WebhookEvent): Promise<void> {
+    const session = event.data.object as CheckoutSessionWebhookObject;
     const chapterId = session.metadata?.chapter_id;
     const subscriptionId = session.subscription;
 
@@ -195,10 +193,8 @@ export class BillingService {
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
   }
 
-  private async handleSubscriptionUpdated(
-    event: Extract<WebhookEvent, { type: 'customer.subscription.updated' }>,
-  ): Promise<void> {
-    const subscription: SubscriptionWebhookObject = event.data.object;
+  private async handleSubscriptionUpdated(event: WebhookEvent): Promise<void> {
+    const subscription = event.data.object as SubscriptionWebhookObject;
     if (!subscription.id) {
       this.logger.warn(
         `customer.subscription.updated missing subscription id: ${event.id}`,
@@ -207,6 +203,13 @@ export class BillingService {
     }
     const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
+
+    if (!subscription.status) {
+      this.logger.warn(
+        `customer.subscription.updated missing subscription status: ${event.id}`,
+      );
+      return;
+    }
 
     const newStatus = this.mapStripeStatus(subscription.status);
     if (!newStatus) {
@@ -227,10 +230,8 @@ export class BillingService {
     );
   }
 
-  private async handleSubscriptionDeleted(
-    event: Extract<WebhookEvent, { type: 'customer.subscription.deleted' }>,
-  ): Promise<void> {
-    const subscription: SubscriptionWebhookObject = event.data.object;
+  private async handleSubscriptionDeleted(event: WebhookEvent): Promise<void> {
+    const subscription = event.data.object as SubscriptionWebhookObject;
     if (!subscription.id) {
       this.logger.warn(
         `customer.subscription.deleted missing subscription id: ${event.id}`,
@@ -249,10 +250,8 @@ export class BillingService {
     this.logger.log(`Chapter ${chapter.id} subscription canceled`);
   }
 
-  private async handleInvoicePaid(
-    event: Extract<WebhookEvent, { type: 'invoice.paid' }>,
-  ): Promise<void> {
-    const invoice: InvoiceWebhookObject = event.data.object;
+  private async handleInvoicePaid(event: WebhookEvent): Promise<void> {
+    const invoice = event.data.object as InvoiceWebhookObject;
     const subscriptionId = invoice.subscription;
     if (!subscriptionId) return;
 

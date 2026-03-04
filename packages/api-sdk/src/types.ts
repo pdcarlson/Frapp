@@ -1812,21 +1812,35 @@ export interface components {
              */
             status: "OPEN" | "PAID" | "VOID";
         };
-        RequestUploadUrlDto: {
+        RequestBackworkUploadUrlDto: {
             /** @description Original filename */
             filename: string;
             /** @description MIME content type (e.g. application/pdf) */
             content_type: string;
         };
-        ConfirmUploadDto: {
+        ConfirmBackworkUploadDto: {
             /** @description Storage path returned from upload-url */
             storage_path: string;
-            /** @description Document title */
-            title: string;
-            /** @description Document description */
-            description?: string;
-            /** @description Folder name (one level, flat structure) */
-            folder?: string;
+            /** @description SHA-256 hash of the uploaded file */
+            file_hash: string;
+            title?: string;
+            /** @description Department code (e.g. "CS") */
+            department_code?: string;
+            /** @description Course number (e.g. "101") */
+            course_number?: string;
+            /** @description Professor name */
+            professor_name?: string;
+            year?: number;
+            /** @enum {string} */
+            semester?: "Spring" | "Summer" | "Fall" | "Winter";
+            /** @enum {string} */
+            assignment_type?: "Exam" | "Midterm" | "Final Exam" | "Quiz" | "Homework" | "Lab" | "Project" | "Study Guide" | "Notes" | "Other";
+            assignment_number?: number;
+            /** @enum {string} */
+            document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
+            tags?: string[];
+            /** @default false */
+            is_redacted: boolean;
         };
         UpdateDepartmentDto: {
             /** @description Full department name */
@@ -1953,6 +1967,22 @@ export interface components {
         StudySessionHeartbeatDto: {
             lat: number;
             lng: number;
+        };
+        RequestDocumentUploadUrlDto: {
+            /** @description Original filename */
+            filename: string;
+            /** @description MIME content type (e.g. application/pdf) */
+            content_type: string;
+        };
+        ConfirmDocumentUploadDto: {
+            /** @description Storage path returned from upload-url */
+            storage_path: string;
+            /** @description Document title */
+            title: string;
+            /** @description Document description */
+            description?: string;
+            /** @description Folder name (one level, flat structure) */
+            folder?: string;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -3248,7 +3278,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RequestUploadUrlDto"];
+                "application/json": components["schemas"]["RequestBackworkUploadUrlDto"];
             };
         };
         responses: {
@@ -3295,7 +3325,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ConfirmUploadDto"];
+                "application/json": components["schemas"]["ConfirmBackworkUploadDto"];
             };
         };
         responses: {
@@ -4260,7 +4290,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RequestUploadUrlDto"];
+                "application/json": components["schemas"]["RequestDocumentUploadUrlDto"];
             };
         };
         responses: {
@@ -4300,7 +4330,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ConfirmUploadDto"];
+                "application/json": components["schemas"]["ConfirmDocumentUploadDto"];
             };
         };
         responses: {

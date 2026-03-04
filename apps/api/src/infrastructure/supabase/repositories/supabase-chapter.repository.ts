@@ -44,7 +44,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
   async create(chapterData: Partial<Chapter>): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')
-      .insert(chapterData)
+      .insert(chapterData as never)
       .select()
       .single();
     if (error) throw error;
@@ -54,7 +54,7 @@ export class SupabaseChapterRepository implements IChapterRepository {
   async update(id: string, chapterData: Partial<Chapter>): Promise<Chapter> {
     const { data, error } = await this.supabase
       .from('chapters')
-      .update(chapterData)
+      .update(chapterData as never)
       .eq('id', id)
       .select()
       .single();

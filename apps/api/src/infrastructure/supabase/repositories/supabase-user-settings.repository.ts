@@ -33,7 +33,7 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
           quiet_hours_tz: data.quiet_hours_tz ?? null,
           theme: data.theme ?? 'system',
           updated_at: new Date().toISOString(),
-        },
+        } as never,
         {
           onConflict: 'user_id',
           ignoreDuplicates: false,

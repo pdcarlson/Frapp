@@ -1,12 +1,28 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { RequestIdInterceptor } from './interface/interceptors/request-id.interceptor';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 
+function initializeSentry(): void {
+  const dsn = process.env.SENTRY_DSN;
+  if (!dsn) {
+    return;
+  }
+
+  Sentry.init({
+    dsn,
+    environment: process.env.NODE_ENV ?? 'development',
+    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
+  });
+}
+
 async function bootstrap() {
+  initializeSentry();
+
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });

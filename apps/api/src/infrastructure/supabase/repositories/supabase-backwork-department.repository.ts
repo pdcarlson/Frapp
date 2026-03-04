@@ -38,7 +38,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
   async create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment> {
     const { data: created, error } = await this.supabase
       .from('backwork_departments')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -51,7 +51,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
   ): Promise<BackworkDepartment> {
     const { data: updated, error } = await this.supabase
       .from('backwork_departments')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

@@ -41,9 +41,15 @@ export type Json =
 
 type TableDefinition<Row> = {
   Row: Row;
-  Insert: Partial<Row>;
-  Update: Partial<Row>;
-  Relationships: [];
+  Insert: Record<string, unknown>;
+  Update: Record<string, unknown>;
+  Relationships: {
+    foreignKeyName: string;
+    columns: string[];
+    isOneToOne?: boolean;
+    referencedRelation: string;
+    referencedColumns: string[];
+  }[];
 };
 
 export interface Database {

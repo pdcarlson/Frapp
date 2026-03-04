@@ -35,7 +35,7 @@ export class SupabaseEventRepository implements IEventRepository {
   async create(data: Partial<Event>): Promise<Event> {
     const { data: created, error } = await this.supabase
       .from('events')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -50,7 +50,7 @@ export class SupabaseEventRepository implements IEventRepository {
   ): Promise<Event> {
     const { data: updated, error } = await this.supabase
       .from('events')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

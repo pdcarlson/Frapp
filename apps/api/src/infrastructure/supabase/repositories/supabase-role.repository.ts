@@ -57,7 +57,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
   async create(roleData: Partial<Role>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
-      .insert(roleData)
+      .insert(roleData as never)
       .select()
       .single();
     if (error) throw error;
@@ -67,7 +67,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
   async update(id: string, roleData: Partial<Role>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
-      .update(roleData)
+      .update(roleData as never)
       .eq('id', id)
       .select()
       .single();

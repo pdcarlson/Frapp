@@ -18,7 +18,7 @@ export class SupabasePushTokenRepository implements IPushTokenRepository {
         user_id: data.user_id,
         token: data.token,
         device_name: data.device_name ?? null,
-      })
+      } as never)
       .select()
       .single();
 
