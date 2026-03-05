@@ -4,6 +4,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:api": "npx infisical run --env=local --path=/ -- npm run start:dev -w apps/api",
+    "dev:web": "npx infisical run --env=local --path=/ -- npm run dev -w apps/web",
+    "dev:landing": "npx infisical run --env=local --path=/ -- npm run dev -w apps/landing",
+    "dev:mobile": "npx infisical run --env=local --path=/ -- npm run start -w apps/mobile",
     "lint": "turbo run lint",
     "lint:api": "npm run lint -w apps/api",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",

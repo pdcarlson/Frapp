@@ -2,6 +2,11 @@ name: Deploy API
 
 # Triggered ONLY after CI workflow completes successfully.
 # This ensures broken code never deploys.
+#
+# Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
+# GitHub's `environment:` field scopes each job to the correct environment,
+# so `RENDER_DEPLOY_HOOK_URL` resolves to the staging or production value
+# depending on which job runs. See docs/internal/ENV_REFERENCE.md.
 on:
   workflow_run:
     workflows: ["CI"]
@@ -67,19 +72,18 @@ jobs:
       - name: Run migrations (dry-run)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_STAGING }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env staging --dry-run
 
       - name: Run migrations (apply)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_STAGING }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env staging
 
   # ── Run database migrations (production) ───────────────────────────────
   # NOTE: The "production" environment has protection rules that require
-  # manual approval. This means the workflow will pause here and wait for
-  # an admin to approve before applying production migrations.
+  # manual approval. The workflow pauses here until an admin approves.
   migrate-production:
     needs: check-changes
     if: |
@@ -102,20 +106,18 @@ jobs:
       - name: Run migrations (dry-run)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_PRODUCTION }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env production --dry-run
 
       - name: Run migrations (apply)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_PRODUCTION }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env production
 
   # ── Deploy API to staging ──────────────────────────────────────────────
   deploy-staging:
     needs: [check-changes, migrate-staging]
-    # Run if API changed. If migrations also changed, wait for them first.
-    # If only API changed (no migrations), skip the migrate job dependency.
     if: |
       always() &&
       needs.check-changes.outputs.api-changed == 'true' &&
@@ -124,31 +126,31 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Trigger Render staging deploy
+      - name: Trigger Render deploy
         env:
-          RENDER_DEPLOY_HOOK_URL_STAGING: ${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -z "$RENDER_DEPLOY_HOOK_URL_STAGING" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_URL_STAGING secret is not configured."
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for staging environment."
             exit 1
           fi
           echo "Triggering Render staging deploy..."
-          curl -sf "$RENDER_DEPLOY_HOOK_URL_STAGING"
+          curl -sf "$RENDER_DEPLOY_HOOK_URL"
 
       - name: Wait for deploy to propagate
         run: sleep 15
 
       - name: Health smoke check
         env:
-          API_STAGING_HEALTHCHECK_URL: ${{ secrets.API_STAGING_HEALTHCHECK_URL }}
+          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
         run: |
-          if [ -z "$API_STAGING_HEALTHCHECK_URL" ]; then
-            echo "::warning::Health check URL not configured — skipping"
+          if [ -z "$API_HEALTHCHECK_URL" ]; then
+            echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
             exit 0
           fi
           echo "Waiting for staging API to become healthy..."
           for i in 1 2 3 4 5 6; do
-            if curl -fsSL "$API_STAGING_HEALTHCHECK_URL" >/dev/null 2>&1; then
+            if curl -fsSL "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
               echo "✅ Staging API is healthy."
               exit 0
             fi
@@ -169,12 +171,12 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Trigger Render production deploy
+      - name: Trigger Render deploy
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured."
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for production environment."
             exit 1
           fi
           echo "Triggering Render production deploy..."
@@ -185,15 +187,15 @@ jobs:
 
       - name: Health smoke check
         env:
-          API_PRODUCTION_HEALTHCHECK_URL: ${{ secrets.API_PRODUCTION_HEALTHCHECK_URL }}
+          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
         run: |
-          if [ -z "$API_PRODUCTION_HEALTHCHECK_URL" ]; then
-            echo "::warning::Health check URL not configured — skipping"
+          if [ -z "$API_HEALTHCHECK_URL" ]; then
+            echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
             exit 0
           fi
           echo "Waiting for production API to become healthy..."
           for i in 1 2 3 4 5 6; do
-            if curl -fsSL "$API_PRODUCTION_HEALTHCHECK_URL" >/dev/null 2>&1; then
+            if curl -fsSL "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
               echo "✅ Production API is healthy."
               exit 0
             fi

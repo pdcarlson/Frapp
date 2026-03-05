@@ -2,30 +2,39 @@
 
 ## Overview
 
-All secrets for the Frapp project are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers. This eliminates the need to manage secrets in multiple provider dashboards.
+All secrets for the Frapp project are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers. This eliminates managing secrets across multiple dashboards.
 
-> **For the complete list of every environment variable, per app, per environment, see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md).** This document covers the Infisical setup, syncs, and rotation policy.
+> **For the complete variable list per app per environment, see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md).**
+> This document covers the Infisical setup, sync configuration, and operational procedures.
+
+## Key Design Principles
+
+1. **Canonical values stored once.** Each secret (e.g., `SUPABASE_URL`) is stored once per Infisical environment. The value changes per environment (local/staging/production), but the name stays the same.
+
+2. **References eliminate duplication.** Framework-specific names (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) are Infisical **secret references** that resolve to the canonical value. Change `SUPABASE_URL` → all references update.
+
+3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
+
+4. **No `.env.local` files (primary path).** Local development uses `npm run dev:api` (etc.), which injects secrets from Infisical's `local` environment via the CLI.
 
 ## Architecture
 
 ```text
-┌──────────────────────────────────┐
-│        Infisical Cloud           │
-│                                  │
-│  Project: Frapp                  │
-│  Environments:                   │
-│    - local (development)         │
-│    - staging (preview branch)    │
-│    - production (main branch)    │
-│                                  │
-│  Syncs:                          │
-│    → Vercel (frapp-web)          │
-│    → Vercel (frapp-landing)      │
-│    → Vercel (frapp-docs)         │
-│    → Render (frapp-api-staging)  │
-│    → Render (frapp-api-prod)     │
-│    → GitHub Actions              │
-└──────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                          INFISICAL                                │
+│                                                                   │
+│  Canonical values (stored once, value changes per environment):   │
+│    SUPABASE_URL, SUPABASE_ANON_KEY, STRIPE_SECRET_KEY, ...       │
+│                                                                   │
+│  References (resolve to canonical):                               │
+│    NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
+│    EXPO_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
+│    NEXT_PUBLIC_API_URL = ${API_URL}                               │
+│    ...                                                            │
+│                                                                   │
+│  3 environments: local, staging, production                       │
+│  7 syncs: Vercel ×4, Render ×2, GitHub Actions ×1                │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## Free Tier Limits
@@ -35,7 +44,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities | 5 | 1 (admin) |
 | Projects | 3 | 1 (Frapp) |
 | Environments | 3 | 3 (local, staging, production) |
-| Integrations | 10 | ~6-8 |
+| Integrations | 10 | 7 |
 
 ## Initial Setup
 
@@ -47,134 +56,133 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 ### 2. Create Environments
 
-In the Infisical dashboard, create three environments:
-
-| Environment | Slug | Description |
+| Environment | Slug | Maps to |
 | --- | --- | --- |
-| Local | `local` | Local development (reference only, `.env.local` used) |
-| Staging | `staging` | Maps to `preview` branch |
-| Production | `production` | Maps to `main` branch |
+| Local | `local` | Local development via `infisical run` |
+| Staging | `staging` | `preview` branch deploys |
+| Production | `production` | `main` branch deploys |
 
-### 3. Import Existing Secrets
+### 3. Add Canonical Values
 
-Import secrets from your current provider dashboards into the corresponding Infisical environments:
+For each environment, add the canonical values from the table in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#canonical-variables). Start with staging:
 
-#### Staging Environment
+| Variable | Staging value |
+| --- | --- |
+| `SUPABASE_URL` | `https://<staging-ref>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | From Supabase staging dashboard |
+| `SUPABASE_ANON_KEY` | From Supabase staging dashboard |
+| `STRIPE_SECRET_KEY` | `sk_test_...` from Stripe test mode |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` from Stripe |
+| `STRIPE_PRICE_ID` | `price_...` from Stripe |
+| `API_URL` | `https://api-staging.frapp.live/v1` |
+| `APP_URL` | `https://app.staging.frapp.live` |
+| `RENDER_DEPLOY_HOOK_URL` | From Render staging service dashboard |
+| `API_HEALTHCHECK_URL` | `https://api-staging.frapp.live/health` |
+| `SUPABASE_PROJECT_REF` | Staging project reference ID |
+| `SUPABASE_ACCESS_TOKEN` | From https://supabase.com/dashboard/account/tokens |
 
-From Vercel (frapp-web, Preview scope):
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_API_URL`
+Repeat for `production` with production values, and `local` with local values.
 
-From Vercel (frapp-landing, Preview scope):
-- `NEXT_PUBLIC_APP_URL`
+### 4. Add References
 
-From Render (frapp-api-staging):
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_ANON_KEY`
-- `STRIPE_SECRET_KEY` (sk_test_...)
-- `STRIPE_WEBHOOK_SECRET`
-- `STRIPE_PRICE_ID`
+In **all three environments**, add these references (they're the same in every environment — the canonical value they resolve to changes per environment):
 
-From GitHub Secrets:
-- `RENDER_DEPLOY_HOOK_URL_STAGING`
-- `API_STAGING_HEALTHCHECK_URL`
+| Variable | Value (Infisical reference syntax) |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` |
+| `NEXT_PUBLIC_API_URL` | `${API_URL}` |
+| `NEXT_PUBLIC_APP_URL` | `${APP_URL}` |
+| `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` |
+| `EXPO_PUBLIC_API_URL` | `${API_URL}` |
 
-#### Production Environment
+### 5. Configure Secret Syncs
 
-Same keys as staging, but with production values:
-- Supabase production project credentials
-- Stripe live mode keys (sk_live_...)
-- Production Render deploy hook URL
-- Production health check URL
+#### Vercel Syncs (4 syncs)
 
-### 4. Configure Secret Syncs
-
-For each provider, create an Infisical secret sync:
-
-#### Vercel Syncs
-
-1. In Infisical → Integrations → Add Sync → Vercel
+1. Infisical → Integrations → Add Sync → Vercel
 2. Authenticate with Vercel
-3. Create syncs for each app:
-   - `frapp-web` → Staging environment → Vercel Preview scope
-   - `frapp-web` → Production environment → Vercel Production scope
-   - `frapp-landing` → Staging environment → Vercel Preview scope
-   - `frapp-landing` → Production environment → Vercel Production scope
-   - `frapp-docs` → (no secrets needed, skip)
-
-#### Render Syncs
-
-1. In Infisical → Integrations → Add Sync → Render
-2. Authenticate with Render
 3. Create syncs:
-   - `frapp-api-staging` → Staging environment
-   - `frapp-api-prod` → Production environment
 
-#### GitHub Actions
+| # | Infisical env | Vercel project | Vercel scope |
+|---|---|---|---|
+| 1 | staging | frapp-web | Preview |
+| 2 | production | frapp-web | Production |
+| 3 | staging | frapp-landing | Preview |
+| 4 | production | frapp-landing | Production |
 
-1. In Infisical → Integrations → Add → GitHub Actions
-2. Configure OIDC-based authentication (recommended for public repos)
-3. Or use Machine Identity with `INFISICAL_MACHINE_IDENTITY_ID` secret
+> **frapp-docs** has no environment variables — no sync needed.
 
-### 5. Configure GitHub Actions
+#### Render Syncs (2 syncs)
 
-Add these secrets to the GitHub repository (Settings → Secrets):
+1. Infisical → Integrations → Add Sync → Render
+2. Create syncs:
 
-| Secret | Value | Purpose |
-| --- | --- | --- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | From Infisical Machine Identity setup | OIDC auth to Infisical |
-| `INFISICAL_PROJECT_ID` | From Infisical project settings | Project identifier |
+| # | Infisical env | Render service |
+|---|---|---|
+| 5 | staging | frapp-api-staging |
+| 6 | production | frapp-api-prod |
 
-### 6. Update `.infisical.json`
+#### GitHub Actions (1 sync)
 
-Replace `REPLACE_WITH_INFISICAL_PROJECT_ID` in `.infisical.json` with the actual project ID from Infisical.
+1. Infisical → Integrations → Add → GitHub Actions
+2. Configure OIDC-based authentication
+3. The deploy workflow uses GitHub's `environment:` feature to scope secrets per job
+
+| # | Infisical env | GitHub environment |
+|---|---|---|
+| 7 | staging + production | Repository (via OIDC per job) |
+
+### 6. Configure GitHub
+
+Add only these 2 secrets to GitHub repository settings (Settings → Secrets → Actions):
+
+| Secret | Value |
+| --- | --- |
+| `INFISICAL_MACHINE_IDENTITY_ID` | From Infisical Machine Identity setup |
+| `INFISICAL_PROJECT_ID` | From Infisical project settings |
+
+### 7. Update `.infisical.json`
+
+Replace `REPLACE_WITH_INFISICAL_PROJECT_ID` in `.infisical.json` with the actual project ID.
+
+### 8. Test Local Development
+
+```bash
+npx infisical login
+npm run dev:api    # Injects from Infisical local env → starts API
+npm run dev:web    # Injects from Infisical local env → starts web
+```
 
 ## Secret Rotation Policy
 
 | Secret Type | Rotation Frequency | Procedure |
 | --- | --- | --- |
-| Supabase service role key | On suspected compromise | Regenerate in Supabase dashboard → update in Infisical |
-| Stripe secret key | On suspected compromise | Regenerate in Stripe dashboard → update in Infisical |
-| Stripe webhook secret | On webhook endpoint change | Regenerate in Stripe dashboard → update in Infisical |
-| Render deploy hook URLs | On service recreation | Copy new URL from Render → update in Infisical |
-| GitHub PAT | Every 90 days | Regenerate in GitHub Settings → update where used |
+| Supabase service role key | On suspected compromise | Regenerate in Supabase → update canonical value in Infisical |
+| Stripe secret key | On suspected compromise | Regenerate in Stripe → update canonical value in Infisical |
+| Render deploy hook URLs | On service recreation | Copy from Render → update canonical value in Infisical |
+| Supabase access token | Every 90 days | Regenerate in Supabase account → update in Infisical |
+
+**All rotations happen in one place (Infisical).** Syncs propagate changes to all providers automatically.
 
 ## Emergency Procedures
 
-### Secret Exposed in Logs / Commit
+### Secret Exposed
 
-1. **Immediately** rotate the exposed secret in the source provider (Supabase/Stripe/etc.)
-2. Update the new value in Infisical
-3. Wait for syncs to propagate (or trigger manual sync)
-4. Verify all services are healthy
-5. If committed to git: force-push to remove the commit (coordinate with team)
+1. **Immediately** rotate the secret in the source provider (Supabase/Stripe/etc.)
+2. Update the canonical value in Infisical (one place)
+3. Syncs propagate automatically — verify all services are healthy
+4. If committed to git: notify team, consider force-push to remove
 
 ### Infisical Down
 
-If Infisical is unavailable:
-- Existing secrets in Vercel/Render/GitHub are unaffected (they're synced copies)
-- New secrets must be added directly to providers temporarily
-- When Infisical recovers, add the secrets there and verify sync
+- Existing secrets in Vercel/Render/GitHub are unaffected (synced copies persist)
+- New changes must go directly to providers temporarily
+- When Infisical recovers, reconcile and re-sync
 
 ## Audit
 
-Infisical provides an audit log of all secret access. Review periodically:
-- Infisical dashboard → Audit Log
-- Verify no unexpected access patterns
-- Verify sync health for all integrations
-
-## Local Development
-
-For local development, continue using `.env.local` files:
-- These are never committed (in `.gitignore`)
-- Local Supabase keys come from `npx supabase status -o env`
-- Stripe test keys can be placeholders unless testing billing
-
-Optionally, use the Infisical CLI for local development:
-```bash
-npx infisical run --env=local -- npm run start:dev -w apps/api
-```
-
-This injects secrets from Infisical's `local` environment at runtime.
+- Infisical dashboard → Audit Log for all secret access
+- Verify sync health periodically for all 7 integrations
+- Review no unexpected access patterns

@@ -229,31 +229,15 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 | **Environments** | `local`, `staging`, `production` |
 | **Syncs** | Vercel (×3 apps), Render (×2 services), GitHub Actions |
 
-### Secret Ownership
+### How It Works
 
-| Secret | Environments | Synced To | Notes |
-| --- | --- | --- | --- |
-| `SUPABASE_URL` | staging, production | Render | API server-side |
-| `SUPABASE_SERVICE_ROLE_KEY` | staging, production | Render | API server-side, NEVER client |
-| `SUPABASE_ANON_KEY` | staging, production | Render | API server-side |
-| `STRIPE_SECRET_KEY` | staging, production | Render | `sk_test_` / `sk_live_` |
-| `STRIPE_WEBHOOK_SECRET` | staging, production | Render | `whsec_` |
-| `STRIPE_PRICE_ID` | staging, production | Render | `price_` |
-| `NEXT_PUBLIC_SUPABASE_URL` | staging, production | Vercel (web) | Client-safe |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | staging, production | Vercel (web) | Client-safe |
-| `NEXT_PUBLIC_API_URL` | staging, production | Vercel (web) | Client-safe |
-| `NEXT_PUBLIC_APP_URL` | staging, production | Vercel (landing) | Client-safe |
-| `EXPO_PUBLIC_SUPABASE_URL` | staging, production | EAS | Mobile builds |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | staging, production | EAS | Mobile builds |
-| `RENDER_DEPLOY_HOOK_URL` | production | GitHub Actions | Deploy trigger |
-| `RENDER_DEPLOY_HOOK_URL_STAGING` | staging | GitHub Actions | Deploy trigger |
-| `SUPABASE_ACCESS_TOKEN` | global | GitHub Actions | For automated migrations |
-| `SUPABASE_PROJECT_REF_STAGING` | staging | GitHub Actions | Migration target |
-| `SUPABASE_PROJECT_REF_PRODUCTION` | production | GitHub Actions | Migration target |
+Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication, no environment suffixes.
+
+See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/SECRETS_MANAGEMENT.md`](../docs/internal/SECRETS_MANAGEMENT.md)** for the setup guide.
 
 ### Bootstrap Secrets (GitHub only)
 
-Only two secrets remain in GitHub repository settings — these bootstrap the Infisical connection:
+Only two secrets live directly in GitHub — these bootstrap the Infisical connection:
 
 | Secret | Purpose |
 | --- | --- |
@@ -262,15 +246,23 @@ Only two secrets remain in GitHub repository settings — these bootstrap the In
 
 ### Local Development
 
-- `.env.local` files (never committed; in `.gitignore`).
-- Local Supabase keys are deterministic JWTs from `npx supabase status -o env`.
-- Stripe test-mode keys can be set to placeholders unless testing billing flows.
+**Primary method (no `.env.local` files):**
+
+```bash
+npx infisical login       # One-time setup
+npm run dev:api           # Injects from Infisical local env
+npm run dev:web
+npm run dev:landing
+npm run dev:mobile
+```
+
+**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`.
 
 ### Rules
 
 - **Never** commit secrets. **Never** log secrets. Rotate keys immediately if exposed.
-- **No placeholder secrets in CI.** CI does not build apps that require runtime secrets — Vercel and Render handle those builds with provider-native env vars synced from Infisical.
-- See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and rotation policy.
+- **No placeholder secrets in CI.** CI does not build apps that require runtime secrets.
+- **No environment suffixes.** `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment — no `_STAGING` / `_PRODUCTION` suffixes.
 
 ---
 

@@ -1,184 +1,200 @@
 # Environment Variable Reference
 
 > **This is the single source of truth for every environment variable in the Frapp project.**
-> All staging and production values are managed in [Infisical](https://infisical.com) and synced automatically to providers. See `docs/internal/SECRETS_MANAGEMENT.md` for the Infisical setup guide.
+>
+> All values are managed in [Infisical](https://infisical.com). Canonical values are stored once per environment. Framework-specific names (e.g., `NEXT_PUBLIC_*`) are Infisical **secret references** that resolve to the canonical value — change it in one place, it updates everywhere.
 
 ---
 
-## apps/api (NestJS — deployed on Render)
-
-| Variable | Required | Source (code) | Local | Staging | Production |
-|---|---|---|---|---|---|
-| `SUPABASE_URL` | ✅ | `supabase.provider.ts` | `http://127.0.0.1:54321` | `https://<staging-ref>.supabase.co` | `https://<prod-ref>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | `supabase.provider.ts` | From `npx supabase status` | Supabase dashboard | Supabase dashboard |
-| `SUPABASE_ANON_KEY` | ✅ | `env.validation.ts` | From `npx supabase status` | Supabase dashboard | Supabase dashboard |
-| `STRIPE_SECRET_KEY` | ✅ | `stripe.service.ts` | `sk_test_...` | `sk_test_...` | `sk_live_...` |
-| `STRIPE_WEBHOOK_SECRET` | ✅ | `stripe.service.ts` | `whsec_...` | `whsec_...` | `whsec_...` |
-| `STRIPE_PRICE_ID` | ✅ | `stripe.service.ts` | `price_...` | `price_...` | `price_...` |
-| `PORT` | ❌ | `main.ts` (default `3001`) | `3001` | `3001` | `3001` |
-| `NODE_ENV` | ❌ | `main.ts` (default `development`) | `development` | `production` | `production` |
-| `SENTRY_DSN` | ❌ | `main.ts` (optional) | _(empty)_ | Sentry dashboard | Sentry dashboard |
-| `SENTRY_TRACES_SAMPLE_RATE` | ❌ | `main.ts` (default `0.1`) | `0.1` | `0.1` | `0.1` |
-
-**Local file:** `apps/api/.env.local`
-**Staging/Production:** Render env vars synced from Infisical
-
----
-
-## apps/web (Next.js dashboard — deployed on Vercel)
-
-| Variable | Required | Source (code) | Local | Staging | Production |
-|---|---|---|---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | `lib/supabase/client.ts`, `server.ts` | `http://127.0.0.1:54321` | `https://<staging-ref>.supabase.co` | `https://<prod-ref>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | `lib/supabase/client.ts`, `server.ts` | From `npx supabase status` | Supabase dashboard | Supabase dashboard |
-| `NEXT_PUBLIC_API_URL` | ✅ | `lib/providers/frapp-client-provider.tsx` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
-
-**Local file:** `apps/web/.env.local`
-**Staging/Production:** Vercel env vars synced from Infisical (Preview / Production scopes)
-
----
-
-## apps/landing (Next.js marketing site — deployed on Vercel)
-
-| Variable | Required | Source (code) | Local | Staging | Production |
-|---|---|---|---|---|---|
-| `NEXT_PUBLIC_APP_URL` | ✅ | `app/page.tsx` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
-
-**Local file:** `apps/landing/.env.local`
-**Staging/Production:** Vercel env vars synced from Infisical (Preview / Production scopes)
-
----
-
-## apps/docs (Next.js documentation — deployed on Vercel)
-
-**No environment variables.** The docs app is pure static content. No Infisical sync needed.
-
----
-
-## apps/mobile (Expo — builds on EAS)
-
-| Variable | Required | Source (code) | Local | Staging | Production |
-|---|---|---|---|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | ✅ | Supabase client init | `http://127.0.0.1:54321` | `https://<staging-ref>.supabase.co` | `https://<prod-ref>.supabase.co` |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase client init | From `npx supabase status` | Supabase dashboard | Supabase dashboard |
-| `EXPO_PUBLIC_API_URL` | ✅ | API client init | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
-
-**Local file:** `apps/mobile/.env.local`
-**Staging/Production:** `EXPO_PUBLIC_API_URL` is hardcoded per profile in `eas.json`. `EXPO_PUBLIC_SUPABASE_*` vars are set via `eas secret:create`.
-
----
-
-## GitHub Actions (CD workflows)
-
-| Secret | Used by | Purpose |
-|---|---|---|
-| `RENDER_DEPLOY_HOOK_URL` | `deploy-api.yml` | Trigger production API deploy |
-| `RENDER_DEPLOY_HOOK_URL_STAGING` | `deploy-api.yml` | Trigger staging API deploy |
-| `API_PRODUCTION_HEALTHCHECK_URL` | `deploy-api.yml` | Post-deploy health check |
-| `API_STAGING_HEALTHCHECK_URL` | `deploy-api.yml` | Post-deploy health check |
-| `SUPABASE_ACCESS_TOKEN` | `deploy-api.yml` | Supabase CLI auth for migrations |
-| `SUPABASE_PROJECT_REF_STAGING` | `deploy-api.yml` | Target staging DB for migrations |
-| `SUPABASE_PROJECT_REF_PRODUCTION` | `deploy-api.yml` | Target production DB for migrations |
-| `GITHUB_TOKEN` | `release.yml` | Auto-provided by GitHub, creates releases |
-
-**Source:** These are injected from Infisical via OIDC in deploy workflows. Only `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` are set directly as GitHub Secrets (bootstrap).
-
----
-
-## Where Everything Lives — Summary
+## How It Works
 
 ```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                    INFISICAL (source of truth)                       │
-│                                                                     │
-│  staging env: all staging values for every app + CD secrets         │
-│  production env: all production values for every app + CD secrets   │
-│                                                                     │
-│  Syncs:                                                             │
-│    → Vercel frapp-web (Preview scope)         staging env           │
-│    → Vercel frapp-web (Production scope)      production env        │
-│    → Vercel frapp-landing (Preview scope)     staging env           │
-│    → Vercel frapp-landing (Production scope)  production env        │
-│    → Render frapp-api-staging                 staging env           │
-│    → Render frapp-api-prod                    production env        │
-│    → GitHub Actions (OIDC)                    per-workflow env      │
-│                                                                     │
-│  Total syncs: 7 of 10 (free tier)                                   │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                    GITHUB SECRETS (bootstrap only)                   │
-│                                                                     │
-│  INFISICAL_MACHINE_IDENTITY_ID    (connects GH Actions → Infisical)│
-│  INFISICAL_PROJECT_ID             (Infisical project identifier)    │
-│  SUPABASE_ACCESS_TOKEN            (Supabase CLI for migrations)     │
-│                                                                     │
-│  Total: 3 secrets                                                   │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                    LOCAL DEVELOPMENT (.env.local)                    │
-│                                                                     │
-│  apps/api/.env.local       — Supabase + Stripe (from supabase      │
-│  apps/web/.env.local         status or Infisical local env)         │
-│  apps/landing/.env.local                                            │
-│  apps/mobile/.env.local                                             │
-│                                                                     │
-│  Or: npx infisical run --env=local -- <command>                     │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                    EAS (mobile builds)                               │
-│                                                                     │
-│  EXPO_PUBLIC_API_URL              hardcoded per profile in eas.json │
-│  EXPO_PUBLIC_SUPABASE_URL         via eas secret:create             │
-│  EXPO_PUBLIC_SUPABASE_ANON_KEY    via eas secret:create             │
-└─────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────┐
-│                    DOCS (apps/docs)                                  │
-│                                                                     │
-│  NO environment variables. Zero. None.                              │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                     INFISICAL                                     │
+│                                                                   │
+│  Canonical values (stored once, value changes per environment):   │
+│    SUPABASE_URL = https://staging.supabase.co                     │
+│    SUPABASE_ANON_KEY = eyJ...                                     │
+│    API_URL = https://api-staging.frapp.live/v1                    │
+│                                                                   │
+│  References (resolve to canonical, same in all environments):     │
+│    NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
+│    NEXT_PUBLIC_SUPABASE_ANON_KEY = ${SUPABASE_ANON_KEY}           │
+│    NEXT_PUBLIC_API_URL = ${API_URL}                               │
+│    EXPO_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}                     │
+│    ...                                                            │
+│                                                                   │
+│  Syncs push resolved values to:                                   │
+│    → Vercel (frapp-web, frapp-landing)                            │
+│    → Render (frapp-api-staging, frapp-api-prod)                   │
+│    → GitHub Actions (via OIDC or environment-scoped secrets)      │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+**Change `SUPABASE_URL` once → every reference (`NEXT_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_URL`) updates automatically.**
 
 ---
 
-## Local Development Quick Start
+## Canonical Variables
 
-Get your local env vars from Supabase:
+These are the real values. Stored once per Infisical environment. No duplicates, no suffixes.
+
+| Variable | local | staging | production | Used by |
+|---|---|---|---|---|
+| `SUPABASE_URL` | `http://127.0.0.1:54321` | `https://<stg-ref>.supabase.co` | `https://<prd-ref>.supabase.co` | API, Web*, Mobile* |
+| `SUPABASE_SERVICE_ROLE_KEY` | from `npx supabase status` | Supabase dashboard | Supabase dashboard | API only |
+| `SUPABASE_ANON_KEY` | from `npx supabase status` | Supabase dashboard | Supabase dashboard | API, Web*, Mobile* |
+| `STRIPE_SECRET_KEY` | `sk_test_...` (or placeholder) | `sk_test_...` | `sk_live_...` | API only |
+| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (or placeholder) | `whsec_...` | `whsec_...` | API only |
+| `STRIPE_PRICE_ID` | `price_...` (or placeholder) | `price_...` | `price_...` | API only |
+| `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` | Web*, Mobile* |
+| `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` | Landing* |
+| `PORT` | `3001` | `3001` | `3001` | API only |
+| `NODE_ENV` | `development` | `production` | `production` | API only |
+| `SENTRY_DSN` | _(empty)_ | from Sentry | from Sentry | API only |
+| `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | `0.1` | `0.1` | API only |
+| `RENDER_DEPLOY_HOOK_URL` | _(n/a)_ | staging hook URL | production hook URL | GitHub Actions |
+| `API_HEALTHCHECK_URL` | _(n/a)_ | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` | GitHub Actions |
+| `SUPABASE_PROJECT_REF` | _(n/a)_ | staging project ref | production project ref | GitHub Actions |
+| `SUPABASE_ACCESS_TOKEN` | _(n/a)_ | (same token) | (same token) | GitHub Actions |
+
+\* Web and Mobile consume these via references (see below), not the canonical name directly.
+
+---
+
+## References (Framework-Specific Names)
+
+These are Infisical **secret references** — they resolve to a canonical value. Defined identically in all three environments. When the canonical value changes, all references update automatically.
+
+| Reference | Resolves to | Consumed by |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/web |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/web |
+| `NEXT_PUBLIC_API_URL` | `${API_URL}` | apps/web |
+| `NEXT_PUBLIC_APP_URL` | `${APP_URL}` | apps/landing |
+| `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
+| `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
+
+**Total: 16 canonical + 7 references = 23 entries. Zero value duplication.**
+
+---
+
+## What Each App Reads
+
+### apps/api (NestJS — Render)
+
+| Variable | Source (code) | Required |
+|---|---|---|
+| `SUPABASE_URL` | `supabase.provider.ts` via ConfigService | ✅ |
+| `SUPABASE_SERVICE_ROLE_KEY` | `supabase.provider.ts` via ConfigService | ✅ |
+| `SUPABASE_ANON_KEY` | `env.validation.ts` | ✅ |
+| `STRIPE_SECRET_KEY` | `stripe.service.ts` via ConfigService | ✅ |
+| `STRIPE_WEBHOOK_SECRET` | `stripe.service.ts` via ConfigService | ✅ |
+| `STRIPE_PRICE_ID` | `stripe.service.ts` via ConfigService | ✅ |
+| `PORT` | `main.ts` (default: `3001`) | ❌ |
+| `NODE_ENV` | `main.ts` (default: `development`) | ❌ |
+| `SENTRY_DSN` | `main.ts` (optional) | ❌ |
+| `SENTRY_TRACES_SAMPLE_RATE` | `main.ts` (default: `0.1`) | ❌ |
+
+### apps/web (Next.js — Vercel)
+
+| Variable | Source (code) | Required |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `server.ts` | ✅ |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
+| `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
+
+### apps/landing (Next.js — Vercel)
+
+| Variable | Source (code) | Required |
+|---|---|---|
+| `NEXT_PUBLIC_APP_URL` | `app/page.tsx` | ✅ |
+
+### apps/docs (Next.js — Vercel)
+
+**No environment variables.**
+
+### apps/mobile (Expo — EAS)
+
+| Variable | Source (code) | Required |
+|---|---|---|
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase client init (future) | ✅ |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase client init (future) | ✅ |
+| `EXPO_PUBLIC_API_URL` | API client init + `eas.json` profiles | ✅ |
+
+---
+
+## Where Everything Lives
+
+### Infisical → Provider Syncs
+
+| # | Source (Infisical) | Destination | What gets synced |
+|---|---|---|---|
+| 1 | staging env | Vercel → frapp-web (Preview scope) | `NEXT_PUBLIC_*` vars |
+| 2 | staging env | Vercel → frapp-landing (Preview scope) | `NEXT_PUBLIC_APP_URL` |
+| 3 | staging env | Render → frapp-api-staging | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
+| 4 | production env | Vercel → frapp-web (Production scope) | `NEXT_PUBLIC_*` vars |
+| 5 | production env | Vercel → frapp-landing (Production scope) | `NEXT_PUBLIC_APP_URL` |
+| 6 | production env | Render → frapp-api-prod | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
+| 7 | per-env | GitHub Actions (OIDC) | `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`, `SUPABASE_*` |
+
+**7 of 10 free-tier integrations used.**
+
+### GitHub Secrets (bootstrap only)
+
+| Secret | Purpose |
+|---|---|
+| `INFISICAL_MACHINE_IDENTITY_ID` | Connect GitHub Actions → Infisical |
+| `INFISICAL_PROJECT_ID` | Infisical project identifier |
+
+**2 secrets total.** Everything else comes from Infisical via environment-scoped injection.
+
+### GitHub Environments
+
+The deploy workflow uses GitHub's `environment:` feature. Secrets like `RENDER_DEPLOY_HOOK_URL` are injected from the correct Infisical environment based on which job runs (staging vs production). **No `_STAGING` / `_PRODUCTION` suffixes needed.**
+
+### EAS (Mobile Builds)
+
+| Variable | How it gets there |
+|---|---|
+| `EXPO_PUBLIC_API_URL` | Hardcoded per profile in `eas.json` |
+| `EXPO_PUBLIC_SUPABASE_URL` | `eas secret:create` (or future Infisical sync) |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `eas secret:create` (or future Infisical sync) |
+
+---
+
+## Local Development
+
+**Primary method (no `.env.local` files needed):**
 
 ```bash
-npx supabase start
-npx supabase status -o env
+# One-time setup
+npx infisical login
+
+# Run any app with secrets injected from Infisical's local environment
+npm run dev:api      # → infisical run --env=local -- npm run start:dev -w apps/api
+npm run dev:web      # → infisical run --env=local -- npm run dev -w apps/web
+npm run dev:landing  # → infisical run --env=local -- npm run dev -w apps/landing
+npm run dev:mobile   # → infisical run --env=local -- npm run start -w apps/mobile
 ```
 
-Then create `.env.local` files using the values above. See each app section for the exact variables needed.
+**Fallback (if Infisical CLI not available):**
 
-**Alternative (Infisical CLI):**
-
-```bash
-npx infisical run --env=local -- npm run start:dev -w apps/api
-npx infisical run --env=local -- npm run dev -w apps/web
-```
-
-This injects secrets at runtime without needing `.env.local` files.
+Create `.env.local` files manually using values from `npx supabase status -o env`. See each app section above for the exact variables needed.
 
 ---
 
 ## Adding a New Environment Variable
 
-1. **Add to code** — reference it via `process.env.YOUR_VAR` or `ConfigService`.
-2. **Add to Infisical** — set values in staging and production environments.
-3. **Update this document** — add a row to the relevant app table above.
-4. **Update syncs** (if needed) — ensure the var reaches the correct provider.
-5. **For local dev** — add to your `.env.local` or Infisical's local environment.
-
----
+1. **Add to code** — reference via `process.env.YOUR_VAR` or `ConfigService`.
+2. **Add canonical value to Infisical** — set in all three environments (local, staging, production).
+3. **If it needs a framework prefix** — add an Infisical reference (e.g., `NEXT_PUBLIC_YOUR_VAR = ${YOUR_VAR}`).
+4. **Update this document** — add rows to the relevant tables.
+5. **Verify syncs** — ensure the variable reaches the correct provider.
 
 ## Removing an Environment Variable
 
-1. **Remove from code** — delete all `process.env.YOUR_VAR` references.
-2. **Remove from Infisical** — delete from all environments.
-3. **Update this document** — remove the row.
-4. **Clean up providers** — the next sync will remove it from Vercel/Render (if sync is configured with overwrite).
+1. **Remove from code** — delete all references.
+2. **Remove from Infisical** — delete from all environments (canonical + any references).
+3. **Update this document** — remove the rows.

@@ -428,21 +428,20 @@ See `CONTRIBUTING.md` for the full list of CI jobs and external checks required 
 
 ### Secrets in CI vs CD
 
-**CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed. The CI pipeline only runs static checks and unit tests.
+**CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** requires several GitHub Secrets for deployments and migrations:
+**CD (deploy workflows)** uses environment-scoped secrets injected from Infisical. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. GitHub's `environment:` feature routes the right values per job:
 
-| Secret | Used by | Purpose |
-| --- | --- | --- |
-| `RENDER_DEPLOY_HOOK_URL` | deploy-api.yml | Trigger production API deploy |
-| `RENDER_DEPLOY_HOOK_URL_STAGING` | deploy-api.yml | Trigger staging API deploy |
-| `API_PRODUCTION_HEALTHCHECK_URL` | deploy-api.yml | Post-deploy health check |
-| `API_STAGING_HEALTHCHECK_URL` | deploy-api.yml | Post-deploy health check |
-| `SUPABASE_ACCESS_TOKEN` | deploy-api.yml | Authenticate Supabase CLI for migrations |
-| `SUPABASE_PROJECT_REF_STAGING` | deploy-api.yml | Target staging DB for migrations |
-| `SUPABASE_PROJECT_REF_PRODUCTION` | deploy-api.yml | Target production DB for migrations |
+| Secret | Purpose |
+| --- | --- |
+| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment) |
+| `API_HEALTHCHECK_URL` | Post-deploy health check (value differs per environment) |
+| `SUPABASE_ACCESS_TOKEN` | Supabase CLI auth for migrations |
+| `SUPABASE_PROJECT_REF` | Target DB for migrations (value differs per environment) |
 
-Once Infisical is configured, these secrets will be injected via the `@infisical/secrets-action` and only `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` will remain as direct GitHub Secrets.
+Only 2 secrets are set directly in GitHub: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` (bootstrap). Everything else comes from Infisical.
+
+See `docs/internal/ENV_REFERENCE.md` for the complete variable mapping.
 
 ---
 
@@ -450,27 +449,28 @@ Once Infisical is configured, these secrets will be injected via the `@infisical
 
 All secrets are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers.
 
-### Setup
+### Key Design
 
-1. Create an Infisical account and project named "Frapp".
-2. Create 3 environments: `local`, `staging`, `production`.
-3. Import existing secrets from Vercel/Render/EAS into Infisical.
-4. Configure secret syncs to each provider.
-5. Configure GitHub Actions to use `@infisical/secrets-action` with OIDC auth.
+- **Canonical values stored once** per environment — no duplication.
+- **Secret references** handle framework prefixes (`NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}`).
+- **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
+- **No `.env.local` files needed** — local dev uses `npm run dev:api` (injects from Infisical CLI).
 
-See `docs/internal/SECRETS_MANAGEMENT.md` for the detailed setup guide and rotation policy.
+### Sync Map (7 of 10 free-tier integrations)
 
-### Provider Sync Map
-
-| Infisical → | Provider | Scope |
+| # | Infisical env | Destination |
 | --- | --- | --- |
-| staging secrets | Vercel (frapp-web, frapp-landing) | Preview environment |
-| production secrets | Vercel (frapp-web, frapp-landing) | Production environment |
-| staging secrets | Render (frapp-api-staging) | Service env vars |
-| production secrets | Render (frapp-api-prod) | Service env vars |
-| deploy hooks, tokens | GitHub Actions | Repository secrets |
+| 1 | staging | Vercel → frapp-web (Preview scope) |
+| 2 | production | Vercel → frapp-web (Production scope) |
+| 3 | staging | Vercel → frapp-landing (Preview scope) |
+| 4 | production | Vercel → frapp-landing (Production scope) |
+| 5 | staging | Render → frapp-api-staging |
+| 6 | production | Render → frapp-api-prod |
+| 7 | per-env | GitHub Actions (OIDC) |
 
-> **Note:** frapp-docs is excluded from Vercel secret syncs — the docs app has no environment variables.
+> **frapp-docs** has no environment variables — no sync needed.
+
+See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/ENV_REFERENCE.md` for the complete variable list.
 
 ---
 
