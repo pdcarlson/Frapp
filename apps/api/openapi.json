@@ -1777,7 +1777,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RequestUploadUrlDto"
+                "$ref": "#/components/schemas/RequestBackworkUploadUrlDto"
               }
             }
           }
@@ -1807,7 +1807,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConfirmUploadDto"
+                "$ref": "#/components/schemas/ConfirmBackworkUploadDto"
               }
             }
           }
@@ -3318,7 +3318,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RequestUploadUrlDto"
+                "$ref": "#/components/schemas/RequestDocumentUploadUrlDto"
               }
             }
           }
@@ -3348,7 +3348,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ConfirmUploadDto"
+                "$ref": "#/components/schemas/ConfirmDocumentUploadDto"
               }
             }
           }
@@ -4355,7 +4355,7 @@
           "status"
         ]
       },
-      "RequestUploadUrlDto": {
+      "RequestBackworkUploadUrlDto": {
         "type": "object",
         "properties": {
           "filename": {
@@ -4372,29 +4372,84 @@
           "content_type"
         ]
       },
-      "ConfirmUploadDto": {
+      "ConfirmBackworkUploadDto": {
         "type": "object",
         "properties": {
           "storage_path": {
             "type": "string",
             "description": "Storage path returned from upload-url"
           },
+          "file_hash": {
+            "type": "string",
+            "description": "SHA-256 hash of the uploaded file"
+          },
           "title": {
-            "type": "string",
-            "description": "Document title"
+            "type": "string"
           },
-          "description": {
+          "department_code": {
             "type": "string",
-            "description": "Document description"
+            "description": "Department code (e.g. \"CS\")"
           },
-          "folder": {
+          "course_number": {
             "type": "string",
-            "description": "Folder name (one level, flat structure)"
+            "description": "Course number (e.g. \"101\")"
+          },
+          "professor_name": {
+            "type": "string",
+            "description": "Professor name"
+          },
+          "year": {
+            "type": "number"
+          },
+          "semester": {
+            "type": "string",
+            "enum": [
+              "Spring",
+              "Summer",
+              "Fall",
+              "Winter"
+            ]
+          },
+          "assignment_type": {
+            "type": "string",
+            "enum": [
+              "Exam",
+              "Midterm",
+              "Final Exam",
+              "Quiz",
+              "Homework",
+              "Lab",
+              "Project",
+              "Study Guide",
+              "Notes",
+              "Other"
+            ]
+          },
+          "assignment_number": {
+            "type": "number"
+          },
+          "document_variant": {
+            "type": "string",
+            "enum": [
+              "Student Copy",
+              "Blank Copy",
+              "Answer Key"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_redacted": {
+            "type": "boolean",
+            "default": false
           }
         },
         "required": [
           "storage_path",
-          "title"
+          "file_hash"
         ]
       },
       "UpdateDepartmentDto": {
@@ -4785,6 +4840,48 @@
         "required": [
           "lat",
           "lng"
+        ]
+      },
+      "RequestDocumentUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. application/pdf)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "ConfirmDocumentUploadDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from upload-url"
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title"
+          },
+          "description": {
+            "type": "string",
+            "description": "Document description"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Folder name (one level, flat structure)"
+          }
+        },
+        "required": [
+          "storage_path",
+          "title"
         ]
       },
       "CreatePollDto": {

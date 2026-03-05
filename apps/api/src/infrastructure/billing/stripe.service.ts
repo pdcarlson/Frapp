@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import type {
@@ -13,22 +13,12 @@ export class StripeBillingService implements IBillingProvider {
   private readonly stripe: Stripe;
   private readonly priceId: string;
   private readonly webhookSecret: string;
-  private readonly logger = new Logger(StripeBillingService.name);
 
   constructor(private readonly config: ConfigService) {
-    const secretKey = config.get<string>('STRIPE_SECRET_KEY');
-    const priceId = config.get<string>('STRIPE_PRICE_ID');
-    const webhookSecret = config.get<string>('STRIPE_WEBHOOK_SECRET');
-
-    if (!secretKey || !priceId || !webhookSecret) {
-      this.logger.warn(
-        'Stripe configuration incomplete — billing features will fail at runtime',
-      );
-    }
-
-    this.stripe = new Stripe(secretKey || 'sk_placeholder');
-    this.priceId = priceId || '';
-    this.webhookSecret = webhookSecret || '';
+    const secretKey = config.getOrThrow<string>('STRIPE_SECRET_KEY');
+    this.priceId = config.getOrThrow<string>('STRIPE_PRICE_ID');
+    this.webhookSecret = config.getOrThrow<string>('STRIPE_WEBHOOK_SECRET');
+    this.stripe = new Stripe(secretKey);
   }
 
   async createCustomer(email: string, name: string): Promise<string> {
@@ -74,6 +64,14 @@ export class StripeBillingService implements IBillingProvider {
       signature,
       this.webhookSecret,
     );
-    return event as unknown as WebhookEvent;
+
+    return {
+      id: event.id,
+      type: event.type,
+      created: event.created,
+      data: {
+        object: event.data.object as unknown as Record<string, unknown>,
+      },
+    };
   }
 }

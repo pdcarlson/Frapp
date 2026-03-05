@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IInviteRepository } from '../../../domain/repositories/invite.repository.interface';
 import { Invite } from '../../../domain/entities/invite.entity';
 
 @Injectable()
 export class SupabaseInviteRepository implements IInviteRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<Invite | null> {
@@ -43,7 +44,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async create(inviteData: Partial<Invite>): Promise<Invite> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData)
+      .insert(inviteData as never)
       .select()
       .single();
     if (error) throw error;
@@ -53,7 +54,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsed(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() })
+      .update({ used_at: new Date().toISOString() } as never)
       .eq('id', id);
     if (error) throw error;
   }
@@ -61,7 +62,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsedAtomically(id: string): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() })
+      .update({ used_at: new Date().toISOString() } as never)
       .eq('id', id)
       .is('used_at', null)
       .select('id');

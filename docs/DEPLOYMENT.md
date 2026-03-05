@@ -5,7 +5,7 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 ## Current rollout status
 
 - ✅ Landing, web, and docs are configured in Vercel with `preview` and `main` environments.
-- 🚧 API deployment is planned but not yet fully live in production.
+- 🚧 API deployment wiring is in progress (Render services + deploy hooks + smoke checks).
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
@@ -118,6 +118,11 @@ npx supabase db push
 npx supabase link --project-ref <PRODUCTION_PROJECT_REF>
 npx supabase db push
 ```
+
+Follow the internal promotion and rollback runbooks when promoting schema changes:
+
+- `docs/internal/DB_PROMOTION_RUNBOOK.md`
+- `docs/internal/DB_ROLLBACK_PLAYBOOK.md`
 
 ### Collect Keys
 
@@ -255,6 +260,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | `STRIPE_SECRET_KEY` | `sk_live_...` | `sk_test_...` |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...` (prod) | `whsec_...` (test) |
 | `STRIPE_PRICE_ID` | `price_...` (prod) | `price_...` (test) |
+| `SENTRY_DSN` | `<prod sentry dsn>` | `<staging sentry dsn>` |
 | `PORT` | `3001` | `3001` |
 | `NODE_ENV` | `production` | `production` |
 
@@ -273,6 +279,8 @@ In each Render service → Settings → Deploy Hook → copy the URL. Store them
 
 - `RENDER_DEPLOY_HOOK_URL` → production hook
 - `RENDER_DEPLOY_HOOK_URL_STAGING` → staging hook
+- `API_PRODUCTION_HEALTHCHECK_URL` → production smoke-check URL (e.g. `https://api.frapp.live/health`)
+- `API_STAGING_HEALTHCHECK_URL` → staging smoke-check URL (e.g. `https://api-staging.frapp.live/health`)
 
 ---
 
@@ -337,7 +345,7 @@ npx eas secret:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<key>" --sco
 
 1. Go to https://dashboard.stripe.com/test → Developers → API keys.
 2. Copy `sk_test_...` → use as `STRIPE_SECRET_KEY` for staging API.
-3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/billing/webhook`.
+3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/webhooks/stripe`.
 4. Copy the webhook signing secret → `STRIPE_WEBHOOK_SECRET`.
 5. Create a Product + Price → copy price ID → `STRIPE_PRICE_ID`.
 

@@ -23,6 +23,21 @@ export interface SearchResult {
 const SEARCH_LIMIT = 10;
 const PATTERN = (q: string) => `%${q}%`;
 
+interface QueryError {
+  message: string;
+}
+
+interface QueryResult<T> {
+  data: T[] | null;
+  error: QueryError | null;
+}
+
+function throwIfError(error: QueryError | null): void {
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 @Injectable()
 export class SearchService {
   constructor(
@@ -58,52 +73,56 @@ export class SearchService {
     chapterId: string,
     pattern: string,
   ): Promise<BackworkResource[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = (await this.supabase
       .from('backwork_resources')
       .select('*')
       .eq('chapter_id', chapterId)
       .or(`title.ilike.${pattern},course_number.ilike.${pattern}`)
-      .limit(SEARCH_LIMIT);
-
-    if (error) throw error;
-    return (data as BackworkResource[]) ?? [];
+      .limit(SEARCH_LIMIT)) as QueryResult<BackworkResource>;
+    throwIfError(error);
+    return data ?? [];
   }
 
   private async searchEvents(
     chapterId: string,
     pattern: string,
   ): Promise<Event[]> {
-    const { data, error } = await this.supabase
+    const { data, error } = (await this.supabase
       .from('events')
       .select('*')
       .eq('chapter_id', chapterId)
       .or(`name.ilike.${pattern},description.ilike.${pattern}`)
-      .limit(SEARCH_LIMIT);
-
-    if (error) throw error;
-    return (data as Event[]) ?? [];
+      .limit(SEARCH_LIMIT)) as QueryResult<Event>;
+    throwIfError(error);
+    return data ?? [];
   }
 
   private async searchMembers(
     chapterId: string,
     pattern: string,
   ): Promise<SearchMemberResult[]> {
-    const { data: members, error: memError } = await this.supabase
+    const { data: members, error: memError } = (await this.supabase
       .from('members')
       .select('id, user_id, chapter_id')
-      .eq('chapter_id', chapterId);
-
-    if (memError) throw memError;
+      .eq('chapter_id', chapterId)) as QueryResult<{
+      id: string;
+      user_id: string;
+      chapter_id: string;
+    }>;
+    throwIfError(memError);
     if (!members?.length) return [];
 
     const userIds = members.map((m) => m.user_id);
-    const { data: users, error: userError } = await this.supabase
+    const { data: users, error: userError } = (await this.supabase
       .from('users')
       .select('id, display_name, email')
       .in('id', userIds)
-      .ilike('display_name', pattern);
-
-    if (userError) throw userError;
+      .ilike('display_name', pattern)) as QueryResult<{
+      id: string;
+      display_name: string;
+      email: string;
+    }>;
+    throwIfError(userError);
     if (!users?.length) return [];
 
     const userMap = new Map(
@@ -120,8 +139,8 @@ export class SearchService {
         id: m?.id ?? '',
         user_id: u.id,
         chapter_id: chapterId,
-        display_name: (userMap.get(u.id)?.display_name as string) ?? '',
-        email: (userMap.get(u.id)?.email as string) ?? '',
+        display_name: userMap.get(u.id)?.display_name ?? '',
+        email: userMap.get(u.id)?.email ?? '',
       };
     });
   }
@@ -130,25 +149,23 @@ export class SearchService {
     chapterId: string,
     pattern: string,
   ): Promise<ChatMessage[]> {
-    const { data: channels, error: chError } = await this.supabase
+    const { data: channels, error: chError } = (await this.supabase
       .from('chat_channels')
       .select('id')
-      .eq('chapter_id', chapterId);
-
-    if (chError) throw chError;
+      .eq('chapter_id', chapterId)) as QueryResult<{ id: string }>;
+    throwIfError(chError);
     if (!channels?.length) return [];
 
     const channelIds = channels.map((c) => c.id);
-    const { data, error } = await this.supabase
+    const { data, error } = (await this.supabase
       .from('chat_messages')
       .select('*')
       .in('channel_id', channelIds)
       .ilike('content', pattern)
       .eq('is_deleted', false)
       .limit(SEARCH_LIMIT)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return (data as ChatMessage[]) ?? [];
+      .order('created_at', { ascending: false })) as QueryResult<ChatMessage>;
+    throwIfError(error);
+    return data ?? [];
   }
 }

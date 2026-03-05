@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IFinancialTransactionRepository } from '../../../domain/repositories/financial-transaction.repository.interface';
 import { FinancialTransaction } from '../../../domain/entities/financial-transaction.entity';
 
 @Injectable()
 export class SupabaseFinancialTransactionRepository implements IFinancialTransactionRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<FinancialTransaction[]> {
@@ -35,7 +36,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
   ): Promise<FinancialTransaction> {
     const { data: created, error } = await this.supabase
       .from('financial_transactions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

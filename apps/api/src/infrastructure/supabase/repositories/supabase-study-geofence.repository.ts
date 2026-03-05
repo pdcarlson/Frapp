@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IStudyGeofenceRepository } from '../../../domain/repositories/study.repository.interface';
 import type { StudyGeofence } from '../../../domain/entities/study.entity';
 
 @Injectable()
 export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<StudyGeofence | null> {
@@ -34,7 +35,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
   async create(data: Partial<StudyGeofence>): Promise<StudyGeofence> {
     const { data: created, error } = await this.supabase
       .from('study_geofences')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -49,7 +50,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
   ): Promise<StudyGeofence> {
     const { data: updated, error } = await this.supabase
       .from('study_geofences')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

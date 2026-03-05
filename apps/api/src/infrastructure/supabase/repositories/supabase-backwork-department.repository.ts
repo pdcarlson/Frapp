@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IBackworkDepartmentRepository } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkDepartment } from '../../../domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkDepartmentRepository implements IBackworkDepartmentRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<BackworkDepartment[]> {
@@ -37,7 +38,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
   async create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment> {
     const { data: created, error } = await this.supabase
       .from('backwork_departments')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -50,7 +51,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
   ): Promise<BackworkDepartment> {
     const { data: updated, error } = await this.supabase
       .from('backwork_departments')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

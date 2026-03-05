@@ -7,6 +7,7 @@ import {
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuthService } from '../../application/services/auth.service';
+import type { RequestContext } from '../types/request-context.types';
 
 @Injectable()
 export class AuthSyncInterceptor implements NestInterceptor {
@@ -16,7 +17,7 @@ export class AuthSyncInterceptor implements NestInterceptor {
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<unknown>> {
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestContext>();
     const supabaseUser = request.supabaseUser;
 
     if (supabaseUser) {

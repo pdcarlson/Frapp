@@ -10,6 +10,8 @@ if (!process.env.SUPABASE_URL)
   process.env.SUPABASE_URL = 'https://placeholder.supabase.co';
 if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder-key';
+if (!process.env.SUPABASE_ANON_KEY)
+  process.env.SUPABASE_ANON_KEY = 'placeholder-anon-key';
 if (!process.env.STRIPE_SECRET_KEY)
   process.env.STRIPE_SECRET_KEY = 'openapi_export_stub'; // pragma: allowlist secret
 if (!process.env.STRIPE_WEBHOOK_SECRET)

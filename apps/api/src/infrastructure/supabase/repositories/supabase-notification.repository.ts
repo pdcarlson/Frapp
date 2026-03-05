@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { INotificationRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { Notification } from '../../../domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseNotificationRepository implements INotificationRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async create(data: Partial<Notification>): Promise<Notification> {
@@ -19,7 +20,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
         title: data.title,
         body: data.body,
         data: data.data ?? {},
-      })
+      } as never)
       .select()
       .single();
 
@@ -60,7 +61,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
   async markRead(id: string, userId: string): Promise<Notification> {
     const { data, error } = await this.supabase
       .from('notifications')
-      .update({ read_at: new Date().toISOString() })
+      .update({ read_at: new Date().toISOString() } as never)
       .eq('id', id)
       .eq('user_id', userId)
       .select()

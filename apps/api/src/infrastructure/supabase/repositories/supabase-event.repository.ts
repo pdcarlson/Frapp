@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IEventRepository } from '../../../domain/repositories/event.repository.interface';
 import { Event } from '../../../domain/entities/event.entity';
 
 @Injectable()
 export class SupabaseEventRepository implements IEventRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Event | null> {
@@ -34,7 +35,7 @@ export class SupabaseEventRepository implements IEventRepository {
   async create(data: Partial<Event>): Promise<Event> {
     const { data: created, error } = await this.supabase
       .from('events')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -49,7 +50,7 @@ export class SupabaseEventRepository implements IEventRepository {
   ): Promise<Event> {
     const { data: updated, error } = await this.supabase
       .from('events')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

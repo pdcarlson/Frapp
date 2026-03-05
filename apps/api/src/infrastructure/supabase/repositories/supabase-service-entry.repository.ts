@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
 import { ServiceEntry } from '../../../domain/entities/service-entry.entity';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry | null> {
@@ -45,7 +46,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   async create(data: Partial<ServiceEntry>): Promise<ServiceEntry> {
     const { data: created, error } = await this.supabase
       .from('service_entries')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -60,7 +61,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
   ): Promise<ServiceEntry> {
     const { data: updated, error } = await this.supabase
       .from('service_entries')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

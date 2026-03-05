@@ -14,15 +14,59 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migration safety checks
+        run: npm run check:migration-safety
+
+      - name: API contract checks
+        run: npm run check:api-contract
+
       - name: Trigger Render staging deploy
         if: secrets.RENDER_DEPLOY_HOOK_URL_STAGING != ''
         run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}"
+
+      - name: Staging health smoke check
+        if: secrets.API_STAGING_HEALTHCHECK_URL != ''
+        run: curl -fsSL "${{ secrets.API_STAGING_HEALTHCHECK_URL }}"
 
   deploy-production:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Migration safety checks
+        run: npm run check:migration-safety
+
+      - name: API contract checks
+        run: npm run check:api-contract
+
       - name: Trigger Render production deploy
         if: secrets.RENDER_DEPLOY_HOOK_URL != ''
         run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+
+      - name: Production health smoke check
+        if: secrets.API_PRODUCTION_HEALTHCHECK_URL != ''
+        run: curl -fsSL "${{ secrets.API_PRODUCTION_HEALTHCHECK_URL }}"

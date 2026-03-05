@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type {
   IChapterDocumentRepository,
   ChapterDocumentFilter,
@@ -10,7 +10,8 @@ import type { ChapterDocument } from '../../../domain/entities/chapter-document.
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(
@@ -54,7 +55,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   async create(data: Partial<ChapterDocument>): Promise<ChapterDocument> {
     const { data: created, error } = await this.supabase
       .from('chapter_documents')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -73,7 +74,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
   async moveToRoot(folder: string, chapterId: string): Promise<void> {
     const { error } = await this.supabase
       .from('chapter_documents')
-      .update({ folder: null })
+      .update({ folder: null } as never)
       .eq('chapter_id', chapterId)
       .eq('folder', folder);
     if (error) throw error;

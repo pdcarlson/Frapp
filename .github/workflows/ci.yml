@@ -14,8 +14,18 @@ jobs:
   lint-typecheck-test:
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce pull request branch policy
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ "${{ github.base_ref }}" == "main" && "${{ github.head_ref }}" != "preview" ]]; then
+            echo "::error::PRs targeting main must use preview as the source branch."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -25,6 +35,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check migration safety (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Check migration safety (push)
+        if: github.event_name == 'push'
+        run: npm run check:migration-safety
 
       - name: Build packages
         run: npx turbo run build --filter='./packages/*'
@@ -38,12 +56,17 @@ jobs:
       - name: Test (API)
         run: npm run test -w apps/api
 
+      - name: Check API contract drift
+        run: npm run check:api-contract
+
   build:
     needs: lint-typecheck-test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4

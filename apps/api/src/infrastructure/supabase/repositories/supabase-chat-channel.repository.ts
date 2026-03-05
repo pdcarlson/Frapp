@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IChatChannelRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatChannel } from '../../../domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseChatChannelRepository implements IChatChannelRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ChatChannel | null> {
@@ -55,7 +56,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
   async create(data: Partial<ChatChannel>): Promise<ChatChannel> {
     const { data: created, error } = await this.supabase
       .from('chat_channels')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -69,7 +70,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
   ): Promise<ChatChannel> {
     const { data: updated, error } = await this.supabase
       .from('chat_channels')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()
