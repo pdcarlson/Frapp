@@ -93,14 +93,13 @@ function dryRun(projectRef) {
   console.log("\n── Dry Run ──────────────────────────────────────────────");
   console.log("  Checking what migrations would be applied...\n");
 
-  // Link to the project first
-  run(`npx supabase link --project-ref ${projectRef}`, { allowFailure: true });
+  // Link to the project first — failure here is fatal
+  console.log("  Linking to Supabase project...");
+  run(`npx supabase link --project-ref ${projectRef}`);
 
-  // Show migration status
-  const output = run("npx supabase migration list", {
-    capture: true,
-    allowFailure: true,
-  });
+  // Show migration status — failure here is fatal
+  console.log("  Listing migration status...");
+  const output = run("npx supabase migration list", { capture: true });
 
   if (output) {
     console.log("\n  Migration status:");

@@ -426,11 +426,23 @@ Production deploys additionally require manual approval before the migration ste
 
 See `CONTRIBUTING.md` for the full list of CI jobs and external checks required for merge.
 
-### Secrets in CI
+### Secrets in CI vs CD
 
-CI does **not** use placeholder secrets. The CI pipeline only runs lint, typecheck, and tests — none of which require runtime secrets. Vercel and Render perform their own builds with provider-native environment variables synced from Infisical.
+**CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed. The CI pipeline only runs static checks and unit tests.
 
-The only GitHub secrets needed are `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` for bootstrapping the Infisical connection in deploy workflows.
+**CD (deploy workflows)** requires several GitHub Secrets for deployments and migrations:
+
+| Secret | Used by | Purpose |
+| --- | --- | --- |
+| `RENDER_DEPLOY_HOOK_URL` | deploy-api.yml | Trigger production API deploy |
+| `RENDER_DEPLOY_HOOK_URL_STAGING` | deploy-api.yml | Trigger staging API deploy |
+| `API_PRODUCTION_HEALTHCHECK_URL` | deploy-api.yml | Post-deploy health check |
+| `API_STAGING_HEALTHCHECK_URL` | deploy-api.yml | Post-deploy health check |
+| `SUPABASE_ACCESS_TOKEN` | deploy-api.yml | Authenticate Supabase CLI for migrations |
+| `SUPABASE_PROJECT_REF_STAGING` | deploy-api.yml | Target staging DB for migrations |
+| `SUPABASE_PROJECT_REF_PRODUCTION` | deploy-api.yml | Target production DB for migrations |
+
+Once Infisical is configured, these secrets will be injected via the `@infisical/secrets-action` and only `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` will remain as direct GitHub Secrets.
 
 ---
 
@@ -452,11 +464,13 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the detailed setup guide and rotat
 
 | Infisical → | Provider | Scope |
 | --- | --- | --- |
-| staging secrets | Vercel (frapp-web, frapp-landing, frapp-docs) | Preview environment |
-| production secrets | Vercel (frapp-web, frapp-landing, frapp-docs) | Production environment |
+| staging secrets | Vercel (frapp-web, frapp-landing) | Preview environment |
+| production secrets | Vercel (frapp-web, frapp-landing) | Production environment |
 | staging secrets | Render (frapp-api-staging) | Service env vars |
 | production secrets | Render (frapp-api-prod) | Service env vars |
 | deploy hooks, tokens | GitHub Actions | Repository secrets |
+
+> **Note:** frapp-docs is excluded from Vercel secret syncs — the docs app has no environment variables.
 
 ---
 

@@ -10,8 +10,10 @@ permissions:
 
 jobs:
   release:
-    # Only run for merge commits (not direct pushes, which are blocked by protection)
-    if: contains(github.event.head_commit.message, 'Merge pull request')
+    # Run for merge commits only, and skip self-triggered runs from the bot.
+    if: >-
+      contains(github.event.head_commit.message, 'Merge pull request') &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,9 +35,9 @@ jobs:
 
       - name: Determine version bump
         id: bump
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          # Check PR labels from the merge commit message
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
           PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP '#\K[0-9]+' | head -1)
 
           BUMP="patch"  # Default
@@ -92,19 +94,6 @@ jobs:
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "New version: $NEW_VERSION"
 
-      - name: Update package.json version
-        run: |
-          npm version ${{ steps.new.outputs.version }} --no-git-tag-version
-          echo "Updated package.json to version ${{ steps.new.outputs.version }}"
-
-      - name: Commit version bump
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json 2>/dev/null || git add package.json
-          git commit -m "chore(release): v${{ steps.new.outputs.version }}" || echo "No changes to commit"
-          git push
-
       - name: Create tag
         run: |
           git tag -a "v${{ steps.new.outputs.version }}" -m "Release v${{ steps.new.outputs.version }}"
@@ -113,13 +102,13 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          # Get commits since last tag
+          # Get commits since last tag (exclude the current tag)
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
 
           if [ -n "$LAST_TAG" ]; then
-            COMMITS=$(git log --oneline "$LAST_TAG"..HEAD~1)
+            COMMITS=$(git log --oneline "$LAST_TAG"..HEAD)
           else
-            COMMITS=$(git log --oneline -20 HEAD~1)
+            COMMITS=$(git log --oneline -20)
           fi
 
           # Write to file for the release body

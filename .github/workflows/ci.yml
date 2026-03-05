@@ -178,9 +178,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Enforce preview-to-main policy
+        env:
+          SOURCE_BRANCH: ${{ github.head_ref }}
         run: |
-          if [[ "${{ github.head_ref }}" != "preview" ]]; then
-            echo "::error::PRs targeting main must come from the preview branch. Source: ${{ github.head_ref }}"
+          if [[ "$SOURCE_BRANCH" != "preview" ]]; then
+            echo "::error::PRs targeting main must come from the preview branch. Source: $SOURCE_BRANCH"
             exit 1
           fi
           echo "Branch policy check passed: preview → main"

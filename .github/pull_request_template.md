@@ -18,7 +18,7 @@
 
 - [ ] CI checks pass (all domain-specific jobs green)
 - [ ] Vercel preview builds succeed (web, landing, docs)
-- [ ] API unit tests: `npm test -w apps/api`
+- [ ] API unit tests: `npm run test -w apps/api`
 - [ ] `npm run check:api-contract` (if API source changes)
 - [ ] `npm run check:migration-safety` (if schema/migration changes)
 - [ ] Manual smoke test notes (if applicable)

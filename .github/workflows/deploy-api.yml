@@ -20,6 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 2
 
       - name: Detect changed paths
@@ -127,12 +128,12 @@ jobs:
         env:
           RENDER_DEPLOY_HOOK_URL_STAGING: ${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}
         run: |
-          if [ -n "$RENDER_DEPLOY_HOOK_URL_STAGING" ]; then
-            echo "Triggering Render staging deploy..."
-            curl -sf "$RENDER_DEPLOY_HOOK_URL_STAGING" || echo "::warning::Render deploy hook failed"
-          else
-            echo "::warning::RENDER_DEPLOY_HOOK_URL_STAGING not configured — skipping deploy"
+          if [ -z "$RENDER_DEPLOY_HOOK_URL_STAGING" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL_STAGING secret is not configured."
+            exit 1
           fi
+          echo "Triggering Render staging deploy..."
+          curl -sf "$RENDER_DEPLOY_HOOK_URL_STAGING"
 
       - name: Wait for deploy to propagate
         run: sleep 15
@@ -154,7 +155,8 @@ jobs:
             echo "Attempt $i/6 — retrying in 20s..."
             sleep 20
           done
-          echo "::warning::Health check did not pass after 6 attempts (2 min)."
+          echo "::error::Staging health check failed after 6 attempts (2 min)."
+          exit 1
 
   # ── Deploy API to production ───────────────────────────────────────────
   deploy-production:
@@ -171,12 +173,12 @@ jobs:
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
-            echo "Triggering Render production deploy..."
-            curl -sf "$RENDER_DEPLOY_HOOK_URL" || echo "::warning::Render deploy hook failed"
-          else
-            echo "::warning::RENDER_DEPLOY_HOOK_URL not configured — skipping deploy"
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured."
+            exit 1
           fi
+          echo "Triggering Render production deploy..."
+          curl -sf "$RENDER_DEPLOY_HOOK_URL"
 
       - name: Wait for deploy to propagate
         run: sleep 15
@@ -198,7 +200,8 @@ jobs:
             echo "Attempt $i/6 — retrying in 20s..."
             sleep 20
           done
-          echo "::warning::Health check did not pass after 6 attempts (2 min)."
+          echo "::error::Production health check failed after 6 attempts (2 min)."
+          exit 1
 
   # ── Skip notification (CI failed) ──────────────────────────────────────
   skip-on-failure:

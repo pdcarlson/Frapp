@@ -6,7 +6,7 @@
 
 Frapp uses a **two-branch model** with `preview` (staging) and `main` (production). There is no `develop` branch.
 
-```
+```text
 feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (production)
 ```
 
@@ -76,7 +76,7 @@ git checkout -b feature/123-my-feature
 
 Use conventional commit messages:
 
-```
+```text
 type(scope): description
 ```
 

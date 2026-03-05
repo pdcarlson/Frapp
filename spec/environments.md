@@ -163,7 +163,6 @@ CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Eac
 | `api-tests` | API Jest unit tests (377+ tests) | Yes (hard) |
 | `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes |
 | `migration-safety` | Migration filename validation + promotion docs | Yes |
-| `docs-sync-check` | Code changes include docs/spec updates (PR only) | Yes |
 | `mobile-validate` | Mobile app lint + typecheck | Yes |
 | `branch-policy` | PRs to `main` must come from `preview` | Yes |
 
@@ -176,7 +175,9 @@ These are provided by third-party integrations and are also required for merge:
 | `Vercel – frapp-web` | Vercel | Next.js build succeeds (web dashboard) |
 | `Vercel – frapp-landing` | Vercel | Next.js build succeeds (landing page) |
 | `Vercel – frapp-docs` | Vercel | Next.js build succeeds (docs site) |
-| `CodeRabbit` | CodeRabbit | AI code review (blocks via request-changes workflow) |
+| `Docs / build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
+
+**CodeRabbit** is not a required status check — it is enforced as a **review-based blocker** via the `request_changes_workflow` setting in `.coderabbit.yaml`. When CodeRabbit finds issues, it posts a "Request Changes" review which blocks merge through GitHub's PR review mechanism. Push new commits to dismiss the stale review and trigger a re-review. As admin, you can manually dismiss the review if you disagree.
 
 ### Key Design Decisions
 
@@ -228,7 +229,14 @@ Production deployments additionally require manual approval before the migration
 
 ### Deploy Ordering
 
-Vercel and Render deployments run in parallel after merge. For breaking API changes, use backward-compatible migration patterns: deploy the new API first (which handles both old and new schemas), then deploy frontends that use the new contract. Document breaking changes in the PR description and coordinate manually when needed.
+**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+
+**Exception — breaking API changes:** When a change introduces backward-incompatible API modifications, operators must coordinate manually:
+1. Deploy the new API first (which should support both old and new schemas during the transition).
+2. Verify the API is healthy via the health check.
+3. Then allow frontend deploys to proceed (they happen automatically but rely on the updated API).
+
+Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ---
 

@@ -6,7 +6,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 ## Architecture
 
-```
+```text
 ┌──────────────────────────────────┐
 │        Infisical Cloud           │
 │                                  │
