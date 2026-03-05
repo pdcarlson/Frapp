@@ -9,101 +9,196 @@ on:
     branches: [main, preview]
 
 jobs:
-  # ── Check if API-related files changed ──────────────────────────────────
+  # ── Check if deploy-relevant files changed ─────────────────────────────
   check-changes:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
       api-changed: ${{ steps.filter.outputs.api-changed }}
+      migrations-changed: ${{ steps.filter.outputs.migrations-changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
-      - name: Check for API-related changes
+      - name: Detect changed paths
         id: filter
         run: |
           CHANGED=$(git diff --name-only HEAD~1 2>/dev/null || echo "")
-          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/|supabase/migrations/)'; then
+
+          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
             echo "api-changed=true" >> "$GITHUB_OUTPUT"
-            echo "API-related files changed — deploy will proceed."
+            echo "API-related files changed."
           else
             echo "api-changed=false" >> "$GITHUB_OUTPUT"
-            echo "No API-related files changed — skipping deploy."
+            echo "No API-related files changed."
           fi
 
-  # ── Deploy to staging ───────────────────────────────────────────────────
-  deploy-staging:
+          if echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
+            echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Migration files changed."
+          else
+            echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
+            echo "No migration files changed."
+          fi
+
+  # ── Run database migrations (staging) ──────────────────────────────────
+  migrate-staging:
     needs: check-changes
     if: |
-      needs.check-changes.outputs.api-changed == 'true' &&
+      needs.check-changes.outputs.migrations-changed == 'true' &&
       github.event.workflow_run.head_branch == 'preview'
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Trigger Render staging deploy
-        if: env.RENDER_DEPLOY_HOOK_URL_STAGING != ''
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@latest
+
+      - name: Run migrations (dry-run)
         env:
-          RENDER_DEPLOY_HOOK_URL_STAGING: ${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}
-        run: |
-          echo "Triggering Render staging deploy..."
-          curl -sf "$RENDER_DEPLOY_HOOK_URL_STAGING" || echo "::warning::Render deploy hook failed or not configured"
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_STAGING }}
+        run: node scripts/run-migration.mjs --env staging --dry-run
 
-      - name: Wait for deploy to start
-        run: sleep 10
-
-      - name: Staging health smoke check
-        if: env.API_STAGING_HEALTHCHECK_URL != ''
+      - name: Run migrations (apply)
         env:
-          API_STAGING_HEALTHCHECK_URL: ${{ secrets.API_STAGING_HEALTHCHECK_URL }}
-        run: |
-          echo "Waiting for staging API to become healthy..."
-          for i in 1 2 3 4 5; do
-            if curl -fsSL "$API_STAGING_HEALTHCHECK_URL" >/dev/null 2>&1; then
-              echo "Staging API is healthy."
-              exit 0
-            fi
-            echo "Attempt $i failed, retrying in 15s..."
-            sleep 15
-          done
-          echo "::warning::Staging health check did not pass after 5 attempts."
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_STAGING }}
+        run: node scripts/run-migration.mjs --env staging
 
-  # ── Deploy to production ────────────────────────────────────────────────
-  deploy-production:
+  # ── Run database migrations (production) ───────────────────────────────
+  # NOTE: The "production" environment has protection rules that require
+  # manual approval. This means the workflow will pause here and wait for
+  # an admin to approve before applying production migrations.
+  migrate-production:
     needs: check-changes
     if: |
-      needs.check-changes.outputs.api-changed == 'true' &&
+      needs.check-changes.outputs.migrations-changed == 'true' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@latest
+
+      - name: Run migrations (dry-run)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_PRODUCTION }}
+        run: node scripts/run-migration.mjs --env production --dry-run
+
+      - name: Run migrations (apply)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF_PRODUCTION }}
+        run: node scripts/run-migration.mjs --env production
+
+  # ── Deploy API to staging ──────────────────────────────────────────────
+  deploy-staging:
+    needs: [check-changes, migrate-staging]
+    # Run if API changed. If migrations also changed, wait for them first.
+    # If only API changed (no migrations), skip the migrate job dependency.
+    if: |
+      always() &&
+      needs.check-changes.outputs.api-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'preview' &&
+      (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Trigger Render staging deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL_STAGING: ${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}
+        run: |
+          if [ -n "$RENDER_DEPLOY_HOOK_URL_STAGING" ]; then
+            echo "Triggering Render staging deploy..."
+            curl -sf "$RENDER_DEPLOY_HOOK_URL_STAGING" || echo "::warning::Render deploy hook failed"
+          else
+            echo "::warning::RENDER_DEPLOY_HOOK_URL_STAGING not configured — skipping deploy"
+          fi
+
+      - name: Wait for deploy to propagate
+        run: sleep 15
+
+      - name: Health smoke check
+        env:
+          API_STAGING_HEALTHCHECK_URL: ${{ secrets.API_STAGING_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$API_STAGING_HEALTHCHECK_URL" ]; then
+            echo "::warning::Health check URL not configured — skipping"
+            exit 0
+          fi
+          echo "Waiting for staging API to become healthy..."
+          for i in 1 2 3 4 5 6; do
+            if curl -fsSL "$API_STAGING_HEALTHCHECK_URL" >/dev/null 2>&1; then
+              echo "✅ Staging API is healthy."
+              exit 0
+            fi
+            echo "Attempt $i/6 — retrying in 20s..."
+            sleep 20
+          done
+          echo "::warning::Health check did not pass after 6 attempts (2 min)."
+
+  # ── Deploy API to production ───────────────────────────────────────────
+  deploy-production:
+    needs: [check-changes, migrate-production]
+    if: |
+      always() &&
+      needs.check-changes.outputs.api-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (needs.migrate-production.result == 'success' || needs.migrate-production.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
       - name: Trigger Render production deploy
-        if: env.RENDER_DEPLOY_HOOK_URL != ''
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
-          echo "Triggering Render production deploy..."
-          curl -sf "$RENDER_DEPLOY_HOOK_URL" || echo "::warning::Render deploy hook failed or not configured"
+          if [ -n "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Triggering Render production deploy..."
+            curl -sf "$RENDER_DEPLOY_HOOK_URL" || echo "::warning::Render deploy hook failed"
+          else
+            echo "::warning::RENDER_DEPLOY_HOOK_URL not configured — skipping deploy"
+          fi
 
-      - name: Wait for deploy to start
-        run: sleep 10
+      - name: Wait for deploy to propagate
+        run: sleep 15
 
-      - name: Production health smoke check
-        if: env.API_PRODUCTION_HEALTHCHECK_URL != ''
+      - name: Health smoke check
         env:
           API_PRODUCTION_HEALTHCHECK_URL: ${{ secrets.API_PRODUCTION_HEALTHCHECK_URL }}
         run: |
+          if [ -z "$API_PRODUCTION_HEALTHCHECK_URL" ]; then
+            echo "::warning::Health check URL not configured — skipping"
+            exit 0
+          fi
           echo "Waiting for production API to become healthy..."
-          for i in 1 2 3 4 5; do
+          for i in 1 2 3 4 5 6; do
             if curl -fsSL "$API_PRODUCTION_HEALTHCHECK_URL" >/dev/null 2>&1; then
-              echo "Production API is healthy."
+              echo "✅ Production API is healthy."
               exit 0
             fi
-            echo "Attempt $i failed, retrying in 15s..."
-            sleep 15
+            echo "Attempt $i/6 — retrying in 20s..."
+            sleep 20
           done
-          echo "::warning::Production health check did not pass after 5 attempts."
+          echo "::warning::Health check did not pass after 6 attempts (2 min)."
 
   # ── Skip notification (CI failed) ──────────────────────────────────────
   skip-on-failure:
