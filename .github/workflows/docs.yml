@@ -17,7 +17,7 @@ on:
       - "package-lock.json"
       - ".github/**"
   push:
-    branches: ["main"]
+    branches: [main, preview]
     paths:
       - "apps/api/**"
       - "apps/docs/**"
