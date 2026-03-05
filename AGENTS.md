@@ -33,6 +33,34 @@ Standard commands from `package.json` scripts (run from repo root):
 - **Build:** `npm run build` (turbo, builds all packages/apps).
 - **Type-check:** `npm run check-types` (turbo).
 
+### Available credentials (Cursor agent env vars)
+
+The following tokens are available as environment variables in Cursor Cloud sessions:
+
+| Env var | Purpose | Permissions |
+|---------|---------|-------------|
+| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` | GitHub PAT for repo admin operations | Full repo access |
+| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI auth | Project management |
+
+### GitHub PAT usage policy
+
+The agent **MAY** use the GitHub PAT (`GITHUB_FULL_PERSONAL_ACCESS_TOKEN`) for:
+- Creating PRs (always targeting the correct branch per the two-branch model)
+- Closing stale/accidental PRs that the agent itself created
+- Creating GitHub labels
+- Running the branch protection configuration script
+- Reading PR status, CI logs, and branch protection rules
+
+The agent **MUST NOT** use the GitHub PAT to:
+- Merge PRs without explicit user approval
+- Delete branches without explicit user approval
+- Modify repository settings beyond branch protection (e.g., visibility, collaborators)
+- Create or modify GitHub Secrets (user must do this manually or grant explicit permission)
+- Force push to any branch
+- Create releases or tags outside of the automated release workflow
+
+When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
+
 ### Gotchas
 
 - The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Supabase local keys are deterministic JWTs output by `npx supabase status -o env`.
