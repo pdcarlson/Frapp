@@ -5,7 +5,11 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 ## Current rollout status
 
 - ✅ Landing, web, and docs are configured in Vercel with `preview` and `main` environments.
+- ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
+- ✅ Branch protection enforced on `preview` and `main`.
 - 🚧 API deployment wiring is in progress (Render services + deploy hooks + smoke checks).
+- 🚧 Infisical centralized secrets management is being set up.
+- 🚧 Automated database migrations in the deploy pipeline are planned.
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
@@ -83,7 +87,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 4. When ready for production, open a promotion PR from `preview` → `main`.
 5. Merging to `main` triggers production deployments.
 
-> `develop` is not used. `preview` is the active staging integration branch.
+> `develop` is not used. `preview` is the active staging integration branch. See `CONTRIBUTING.md` for the full branch model, merge strategy, and required checks.
 
 **Vercel environment mapping:**
 
@@ -405,7 +409,58 @@ Same steps but toggle to Live mode in Stripe dashboard. Requires business verifi
 
 ---
 
-## 10. Troubleshooting
+## 10. CI/CD Pipeline
+
+### How Deployments Are Gated
+
+All deployments are gated behind CI success. The flow is:
+
+1. **PR created** → CI runs domain-specific jobs in parallel. Vercel builds previews.
+2. **All checks pass** → PR is mergeable (branch protection enforced).
+3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
+4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
+
+Production deploys additionally require manual approval before the migration step.
+
+### Required Status Checks
+
+See `CONTRIBUTING.md` for the full list of CI jobs and external checks required for merge.
+
+### Secrets in CI
+
+CI does **not** use placeholder secrets. The CI pipeline only runs lint, typecheck, and tests — none of which require runtime secrets. Vercel and Render perform their own builds with provider-native environment variables synced from Infisical.
+
+The only GitHub secrets needed are `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` for bootstrapping the Infisical connection in deploy workflows.
+
+---
+
+## 11. Secrets Management (Infisical)
+
+All secrets are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers.
+
+### Setup
+
+1. Create an Infisical account and project named "Frapp".
+2. Create 3 environments: `local`, `staging`, `production`.
+3. Import existing secrets from Vercel/Render/EAS into Infisical.
+4. Configure secret syncs to each provider.
+5. Configure GitHub Actions to use `@infisical/secrets-action` with OIDC auth.
+
+See `docs/internal/SECRETS_MANAGEMENT.md` for the detailed setup guide and rotation policy.
+
+### Provider Sync Map
+
+| Infisical → | Provider | Scope |
+| --- | --- | --- |
+| staging secrets | Vercel (frapp-web, frapp-landing, frapp-docs) | Preview environment |
+| production secrets | Vercel (frapp-web, frapp-landing, frapp-docs) | Production environment |
+| staging secrets | Render (frapp-api-staging) | Service env vars |
+| production secrets | Render (frapp-api-prod) | Service env vars |
+| deploy hooks, tokens | GitHub Actions | Repository secrets |
+
+---
+
+## 12. Troubleshooting
 
 **Vercel build fails with "module not found"**
 → Ensure `transpilePackages` in `next.config.js` includes all `@repo/*` packages used by that app. The `vercel.json` `buildCommand` uses Turbo to build dependencies first.
