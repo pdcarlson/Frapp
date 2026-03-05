@@ -3,7 +3,7 @@ name: Trigger CodeRabbit Review
 on:
   pull_request_target:
     branches: [preview, main]
-    types: [opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, synchronize]
 
 permissions:
   pull-requests: write

@@ -18,6 +18,7 @@ Ensure pull requests targeting `preview` and `main` always receive a CodeRabbit 
      - opened
      - reopened
      - ready_for_review
+     - synchronize (new commits pushed to the PR branch)
    - This forces a review request even when CodeRabbit auto-review settings in UI are restrictive.
 
 ## If reviews are still skipped
