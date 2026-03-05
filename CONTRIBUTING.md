@@ -135,13 +135,14 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 
 ---
 
-## Secrets
+## Secrets & Environment Variables
 
 - **Never** commit secrets (`.env*`, credentials, private keys).
 - **Never** log secrets.
 - **Never** use placeholder secrets in CI/CD workflows.
 - All secrets are managed in Infisical and synced to providers (Vercel, Render, EAS, GitHub Actions).
-- See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide.
+- See **[`docs/internal/ENV_REFERENCE.md`](docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
+- See **[`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
 
 ---
 

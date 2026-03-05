@@ -4,6 +4,8 @@
 
 All secrets for the Frapp project are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers. This eliminates the need to manage secrets in multiple provider dashboards.
 
+> **For the complete list of every environment variable, per app, per environment, see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md).** This document covers the Infisical setup, syncs, and rotation policy.
+
 ## Architecture
 
 ```text

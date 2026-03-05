@@ -57,37 +57,14 @@ npm run dev
 
 ### Environment Variables
 
-**Web App (`apps/web/.env.local`)**
+Each app needs a `.env.local` file for local development. Local Supabase keys come from `npx supabase status -o env`.
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
-NEXT_PUBLIC_API_URL=http://localhost:3001/v1
-```
+See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
-**Mobile App (`apps/mobile/.env.local`)**
+**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
 
-```env
-EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
-EXPO_PUBLIC_API_URL=http://localhost:3001/v1
-```
-
-**API (`apps/api/.env.local`)**
-
-```env
-SUPABASE_URL=[REDACTED]
-SUPABASE_SERVICE_ROLE_KEY=<from supabase start output>
-
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_ID=price_...
-```
-
-**Landing (`apps/landing/.env.local`)**
-
-```env
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+```bash
+npx infisical run --env=local -- npm run start:dev -w apps/api
 ```
 
 ### Accessing Services
