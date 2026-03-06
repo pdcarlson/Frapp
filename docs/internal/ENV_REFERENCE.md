@@ -29,7 +29,7 @@ Change SUPABASE_URL → both references update instantly.
 | `staging` | Deployed to staging infra when code merges to `preview` branch | Vercel Preview, Render staging, Supabase staging project |
 | `production` | Deployed to production infra when code merges to `main` branch | Vercel Production, Render production, Supabase production project |
 
-You should **never** use staging/production values during normal local development. The `local` environment exists specifically so you develop against your local Docker Supabase, local API, etc.
+**Local uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to preview. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
 
 ---
 
@@ -44,9 +44,9 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `SUPABASE_URL` | `http://127.0.0.1:54321` | `https://YOUR_STAGING_REF.supabase.co` ← copy from Supabase staging dashboard → Settings → API → Project URL | `https://YOUR_PROD_REF.supabase.co` ← copy from Supabase production dashboard → Settings → API → Project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU` ← this is the deterministic local key, same for everyone | Copy from Supabase staging dashboard → Settings → API → `service_role` key (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → `service_role` key (⚠️ secret!) |
 | `SUPABASE_ANON_KEY` | `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0` ← this is the deterministic local key, same for everyone | Copy from Supabase staging dashboard → Settings → API → `anon` `public` key | Copy from Supabase production dashboard → Settings → API → `anon` `public` key |
-| `STRIPE_SECRET_KEY` | `sk_test_placeholder` ← literal string, billing flows won't work locally unless you use a real test key | Copy from Stripe dashboard → Developers → API keys → Secret key (test mode: `sk_test_...`) | Copy from Stripe dashboard → Developers → API keys → Secret key (live mode: `sk_live_...`) |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_placeholder` ← literal string, webhooks won't work locally unless you use Stripe CLI | Copy from Stripe dashboard → Developers → Webhooks → your staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → your production endpoint → Signing secret |
-| `STRIPE_PRICE_ID` | `price_placeholder` ← literal string, subscription flows won't work locally unless you create a test price | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`) | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`) |
+| `STRIPE_SECRET_KEY` | **Same as staging** — use your real Stripe test-mode key (`sk_test_...`) so you can test billing flows locally. Copy from Stripe dashboard → Developers → API keys → Secret key (test mode). | ← same `sk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Secret key (live mode: `sk_live_...`) |
+| `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/billing/webhook` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
+| `STRIPE_PRICE_ID` | **Same as staging** — use the same test-mode Price ID. Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`). | ← same `price_...` as local | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (production `price_...`) |
 | `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
 | `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
 
@@ -56,7 +56,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 |---|---|---|---|
 | `PORT` | `3001` | `3001` | `3001` |
 | `NODE_ENV` | `development` | `production` | `production` |
-| `SENTRY_DSN` | _(leave empty — no error tracking locally)_ | Copy from Sentry → Settings → Client Keys → DSN | Copy from Sentry → Settings → Client Keys → DSN |
+| `SENTRY_DSN` | **Same as staging** — use the same DSN so errors during local development show up in Sentry. Copy from Sentry → Settings → Client Keys → DSN. | ← same DSN as local | Copy from Sentry → Settings → Client Keys → DSN (use a separate production project if you want isolation) |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | `0.1` | `0.1` |
 
 ### CD Secrets (Deploy Workflows Only)
