@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/Infisical/infisical/main/.infisical.schema.json",
-  "workspaceId": "REPLACE_WITH_INFISICAL_PROJECT_ID",
+  "workspaceId": "a207b6c2-0be2-4507-a8fb-9a21ee8538bd",
   "defaultEnvironment": "local",
   "gitBranchToEnvironmentMapping": {
     "main": "production",
