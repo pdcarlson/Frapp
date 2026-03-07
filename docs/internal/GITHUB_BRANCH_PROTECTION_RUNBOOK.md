@@ -92,7 +92,38 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 ### CodeRabbit (Review-Based Blocker)
 
-CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review. Since branch protection requires "Dismiss stale reviews", pushing new commits dismisses the stale CodeRabbit review and triggers a new one. As admin, you can manually dismiss CodeRabbit's review if you disagree.
+CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review. Since branch protection requires "Dismiss stale reviews", pushing new commits dismisses the stale CodeRabbit review and triggers a new one. As admin, you can manually dismiss CodeRabbit's review if you disagree, then add a human approval to satisfy the required review count.
+
+`CodeRabbit` is intentionally **not** a required status check. It is enforced through PR reviews only.
+
+## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
+
+Use this sequence:
+
+1. Inspect what branch protection currently requires:
+
+```bash
+GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh api repos/pdcarlson/Frapp/branches/preview/protection
+```
+
+2. Inspect what the PR actually reported:
+
+```bash
+GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr checks <PR_NUMBER>
+```
+
+3. Compare names exactly (including capitalization and punctuation):
+   - Required checks are workflow/job scoped (`CI / api-tests`, `Docs / build-and-lint`)
+   - External checks are status contexts (`Vercel – frapp-web`)
+
+Common causes and fixes:
+
+- **Workflow path filters + required checks:** if a required workflow is skipped by `paths`, GitHub waits forever for a check that never runs.  
+  **Fix:** required workflows must run on every PR to protected branches.
+- **Job/workflow renames:** required check name no longer matches emitted name.  
+  **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
+- **External app outage/stuck status (Vercel/CodeRabbit):** check context does not finalize.  
+  **Fix:** rerun provider check or temporarily remove that check per Emergency Override, then re-apply protections.
 
 ## Verification Checklist
 

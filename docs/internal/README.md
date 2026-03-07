@@ -18,6 +18,7 @@ Use this area for:
 - `CODERABBIT_RUNBOOK.md`
 - `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
 - `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
+- `PR_REVIEW_PROCESS.md`
 - `INCIDENT_RESPONSE_API_DOWN.md`
 - `INCIDENT_RESPONSE_WEBHOOK_FAILURES.md`
 - `INCIDENT_RESPONSE_DB_LATENCY.md`

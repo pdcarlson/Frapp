@@ -2,8 +2,8 @@
 # https://docs.coderabbit.ai/reference/configuration
 
 reviews:
-  # Post a status summary comment on PRs
-  review_status: true
+  # Keep CodeRabbit as a review blocker only (avoid long-lived pending status checks).
+  review_status: false
 
   # Use "Request Changes" reviews when issues are found.
   # This blocks merge via GitHub's PR review requirement in branch protection.

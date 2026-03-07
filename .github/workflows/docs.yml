@@ -2,36 +2,9 @@ name: Docs
 
 on:
   pull_request:
-    paths:
-      - "apps/api/**"
-      - "apps/docs/**"
-      - "apps/landing/**"
-      - "apps/mobile/**"
-      - "apps/web/**"
-      - "docs/**"
-      - "packages/**"
-      - "spec/**"
-      - "supabase/**"
-      - "scripts/check-docs-impact.mjs"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/**"
+    branches: [main, preview]
   push:
     branches: [main, preview]
-    paths:
-      - "apps/api/**"
-      - "apps/docs/**"
-      - "apps/landing/**"
-      - "apps/mobile/**"
-      - "apps/web/**"
-      - "docs/**"
-      - "packages/**"
-      - "spec/**"
-      - "supabase/**"
-      - "scripts/check-docs-impact.mjs"
-      - "package.json"
-      - "package-lock.json"
-      - ".github/**"
 
 jobs:
   build-and-lint:

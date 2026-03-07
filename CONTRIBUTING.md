@@ -64,6 +64,8 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 ## PR Workflow
 
+For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
+
 ### 1. Create a feature branch
 
 ```bash
