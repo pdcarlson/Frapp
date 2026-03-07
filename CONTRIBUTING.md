@@ -15,7 +15,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 | `main` | Production-ready code | Triggers production deploys (Vercel, Render) |
 | `preview` | Staging integration | Triggers staging deploys (Vercel preview, Render staging) |
 | `feature/*` | Short-lived feature work | PR preview URLs only; merged into `preview` |
-| `hotfix/*` | Emergency production fixes | Branch from `main`, PR to `main`, then cherry-pick to `preview` |
+| `hotfix/*` | Emergency production fixes | Branch from `preview`, PR to `preview`, then fast-track promotion PR to `main` |
 
 ### Rules
 
@@ -23,7 +23,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 - **Feature branches** are created from `preview` and target `preview` via PR.
 - **Production promotion** is done via PR from `preview` → `main`.
 - **PRs to `main`** must come from `preview` (enforced by CI).
-- **Hotfixes** branch from `main`, PR to `main`, then immediately cherry-pick or merge back to `preview`.
+- **Hotfixes** branch from `preview`, merge to `preview`, then fast-track a promotion PR to `main`.
 
 ---
 

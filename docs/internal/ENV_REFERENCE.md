@@ -151,7 +151,7 @@ Reads the `EXPO_PUBLIC_*` references:
 | 4 | production | Vercel → frapp-landing (Production scope) | `NEXT_PUBLIC_APP_URL` |
 | 5 | staging | Render → frapp-api-staging | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
 | 6 | production | Render → frapp-api-prod | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
-| 7 | per-env | GitHub Actions (OIDC) | `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`, `SUPABASE_*` |
+| 7 | per-env | GitHub environment-scoped secrets (transitional) | `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`, `SUPABASE_*` |
 
 **7 of 10 free-tier integrations used. frapp-docs has no env vars — no sync needed.**
 

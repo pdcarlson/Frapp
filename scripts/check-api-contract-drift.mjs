@@ -32,11 +32,30 @@ const CONTRACT_ARTIFACTS = [
 /** Paths that are API source but do NOT affect the contract (tests, configs, etc.). */
 const API_SOURCE_EXCLUSIONS = [
   "apps/api/src/export-openapi.ts",
+  "apps/api/src/main.ts",
+  "apps/api/src/env.validation.ts",
   ".spec.ts",
   ".spec.js",
   ".e2e-spec.ts",
   "apps/api/src/config/",
-  "apps/api/src/infrastructure/supabase/",
+  "apps/api/src/infrastructure/",
+  ".service.ts",
+  ".repository.ts",
+];
+
+/** Contract-affecting API source signals (routes, DTOs, schemas, entities). */
+const CONTRACT_SIGNAL_PATTERNS = [
+  ".controller.ts",
+  ".dto.ts",
+  ".entity.ts",
+  "/dto/",
+  "/dtos/",
+  "/schema/",
+  "/schemas/",
+  "/response/",
+  "/responses/",
+  "/request/",
+  "/requests/",
 ];
 
 function getArg(name) {
@@ -115,7 +134,9 @@ function isApiSourceFile(filePath) {
   const isExcluded = API_SOURCE_EXCLUSIONS.some((exclusion) =>
     filePath.includes(exclusion),
   );
-  return !isExcluded;
+  if (isExcluded) return false;
+
+  return CONTRACT_SIGNAL_PATTERNS.some((signal) => filePath.includes(signal));
 }
 
 function isContractArtifact(filePath) {

@@ -45,14 +45,18 @@ jobs:
 
           if [ -n "$PR_NUMBER" ]; then
             # Fetch PR labels using GitHub API
-            LABELS=$(curl -s \
+            LABELS=$(curl --fail --silent --show-error \
               -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" \
               | node -e "
                 const data = require('fs').readFileSync('/dev/stdin', 'utf8');
                 const pr = JSON.parse(data);
-                const labels = (pr.labels || []).map(l => l.name);
+                if (!Array.isArray(pr.labels)) {
+                  console.error('Unexpected pull request payload');
+                  process.exit(1);
+                }
+                const labels = pr.labels.map(l => l.name);
                 console.log(labels.join(','));
               ")
 
@@ -97,6 +101,8 @@ jobs:
 
       - name: Create tag
         run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           TAG="v${{ steps.new.outputs.version }}"
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
             echo "Tag $TAG already exists on remote — skipping (likely a re-run)."

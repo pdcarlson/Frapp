@@ -49,7 +49,7 @@ npx infisical run --env=local -- npm run dev -w apps/web
 
 The NestJS API uses `@nestjs/config` to load environment variables:
 
-- Reads from `process.env` and `.env.local` in development.
+- Reads from `process.env`; in development it loads `.env.local` first and then `.env`.
 - Provides typed access to configuration (database, Supabase, Stripe, etc.).
 - Validates all required variables on startup via `env.validation.ts`.
 

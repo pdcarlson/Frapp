@@ -57,7 +57,7 @@ npm run dev
 
 ### Environment Variables
 
-Each app needs a `.env.local` file for local development. Local Supabase keys come from `npx supabase status -o env`.
+If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npx supabase status -o env`.
 
 See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
@@ -169,12 +169,13 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-Deployments are gated by CI. The deploy pipeline only triggers after the CI workflow completes successfully (via `workflow_run`). This ensures broken code never deploys.
+GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are still push-triggered and enforced at merge time via required status checks.
 
 ### Deploy Pipeline (on merge)
 
 ```text
-CI passes → DB migration (dry-run then apply) → API deploy (Render) → Frontend deploy (Vercel, auto)
+CI passes → DB migration (dry-run then apply) → API deploy (Render)
+Vercel preview/production deployments are push-triggered and can proceed in parallel, subject to required checks
 ```
 
 Production deployments additionally require manual approval before the migration step runs.
