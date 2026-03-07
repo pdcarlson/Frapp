@@ -209,12 +209,12 @@ Production deployments additionally require manual approval before the migration
 
 **Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
-**Exception — breaking API changes:** When a change introduces backward-incompatible API modifications, operators must coordinate manually:
-1. Deploy the new API first (which should support both old and new schemas during the transition).
-2. Verify the API is healthy via the health check.
-3. Then allow frontend deploys to proceed (they happen automatically but rely on the updated API).
+**Exception — breaking API changes:** Use the split-PR flow in `docs/internal/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
+1. Merge/deploy the backward-compatible API PR first.
+2. Verify the API health check passes.
+3. Merge frontend follow-up PRs only after API verification.
 
-Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
 
 ### Release labels for version tags
 

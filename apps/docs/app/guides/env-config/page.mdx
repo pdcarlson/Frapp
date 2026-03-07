@@ -14,7 +14,7 @@ We maintain three main environments:
 
 ## 2. Secrets management
 
-All staging and production secrets are centrally managed in **Infisical** and automatically synced to deployment providers (Vercel, Render, EAS).
+All staging and production secrets are centrally managed in **Infisical** and automatically synced to deployment targets (Vercel, Render, and GitHub Actions). For the full per-app/per-environment mapping, see `docs/internal/ENV_REFERENCE.md`.
 
 <Callout type="info">
   For the complete list of every environment variable, per app, per environment,
@@ -25,7 +25,7 @@ Key principles:
 - **Infisical is the single source of truth** for all non-local secrets.
 - **No `.env.example` files** — the centralized `ENV_REFERENCE.md` replaces them.
 - **No placeholder secrets in CI** — CI only runs lint, typecheck, and tests (no runtime secrets needed).
-- **Provider-native syncs** — Infisical pushes secrets to Vercel, Render, and GitHub Actions automatically.
+- **Provider-native syncs** — Infisical pushes secrets to Vercel, Render, and GitHub Actions automatically; mobile EAS credentials are managed in Expo/EAS.
 
 ## 3. Local development setup
 

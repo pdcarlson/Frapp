@@ -279,12 +279,10 @@ Render auto-detects the health check from the Dockerfile `HEALTHCHECK` directive
 
 ### 5.5 Deploy Hooks (for GitHub Actions)
 
-In each Render service → Settings → Deploy Hook → copy the URL. Store them as GitHub repo secrets:
+In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
 
-- `RENDER_DEPLOY_HOOK_URL` → production hook
-- `RENDER_DEPLOY_HOOK_URL_STAGING` → staging hook
-- `API_PRODUCTION_HEALTHCHECK_URL` → production smoke-check URL (e.g. `https://api.frapp.live/health`)
-- `API_STAGING_HEALTHCHECK_URL` → staging smoke-check URL (e.g. `https://api-staging.frapp.live/health`)
+- `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
+- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`)
 
 ---
 
