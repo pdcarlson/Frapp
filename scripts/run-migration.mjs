@@ -18,11 +18,12 @@
  * For production: SUPABASE_PROJECT_REF = production project ref
  */
 
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const MIGRATIONS_DIR = join(process.cwd(), "supabase", "migrations");
+const SUPABASE_PROJECT_REF_PATTERN = /^[a-z0-9]{15,20}$/;
 
 function getArg(name) {
   const idx = process.argv.indexOf(name);
@@ -34,17 +35,23 @@ function hasFlag(name) {
   return process.argv.includes(name);
 }
 
-function run(command, options = {}) {
-  console.log(`  $ ${command}`);
+function quoteArg(arg) {
+  return /[^\w./:-]/.test(arg) ? JSON.stringify(arg) : arg;
+}
+
+function run(command, args = [], options = {}) {
+  const rendered = [command, ...args].map(quoteArg).join(" ");
+  console.log(`  $ ${rendered}`);
+  const { capture = false, allowFailure = false, ...execOptions } = options;
   try {
-    const result = execSync(command, {
+    const result = execFileSync(command, args, {
       encoding: "utf8",
-      stdio: options.capture ? "pipe" : "inherit",
-      ...options,
+      stdio: capture ? "pipe" : "inherit",
+      ...execOptions,
     });
     return result;
   } catch (error) {
-    if (options.allowFailure) {
+    if (allowFailure) {
       console.warn(`  ⚠ Command failed (non-fatal): ${error.message}`);
       return null;
     }
@@ -68,6 +75,12 @@ function validateEnvironment() {
   const projectRef = process.env.SUPABASE_PROJECT_REF;
   if (!projectRef) {
     console.error("Error: SUPABASE_PROJECT_REF environment variable is required");
+    process.exit(2);
+  }
+  if (!SUPABASE_PROJECT_REF_PATTERN.test(projectRef)) {
+    console.error(
+      "Error: SUPABASE_PROJECT_REF must be 15-20 lowercase alphanumeric characters",
+    );
     process.exit(2);
   }
 
@@ -95,11 +108,11 @@ function dryRun(projectRef) {
 
   // Link to the project first — failure here is fatal
   console.log("  Linking to Supabase project...");
-  run(`npx supabase link --project-ref ${projectRef}`);
+  run("npx", ["supabase", "link", "--project-ref", projectRef]);
 
   // Show migration status — failure here is fatal
   console.log("  Listing migration status...");
-  const output = run("npx supabase migration list", { capture: true });
+  const output = run("npx", ["supabase", "migration", "list"], { capture: true });
 
   if (output) {
     console.log("\n  Migration status:");
@@ -114,11 +127,11 @@ function applyMigrations(projectRef) {
 
   // Link to the project
   console.log("\n  Linking to Supabase project...");
-  run(`npx supabase link --project-ref ${projectRef}`);
+  run("npx", ["supabase", "link", "--project-ref", projectRef]);
 
   // Push migrations
   console.log("\n  Pushing migrations...");
-  run("npx supabase db push");
+  run("npx", ["supabase", "db", "push"]);
 
   console.log("\n  ✅ Migrations applied successfully.");
 }
