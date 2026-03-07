@@ -123,11 +123,10 @@ function buildProtectionPayload(branch) {
     required_pull_request_reviews: {
       dismiss_stale_reviews: true,
       require_code_owner_reviews: false,
-      // CodeRabbit acts as a reviewer with request_changes_workflow.
-      // Setting to 0 means no human review is required (solo developer),
-      // but CodeRabbit's "Request Changes" will still block merge until
-      // dismissed or resolved by a new push.
-      required_approving_review_count: 0,
+      // Require at least 1 approving review. CodeRabbit acts as a reviewer
+      // via request_changes_workflow, so its approval satisfies this. As admin,
+      // you can also approve your own PRs when CodeRabbit has no objections.
+      required_approving_review_count: 1,
       require_last_push_approval: false,
     },
     restrictions: null,

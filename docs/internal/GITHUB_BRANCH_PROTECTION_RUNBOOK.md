@@ -51,7 +51,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Require branches up to date | Yes |
 | Enforce admins | Yes |
 | Dismiss stale reviews | Yes |
-| Required approving reviews | 0 (solo dev; CodeRabbit is the reviewer) |
+| Required approving reviews | 1 (CodeRabbit acts as reviewer via request_changes_workflow) |
 | Linear history | Yes |
 | Force pushes | Blocked |
 | Deletions | Blocked |
