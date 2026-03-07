@@ -96,8 +96,14 @@ jobs:
 
       - name: Create tag
         run: |
-          git tag -a "v${{ steps.new.outputs.version }}" -m "Release v${{ steps.new.outputs.version }}"
-          git push origin "v${{ steps.new.outputs.version }}"
+          TAG="v${{ steps.new.outputs.version }}"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on remote — skipping (likely a re-run)."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
 
       - name: Generate changelog
         id: changelog

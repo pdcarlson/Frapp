@@ -41,7 +41,12 @@ const API_SOURCE_EXCLUSIONS = [
 function getArg(name) {
   const idx = process.argv.indexOf(name);
   if (idx === -1) return undefined;
-  return process.argv[idx + 1];
+  const value = process.argv[idx + 1];
+  if (value === undefined || value.startsWith("-")) {
+    console.error(`Error: flag ${name} requires a value.`);
+    process.exit(2);
+  }
+  return value;
 }
 
 function getChangedFiles(base, head) {

@@ -136,12 +136,28 @@ In **all three environments**, add these references (they're the same in every e
 
 ### 6. Configure GitHub
 
-Add only these 2 secrets to GitHub repository settings (Settings → Secrets → Actions):
+Add these secrets to GitHub repository settings (Settings → Secrets → Actions):
+
+**Infisical bootstrap (permanent):**
 
 | Secret | Value |
 | --- | --- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | From Infisical Machine Identity setup |
-| `INFISICAL_PROJECT_ID` | From Infisical project settings |
+| `INFISICAL_MACHINE_IDENTITY_ID` | From Infisical Machine Identity → Client ID |
+| `INFISICAL_CLIENT_SECRET` | From Infisical Machine Identity → Client Secret |
+| `INFISICAL_PROJECT_ID` | From Infisical → Project Settings → Project ID |
+
+**Transitional (until Infisical GitHub Action injection is wired):**
+
+The deploy workflow (`deploy-api.yml`) currently uses `${{ secrets.* }}` for these. They should be set as **GitHub environment-scoped secrets** (staging and production environments) or synced via the Infisical GitHub Actions integration:
+
+| Secret | Staging value | Production value |
+| --- | --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | Account-level token (same for both) | (same) |
+| `SUPABASE_PROJECT_REF` | Staging project ref | Production project ref |
+| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL | Production deploy hook URL |
+| `API_HEALTHCHECK_URL` | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
+
+Once the `@infisical/secrets-action` is integrated into the deploy workflow, these transitional secrets can be removed from GitHub and injected from Infisical at runtime.
 
 ### 7. Update `.infisical.json`
 

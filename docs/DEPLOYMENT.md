@@ -439,7 +439,7 @@ See `CONTRIBUTING.md` for the full list of CI jobs and external checks required 
 | `SUPABASE_ACCESS_TOKEN` | Supabase CLI auth for migrations |
 | `SUPABASE_PROJECT_REF` | Target DB for migrations (value differs per environment) |
 
-Only 2 secrets are set directly in GitHub: `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_PROJECT_ID` (bootstrap). Everything else comes from Infisical.
+3 permanent GitHub Secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The deploy secrets above (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`) are transitional — they'll be replaced by Infisical runtime injection once the `@infisical/secrets-action` is integrated.
 
 See `docs/internal/ENV_REFERENCE.md` for the complete variable mapping.
 

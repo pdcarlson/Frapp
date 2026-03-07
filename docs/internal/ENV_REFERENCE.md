@@ -157,14 +157,26 @@ Reads the `EXPO_PUBLIC_*` references:
 
 ---
 
-## GitHub Secrets (Bootstrap Only)
+## GitHub Secrets
+
+**Permanent (Infisical bootstrap):**
 
 | Secret | Where to get it |
 |---|---|
-| `INFISICAL_MACHINE_IDENTITY_ID` | Infisical → Settings → Machine Identities → Create → copy ID |
-| `INFISICAL_PROJECT_ID` | Infisical → Project Settings → copy Project ID |
+| `INFISICAL_MACHINE_IDENTITY_ID` | Infisical → Organization Settings → Machine Identities → Client ID |
+| `INFISICAL_CLIENT_SECRET` | Infisical → Machine Identity → Universal Auth → Client Secret |
+| `INFISICAL_PROJECT_ID` | Infisical → Project Settings → Project ID |
 
-**That's it. 2 secrets. Everything else comes from Infisical.**
+**Transitional (until `@infisical/secrets-action` is integrated into deploy workflow):**
+
+These are used by `deploy-api.yml` via `${{ secrets.* }}`. Set them as GitHub **environment-scoped** secrets (staging and production):
+
+| Secret | Staging value | Production value |
+|---|---|---|
+| `SUPABASE_ACCESS_TOKEN` | Account-level token (same for both) | (same) |
+| `SUPABASE_PROJECT_REF` | Staging project ref | Production project ref |
+| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL | Production deploy hook URL |
+| `API_HEALTHCHECK_URL` | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
 
 ---
 

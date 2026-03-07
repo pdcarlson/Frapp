@@ -90,13 +90,15 @@ GITHUB_PAT=ghp_xxx npm run configure:branch-protection               # Apply
 | `staging` | None | Staging deploys (preview branch) |
 | `production` | Required reviewer (pdcarlson) | Production deploys + migration approval gate |
 
-**Repository Secrets (3 — Infisical bootstrap only):**
+**Repository Secrets (3 — Infisical bootstrap):**
 
 | Secret | Purpose |
 |--------|---------|
-| `INFISICAL_MACHINE_IDENTITY_ID` | Connect GitHub Actions → Infisical |
-| `INFISICAL_CLIENT_SECRET` | Machine identity auth |
+| `INFISICAL_MACHINE_IDENTITY_ID` | Machine identity Client ID for Infisical auth |
+| `INFISICAL_CLIENT_SECRET` | Machine identity Client Secret for Infisical auth |
 | `INFISICAL_PROJECT_ID` | Infisical project identifier |
+
+> **Note:** The deploy workflow (`deploy-api.yml`) currently references `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, and `API_HEALTHCHECK_URL` via `${{ secrets.* }}`. These are **transitional** — they will be replaced by Infisical OIDC injection once the `@infisical/secrets-action` is integrated. Until then, these secrets are populated via Infisical's GitHub Actions sync or set manually in GitHub environment-scoped secrets.
 
 **Labels:**
 
