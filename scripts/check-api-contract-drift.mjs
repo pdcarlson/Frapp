@@ -16,6 +16,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 /** Paths that, when changed, indicate the API contract may have changed. */
 const API_SOURCE_PATTERNS = [
@@ -140,14 +141,18 @@ function main() {
     return;
   }
 
-  if (changedArtifacts.length >= CONTRACT_ARTIFACTS.length) {
+  const validChangedArtifacts = CONTRACT_ARTIFACTS.filter(
+    (artifact) => changedArtifacts.includes(artifact) && existsSync(artifact),
+  );
+
+  if (validChangedArtifacts.length === CONTRACT_ARTIFACTS.length) {
     console.log("API contract drift check passed (artifacts updated).");
     return;
   }
 
   // API source changed but artifacts are missing from the changeset
   const missingArtifacts = CONTRACT_ARTIFACTS.filter(
-    (artifact) => !changedArtifacts.includes(artifact),
+    (artifact) => !validChangedArtifacts.includes(artifact),
   );
 
   console.error("API contract drift check failed.");

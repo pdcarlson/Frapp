@@ -103,13 +103,13 @@ Use this sequence:
 1. Inspect what branch protection currently requires:
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh api repos/pdcarlson/Frapp/branches/preview/protection
+GITHUB_TOKEN="$GITHUB_PAT" gh api repos/pdcarlson/Frapp/branches/preview/protection
 ```
 
 2. Inspect what the PR actually reported:
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr checks <PR_NUMBER>
+GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
 ```
 
 3. Compare names exactly (including capitalization and punctuation):

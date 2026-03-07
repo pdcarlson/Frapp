@@ -65,8 +65,8 @@ Key principles:
 
 To reconfigure branch protection after changing CI job names:
 ```bash
-GITHUB_PAT=ghp_xxx npm run configure:branch-protection -- --dry-run  # Review
-GITHUB_PAT=ghp_xxx npm run configure:branch-protection               # Apply
+GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run  # Review
+GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection               # Apply
 ```
 
 ### Infisical sync map

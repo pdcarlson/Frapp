@@ -29,7 +29,8 @@ jobs:
       - name: Get current version
         id: current
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(git tag --list 'v*' --sort=-version:refname | head -n1 | sed 's/^v//')
+          VERSION="${VERSION:-0.0.0}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Current version: $VERSION"
 

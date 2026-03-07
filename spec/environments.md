@@ -173,7 +173,7 @@ Deployments are gated by CI. The deploy pipeline only triggers after the CI work
 
 ### Deploy Pipeline (on merge)
 
-```
+```text
 CI passes → DB migration (dry-run then apply) → API deploy (Render) → Frontend deploy (Vercel, auto)
 ```
 
@@ -237,11 +237,12 @@ See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** fo
 
 ### Bootstrap Secrets (GitHub only)
 
-Only two secrets live directly in GitHub — these bootstrap the Infisical connection:
+Three secrets live directly in GitHub — these bootstrap the Infisical connection:
 
 | Secret | Purpose |
 | --- | --- |
 | `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical |
+| `INFISICAL_CLIENT_SECRET` | Client Secret for Infisical machine identity auth |
 | `INFISICAL_PROJECT_ID` | Project identifier |
 
 ### Local Development

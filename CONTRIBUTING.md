@@ -50,6 +50,8 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `CI / api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness |
 | `CI / migration-safety` | Migration filename validation + promotion docs |
 | `CI / mobile-validate` | Mobile app lint + typecheck |
+| `Docs / build-and-lint` | Docs build + lint + docs/spec sync checks |
+| `CI / branch-policy` | `main`-targeting PRs must come from `preview` (required on `main` only) |
 
 ### External Checks
 
@@ -58,7 +60,12 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `Vercel – frapp-web` | Vercel (Next.js build) |
 | `Vercel – frapp-landing` | Vercel (Next.js build) |
 | `Vercel – frapp-docs` | Vercel (Next.js build) |
-| CodeRabbit review | CodeRabbit (AI code review) |
+
+### Review Blockers (not status checks)
+
+| Check | Provider |
+| --- | --- |
+| CodeRabbit review (`request_changes_workflow`) | CodeRabbit (AI code review) |
 
 ---
 

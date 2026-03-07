@@ -16,7 +16,10 @@ on:
 jobs:
   # ── Check if deploy-relevant files changed ─────────────────────────────
   check-changes:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     outputs:
       api-changed: ${{ steps.filter.outputs.api-changed }}
@@ -53,6 +56,7 @@ jobs:
   migrate-staging:
     needs: check-changes
     if: |
+      needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.migrations-changed == 'true' &&
       github.event.workflow_run.head_branch == 'preview'
     runs-on: ubuntu-latest
@@ -87,6 +91,7 @@ jobs:
   migrate-production:
     needs: check-changes
     if: |
+      needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.migrations-changed == 'true' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
@@ -120,6 +125,7 @@ jobs:
     needs: [check-changes, migrate-staging]
     if: |
       always() &&
+      needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.api-changed == 'true' &&
       github.event.workflow_run.head_branch == 'preview' &&
       (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
@@ -135,7 +141,7 @@ jobs:
             exit 1
           fi
           echo "Triggering Render staging deploy..."
-          curl -sf "$RENDER_DEPLOY_HOOK_URL"
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$RENDER_DEPLOY_HOOK_URL"
 
       - name: Wait for deploy to propagate
         run: sleep 15
@@ -150,7 +156,7 @@ jobs:
           fi
           echo "Waiting for staging API to become healthy..."
           for i in 1 2 3 4 5 6; do
-            if curl -fsSL "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
               echo "✅ Staging API is healthy."
               exit 0
             fi
@@ -165,6 +171,7 @@ jobs:
     needs: [check-changes, migrate-production]
     if: |
       always() &&
+      needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.api-changed == 'true' &&
       github.event.workflow_run.head_branch == 'main' &&
       (needs.migrate-production.result == 'success' || needs.migrate-production.result == 'skipped')
@@ -180,7 +187,7 @@ jobs:
             exit 1
           fi
           echo "Triggering Render production deploy..."
-          curl -sf "$RENDER_DEPLOY_HOOK_URL"
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$RENDER_DEPLOY_HOOK_URL"
 
       - name: Wait for deploy to propagate
         run: sleep 15
@@ -195,7 +202,7 @@ jobs:
           fi
           echo "Waiting for production API to become healthy..."
           for i in 1 2 3 4 5 6; do
-            if curl -fsSL "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
               echo "✅ Production API is healthy."
               exit 0
             fi
