@@ -143,9 +143,9 @@ CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Eac
 | `mobile-validate` | Mobile app lint + typecheck | Yes |
 | `branch-policy` | PRs to `main` must come from `preview` | Yes |
 
-### External Required Checks
+### Additional Required Checks
 
-These are provided by third-party integrations and are also required for merge:
+These checks are also required for merge. Some come from third-party integrations, others from separate GitHub Actions workflows:
 
 | Check | Provider | What it validates |
 | --- | --- | --- |
@@ -215,6 +215,14 @@ Production deployments additionally require manual approval before the migration
 3. Then allow frontend deploys to proceed (they happen automatically but rely on the updated API).
 
 Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+
+### Release labels for version tags
+
+Version bumps are derived from labels on the `preview` → `main` promotion PR (the PR merged into `main`):
+
+- No release label → patch bump
+- `release:minor` → minor bump
+- `release:major` → major bump
 
 ---
 

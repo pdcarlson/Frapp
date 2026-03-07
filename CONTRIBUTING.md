@@ -157,11 +157,11 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 
 ## Version Tagging
 
-Versions are automatically created when `preview` merges to `main`:
+Versions are automatically created when the `preview` → `main` promotion PR merges:
 
-- **Default:** Patch bump (`v1.0.0` → `v1.0.1`)
-- **Minor:** Add label `release:minor` to the PR (`v1.0.0` → `v1.1.0`)
-- **Major:** Add label `release:major` to the PR (`v1.0.0` → `v2.0.0`)
+- **Default:** Patch bump when the promotion PR has no release label (`v1.0.0` → `v1.0.1`)
+- **Minor:** Add label `release:minor` to the `preview` → `main` promotion PR (`v1.0.0` → `v1.1.0`)
+- **Major:** Add label `release:major` to the `preview` → `main` promotion PR (`v1.0.0` → `v2.0.0`)
 
 The version tag and GitHub Release are created automatically by the release workflow.
 
