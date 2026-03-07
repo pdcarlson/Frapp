@@ -1,8 +1,56 @@
+# CodeRabbit Configuration
+# https://docs.coderabbit.ai/reference/configuration
+
 reviews:
-  review_status: true
+  # Keep CodeRabbit as a review blocker only (avoid long-lived pending status checks).
+  review_status: false
+
+  # Use "Request Changes" reviews when issues are found.
+  # This blocks merge via GitHub's PR review requirement in branch protection.
+  # As admin, you can dismiss the review if you disagree with the feedback.
+  request_changes_workflow: true
+
   auto_review:
     enabled: true
     drafts: false
     base_branches:
       - preview
       - main
+
+  # Domain-specific review instructions
+  path_instructions:
+    - path: "apps/api/**"
+      instructions: |
+        Focus on security, input validation, SQL injection risks, auth guard
+        usage, and error handling. Verify that new endpoints have appropriate
+        guards (SupabaseAuthGuard, ChapterGuard, PermissionsGuard). Check
+        that DTOs use class-validator decorators.
+
+    - path: "supabase/migrations/**"
+      instructions: |
+        Check for destructive operations (DROP, DELETE, TRUNCATE). Verify
+        backward compatibility with the current API. Ensure a rollback path
+        exists and is documented. Flag any migration that could cause downtime.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        Check for secret exposure (inline interpolation vs env vars), missing
+        permissions declarations, and proper condition checks. Verify that
+        workflow_run triggers check for success conclusion.
+
+    - path: "packages/**"
+      instructions: |
+        Shared packages affect multiple consumers (web, mobile, API). Check
+        for breaking changes to exported interfaces. Verify that changes are
+        backward-compatible or coordinated with consumer updates.
+
+    - path: "apps/web/**"
+      instructions: |
+        Check for proper use of server vs client components. Verify that
+        sensitive data is not exposed to the client. Check accessibility.
+
+    - path: "apps/mobile/**"
+      instructions: |
+        Check for platform-specific issues (iOS vs Android). Verify that
+        AsyncStorage usage is appropriate. Check for memory leaks in
+        useEffect cleanup.

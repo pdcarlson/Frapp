@@ -10,7 +10,12 @@ const MIGRATION_FILENAME = /^\d{14}_[a-z0-9_]+\.sql$/;
 function getArg(name) {
   const index = process.argv.indexOf(name);
   if (index === -1) return undefined;
-  return process.argv[index + 1];
+  const value = process.argv[index + 1];
+  if (value === undefined || value.startsWith("-")) {
+    console.error(`Error: flag ${name} requires a value.`);
+    process.exit(2);
+  }
+  return value;
 }
 
 function getChangedFiles(base, head) {

@@ -1,91 +1,157 @@
-# GitHub Branch Protection + Review Bot Setup
+# GitHub Branch Protection Runbook
 
 ## Purpose
 
-This runbook configures merge-blocking branch protections and review automation for:
+Configure merge-blocking branch protections for `preview` and `main`. This ensures:
 
-- `preview` (staging integration branch)
-- `main` (production branch)
-
-It also enforces the promotion policy:
-
-- Feature work merges into `preview`
-- Only promotion PRs from `preview` should merge into `main`
+- All required CI checks pass before merge
+- All Vercel builds succeed before merge
+- CodeRabbit review is addressed before merge
+- PRs to `main` must come from `preview`
+- No force pushes, no direct commits, no bypasses (even for admins)
 
 ## Prerequisites
 
-1. A GitHub token with repository administration permissions:
-   - Fine-grained PAT: **Repository administration: Read & write**
-   - Classic PAT: `repo` scope (admin rights on repository still required)
-2. Token exported in shell:
+1. A GitHub Personal Access Token (PAT) with repository administration permissions:
+   - **Fine-grained PAT:** Repository administration: Read & write
+   - **Classic PAT:** `repo` scope
+2. Export the token in your shell:
 
 ```bash
-export GITHUB_PAT=<your_token>
+export GITHUB_PAT=ghp_your_token_here
 ```
 
-Supported token env names:
+## Step 1: Dry Run (Review Before Applying)
 
-- `GITHUB_PAT` (preferred)
-- `GH_PAT`
-- `GH_TOKEN`
-- `GITHUB_TOKEN`
-- or pass a custom env key via `--token-env <ENV_VAR_NAME>`
+```bash
+npm run configure:branch-protection -- --dry-run
+```
 
-## Automation command
+This prints the exact configuration that will be applied without making any changes. Review the output carefully.
 
-From repository root:
+## Step 2: Apply
+
+```bash
+npm run configure:branch-protection
+```
+
+Or with explicit repo:
 
 ```bash
 npm run configure:branch-protection -- --repo pdcarlson/Frapp
 ```
 
-If your token is stored in a custom variable name:
+## What Gets Configured
+
+### Both branches (preview and main)
+
+| Setting | Value |
+| --- | --- |
+| Required status checks | See table below |
+| Require branches up to date | Yes |
+| Enforce admins | Yes |
+| Dismiss stale reviews | Yes |
+| Required approving reviews | 1 (CodeRabbit acts as reviewer via request_changes_workflow) |
+| Linear history | Yes |
+| Force pushes | Blocked |
+| Deletions | Blocked |
+| Conversation resolution | Required |
+
+### Required Status Checks
+
+**CI checks (from `.github/workflows/ci.yml`):**
+
+| Check name | What it validates |
+| --- | --- |
+| `CI / packages-build` | Shared packages compile |
+| `CI / lint-and-typecheck` | ESLint + TypeScript (all workspaces) |
+| `CI / api-tests` | API Jest unit tests |
+| `CI / api-contract-check` | openapi.json + api-sdk freshness |
+| `CI / migration-safety` | Migration filename + docs validation |
+| `CI / mobile-validate` | Mobile lint + typecheck |
+
+**Vercel checks (external):**
+
+| Check name | What it validates |
+| --- | --- |
+| `Vercel – frapp-web` | Web dashboard Next.js build |
+| `Vercel – frapp-landing` | Landing page Next.js build |
+| `Vercel – frapp-docs` | Docs site Next.js build |
+
+**Docs check (from `.github/workflows/docs.yml`):**
+
+| Check name | What it validates |
+| --- | --- |
+| `Docs / build-and-lint` | Docs build + lint + spec sync |
+
+**main branch only:**
+
+| Check name | What it validates |
+| --- | --- |
+| `CI / branch-policy` | Source branch must be `preview` |
+
+### CodeRabbit (Review-Based Blocker)
+
+CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review. Since branch protection requires "Dismiss stale reviews", pushing new commits dismisses the stale CodeRabbit review and triggers a new one. As admin, you can manually dismiss CodeRabbit's review if you disagree, then add a human approval to satisfy the required review count.
+
+`CodeRabbit` is intentionally **not** a required status check. It is enforced through PR reviews only.
+
+## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
+
+Use this sequence:
+
+1. Inspect what branch protection currently requires:
 
 ```bash
-npm run configure:branch-protection -- --repo pdcarlson/Frapp --token-env YOUR_CUSTOM_PAT_VAR
+GITHUB_TOKEN="$GITHUB_PAT" gh api repos/pdcarlson/Frapp/branches/preview/protection
 ```
 
-Optional dry-run:
+2. Inspect what the PR actually reported:
 
 ```bash
-npm run configure:branch-protection -- --repo pdcarlson/Frapp --dry-run
+GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
 ```
 
-Optional custom required checks:
+3. Compare names exactly (including capitalization and punctuation):
+   - Required checks are workflow/job scoped (`CI / api-tests`, `Docs / build-and-lint`)
+   - External checks are status contexts (`Vercel – frapp-web`)
 
-```bash
-npm run configure:branch-protection -- --repo pdcarlson/Frapp --checks "CI / lint-typecheck-test,CI / build"
-```
+Common causes and fixes:
 
-## What the script configures
+- **Workflow path filters + required checks:** if a required workflow is skipped by `paths`, GitHub waits forever for a check that never runs.  
+  **Fix:** required workflows must run on every PR to protected branches.
+- **Job/workflow renames:** required check name no longer matches emitted name.  
+  **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
+- **External app outage/stuck status (Vercel/CodeRabbit):** check context does not finalize.  
+  **Fix:** rerun provider check or temporarily remove that check per Emergency Override, then re-apply protections.
 
-For `preview` and `main`:
+## Verification Checklist
 
-- Required status checks:
-  - `CI / lint-typecheck-test`
-  - `CI / build`
-- Require PR reviews (1 approval)
-- Dismiss stale reviews on new commits
-- Require conversation resolution
-- Enforce protections for admins
-- Disallow force pushes and deletions
+After running the script, verify in the GitHub UI (Settings → Branches):
 
-## Existing in-repo policy guards
+- [ ] Branch protection rules exist for `preview` and `main`
+- [ ] All required status checks are listed
+- [ ] "Include administrators" is checked
+- [ ] "Require linear history" is checked
+- [ ] "Require conversation resolution" is checked
+- [ ] Test: create a PR with a deliberate lint failure → verify merge is blocked
 
-- CI gate blocks PRs targeting `main` if source branch is not `preview`.
-- `.coderabbit.yaml` includes auto-review on `preview` and `main`.
+## Emergency Override
 
-## Manual verification checklist
+If you need to merge urgently and a check is broken:
 
-After running the script, verify in GitHub UI:
+1. Go to GitHub → Settings → Branches → Edit protection rule
+2. Temporarily remove the broken check from the required list
+3. Merge the PR
+4. **Immediately re-add the check** (run `npm run configure:branch-protection` again)
+5. Document the override in the PR description
 
-1. Branch protection exists for `preview` and `main`.
-2. Required checks are listed and required.
-3. Required PR review count is 1+.
-4. "Include administrators" is enabled.
-5. PR to `main` from non-`preview` branch fails CI policy gate.
+## Updating Check Names
 
-## Notes for future agents
+If CI job names change (e.g., renaming a workflow job), update:
 
-- If API/workflow job names change, update required check names passed via `--checks`.
-- Keep this runbook and `AGENTS.md` in sync when branch policy changes.
+1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `VERCEL_CHECKS`, `DOCS_CHECKS` arrays
+2. This runbook — required checks tables
+3. `CONTRIBUTING.md` — required checks section
+4. `spec/environments.md` — CI job matrix
+5. Re-run `npm run configure:branch-protection` to apply the new names

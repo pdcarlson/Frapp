@@ -1,0 +1,144 @@
+name: Release
+
+# Automatically creates a version tag and GitHub Release when preview merges into main.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Run for merge commits only, and skip self-triggered runs from the bot.
+    if: >-
+      contains(github.event.head_commit.message, 'Merge pull request') &&
+      github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Get current version
+        id: current
+        run: |
+          VERSION=$(git tag --list 'v*' --sort=-version:refname | head -n1 | sed 's/^v//')
+          VERSION="${VERSION:-0.0.0}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Current version: $VERSION"
+
+      - name: Determine version bump
+        id: bump
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          PR_NUMBER=$(echo "$COMMIT_MSG" | grep -oP '#\K[0-9]+' | head -1)
+
+          BUMP="patch"  # Default
+
+          if [ -n "$PR_NUMBER" ]; then
+            # Fetch PR labels using GitHub API
+            LABELS=$(curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/$PR_NUMBER" \
+              | node -e "
+                const data = require('fs').readFileSync('/dev/stdin', 'utf8');
+                const pr = JSON.parse(data);
+                if (!Array.isArray(pr.labels)) {
+                  console.error('Unexpected pull request payload');
+                  process.exit(1);
+                }
+                const labels = pr.labels.map(l => l.name);
+                console.log(labels.join(','));
+              ")
+
+            echo "PR #$PR_NUMBER labels: $LABELS"
+
+            if echo "$LABELS" | grep -q "release:major"; then
+              BUMP="major"
+            elif echo "$LABELS" | grep -q "release:minor"; then
+              BUMP="minor"
+            fi
+          fi
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "Version bump: $BUMP"
+
+      - name: Calculate new version
+        id: new
+        run: |
+          CURRENT="${{ steps.current.outputs.version }}"
+          BUMP="${{ steps.bump.outputs.bump }}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "New version: $NEW_VERSION"
+
+      - name: Create tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          TAG="v${{ steps.new.outputs.version }}"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "Tag $TAG already exists on remote — skipping (likely a re-run)."
+          else
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag (exclude the current tag)
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$LAST_TAG" ]; then
+            COMMITS=$(git log --oneline "$LAST_TAG"..HEAD)
+          else
+            COMMITS=$(git log --oneline -20)
+          fi
+
+          # Write to file for the release body
+          echo "## Changes" > /tmp/changelog.md
+          echo "" >> /tmp/changelog.md
+          echo "$COMMITS" | while IFS= read -r line; do
+            echo "- $line" >> /tmp/changelog.md
+          done
+
+          echo "Changelog generated."
+          cat /tmp/changelog.md
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.new.outputs.version }}" \
+            --title "v${{ steps.new.outputs.version }}" \
+            --notes-file /tmp/changelog.md \
+            --latest

@@ -8,6 +8,8 @@ Ensure pull requests targeting `preview` and `main` always receive a CodeRabbit 
 
 1. **Repository config**: `.coderabbit.yaml`
    - Enables auto-review.
+   - Disables status-check mode (`review_status: false`) to avoid long-lived pending `CodeRabbit` checks.
+   - Keeps merge blocking via review requests (`request_changes_workflow: true`).
    - Sets `base_branches` to:
      - `preview`
      - `main`

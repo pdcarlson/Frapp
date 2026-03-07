@@ -15,11 +15,7 @@ This app cannot be tested in a headless cloud VM — it requires Expo Go on a ph
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and configure:
-
-- `EXPO_PUBLIC_SUPABASE_URL`
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_API_URL`
+Create `.env.local` with the required variables. See [`docs/internal/ENV_REFERENCE.md`](../../docs/internal/ENV_REFERENCE.md) for the complete list and values per environment.
 
 ## Common commands
 

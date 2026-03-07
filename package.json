@@ -4,6 +4,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "dev:api": "npx --no-install infisical run --env=local --path=/ -- npm run start:dev -w apps/api",
+    "dev:web": "npx --no-install infisical run --env=local --path=/ -- npm run dev -w apps/web",
+    "dev:landing": "npx --no-install infisical run --env=local --path=/ -- npm run dev -w apps/landing",
+    "dev:mobile": "npx --no-install infisical run --env=local --path=/ -- npm run start -w apps/mobile",
     "lint": "turbo run lint",
     "lint:api": "npm run lint -w apps/api",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
@@ -13,6 +17,7 @@
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs"
   },
   "devDependencies": {
+    "@infisical/cli": "^0.43.40",
     "prettier": "^3.7.4",
     "turbo": "^2.8.7",
     "typescript": "5.9.2"

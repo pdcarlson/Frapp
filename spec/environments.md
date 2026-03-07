@@ -57,37 +57,14 @@ npm run dev
 
 ### Environment Variables
 
-**Web App (`apps/web/.env.local`)**
+If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npx supabase status -o env`.
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
-NEXT_PUBLIC_API_URL=http://localhost:3001/v1
-```
+See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
-**Mobile App (`apps/mobile/.env.local`)**
+**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
 
-```env
-EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<from supabase start output>
-EXPO_PUBLIC_API_URL=http://localhost:3001/v1
-```
-
-**API (`apps/api/.env.local`)**
-
-```env
-SUPABASE_URL=[REDACTED]
-SUPABASE_SERVICE_ROLE_KEY=<from supabase start output>
-
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRICE_ID=price_...
-```
-
-**Landing (`apps/landing/.env.local`)**
-
-```env
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+```bash
+npx infisical run --env=local -- npm run start:dev -w apps/api
 ```
 
 ### Accessing Services
@@ -152,20 +129,56 @@ npm run generate -w packages/api-sdk
 
 ## 5. Continuous Integration (CI)
 
-On every PR to `preview` or `main`, a GitHub Actions workflow runs:
+CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Each job is an independent required status check — failures are visible per domain, not hidden behind a single monolith gate.
 
-1. **Install:** `npm ci`
-2. **Build shared packages:** `npx turbo run build --filter='./packages/*'`
-3. **Type check:** `npm run check-types`
-4. **Lint:** `npm run lint`
-5. **Test:** `npm run test -w apps/api`
-6. **Build:** `npm run build`
+### CI Job Matrix
 
-If any step fails, the PR cannot be merged.
+| Job | What it validates | Blocker? |
+| --- | --- | --- |
+| `packages-build` | Shared packages compile | Yes |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces | Yes |
+| `api-tests` | API Jest unit tests (377+ tests) | Yes (hard) |
+| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes |
+| `migration-safety` | Migration filename validation + promotion docs | Yes |
+| `mobile-validate` | Mobile app lint + typecheck | Yes |
+| `branch-policy` | PRs to `main` must come from `preview` | Yes |
+
+### Additional Required Checks
+
+These checks are also required for merge. Some come from third-party integrations, others from separate GitHub Actions workflows:
+
+| Check | Provider | What it validates |
+| --- | --- | --- |
+| `Vercel – frapp-web` | Vercel | Next.js build succeeds (web dashboard) |
+| `Vercel – frapp-landing` | Vercel | Next.js build succeeds (landing page) |
+| `Vercel – frapp-docs` | Vercel | Next.js build succeeds (docs site) |
+| `Docs / build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
+
+**CodeRabbit** is not a required status check — it is enforced as a **review-based blocker** via the `request_changes_workflow` setting in `.coderabbit.yaml`. When CodeRabbit finds issues, it posts a "Request Changes" review which blocks merge through GitHub's PR review mechanism. Push new commits to dismiss the stale review and trigger a re-review. As admin, you can manually dismiss the review if you disagree.
+
+### Key Design Decisions
+
+- **No CI build job.** Vercel performs its own builds with its own environment variables. Vercel's status checks serve as the build gate, eliminating the need for placeholder secrets in CI.
+- **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
+- **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
+- **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
+
+If any required check fails, the PR cannot be merged. Branch protection rules enforce this for all users, including admins.
 
 ---
 
 ## 6. Continuous Deployment (CD)
+
+GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are still push-triggered and enforced at merge time via required status checks.
+
+### Deploy Pipeline (on merge)
+
+```text
+CI passes → DB migration (dry-run then apply) → API deploy (Render)
+Vercel preview/production deployments are push-triggered and can proceed in parallel, subject to required checks
+```
+
+Production deployments additionally require manual approval before the migration step runs.
 
 ### Web, Landing, Docs (Vercel)
 
@@ -173,16 +186,16 @@ If any step fails, the PR cannot be merged.
 - Push to `preview` triggers **preview** Vercel deployments (staging domains).
 - PRs get ephemeral preview URLs automatically.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
+- Vercel builds are also required status checks — if the Vercel build fails, the PR cannot merge.
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 
 ### API (Render)
 
-- Push to `main` triggers GitHub Actions → Render production deploy hook.
-- Push to `preview` triggers GitHub Actions → Render staging deploy hook.
+- API deploys are gated behind CI success using `workflow_run` triggers.
+- Push to `main` (after CI) → GitHub Actions triggers Render production deploy hook.
+- Push to `preview` (after CI) → GitHub Actions triggers Render staging deploy hook.
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
-- Deploy workflows run migration safety and API contract checks before triggering Render.
-- Deploy workflows run optional post-deploy health smoke checks via configured healthcheck URLs.
-- Database migrations are applied manually before deploy: `npx supabase db push --project-ref <REF>`.
+- Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.
 
 ### Mobile (EAS)
@@ -192,23 +205,106 @@ If any step fails, the PR cannot be merged.
 - **OTA updates:** For JS-only changes, use `eas update` to push directly to users without App Store review.
 - **Native changes:** Full build + App Store / Google Play submission via `eas submit`.
 
+### Deploy Ordering
+
+**Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
+
+**Exception — breaking API changes:** Use the split-PR flow in `docs/internal/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
+1. Merge/deploy the backward-compatible API PR first.
+2. Verify the API health check passes.
+3. Merge frontend follow-up PRs only after API verification.
+
+Because Vercel deploys are push-triggered, hold frontend merges until the API is confirmed healthy. Breaking changes must be documented in the PR description and flagged for manual coordination. Use backward-compatible migration patterns wherever possible to avoid this scenario.
+
+### Release labels for version tags
+
+Version bumps are derived from labels on the `preview` → `main` promotion PR (the PR merged into `main`):
+
+- No release label → patch bump
+- `release:minor` → minor bump
+- `release:major` → major bump
+
 ---
 
 ## 7. Secret Management
 
-- **Local:** `.env.local` files (never committed; in `.gitignore`).
-- **CI/CD:** GitHub Actions secrets or Vercel environment variables.
-- **Staging / Production:** Environment variables set in the hosting provider (Vercel, Render, EAS). Consider a secret manager (Infisical, Doppler) for centralized management as the team grows.
+Secrets are centrally managed in **Infisical** (free tier) with automatic syncs to deployment providers. This provides a single source of truth for all environment variables across all environments.
 
-**Rule:** Never commit secrets. Never log secrets. Rotate keys immediately if exposed.
+### Infisical Setup
+
+| Property | Value |
+| --- | --- |
+| **Project** | Frapp |
+| **Environments** | `local`, `staging`, `production` |
+| **Syncs** | Vercel (×3 apps), Render (×2 services), GitHub Actions |
+
+### How It Works
+
+Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication, no environment suffixes.
+
+See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/SECRETS_MANAGEMENT.md`](../docs/internal/SECRETS_MANAGEMENT.md)** for the setup guide.
+
+### Bootstrap Secrets (GitHub only)
+
+Three secrets live directly in GitHub — these bootstrap the Infisical connection:
+
+| Secret | Purpose |
+| --- | --- |
+| `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical |
+| `INFISICAL_CLIENT_SECRET` | Client Secret for Infisical machine identity auth |
+| `INFISICAL_PROJECT_ID` | Project identifier |
+
+### Local Development
+
+**Primary method (no `.env.local` files):**
+
+```bash
+npx infisical login       # One-time setup
+npm run dev:api           # Injects from Infisical local env
+npm run dev:web
+npm run dev:landing
+npm run dev:mobile
+```
+
+**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`.
+
+### Rules
+
+- **Never** commit secrets. **Never** log secrets. Rotate keys immediately if exposed.
+- **No placeholder secrets in CI.** CI does not build apps that require runtime secrets.
+- **No environment suffixes.** `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment — no `_STAGING` / `_PRODUCTION` suffixes.
 
 ---
 
 ## 8. Database Migrations
 
-- Managed via Supabase CLI: `npx supabase migration new <name>` to create, `npx supabase db push --local` to apply locally (or omit `--local` after `supabase link` for remote projects).
-- Two workflows exist for pushing migrations to remote projects. Use `npx supabase db push --project-ref <REF>` for one-shot or CI/CD scripts where no persistent link is desired. Use `npx supabase link --project-ref <REF>` followed by `npx supabase db push` when working repeatedly against the same remote project (the link persists in `.supabase/`). See `docs/DEPLOYMENT.md` for the link-then-push pattern and section 6 above for the `--project-ref` usage in Render deploys.
+### Local Development
+
+- Create: `npx supabase migration new <name>`
+- Apply locally: `npx supabase db push --local`
+- Reset local: `npx supabase db reset` (reapplies all migrations from scratch)
+
+### Remote (Staging / Production)
+
+Two workflows exist for pushing migrations to remote projects:
+- **One-shot (CI/CD):** `npx supabase db push --project-ref <REF>` — no persistent link needed.
+- **Interactive (developer):** `npx supabase link --project-ref <REF>` followed by `npx supabase db push` — link persists in `.supabase/`.
+
+### Automated Migrations (CI/CD)
+
+Migrations run automatically as part of the deploy pipeline, after CI passes and before app deployments:
+
+1. **Pre-flight validation** (CI): `check:migration-safety` validates filenames, ordering, and promotion docs.
+2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
+3. **Apply** (CD): `supabase db push` applies pending migrations.
+4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
+5. **Production gate**: Production migrations require manual approval via GitHub Actions environment protection.
+
+### Safety Rules
+
 - Migration files live in `supabase/migrations/`.
 - Migrations are version-controlled and applied in order.
-- Promotion follows `docs/internal/DB_PROMOTION_RUNBOOK.md` and rollback follows `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
+- Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
+- Every migration should have a documented rollback strategy in `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
+- See `docs/DEPLOYMENT.md` for the full migration deployment workflow.
