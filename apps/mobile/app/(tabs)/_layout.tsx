@@ -92,6 +92,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="chat-thread"
+        options={{
+          title: "Chat Thread",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

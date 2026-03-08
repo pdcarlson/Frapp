@@ -1,5 +1,27 @@
+import { Link } from "expo-router";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
+import { frappTokens } from "@repo/theme/tokens";
 import { TaskLoopCard } from "@/components/task-loop-card";
+
+function ChatNavTile({
+  href,
+  title,
+  subtitle,
+}: {
+  href: "/chat-thread";
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable style={styles.navTile}>
+        <Text style={styles.navTileTitle}>{title}</Text>
+        <Text style={styles.navTileSubtitle}>{subtitle}</Text>
+      </Pressable>
+    </Link>
+  );
+}
 
 export default function ChatScreen() {
   return (
@@ -7,6 +29,11 @@ export default function ChatScreen() {
       title="Chat"
       subtitle="Role-aware channels with delivery state visibility for every message action."
     >
+      <ChatNavTile
+        href="/chat-thread"
+        title="Open #general thread preview"
+        subtitle="Inspect sending, sent, and retry-needed message states in one place."
+      />
       <TaskLoopCard
         category="Pinned"
         state="synced"
@@ -39,3 +66,24 @@ export default function ChatScreen() {
     </ScreenShell>
   );
 }
+
+const styles = StyleSheet.create({
+  navTile: {
+    borderRadius: frappTokens.radius.lg,
+    borderWidth: 1,
+    borderColor: frappTokens.color.surface.border,
+    backgroundColor: frappTokens.color.surface.card,
+    padding: frappTokens.spacing.lg,
+    gap: 6,
+  },
+  navTileTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: frappTokens.color.text.primary,
+  },
+  navTileSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: frappTokens.color.text.secondary,
+  },
+});
