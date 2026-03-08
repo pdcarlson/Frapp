@@ -24,5 +24,6 @@ Use this area for:
 - `INCIDENT_RESPONSE_DB_LATENCY.md`
 - `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
 - `ALERT_ROUTING.md`
+- `ACCESSIBILITY_TESTING_PROTOCOL.md`
 
 Public-facing product docs live in `apps/docs/`.

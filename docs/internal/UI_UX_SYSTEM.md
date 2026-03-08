@@ -62,6 +62,9 @@ Minimum release requirements:
 - 3:1 non-text UI contrast minimum
 - Dialogs trap focus and return focus to trigger on close
 
+Execution protocol and evidence requirements are documented in:
+- `docs/internal/ACCESSIBILITY_TESTING_PROTOCOL.md`
+
 ## 6) Motion and Feedback
 
 Adopt these timing ranges:
