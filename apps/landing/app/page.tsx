@@ -97,9 +97,33 @@ export default function Home() {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.frapp.live/signup";
   const normalizedAppUrl = appUrl.replace(/\/$/, "");
   const loginUrl = `${normalizedAppUrl}/login`;
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    name: "Frapp",
+    applicationCategory: "BusinessApplication",
+    operatingSystem: "Web, iOS, Android",
+    url: "https://frapp.live",
+    description:
+      "Frapp is the operating system for Greek Life, unifying chat, events, points, study hours, and chapter billing.",
+    offers: {
+      "@type": "Offer",
+      priceCurrency: "USD",
+      price: "149",
+      description: "Flat monthly chapter plan",
+    },
+    brand: {
+      "@type": "Brand",
+      name: "Frapp",
+    },
+  };
 
   return (
     <main className="min-h-screen bg-background text-foreground">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="text-xl font-bold tracking-tight text-navy dark:text-white">
