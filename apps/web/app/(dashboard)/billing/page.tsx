@@ -1,10 +1,12 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useInvoices } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
 
@@ -68,6 +70,9 @@ function formatDate(value: string): string {
 }
 
 export default function BillingPage() {
+  const [invoiceSearch, setInvoiceSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid" | "overdue">("all");
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
   const statusQuery = useBillingStatus();
   const invoicesQuery = useInvoices();
   const isLoading = statusQuery.isLoading || invoicesQuery.isLoading;
@@ -78,6 +83,27 @@ export default function BillingPage() {
     ? (invoicesQuery.data as InvoicePreview[])
     : fallbackInvoices;
   const visibleInvoices = usingPreviewData ? fallbackInvoices : invoices;
+  const filteredInvoices = useMemo(() => {
+    const query = invoiceSearch.trim().toLowerCase();
+    return visibleInvoices.filter((invoice) => {
+      const statusLower = invoice.status.toLowerCase();
+      if (statusFilter !== "all" && statusLower !== statusFilter) {
+        return false;
+      }
+      if (!query) return true;
+      return (
+        invoice.title.toLowerCase().includes(query) ||
+        statusLower.includes(query)
+      );
+    });
+  }, [visibleInvoices, invoiceSearch, statusFilter]);
+  const invoiceIds = filteredInvoices.map((invoice) => invoice.id);
+  const allInvoicesSelected =
+    invoiceIds.length > 0 &&
+    invoiceIds.every((invoiceId) => selectedInvoiceIds.includes(invoiceId));
+  const openCount = visibleInvoices.filter((invoice) => invoice.status === "OPEN").length;
+  const overdueCount = visibleInvoices.filter((invoice) => invoice.status === "OVERDUE").length;
+  const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
 
   if (isLoading) {
     return <LoadingState message="Loading billing overview..." />;
@@ -145,7 +171,49 @@ export default function BillingPage() {
           <CardDescription>Track dues collection and overdue balances.</CardDescription>
         </CardHeader>
         <CardContent>
-          {visibleInvoices.length === 0 ? (
+          <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <Input
+              value={invoiceSearch}
+              onChange={(event) => setInvoiceSearch(event.target.value)}
+              placeholder="Search invoice or member"
+            />
+            <select
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(
+                  event.target.value as "all" | "open" | "paid" | "overdue",
+                )
+              }
+              className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+            >
+              <option value="all">Status: All</option>
+              <option value="open">Open</option>
+              <option value="overdue">Overdue</option>
+              <option value="paid">Paid</option>
+            </select>
+          </div>
+          <div className="mb-4 flex flex-wrap gap-2 text-xs">
+            <Badge variant="secondary">Open: {openCount}</Badge>
+            <Badge variant="secondary">Overdue: {overdueCount}</Badge>
+            <Badge variant="secondary">Paid: {paidCount}</Badge>
+          </div>
+          {selectedInvoiceIds.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
+              <p className="text-sm font-medium">
+                {selectedInvoiceIds.length} invoice
+                {selectedInvoiceIds.length > 1 ? "s" : ""} selected
+              </p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline">
+                  Send reminder
+                </Button>
+                <Button size="sm" variant="outline">
+                  Export CSV
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {filteredInvoices.length === 0 ? (
             <EmptyState
               title="No invoices yet"
               description="Create your first invoice to start chapter dues collection."
@@ -155,6 +223,24 @@ export default function BillingPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible invoices"
+                      checked={allInvoicesSelected}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedInvoiceIds((previous) => [
+                            ...new Set([...previous, ...invoiceIds]),
+                          ]);
+                          return;
+                        }
+                        setSelectedInvoiceIds((previous) =>
+                          previous.filter((id) => !invoiceIds.includes(id)),
+                        );
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Invoice</TableHead>
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
@@ -162,8 +248,26 @@ export default function BillingPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleInvoices.map((invoice) => (
+                {filteredInvoices.map((invoice) => (
                   <TableRow key={invoice.id}>
+                    <TableCell className="w-10">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${invoice.title}`}
+                        checked={selectedInvoiceIds.includes(invoice.id)}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedInvoiceIds((previous) => [
+                              ...new Set([...previous, invoice.id]),
+                            ]);
+                            return;
+                          }
+                          setSelectedInvoiceIds((previous) =>
+                            previous.filter((id) => id !== invoice.id),
+                          );
+                        }}
+                      />
+                    </TableCell>
                     <TableCell className="font-medium">{invoice.title}</TableCell>
                     <TableCell>{formatCurrency(invoice.amount)}</TableCell>
                     <TableCell>
