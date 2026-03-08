@@ -13,6 +13,8 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
+import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 
 type MemberRow = Record<string, unknown>;
 const fallbackMembers: MemberRow[] = [
@@ -44,6 +46,8 @@ export default function MembersPage() {
   const [onboardingFilter, setOnboardingFilter] = useState<"all" | "complete" | "pending">("all");
   const [savedView, setSavedView] = useState<"all" | "exec" | "new">("all");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [activeMemberId, setActiveMemberId] = useState<string | null>(null);
+  const [detailSheetOpen, setDetailSheetOpen] = useState(false);
   const trimmedQuery = query.trim();
   const membersQuery = useMembers();
   const searchQuery = useMemberSearch(trimmedQuery);
@@ -93,6 +97,13 @@ export default function MembersPage() {
     visibleMemberIds.length > 0 &&
     visibleMemberIds.every((memberId) => selectedMemberIds.includes(memberId));
   const selectedCount = selectedMemberIds.length;
+  const activeMember = useMemo(
+    () =>
+      visibleMembers.find(
+        (member) => String(member.id ?? member.user_id ?? "") === activeMemberId,
+      ) ?? null,
+    [activeMemberId, visibleMembers],
+  );
 
   if (activeQuery.isLoading) {
     return <LoadingState message="Loading chapter members..." />;
@@ -106,10 +117,14 @@ export default function MembersPage() {
             <CardTitle>Members Directory</CardTitle>
             <CardDescription>Search and review chapter membership records.</CardDescription>
           </div>
-          <Button className="gap-2">
-            <UserPlus className="h-4 w-4" />
-            Invite Member
-          </Button>
+          <InviteMemberDialog
+            trigger={
+              <Button className="gap-2">
+                <UserPlus className="h-4 w-4" />
+                Invite Member
+              </Button>
+            }
+          />
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -235,6 +250,7 @@ export default function MembersPage() {
                   <TableHead>User ID</TableHead>
                   <TableHead>Roles</TableHead>
                   <TableHead>Onboarding</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -284,6 +300,18 @@ export default function MembersPage() {
                       </TableCell>
                       <TableCell>{roleCount} role(s)</TableCell>
                       <TableCell>{onboardingComplete ? "Complete" : "Pending"}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setActiveMemberId(memberId);
+                            setDetailSheetOpen(true);
+                          }}
+                        >
+                          View details
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -292,6 +320,13 @@ export default function MembersPage() {
           </CardContent>
         </Card>
       )}
+
+      <MemberDetailSheet
+        open={detailSheetOpen}
+        onOpenChange={setDetailSheetOpen}
+        member={activeMember}
+        usingPreviewData={usingPreviewData}
+      />
     </div>
   );
 }
