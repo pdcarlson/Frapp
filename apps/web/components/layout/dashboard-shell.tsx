@@ -15,7 +15,7 @@ const navItems = [
   { icon: Users, label: "Members", href: "/members" },
   { icon: CalendarDays, label: "Events", href: "/events" },
   { icon: Star, label: "Points", href: "/points" },
-  { icon: CircleDollarSign, label: "Billing", href: "#", soon: true },
+  { icon: CircleDollarSign, label: "Billing", href: "/billing" },
   { icon: BookOpen, label: "Backwork", href: "#", soon: true },
   { icon: Settings, label: "Settings", href: "#", soon: true },
 ];
@@ -27,12 +27,14 @@ export function DashboardShell({ children }: DashboardShellProps) {
     "/members": "Members",
     "/events": "Events",
     "/points": "Points Ledger",
+    "/billing": "Billing",
   };
   const actionByPath: Record<string, string> = {
     "/": "Invite Member",
     "/members": "Invite Member",
     "/events": "New Event",
     "/points": "Adjust Points",
+    "/billing": "Create Invoice",
   };
   const pageTitle = titleByPath[pathname] ?? "Dashboard";
   const pageAction = actionByPath[pathname] ?? "Open Action";
