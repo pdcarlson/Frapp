@@ -127,6 +127,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="notification-targets"
+        options={{
+          title: "Notification Destinations",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

@@ -1,4 +1,5 @@
 import { ScreenShell } from "@/components/screen-shell";
+import { NavTile } from "@/components/nav-tile";
 import { TaskLoopCard } from "@/components/task-loop-card";
 
 export default function NotificationsScreen() {
@@ -7,6 +8,12 @@ export default function NotificationsScreen() {
       title="Notification Center"
       subtitle="Unread activity, delivery priority, and deep-link readiness across chapter workflows."
     >
+      <NavTile
+        href="/notification-targets"
+        title="Open deep-link destination map"
+        description="Preview where event, chat, points, and task notifications route."
+        accessibilityHint="Open notification deep-link destination preview."
+      />
       <TaskLoopCard
         category="Events"
         state="synced"
