@@ -33,6 +33,16 @@
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
 
+## UI/UX quality gate (required for UI-touching PRs)
+
+- [ ] Token-only styling for colors/spacing/radius/motion (no ad hoc visual values).
+- [ ] One clear primary action per touched screen/section.
+- [ ] Async states complete (loading, empty, error, success, and offline/degraded when network-dependent).
+- [ ] Accessibility baseline verified (focus visibility, labels for icon-only controls, contrast checks, keyboard flow).
+- [ ] Responsive/adaptive behavior checked for impacted surfaces.
+- [ ] Microcopy uses production-grade language (no placeholder/vibe-coded copy).
+- [ ] If this PR changes UX patterns, `docs/internal/UI_UX_SYSTEM.md` and/or `docs/internal/UX_WRITING_GUIDE.md` were updated.
+
 ## Release label (preview → main only)
 
 - [ ] `release:patch` (default) / `release:minor` / `release:major`
