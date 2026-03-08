@@ -1,16 +1,24 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { InfoCard, ScreenShell } from "@/components/screen-shell";
 
 export default function ChatScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Chat</Text>
-      <Text style={styles.subtitle}>Coming soon</Text>
-    </View>
+    <ScreenShell
+      title="Chat"
+      subtitle="Role-aware channels, announcements, and DMs built for chapter communication."
+    >
+      <InfoCard
+        badge="Pinned"
+        title="#announcements"
+        body="Only officers can post. New posts notify all members."
+      />
+      <InfoCard
+        title="Recent: #general"
+        body="“Reminder: submit service hours before Sunday.”"
+      />
+      <InfoCard
+        title="Message reliability"
+        body="Outgoing messages will show sending, sent, or retry-needed states in low-connectivity conditions."
+      />
+    </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
-});

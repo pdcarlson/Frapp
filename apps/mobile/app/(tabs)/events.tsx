@@ -1,16 +1,25 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { InfoCard, ScreenShell } from "@/components/screen-shell";
 
 export default function EventsScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Events</Text>
-      <Text style={styles.subtitle}>Coming soon</Text>
-    </View>
+    <ScreenShell
+      title="Events"
+      subtitle="Check in during event windows, track attendance status, and never miss required events."
+    >
+      <InfoCard
+        badge="Today"
+        title="Chapter Meeting • 6:00 PM"
+        body="Check-in opens 15 minutes before start and closes 15 minutes after end."
+      />
+      <InfoCard
+        title="Philanthropy Event • Saturday"
+        body="Optional attendance • 15 points available."
+      />
+      <InfoCard
+        badge="Calendar"
+        title="Sync events to your phone calendar"
+        body="Use Add to Calendar to keep chapter events in your personal schedule."
+      />
+    </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
-});

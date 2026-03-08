@@ -1,16 +1,23 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { InfoCard, ScreenShell } from "@/components/screen-shell";
 
 export default function ProfileScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Profile</Text>
-      <Text style={styles.subtitle}>Coming soon</Text>
-    </View>
+    <ScreenShell
+      title="Profile"
+      subtitle="Manage your chapter identity, preferences, and notification behavior."
+    >
+      <InfoCard
+        title="Account"
+        body="Display name, photo, and bio are visible in directory and chat."
+      />
+      <InfoCard
+        title="Notifications"
+        body="Set quiet hours and category-level push preferences for announcements, events, points, and tasks."
+      />
+      <InfoCard
+        title="Theme"
+        body="Choose light, dark, or system mode with consistent contrast-safe color roles."
+      />
+    </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
-});

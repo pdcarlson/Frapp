@@ -1,16 +1,26 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { InfoCard, ScreenShell } from "@/components/screen-shell";
 
 export default function HomeScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Activity Feed</Text>
-      <Text style={styles.subtitle}>Coming soon</Text>
-    </View>
+    <ScreenShell
+      title="Activity Feed"
+      subtitle="Everything your chapter needs to notice right now, without scrolling through noise."
+    >
+      <InfoCard
+        badge="Upcoming"
+        title="Chapter Meeting • Tonight 6:00 PM"
+        body="42 members confirmed. Attendance points auto-award is enabled."
+      />
+      <InfoCard
+        badge="Announcement"
+        title="Exec update posted in #announcements"
+        body="Treasurer shared dues timeline and next action deadlines."
+      />
+      <InfoCard
+        badge="Milestone"
+        title="You moved to #4 on the leaderboard"
+        body="9 points behind #3. One event check-in can close the gap."
+      />
+    </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
-});
