@@ -75,6 +75,9 @@ Adopt these timing ranges:
 
 Motion must remain subtle, functional, and compatible with reduced-motion preferences.
 
+Motion token source:
+- `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`)
+
 ## 7) Chapter Accent Safety Rules
 
 Chapter-provided accent colors must pass minimum contrast thresholds before use:

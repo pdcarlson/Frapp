@@ -55,6 +55,18 @@ export const frappTokens = {
     body: 15,
     label: 12,
   },
+  motion: {
+    duration: {
+      micro: 140,
+      standard: 220,
+      context: 300,
+    },
+    easing: {
+      standard: "cubic-bezier(0.16, 1, 0.3, 1)",
+      entrance: "cubic-bezier(0.22, 1, 0.36, 1)",
+      exit: "cubic-bezier(0.4, 0, 1, 1)",
+    },
+  },
 } as const;
 
 export type FrappTokens = typeof frappTokens;
