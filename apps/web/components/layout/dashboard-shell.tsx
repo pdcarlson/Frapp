@@ -7,6 +7,7 @@ import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Settin
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
+import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -25,6 +26,7 @@ const navItems = [
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -59,6 +61,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
       <DashboardCommandMenu
         open={commandMenuOpen}
         onOpenChange={setCommandMenuOpen}
+      />
+      <DashboardNotificationDrawer
+        open={notificationDrawerOpen}
+        onOpenChange={setNotificationDrawerOpen}
       />
       <a
         href="#main-content"
@@ -122,7 +128,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 >
                   Search (⌘K)
                 </Button>
-                <Button variant="outline" size="icon" aria-label="Notifications">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Notifications"
+                  onClick={() => setNotificationDrawerOpen(true)}
+                >
                   <Bell className="h-4 w-4" />
                 </Button>
                 <Button size="sm" asChild>
