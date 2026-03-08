@@ -85,6 +85,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="points-details"
+        options={{
+          title: "Points Details",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

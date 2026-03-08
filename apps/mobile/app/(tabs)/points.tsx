@@ -1,5 +1,27 @@
+import { Link } from "expo-router";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
+import { frappTokens } from "@repo/theme/tokens";
 import { FeedSummaryCard, TaskLoopCard } from "@/components/task-loop-card";
+
+function PointsNavTile({
+  href,
+  title,
+  subtitle,
+}: {
+  href: "/points-details";
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable style={styles.navTile}>
+        <Text style={styles.navTileTitle}>{title}</Text>
+        <Text style={styles.navTileSubtitle}>{subtitle}</Text>
+      </Pressable>
+    </Link>
+  );
+}
 
 export default function PointsScreen() {
   return (
@@ -7,6 +29,11 @@ export default function PointsScreen() {
       title="My Points"
       subtitle="Track your balance, transaction sync health, and leaderboard momentum."
     >
+      <PointsNavTile
+        href="/points-details"
+        title="Open leaderboard details"
+        subtitle="Switch time windows and inspect top chapter ranks."
+      />
       <FeedSummaryCard
         balance="186 pts"
         rank="#4 chapter-wide"
@@ -37,3 +64,24 @@ export default function PointsScreen() {
     </ScreenShell>
   );
 }
+
+const styles = StyleSheet.create({
+  navTile: {
+    borderRadius: frappTokens.radius.lg,
+    borderWidth: 1,
+    borderColor: frappTokens.color.surface.border,
+    backgroundColor: frappTokens.color.surface.card,
+    padding: frappTokens.spacing.lg,
+    gap: 6,
+  },
+  navTileTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: frappTokens.color.text.primary,
+  },
+  navTileSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: frappTokens.color.text.secondary,
+  },
+});
