@@ -37,6 +37,9 @@ const fallbackMembers: MemberRow[] = [
 
 export default function MembersPage() {
   const [query, setQuery] = useState("");
+  const [onboardingFilter, setOnboardingFilter] = useState<"all" | "complete" | "pending">("all");
+  const [savedView, setSavedView] = useState<"all" | "exec" | "new">("all");
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const trimmedQuery = query.trim();
   const membersQuery = useMembers();
   const searchQuery = useMemberSearch(trimmedQuery);
@@ -56,6 +59,36 @@ export default function MembersPage() {
     if (!Array.isArray(raw)) return [];
     return raw as MemberRow[];
   }, [activeQuery.data, usingPreviewData, usingSearch, trimmedQuery]);
+  const visibleMembers = useMemo(() => {
+    return members.filter((member) => {
+      const onboardingComplete =
+        typeof member.has_completed_onboarding === "boolean"
+          ? member.has_completed_onboarding
+          : false;
+      const roleCount = Array.isArray(member.role_ids) ? member.role_ids.length : 0;
+
+      if (onboardingFilter === "complete" && !onboardingComplete) {
+        return false;
+      }
+      if (onboardingFilter === "pending" && onboardingComplete) {
+        return false;
+      }
+
+      if (savedView === "exec" && roleCount < 2) {
+        return false;
+      }
+      if (savedView === "new" && onboardingComplete) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [members, onboardingFilter, savedView]);
+  const visibleMemberIds = visibleMembers.map((member) => String(member.id ?? member.user_id ?? ""));
+  const allVisibleSelected =
+    visibleMemberIds.length > 0 &&
+    visibleMemberIds.every((memberId) => selectedMemberIds.includes(memberId));
+  const selectedCount = selectedMemberIds.length;
 
   if (activeQuery.isLoading) {
     return <LoadingState message="Loading chapter members..." />;
@@ -75,14 +108,42 @@ export default function MembersPage() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="relative max-w-md">
-            <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search by member name"
-              className="pl-9"
-            />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by member name"
+                className="pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={savedView}
+                onChange={(event) =>
+                  setSavedView(event.target.value as "all" | "exec" | "new")
+                }
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Saved view: All members</option>
+                <option value="exec">Saved view: Exec board</option>
+                <option value="new">Saved view: New members</option>
+              </select>
+              <select
+                value={onboardingFilter}
+                onChange={(event) =>
+                  setOnboardingFilter(
+                    event.target.value as "all" | "complete" | "pending",
+                  )
+                }
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Onboarding: All</option>
+                <option value="complete">Onboarding: Complete</option>
+                <option value="pending">Onboarding: Pending</option>
+              </select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -108,7 +169,28 @@ export default function MembersPage() {
         </Card>
       ) : null}
 
-      {members.length === 0 ? (
+      {selectedCount > 0 ? (
+        <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium">
+              {selectedCount} member{selectedCount > 1 ? "s" : ""} selected
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline">
+                Assign role
+              </Button>
+              <Button size="sm" variant="outline">
+                Mark onboarding complete
+              </Button>
+              <Button size="sm" variant="outline">
+                Remove selected
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {visibleMembers.length === 0 ? (
         <EmptyState
           title="No members match this view"
           description="Try a broader search or invite your first members to populate this directory."
@@ -126,6 +208,24 @@ export default function MembersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible members"
+                      checked={allVisibleSelected}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedMemberIds((previous) => [
+                            ...new Set([...previous, ...visibleMemberIds]),
+                          ]);
+                          return;
+                        }
+                        setSelectedMemberIds((previous) =>
+                          previous.filter((memberId) => !visibleMemberIds.includes(memberId)),
+                        );
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Member</TableHead>
                   <TableHead>User ID</TableHead>
                   <TableHead>Roles</TableHead>
@@ -133,7 +233,8 @@ export default function MembersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {members.map((member) => {
+                {visibleMembers.map((member) => {
+                  const memberId = String(member.id ?? member.user_id ?? "unknown-id");
                   const userId = String(member.user_id ?? "unknown-user");
                   const displayName =
                     typeof member.display_name === "string" && member.display_name.length > 0
@@ -145,7 +246,23 @@ export default function MembersPage() {
                       ? member.has_completed_onboarding
                       : false;
                   return (
-                    <TableRow key={String(member.id ?? userId)}>
+                    <TableRow key={memberId}>
+                      <TableCell className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${displayName}`}
+                          checked={selectedMemberIds.includes(memberId)}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedMemberIds((previous) => [...new Set([...previous, memberId])]);
+                              return;
+                            }
+                            setSelectedMemberIds((previous) =>
+                              previous.filter((candidateId) => candidateId !== memberId),
+                            );
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           <span>{displayName}</span>
