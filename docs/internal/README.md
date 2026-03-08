@@ -26,5 +26,6 @@ Use this area for:
 - `ALERT_ROUTING.md`
 - `ACCESSIBILITY_TESTING_PROTOCOL.md`
 - `STATE_MICROCOPY_PACK.md`
+- `ICONOGRAPHY_GUIDELINES.md`
 
 Public-facing product docs live in `apps/docs/`.

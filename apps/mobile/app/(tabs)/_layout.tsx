@@ -1,18 +1,21 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { frappTokens } from "@repo/theme/tokens";
+
+const TAB_ICON_SIZE = 20;
 
 const tabIcon = (
   iconName: keyof typeof Ionicons.glyphMap,
   color: string,
-  size = 20,
+  size = TAB_ICON_SIZE,
 ) => <Ionicons name={iconName} size={size} color={color} />;
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#2563eb",
-        tabBarInactiveTintColor: "#64748b",
+        tabBarActiveTintColor: frappTokens.color.brand.royalBlue,
+        tabBarInactiveTintColor: frappTokens.color.text.muted,
         tabBarStyle: {
           height: 62,
           paddingTop: 6,

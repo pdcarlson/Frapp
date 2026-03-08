@@ -98,3 +98,6 @@ A UI change is not ready unless it passes:
 6. Responsive/adaptive behavior checks
 7. Trust/copy clarity (no placeholder language)
 
+Icon sizing and usage standards are documented in:
+- `docs/internal/ICONOGRAPHY_GUIDELINES.md`
+

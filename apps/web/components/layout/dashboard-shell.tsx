@@ -50,6 +50,8 @@ const chapterPreview = {
 
 const sidebarFocusRingClassName =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+const navIconClassName = "h-4 w-4";
+const statusIconClassName = "h-3.5 w-3.5";
 
 function withAlpha(hexColor: string, opacity: number): string {
   const normalized = hexColor.replace("#", "");
@@ -129,7 +131,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                       : "text-slate-300 hover:bg-slate-800 hover:text-white",
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className={navIconClassName} />
                   <span>{item.label}</span>
                 </Link>
               ) : (
@@ -143,7 +145,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   disabled
                   title={item.statusLabel}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className={navIconClassName} />
                   <span>{item.label}</span>
                   {item.statusLabel ? (
                     <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
@@ -167,7 +169,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
               }}
             >
-              <ShieldCheck className="h-3.5 w-3.5" />
+              <ShieldCheck className={statusIconClassName} />
               <span>Subscription Active</span>
             </div>
             {chapterAccent.fallbackApplied ? (
