@@ -1,31 +1,5 @@
-import { Link } from "expo-router";
-import { Pressable, StyleSheet, Text } from "react-native";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
-import { frappTokens } from "@repo/theme/tokens";
-
-function NavTile({
-  href,
-  title,
-  description,
-}: {
-  href:
-    | "/notifications"
-    | "/preferences"
-    | "/task-center"
-    | "/service-hours"
-    | "/documents-reports";
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link href={href} asChild>
-      <Pressable style={styles.tile}>
-        <Text style={styles.tileTitle}>{title}</Text>
-        <Text style={styles.tileDescription}>{description}</Text>
-      </Pressable>
-    </Link>
-  );
-}
+import { NavTile } from "@/components/nav-tile";
 
 export default function MoreScreen() {
   return (
@@ -37,26 +11,31 @@ export default function MoreScreen() {
         href="/notifications"
         title="Notification Center"
         description="Review unread activity and category-level updates."
+        accessibilityHint="Open notification history and deep-link alerts."
       />
       <NavTile
         href="/preferences"
         title="Preferences"
         description="Quiet hours, theme mode, and communication defaults."
+        accessibilityHint="Manage quiet hours and category notification controls."
       />
       <NavTile
         href="/task-center"
         title="Task Center"
         description="Track assigned tasks, due dates, and confirmation state."
+        accessibilityHint="Open assigned task queue and completion states."
       />
       <NavTile
         href="/service-hours"
         title="Service Hours"
         description="Log philanthropy work and monitor approval queue outcomes."
+        accessibilityHint="Review submitted service entries and approvals."
       />
       <NavTile
         href="/documents-reports"
         title="Documents & Reports"
         description="Review chapter docs and export-ready reporting snapshots."
+        accessibilityHint="Open documents and export report readiness statuses."
       />
       <InfoCard
         title="Coming next"
@@ -66,24 +45,3 @@ export default function MoreScreen() {
     </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  tile: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  tileTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  tileDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-});

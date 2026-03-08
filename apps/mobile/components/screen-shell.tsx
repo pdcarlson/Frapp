@@ -50,6 +50,9 @@ const styles = StyleSheet.create({
     backgroundColor: frappTokens.color.surface.canvas,
   },
   content: {
+    width: "100%",
+    maxWidth: 880,
+    alignSelf: "center",
     paddingHorizontal: 16,
     paddingVertical: 18,
     gap: 12,
