@@ -13,15 +13,33 @@ type DashboardShellProps = {
   children: React.ReactNode;
 };
 
+type NavItem = {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  href?: string;
+  status?: "available" | "coming-soon" | "restricted";
+  statusLabel?: string;
+};
+
 const navItems = [
-  { icon: LayoutDashboard, label: "Overview", href: "/" },
-  { icon: Users, label: "Members", href: "/members" },
-  { icon: CalendarDays, label: "Events", href: "/events" },
-  { icon: Star, label: "Points", href: "/points" },
-  { icon: CircleDollarSign, label: "Billing", href: "/billing" },
-  { icon: BookOpen, label: "Backwork", href: "#", soon: true },
-  { icon: Settings, label: "Settings", href: "#", soon: true },
-];
+  { icon: LayoutDashboard, label: "Overview", href: "/", status: "available" },
+  { icon: Users, label: "Members", href: "/members", status: "available" },
+  { icon: CalendarDays, label: "Events", href: "/events", status: "available" },
+  { icon: Star, label: "Points", href: "/points", status: "available" },
+  { icon: CircleDollarSign, label: "Billing", href: "/billing", status: "available" },
+  {
+    icon: BookOpen,
+    label: "Backwork",
+    status: "restricted",
+    statusLabel: "Requires docs:view",
+  },
+  {
+    icon: Settings,
+    label: "Settings",
+    status: "coming-soon",
+    statusLabel: "Soon",
+  },
+] satisfies NavItem[];
 
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
@@ -80,24 +98,37 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </div>
           <nav className="space-y-1">
             {navItems.map((item) => (
-              <Link
-                key={item.label}
-                href={item.href}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
-                  pathname === item.href
-                    ? "bg-primary/20 text-white"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                <span>{item.label}</span>
-                {item.soon ? (
-                  <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                    Soon
-                  </span>
-                ) : null}
-              </Link>
+              item.href ? (
+                <Link
+                  key={item.label}
+                  href={item.href}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
+                    pathname === item.href
+                      ? "bg-primary/20 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white",
+                  )}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              ) : (
+                <button
+                  key={item.label}
+                  type="button"
+                  className="flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500"
+                  disabled
+                  title={item.statusLabel}
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                  {item.statusLabel ? (
+                    <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+                      {item.statusLabel}
+                    </span>
+                  ) : null}
+                </button>
+              )
             ))}
           </nav>
 
