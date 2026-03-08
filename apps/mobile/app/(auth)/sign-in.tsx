@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
     backgroundColor: frappTokens.color.surface.muted,
   },
   modeButtonActive: {
-    backgroundColor: "#DBEAFE",
+    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
   },
   modeButtonText: {
     fontSize: 13,
@@ -190,7 +190,7 @@ const styles = StyleSheet.create({
     color: frappTokens.color.text.secondary,
   },
   modeButtonTextActive: {
-    color: "#1D4ED8",
+    color: frappTokens.color.feedback.infoTextInteractive,
   },
   errorText: {
     marginTop: 10,
@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: 16,
-    borderRadius: 10,
+    borderRadius: frappTokens.radius.md,
     backgroundColor: frappTokens.color.brand.royalBlue,
     paddingVertical: 12,
     alignItems: "center",
@@ -214,21 +214,21 @@ const styles = StyleSheet.create({
     opacity: 0.55,
   },
   primaryButtonText: {
-    color: "#fff",
+    color: frappTokens.color.text.inverse,
     fontWeight: "700",
     fontSize: 14,
   },
   secondaryButton: {
     marginTop: 10,
-    borderRadius: 10,
+    borderRadius: frappTokens.radius.md,
     borderWidth: 1,
-    borderColor: "#CBD5E1",
+    borderColor: frappTokens.color.surface.border,
     paddingVertical: 12,
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: frappTokens.color.surface.card,
   },
   secondaryButtonText: {
-    color: "#1E293B",
+    color: frappTokens.color.text.primary,
     fontWeight: "700",
     fontSize: 14,
   },
@@ -236,15 +236,15 @@ const styles = StyleSheet.create({
     marginTop: 14,
     borderRadius: frappTokens.radius.md,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: frappTokens.color.feedback.infoBorder,
+    backgroundColor: frappTokens.color.feedback.infoBackground,
     padding: 12,
     gap: 8,
   },
   readinessTitle: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#1E40AF",
+    color: frappTokens.color.feedback.infoTextStrong,
     textTransform: "uppercase",
     letterSpacing: 0.3,
   },
@@ -263,10 +263,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   readyTone: {
-    color: "#166534",
+    color: frappTokens.color.feedback.successText,
   },
   warningTone: {
-    color: "#92400E",
+    color: frappTokens.color.feedback.warningText,
   },
   errorTone: {
     color: frappTokens.color.feedback.errorText,
