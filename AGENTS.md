@@ -189,6 +189,18 @@ The agent **MUST NOT** use the GitHub PAT to:
 
 When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
 
+### Agent skills
+
+Skills are detailed SOPs in `.cursor/skills/`. Reference them when working in the relevant area:
+
+| Skill | File | Use when |
+|-------|------|----------|
+| Testing | `.cursor/skills/testing.md` | Running tests, verifying changes, CI parity checks |
+| UI Development | `.cursor/skills/ui-development.md` | Building/modifying web dashboard, landing, or shared UI components |
+| API Development | `.cursor/skills/api-development.md` | Adding NestJS endpoints, services, repositories, or updating the API contract |
+| Audit & Quality | `.cursor/skills/audit.md` | Code quality reviews, security audits, dependency checks, migration reviews |
+| Infrastructure Research | `.cursor/skills/infrastructure-research.md` | Investigating deployments, CI failures, secret sync, or service health |
+
 ### Gotchas
 
 - The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Prefer using `npm run dev:api` which injects from Infisical instead.
@@ -199,3 +211,6 @@ When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN
 - `npx supabase db push` requires `--local` flag when running against local dev (no linked project). Without it, the CLI errors with "Cannot find project ref".
 - The `openapi.json` is committed as a source-of-truth artifact. When changing API endpoints, regenerate it: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`. CI checks freshness via git-diff.
 - Branch protection is enforced for admins (`enforce_admins: true`). Emergency overrides require temporarily modifying protection rules via GitHub UI.
+- The `INFISICAL_API_KEY` env var may not have access to the `local` Infisical environment (returns 404 for path `/`). In cloud VMs, create `.env.local` files using `npx supabase status -o env` values for Supabase keys plus placeholder Stripe values (`sk_test_placeholder...`, `whsec_placeholder...`, `price_placeholder...`). The API will start but billing endpoints won't function without real Stripe test keys.
+- Docker in cloud VMs requires `fuse-overlayfs` storage driver and `iptables-legacy`. See daemon config at `/etc/docker/daemon.json`. Start with `sudo dockerd &>/tmp/dockerd.log &`. For socket access, prefer adding the user to the `docker` group (`sudo usermod -aG docker $USER` and re-login) or starting dockerd as the current user. The `chmod 666 /var/run/docker.sock` shortcut should **only** be used in ephemeral, isolated CI/test VMs where no untrusted code runs — it grants root-equivalent access to any local process.
+- `npx supabase db push --local` is idempotent — safe to run every startup. If migrations are already applied (from `supabase start`), it reports "Remote database is up to date".

@@ -382,7 +382,7 @@ Tapping the notification opens the app directly to the relevant content. If the 
 
 - Per-user configurable start and end time (e.g. 10:00 PM to 8:00 AM).
 - During quiet hours, NORMAL notifications are delivered as badge-only (no sound/vibration). URGENT notifications are unaffected.
-- Quiet hours are timezone-aware (stored as UTC offsets).
+- Quiet hours are timezone-aware (stored as UTC offsets). The implementation uses `Intl.DateTimeFormat` to convert the current UTC time to the user's timezone; midnight is normalized to hour 0 to handle locale-specific h24 hour cycles.
 
 ### Notification Grouping
 
