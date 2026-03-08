@@ -113,6 +113,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="documents-reports"
+        options={{
+          title: "Documents & Reports",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

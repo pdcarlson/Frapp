@@ -8,7 +8,12 @@ function NavTile({
   title,
   description,
 }: {
-  href: "/notifications" | "/preferences" | "/task-center" | "/service-hours";
+  href:
+    | "/notifications"
+    | "/preferences"
+    | "/task-center"
+    | "/service-hours"
+    | "/documents-reports";
   title: string;
   description: string;
 }) {
@@ -48,9 +53,14 @@ export default function MoreScreen() {
         title="Service Hours"
         description="Log philanthropy work and monitor approval queue outcomes."
       />
+      <NavTile
+        href="/documents-reports"
+        title="Documents & Reports"
+        description="Review chapter docs and export-ready reporting snapshots."
+      />
       <InfoCard
         title="Coming next"
-        body="Chapter documents and reports will appear in this section as workflows graduate from preview to production."
+        body="Polished filters, sharing controls, and role-aware access will continue expanding in these workflows."
         badge="Roadmap"
       />
     </ScreenShell>
