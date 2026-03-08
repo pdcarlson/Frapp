@@ -117,7 +117,7 @@ import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@r
 Pattern:
 - `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
 - `useMutation` for writes: `mutationFn` calls `client.POST/PATCH/DELETE`, `onSuccess` invalidates queries
-- All hooks require `FrappClientProvider` in the component tree
+- All hooks require both `QueryClientProvider` (TanStack Query — provides caching, invalidation, and retry logic) and `FrappClientProvider` (provides the typed API client) in the component tree
 
 ### Provider chain (web app)
 

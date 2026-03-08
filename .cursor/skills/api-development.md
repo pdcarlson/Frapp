@@ -114,6 +114,8 @@ export class WidgetController {
   constructor(private readonly widgetService: WidgetService) {}
 
   @Get()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.WIDGETS_VIEW)
   @ApiOperation({ summary: 'List widgets' })
   async list(@CurrentChapterId() chapterId: string) {
     return this.widgetService.list(chapterId);
