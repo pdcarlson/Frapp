@@ -9,6 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import {
+  dashboardFilterSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 
 type BillingStatusPreview = {
   status: string;
@@ -184,7 +188,7 @@ export default function BillingPage() {
                   event.target.value as "all" | "open" | "paid" | "overdue",
                 )
               }
-              className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              className={dashboardFilterSelectClassName}
             >
               <option value="all">Status: All</option>
               <option value="open">Open</option>
@@ -227,6 +231,7 @@ export default function BillingPage() {
                     <input
                       type="checkbox"
                       aria-label="Select all visible invoices"
+                      className={dashboardTableCheckboxClassName}
                       checked={allInvoicesSelected}
                       onChange={(event) => {
                         if (event.target.checked) {
@@ -254,6 +259,7 @@ export default function BillingPage() {
                       <input
                         type="checkbox"
                         aria-label={`Select ${invoice.title}`}
+                        className={dashboardTableCheckboxClassName}
                         checked={selectedInvoiceIds.includes(invoice.id)}
                         onChange={(event) => {
                           if (event.target.checked) {

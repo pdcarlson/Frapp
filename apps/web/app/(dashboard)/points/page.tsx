@@ -9,6 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import {
+  dashboardFilterSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -264,7 +268,7 @@ export default function PointsPage() {
                     event.target.value as "all" | "positive" | "negative",
                   )
                 }
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Amount: All</option>
                 <option value="positive">Amount: Positive</option>
@@ -273,7 +277,7 @@ export default function PointsPage() {
               <select
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Category: All</option>
                 <option value="attendance">Attendance</option>
@@ -312,6 +316,7 @@ export default function PointsPage() {
                       <input
                         type="checkbox"
                         aria-label="Select all visible transactions"
+                        className={dashboardTableCheckboxClassName}
                         checked={allTransactionsSelected}
                         onChange={(event) => {
                           if (event.target.checked) {
@@ -339,6 +344,7 @@ export default function PointsPage() {
                         <input
                           type="checkbox"
                           aria-label={`Select ${transaction.description}`}
+                          className={dashboardTableCheckboxClassName}
                           checked={selectedTransactionIds.includes(transaction.id)}
                           onChange={(event) => {
                             if (event.target.checked) {

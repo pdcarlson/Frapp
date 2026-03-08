@@ -9,6 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import {
+  dashboardFilterSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 
 type EventRow = Record<string, unknown>;
 const fallbackEvents: EventRow[] = [
@@ -125,7 +129,7 @@ export default function EventsPage() {
                     event.target.value as "all" | "mandatory" | "optional",
                   )
                 }
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Attendance: All</option>
                 <option value="mandatory">Attendance: Mandatory</option>
@@ -138,7 +142,7 @@ export default function EventsPage() {
                     event.target.value as "all" | "recurring" | "one-time",
                   )
                 }
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Cadence: All</option>
                 <option value="recurring">Cadence: Recurring</option>
@@ -204,6 +208,7 @@ export default function EventsPage() {
                     <input
                       type="checkbox"
                       aria-label="Select all visible events"
+                      className={dashboardTableCheckboxClassName}
                       checked={allVisibleSelected}
                       onChange={(event) => {
                         if (event.target.checked) {
@@ -241,6 +246,7 @@ export default function EventsPage() {
                         <input
                           type="checkbox"
                           aria-label={`Select ${eventName}`}
+                          className={dashboardTableCheckboxClassName}
                           checked={selectedEventIds.includes(eventId)}
                           onChange={(eventValue) => {
                             if (eventValue.target.checked) {

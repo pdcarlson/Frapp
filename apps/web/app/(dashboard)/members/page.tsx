@@ -9,6 +9,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import {
+  dashboardFilterSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 
 type MemberRow = Record<string, unknown>;
 const fallbackMembers: MemberRow[] = [
@@ -124,7 +128,7 @@ export default function MembersPage() {
                 onChange={(event) =>
                   setSavedView(event.target.value as "all" | "exec" | "new")
                 }
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Saved view: All members</option>
                 <option value="exec">Saved view: Exec board</option>
@@ -137,7 +141,7 @@ export default function MembersPage() {
                     event.target.value as "all" | "complete" | "pending",
                   )
                 }
-                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+                className={dashboardFilterSelectClassName}
               >
                 <option value="all">Onboarding: All</option>
                 <option value="complete">Onboarding: Complete</option>
@@ -212,6 +216,7 @@ export default function MembersPage() {
                     <input
                       type="checkbox"
                       aria-label="Select all visible members"
+                      className={dashboardTableCheckboxClassName}
                       checked={allVisibleSelected}
                       onChange={(event) => {
                         if (event.target.checked) {
@@ -251,6 +256,7 @@ export default function MembersPage() {
                         <input
                           type="checkbox"
                           aria-label={`Select ${displayName}`}
+                          className={dashboardTableCheckboxClassName}
                           checked={selectedMemberIds.includes(memberId)}
                           onChange={(event) => {
                             if (event.target.checked) {
