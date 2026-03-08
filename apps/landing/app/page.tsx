@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { BookOpen, CalendarDays, CheckCircle2, CircleDollarSign, GraduationCap, MessageSquare, ShieldCheck, Sparkles, Star } from "lucide-react";
 
@@ -265,6 +266,51 @@ export default function Home() {
               </article>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-6xl px-6 py-20">
+        <div className="mx-auto mb-12 max-w-2xl text-center motion-safe:animate-fade-up motion-reduce:animate-none">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Product in context</p>
+          <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Web and mobile surfaces designed as one system.</h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">
+            Leadership workflows stay dense on desktop while members get focused, reliable loops on mobile.
+          </p>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-2">
+          <article className="rounded-xl border border-border bg-card p-4 shadow-sm motion-safe:animate-fade-up motion-reduce:animate-none">
+            <div className="overflow-hidden rounded-lg border border-border">
+              <Image
+                src="/showcase-dashboard.svg"
+                alt="Frapp web dashboard preview showing operations, members, and points modules."
+                width={1280}
+                height={900}
+                className="h-auto w-full"
+                priority={false}
+              />
+            </div>
+            <h3 className="mt-4 text-base font-semibold">Dashboard operations console</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Role-aware navigation, points controls, billing visibility, and resilient table workflows.
+            </p>
+          </article>
+
+          <article className="rounded-xl border border-border bg-card p-4 shadow-sm motion-safe:animate-fade-up motion-reduce:animate-none">
+            <div className="overflow-hidden rounded-lg border border-border">
+              <Image
+                src="/showcase-mobile.svg"
+                alt="Frapp mobile app preview showing feed updates and task-loop state cards."
+                width={900}
+                height={900}
+                className="h-auto w-full"
+                priority={false}
+              />
+            </div>
+            <h3 className="mt-4 text-base font-semibold">Member mobile loop</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Unified chapter feed, explicit sync states, and quick routes for events, chat, and points.
+            </p>
+          </article>
         </div>
       </section>
 
