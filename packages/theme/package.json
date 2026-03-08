@@ -5,7 +5,8 @@
   "private": true,
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
-    "./globals.css": "./src/globals.css"
+    "./globals.css": "./src/globals.css",
+    "./tokens": "./src/tokens.ts"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17",

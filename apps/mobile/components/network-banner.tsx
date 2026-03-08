@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { frappTokens } from "@repo/theme/tokens";
 
 type NetworkBannerProps = {
   isOnline: boolean | null;
@@ -40,17 +41,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   offlineContainer: {
-    backgroundColor: "#fef2f2",
-    borderBottomColor: "#fecaca",
+    backgroundColor: frappTokens.color.feedback.errorBackground,
+    borderBottomColor: frappTokens.color.feedback.errorBorder,
   },
   degradedContainer: {
-    backgroundColor: "#fffbeb",
-    borderBottomColor: "#fde68a",
+    backgroundColor: frappTokens.color.feedback.warningBackground,
+    borderBottomColor: frappTokens.color.feedback.warningBorder,
   },
   offlineText: {
-    color: "#b91c1c",
+    color: frappTokens.color.feedback.errorText,
   },
   degradedText: {
-    color: "#92400e",
+    color: frappTokens.color.feedback.warningText,
   },
 });

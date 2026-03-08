@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { frappTokens } from "@repo/theme/tokens";
 
 export default function SignIn() {
   return (
@@ -29,25 +30,25 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#f8fafc",
+    backgroundColor: frappTokens.color.surface.canvas,
   },
   title: {
     fontSize: 36,
     fontWeight: "800",
-    color: "#0f172a",
+    color: frappTokens.color.text.primary,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: "#64748b",
+    color: frappTokens.color.text.muted,
     marginBottom: 24,
     textAlign: "center",
   },
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 14,
+    backgroundColor: frappTokens.color.surface.card,
+    borderRadius: frappTokens.radius.lg,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: frappTokens.color.surface.border,
     padding: 20,
     width: "100%",
     maxWidth: 340,
@@ -60,18 +61,18 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: "700",
-    color: "#0f172a",
+    color: frappTokens.color.text.primary,
   },
   cardBody: {
     marginTop: 8,
     fontSize: 14,
     lineHeight: 20,
-    color: "#475569",
+    color: frappTokens.color.text.secondary,
   },
   primaryButton: {
     marginTop: 16,
     borderRadius: 10,
-    backgroundColor: "#2563eb",
+    backgroundColor: frappTokens.color.brand.royalBlue,
     paddingVertical: 12,
     alignItems: "center",
   },
@@ -84,13 +85,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#cbd5e1",
+    borderColor: "#CBD5E1",
     paddingVertical: 12,
     alignItems: "center",
     backgroundColor: "#fff",
   },
   secondaryButtonText: {
-    color: "#1e293b",
+    color: "#1E293B",
     fontWeight: "700",
     fontSize: 14,
   },

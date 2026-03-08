@@ -1,5 +1,6 @@
 import { ReactNode } from "react";
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
+import { frappTokens } from "@repo/theme/tokens";
 
 type ScreenShellProps = {
   title: string;
@@ -46,7 +47,7 @@ export function InfoCard({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: frappTokens.color.surface.canvas,
   },
   content: {
     paddingHorizontal: 16,
@@ -57,46 +58,46 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   title: {
-    color: "#0f172a",
-    fontSize: 30,
+    color: frappTokens.color.text.primary,
+    fontSize: frappTokens.type.title,
     fontWeight: "800",
     letterSpacing: -0.4,
   },
   subtitle: {
     marginTop: 6,
-    color: "#475569",
-    fontSize: 15,
+    color: frappTokens.color.text.secondary,
+    fontSize: frappTokens.type.body,
     lineHeight: 22,
   },
   card: {
-    borderRadius: 14,
+    borderRadius: frappTokens.radius.lg,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#ffffff",
-    padding: 16,
+    borderColor: frappTokens.color.surface.border,
+    backgroundColor: frappTokens.color.surface.card,
+    padding: frappTokens.spacing.lg,
     gap: 8,
   },
   badge: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    backgroundColor: "#dbeafe",
+    backgroundColor: "#DBEAFE",
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   badgeText: {
-    color: "#1d4ed8",
+    color: "#1D4ED8",
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   cardTitle: {
-    color: "#0f172a",
+    color: frappTokens.color.text.primary,
     fontSize: 16,
     fontWeight: "700",
   },
   cardBody: {
-    color: "#475569",
+    color: frappTokens.color.text.secondary,
     fontSize: 14,
     lineHeight: 20,
   },
