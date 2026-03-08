@@ -15,7 +15,7 @@ Read `.cursor/skills/audit.md` before performing any audit or quality review.
 
 Key points:
 - All tables must have RLS enabled — current design uses default-deny with service_role bypass
-- Every write endpoint needs PermissionsGuard with explicit `@RequirePermissions()`
+- Every endpoint (read or write) that accesses or returns protected user/chapter data must have `@UseGuards(PermissionsGuard)` with explicit `@RequirePermissions()` — this includes GET/list endpoints (e.g., `member.controller.ts` uses `MEMBERS_VIEW` on reads, `financial-invoice.controller.ts` uses `BILLING_VIEW` on GET)
 - Migrations must follow `{14-digit-timestamp}_{snake_case}.sql` naming and update rollback docs
 - DTOs must use class-validator decorators — global ValidationPipe strips unknown fields
 - The spec (`spec/`) is the source of truth — implementation follows spec

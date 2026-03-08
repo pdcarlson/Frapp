@@ -108,12 +108,10 @@ Generated TypeScript client from `openapi.json`. Uses `openapi-fetch` for type-s
 
 ### React hooks (`@repo/hooks`)
 
-All data fetching uses TanStack Query via shared hooks:
+All data fetching uses TanStack Query via shared hooks. Import from the package root (barrel export in `packages/hooks/src/index.ts`):
 
 ```typescript
-import { useCurrentUser, useUpdateUser } from "@repo/hooks/use-user";
-import { useMembers } from "@repo/hooks/use-members";
-import { useCurrentChapter } from "@repo/hooks/use-chapters";
+import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
 ```
 
 Pattern:

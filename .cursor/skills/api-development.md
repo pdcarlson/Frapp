@@ -174,7 +174,9 @@ Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
 ## Auth and guard chain
 
-Request flow for most endpoints:
+**These guards are NOT globally registered.** There is no `APP_GUARD` or `APP_INTERCEPTOR` provider in `app.module.ts`. You must apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()`. Missing a decorator means the route is unprotected.
+
+Recommended per-route pattern (applied in this order):
 
 ```
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
@@ -183,6 +185,14 @@ Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
              → PermissionsGuard (checks @RequirePermissions against member's roles)
              → Controller
 ```
+
+### How to apply
+
+- **Controller-level** (most common): `@UseGuards(SupabaseAuthGuard, ChapterGuard)` on the class
+- **Route-level permissions**: `@UseGuards(PermissionsGuard)` + `@RequirePermissions(...)` on individual methods
+- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — currently only on user, invite, notification, and chapter-create controllers. Only needed where user auto-sync is required on first request.
+
+**Order matters.** `SupabaseAuthGuard` must run before `ChapterGuard` (which needs `request.supabaseUser`). `ChapterGuard` must run before `PermissionsGuard` (which needs `request.member`).
 
 ### Custom decorators
 

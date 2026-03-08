@@ -40,6 +40,8 @@ supabase/.branches/
 *.pem
 
 # Cursor (keep skills and rules tracked)
-.cursor
+.cursor/*
 !.cursor/skills/
+!.cursor/skills/**
 !.cursor/rules/
+!.cursor/rules/**

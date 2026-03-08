@@ -12,7 +12,7 @@
 | API-only lint | `npm run lint:api` |
 | Type-check | `npm run check-types` |
 | API unit tests | `npm run test -w apps/api` |
-| Single test file | `npx jest --config apps/api/jest.config.ts <path> -w apps/api` |
+| Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
 
@@ -33,15 +33,22 @@ npm run check-types
 
 ### Full (integration / manual testing)
 
-Requires Docker + Supabase + `.env.local` files. See `AGENTS.md` "Starting the dev environment" section.
+Requires Docker + Supabase. See `AGENTS.md` "Starting the dev environment" section.
 
+Prefer Infisical-injected envs as the primary method:
 ```bash
 sudo dockerd &>/tmp/dockerd.log &
-sleep 3 && sudo chmod 666 /var/run/docker.sock
+sleep 3
 npx supabase start
 npx supabase db push --local
-npm run start:dev -w apps/api   # port 3001
-npm run dev -w apps/web         # port 3000
+npm run dev:api     # Infisical-injected, port 3001
+npm run dev:web     # Infisical-injected, port 3000
+```
+
+Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`):
+```bash
+npm run start:dev -w apps/api   # reads .env.local, port 3001
+npm run dev -w apps/web         # reads .env.local, port 3000
 ```
 
 ### Health verification
@@ -82,11 +89,11 @@ Repositories and adapters are mocked via `jest.fn()` on each method. No shared m
 ### Running a subset
 
 ```bash
-# Single file
-npx jest src/application/services/event.service.spec.ts --config apps/api/jest.config.ts
+# Single file (via npm workspace flag)
+npm run test -w apps/api -- --testPathPattern="event.service"
 
 # Pattern match
-npx jest --testPathPattern="billing" --config apps/api/jest.config.ts
+npm run test -w apps/api -- --testPathPattern="billing"
 ```
 
 ---
