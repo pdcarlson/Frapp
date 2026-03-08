@@ -75,7 +75,18 @@ Adopt these timing ranges:
 
 Motion must remain subtle, functional, and compatible with reduced-motion preferences.
 
-## 7) Quality Gate Checklist
+## 7) Chapter Accent Safety Rules
+
+Chapter-provided accent colors must pass minimum contrast thresholds before use:
+
+- Accent on white text: **4.5:1 minimum**
+- Invalid hex values are rejected
+- Failing colors are automatically replaced with the fallback accent (`royalBlue`)
+
+Implementation reference:
+- `packages/theme/src/accent.ts` (`resolveChapterAccentColor`)
+
+## 8) Quality Gate Checklist
 
 A UI change is not ready unless it passes:
 

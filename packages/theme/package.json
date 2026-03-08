@@ -6,7 +6,8 @@
   "exports": {
     "./tailwind": "./src/tailwind.config.ts",
     "./globals.css": "./src/globals.css",
-    "./tokens": "./src/tokens.ts"
+    "./tokens": "./src/tokens.ts",
+    "./accent": "./src/accent.ts"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17",

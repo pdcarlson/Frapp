@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Settings, ShieldCheck, Star, Users } from "lucide-react";
+import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
@@ -41,10 +42,25 @@ const navItems = [
   },
 ] satisfies NavItem[];
 
+const chapterPreview = {
+  name: "Alpha Beta Chapter",
+  university: "University of State",
+  requestedAccent: "#93C5FD",
+};
+
+function withAlpha(hexColor: string, opacity: number): string {
+  const normalized = hexColor.replace("#", "");
+  const red = Number.parseInt(normalized.slice(0, 2), 16);
+  const green = Number.parseInt(normalized.slice(2, 4), 16);
+  const blue = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+}
+
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const chapterAccent = resolveChapterAccentColor(chapterPreview.requestedAccent);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -134,12 +150,24 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
           <div className="mt-10 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
             <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">Alpha Beta Chapter</p>
-            <p className="mt-1 text-xs text-slate-400">University of State</p>
-            <div className="mt-3 flex items-center gap-2 text-xs text-emerald-300">
+            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
+            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
+            <div
+              className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
+              style={{
+                color: chapterAccent.resolvedAccent,
+                borderColor: withAlpha(chapterAccent.resolvedAccent, 0.45),
+                backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
+              }}
+            >
               <ShieldCheck className="h-3.5 w-3.5" />
               <span>Subscription Active</span>
             </div>
+            {chapterAccent.fallbackApplied ? (
+              <p className="mt-2 text-[11px] text-slate-500">
+                Accent adjusted for contrast safety.
+              </p>
+            ) : null}
           </div>
         </aside>
 
