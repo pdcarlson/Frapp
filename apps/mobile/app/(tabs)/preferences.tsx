@@ -1,23 +1,39 @@
-import { InfoCard, ScreenShell } from "@/components/screen-shell";
+import { ScreenShell } from "@/components/screen-shell";
+import { TaskLoopCard } from "@/components/task-loop-card";
 
 export default function PreferencesScreen() {
   return (
     <ScreenShell
       title="Preferences"
-      subtitle="Control communication, quiet hours, and visual mode settings."
+      subtitle="Control communication defaults and confirm whether each preference has synced."
     >
-      <InfoCard
-        badge="Quiet hours"
+      <TaskLoopCard
+        category="Quiet hours"
+        state="synced"
         title="10:00 PM → 8:00 AM"
         body="Normal-priority notifications are delivered silently during this window."
+        meta="Timezone: America/New_York"
       />
-      <InfoCard
-        title="Category controls"
-        body="Enable or mute alerts for announcements, DMs, events, points, tasks, and service updates."
+      <TaskLoopCard
+        category="Category controls"
+        state="pending"
+        title="DM preference update queued"
+        body="Your latest DM alert toggle is waiting for a stable network to sync."
+        meta="Will retry automatically"
       />
-      <InfoCard
-        title="Theme mode"
-        body="Use Light, Dark, or System to match your device and reading comfort."
+      <TaskLoopCard
+        category="Theme"
+        state="cached"
+        title="System mode active"
+        body="Frapp follows your device appearance and keeps the last known mode offline."
+        meta="Last confirmed sync: today"
+      />
+      <TaskLoopCard
+        category="Integrity"
+        state="retry"
+        title="Notification token refresh failed"
+        body="Push registration is retrying. You can still view all alerts from Notification Center."
+        meta="Retry in 30 seconds"
       />
     </ScreenShell>
   );
