@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Settings, ShieldCheck, Star, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -22,6 +24,7 @@ const navItems = [
 
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -39,8 +42,24 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const pageTitle = titleByPath[pathname] ?? "Dashboard";
   const pageAction = actionByPath[pathname] ?? "Open Action";
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandMenuOpen((prev) => !prev);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="min-h-screen bg-muted/30">
+      <DashboardCommandMenu
+        open={commandMenuOpen}
+        onOpenChange={setCommandMenuOpen}
+      />
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
@@ -95,7 +114,12 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <h1 className="text-lg font-semibold">{pageTitle}</h1>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" className="hidden sm:inline-flex">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="hidden sm:inline-flex"
+                  onClick={() => setCommandMenuOpen(true)}
+                >
                   Search (⌘K)
                 </Button>
                 <Button variant="outline" size="icon" aria-label="Notifications">
