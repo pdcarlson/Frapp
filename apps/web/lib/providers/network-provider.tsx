@@ -18,7 +18,15 @@ const NetworkContext = createContext<NetworkContextValue>({
   isOffline: false,
 });
 
-const HEALTH_CHECK_URL = "/api/health";
+function getHealthCheckUrl() {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/v1";
+  const normalizedApiUrl = apiUrl.replace(/\/$/, "");
+  if (normalizedApiUrl.endsWith("/v1")) {
+    return `${normalizedApiUrl.slice(0, -3)}/health`;
+  }
+  return `${normalizedApiUrl}/health`;
+}
+
 const DEGRADED_THRESHOLD = 3;
 
 export function NetworkProvider({ children }: { children: React.ReactNode }) {
@@ -35,8 +43,8 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
 
-      const res = await fetch(HEALTH_CHECK_URL, {
-        method: "HEAD",
+      const res = await fetch(getHealthCheckUrl(), {
+        method: "GET",
         signal: controller.signal,
         cache: "no-store",
       });

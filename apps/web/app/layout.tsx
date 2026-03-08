@@ -1,6 +1,9 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { AppProviders } from "./providers";
+import { OfflineBanner } from "@/components/shared/offline-banner";
+import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff2",
@@ -21,7 +24,13 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={geistSans.variable} suppressHydrationWarning>
-      <body className="font-sans antialiased">{children}</body>
+      <body className="font-sans antialiased">
+        <AppProviders>
+          <OfflineBanner />
+          {children}
+          <Toaster />
+        </AppProviders>
+      </body>
     </html>
   );
 }
