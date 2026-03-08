@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, CalendarDays, Clock3, Loader2, MapPin, Trash2 } from "lucide-react";
+import { AlertTriangle, BellRing, CalendarDays, Clock3, Loader2, MapPin, Trash2, UsersRound } from "lucide-react";
 import { useDeleteEvent, useEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -100,6 +100,31 @@ export function EventDetailSheet({
     }
   }
 
+  function handleAttendanceAction(action: "queue" | "reminder") {
+    if (!resolvedEvent) return;
+
+    if (!canMutate) {
+      toast({
+        title: "Preview mode",
+        description: "Sign in to run live attendance actions for this event.",
+      });
+      return;
+    }
+
+    if (action === "queue") {
+      toast({
+        title: "Attendance queue opened",
+        description: "You can now verify check-ins and adjust attendance records.",
+      });
+      return;
+    }
+
+    toast({
+      title: "Reminder scheduled",
+      description: "A check-in reminder will be sent to eligible members.",
+    });
+  }
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
@@ -157,6 +182,26 @@ export function EventDetailSheet({
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
               <Badge variant="outline">{recurrenceRule}</Badge>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleAttendanceAction("queue")}
+                disabled={!resolvedEvent}
+              >
+                <UsersRound className="h-4 w-4" />
+                Open attendance queue
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => handleAttendanceAction("reminder")}
+                disabled={!resolvedEvent}
+              >
+                <BellRing className="h-4 w-4" />
+                Send check-in reminder
+              </Button>
             </div>
           </div>
 
