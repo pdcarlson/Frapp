@@ -13,6 +13,8 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { EventDetailSheet } from "@/components/events/event-detail-sheet";
+import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 
 type EventRow = Record<string, unknown>;
 const fallbackEvents: EventRow[] = [
@@ -48,6 +50,10 @@ export default function EventsPage() {
   const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
+  const [detailSheetOpen, setDetailSheetOpen] = useState(false);
+  const [editorDialogOpen, setEditorDialogOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
+  const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   const eventsQuery = useEvents();
   const usingPreviewData = eventsQuery.isError;
   const events = useMemo(() => {
@@ -105,7 +111,14 @@ export default function EventsPage() {
             <CardTitle>Events</CardTitle>
             <CardDescription>Plan chapter events and monitor attendance operations.</CardDescription>
           </div>
-          <Button className="gap-2">
+          <Button
+            className="gap-2"
+            onClick={() => {
+              setEditorMode("create");
+              setActiveEvent(null);
+              setEditorDialogOpen(true);
+            }}
+          >
             <Plus className="h-4 w-4" />
             New Event
           </Button>
@@ -228,6 +241,7 @@ export default function EventsPage() {
                   <TableHead>Location</TableHead>
                   <TableHead>Points</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -278,6 +292,18 @@ export default function EventsPage() {
                           ) : null}
                         </div>
                       </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setActiveEvent(event);
+                            setDetailSheetOpen(true);
+                          }}
+                        >
+                          View details
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -286,6 +312,33 @@ export default function EventsPage() {
           </CardContent>
         </Card>
       )}
+
+      <EventDetailSheet
+        open={detailSheetOpen}
+        onOpenChange={setDetailSheetOpen}
+        event={activeEvent}
+        usingPreviewData={usingPreviewData}
+        onRequestEdit={(event) => {
+          setActiveEvent(event);
+          setDetailSheetOpen(false);
+          setEditorMode("edit");
+          setEditorDialogOpen(true);
+        }}
+        onEventDeleted={async () => {
+          await eventsQuery.refetch();
+        }}
+      />
+
+      <EventEditorDialog
+        open={editorDialogOpen}
+        onOpenChange={setEditorDialogOpen}
+        mode={editorMode}
+        event={activeEvent}
+        usingPreviewData={usingPreviewData}
+        onSaved={async () => {
+          await eventsQuery.refetch();
+        }}
+      />
     </div>
   );
 }
