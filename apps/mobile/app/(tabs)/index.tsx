@@ -1,25 +1,47 @@
-import { InfoCard, ScreenShell } from "@/components/screen-shell";
+import { ScreenShell } from "@/components/screen-shell";
+import { FeedSummaryCard, TaskLoopCard } from "@/components/task-loop-card";
 
 export default function HomeScreen() {
   return (
     <ScreenShell
       title="Activity Feed"
-      subtitle="Everything your chapter needs to notice right now, without scrolling through noise."
+      subtitle="A unified chapter pulse with clear sync states, next actions, and high-signal updates."
     >
-      <InfoCard
-        badge="Upcoming"
-        title="Chapter Meeting • Tonight 6:00 PM"
-        body="42 members confirmed. Attendance points auto-award is enabled."
+      <FeedSummaryCard
+        balance="186 pts"
+        rank="#4 chapter-wide"
+        period="Month to date"
       />
-      <InfoCard
-        badge="Announcement"
-        title="Exec update posted in #announcements"
-        body="Treasurer shared dues timeline and next action deadlines."
+      <TaskLoopCard
+        category="Events"
+        state="pending"
+        title="Chapter Meeting check-in opens in 12 minutes"
+        body="42 members confirmed. Role-targeted attendance will auto-award points after check-in."
+        meta="Grace window: 15 minutes after start."
+        actionHint="Open event and pre-check your attendance status."
       />
-      <InfoCard
-        badge="Milestone"
-        title="You moved to #4 on the leaderboard"
-        body="9 points behind #3. One event check-in can close the gap."
+      <TaskLoopCard
+        category="Announcements"
+        state="synced"
+        title="Exec dues timeline posted in #announcements"
+        body="Leadership shared this week’s payment milestones and member outreach assignments."
+        meta="Delivered to all members • 2 minutes ago"
+      />
+      <TaskLoopCard
+        category="Backwork"
+        state="cached"
+        title="Rush Week Guide is available from cache"
+        body="The latest document remains accessible while connectivity is unstable."
+        meta="Last synced at 5:42 PM"
+        actionHint="Reconnect to fetch newly uploaded revisions."
+      />
+      <TaskLoopCard
+        category="Points"
+        state="retry"
+        title="One transaction failed to sync"
+        body="Your +10 attendance award is queued and will retry automatically."
+        meta="Auto-retry in 30 seconds"
+        actionHint="Keep Frapp open or tap retry from My Points."
       />
     </ScreenShell>
   );
