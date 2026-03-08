@@ -1,0 +1,19 @@
+---
+description: Adding or modifying NestJS API endpoints, services, repositories, DTOs, or the OpenAPI contract
+globs:
+  - "apps/api/src/**"
+  - "packages/api-sdk/**"
+  - "packages/validation/**"
+alwaysApply: false
+---
+
+# API Development
+
+Read `.cursor/skills/api-development.md` before working on the API.
+
+Key points:
+- Layered architecture: Interface → Application → Domain ← Infrastructure — respect dependency direction
+- New endpoints follow a 9-step workflow: entity → repo interface → Supabase impl → service → DTOs → controller → module → tests → contract artifacts
+- Guard chain: SupabaseAuthGuard → AuthSyncInterceptor → ChapterGuard → PermissionsGuard
+- After changing any controller or DTO, regenerate contract: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`
+- Supabase repositories use `.maybeSingle()` for single rows (not `.single()`), always `if (error) throw error;`

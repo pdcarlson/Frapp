@@ -1,0 +1,21 @@
+---
+description: Running tests, verifying code changes, CI parity checks, or setting up the test environment
+globs:
+  - "apps/api/src/**/*.spec.ts"
+  - "apps/api/src/**/*.service.ts"
+  - "apps/api/src/**/*.guard.ts"
+  - "apps/api/src/**/*.interceptor.ts"
+  - ".github/workflows/ci.yml"
+alwaysApply: false
+---
+
+# Testing
+
+Read `.cursor/skills/testing.md` before running tests, writing test cases, or verifying changes.
+
+Key points:
+- Unit tests do NOT require Docker or Supabase — just `npm install`
+- Manual/integration tests require Docker + Supabase + `.env.local` files
+- Always run the CI parity checklist before pushing: lint, check-types, api tests, contract check, migration check
+- Each spec defines its own mocks inline — no shared fixtures
+- Use `@nestjs/testing` TestingModule with `{ provide: TOKEN, useValue: mockObj }` pattern

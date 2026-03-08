@@ -39,6 +39,7 @@ supabase/.branches/
 .DS_Store
 *.pem
 
-# Cursor (keep skills tracked)
+# Cursor (keep skills and rules tracked)
 .cursor
 !.cursor/skills/
+!.cursor/rules/
