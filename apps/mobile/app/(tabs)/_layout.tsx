@@ -78,6 +78,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="event-details"
+        options={{
+          title: "Event Details",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

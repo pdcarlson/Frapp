@@ -1,5 +1,27 @@
+import { Link } from "expo-router";
+import { Pressable, StyleSheet, Text } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
+import { frappTokens } from "@repo/theme/tokens";
 import { TaskLoopCard } from "@/components/task-loop-card";
+
+function EventNavTile({
+  href,
+  title,
+  subtitle,
+}: {
+  href: "/event-details";
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <Link href={href} asChild>
+      <Pressable style={styles.navTile}>
+        <Text style={styles.navTileTitle}>{title}</Text>
+        <Text style={styles.navTileSubtitle}>{subtitle}</Text>
+      </Pressable>
+    </Link>
+  );
+}
 
 export default function EventsScreen() {
   return (
@@ -7,6 +29,11 @@ export default function EventsScreen() {
       title="Events"
       subtitle="Upcoming windows, check-in eligibility, and recovery states when connectivity degrades."
     >
+      <EventNavTile
+        href="/event-details"
+        title="Open Chapter Meeting details"
+        subtitle="View check-in rules, role targeting, and calendar export status."
+      />
       <TaskLoopCard
         category="Today"
         state="pending"
@@ -33,3 +60,24 @@ export default function EventsScreen() {
     </ScreenShell>
   );
 }
+
+const styles = StyleSheet.create({
+  navTile: {
+    borderRadius: frappTokens.radius.lg,
+    borderWidth: 1,
+    borderColor: frappTokens.color.surface.border,
+    backgroundColor: frappTokens.color.surface.card,
+    padding: frappTokens.spacing.lg,
+    gap: 6,
+  },
+  navTileTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: frappTokens.color.text.primary,
+  },
+  navTileSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: frappTokens.color.text.secondary,
+  },
+});
