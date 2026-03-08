@@ -57,6 +57,27 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => tabIcon("person-outline", color),
         }}
       />
+      <Tabs.Screen
+        name="more"
+        options={{
+          title: "More",
+          tabBarIcon: ({ color }) => tabIcon("ellipsis-horizontal-circle-outline", color),
+        }}
+      />
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: "Notifications",
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="preferences"
+        options={{
+          title: "Preferences",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }
