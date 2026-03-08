@@ -99,6 +99,20 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="task-center"
+        options={{
+          title: "Task Center",
+          href: null,
+        }}
+      />
+      <Tabs.Screen
+        name="service-hours"
+        options={{
+          title: "Service Hours",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

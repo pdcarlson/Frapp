@@ -3,7 +3,15 @@ import { Pressable, StyleSheet, Text } from "react-native";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
 import { frappTokens } from "@repo/theme/tokens";
 
-function NavTile({ href, title, description }: { href: "/notifications" | "/preferences"; title: string; description: string }) {
+function NavTile({
+  href,
+  title,
+  description,
+}: {
+  href: "/notifications" | "/preferences" | "/task-center" | "/service-hours";
+  title: string;
+  description: string;
+}) {
   return (
     <Link href={href} asChild>
       <Pressable style={styles.tile}>
@@ -30,9 +38,19 @@ export default function MoreScreen() {
         title="Preferences"
         description="Quiet hours, theme mode, and communication defaults."
       />
+      <NavTile
+        href="/task-center"
+        title="Task Center"
+        description="Track assigned tasks, due dates, and confirmation state."
+      />
+      <NavTile
+        href="/service-hours"
+        title="Service Hours"
+        description="Log philanthropy work and monitor approval queue outcomes."
+      />
       <InfoCard
         title="Coming next"
-        body="Tasks, service hours, and chapter documents will appear in this section as workflows graduate from preview to production."
+        body="Chapter documents and reports will appear in this section as workflows graduate from preview to production."
         badge="Roadmap"
       />
     </ScreenShell>
