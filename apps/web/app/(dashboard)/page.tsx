@@ -2,7 +2,6 @@ import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Sparkles, S
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DashboardShell } from "@/components/layout/dashboard-shell";
 
 const stats = [
   {
@@ -40,7 +39,7 @@ const recentActivity = [
 
 export default function Home() {
   return (
-    <DashboardShell>
+    <>
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.label}>
@@ -139,6 +138,6 @@ export default function Home() {
           </CardContent>
         </Card>
       </section>
-    </DashboardShell>
+    </>
   );
 }
