@@ -4,9 +4,9 @@ import { frappTokens } from "@repo/theme/tokens";
 const LOOP_STATE_STYLES = {
   synced: {
     label: "Synced",
-    backgroundColor: "#DCFCE7",
-    borderColor: "#86EFAC",
-    textColor: "#166534",
+    backgroundColor: frappTokens.color.feedback.successBackground,
+    borderColor: frappTokens.color.feedback.successBorder,
+    textColor: frappTokens.color.feedback.successText,
   },
   pending: {
     label: "Pending",
@@ -22,9 +22,9 @@ const LOOP_STATE_STYLES = {
   },
   cached: {
     label: "Cached",
-    backgroundColor: "#DBEAFE",
-    borderColor: "#93C5FD",
-    textColor: "#1D4ED8",
+    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
+    borderColor: frappTokens.color.feedback.infoBorderStrong,
+    textColor: frappTokens.color.feedback.infoTextInteractive,
   },
 } as const;
 
@@ -155,8 +155,8 @@ const styles = StyleSheet.create({
   summaryCard: {
     borderRadius: frappTokens.radius.xl,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: frappTokens.color.feedback.infoBorder,
+    backgroundColor: frappTokens.color.feedback.infoBackground,
     padding: frappTokens.spacing.xl,
     gap: 6,
   },
@@ -165,12 +165,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.4,
     textTransform: "uppercase",
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   summaryBalance: {
     fontSize: 30,
     fontWeight: "800",
-    color: "#1E40AF",
+    color: frappTokens.color.feedback.infoTextStrong,
     letterSpacing: -0.6,
   },
   summaryMetaRow: {
@@ -181,10 +181,10 @@ const styles = StyleSheet.create({
   summaryMetaText: {
     fontSize: 13,
     fontWeight: "600",
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   summaryMetaDivider: {
     fontSize: 13,
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
 });

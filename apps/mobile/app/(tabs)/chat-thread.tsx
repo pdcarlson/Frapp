@@ -8,9 +8,9 @@ type MessageState = "sent" | "sending" | "retry";
 const MESSAGE_STATE_STYLES = {
   sent: {
     label: "Sent",
-    backgroundColor: "#DCFCE7",
-    borderColor: "#86EFAC",
-    textColor: "#166534",
+    backgroundColor: frappTokens.color.feedback.successBackground,
+    borderColor: frappTokens.color.feedback.successBorder,
+    textColor: frappTokens.color.feedback.successText,
   },
   sending: {
     label: "Sending",
@@ -133,8 +133,8 @@ const styles = StyleSheet.create({
   threadSummaryCard: {
     borderRadius: frappTokens.radius.lg,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: frappTokens.color.feedback.infoBorder,
+    backgroundColor: frappTokens.color.feedback.infoBackground,
     padding: frappTokens.spacing.lg,
     gap: 6,
   },
@@ -143,17 +143,17 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
     textTransform: "uppercase",
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   threadSummaryValue: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#1E40AF",
+    color: frappTokens.color.feedback.infoTextStrong,
     letterSpacing: -0.3,
   },
   threadSummaryMeta: {
     fontSize: 13,
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   messageBubble: {
     borderRadius: frappTokens.radius.lg,
@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
     backgroundColor: frappTokens.color.surface.card,
   },
   messageBubbleOutgoing: {
-    backgroundColor: "#F8FAFF",
-    borderColor: "#BFDBFE",
+    backgroundColor: frappTokens.color.feedback.infoBackground,
+    borderColor: frappTokens.color.feedback.infoBorder,
   },
   messageHeader: {
     flexDirection: "row",

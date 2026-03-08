@@ -61,8 +61,8 @@ const styles = StyleSheet.create({
   summaryCard: {
     borderRadius: frappTokens.radius.lg,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: frappTokens.color.feedback.infoBorder,
+    backgroundColor: frappTokens.color.feedback.infoBackground,
     padding: frappTokens.spacing.lg,
     gap: 6,
   },
@@ -71,17 +71,17 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0.3,
     textTransform: "uppercase",
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   summaryValue: {
     fontSize: 22,
     fontWeight: "800",
     letterSpacing: -0.3,
-    color: "#1E40AF",
+    color: frappTokens.color.feedback.infoTextStrong,
   },
   summaryMeta: {
     fontSize: 13,
-    color: "#1E3A8A",
+    color: frappTokens.color.feedback.infoText,
   },
   backButton: {
     borderRadius: frappTokens.radius.md,

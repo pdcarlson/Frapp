@@ -83,12 +83,12 @@ const styles = StyleSheet.create({
   badge: {
     alignSelf: "flex-start",
     borderRadius: 999,
-    backgroundColor: "#DBEAFE",
+    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   badgeText: {
-    color: "#1D4ED8",
+    color: frappTokens.color.feedback.infoTextInteractive,
     fontSize: 11,
     fontWeight: "700",
     letterSpacing: 0.2,

@@ -54,14 +54,14 @@ const styles = StyleSheet.create({
     marginTop: 4,
     borderRadius: frappTokens.radius.md,
     borderWidth: 1,
-    borderColor: "#BFDBFE",
-    backgroundColor: "#EFF6FF",
+    borderColor: frappTokens.color.feedback.infoBorder,
+    backgroundColor: frappTokens.color.feedback.infoBackground,
     paddingVertical: 12,
     alignItems: "center",
   },
   tutorialText: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#1D4ED8",
+    color: frappTokens.color.feedback.infoTextInteractive,
   },
 });

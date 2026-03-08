@@ -101,8 +101,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   windowButtonActive: {
-    backgroundColor: "#DBEAFE",
-    borderColor: "#93C5FD",
+    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
+    borderColor: frappTokens.color.feedback.infoBorderStrong,
   },
   windowButtonText: {
     fontSize: 13,
@@ -110,7 +110,7 @@ const styles = StyleSheet.create({
     color: frappTokens.color.text.secondary,
   },
   windowButtonTextActive: {
-    color: "#1D4ED8",
+    color: frappTokens.color.feedback.infoTextInteractive,
   },
   tableCard: {
     borderRadius: frappTokens.radius.lg,
