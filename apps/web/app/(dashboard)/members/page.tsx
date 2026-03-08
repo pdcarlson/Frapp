@@ -15,6 +15,7 @@ import {
 } from "@/components/shared/table-controls";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 
 type MemberRow = Record<string, unknown>;
 const fallbackMembers: MemberRow[] = [
@@ -106,7 +107,7 @@ export default function MembersPage() {
   );
 
   if (activeQuery.isLoading) {
-    return <LoadingState message="Loading chapter members..." />;
+    return <LoadingState message={stateMicrocopy.members.loading} />;
   }
 
   return (
@@ -174,10 +175,10 @@ export default function MembersPage() {
               <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
               <div>
                 <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  Showing preview member data
+                  {stateMicrocopy.members.previewTitle}
                 </p>
                 <p className="text-xs text-amber-800 dark:text-amber-200">
-                  Sign in to load live chapter member records.
+                  {stateMicrocopy.members.previewDescription}
                 </p>
               </div>
             </div>
@@ -211,8 +212,8 @@ export default function MembersPage() {
 
       {visibleMembers.length === 0 ? (
         <EmptyState
-          title="No members match this view"
-          description="Try a broader search or invite your first members to populate this directory."
+          title={stateMicrocopy.members.emptyTitle}
+          description={stateMicrocopy.members.emptyDescription}
           actionLabel="Generate invite link"
         />
       ) : (

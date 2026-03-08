@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 
 type BillingStatusPreview = {
   status: string;
@@ -110,7 +111,7 @@ export default function BillingPage() {
   const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
 
   if (isLoading) {
-    return <LoadingState message="Loading billing overview..." />;
+    return <LoadingState message={stateMicrocopy.billing.loading} />;
   }
 
   return (
@@ -148,10 +149,10 @@ export default function BillingPage() {
               <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
               <div>
                 <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  Showing preview billing data
+                  {stateMicrocopy.billing.previewTitle}
                 </p>
                 <p className="text-xs text-amber-800 dark:text-amber-200">
-                  Sign in to load live chapter subscription and invoice records.
+                  {stateMicrocopy.billing.previewDescription}
                 </p>
               </div>
             </div>
@@ -219,8 +220,8 @@ export default function BillingPage() {
           ) : null}
           {filteredInvoices.length === 0 ? (
             <EmptyState
-              title="No invoices yet"
-              description="Create your first invoice to start chapter dues collection."
+              title={stateMicrocopy.billing.emptyTitle}
+              description={stateMicrocopy.billing.emptyDescription}
               actionLabel="Create invoice"
             />
           ) : (

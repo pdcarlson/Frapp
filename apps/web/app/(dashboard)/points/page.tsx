@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -136,7 +137,7 @@ export default function PointsPage() {
     transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
 
   if (isLoading) {
-    return <LoadingState message="Loading points ledger..." />;
+    return <LoadingState message={stateMicrocopy.points.loading} />;
   }
 
   return (
@@ -179,10 +180,10 @@ export default function PointsPage() {
           <CardContent className="flex items-center justify-between gap-4 pt-6">
             <div>
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                Showing preview points data
+                {stateMicrocopy.points.previewTitle}
               </p>
               <p className="text-xs text-amber-800 dark:text-amber-200">
-                Sign in to load live leaderboard and transaction records.
+                {stateMicrocopy.points.previewDescription}
               </p>
             </div>
             <Button
@@ -217,8 +218,8 @@ export default function PointsPage() {
             </div>
             {filteredLeaderboard.length === 0 ? (
               <EmptyState
-                title="No leaderboard entries"
-                description="Point activity will populate after attendance, study, or admin adjustments."
+                title={stateMicrocopy.points.emptyLeaderboardTitle}
+                description={stateMicrocopy.points.emptyLeaderboardDescription}
               />
             ) : (
               <Table>
@@ -305,8 +306,8 @@ export default function PointsPage() {
             ) : null}
             {filteredTransactions.length === 0 ? (
               <EmptyState
-                title="No transactions in this window"
-                description="Your attendance, study sessions, and adjustments will appear here."
+                title={stateMicrocopy.points.emptyTransactionsTitle}
+                description={stateMicrocopy.points.emptyTransactionsDescription}
               />
             ) : (
               <Table>

@@ -81,3 +81,12 @@ Examples:
 - `Showing preview billing data`
 - `Sign in to load live chapter subscription and invoice records`
 
+## 7) Domain State Pack (Operational Copy)
+
+For reusable loading/empty/error/preview copy, use:
+
+- `docs/internal/STATE_MICROCOPY_PACK.md`
+- `apps/web/lib/state-microcopy.ts`
+
+Do not rewrite equivalent state text ad hoc per screen unless the workflow intent is materially different.
+

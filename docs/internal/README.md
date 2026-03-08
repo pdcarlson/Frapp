@@ -25,5 +25,6 @@ Use this area for:
 - `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
 - `ALERT_ROUTING.md`
 - `ACCESSIBILITY_TESTING_PROTOCOL.md`
+- `STATE_MICROCOPY_PACK.md`
 
 Public-facing product docs live in `apps/docs/`.

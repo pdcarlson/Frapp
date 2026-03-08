@@ -15,6 +15,7 @@ import {
 } from "@/components/shared/table-controls";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 
 type EventRow = Record<string, unknown>;
 const fallbackEvents: EventRow[] = [
@@ -100,7 +101,7 @@ export default function EventsPage() {
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
 
   if (eventsQuery.isLoading) {
-    return <LoadingState message="Loading chapter events..." />;
+    return <LoadingState message={stateMicrocopy.events.loading} />;
   }
 
   return (
@@ -171,10 +172,10 @@ export default function EventsPage() {
           <CardContent className="flex items-center justify-between gap-4 pt-6">
             <div>
               <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                Showing preview event data
+                {stateMicrocopy.events.previewTitle}
               </p>
               <p className="text-xs text-amber-800 dark:text-amber-200">
-                Sign in to load live event scheduling and attendance records.
+                {stateMicrocopy.events.previewDescription}
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => eventsQuery.refetch()}>
@@ -201,8 +202,8 @@ export default function EventsPage() {
 
       {filteredEvents.length === 0 ? (
         <EmptyState
-          title="No events yet"
-          description="Create your first chapter event to unlock attendance and point automation."
+          title={stateMicrocopy.events.emptyTitle}
+          description={stateMicrocopy.events.emptyDescription}
           actionLabel="Create first event"
         />
       ) : (
