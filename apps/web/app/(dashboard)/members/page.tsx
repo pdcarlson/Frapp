@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
@@ -16,6 +16,7 @@ import {
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 type MemberRow = Record<string, unknown>;
 const fallbackMembers: MemberRow[] = [
@@ -43,6 +44,7 @@ const fallbackMembers: MemberRow[] = [
 ];
 
 export default function MembersPage() {
+  const { isOffline } = useNetwork();
   const [query, setQuery] = useState("");
   const [onboardingFilter, setOnboardingFilter] = useState<"all" | "complete" | "pending">("all");
   const [savedView, setSavedView] = useState<"all" | "exec" | "new">("all");
@@ -105,6 +107,21 @@ export default function MembersPage() {
       ) ?? null,
     [activeMemberId, visibleMembers],
   );
+
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Members directory unavailable offline"
+        description="Reconnect to load live membership records and role updates."
+        onRetry={() => {
+          void membersQuery.refetch();
+          if (usingSearch) {
+            void searchQuery.refetch();
+          }
+        }}
+      />
+    );
+  }
 
   if (activeQuery.isLoading) {
     return <LoadingState message={stateMicrocopy.members.loading} />;

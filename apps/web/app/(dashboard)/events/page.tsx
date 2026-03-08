@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
@@ -16,6 +16,7 @@ import {
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 type EventRow = Record<string, unknown>;
 const fallbackEvents: EventRow[] = [
@@ -47,6 +48,7 @@ function formatDate(value: unknown): string {
 }
 
 export default function EventsPage() {
+  const { isOffline } = useNetwork();
   const [query, setQuery] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
@@ -99,6 +101,18 @@ export default function EventsPage() {
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
+
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Events workspace unavailable offline"
+        description="Reconnect to load event schedules and attendance updates."
+        onRetry={() => {
+          void eventsQuery.refetch();
+        }}
+      />
+    );
+  }
 
   if (eventsQuery.isLoading) {
     return <LoadingState message={stateMicrocopy.events.loading} />;

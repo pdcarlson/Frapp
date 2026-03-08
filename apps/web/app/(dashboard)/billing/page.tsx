@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 type BillingStatusPreview = {
   status: string;
@@ -75,6 +76,7 @@ function formatDate(value: string): string {
 }
 
 export default function BillingPage() {
+  const { isOffline } = useNetwork();
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid" | "overdue">("all");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
@@ -109,6 +111,19 @@ export default function BillingPage() {
   const openCount = visibleInvoices.filter((invoice) => invoice.status === "OPEN").length;
   const overdueCount = visibleInvoices.filter((invoice) => invoice.status === "OVERDUE").length;
   const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
+
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Billing workspace unavailable offline"
+        description="Reconnect to sync subscription status and invoice balances."
+        onRetry={() => {
+          void statusQuery.refetch();
+          void invoicesQuery.refetch();
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return <LoadingState message={stateMicrocopy.billing.loading} />;

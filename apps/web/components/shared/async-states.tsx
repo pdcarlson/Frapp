@@ -1,4 +1,4 @@
-import { AlertTriangle, FolderOpen, LoaderCircle } from "lucide-react";
+import { AlertTriangle, FolderOpen, LoaderCircle, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function LoadingState({ message = "Loading data..." }: { message?: string }) {
@@ -46,6 +46,31 @@ export function ErrorState({
       {onRetry ? (
         <Button variant="outline" onClick={onRetry}>
           Retry
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+export function OfflineState({
+  title = "You're offline",
+  description = "Reconnect to sync chapter data and retry this workflow.",
+  actionLabel = "Retry now",
+  onRetry,
+}: {
+  title?: string;
+  description?: string;
+  actionLabel?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-primary/30 bg-primary/5 p-6 text-center">
+      <WifiOff className="h-6 w-6 text-primary" />
+      <h2 className="text-base font-semibold">{title}</h2>
+      <p className="max-w-lg text-sm text-muted-foreground">{description}</p>
+      {onRetry ? (
+        <Button variant="outline" onClick={onRetry}>
+          {actionLabel}
         </Button>
       ) : null}
     </div>

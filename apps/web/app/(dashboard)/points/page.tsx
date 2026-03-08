@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState } from "@/components/shared/async-states";
+import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
+import { useNetwork } from "@/lib/providers/network-provider";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -69,6 +70,7 @@ function formatTimestamp(value: string): string {
 }
 
 export default function PointsPage() {
+  const { isOffline } = useNetwork();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
@@ -135,6 +137,19 @@ export default function PointsPage() {
   const allTransactionsSelected =
     transactionIds.length > 0 &&
     transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
+
+  if (isOffline) {
+    return (
+      <OfflineState
+        title="Points ledger unavailable offline"
+        description="Reconnect to refresh leaderboard standings and transaction history."
+        onRetry={() => {
+          void leaderboardQuery.refetch();
+          void summaryQuery.refetch();
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return <LoadingState message={stateMicrocopy.points.loading} />;
