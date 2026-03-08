@@ -48,41 +48,18 @@ When `supabase start` finishes, it prints the local project URL and keys:
 - `anon key`
 - `service_role key`
 
-Create `apps/api/.env.local` and set:
+Create `.env.local` files for each app using these values. See <a href="https://github.com/pdcarlson/Frapp/blob/preview/docs/internal/ENV_REFERENCE.md"><code>docs/internal/ENV_REFERENCE.md</code></a> for the exact variables each app needs and their local values.
+
+**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical at runtime:
 
 ```bash
-SUPABASE_URL=[REDACTED]
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_ANON_KEY=...
-PORT=3001
-NODE_ENV=development
-```
-
-Create `apps/web/.env.local` with:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=[REDACTED]
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-NEXT_PUBLIC_API_URL=http://localhost:3001/v1
-```
-
-Create `apps/landing/.env.local` with:
-
-```bash
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-For the mobile app, create `apps/mobile/.env.local`:
-
-```bash
-EXPO_PUBLIC_SUPABASE_URL=[REDACTED]
-EXPO_PUBLIC_SUPABASE_ANON_KEY=...
-EXPO_PUBLIC_API_URL=http://localhost:3001/v1
+npx infisical run --env=local -- npm run start:dev -w apps/api
 ```
 
 <Callout type="warning">
-  Never commit `.env.local` files. They contain real secrets. Only
-  `.env.example` files live in Git.
+  Never commit `.env.local` files. They contain real secrets. All staging and
+  production secrets are managed in Infisical — see
+  `docs/internal/SECRETS_MANAGEMENT.md`.
 </Callout>
 
 ## 4. Run the dev servers

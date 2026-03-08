@@ -49,6 +49,70 @@ export interface ServiceReportInput {
   end_date?: string;
 }
 
+interface QueryError {
+  message: string;
+}
+
+interface QueryResult<T> {
+  data: T[] | null;
+  error: QueryError | null;
+}
+
+interface AttendanceJoinedRow {
+  status: string;
+  check_in_time: string | null;
+  event_id: string;
+  events: { id: string; name: string; start_time: string } | null;
+  users: { display_name: string } | null;
+}
+
+interface PointsTransactionRow {
+  user_id: string;
+  amount: number;
+  category: string | null;
+}
+
+interface UserNameRow {
+  id: string;
+  display_name: string;
+}
+
+interface MemberRosterRow {
+  user_id: string;
+  role_ids: string[];
+  created_at: string;
+}
+
+interface UserRosterRow {
+  id: string;
+  display_name: string;
+  email: string;
+}
+
+interface UserAmountRow {
+  user_id: string;
+  amount: number;
+}
+
+interface RoleNameRow {
+  id: string;
+  name: string;
+}
+
+interface ServiceEntryRow {
+  user_id: string;
+  date: string;
+  duration_minutes: number;
+  description: string;
+  status: string;
+}
+
+function throwIfError(error: QueryError | null): void {
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 @Injectable()
 export class ReportService {
   constructor(
@@ -81,12 +145,13 @@ export class ReportService {
       );
     }
 
-    const { data: eventsData, error: eventsError } = await eventQuery;
-    if (eventsError) throw eventsError;
+    const { data: eventsData, error: eventsError } =
+      (await eventQuery) as QueryResult<{ id: string }>;
+    throwIfError(eventsError);
     const eventIds = (eventsData ?? []).map((e) => e.id);
     if (eventIds.length === 0) return [];
 
-    const { data, error } = await this.supabase
+    const { data, error } = (await this.supabase
       .from('event_attendance')
       .select(
         `
@@ -97,22 +162,19 @@ export class ReportService {
         users (display_name)
       `,
       )
-      .in('event_id', eventIds);
+      .in('event_id', eventIds)) as QueryResult<AttendanceJoinedRow>;
+    throwIfError(error);
 
-    if (error) throw error;
-
-    const rows = (data ?? []).map((row: Record<string, unknown>) => {
-      const events = row.events as Record<string, unknown> | null;
-      const users = row.users as Record<string, unknown> | null;
-      const startTime = events?.start_time as string;
+    const rows = (data ?? []).map((row) => {
+      const startTime = row.events?.start_time ?? '';
       const eventDate = startTime ? startTime.split('T')[0] : '';
 
       return {
-        member_name: (users?.display_name as string) ?? '',
-        event_name: (events?.name as string) ?? '',
+        member_name: row.users?.display_name ?? '',
+        event_name: row.events?.name ?? '',
         event_date: eventDate,
-        status: (row.status as string) ?? '',
-        check_in_time: (row.check_in_time as string) ?? null,
+        status: row.status,
+        check_in_time: row.check_in_time,
       };
     });
 
@@ -142,8 +204,9 @@ export class ReportService {
       // Placeholder: could filter by created_at if window is date range
     }
 
-    const { data: txns, error } = await query;
-    if (error) throw error;
+    const { data: txns, error } =
+      (await query) as QueryResult<PointsTransactionRow>;
+    throwIfError(error);
 
     const byUser = new Map<
       string,
@@ -151,30 +214,26 @@ export class ReportService {
     >();
 
     for (const t of txns ?? []) {
-      const uid = t.user_id as string;
+      const uid = t.user_id;
       if (!byUser.has(uid)) {
         byUser.set(uid, { total: 0, byCategory: {} });
       }
       const entry = byUser.get(uid)!;
-      entry.total += (t.amount as number) ?? 0;
-      const cat = (t.category as string) ?? 'OTHER';
-      entry.byCategory[cat] =
-        (entry.byCategory[cat] ?? 0) + (t.amount as number);
+      entry.total += t.amount ?? 0;
+      const cat = t.category ?? 'OTHER';
+      entry.byCategory[cat] = (entry.byCategory[cat] ?? 0) + (t.amount ?? 0);
     }
 
     const userIds = [...byUser.keys()];
     if (userIds.length === 0) return [];
 
-    const { data: users, error: userError } = await this.supabase
+    const { data: users, error: userError } = (await this.supabase
       .from('users')
       .select('id, display_name')
-      .in('id', userIds);
+      .in('id', userIds)) as QueryResult<UserNameRow>;
+    throwIfError(userError);
 
-    if (userError) throw userError;
-
-    const userMap = new Map(
-      (users ?? []).map((u) => [u.id, u.display_name as string]),
-    );
+    const userMap = new Map((users ?? []).map((u) => [u.id, u.display_name]));
 
     return userIds.map((uid) => {
       const entry = byUser.get(uid)!;
@@ -187,21 +246,19 @@ export class ReportService {
   }
 
   async getRosterReport(chapterId: string): Promise<RosterReportRow[]> {
-    const { data: members, error: memberError } = await this.supabase
+    const { data: members, error: memberError } = (await this.supabase
       .from('members')
       .select('user_id, role_ids, created_at')
-      .eq('chapter_id', chapterId);
-
-    if (memberError) throw memberError;
+      .eq('chapter_id', chapterId)) as QueryResult<MemberRosterRow>;
+    throwIfError(memberError);
     if (!members?.length) return [];
 
     const userIds = members.map((m) => m.user_id);
-    const { data: users, error: userError } = await this.supabase
+    const { data: users, error: userError } = (await this.supabase
       .from('users')
       .select('id, display_name, email')
-      .in('id', userIds);
-
-    if (userError) throw userError;
+      .in('id', userIds)) as QueryResult<UserRosterRow>;
+    throwIfError(userError);
 
     const userMap = new Map(
       (users ?? []).map((u) => [
@@ -210,26 +267,27 @@ export class ReportService {
       ]),
     );
 
-    const { data: allTxns } = await this.supabase
+    const { data: allTxns } = (await this.supabase
       .from('point_transactions')
       .select('user_id, amount')
       .eq('chapter_id', chapterId)
-      .in('user_id', userIds);
+      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
 
     const balances = new Map<string, number>();
     for (const t of allTxns ?? []) {
-      const uid = t.user_id as string;
-      balances.set(uid, (balances.get(uid) ?? 0) + ((t.amount as number) ?? 0));
+      const uid = t.user_id;
+      balances.set(uid, (balances.get(uid) ?? 0) + (t.amount ?? 0));
     }
 
     const roleIds = [...new Set(members.flatMap((m) => m.role_ids ?? []))];
     const roleMap = new Map<string, string>();
     if (roleIds.length > 0) {
-      const { data: roles } = await this.supabase
+      const { data: roles, error: rolesError } = (await this.supabase
         .from('roles')
         .select('id, name')
         .eq('chapter_id', chapterId)
-        .in('id', roleIds);
+        .in('id', roleIds)) as QueryResult<RoleNameRow>;
+      throwIfError(rolesError);
       for (const r of roles ?? []) {
         roleMap.set(r.id, r.name);
       }
@@ -241,10 +299,10 @@ export class ReportService {
         (rid: string) => roleMap.get(rid) ?? rid,
       );
       return {
-        name: (u?.display_name as string) ?? '',
-        email: (u?.email as string) ?? '',
+        name: u?.display_name ?? '',
+        email: u?.email ?? '',
         roles: roleNames,
-        join_date: (m.created_at as string)?.split('T')[0] ?? '',
+        join_date: m.created_at.split('T')[0] ?? '',
         point_balance: balances.get(m.user_id) ?? 0,
       };
     });
@@ -269,22 +327,20 @@ export class ReportService {
       query = query.lte('date', input.end_date);
     }
 
-    const { data: entries, error } = await query.order('date', {
+    const { data: entries, error } = (await query.order('date', {
       ascending: false,
-    });
-
-    if (error) throw error;
+    })) as QueryResult<ServiceEntryRow>;
+    throwIfError(error);
     if (!entries?.length) return [];
 
     const userIds = [...new Set(entries.map((e) => e.user_id))];
-    const { data: users } = await this.supabase
+    const { data: users, error: usersError } = (await this.supabase
       .from('users')
       .select('id, display_name')
-      .in('id', userIds);
+      .in('id', userIds)) as QueryResult<UserNameRow>;
+    throwIfError(usersError);
 
-    const userMap = new Map(
-      (users ?? []).map((u) => [u.id, u.display_name as string]),
-    );
+    const userMap = new Map((users ?? []).map((u) => [u.id, u.display_name]));
 
     return entries.map((e) => ({
       member_name: userMap.get(e.user_id) ?? '',

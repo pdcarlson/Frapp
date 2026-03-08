@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { IMemberRepository } from '../../../domain/repositories/member.repository.interface';
 import { Member } from '../../../domain/entities/member.entity';
 
 @Injectable()
 export class SupabaseMemberRepository implements IMemberRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string): Promise<Member | null> {
@@ -46,7 +47,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
   async create(memberData: Partial<Member>): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .insert(memberData)
+      .insert(memberData as never)
       .select()
       .single();
     if (error) throw error;
@@ -56,7 +57,7 @@ export class SupabaseMemberRepository implements IMemberRepository {
   async update(id: string, memberData: Partial<Member>): Promise<Member> {
     const { data, error } = await this.supabase
       .from('members')
-      .update(memberData)
+      .update(memberData as never)
       .eq('id', id)
       .select()
       .single();

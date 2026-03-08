@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { ISemesterArchiveRepository } from '../../../domain/repositories/semester-archive.repository.interface';
 import type { SemesterArchive } from '../../../domain/entities/semester-archive.entity';
 
 @Injectable()
 export class SupabaseSemesterArchiveRepository implements ISemesterArchiveRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<SemesterArchive[]> {
@@ -37,7 +38,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
   async create(data: Partial<SemesterArchive>): Promise<SemesterArchive> {
     const { data: created, error } = await this.supabase
       .from('semester_archives')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

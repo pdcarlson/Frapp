@@ -331,11 +331,13 @@ Configurable alerts via the monitoring provider:
 ## 10. API Contract Strategy
 
 - **Source of truth:** NestJS controllers with `@nestjs/swagger` decorators produce an OpenAPI spec.
-- **Export:** `npm run openapi:export -w apps/api` generates `openapi.json` in `apps/api/`. Re-run when the API surface changes so the SDK stays in sync.
-- **SDK generation:** `npm run generate -w packages/api-sdk` generates TypeScript client from the OpenAPI spec.
-- **Contract testing:** CI verifies that `openapi.json` is up to date and that `@repo/api-sdk` compiles against it.
+- **Committed artifacts:** `apps/api/openapi.json` and `packages/api-sdk/src/types.ts` are committed to the repository. They are the canonical, versioned contract that all consumers (web, mobile) depend on.
+- **Export:** `npm run openapi:export -w apps/api` regenerates `openapi.json` locally. Run this whenever the API surface changes.
+- **SDK generation:** `npm run generate -w packages/api-sdk` regenerates the TypeScript client from the committed OpenAPI spec.
+- **Contract freshness check (CI):** `npm run check:api-contract` uses `git diff` to verify that any PR touching `apps/api/src/` also includes updated `openapi.json` and `api-sdk/types.ts`. This avoids bootstrapping the NestJS application in CI, so no Supabase/Stripe credentials are needed.
+- **Developer workflow:** After changing an API endpoint: (1) run `npm run openapi:export -w apps/api`, (2) run `npm run generate -w packages/api-sdk`, (3) commit both generated files alongside the source changes.
 
-**Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), and Points (me, leaderboard, members, adjust) are implemented and included in the OpenAPI spec. The export script runs without real Supabase credentials (uses placeholders when env is missing).
+**Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), and Points (me, leaderboard, members, adjust) are implemented and included in the OpenAPI spec.
 
 ---
 

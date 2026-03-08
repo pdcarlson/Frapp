@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { INotificationPreferenceRepository } from '../../../domain/repositories/notification.repository.interface';
 import type { NotificationPreference } from '../../../domain/entities/notification.entity';
 
 @Injectable()
 export class SupabaseNotificationPreferenceRepository implements INotificationPreferenceRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByUserAndChapter(
@@ -53,7 +54,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
           category: data.category,
           is_enabled: data.is_enabled ?? true,
           updated_at: new Date().toISOString(),
-        },
+        } as never,
         {
           onConflict: 'user_id,chapter_id,category',
           ignoreDuplicates: false,

@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IMessageReactionRepository } from '../../../domain/repositories/chat.repository.interface';
 import { MessageReaction } from '../../../domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseMessageReactionRepository implements IMessageReactionRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByMessage(messageId: string): Promise<MessageReaction[]> {
@@ -39,7 +40,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
   async create(data: Partial<MessageReaction>): Promise<MessageReaction> {
     const { data: created, error } = await this.supabase
       .from('message_reactions')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;

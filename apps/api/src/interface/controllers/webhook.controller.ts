@@ -16,7 +16,7 @@ import {
   BILLING_PROVIDER,
   type IBillingProvider,
 } from '../../domain/adapters/billing.interface';
-import type { Request } from 'express';
+import type { WebhookRequest } from '../types/request-context.types';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -33,14 +33,14 @@ export class WebhookController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Handle Stripe webhook events' })
   async handleStripeWebhook(
-    @Req() req: Request,
+    @Req() req: WebhookRequest,
     @Headers('stripe-signature') signature: string,
   ) {
     if (!signature) {
       throw new BadRequestException('Missing stripe-signature header');
     }
 
-    const rawBody = (req as any).rawBody as Buffer;
+    const rawBody = req.rawBody;
     if (!rawBody) {
       throw new BadRequestException(
         'Raw body not available. Ensure rawBody parsing is enabled.',

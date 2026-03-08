@@ -10,6 +10,9 @@ import {
   BILLING_PROVIDER,
   type IBillingProvider,
   type WebhookEvent,
+  type CheckoutSessionWebhookObject,
+  type SubscriptionWebhookObject,
+  type InvoiceWebhookObject,
 } from '../../domain/adapters/billing.interface';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -162,7 +165,7 @@ export class BillingService {
   }
 
   private async handleCheckoutCompleted(event: WebhookEvent): Promise<void> {
-    const session = event.data.object;
+    const session = event.data.object as CheckoutSessionWebhookObject;
     const chapterId = session.metadata?.chapter_id;
     const subscriptionId = session.subscription;
 
@@ -191,9 +194,22 @@ export class BillingService {
   }
 
   private async handleSubscriptionUpdated(event: WebhookEvent): Promise<void> {
-    const subscription = event.data.object;
+    const subscription = event.data.object as SubscriptionWebhookObject;
+    if (!subscription.id) {
+      this.logger.warn(
+        `customer.subscription.updated missing subscription id: ${event.id}`,
+      );
+      return;
+    }
     const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
+
+    if (!subscription.status) {
+      this.logger.warn(
+        `customer.subscription.updated missing subscription status: ${event.id}`,
+      );
+      return;
+    }
 
     const newStatus = this.mapStripeStatus(subscription.status);
     if (!newStatus) {
@@ -215,7 +231,13 @@ export class BillingService {
   }
 
   private async handleSubscriptionDeleted(event: WebhookEvent): Promise<void> {
-    const subscription = event.data.object;
+    const subscription = event.data.object as SubscriptionWebhookObject;
+    if (!subscription.id) {
+      this.logger.warn(
+        `customer.subscription.deleted missing subscription id: ${event.id}`,
+      );
+      return;
+    }
     const chapter = await this.findChapterBySubscription(subscription.id);
     if (!chapter) return;
 
@@ -229,7 +251,7 @@ export class BillingService {
   }
 
   private async handleInvoicePaid(event: WebhookEvent): Promise<void> {
-    const invoice = event.data.object;
+    const invoice = event.data.object as InvoiceWebhookObject;
     const subscriptionId = invoice.subscription;
     if (!subscriptionId) return;
 

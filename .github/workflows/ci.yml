@@ -10,12 +10,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# ---------------------------------------------------------------------------
+# Domain-specific parallel jobs. Each is an independent required status check.
+# The `packages-build` job runs first (shared dependency), then all others
+# run in parallel.
+# ---------------------------------------------------------------------------
+
 jobs:
-  lint-typecheck-test:
+  # ── Shared packages build (dependency for downstream jobs) ──────────────
+  packages-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -26,7 +35,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build packages
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+  # ── Lint + type check (full monorepo) ───────────────────────────────────
+  lint-and-typecheck:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
       - name: Type check
@@ -35,15 +66,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Test (API)
-        run: npm run test -w apps/api
-
-  build:
-    needs: lint-typecheck-test
+  # ── API unit tests ──────────────────────────────────────────────────────
+  api-tests:
+    needs: packages-build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -54,10 +85,104 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build all
-        run: npm run build
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Run API tests
+        run: npm run test -w apps/api
+
+  # ── API contract freshness check ────────────────────────────────────────
+  api-contract-check:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check API contract freshness (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:api-contract -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Check API contract freshness (push)
+        if: github.event_name == 'push'
+        run: npm run check:api-contract
+
+  # ── Migration safety ────────────────────────────────────────────────────
+  migration-safety:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check migration safety (PR)
+        if: github.event_name == 'pull_request'
+        run: npm run check:migration-safety -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Check migration safety (push)
+        if: github.event_name == 'push'
+        run: npm run check:migration-safety
+
+  # ── Mobile app validation ───────────────────────────────────────────────
+  mobile-validate:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Lint mobile
+        run: npm run lint -w apps/mobile
+
+      - name: Type check mobile
+        run: npm run check-types -w apps/mobile
+
+  # ── Branch policy enforcement (PRs to main only) ───────────────────────
+  branch-policy:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce preview-to-main policy
         env:
-          NEXT_PUBLIC_SUPABASE_URL: http://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
-          NEXT_PUBLIC_API_URL: http://placeholder.api/v1
-          NEXT_PUBLIC_APP_URL: http://placeholder.app
+          SOURCE_BRANCH: ${{ github.head_ref }}
+        run: |
+          if [[ "$SOURCE_BRANCH" != "preview" ]]; then
+            echo "::error::PRs targeting main must come from the preview branch. Source: $SOURCE_BRANCH"
+            exit 1
+          fi
+          echo "Branch policy check passed: preview → main"

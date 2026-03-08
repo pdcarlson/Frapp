@@ -25,6 +25,8 @@ services:
         sync: false
       - key: STRIPE_PRICE_ID
         sync: false
+      - key: SENTRY_DSN
+        sync: false
 
   # ─── Staging API ──────────────────────────────────────────────
   - type: web
@@ -51,4 +53,6 @@ services:
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: STRIPE_PRICE_ID
+        sync: false
+      - key: SENTRY_DSN
         sync: false

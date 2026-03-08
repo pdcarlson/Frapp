@@ -5,7 +5,11 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 ## Current rollout status
 
 - ✅ Landing, web, and docs are configured in Vercel with `preview` and `main` environments.
-- 🚧 API deployment is planned but not yet fully live in production.
+- ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
+- ✅ Branch protection enforced on `preview` and `main`.
+- 🚧 API deployment wiring is in progress (Render services + deploy hooks + smoke checks).
+- 🚧 Infisical centralized secrets management is being set up.
+- 🚧 Automated database migrations in the deploy pipeline are planned.
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
@@ -83,7 +87,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 4. When ready for production, open a promotion PR from `preview` → `main`.
 5. Merging to `main` triggers production deployments.
 
-> `develop` is not used. `preview` is the active staging integration branch.
+> `develop` is not used. `preview` is the active staging integration branch. See `CONTRIBUTING.md` for the full branch model, merge strategy, and required checks.
 
 **Vercel environment mapping:**
 
@@ -118,6 +122,11 @@ npx supabase db push
 npx supabase link --project-ref <PRODUCTION_PROJECT_REF>
 npx supabase db push
 ```
+
+Follow the internal promotion and rollback runbooks when promoting schema changes:
+
+- `docs/internal/DB_PROMOTION_RUNBOOK.md`
+- `docs/internal/DB_ROLLBACK_PLAYBOOK.md`
 
 ### Collect Keys
 
@@ -255,6 +264,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | `STRIPE_SECRET_KEY` | `sk_live_...` | `sk_test_...` |
 | `STRIPE_WEBHOOK_SECRET` | `whsec_...` (prod) | `whsec_...` (test) |
 | `STRIPE_PRICE_ID` | `price_...` (prod) | `price_...` (test) |
+| `SENTRY_DSN` | `<prod sentry dsn>` | `<staging sentry dsn>` |
 | `PORT` | `3001` | `3001` |
 | `NODE_ENV` | `production` | `production` |
 
@@ -269,10 +279,10 @@ Render auto-detects the health check from the Dockerfile `HEALTHCHECK` directive
 
 ### 5.5 Deploy Hooks (for GitHub Actions)
 
-In each Render service → Settings → Deploy Hook → copy the URL. Store them as GitHub repo secrets:
+In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
 
-- `RENDER_DEPLOY_HOOK_URL` → production hook
-- `RENDER_DEPLOY_HOOK_URL_STAGING` → staging hook
+- `RENDER_DEPLOY_HOOK_URL` → deploy hook URL for that environment
+- `API_HEALTHCHECK_URL` → smoke-check URL for that environment (e.g. `https://api-staging.frapp.live/health` or `https://api.frapp.live/health`)
 
 ---
 
@@ -337,7 +347,7 @@ npx eas secret:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY --value "<key>" --sco
 
 1. Go to https://dashboard.stripe.com/test → Developers → API keys.
 2. Copy `sk_test_...` → use as `STRIPE_SECRET_KEY` for staging API.
-3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/billing/webhook`.
+3. Create a webhook endpoint pointing at `https://api-staging.frapp.live/v1/webhooks/stripe`.
 4. Copy the webhook signing secret → `STRIPE_WEBHOOK_SECRET`.
 5. Create a Product + Price → copy price ID → `STRIPE_PRICE_ID`.
 
@@ -397,7 +407,72 @@ Same steps but toggle to Live mode in Stripe dashboard. Requires business verifi
 
 ---
 
-## 10. Troubleshooting
+## 10. CI/CD Pipeline
+
+### How Deployments Are Gated
+
+All deployments are gated behind CI success. The flow is:
+
+1. **PR created** → CI runs domain-specific jobs in parallel. Vercel builds previews.
+2. **All checks pass** → PR is mergeable (branch protection enforced).
+3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
+4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
+
+Production deploys additionally require manual approval before the migration step.
+
+### Required Status Checks
+
+See `CONTRIBUTING.md` for the full list of CI jobs and external checks required for merge.
+
+### Secrets in CI vs CD
+
+**CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
+
+**CD (deploy workflows)** uses environment-scoped secrets injected from Infisical. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. GitHub's `environment:` feature routes the right values per job:
+
+| Secret | Purpose |
+| --- | --- |
+| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment) |
+| `API_HEALTHCHECK_URL` | Post-deploy health check (value differs per environment) |
+| `SUPABASE_ACCESS_TOKEN` | Supabase CLI auth for migrations |
+| `SUPABASE_PROJECT_REF` | Target DB for migrations (value differs per environment) |
+
+3 permanent GitHub Secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The deploy secrets above (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`) are transitional — they'll be replaced by Infisical runtime injection once the `@infisical/secrets-action` is integrated.
+
+See `docs/internal/ENV_REFERENCE.md` for the complete variable mapping.
+
+---
+
+## 11. Secrets Management (Infisical)
+
+All secrets are centrally managed in [Infisical](https://infisical.com) (free tier) with automatic syncs to deployment providers.
+
+### Key Design
+
+- **Canonical values stored once** per environment — no duplication.
+- **Secret references** handle framework prefixes (`NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}`).
+- **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
+- **No `.env.local` files needed** — local dev uses `npm run dev:api` (injects from Infisical CLI).
+
+### Sync Map (7 of 10 free-tier integrations)
+
+| # | Infisical env | Destination |
+| --- | --- | --- |
+| 1 | staging | Vercel → frapp-web (Preview scope) |
+| 2 | production | Vercel → frapp-web (Production scope) |
+| 3 | staging | Vercel → frapp-landing (Preview scope) |
+| 4 | production | Vercel → frapp-landing (Production scope) |
+| 5 | staging | Render → frapp-api-staging |
+| 6 | production | Render → frapp-api-prod |
+| 7 | per-env | GitHub Actions (OIDC) |
+
+> **frapp-docs** has no environment variables — no sync needed.
+
+See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/ENV_REFERENCE.md` for the complete variable list.
+
+---
+
+## 12. Troubleshooting
 
 **Vercel build fails with "module not found"**
 → Ensure `transpilePackages` in `next.config.js` includes all `@repo/*` packages used by that app. The `vercel.json` `buildCommand` uses Turbo to build dependencies first.

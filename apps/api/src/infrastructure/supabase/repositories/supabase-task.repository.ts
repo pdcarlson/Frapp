@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import { ITaskRepository } from '../../../domain/repositories/task.repository.interface';
 import { Task } from '../../../domain/entities/task.entity';
 
 @Injectable()
 export class SupabaseTaskRepository implements ITaskRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Task | null> {
@@ -45,7 +46,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
   async create(data: Partial<Task>): Promise<Task> {
     const { data: created, error } = await this.supabase
       .from('tasks')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
 
@@ -60,7 +61,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
   ): Promise<Task> {
     const { data: updated, error } = await this.supabase
       .from('tasks')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .eq('chapter_id', chapterId)
       .select()

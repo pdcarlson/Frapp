@@ -12,6 +12,11 @@ import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
 } from '../decorators/permissions.decorator';
+import type { RequestContext } from '../types/request-context.types';
+
+interface RolePermissionRow {
+  permissions: string[];
+}
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -39,7 +44,7 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
+    const request = context.switchToHttp().getRequest<RequestContext>();
     const member = request.member;
 
     if (!member?.role_ids?.length) {
@@ -55,7 +60,9 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No valid roles found');
     }
 
-    const userPermissions = new Set(roles.flatMap((r) => r.permissions));
+    const userPermissions = new Set(
+      (roles as RolePermissionRow[]).flatMap((role) => role.permissions),
+    );
 
     if (userPermissions.has('*')) {
       return true;

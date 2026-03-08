@@ -88,9 +88,28 @@ export function useConfirmBackworkUpload() {
   return useMutation({
     mutationFn: async (body: {
       storage_path: string;
-      title: string;
-      description?: string;
-      folder?: string;
+      file_hash: string;
+      title?: string;
+      department_code?: string;
+      course_number?: string;
+      professor_name?: string;
+      year?: number;
+      semester?: "Spring" | "Summer" | "Fall" | "Winter";
+      assignment_type?:
+        | "Exam"
+        | "Midterm"
+        | "Final Exam"
+        | "Quiz"
+        | "Homework"
+        | "Lab"
+        | "Project"
+        | "Study Guide"
+        | "Notes"
+        | "Other";
+      assignment_number?: number;
+      document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
+      tags?: string[];
+      is_redacted: boolean;
     }) => {
       const { data, error } = await client.POST("/v1/backwork", { body });
       if (error) throw error;

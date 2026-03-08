@@ -1,13 +1,14 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type { IChatCategoryRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatChannelCategory } from '../../../domain/entities/chat.entity';
 
 @Injectable()
 export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChatChannelCategory[]> {
@@ -25,7 +26,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   ): Promise<ChatChannelCategory> {
     const { data: created, error } = await this.supabase
       .from('chat_channel_categories')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
@@ -38,7 +39,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
   ): Promise<ChatChannelCategory> {
     const { data: updated, error } = await this.supabase
       .from('chat_channel_categories')
-      .update(data)
+      .update(data as never)
       .eq('id', id)
       .select()
       .single();

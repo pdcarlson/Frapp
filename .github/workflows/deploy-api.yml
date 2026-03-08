@@ -1,28 +1,223 @@
 name: Deploy API
 
+# Triggered ONLY after CI workflow completes successfully.
+# This ensures broken code never deploys.
+#
+# Secrets use UNIFIED names (no _STAGING / _PRODUCTION suffixes).
+# GitHub's `environment:` field scopes each job to the correct environment,
+# so `RENDER_DEPLOY_HOOK_URL` resolves to the staging or production value
+# depending on which job runs. See docs/internal/ENV_REFERENCE.md.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main, preview]
-    paths:
-      - "apps/api/**"
-      - "packages/validation/**"
-      - "packages/typescript-config/**"
 
 jobs:
-  deploy-staging:
-    if: github.ref == 'refs/heads/preview'
+  # ── Check if deploy-relevant files changed ─────────────────────────────
+  check-changes:
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      api-changed: ${{ steps.filter.outputs.api-changed }}
+      migrations-changed: ${{ steps.filter.outputs.migrations-changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: filter
+        run: |
+          CHANGED=$(git diff --name-only HEAD~1 2>/dev/null || echo "")
+
+          if echo "$CHANGED" | grep -qE '^(apps/api/|packages/validation/|packages/typescript-config/)'; then
+            echo "api-changed=true" >> "$GITHUB_OUTPUT"
+            echo "API-related files changed."
+          else
+            echo "api-changed=false" >> "$GITHUB_OUTPUT"
+            echo "No API-related files changed."
+          fi
+
+          if echo "$CHANGED" | grep -qE '^supabase/migrations/'; then
+            echo "migrations-changed=true" >> "$GITHUB_OUTPUT"
+            echo "Migration files changed."
+          else
+            echo "migrations-changed=false" >> "$GITHUB_OUTPUT"
+            echo "No migration files changed."
+          fi
+
+  # ── Run database migrations (staging) ──────────────────────────────────
+  migrate-staging:
+    needs: check-changes
+    if: |
+      needs.check-changes.result == 'success' &&
+      needs.check-changes.outputs.migrations-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'preview'
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - name: Trigger Render staging deploy
-        if: secrets.RENDER_DEPLOY_HOOK_URL_STAGING != ''
-        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL_STAGING }}"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  deploy-production:
-    if: github.ref == 'refs/heads/main'
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@2.77.0
+
+      - name: Run migrations (dry-run)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/run-migration.mjs --env staging --dry-run
+
+      - name: Run migrations (apply)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/run-migration.mjs --env staging
+
+  # ── Run database migrations (production) ───────────────────────────────
+  # NOTE: The "production" environment has protection rules that require
+  # manual approval. The workflow pauses here until an admin approves.
+  migrate-production:
+    needs: check-changes
+    if: |
+      needs.check-changes.result == 'success' &&
+      needs.check-changes.outputs.migrations-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Trigger Render production deploy
-        if: secrets.RENDER_DEPLOY_HOOK_URL != ''
-        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@2.77.0
+
+      - name: Run migrations (dry-run)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/run-migration.mjs --env production --dry-run
+
+      - name: Run migrations (apply)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+        run: node scripts/run-migration.mjs --env production
+
+  # ── Deploy API to staging ──────────────────────────────────────────────
+  deploy-staging:
+    needs: [check-changes, migrate-staging]
+    if: |
+      always() &&
+      needs.check-changes.result == 'success' &&
+      needs.check-changes.outputs.api-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'preview' &&
+      (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for staging environment."
+            exit 1
+          fi
+          echo "Triggering Render staging deploy..."
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$RENDER_DEPLOY_HOOK_URL"
+
+      - name: Wait for deploy to propagate
+        run: sleep 15
+
+      - name: Health smoke check
+        env:
+          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$API_HEALTHCHECK_URL" ]; then
+            echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
+            exit 0
+          fi
+          echo "Waiting for staging API to become healthy..."
+          for i in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+              echo "✅ Staging API is healthy."
+              exit 0
+            fi
+            echo "Attempt $i/6 — retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::Staging health check failed after 6 attempts (2 min)."
+          exit 1
+
+  # ── Deploy API to production ───────────────────────────────────────────
+  deploy-production:
+    needs: [check-changes, migrate-production]
+    if: |
+      always() &&
+      needs.check-changes.result == 'success' &&
+      needs.check-changes.outputs.api-changed == 'true' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (needs.migrate-production.result == 'success' || needs.migrate-production.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for production environment."
+            exit 1
+          fi
+          echo "Triggering Render production deploy..."
+          curl --fail --silent --show-error --connect-timeout 5 --max-time 30 "$RENDER_DEPLOY_HOOK_URL"
+
+      - name: Wait for deploy to propagate
+        run: sleep 15
+
+      - name: Health smoke check
+        env:
+          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$API_HEALTHCHECK_URL" ]; then
+            echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
+            exit 0
+          fi
+          echo "Waiting for production API to become healthy..."
+          for i in 1 2 3 4 5 6; do
+            if curl --fail --silent --show-error --location --connect-timeout 2 --max-time 5 "$API_HEALTHCHECK_URL" >/dev/null 2>&1; then
+              echo "✅ Production API is healthy."
+              exit 0
+            fi
+            echo "Attempt $i/6 — retrying in 20s..."
+            sleep 20
+          done
+          echo "::error::Production health check failed after 6 attempts (2 min)."
+          exit 1
+
+  # ── Skip notification (CI failed) ──────────────────────────────────────
+  skip-on-failure:
+    if: github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: CI did not pass
+        run: |
+          echo "CI workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+          echo "Skipping deploy — CI must pass before deployments are triggered."

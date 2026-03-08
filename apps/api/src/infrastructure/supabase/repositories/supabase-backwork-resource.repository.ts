@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
+import type { FrappSupabaseClient } from '../database.types';
 import type {
   IBackworkResourceRepository,
   BackworkResourceFilter,
@@ -10,7 +10,8 @@ import { BackworkResource } from '../../../domain/entities/backwork.entity';
 @Injectable()
 export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findById(
@@ -87,7 +88,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
   async create(data: Partial<BackworkResource>): Promise<BackworkResource> {
     const { data: created, error } = await this.supabase
       .from('backwork_resources')
-      .insert(data)
+      .insert(data as never)
       .select()
       .single();
     if (error) throw error;
