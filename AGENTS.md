@@ -189,6 +189,18 @@ The agent **MUST NOT** use the GitHub PAT to:
 
 When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
 
+### Agent skills
+
+Skills are detailed SOPs in `.cursor/skills/`. Reference them when working in the relevant area:
+
+| Skill | File | Use when |
+|-------|------|----------|
+| Testing | `.cursor/skills/testing.md` | Running tests, verifying changes, CI parity checks |
+| UI Development | `.cursor/skills/ui-development.md` | Building/modifying web dashboard, landing, or shared UI components |
+| API Development | `.cursor/skills/api-development.md` | Adding NestJS endpoints, services, repositories, or updating the API contract |
+| Audit & Quality | `.cursor/skills/audit.md` | Code quality reviews, security audits, dependency checks, migration reviews |
+| Infrastructure Research | `.cursor/skills/infrastructure-research.md` | Investigating deployments, CI failures, secret sync, or service health |
+
 ### Gotchas
 
 - The API reads env from `.env.local` then `.env` (NestJS ConfigModule). Prefer using `npm run dev:api` which injects from Infisical instead.
