@@ -175,6 +175,9 @@ describe('NotificationService', () => {
     });
 
     it('should downgrade to SILENT during quiet hours for NORMAL priority', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-06-15T15:00:00Z'));
+
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
         basePreference,
       );
@@ -198,6 +201,8 @@ describe('NotificationService', () => {
           priority: 'SILENT',
         }),
       );
+
+      jest.useRealTimers();
     });
 
     it('should NOT downgrade URGENT during quiet hours', async () => {
