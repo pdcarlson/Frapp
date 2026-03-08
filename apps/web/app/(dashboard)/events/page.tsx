@@ -1,10 +1,12 @@
 "use client";
 
-import { CalendarDays, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CalendarDays, Plus, Search } from "lucide-react";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState, LoadingState } from "@/components/shared/async-states";
 
@@ -38,13 +40,54 @@ function formatDate(value: unknown): string {
 }
 
 export default function EventsPage() {
+  const [query, setQuery] = useState("");
+  const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
+  const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
+  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const eventsQuery = useEvents();
   const usingPreviewData = eventsQuery.isError;
-  const events = usingPreviewData
-    ? fallbackEvents
-    : Array.isArray(eventsQuery.data)
-      ? (eventsQuery.data as EventRow[])
-      : [];
+  const events = useMemo(() => {
+    if (usingPreviewData) {
+      return fallbackEvents;
+    }
+    if (Array.isArray(eventsQuery.data)) {
+      return eventsQuery.data as EventRow[];
+    }
+    return [];
+  }, [usingPreviewData, eventsQuery.data]);
+  const filteredEvents = useMemo(() => {
+    const queryLower = query.trim().toLowerCase();
+    return events.filter((event) => {
+      const name = String(event.name ?? "").toLowerCase();
+      const location = String(event.location ?? "").toLowerCase();
+      const recurrenceRule =
+        typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
+      const isRecurring = recurrenceRule.length > 0;
+      const isMandatory =
+        typeof event.is_mandatory === "boolean" ? event.is_mandatory : false;
+
+      if (queryLower && !name.includes(queryLower) && !location.includes(queryLower)) {
+        return false;
+      }
+      if (attendanceFilter === "mandatory" && !isMandatory) {
+        return false;
+      }
+      if (attendanceFilter === "optional" && isMandatory) {
+        return false;
+      }
+      if (recurrenceFilter === "recurring" && !isRecurring) {
+        return false;
+      }
+      if (recurrenceFilter === "one-time" && isRecurring) {
+        return false;
+      }
+      return true;
+    });
+  }, [events, query, attendanceFilter, recurrenceFilter]);
+  const visibleEventIds = filteredEvents.map((event) => String(event.id ?? event.name ?? ""));
+  const allVisibleSelected =
+    visibleEventIds.length > 0 &&
+    visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
 
   if (eventsQuery.isLoading) {
     return <LoadingState message="Loading chapter events..." />;
@@ -63,6 +106,47 @@ export default function EventsPage() {
             New Event
           </Button>
         </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative max-w-md">
+              <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search events by name or location"
+                className="pl-9"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <select
+                value={attendanceFilter}
+                onChange={(event) =>
+                  setAttendanceFilter(
+                    event.target.value as "all" | "mandatory" | "optional",
+                  )
+                }
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Attendance: All</option>
+                <option value="mandatory">Attendance: Mandatory</option>
+                <option value="optional">Attendance: Optional</option>
+              </select>
+              <select
+                value={recurrenceFilter}
+                onChange={(event) =>
+                  setRecurrenceFilter(
+                    event.target.value as "all" | "recurring" | "one-time",
+                  )
+                }
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Cadence: All</option>
+                <option value="recurring">Cadence: Recurring</option>
+                <option value="one-time">Cadence: One-time</option>
+              </select>
+            </div>
+          </div>
+        </CardContent>
       </Card>
 
       {usingPreviewData ? (
@@ -83,7 +167,22 @@ export default function EventsPage() {
         </Card>
       ) : null}
 
-      {events.length === 0 ? (
+      {selectedEventIds.length > 0 ? (
+        <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
+          <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm font-medium">
+              {selectedEventIds.length} event{selectedEventIds.length > 1 ? "s" : ""} selected
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline">Mark attendance complete</Button>
+              <Button size="sm" variant="outline">Notify assignees</Button>
+              <Button size="sm" variant="outline">Archive selected</Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {filteredEvents.length === 0 ? (
         <EmptyState
           title="No events yet"
           description="Create your first chapter event to unlock attendance and point automation."
@@ -101,6 +200,24 @@ export default function EventsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      aria-label="Select all visible events"
+                      checked={allVisibleSelected}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedEventIds((previous) => [
+                            ...new Set([...previous, ...visibleEventIds]),
+                          ]);
+                          return;
+                        }
+                        setSelectedEventIds((previous) =>
+                          previous.filter((eventId) => !visibleEventIds.includes(eventId)),
+                        );
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>Event</TableHead>
                   <TableHead>Schedule</TableHead>
                   <TableHead>Location</TableHead>
@@ -109,7 +226,8 @@ export default function EventsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {events.map((event) => {
+                {filteredEvents.map((event) => {
+                  const eventId = String(event.id ?? event.name ?? "unknown-event");
                   const eventName = String(event.name ?? "Untitled event");
                   const pointValue =
                     typeof event.point_value === "number" ? event.point_value : 0;
@@ -118,7 +236,25 @@ export default function EventsPage() {
                   const recurrenceRule =
                     typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
                   return (
-                    <TableRow key={String(event.id ?? eventName)}>
+                    <TableRow key={eventId}>
+                      <TableCell className="w-10">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${eventName}`}
+                          checked={selectedEventIds.includes(eventId)}
+                          onChange={(eventValue) => {
+                            if (eventValue.target.checked) {
+                              setSelectedEventIds((previous) => [
+                                ...new Set([...previous, eventId]),
+                              ]);
+                              return;
+                            }
+                            setSelectedEventIds((previous) =>
+                              previous.filter((candidate) => candidate !== eventId),
+                            );
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">{eventName}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {formatDate(event.start_time)}
