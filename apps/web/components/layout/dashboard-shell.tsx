@@ -48,6 +48,9 @@ const chapterPreview = {
   requestedAccent: "#93C5FD",
 };
 
+const sidebarFocusRingClassName =
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+
 function withAlpha(hexColor: string, opacity: number): string {
   const normalized = hexColor.replace("#", "");
   const red = Number.parseInt(normalized.slice(0, 2), 16);
@@ -120,6 +123,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   href={item.href}
                   className={cn(
                     "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
+                    sidebarFocusRingClassName,
                     pathname === item.href
                       ? "bg-primary/20 text-white"
                       : "text-slate-300 hover:bg-slate-800 hover:text-white",
@@ -132,7 +136,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <button
                   key={item.label}
                   type="button"
-                  className="flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500"
+                  className={cn(
+                    "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500",
+                    sidebarFocusRingClassName,
+                  )}
                   disabled
                   title={item.statusLabel}
                 >
