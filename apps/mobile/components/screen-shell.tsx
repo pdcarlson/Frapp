@@ -89,19 +89,19 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     color: frappTokens.color.feedback.infoTextInteractive,
-    fontSize: 11,
+    fontSize: frappTokens.type.label - 1,
     fontWeight: "700",
     letterSpacing: 0.2,
     textTransform: "uppercase",
   },
   cardTitle: {
     color: frappTokens.color.text.primary,
-    fontSize: 16,
+    fontSize: frappTokens.type.section - 2,
     fontWeight: "700",
   },
   cardBody: {
     color: frappTokens.color.text.secondary,
-    fontSize: 14,
+    fontSize: frappTokens.type.body - 1,
     lineHeight: 20,
   },
 });

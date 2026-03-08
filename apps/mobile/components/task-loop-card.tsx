@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   category: {
-    fontSize: 11,
+    fontSize: frappTokens.type.label - 1,
     fontWeight: "700",
     color: frappTokens.color.text.muted,
     letterSpacing: 0.4,
@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   stateText: {
-    fontSize: 11,
+    fontSize: frappTokens.type.label - 1,
     fontWeight: "700",
   },
   title: {
@@ -142,13 +142,13 @@ const styles = StyleSheet.create({
     color: frappTokens.color.text.secondary,
   },
   meta: {
-    fontSize: 12,
+    fontSize: frappTokens.type.meta,
     lineHeight: 18,
     color: frappTokens.color.text.muted,
   },
   actionHint: {
     marginTop: 2,
-    fontSize: 12,
+    fontSize: frappTokens.type.meta,
     fontWeight: "600",
     color: frappTokens.color.brand.royalBlue,
   },
@@ -161,7 +161,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   summaryLabel: {
-    fontSize: 12,
+    fontSize: frappTokens.type.label,
     fontWeight: "700",
     letterSpacing: 0.4,
     textTransform: "uppercase",
@@ -179,12 +179,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   summaryMetaText: {
-    fontSize: 13,
+    fontSize: frappTokens.type.meta,
     fontWeight: "600",
     color: frappTokens.color.feedback.infoText,
   },
   summaryMetaDivider: {
-    fontSize: 13,
+    fontSize: frappTokens.type.meta,
     color: frappTokens.color.feedback.infoText,
   },
 });

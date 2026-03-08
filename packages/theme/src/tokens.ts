@@ -50,10 +50,13 @@ export const frappTokens = {
     xl: 24,
   },
   type: {
+    display: 34,
     title: 30,
     section: 18,
     body: 15,
+    meta: 13,
     label: 12,
+    mono: 13,
   },
   motion: {
     duration: {

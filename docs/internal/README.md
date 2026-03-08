@@ -27,5 +27,6 @@ Use this area for:
 - `ACCESSIBILITY_TESTING_PROTOCOL.md`
 - `STATE_MICROCOPY_PACK.md`
 - `ICONOGRAPHY_GUIDELINES.md`
+- `TYPOGRAPHY_GUIDELINES.md`
 
 Public-facing product docs live in `apps/docs/`.

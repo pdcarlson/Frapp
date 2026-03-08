@@ -104,3 +104,6 @@ A UI change is not ready unless it passes:
 Icon sizing and usage standards are documented in:
 - `docs/internal/ICONOGRAPHY_GUIDELINES.md`
 
+Typography roles and usage standards are documented in:
+- `docs/internal/TYPOGRAPHY_GUIDELINES.md`
+
