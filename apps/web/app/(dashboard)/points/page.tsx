@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Scale } from "lucide-react";
 import { useLeaderboard, useMyPoints } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/shared/table-controls";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -77,6 +78,7 @@ export default function PointsPage() {
   const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
+  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
   const usingPreviewData = leaderboardQuery.isError || summaryQuery.isError;
@@ -166,6 +168,10 @@ export default function PointsPage() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setAdjustDialogOpen(true)}>
+              <Scale className="h-4 w-4" />
+              Adjust points
+            </Button>
             {windows.map((item) => (
               <Button
                 key={item.value}
@@ -397,6 +403,15 @@ export default function PointsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <PointsAdjustmentDialog
+        open={adjustDialogOpen}
+        onOpenChange={setAdjustDialogOpen}
+        usingPreviewData={usingPreviewData}
+        onAdjusted={async () => {
+          await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
+        }}
+      />
     </div>
   );
 }
