@@ -153,7 +153,7 @@ export default function Home() {
 
       <section className="bg-gradient-to-b from-primary-50/70 to-background">
         <div className="mx-auto grid w-full max-w-6xl gap-10 px-6 pb-20 pt-16 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
-          <div className="space-y-6">
+          <div className="space-y-6 motion-safe:animate-fade-up motion-reduce:animate-none">
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600">
               The operating system for greek life
             </p>
@@ -183,7 +183,7 @@ export default function Home() {
               <span>14-day trial • No per-seat pricing • Stripe-backed billing</span>
             </div>
           </div>
-          <div id="showcase" className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+          <div id="showcase" className="rounded-2xl border border-border bg-card p-6 shadow-sm motion-safe:animate-fade-up motion-reduce:animate-none">
             <div className="mb-5 flex items-center justify-between border-b border-border pb-4">
               <p className="text-sm font-semibold">Chapter Operations Snapshot</p>
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
@@ -208,7 +208,7 @@ export default function Home() {
       </section>
 
       <section className="border-y border-border bg-muted/40">
-        <div className="mx-auto grid w-full max-w-6xl gap-8 px-6 py-12 sm:grid-cols-3">
+        <div className="mx-auto grid w-full max-w-6xl gap-8 px-6 py-12 sm:grid-cols-3 motion-safe:animate-fade-up motion-reduce:animate-none">
           {chapterStats.map((stat) => (
             <div key={stat.label}>
               <p className="text-3xl font-bold text-navy dark:text-white">{stat.value}</p>
@@ -219,13 +219,13 @@ export default function Home() {
       </section>
 
       <section id="features" className="mx-auto w-full max-w-6xl px-6 py-20">
-        <div className="mx-auto mb-12 max-w-2xl text-center">
+        <div className="mx-auto mb-12 max-w-2xl text-center motion-safe:animate-fade-up motion-reduce:animate-none">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Core capabilities</p>
           <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Six core systems. One chapter platform.</h2>
         </div>
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <article key={feature.title} className="rounded-xl border border-border bg-card p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <article key={feature.title} className="rounded-xl border border-border bg-card p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md motion-safe:animate-fade-up motion-reduce:animate-none">
               <feature.icon className="h-8 w-8 text-primary" />
               <h3 className="mt-5 text-lg font-semibold">{feature.title}</h3>
               <p className="mt-2 text-sm leading-6 text-muted-foreground">{feature.description}</p>
@@ -236,7 +236,7 @@ export default function Home() {
 
       <section id="how-it-works" className="bg-muted/40 py-20">
         <div className="mx-auto w-full max-w-6xl px-6">
-          <div className="mx-auto mb-12 max-w-2xl text-center">
+          <div className="mx-auto mb-12 max-w-2xl text-center motion-safe:animate-fade-up motion-reduce:animate-none">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">How it works</p>
             <h2 className="mt-4 text-3xl font-bold tracking-tight sm:text-4xl">Launch your chapter in under five minutes.</h2>
           </div>
@@ -258,7 +258,7 @@ export default function Home() {
                 body: "From attendance to points and dues, keep everything synced across admin and member experiences.",
               },
             ].map((item) => (
-              <article key={item.step} className="rounded-xl border border-border bg-card p-6">
+              <article key={item.step} className="rounded-xl border border-border bg-card p-6 motion-safe:animate-fade-up motion-reduce:animate-none">
                 <p className="text-sm font-bold text-primary">{item.step}</p>
                 <h3 className="mt-4 text-lg font-semibold">{item.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.body}</p>
@@ -269,8 +269,8 @@ export default function Home() {
       </section>
 
       <section id="pricing" className="mx-auto w-full max-w-6xl px-6 py-20">
-        <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-2xl border-2 border-primary/30 bg-card p-8 shadow-sm">
+        <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] motion-safe:animate-fade-up motion-reduce:animate-none">
+          <div className="rounded-2xl border-2 border-primary/30 bg-card p-8 shadow-sm motion-safe:animate-fade-up motion-reduce:animate-none">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Simple chapter pricing</p>
             <p className="mt-4 text-5xl font-bold text-navy dark:text-white">$149</p>
             <p className="text-sm text-muted-foreground">per chapter / month</p>
@@ -297,7 +297,7 @@ export default function Home() {
           </div>
           <div className="space-y-4">
             {faqs.map((faq) => (
-              <article key={faq.question} className="rounded-xl border border-border bg-card p-5">
+              <article key={faq.question} className="rounded-xl border border-border bg-card p-5 motion-safe:animate-fade-up motion-reduce:animate-none">
                 <h3 className="font-semibold">{faq.question}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">{faq.answer}</p>
               </article>
@@ -308,10 +308,10 @@ export default function Home() {
 
       <section className="bg-muted/40 py-20">
         <div className="mx-auto w-full max-w-6xl px-6">
-          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl">Built for real chapter operations.</h2>
+          <h2 className="text-center text-3xl font-bold tracking-tight sm:text-4xl motion-safe:animate-fade-up motion-reduce:animate-none">Built for real chapter operations.</h2>
           <div className="mt-10 grid gap-5 md:grid-cols-3">
             {testimonials.map((testimonial) => (
-              <article key={testimonial.name} className="rounded-xl border border-border bg-card p-6">
+              <article key={testimonial.name} className="rounded-xl border border-border bg-card p-6 motion-safe:animate-fade-up motion-reduce:animate-none">
                 <p className="text-sm leading-6 text-slate-700 dark:text-slate-200">“{testimonial.quote}”</p>
                 <p className="mt-5 text-sm font-semibold">{testimonial.name}</p>
                 <p className="text-xs text-muted-foreground">{testimonial.role}</p>
@@ -323,7 +323,7 @@ export default function Home() {
       </section>
 
       <section className="bg-navy py-20 text-white">
-        <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-6 text-center">
+        <div className="mx-auto flex w-full max-w-6xl flex-col items-center px-6 text-center motion-safe:animate-fade-up motion-reduce:animate-none">
           <h2 className="max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl">
             Ready to run your chapter with clarity, speed, and accountability?
           </h2>
