@@ -120,6 +120,13 @@ export default function TabLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="onboarding-tour"
+        options={{
+          title: "Onboarding Tutorial",
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

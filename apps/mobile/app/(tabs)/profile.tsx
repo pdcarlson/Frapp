@@ -21,6 +21,11 @@ export default function ProfileScreen() {
         title="Theme"
         body="Choose light, dark, or system mode with consistent contrast-safe color roles."
       />
+      <Link href="/onboarding-tour" asChild>
+        <Pressable style={styles.tutorialButton}>
+          <Text style={styles.tutorialText}>Revisit onboarding tutorial</Text>
+        </Pressable>
+      </Link>
       <Link href="/(auth)/sign-in" asChild>
         <Pressable style={styles.signOutButton}>
           <Text style={styles.signOutText}>Sign out of preview session</Text>
@@ -44,5 +49,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     color: frappTokens.color.feedback.errorText,
+  },
+  tutorialButton: {
+    marginTop: 4,
+    borderRadius: frappTokens.radius.md,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    backgroundColor: "#EFF6FF",
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  tutorialText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1D4ED8",
   },
 });
