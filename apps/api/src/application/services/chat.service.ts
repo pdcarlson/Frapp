@@ -222,8 +222,10 @@ export class ChatService {
 
   async getMessages(
     channelId: string,
+    chapterId: string,
     options?: { limit?: number; before?: string },
   ): Promise<ChatMessage[]> {
+    await this.validateChannelForChapter(channelId, chapterId);
     return this.messageRepo.findByChannel(channelId, options);
   }
 
@@ -307,11 +309,11 @@ export class ChatService {
 
   async editMessage(
     messageId: string,
+    chapterId: string,
     senderId: string,
     content: string,
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+    const message = await this.findMessageInChapter(messageId, chapterId);
 
     if (message.sender_id !== senderId) {
       throw new ForbiddenException('You can only edit your own messages');
@@ -329,11 +331,11 @@ export class ChatService {
 
   async deleteMessage(
     messageId: string,
+    chapterId: string,
     requesterId: string,
     hasManagePermission: boolean,
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+    const message = await this.findMessageInChapter(messageId, chapterId);
 
     if (message.sender_id !== requesterId && !hasManagePermission) {
       throw new ForbiddenException(
@@ -350,9 +352,8 @@ export class ChatService {
 
   // ── Pins ─────────────────────────────────────────────────────────────
 
-  async pinMessage(messageId: string): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+  async pinMessage(messageId: string, chapterId: string): Promise<ChatMessage> {
+    const message = await this.findMessageInChapter(messageId, chapterId);
 
     if (message.is_pinned) {
       throw new BadRequestException('Message is already pinned');
@@ -373,9 +374,11 @@ export class ChatService {
     });
   }
 
-  async unpinMessage(messageId: string): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+  async unpinMessage(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessage> {
+    const message = await this.findMessageInChapter(messageId, chapterId);
 
     if (!message.is_pinned) {
       throw new BadRequestException('Message is not pinned');
@@ -387,13 +390,23 @@ export class ChatService {
     });
   }
 
-  async getPinnedMessages(channelId: string): Promise<ChatMessage[]> {
+  async getPinnedMessages(
+    channelId: string,
+    chapterId: string,
+  ): Promise<ChatMessage[]> {
+    await this.validateChannelForChapter(channelId, chapterId);
     return this.messageRepo.findPinnedByChannel(channelId);
   }
 
   // ── Reactions ────────────────────────────────────────────────────────
 
-  async toggleReaction(messageId: string, userId: string, emoji: string) {
+  async toggleReaction(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    emoji: string,
+  ) {
+    await this.findMessageInChapter(messageId, chapterId);
     const existing = await this.reactionRepo.findOne(messageId, userId, emoji);
 
     if (existing) {
@@ -409,13 +422,15 @@ export class ChatService {
     return { action: 'added' as const, reaction };
   }
 
-  async getReactions(messageId: string) {
+  async getReactions(messageId: string, chapterId: string) {
+    await this.findMessageInChapter(messageId, chapterId);
     return this.reactionRepo.findByMessage(messageId);
   }
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
-  async markChannelRead(channelId: string, userId: string) {
+  async markChannelRead(channelId: string, chapterId: string, userId: string) {
+    await this.validateChannelForChapter(channelId, chapterId);
     return this.readReceiptRepo.upsert(
       channelId,
       userId,
@@ -431,6 +446,8 @@ export class ChatService {
     filename: string,
     contentType: string,
   ) {
+    await this.validateChannelForChapter(channelId, chapterId);
+
     const ext = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';
@@ -457,5 +474,17 @@ export class ChatService {
     );
 
     return { signedUrl, storagePath, messageId };
+  }
+
+  private async findMessageInChapter(
+    messageId: string,
+    chapterId: string,
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) {
+      throw new NotFoundException('Message not found');
+    }
+    await this.validateChannelForChapter(message.channel_id, chapterId);
+    return message;
   }
 }

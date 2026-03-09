@@ -135,6 +135,7 @@ describe('ChatService', () => {
     }).compile();
 
     service = module.get(ChatService);
+    mockChannelRepo.findById.mockResolvedValue(baseChannel);
   });
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -262,6 +263,31 @@ describe('ChatService', () => {
 
   // ── Messages ─────────────────────────────────────────────────────────
 
+  describe('getMessages', () => {
+    it('should return messages for a chapter-scoped channel', async () => {
+      mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
+
+      const result = await service.getMessages('ch-chan-1', 'ch-1', {
+        limit: 20,
+      });
+
+      expect(result).toEqual([baseMessage]);
+      expect(mockChannelRepo.findById).toHaveBeenCalledWith('ch-chan-1', 'ch-1');
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', {
+        limit: 20,
+      });
+    });
+
+    it('should reject when channel is outside chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(service.getMessages('ch-chan-1', 'ch-2')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+  });
+
   describe('sendMessage', () => {
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -313,7 +339,12 @@ describe('ChatService', () => {
         edited_at: '2026-01-01T13:00:00.000Z',
       });
 
-      const result = await service.editMessage('msg-1', 'user-1', 'Updated');
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
       expect(result.content).toBe('Updated');
       expect(result.edited_at).toBeTruthy();
     });
@@ -322,7 +353,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.editMessage('msg-1', 'user-2', 'Hacked'),
+        service.editMessage('msg-1', 'ch-1', 'user-2', 'Hacked'),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -333,8 +364,21 @@ describe('ChatService', () => {
       });
 
       await expect(
-        service.editMessage('msg-1', 'user-1', 'Updated'),
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated'),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject editing when message channel is outside chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        channel_id: 'ch-chan-2',
+      });
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 
@@ -347,7 +391,7 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      const result = await service.deleteMessage('msg-1', 'user-1', false);
+      const result = await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
       expect(result.is_deleted).toBe(true);
       expect(result.content).toBe('[message deleted]');
     });
@@ -359,7 +403,7 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      await service.deleteMessage('msg-1', 'user-2', true);
+      await service.deleteMessage('msg-1', 'ch-1', 'user-2', true);
       expect(mockMessageRepo.update).toHaveBeenCalled();
     });
 
@@ -367,7 +411,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.deleteMessage('msg-1', 'user-2', false),
+        service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -383,7 +427,7 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      const result = await service.pinMessage('msg-1');
+      const result = await service.pinMessage('msg-1', 'ch-1');
       expect(result.is_pinned).toBe(true);
     });
 
@@ -393,7 +437,7 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
+      await expect(service.pinMessage('msg-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -402,7 +446,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.countPinnedByChannel.mockResolvedValue(50);
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
+      await expect(service.pinMessage('msg-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -419,14 +463,14 @@ describe('ChatService', () => {
         is_pinned: false,
       });
 
-      const result = await service.unpinMessage('msg-1');
+      const result = await service.unpinMessage('msg-1', 'ch-1');
       expect(result.is_pinned).toBe(false);
     });
 
     it('should reject unpinning non-pinned message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
-      await expect(service.unpinMessage('msg-1')).rejects.toThrow(
+      await expect(service.unpinMessage('msg-1', 'ch-1')).rejects.toThrow(
         BadRequestException,
       );
     });
@@ -446,7 +490,9 @@ describe('ChatService', () => {
       };
       mockReactionRepo.create.mockResolvedValue(newReaction);
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+
+      const result = await service.toggleReaction('msg-1', 'ch-1', 'user-1', '👍');
       expect(result.action).toBe('added');
     });
 
@@ -460,8 +506,9 @@ describe('ChatService', () => {
       };
       mockReactionRepo.findOne.mockResolvedValue(existing);
       mockReactionRepo.delete.mockResolvedValue();
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      const result = await service.toggleReaction('msg-1', 'ch-1', 'user-1', '👍');
       expect(result.action).toBe('removed');
     });
   });
@@ -478,7 +525,7 @@ describe('ChatService', () => {
         updated_at: '2026-01-01T12:00:00.000Z',
       });
 
-      const result = await service.markChannelRead('ch-chan-1', 'user-1');
+      const result = await service.markChannelRead('ch-chan-1', 'ch-1', 'user-1');
       expect(result.channel_id).toBe('ch-chan-1');
     });
   });

@@ -185,10 +185,11 @@ export class ChatController {
   })
   async getMessages(
     @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
     @Query('limit') limit?: number,
     @Query('before') before?: string,
   ) {
-    return this.chatService.getMessages(channelId, { limit, before });
+    return this.chatService.getMessages(channelId, chapterId, { limit, before });
   }
 
   @Post(':id/messages')
@@ -213,43 +214,59 @@ export class ChatController {
   @ApiOperation({ summary: 'Edit a message (own only)' })
   async editMessage(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: EditMessageDto,
   ) {
-    return this.chatService.editMessage(messageId, userId, dto.content);
+    return this.chatService.editMessage(
+      messageId,
+      chapterId,
+      userId,
+      dto.content,
+    );
   }
 
   @Delete('messages/:messageId')
   @ApiOperation({ summary: 'Delete a message (soft delete)' })
   async deleteMessage(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.deleteMessage(messageId, userId, false);
+    return this.chatService.deleteMessage(messageId, chapterId, userId, false);
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────
 
   @Get(':id/pins')
   @ApiOperation({ summary: 'Get pinned messages in a channel' })
-  async getPinnedMessages(@Param('id') channelId: string) {
-    return this.chatService.getPinnedMessages(channelId);
+  async getPinnedMessages(
+    @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.chatService.getPinnedMessages(channelId, chapterId);
   }
 
   @Post('messages/:messageId/pin')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Pin a message' })
-  async pinMessage(@Param('messageId') messageId: string) {
-    return this.chatService.pinMessage(messageId);
+  async pinMessage(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.chatService.pinMessage(messageId, chapterId);
   }
 
   @Delete('messages/:messageId/pin')
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Unpin a message' })
-  async unpinMessage(@Param('messageId') messageId: string) {
-    return this.chatService.unpinMessage(messageId);
+  async unpinMessage(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.chatService.unpinMessage(messageId, chapterId);
   }
 
   // ── Reactions ────────────────────────────────────────────────────────
@@ -258,16 +275,25 @@ export class ChatController {
   @ApiOperation({ summary: 'Toggle reaction (add/remove)' })
   async toggleReaction(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: ReactionDto,
   ) {
-    return this.chatService.toggleReaction(messageId, userId, dto.emoji);
+    return this.chatService.toggleReaction(
+      messageId,
+      chapterId,
+      userId,
+      dto.emoji,
+    );
   }
 
   @Get('messages/:messageId/reactions')
   @ApiOperation({ summary: 'Get reactions for a message' })
-  async getReactions(@Param('messageId') messageId: string) {
-    return this.chatService.getReactions(messageId);
+  async getReactions(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.chatService.getReactions(messageId, chapterId);
   }
 
   // ── File Upload ────────────────────────────────────────────────────
@@ -295,8 +321,9 @@ export class ChatController {
   @ApiOperation({ summary: 'Mark channel as read' })
   async markRead(
     @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.markChannelRead(channelId, userId);
+    return this.chatService.markChannelRead(channelId, chapterId, userId);
   }
 }
