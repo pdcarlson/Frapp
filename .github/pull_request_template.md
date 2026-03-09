@@ -41,6 +41,7 @@
 - [ ] Accessibility baseline verified (focus visibility, labels for icon-only controls, contrast checks, keyboard flow).
 - [ ] Responsive/adaptive behavior checked for impacted surfaces.
 - [ ] Microcopy uses production-grade language (no placeholder/vibe-coded copy).
+- [ ] No dead-end controls: every actionable-looking control has behavior or explicit disabled rationale.
 - [ ] If this PR changes UX patterns, `docs/internal/UI_UX_SYSTEM.md` and/or `docs/internal/UX_WRITING_GUIDE.md` were updated.
 
 ## Release label (preview → main only)
