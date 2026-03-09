@@ -227,6 +227,79 @@ describe('NotificationService', () => {
       );
     });
 
+    it('should normalize Intl hour 24 to midnight for quiet-hours checks', async () => {
+      const formatToPartsSpy = jest
+        .spyOn(Intl.DateTimeFormat.prototype, 'formatToParts')
+        .mockReturnValue([
+          { type: 'hour', value: '24' },
+          { type: 'literal', value: ':' },
+          { type: 'minute', value: '15' },
+          { type: 'literal', value: ':' },
+          { type: 'second', value: '00' },
+        ]);
+
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+        basePreference,
+      );
+      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+      try {
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Midnight',
+          body: 'Body',
+          priority: 'NORMAL',
+        });
+
+        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+          [basePushToken.token],
+          expect.objectContaining({
+            priority: 'SILENT',
+          }),
+        );
+      } finally {
+        formatToPartsSpy.mockRestore();
+      }
+    });
+
+    it('should continue when push provider delivery fails', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+        basePreference,
+      );
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+      mockPushProvider.sendToUser.mockRejectedValueOnce(new Error('boom'));
+
+      await expect(
+        service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockNotificationRepo.create).toHaveBeenCalled();
+    });
+
+    it('should use default category when category is omitted', async () => {
+      mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(null);
+      mockSettingsRepo.findByUser.mockResolvedValue(null);
+      mockNotificationRepo.create.mockResolvedValue(baseNotification);
+      mockPushTokenRepo.findByUser.mockResolvedValue([]);
+
+      await service.notifyUser('u-1', 'ch-1', {
+        title: 'Test',
+        body: 'Body',
+      });
+
+      expect(mockPreferenceRepo.findByUserChapterCategory).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+        'default',
+      );
+    });
+
     it('should not send push when user has no push tokens', async () => {
       mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
         basePreference,
