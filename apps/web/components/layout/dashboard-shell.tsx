@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -204,6 +205,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 >
                   <Bell className="h-4 w-4" />
                 </Button>
+                <ThemeToggle />
                 <Button size="sm" asChild>
                   <Link href="#">{pageAction}</Link>
                 </Button>

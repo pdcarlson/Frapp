@@ -1,7 +1,8 @@
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
 const ONBOARDING_STEPS = [
   {
@@ -35,6 +36,9 @@ const ONBOARDING_STEPS = [
 ];
 
 export default function OnboardingTourScreen() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   return (
     <ScreenShell
       title="Onboarding Tutorial"
@@ -71,82 +75,84 @@ export default function OnboardingTourScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  summaryCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    color: frappTokens.color.feedback.infoTextStrong,
-  },
-  summaryMeta: {
-    fontSize: 13,
-    color: frappTokens.color.feedback.infoText,
-  },
-  stepList: {
-    gap: 8,
-  },
-  stepCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 8,
-  },
-  stepHeader: {
-    gap: 6,
-  },
-  stepBadge: {
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorderStrong,
-    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  stepBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: frappTokens.color.feedback.infoTextInteractive,
-    textTransform: "uppercase",
-  },
-  stepTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  stepDetail: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-  backButton: {
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    summaryCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: tokens.spacing.lg,
+      gap: 6,
+    },
+    summaryLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+      color: tokens.color.feedback.infoText,
+    },
+    summaryValue: {
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: -0.3,
+      color: tokens.color.feedback.infoTextStrong,
+    },
+    summaryMeta: {
+      fontSize: 13,
+      color: tokens.color.feedback.infoText,
+    },
+    stepList: {
+      gap: 8,
+    },
+    stepCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 8,
+    },
+    stepHeader: {
+      gap: 6,
+    },
+    stepBadge: {
+      alignSelf: "flex-start",
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorderStrong,
+      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    stepBadgeText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: tokens.color.feedback.infoTextInteractive,
+      textTransform: "uppercase",
+    },
+    stepTitle: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    stepDetail: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    backButton: {
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    backButtonText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+  });
+}

@@ -1,7 +1,8 @@
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
 const TARGETS = [
   {
@@ -27,6 +28,9 @@ const TARGETS = [
 ] as const;
 
 export default function NotificationTargetsScreen() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   return (
     <ScreenShell
       title="Notification Destinations"
@@ -60,64 +64,66 @@ export default function NotificationTargetsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  summaryCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    color: frappTokens.color.feedback.infoTextStrong,
-  },
-  summaryMeta: {
-    fontSize: 13,
-    color: frappTokens.color.feedback.infoText,
-  },
-  targetList: {
-    gap: 8,
-  },
-  targetRow: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  targetLabel: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  targetDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-  backButton: {
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    summaryCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: tokens.spacing.lg,
+      gap: 6,
+    },
+    summaryLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.feedback.infoText,
+    },
+    summaryValue: {
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: -0.3,
+      color: tokens.color.feedback.infoTextStrong,
+    },
+    summaryMeta: {
+      fontSize: 13,
+      color: tokens.color.feedback.infoText,
+    },
+    targetList: {
+      gap: 8,
+    },
+    targetRow: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 6,
+    },
+    targetLabel: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    targetDescription: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    backButton: {
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    backButtonText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+  });
+}

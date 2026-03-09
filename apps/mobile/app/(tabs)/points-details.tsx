@@ -1,9 +1,10 @@
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { useMemo, useState } from "react";
+import { useFrappTheme } from "@/lib/theme";
 
 type LeaderboardWindow = "all-time" | "semester" | "month";
 
@@ -38,6 +39,8 @@ const LEADERBOARD_ROWS_BY_WINDOW: Record<
 };
 
 export default function PointsDetailsScreen() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   const [selectedWindow, setSelectedWindow] =
     useState<LeaderboardWindow>("all-time");
   const leaderboardRows = useMemo(
@@ -134,102 +137,104 @@ export default function PointsDetailsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  windowCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 10,
-  },
-  windowLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: frappTokens.color.text.muted,
-  },
-  windowButtonRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  windowButton: {
-    flex: 1,
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.muted,
-    paddingVertical: 9,
-    alignItems: "center",
-  },
-  windowButtonActive: {
-    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
-    borderColor: frappTokens.color.feedback.infoBorderStrong,
-  },
-  windowButtonText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: frappTokens.color.text.secondary,
-  },
-  windowButtonTextActive: {
-    color: frappTokens.color.feedback.infoTextInteractive,
-  },
-  tableCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 8,
-  },
-  tableTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  tableRows: {
-    gap: 6,
-  },
-  tableRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.muted,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    gap: 8,
-  },
-  rankCell: {
-    width: 34,
-    fontSize: 13,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  memberCell: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: "600",
-    color: frappTokens.color.text.primary,
-  },
-  pointsCell: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: frappTokens.color.brand.royalBlue,
-  },
-  backButton: {
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    windowCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 10,
+    },
+    windowLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.text.muted,
+    },
+    windowButtonRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    windowButton: {
+      flex: 1,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.muted,
+      paddingVertical: 9,
+      alignItems: "center",
+    },
+    windowButtonActive: {
+      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+      borderColor: tokens.color.feedback.infoBorderStrong,
+    },
+    windowButtonText: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: tokens.color.text.secondary,
+    },
+    windowButtonTextActive: {
+      color: tokens.color.feedback.infoTextInteractive,
+    },
+    tableCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 8,
+    },
+    tableTitle: {
+      fontSize: 15,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    tableRows: {
+      gap: 6,
+    },
+    tableRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.muted,
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      gap: 8,
+    },
+    rankCell: {
+      width: 34,
+      fontSize: 13,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    memberCell: {
+      flex: 1,
+      fontSize: 13,
+      fontWeight: "600",
+      color: tokens.color.text.primary,
+    },
+    pointsCell: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: tokens.color.brand.royalBlue,
+    },
+    backButton: {
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    backButtonText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+  });
+}

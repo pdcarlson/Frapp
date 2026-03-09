@@ -2,8 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
+:root {
     /* ── Surface ─────────────────────────────────────────── */
     --background: 210 40% 98%;        /* #F8FAFC Slate-50 */
     --foreground: 222 47% 11%;        /* #0F172A Navy */
@@ -54,7 +53,7 @@
     --radius: 0.625rem;               /* 10px — slightly tighter for dashboard density */
   }
 
-  .dark {
+.dark {
     /* ── Surface ─────────────────────────────────────────── */
     --background: 222 47% 11%;        /* #0F172A Navy */
     --foreground: 210 40% 98%;        /* #F8FAFC */
@@ -87,7 +86,6 @@
     --border: 217 33% 17%;
     --input: 217 33% 17%;
     --ring: 213 94% 68%;
-  }
 }
 
 @layer base {

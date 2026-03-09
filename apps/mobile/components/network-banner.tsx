@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
 type NetworkBannerProps = {
   isOnline: boolean | null;
@@ -10,6 +11,9 @@ export function NetworkBanner({
   isOnline,
   isInternetReachable,
 }: NetworkBannerProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   const offline = isOnline === false;
   const degraded = isOnline === true && isInternetReachable === false;
 
@@ -30,28 +34,30 @@ export function NetworkBanner({
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-  },
-  text: {
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  offlineContainer: {
-    backgroundColor: frappTokens.color.feedback.errorBackground,
-    borderBottomColor: frappTokens.color.feedback.errorBorder,
-  },
-  degradedContainer: {
-    backgroundColor: frappTokens.color.feedback.warningBackground,
-    borderBottomColor: frappTokens.color.feedback.warningBorder,
-  },
-  offlineText: {
-    color: frappTokens.color.feedback.errorText,
-  },
-  degradedText: {
-    color: frappTokens.color.feedback.warningText,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    container: {
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderBottomWidth: 1,
+    },
+    text: {
+      fontSize: 12,
+      fontWeight: "600",
+    },
+    offlineContainer: {
+      backgroundColor: tokens.color.feedback.errorBackground,
+      borderBottomColor: tokens.color.feedback.errorBorder,
+    },
+    degradedContainer: {
+      backgroundColor: tokens.color.feedback.warningBackground,
+      borderBottomColor: tokens.color.feedback.warningBorder,
+    },
+    offlineText: {
+      color: tokens.color.feedback.errorText,
+    },
+    degradedText: {
+      color: tokens.color.feedback.warningText,
+    },
+  });
+}

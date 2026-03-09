@@ -2,9 +2,13 @@ import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
 export default function TaskCenterScreen() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   return (
     <ScreenShell
       title="Task Center"
@@ -57,43 +61,45 @@ export default function TaskCenterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  summaryCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    color: frappTokens.color.feedback.infoTextStrong,
-  },
-  summaryMeta: {
-    fontSize: 13,
-    color: frappTokens.color.feedback.infoText,
-  },
-  backButton: {
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    summaryCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: tokens.spacing.lg,
+      gap: 6,
+    },
+    summaryLabel: {
+      fontSize: 12,
+      fontWeight: "700",
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+      color: tokens.color.feedback.infoText,
+    },
+    summaryValue: {
+      fontSize: 22,
+      fontWeight: "800",
+      letterSpacing: -0.3,
+      color: tokens.color.feedback.infoTextStrong,
+    },
+    summaryMeta: {
+      fontSize: 13,
+      color: tokens.color.feedback.infoText,
+    },
+    backButton: {
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    backButtonText: {
+      fontSize: 14,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+  });
+}

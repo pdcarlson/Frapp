@@ -1,7 +1,7 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { frappTokens } from "@repo/theme/tokens";
 import { usePreviewSession } from "@/lib/preview-session";
+import { useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
 
@@ -11,8 +11,21 @@ const tabIcon = (
   size = TAB_ICON_SIZE,
 ) => <Ionicons name={iconName} size={size} color={color} />;
 
+const TAB_ICON_NAMES = {
+  home: { inactive: "home-outline", active: "home" },
+  chat: { inactive: "chatbubbles-outline", active: "chatbubbles" },
+  events: { inactive: "calendar-outline", active: "calendar" },
+  points: { inactive: "trophy-outline", active: "trophy" },
+  profile: { inactive: "person-outline", active: "person" },
+  more: {
+    inactive: "ellipsis-horizontal-circle-outline",
+    active: "ellipsis-horizontal-circle",
+  },
+} as const;
+
 export default function TabLayout() {
   const { status } = usePreviewSession();
+  const { tokens } = useFrappTheme();
 
   if (status === "hydrating") {
     return null;
@@ -25,14 +38,17 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: frappTokens.color.brand.royalBlue,
-        tabBarInactiveTintColor: frappTokens.color.text.muted,
+        tabBarActiveTintColor: tokens.color.brand.royalBlue,
+        tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarStyle: {
           height: 62,
           paddingTop: 6,
           paddingBottom: 6,
+          backgroundColor: tokens.color.surface.card,
+          borderTopColor: tokens.color.surface.border,
         },
-        headerTitleStyle: { fontWeight: "700" },
+        headerTitleStyle: { fontWeight: "700", color: tokens.color.text.primary },
+        headerStyle: { backgroundColor: tokens.color.surface.card },
       }}
     >
       <Tabs.Screen
@@ -40,42 +56,72 @@ export default function TabLayout() {
         options={{
           title: "Home",
           headerTitle: "Frapp",
-          tabBarIcon: ({ color }) => tabIcon("home-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused ? TAB_ICON_NAMES.home.active : TAB_ICON_NAMES.home.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen
         name="chat"
         options={{
           title: "Chat",
-          tabBarIcon: ({ color }) => tabIcon("chatbubbles-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused ? TAB_ICON_NAMES.chat.active : TAB_ICON_NAMES.chat.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen
         name="events"
         options={{
           title: "Events",
-          tabBarIcon: ({ color }) => tabIcon("calendar-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused
+                ? TAB_ICON_NAMES.events.active
+                : TAB_ICON_NAMES.events.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen
         name="points"
         options={{
           title: "Points",
-          tabBarIcon: ({ color }) => tabIcon("trophy-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused
+                ? TAB_ICON_NAMES.points.active
+                : TAB_ICON_NAMES.points.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "Profile",
-          tabBarIcon: ({ color }) => tabIcon("person-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused
+                ? TAB_ICON_NAMES.profile.active
+                : TAB_ICON_NAMES.profile.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: "More",
-          tabBarIcon: ({ color }) => tabIcon("ellipsis-horizontal-circle-outline", color),
+          tabBarIcon: ({ color, focused }) =>
+            tabIcon(
+              focused ? TAB_ICON_NAMES.more.active : TAB_ICON_NAMES.more.inactive,
+              color,
+            ),
         }}
       />
       <Tabs.Screen

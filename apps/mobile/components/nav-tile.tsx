@@ -1,7 +1,8 @@
 import type { Href } from "expo-router";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
 type NavTileProps = {
   href: Href;
@@ -16,6 +17,9 @@ export function NavTile({
   description,
   accessibilityHint,
 }: NavTileProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   return (
     <Link href={href} asChild>
       <Pressable
@@ -31,25 +35,27 @@ export function NavTile({
   );
 }
 
-const styles = StyleSheet.create({
-  tile: {
-    minHeight: 52,
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-    justifyContent: "center",
-  },
-  tileTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  tileDescription: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    tile: {
+      minHeight: 52,
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 6,
+      justifyContent: "center",
+    },
+    tileTitle: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    tileDescription: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+  });
+}

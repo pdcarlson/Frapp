@@ -42,3 +42,4 @@ Avoid custom in-between values unless there is a documented accessibility reason
 
 - Dashboard shell nav icons: `apps/web/components/layout/dashboard-shell.tsx`
 - Mobile tab icons: `apps/mobile/app/(tabs)/_layout.tsx`
+- Semantic intent map: `docs/internal/ICON_INTENT_MAP.md`

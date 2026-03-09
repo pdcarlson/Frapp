@@ -1,34 +1,8 @@
 import { StyleSheet, Text, View } from "react-native";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { useFrappTheme } from "@/lib/theme";
 
-const LOOP_STATE_STYLES = {
-  synced: {
-    label: "Synced",
-    backgroundColor: frappTokens.color.feedback.successBackground,
-    borderColor: frappTokens.color.feedback.successBorder,
-    textColor: frappTokens.color.feedback.successText,
-  },
-  pending: {
-    label: "Pending",
-    backgroundColor: frappTokens.color.feedback.warningBackground,
-    borderColor: frappTokens.color.feedback.warningBorder,
-    textColor: frappTokens.color.feedback.warningText,
-  },
-  retry: {
-    label: "Retry needed",
-    backgroundColor: frappTokens.color.feedback.errorBackground,
-    borderColor: frappTokens.color.feedback.errorBorder,
-    textColor: frappTokens.color.feedback.errorText,
-  },
-  cached: {
-    label: "Cached",
-    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
-    borderColor: frappTokens.color.feedback.infoBorderStrong,
-    textColor: frappTokens.color.feedback.infoTextInteractive,
-  },
-} as const;
-
-export type TaskLoopState = keyof typeof LOOP_STATE_STYLES;
+export type TaskLoopState = "synced" | "pending" | "retry" | "cached";
 
 type TaskLoopCardProps = {
   category: string;
@@ -47,10 +21,13 @@ export function TaskLoopCard({
   meta,
   actionHint,
 }: TaskLoopCardProps) {
-  const stateStyle = LOOP_STATE_STYLES[state];
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+  const loopStateStyles = createLoopStateStyles(tokens);
+  const stateStyle = loopStateStyles[state];
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { borderLeftColor: stateStyle.cardAccent }]}>
       <View style={styles.headerRow}>
         <Text style={styles.category}>{category}</Text>
         <View
@@ -86,6 +63,9 @@ export function FeedSummaryCard({
   rank,
   period,
 }: FeedSummaryCardProps) {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
+
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryLabel}>Point balance</Text>
@@ -99,92 +79,128 @@ export function FeedSummaryCard({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 8,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-  },
-  category: {
-    fontSize: frappTokens.type.label - 1,
-    fontWeight: "700",
-    color: frappTokens.color.text.muted,
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-  },
-  statePill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  stateText: {
-    fontSize: frappTokens.type.label - 1,
-    fontWeight: "700",
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  body: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-  meta: {
-    fontSize: frappTokens.type.meta,
-    lineHeight: 18,
-    color: frappTokens.color.text.muted,
-  },
-  actionHint: {
-    marginTop: 2,
-    fontSize: frappTokens.type.meta,
-    fontWeight: "600",
-    color: frappTokens.color.brand.royalBlue,
-  },
-  summaryCard: {
-    borderRadius: frappTokens.radius.xl,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: frappTokens.spacing.xl,
-    gap: 6,
-  },
-  summaryLabel: {
-    fontSize: frappTokens.type.label,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-    textTransform: "uppercase",
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryBalance: {
-    fontSize: 30,
-    fontWeight: "800",
-    color: frappTokens.color.feedback.infoTextStrong,
-    letterSpacing: -0.6,
-  },
-  summaryMetaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  summaryMetaText: {
-    fontSize: frappTokens.type.meta,
-    fontWeight: "600",
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryMetaDivider: {
-    fontSize: frappTokens.type.meta,
-    color: frappTokens.color.feedback.infoText,
-  },
-});
+function createLoopStateStyles(tokens: FrappTokens) {
+  return {
+    synced: {
+      label: "Synced",
+      backgroundColor: tokens.color.feedback.successBackground,
+      borderColor: tokens.color.feedback.successBorder,
+      textColor: tokens.color.feedback.successText,
+      cardAccent: tokens.color.feedback.successBorder,
+    },
+    pending: {
+      label: "Pending",
+      backgroundColor: tokens.color.feedback.warningBackground,
+      borderColor: tokens.color.feedback.warningBorder,
+      textColor: tokens.color.feedback.warningText,
+      cardAccent: tokens.color.feedback.warningBorder,
+    },
+    retry: {
+      label: "Retry needed",
+      backgroundColor: tokens.color.feedback.errorBackground,
+      borderColor: tokens.color.feedback.errorBorder,
+      textColor: tokens.color.feedback.errorText,
+      cardAccent: tokens.color.feedback.errorBorder,
+    },
+    cached: {
+      label: "Cached",
+      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+      borderColor: tokens.color.feedback.infoBorderStrong,
+      textColor: tokens.color.feedback.infoTextInteractive,
+      cardAccent: tokens.color.feedback.infoBorderStrong,
+    },
+  } as const;
+}
+
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    card: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      borderLeftWidth: 4,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 8,
+    },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 8,
+    },
+    category: {
+      fontSize: tokens.type.label - 1,
+      fontWeight: "700",
+      color: tokens.color.text.muted,
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+    },
+    statePill: {
+      borderRadius: 999,
+      borderWidth: 1,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+    },
+    stateText: {
+      fontSize: tokens.type.label - 1,
+      fontWeight: "700",
+    },
+    title: {
+      fontSize: 16,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    body: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    meta: {
+      fontSize: tokens.type.meta,
+      lineHeight: 18,
+      color: tokens.color.text.muted,
+    },
+    actionHint: {
+      marginTop: 2,
+      fontSize: tokens.type.meta,
+      fontWeight: "600",
+      color: tokens.color.brand.royalBlue,
+    },
+    summaryCard: {
+      borderRadius: tokens.radius.xl,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: tokens.spacing.xl,
+      gap: 6,
+    },
+    summaryLabel: {
+      fontSize: tokens.type.label,
+      fontWeight: "700",
+      letterSpacing: 0.4,
+      textTransform: "uppercase",
+      color: tokens.color.feedback.infoText,
+    },
+    summaryBalance: {
+      fontSize: 30,
+      fontWeight: "800",
+      color: tokens.color.feedback.infoTextStrong,
+      letterSpacing: -0.6,
+    },
+    summaryMetaRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    summaryMetaText: {
+      fontSize: tokens.type.meta,
+      fontWeight: "600",
+      color: tokens.color.feedback.infoText,
+    },
+    summaryMetaDivider: {
+      fontSize: tokens.type.meta,
+      color: tokens.color.feedback.infoText,
+    },
+  });
+}

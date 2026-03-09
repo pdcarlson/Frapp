@@ -1,16 +1,18 @@
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
 import { PreviewAuthMethod, usePreviewSession } from "@/lib/preview-session";
+import { useFrappTheme } from "@/lib/theme";
 
 type SessionReadinessRowProps = {
   label: string;
   value: string;
   tone: "ready" | "warning" | "error";
+  styles: ReturnType<typeof createStyles>;
 };
 
-function SessionReadinessRow({ label, value, tone }: SessionReadinessRowProps) {
+function SessionReadinessRow({ label, value, tone, styles }: SessionReadinessRowProps) {
   const toneStyle =
     tone === "ready"
       ? styles.readyTone
@@ -27,6 +29,8 @@ function SessionReadinessRow({ label, value, tone }: SessionReadinessRowProps) {
 }
 
 export default function SignIn() {
+  const { tokens } = useFrappTheme();
+  const styles = createStyles(tokens);
   const router = useRouter();
   const { signIn } = usePreviewSession();
   const [email, setEmail] = useState("officer@university.edu");
@@ -74,7 +78,7 @@ export default function SignIn() {
           value={email}
           onChangeText={setEmail}
           placeholder="you@university.edu"
-          placeholderTextColor={frappTokens.color.text.muted}
+          placeholderTextColor={tokens.color.text.muted}
           autoCapitalize="none"
           autoComplete="email"
           keyboardType="email-address"
@@ -155,21 +159,25 @@ export default function SignIn() {
             label="Network"
             value="Connected"
             tone="ready"
+            styles={styles}
           />
           <SessionReadinessRow
             label="Email validation"
             value="Valid format"
             tone="ready"
+            styles={styles}
           />
           <SessionReadinessRow
             label="Storage"
             value="Provisioning"
             tone="warning"
+            styles={styles}
           />
           <SessionReadinessRow
             label="Chapter context"
             value="Resolves after sign-in"
             tone="warning"
+            styles={styles}
           />
         </View>
       </View>
@@ -177,173 +185,175 @@ export default function SignIn() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-    backgroundColor: frappTokens.color.surface.canvas,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: "800",
-    color: frappTokens.color.text.primary,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: frappTokens.color.text.muted,
-    marginBottom: 24,
-    textAlign: "center",
-  },
-  card: {
-    backgroundColor: frappTokens.color.surface.card,
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    padding: 20,
-    width: "100%",
-    maxWidth: 340,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  cardBody: {
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-  inputLabel: {
-    marginTop: 14,
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: frappTokens.color.text.muted,
-  },
-  input: {
-    marginTop: 8,
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: frappTokens.color.text.primary,
-  },
-  modeRow: {
-    marginTop: 10,
-    flexDirection: "row",
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    overflow: "hidden",
-  },
-  modeButton: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 10,
-    backgroundColor: frappTokens.color.surface.muted,
-  },
-  modeButtonActive: {
-    backgroundColor: frappTokens.color.feedback.infoBackgroundStrong,
-  },
-  modeButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: frappTokens.color.text.secondary,
-  },
-  modeButtonTextActive: {
-    color: frappTokens.color.feedback.infoTextInteractive,
-  },
-  errorText: {
-    marginTop: 10,
-    fontSize: 12,
-    fontWeight: "600",
-    color: frappTokens.color.feedback.errorText,
-  },
-  helperText: {
-    marginTop: 10,
-    fontSize: 12,
-    color: frappTokens.color.text.secondary,
-  },
-  primaryButton: {
-    marginTop: 16,
-    borderRadius: frappTokens.radius.md,
-    backgroundColor: frappTokens.color.brand.royalBlue,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  primaryButtonDisabled: {
-    opacity: 0.55,
-  },
-  primaryButtonText: {
-    color: frappTokens.color.text.inverse,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  secondaryButton: {
-    marginTop: 10,
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    paddingVertical: 12,
-    alignItems: "center",
-    backgroundColor: frappTokens.color.surface.card,
-  },
-  secondaryButtonText: {
-    color: frappTokens.color.text.primary,
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  readinessCard: {
-    marginTop: 14,
-    borderRadius: frappTokens.radius.md,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: 12,
-    gap: 8,
-  },
-  readinessTitle: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: frappTokens.color.feedback.infoTextStrong,
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
-  },
-  readinessRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 10,
-  },
-  readinessLabel: {
-    fontSize: 12,
-    color: frappTokens.color.text.secondary,
-  },
-  readinessValue: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  readyTone: {
-    color: frappTokens.color.feedback.successText,
-  },
-  warningTone: {
-    color: frappTokens.color.feedback.warningText,
-  },
-  errorTone: {
-    color: frappTokens.color.feedback.errorText,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    container: {
+      flex: 1,
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 24,
+      backgroundColor: tokens.color.surface.canvas,
+    },
+    title: {
+      fontSize: 36,
+      fontWeight: "800",
+      color: tokens.color.text.primary,
+      marginBottom: 8,
+    },
+    subtitle: {
+      fontSize: 16,
+      color: tokens.color.text.muted,
+      marginBottom: 24,
+      textAlign: "center",
+    },
+    card: {
+      backgroundColor: tokens.color.surface.card,
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      padding: 20,
+      width: "100%",
+      maxWidth: 340,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
+      elevation: 3,
+    },
+    cardTitle: {
+      fontSize: 18,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    cardBody: {
+      marginTop: 8,
+      fontSize: 14,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    inputLabel: {
+      marginTop: 14,
+      fontSize: 12,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.text.muted,
+    },
+    input: {
+      marginTop: 8,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: tokens.color.text.primary,
+    },
+    modeRow: {
+      marginTop: 10,
+      flexDirection: "row",
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      overflow: "hidden",
+    },
+    modeButton: {
+      flex: 1,
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 10,
+      backgroundColor: tokens.color.surface.muted,
+    },
+    modeButtonActive: {
+      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+    },
+    modeButtonText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: tokens.color.text.secondary,
+    },
+    modeButtonTextActive: {
+      color: tokens.color.feedback.infoTextInteractive,
+    },
+    errorText: {
+      marginTop: 10,
+      fontSize: 12,
+      fontWeight: "600",
+      color: tokens.color.feedback.errorText,
+    },
+    helperText: {
+      marginTop: 10,
+      fontSize: 12,
+      color: tokens.color.text.secondary,
+    },
+    primaryButton: {
+      marginTop: 16,
+      borderRadius: tokens.radius.md,
+      backgroundColor: tokens.color.brand.royalBlue,
+      paddingVertical: 12,
+      alignItems: "center",
+    },
+    primaryButtonDisabled: {
+      opacity: 0.55,
+    },
+    primaryButtonText: {
+      color: tokens.color.text.inverse,
+      fontWeight: "700",
+      fontSize: 14,
+    },
+    secondaryButton: {
+      marginTop: 10,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      paddingVertical: 12,
+      alignItems: "center",
+      backgroundColor: tokens.color.surface.card,
+    },
+    secondaryButtonText: {
+      color: tokens.color.text.primary,
+      fontWeight: "700",
+      fontSize: 14,
+    },
+    readinessCard: {
+      marginTop: 14,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: 12,
+      gap: 8,
+    },
+    readinessTitle: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: tokens.color.feedback.infoTextStrong,
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+    },
+    readinessRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 10,
+    },
+    readinessLabel: {
+      fontSize: 12,
+      color: tokens.color.text.secondary,
+    },
+    readinessValue: {
+      fontSize: 12,
+      fontWeight: "700",
+    },
+    readyTone: {
+      color: tokens.color.feedback.successText,
+    },
+    warningTone: {
+      color: tokens.color.feedback.warningText,
+    },
+    errorTone: {
+      color: tokens.color.feedback.errorText,
+    },
+  });
+}

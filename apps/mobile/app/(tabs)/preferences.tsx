@@ -1,9 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useState } from "react";
-import { StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
-import { frappTokens } from "@repo/theme/tokens";
+import { FrappTokens } from "@repo/theme/tokens";
+import { ThemePreference, useFrappTheme } from "@/lib/theme";
 
 const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
 
@@ -50,11 +51,19 @@ const PREFERENCE_ROWS: PreferenceRow[] = [
   },
 ];
 
+const THEME_OPTIONS: Array<{ key: ThemePreference; label: string }> = [
+  { key: "system", label: "System" },
+  { key: "light", label: "Light" },
+  { key: "dark", label: "Dark" },
+];
+
 type PreferenceToggleRowProps = {
   title: string;
   description: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
+  tokens: FrappTokens;
+  styles: ReturnType<typeof createStyles>;
 };
 
 function PreferenceToggleRow({
@@ -62,6 +71,8 @@ function PreferenceToggleRow({
   description,
   value,
   onValueChange,
+  tokens,
+  styles,
 }: PreferenceToggleRowProps) {
   return (
     <View style={styles.toggleCard}>
@@ -73,14 +84,10 @@ function PreferenceToggleRow({
         value={value}
         onValueChange={onValueChange}
         trackColor={{
-          false: frappTokens.color.surface.border,
-          true: frappTokens.color.feedback.infoBorderStrong,
+          false: tokens.color.surface.border,
+          true: tokens.color.feedback.infoBorderStrong,
         }}
-        thumbColor={
-          value
-            ? frappTokens.color.brand.royalBlue
-            : frappTokens.color.surface.card
-        }
+        thumbColor={value ? tokens.color.brand.royalBlue : tokens.color.surface.card}
       />
     </View>
   );
@@ -101,6 +108,9 @@ function isPreferenceState(value: unknown): value is PreferenceState {
 }
 
 export default function PreferencesScreen() {
+  const { tokens, themePreference, resolvedTheme, setThemePreference } =
+    useFrappTheme();
+  const styles = createStyles(tokens);
   const [preferences, setPreferences] = useState<PreferenceState>(DEFAULT_PREFERENCES);
   const [isHydrated, setIsHydrated] = useState(false);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
@@ -194,8 +204,43 @@ export default function PreferencesScreen() {
               [row.key]: value,
             }))
           }
+          tokens={tokens}
+          styles={styles}
         />
       ))}
+
+      <View style={styles.themeCard}>
+        <Text style={styles.themeLabel}>Theme override</Text>
+        <Text style={styles.themeDescription}>
+          System is the default. Manual override persists locally for reliable preview testing.
+        </Text>
+        <View style={styles.themeOptionRow}>
+          {THEME_OPTIONS.map((themeOption) => {
+            const selected = themePreference === themeOption.key;
+            return (
+              <Pressable
+                key={themeOption.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => setThemePreference(themeOption.key)}
+                style={[
+                  styles.themeOptionButton,
+                  selected ? styles.themeOptionButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.themeOptionText,
+                    selected ? styles.themeOptionTextActive : null,
+                  ]}
+                >
+                  {themeOption.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
 
       <TaskLoopCard
         category="Quiet hours"
@@ -226,9 +271,9 @@ export default function PreferencesScreen() {
       <TaskLoopCard
         category="Theme"
         state="cached"
-        title="System mode active"
-        body="Frapp follows your device appearance and keeps the last known mode offline."
-        meta="Last confirmed sync: today"
+        title={`Theme mode: ${themePreference}`}
+        body={`Current resolved appearance is ${resolvedTheme}. Manual override persists on this device.`}
+        meta="Theme preference synced to local settings storage"
       />
       <TaskLoopCard
         category="Integrity"
@@ -245,56 +290,102 @@ export default function PreferencesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  summaryCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.feedback.infoBorder,
-    backgroundColor: frappTokens.color.feedback.infoBackground,
-    padding: frappTokens.spacing.lg,
-    gap: 6,
-  },
-  summaryLabel: {
-    fontSize: frappTokens.type.label,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-    textTransform: "uppercase",
-    color: frappTokens.color.feedback.infoText,
-  },
-  summaryValue: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: frappTokens.color.feedback.infoTextStrong,
-    letterSpacing: -0.3,
-  },
-  summaryMeta: {
-    fontSize: frappTokens.type.meta,
-    color: frappTokens.color.feedback.infoText,
-  },
-  toggleCard: {
-    borderRadius: frappTokens.radius.lg,
-    borderWidth: 1,
-    borderColor: frappTokens.color.surface.border,
-    backgroundColor: frappTokens.color.surface.card,
-    padding: frappTokens.spacing.lg,
-    gap: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  toggleTextStack: {
-    flex: 1,
-    gap: 4,
-    paddingRight: 12,
-  },
-  toggleTitle: {
-    fontSize: frappTokens.type.section - 2,
-    fontWeight: "700",
-    color: frappTokens.color.text.primary,
-  },
-  toggleDescription: {
-    fontSize: frappTokens.type.body - 1,
-    lineHeight: 20,
-    color: frappTokens.color.text.secondary,
-  },
-});
+function createStyles(tokens: FrappTokens) {
+  return StyleSheet.create({
+    summaryCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tokens.color.feedback.infoBackground,
+      padding: tokens.spacing.lg,
+      gap: 6,
+    },
+    summaryLabel: {
+      fontSize: tokens.type.label,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.feedback.infoText,
+    },
+    summaryValue: {
+      fontSize: 22,
+      fontWeight: "800",
+      color: tokens.color.feedback.infoTextStrong,
+      letterSpacing: -0.3,
+    },
+    summaryMeta: {
+      fontSize: tokens.type.meta,
+      color: tokens.color.feedback.infoText,
+    },
+    toggleCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 10,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    toggleTextStack: {
+      flex: 1,
+      gap: 4,
+      paddingRight: 12,
+    },
+    toggleTitle: {
+      fontSize: tokens.type.section - 2,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    toggleDescription: {
+      fontSize: tokens.type.body - 1,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    themeCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 8,
+    },
+    themeLabel: {
+      fontSize: tokens.type.section - 2,
+      fontWeight: "700",
+      color: tokens.color.text.primary,
+    },
+    themeDescription: {
+      fontSize: tokens.type.body - 1,
+      lineHeight: 20,
+      color: tokens.color.text.secondary,
+    },
+    themeOptionRow: {
+      marginTop: 4,
+      flexDirection: "row",
+      gap: 8,
+    },
+    themeOptionButton: {
+      flex: 1,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.muted,
+      paddingVertical: 9,
+      alignItems: "center",
+    },
+    themeOptionButtonActive: {
+      borderColor: tokens.color.feedback.infoBorderStrong,
+      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
+    },
+    themeOptionText: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: tokens.color.text.secondary,
+    },
+    themeOptionTextActive: {
+      color: tokens.color.feedback.infoTextInteractive,
+    },
+  });
+}
