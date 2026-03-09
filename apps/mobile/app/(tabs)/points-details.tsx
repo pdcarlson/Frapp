@@ -3,15 +3,48 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { frappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
+import { useMemo, useState } from "react";
 
-const LEADERBOARD_ROWS = [
-  { rank: "#1", member: "Jordan M.", points: "332 pts" },
-  { rank: "#2", member: "Evan R.", points: "318 pts" },
-  { rank: "#3", member: "Dylan P.", points: "295 pts" },
-  { rank: "#4", member: "You", points: "286 pts" },
+type LeaderboardWindow = "all-time" | "semester" | "month";
+
+const WINDOW_OPTIONS: Array<{ key: LeaderboardWindow; label: string }> = [
+  { key: "all-time", label: "All time" },
+  { key: "semester", label: "Semester" },
+  { key: "month", label: "Month" },
 ];
 
+const LEADERBOARD_ROWS_BY_WINDOW: Record<
+  LeaderboardWindow,
+  Array<{ rank: string; member: string; points: string }>
+> = {
+  "all-time": [
+    { rank: "#1", member: "Jordan M.", points: "332 pts" },
+    { rank: "#2", member: "Evan R.", points: "318 pts" },
+    { rank: "#3", member: "Dylan P.", points: "295 pts" },
+    { rank: "#4", member: "You", points: "286 pts" },
+  ],
+  semester: [
+    { rank: "#1", member: "You", points: "94 pts" },
+    { rank: "#2", member: "Jordan M.", points: "90 pts" },
+    { rank: "#3", member: "Dylan P.", points: "88 pts" },
+    { rank: "#4", member: "Evan R.", points: "81 pts" },
+  ],
+  month: [
+    { rank: "#1", member: "You", points: "42 pts" },
+    { rank: "#2", member: "Jordan M.", points: "40 pts" },
+    { rank: "#3", member: "Evan R.", points: "36 pts" },
+    { rank: "#4", member: "Dylan P.", points: "35 pts" },
+  ],
+};
+
 export default function PointsDetailsScreen() {
+  const [selectedWindow, setSelectedWindow] =
+    useState<LeaderboardWindow>("all-time");
+  const leaderboardRows = useMemo(
+    () => LEADERBOARD_ROWS_BY_WINDOW[selectedWindow],
+    [selectedWindow],
+  );
+
   return (
     <ScreenShell
       title="Leaderboard Details"
@@ -20,24 +53,42 @@ export default function PointsDetailsScreen() {
       <View style={styles.windowCard}>
         <Text style={styles.windowLabel}>Time window</Text>
         <View style={styles.windowButtonRow}>
-          <Pressable style={[styles.windowButton, styles.windowButtonActive]}>
-            <Text style={[styles.windowButtonText, styles.windowButtonTextActive]}>
-              All time
-            </Text>
-          </Pressable>
-          <Pressable style={styles.windowButton}>
-            <Text style={styles.windowButtonText}>Semester</Text>
-          </Pressable>
-          <Pressable style={styles.windowButton}>
-            <Text style={styles.windowButtonText}>Month</Text>
-          </Pressable>
+          {WINDOW_OPTIONS.map((windowOption) => {
+            const active = selectedWindow === windowOption.key;
+
+            return (
+              <Pressable
+                key={windowOption.key}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => setSelectedWindow(windowOption.key)}
+                style={[
+                  styles.windowButton,
+                  active ? styles.windowButtonActive : null,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.windowButtonText,
+                    active ? styles.windowButtonTextActive : null,
+                  ]}
+                >
+                  {windowOption.label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
       <View style={styles.tableCard}>
-        <Text style={styles.tableTitle}>Top chapter ranks</Text>
+        <Text style={styles.tableTitle}>
+          Top chapter ranks ·{" "}
+          {WINDOW_OPTIONS.find((windowOption) => windowOption.key === selectedWindow)
+            ?.label ?? "All time"}
+        </Text>
         <View style={styles.tableRows}>
-          {LEADERBOARD_ROWS.map((row) => (
+          {leaderboardRows.map((row) => (
             <View key={row.rank} style={styles.tableRow}>
               <Text style={styles.rankCell}>{row.rank}</Text>
               <Text style={styles.memberCell}>{row.member}</Text>
@@ -56,10 +107,22 @@ export default function PointsDetailsScreen() {
       />
       <TaskLoopCard
         category="Refresh"
-        state="pending"
-        title="Month window recomputing"
-        body="Current period leaderboard is refreshing in the background after recent check-ins."
-        meta="Estimated refresh: < 30s"
+        state={selectedWindow === "month" ? "pending" : "synced"}
+        title={
+          selectedWindow === "month"
+            ? "Month window recomputing"
+            : "Selected window synchronized"
+        }
+        body={
+          selectedWindow === "month"
+            ? "Current period leaderboard is refreshing in the background after recent check-ins."
+            : "Leaderboard data is in sync with the selected time window."
+        }
+        meta={
+          selectedWindow === "month"
+            ? "Estimated refresh: < 30s"
+            : "Switch windows to inspect period-level rankings."
+        }
       />
 
       <Link href="/points" asChild>

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { frappTokens } from "@repo/theme/tokens";
@@ -71,6 +72,37 @@ function MessageBubble({
 }
 
 export default function ChatThreadScreen() {
+  const [pendingActions, setPendingActions] = useState(2);
+  const [retryCount, setRetryCount] = useState(2);
+  const [composerFeedback, setComposerFeedback] = useState(
+    "Draft preserved locally with retry metadata. Sending resumes automatically once connection improves.",
+  );
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  function handleRetryUpload() {
+    if (isRetrying) {
+      return;
+    }
+
+    setIsRetrying(true);
+    setRetryCount((current) => current + 1);
+    setComposerFeedback(
+      "Retry requested. Upload requeued and compression fallback is running.",
+    );
+
+    setTimeout(() => {
+      setPendingActions((current) => Math.max(current - 1, 0));
+      setIsRetrying(false);
+    }, 800);
+  }
+
+  function handleQueueMessage() {
+    setPendingActions((current) => current + 1);
+    setComposerFeedback(
+      "Message queued successfully. It will send automatically when connection stabilizes.",
+    );
+  }
+
   return (
     <ScreenShell
       title="#general"
@@ -80,7 +112,7 @@ export default function ChatThreadScreen() {
         <Text style={styles.threadSummaryLabel}>Thread health</Text>
         <Text style={styles.threadSummaryValue}>Delivery stabilized</Text>
         <Text style={styles.threadSummaryMeta}>
-          2 pending actions • 1 retry-required attachment
+          {pendingActions} pending actions • {retryCount} retry attempts
         </Text>
       </View>
 
@@ -107,14 +139,27 @@ export default function ChatThreadScreen() {
 
       <View style={styles.composerCard}>
         <Text style={styles.composerLabel}>Composer state</Text>
-        <Text style={styles.composerText}>
-          Draft preserved locally with retry metadata. Sending resumes automatically once connection improves.
-        </Text>
+        <Text style={styles.composerText}>{composerFeedback}</Text>
         <View style={styles.composerActions}>
-          <Pressable style={styles.retryButton}>
-            <Text style={styles.retryButtonText}>Retry failed upload</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isRetrying }}
+            disabled={isRetrying}
+            onPress={handleRetryUpload}
+            style={[
+              styles.retryButton,
+              isRetrying ? styles.retryButtonDisabled : null,
+            ]}
+          >
+            <Text style={styles.retryButtonText}>
+              {isRetrying ? "Retrying upload..." : "Retry failed upload"}
+            </Text>
           </Pressable>
-          <Pressable style={styles.sendButton}>
+          <Pressable
+            accessibilityRole="button"
+            onPress={handleQueueMessage}
+            style={styles.sendButton}
+          >
             <Text style={styles.sendButtonText}>Queue message</Text>
           </Pressable>
         </View>
@@ -232,6 +277,9 @@ const styles = StyleSheet.create({
     backgroundColor: frappTokens.color.feedback.errorBackground,
     paddingVertical: 10,
     alignItems: "center",
+  },
+  retryButtonDisabled: {
+    opacity: 0.65,
   },
   retryButtonText: {
     fontSize: 12,

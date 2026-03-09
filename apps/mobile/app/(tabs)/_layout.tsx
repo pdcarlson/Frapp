@@ -1,6 +1,7 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { frappTokens } from "@repo/theme/tokens";
+import { usePreviewSession } from "@/lib/preview-session";
 
 const TAB_ICON_SIZE = 20;
 
@@ -11,6 +12,16 @@ const tabIcon = (
 ) => <Ionicons name={iconName} size={size} color={color} />;
 
 export default function TabLayout() {
+  const { status } = usePreviewSession();
+
+  if (status === "hydrating") {
+    return null;
+  }
+
+  if (status === "unauthenticated") {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
+
   return (
     <Tabs
       screenOptions={{

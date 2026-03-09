@@ -104,6 +104,7 @@ export default function PreferencesScreen() {
   const [preferences, setPreferences] = useState<PreferenceState>(DEFAULT_PREFERENCES);
   const [isHydrated, setIsHydrated] = useState(false);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
+  const [hydrationRecovered, setHydrationRecovered] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -121,6 +122,13 @@ export default function PreferencesScreen() {
         }
 
         setPreferences(parsedPreferences);
+      } catch {
+        setHydrationRecovered(true);
+        try {
+          await AsyncStorage.removeItem(PREFERENCE_STORAGE_KEY);
+        } catch {
+          // Ignore cleanup failures and continue with safe in-memory defaults.
+        }
       } finally {
         if (isMounted) {
           setIsHydrated(true);
@@ -166,9 +174,11 @@ export default function PreferencesScreen() {
         <Text style={styles.summaryLabel}>Saved preferences</Text>
         <Text style={styles.summaryValue}>{enabledCount} enabled</Text>
         <Text style={styles.summaryMeta}>
-          {isHydrated
-            ? "Stored on this device for reliable local continuity."
-            : "Hydrating local preferences..."}
+          {!isHydrated
+            ? "Hydrating local preferences..."
+            : hydrationRecovered
+              ? "Malformed saved preferences were reset to safe defaults."
+              : "Stored on this device for reliable local continuity."}
         </Text>
       </View>
 
@@ -196,10 +206,22 @@ export default function PreferencesScreen() {
       />
       <TaskLoopCard
         category="Category controls"
-        state={isHydrated ? "pending" : "cached"}
-        title={isHydrated ? "Preference sync queue ready" : "Hydrating saved preferences"}
+        state={hydrationRecovered ? "retry" : isHydrated ? "pending" : "cached"}
+        title={
+          hydrationRecovered
+            ? "Recovered from invalid saved preferences"
+            : isHydrated
+              ? "Preference sync queue ready"
+              : "Hydrating saved preferences"
+        }
         body="Recent toggle changes are queued for the next reliable network sync."
-        meta={isHydrated ? "Will retry automatically on poor networks." : "Loading local values..."}
+        meta={
+          hydrationRecovered
+            ? "Corrupt local JSON was cleared and defaults were restored."
+            : isHydrated
+              ? "Will retry automatically on poor networks."
+              : "Loading local values..."
+        }
       />
       <TaskLoopCard
         category="Theme"

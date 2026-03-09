@@ -1,6 +1,8 @@
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
+import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { frappTokens } from "@repo/theme/tokens";
+import { PreviewAuthMethod, usePreviewSession } from "@/lib/preview-session";
 
 type SessionReadinessRowProps = {
   label: string;
@@ -25,6 +27,36 @@ function SessionReadinessRow({ label, value, tone }: SessionReadinessRowProps) {
 }
 
 export default function SignIn() {
+  const router = useRouter();
+  const { signIn } = usePreviewSession();
+  const [email, setEmail] = useState("officer@university.edu");
+  const [authMode, setAuthMode] = useState<PreviewAuthMethod>("password");
+  const [submitting, setSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  function isValidEmailAddress(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
+
+  async function handlePreviewSignIn(method: PreviewAuthMethod) {
+    if (!isValidEmailAddress(email.trim())) {
+      setAuthError("Enter a valid chapter email before continuing.");
+      return;
+    }
+
+    setSubmitting(true);
+    setAuthError(null);
+
+    try {
+      await signIn({ email: email.trim().toLowerCase(), method });
+      router.replace("/(tabs)");
+    } catch {
+      setAuthError("Sign-in preview failed. Retry in a moment.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Frapp</Text>
@@ -39,7 +71,8 @@ export default function SignIn() {
 
         <Text style={styles.inputLabel}>Chapter email</Text>
         <TextInput
-          defaultValue="officer@university.edu"
+          value={email}
+          onChangeText={setEmail}
           placeholder="you@university.edu"
           placeholderTextColor={frappTokens.color.text.muted}
           autoCapitalize="none"
@@ -49,30 +82,72 @@ export default function SignIn() {
         />
 
         <View style={styles.modeRow}>
-          <View style={[styles.modeButton, styles.modeButtonActive]}>
-            <Text style={[styles.modeButtonText, styles.modeButtonTextActive]}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: authMode === "password" }}
+            onPress={() => setAuthMode("password")}
+            style={[
+              styles.modeButton,
+              authMode === "password" ? styles.modeButtonActive : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                authMode === "password" ? styles.modeButtonTextActive : null,
+              ]}
+            >
               Password
             </Text>
-          </View>
-          <View style={styles.modeButton}>
-            <Text style={styles.modeButtonText}>Magic Link</Text>
-          </View>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: authMode === "magic_link" }}
+            onPress={() => setAuthMode("magic_link")}
+            style={[
+              styles.modeButton,
+              authMode === "magic_link" ? styles.modeButtonActive : null,
+            ]}
+          >
+            <Text
+              style={[
+                styles.modeButtonText,
+                authMode === "magic_link" ? styles.modeButtonTextActive : null,
+              ]}
+            >
+              Magic Link
+            </Text>
+          </Pressable>
         </View>
 
         <Text style={styles.helperText}>
           In preview mode, this action simulates chapter session handoff.
         </Text>
+        {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
 
-        <Link href="/(tabs)" asChild>
-          <Pressable style={styles.primaryButton}>
-            <Text style={styles.primaryButtonText}>Continue with email</Text>
-          </Pressable>
-        </Link>
-        <Link href="/(tabs)" asChild>
-          <Pressable style={styles.secondaryButton}>
-            <Text style={styles.secondaryButtonText}>Use magic link</Text>
-          </Pressable>
-        </Link>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
+          disabled={submitting}
+          onPress={() => handlePreviewSignIn(authMode)}
+          style={[
+            styles.primaryButton,
+            submitting ? styles.primaryButtonDisabled : null,
+          ]}
+        >
+          <Text style={styles.primaryButtonText}>
+            {submitting ? "Preparing session..." : "Continue with email"}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
+          disabled={submitting}
+          onPress={() => handlePreviewSignIn("magic_link")}
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonText}>Use magic link</Text>
+        </Pressable>
 
         <View style={styles.readinessCard}>
           <Text style={styles.readinessTitle}>Session readiness</Text>

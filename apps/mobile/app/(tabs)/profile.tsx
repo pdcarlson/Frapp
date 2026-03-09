@@ -1,9 +1,18 @@
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { frappTokens } from "@repo/theme/tokens";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
+import { usePreviewSession } from "@/lib/preview-session";
 
 export default function ProfileScreen() {
+  const router = useRouter();
+  const { signOut } = usePreviewSession();
+
+  async function handleSignOut() {
+    await signOut();
+    router.replace("/(auth)/sign-in");
+  }
+
   return (
     <ScreenShell
       title="Profile"
@@ -26,11 +35,15 @@ export default function ProfileScreen() {
           <Text style={styles.tutorialText}>Revisit onboarding tutorial</Text>
         </Pressable>
       </Link>
-      <Link href="/(auth)/sign-in" asChild>
-        <Pressable style={styles.signOutButton}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => {
+          void handleSignOut();
+        }}
+        style={styles.signOutButton}
+      >
           <Text style={styles.signOutText}>Sign out of preview session</Text>
-        </Pressable>
-      </Link>
+      </Pressable>
     </ScreenShell>
   );
 }

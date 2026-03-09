@@ -10,8 +10,8 @@ export function NetworkBanner({
   isOnline,
   isInternetReachable,
 }: NetworkBannerProps) {
-  const offline = isOnline === false || isInternetReachable === false;
-  const degraded = isOnline === true && isInternetReachable === null;
+  const offline = isOnline === false;
+  const degraded = isOnline === true && isInternetReachable === false;
 
   if (!offline && !degraded) {
     return null;
