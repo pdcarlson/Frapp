@@ -29,6 +29,11 @@ APPLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --canonical-pr-number)
+      if [[ $# -lt 2 || -z "${2:-}" || "${2:-}" == -* ]]; then
+        echo "Error: --canonical-pr-number requires a value." >&2
+        usage
+        exit 1
+      fi
       CANONICAL_PR_NUMBER="${2:-}"
       shift 2
       ;;
@@ -80,7 +85,7 @@ else
   echo
 fi
 
-for pr in 30 32 33 31; do
+for pr in 30 31 32 33; do
   if [[ "$pr" == "$CANONICAL_PR_NUMBER" ]]; then
     continue
   fi

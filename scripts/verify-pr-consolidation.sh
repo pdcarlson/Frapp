@@ -120,6 +120,7 @@ set -e
 if [[ "$CHECKS_EXIT_CODE" -eq 8 ]]; then
   echo
   echo "ℹ️ Checks are still pending. Re-run this script when CI completes."
+  exit "$CHECKS_EXIT_CODE"
 elif [[ "$CHECKS_EXIT_CODE" -ne 0 ]]; then
   echo
   echo "❌ Unable to read canonical PR checks (exit code: $CHECKS_EXIT_CODE)."
