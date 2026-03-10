@@ -25,6 +25,16 @@ Body:
 
 - Copy from `docs/internal/PR_CONSOLIDATION_CANONICAL_PR_BODY.md`.
 
+Suggested command (maintainer/write-capable environment):
+
+```bash
+gh pr create \
+  --base preview \
+  --head c/mobile-ui-ux-quality-plan-29ef \
+  --title "feat(ui): consolidate mobile/web UX remediation into canonical PR" \
+  --body-file docs/internal/PR_CONSOLIDATION_CANONICAL_PR_BODY.md
+```
+
 ## Step 2 — Close superseded/stale PRs with redirect note
 
 After canonical PR is open, close these PRs in this order:
@@ -39,6 +49,16 @@ For each closure, include:
 - direct link to canonical PR,
 - one-line statement that canonical PR is the single review source of truth.
 
+Suggested command sequence:
+
+```bash
+# Replace <NEW_PR_URL> with the canonical PR URL returned by gh pr create.
+gh pr close 30 --comment "Closing during PR consolidation. Superseded by canonical implementation PR: <NEW_PR_URL>."
+gh pr close 32 --comment "Closing during PR consolidation. Superseded by canonical implementation PR: <NEW_PR_URL>."
+gh pr close 33 --comment "Closing during PR consolidation. Superseded by canonical implementation PR: <NEW_PR_URL>."
+gh pr close 31 --comment "Closing as superseded by canonical implementation PR: <NEW_PR_URL>. This is now the single review source of truth for this UX remediation scope."
+```
+
 ## Step 3 — Post-open verification gate
 
 Validate the canonical PR has full review/CI context:
@@ -50,6 +70,15 @@ Validate the canonical PR has full review/CI context:
   - interaction and icon docs links,
   - test evidence (lint/types/visual/manual walkthrough).
 - Old PRs are closed and no longer active review sources.
+
+Suggested verification commands:
+
+```bash
+# Replace <NEW_PR_NUMBER> with the canonical PR number.
+gh pr checks <NEW_PR_NUMBER>
+gh pr view <NEW_PR_NUMBER>
+gh pr list --state open
+```
 
 ## Step 4 — Completion criteria
 
