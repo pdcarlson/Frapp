@@ -112,7 +112,19 @@ echo "✅ Superseded/stale PRs are closed."
 echo
 
 echo "Running check status for canonical PR..."
+set +e
 gh pr checks "$CANONICAL_PR_NUMBER"
+CHECKS_EXIT_CODE=$?
+set -e
+
+if [[ "$CHECKS_EXIT_CODE" -eq 8 ]]; then
+  echo
+  echo "ℹ️ Checks are still pending. Re-run this script when CI completes."
+elif [[ "$CHECKS_EXIT_CODE" -ne 0 ]]; then
+  echo
+  echo "❌ Unable to read canonical PR checks (exit code: $CHECKS_EXIT_CODE)."
+  exit "$CHECKS_EXIT_CODE"
+fi
 
 echo
 echo "✅ Consolidation verification checks completed."
