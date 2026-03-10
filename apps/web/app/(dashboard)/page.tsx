@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Sparkles, Star, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,31 @@ const recentActivity = [
   "Task completion confirmed for 3 members",
   "Backwork upload: CS 3320 Midterm Study Guide",
   "Invoice reminder sent to 5 members",
+];
+
+type QuickAction = {
+  label: string;
+  href?: string;
+  disabledReason?: string;
+};
+
+const quickActions: QuickAction[] = [
+  {
+    label: "Create event",
+    href: "/events",
+  },
+  {
+    label: "Invite member",
+    href: "/members",
+  },
+  {
+    label: "Adjust points",
+    href: "/points",
+  },
+  {
+    label: "Review service entries",
+    disabledReason: "Service entry review ships in the next dashboard milestone.",
+  },
 ];
 
 export default function Home() {
@@ -85,21 +111,42 @@ export default function Home() {
             <CardDescription>Common admin workflows</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {[
-              "Create event",
-              "Invite member",
-              "Adjust points",
-              "Review service entries",
-            ].map((action) => (
-              <Button
-                key={action}
-                variant="outline"
-                className="w-full justify-between"
-              >
-                <span>{action}</span>
-                <ArrowUpRight className="h-4 w-4" />
-              </Button>
-            ))}
+            {quickActions.map((action) => {
+              const buttonContent = (
+                <>
+                  <span>{action.label}</span>
+                  <ArrowUpRight className="h-4 w-4" />
+                </>
+              );
+
+              if (action.href) {
+                return (
+                  <Button
+                    key={action.label}
+                    variant="outline"
+                    className="w-full justify-between"
+                    asChild
+                  >
+                    <Link href={action.href} aria-label={action.label}>
+                      {buttonContent}
+                    </Link>
+                  </Button>
+                );
+              }
+
+              return (
+                <Button
+                  key={action.label}
+                  variant="outline"
+                  className="w-full justify-between"
+                  disabled
+                  aria-disabled="true"
+                  title={action.disabledReason}
+                >
+                  {buttonContent}
+                </Button>
+              );
+            })}
           </CardContent>
         </Card>
       </section>

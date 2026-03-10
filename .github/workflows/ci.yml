@@ -175,6 +175,8 @@ jobs:
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:
     needs: packages-build
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

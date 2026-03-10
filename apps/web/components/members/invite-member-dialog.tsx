@@ -100,6 +100,17 @@ function normalizeInvites(input: unknown): InviteRow[] {
   });
 }
 
+function buildInviteShareMessage(invite: InviteRow): string {
+  const expirationText = formatDate(invite.expires_at);
+  return [
+    "Frapp member invite",
+    `Role: ${invite.role}`,
+    `Invite code: ${invite.token}`,
+    `Expires: ${expirationText}`,
+    "Open the join page and enter this code to redeem.",
+  ].join("\n");
+}
+
 type InviteMemberDialogProps = {
   trigger: React.ReactNode;
 };
@@ -197,17 +208,15 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
   async function handleCopyInvite(invite: InviteRow) {
     try {
-      const baseUrl = typeof window === "undefined" ? "" : window.location.origin;
-      const link = baseUrl ? `${baseUrl}/join?token=${invite.token}` : invite.token;
-      await navigator.clipboard.writeText(link);
+      await navigator.clipboard.writeText(buildInviteShareMessage(invite));
       toast({
-        title: "Invite link copied",
-        description: "Share it securely with the member you are inviting.",
+        title: "Invite code copied",
+        description: "Share the code through a secure channel.",
       });
     } catch {
       toast({
         title: "Clipboard unavailable",
-        description: "Copy the invite token manually from the list.",
+        description: "Copy the invite code manually from the list.",
         variant: "destructive",
       });
     }
@@ -311,7 +320,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                   </div>
                   <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
-                    Copy link
+                    Copy code
                   </Button>
                 </div>
               ))}
@@ -343,7 +352,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                 <div className="flex items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => handleCopyInvite(invite)}>
                     <Copy className="h-3.5 w-3.5" />
-                    Copy
+                    Copy code
                   </Button>
                   <Button
                     size="sm"

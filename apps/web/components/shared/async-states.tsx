@@ -1,3 +1,5 @@
+"use client";
+
 import { AlertTriangle, FolderOpen, LoaderCircle, WifiOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 

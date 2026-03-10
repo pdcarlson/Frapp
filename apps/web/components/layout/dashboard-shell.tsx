@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Settings, ShieldCheck, Star, Users } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Menu, Settings, ShieldCheck, Star, Users } from "lucide-react";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
@@ -66,6 +67,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const chapterAccent = resolveChapterAccentColor(chapterPreview.requestedAccent);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
@@ -83,6 +85,47 @@ export function DashboardShell({ children }: DashboardShellProps) {
   };
   const pageTitle = titleByPath[pathname] ?? "Dashboard";
   const pageAction = actionByPath[pathname] ?? "Open Action";
+
+  function renderNavItems(onNavigate?: () => void) {
+    return navItems.map((item) => (
+      item.href ? (
+        <Link
+          key={item.label}
+          href={item.href}
+          onClick={onNavigate}
+          className={cn(
+            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
+            sidebarFocusRingClassName,
+            pathname === item.href
+              ? "bg-primary/20 text-white"
+              : "text-slate-300 hover:bg-slate-800 hover:text-white",
+          )}
+        >
+          <item.icon className={navIconClassName} />
+          <span>{item.label}</span>
+        </Link>
+      ) : (
+        <button
+          key={item.label}
+          type="button"
+          className={cn(
+            "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500",
+            sidebarFocusRingClassName,
+          )}
+          disabled
+          title={item.statusLabel}
+        >
+          <item.icon className={navIconClassName} />
+          <span>{item.label}</span>
+          {item.statusLabel ? (
+            <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+              {item.statusLabel}
+            </span>
+          ) : null}
+        </button>
+      )
+    ));
+  }
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -106,6 +149,24 @@ export function DashboardShell({ children }: DashboardShellProps) {
         open={notificationDrawerOpen}
         onOpenChange={setNotificationDrawerOpen}
       />
+      <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+        <SheetContent side="left" className="border-slate-800 bg-slate-950 px-4 py-6 text-slate-100">
+          <SheetHeader>
+            <SheetTitle className="text-white">Navigation</SheetTitle>
+            <SheetDescription className="text-slate-400">
+              Open dashboard routes and chapter tools.
+            </SheetDescription>
+          </SheetHeader>
+          <nav className="mt-6 space-y-1">
+            {renderNavItems(() => setMobileNavOpen(false))}
+          </nav>
+          <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
+            <p className="text-xs text-slate-400">Chapter</p>
+            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
+            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
+          </div>
+        </SheetContent>
+      </Sheet>
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm"
@@ -119,43 +180,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
             <p className="mt-2 text-lg font-semibold text-white">Operations Console</p>
           </div>
           <nav className="space-y-1">
-            {navItems.map((item) => (
-              item.href ? (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
-                    sidebarFocusRingClassName,
-                    pathname === item.href
-                      ? "bg-primary/20 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white",
-                  )}
-                >
-                  <item.icon className={navIconClassName} />
-                  <span>{item.label}</span>
-                </Link>
-              ) : (
-                <button
-                  key={item.label}
-                  type="button"
-                  className={cn(
-                    "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500",
-                    sidebarFocusRingClassName,
-                  )}
-                  disabled
-                  title={item.statusLabel}
-                >
-                  <item.icon className={navIconClassName} />
-                  <span>{item.label}</span>
-                  {item.statusLabel ? (
-                    <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
-                      {item.statusLabel}
-                    </span>
-                  ) : null}
-                </button>
-              )
-            ))}
+            {renderNavItems()}
           </nav>
 
           <div className="mt-10 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
@@ -191,8 +216,17 @@ export function DashboardShell({ children }: DashboardShellProps) {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
+                  size="icon"
+                  className="lg:hidden"
+                  aria-label="Open navigation menu"
+                  onClick={() => setMobileNavOpen(true)}
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
                   size="sm"
-                  className="hidden sm:inline-flex"
+                  className="inline-flex"
                   onClick={() => setCommandMenuOpen(true)}
                 >
                   Search (⌘K)

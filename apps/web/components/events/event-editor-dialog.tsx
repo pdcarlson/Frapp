@@ -128,6 +128,14 @@ export function EventEditorDialog({
       });
       return;
     }
+    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      toast({
+        title: "Valid schedule required",
+        description: "End must be after start.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const payload = {
       name: name.trim(),
@@ -159,13 +167,22 @@ export function EventEditorDialog({
           description: `${payload.name} was updated successfully.`,
         });
       }
-
-      await onSaved();
-      onOpenChange(false);
     } catch (error) {
       toast({
         title: mode === "create" ? "Could not create event" : "Could not update event",
         description: getErrorMessage(error),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    onOpenChange(false);
+    try {
+      await onSaved();
+    } catch {
+      toast({
+        title: "Event saved",
+        description: "The event was saved, but this view could not refresh automatically.",
         variant: "destructive",
       });
     }
