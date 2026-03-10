@@ -1,4 +1,6 @@
-import { Linking, Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { Platform } from "react-native";
 
 type CalendarExportInput = {
   title: string;
@@ -69,13 +71,32 @@ export async function exportEventToCalendar(
     return true;
   }
 
-  const dataUrl = `data:text/calendar;charset=utf-8,${encodeURIComponent(icsContent)}`;
-  const canOpen = await Linking.canOpenURL(dataUrl);
+  const exportDirectory =
+    FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
 
-  if (!canOpen) {
+  if (!exportDirectory) {
     return false;
   }
 
-  await Linking.openURL(dataUrl);
-  return true;
+  const fileUri = `${exportDirectory}${filename}`;
+
+  try {
+    await FileSystem.writeAsStringAsync(fileUri, icsContent, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
+
+    if (!(await Sharing.isAvailableAsync())) {
+      return false;
+    }
+
+    await Sharing.shareAsync(fileUri, {
+      dialogTitle: "Export event calendar file",
+      mimeType: "text/calendar",
+      UTI: "public.calendar-event",
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
 }

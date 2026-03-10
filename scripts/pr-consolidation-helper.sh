@@ -80,10 +80,12 @@ else
   echo
 fi
 
-run_or_print gh pr close 30 --comment "$REDIRECT_MSG"
-run_or_print gh pr close 32 --comment "$REDIRECT_MSG"
-run_or_print gh pr close 33 --comment "$REDIRECT_MSG"
-run_or_print gh pr close 31 --comment "$REDIRECT_MSG"
+for pr in 30 32 33 31; do
+  if [[ "$pr" == "$CANONICAL_PR_NUMBER" ]]; then
+    continue
+  fi
+  run_or_print gh pr close "$pr" --comment "$REDIRECT_MSG"
+done
 run_or_print gh pr checks "$CANONICAL_PR_NUMBER"
 run_or_print gh pr view "$CANONICAL_PR_NUMBER"
 run_or_print gh pr list --state open
