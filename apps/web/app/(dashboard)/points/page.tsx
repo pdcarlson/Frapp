@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
@@ -72,6 +73,7 @@ function formatTimestamp(value: string): string {
 
 export default function PointsPage() {
   const { isOffline } = useNetwork();
+  const { toast } = useToast();
   const [window, setWindow] = useState<"all" | "semester" | "month">("all");
   const [leaderboardSearch, setLeaderboardSearch] = useState("");
   const [transactionSearch, setTransactionSearch] = useState("");
@@ -139,6 +141,13 @@ export default function PointsPage() {
   const allTransactionsSelected =
     transactionIds.length > 0 &&
     transactionIds.every((transactionId) => selectedTransactionIds.includes(transactionId));
+
+  function handleBulkTransactionAction(actionLabel: string) {
+    toast({
+      title: "Bulk points action queued",
+      description: `${actionLabel} for ${selectedTransactionIds.length} selected transaction${selectedTransactionIds.length > 1 ? "s" : ""} is not available yet.`,
+    });
+  }
 
   if (isOffline) {
     return (
@@ -316,10 +325,18 @@ export default function PointsPage() {
                   {selectedTransactionIds.length > 1 ? "s" : ""} selected
                 </p>
                 <div className="flex gap-2">
-                  <Button size="sm" variant="outline">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleBulkTransactionAction("Export selected")}
+                  >
                     Export selected
                   </Button>
-                  <Button size="sm" variant="outline">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleBulkTransactionAction("Flag for audit")}
+                  >
                     Flag for audit
                   </Button>
                 </div>

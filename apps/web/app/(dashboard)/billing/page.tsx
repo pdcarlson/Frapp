@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 
@@ -77,6 +78,7 @@ function formatDate(value: string): string {
 
 export default function BillingPage() {
   const { isOffline } = useNetwork();
+  const { toast } = useToast();
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid" | "overdue">("all");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
@@ -112,6 +114,20 @@ export default function BillingPage() {
   const overdueCount = visibleInvoices.filter((invoice) => invoice.status === "OVERDUE").length;
   const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
 
+  function handleInvoiceAction(actionLabel: string) {
+    toast({
+      title: "Billing action queued",
+      description: `${actionLabel} is not available yet. Please continue using current billing workflows.`,
+    });
+  }
+
+  function handleBulkInvoiceAction(actionLabel: string) {
+    toast({
+      title: "Bulk billing action queued",
+      description: `${actionLabel} for ${selectedInvoiceIds.length} selected invoice${selectedInvoiceIds.length > 1 ? "s" : ""} is not available yet.`,
+    });
+  }
+
   if (isOffline) {
     return (
       <OfflineState
@@ -137,7 +153,9 @@ export default function BillingPage() {
             <CardTitle>Subscription Status</CardTitle>
             <CardDescription>Monitor chapter billing health and member invoice progress.</CardDescription>
           </div>
-          <Button>Create Invoice</Button>
+          <Button onClick={() => handleInvoiceAction("Create Invoice")}>
+            Create Invoice
+          </Button>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-lg border border-border p-4">
@@ -193,11 +211,13 @@ export default function BillingPage() {
         <CardContent>
           <div className="mb-3 grid gap-2 sm:grid-cols-[1fr_auto]">
             <Input
+              aria-label="Search invoices or members"
               value={invoiceSearch}
               onChange={(event) => setInvoiceSearch(event.target.value)}
               placeholder="Search invoice or member"
             />
             <select
+              aria-label="Invoice status filter"
               value={statusFilter}
               onChange={(event) =>
                 setStatusFilter(
@@ -224,10 +244,18 @@ export default function BillingPage() {
                 {selectedInvoiceIds.length > 1 ? "s" : ""} selected
               </p>
               <div className="flex gap-2">
-                <Button size="sm" variant="outline">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBulkInvoiceAction("Send reminder")}
+                >
                   Send reminder
                 </Button>
-                <Button size="sm" variant="outline">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleBulkInvoiceAction("Export CSV")}
+                >
                   Export CSV
                 </Button>
               </div>
@@ -238,6 +266,7 @@ export default function BillingPage() {
               title={stateMicrocopy.billing.emptyTitle}
               description={stateMicrocopy.billing.emptyDescription}
               actionLabel="Create invoice"
+              onAction={() => handleInvoiceAction("Create Invoice")}
             />
           ) : (
             <Table>

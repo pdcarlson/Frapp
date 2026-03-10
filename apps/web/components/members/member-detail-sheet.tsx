@@ -55,7 +55,12 @@ export function MemberDetailSheet({
   member,
   usingPreviewData,
 }: MemberDetailSheetProps) {
-  const memberId = typeof member?.id === "string" ? member.id : "";
+  const memberId =
+    (typeof member?.id === "string" && member.id.length > 0
+      ? member.id
+      : typeof member?.user_id === "string"
+        ? member.user_id
+        : "") ?? "";
   const rolesQuery = useRoles();
   const memberQuery = useMember(!usingPreviewData ? memberId : "");
   const updateRolesMutation = useUpdateMemberRoles();

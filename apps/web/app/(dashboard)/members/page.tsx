@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { useToast } from "@/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -43,8 +44,33 @@ const fallbackMembers: MemberRow[] = [
   },
 ];
 
+const EXEC_ROLE_KEYWORDS = [
+  "president",
+  "vice",
+  "treasurer",
+  "secretary",
+  "exec",
+  "officer",
+  "admin",
+];
+
+function isExecBoardMember(member: MemberRow): boolean {
+  if (!Array.isArray(member.role_ids)) {
+    return false;
+  }
+
+  return member.role_ids.some((roleId) => {
+    if (typeof roleId !== "string") {
+      return false;
+    }
+    const normalizedRoleId = roleId.toLowerCase();
+    return EXEC_ROLE_KEYWORDS.some((keyword) => normalizedRoleId.includes(keyword));
+  });
+}
+
 export default function MembersPage() {
   const { isOffline } = useNetwork();
+  const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [onboardingFilter, setOnboardingFilter] = useState<"all" | "complete" | "pending">("all");
   const [savedView, setSavedView] = useState<"all" | "exec" | "new">("all");
@@ -76,7 +102,6 @@ export default function MembersPage() {
         typeof member.has_completed_onboarding === "boolean"
           ? member.has_completed_onboarding
           : false;
-      const roleCount = Array.isArray(member.role_ids) ? member.role_ids.length : 0;
 
       if (onboardingFilter === "complete" && !onboardingComplete) {
         return false;
@@ -85,7 +110,7 @@ export default function MembersPage() {
         return false;
       }
 
-      if (savedView === "exec" && roleCount < 2) {
+      if (savedView === "exec" && !isExecBoardMember(member)) {
         return false;
       }
       if (savedView === "new" && onboardingComplete) {
@@ -107,6 +132,13 @@ export default function MembersPage() {
       ) ?? null,
     [activeMemberId, visibleMembers],
   );
+
+  function notifyBulkAction(actionLabel: string) {
+    toast({
+      title: "Bulk member action queued",
+      description: `${actionLabel} for ${selectedCount} selected member${selectedCount > 1 ? "s" : ""} is not available yet.`,
+    });
+  }
 
   if (isOffline) {
     return (
@@ -149,6 +181,7 @@ export default function MembersPage() {
             <div className="relative max-w-md">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
+                aria-label="Search members by name"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search by member name"
@@ -157,6 +190,7 @@ export default function MembersPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <select
+                aria-label="Choose saved member view"
                 value={savedView}
                 onChange={(event) =>
                   setSavedView(event.target.value as "all" | "exec" | "new")
@@ -168,6 +202,7 @@ export default function MembersPage() {
                 <option value="new">Saved view: New members</option>
               </select>
               <select
+                aria-label="Filter members by onboarding status"
                 value={onboardingFilter}
                 onChange={(event) =>
                   setOnboardingFilter(
@@ -213,13 +248,25 @@ export default function MembersPage() {
               {selectedCount} member{selectedCount > 1 ? "s" : ""} selected
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => notifyBulkAction("Assign role")}
+              >
                 Assign role
               </Button>
-              <Button size="sm" variant="outline">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => notifyBulkAction("Mark onboarding complete")}
+              >
                 Mark onboarding complete
               </Button>
-              <Button size="sm" variant="outline">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => notifyBulkAction("Remove selected")}
+              >
                 Remove selected
               </Button>
             </div>
@@ -232,6 +279,12 @@ export default function MembersPage() {
           title={stateMicrocopy.members.emptyTitle}
           description={stateMicrocopy.members.emptyDescription}
           actionLabel="Generate invite link"
+          onAction={() => {
+            toast({
+              title: "Invite action available in header",
+              description: "Use the Invite Member button at the top-right to generate links.",
+            });
+          }}
         />
       ) : (
         <Card>

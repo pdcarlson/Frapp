@@ -13,6 +13,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { useToast } from "@/hooks/use-toast";
 import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { stateMicrocopy } from "@/lib/state-microcopy";
@@ -49,6 +50,7 @@ function formatDate(value: unknown): string {
 
 export default function EventsPage() {
   const { isOffline } = useNetwork();
+  const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
@@ -101,6 +103,13 @@ export default function EventsPage() {
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
+
+  function handleBulkAction(actionLabel: string) {
+    toast({
+      title: "Bulk event action queued",
+      description: `${actionLabel} for ${selectedEventIds.length} selected event${selectedEventIds.length > 1 ? "s" : ""} is not available yet.`,
+    });
+  }
 
   if (isOffline) {
     return (
@@ -206,9 +215,27 @@ export default function EventsPage() {
               {selectedEventIds.length} event{selectedEventIds.length > 1 ? "s" : ""} selected
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" variant="outline">Mark attendance complete</Button>
-              <Button size="sm" variant="outline">Notify assignees</Button>
-              <Button size="sm" variant="outline">Archive selected</Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction("Mark attendance complete")}
+              >
+                Mark attendance complete
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction("Notify assignees")}
+              >
+                Notify assignees
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleBulkAction("Archive selected")}
+              >
+                Archive selected
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -219,6 +246,11 @@ export default function EventsPage() {
           title={stateMicrocopy.events.emptyTitle}
           description={stateMicrocopy.events.emptyDescription}
           actionLabel="Create first event"
+          onAction={() => {
+            setEditorMode("create");
+            setActiveEvent(null);
+            setEditorDialogOpen(true);
+          }}
         />
       ) : (
         <Card>

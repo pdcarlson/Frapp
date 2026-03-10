@@ -59,7 +59,7 @@ export function PointsAdjustmentDialog({
   const memberOptions = useMemo(() => {
     const membersData = membersQuery.data as unknown;
     if (!Array.isArray(membersData) || membersData.length === 0) {
-      return fallbackMembers;
+      return usingPreviewData ? fallbackMembers : [];
     }
     return (membersData as Record<string, unknown>[])
       .map((member) => {
@@ -69,12 +69,14 @@ export function PointsAdjustmentDialog({
         return { userId, label: `${displayName} (${userId})` };
       })
       .filter((option): option is MemberOption => option !== null);
-  }, [membersQuery.data]);
+  }, [membersQuery.data, usingPreviewData]);
 
   useEffect(() => {
     if (!open) return;
     setTargetUserId((previous) =>
-      previous || memberOptions[0]?.userId || fallbackMembers[0]?.userId || "",
+      memberOptions.some((option) => option.userId === previous)
+        ? previous
+        : memberOptions[0]?.userId || "",
     );
     setAmount("10");
     setCategory("MANUAL");
@@ -93,6 +95,15 @@ export function PointsAdjustmentDialog({
       toast({
         title: "Member required",
         description: "Select a member before submitting an adjustment.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!memberOptions.some((option) => option.userId === targetUserId)) {
+      toast({
+        title: "Member selection expired",
+        description: "Pick a current member before submitting.",
         variant: "destructive",
       });
       return;
@@ -132,19 +143,31 @@ export function PointsAdjustmentDialog({
         category,
         reason: reason.trim(),
       });
-      toast({
-        title: "Points adjusted",
-        description: `${parsedAmount > 0 ? "+" : ""}${parsedAmount} points applied successfully.`,
-      });
-      await onAdjusted();
-      onOpenChange(false);
     } catch (error) {
       toast({
         title: "Could not adjust points",
         description: getErrorMessage(error),
         variant: "destructive",
       });
+      return;
     }
+
+    toast({
+      title: "Points adjusted",
+      description: `${parsedAmount > 0 ? "+" : ""}${parsedAmount} points applied successfully.`,
+    });
+
+    try {
+      await onAdjusted();
+    } catch {
+      toast({
+        title: "Points adjusted, but refresh failed",
+        description: "Reload the page to fetch the latest balances.",
+        variant: "destructive",
+      });
+    }
+
+    onOpenChange(false);
   }
 
   return (

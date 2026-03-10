@@ -19,7 +19,10 @@ const NetworkContext = createContext<NetworkContextValue>({
 });
 
 function getHealthCheckUrl() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/v1";
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) {
+    return null;
+  }
   const normalizedApiUrl = apiUrl.replace(/\/$/, "");
   if (normalizedApiUrl.endsWith("/v1")) {
     return `${normalizedApiUrl.slice(0, -3)}/health`;
@@ -39,22 +42,31 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const healthCheckUrl = getHealthCheckUrl();
+    if (!healthCheckUrl) {
+      setFailureCount(0);
+      setState("ONLINE");
+      return;
+    }
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await fetch(healthCheckUrl, {
+          method: "GET",
+          signal: controller.signal,
+          cache: "no-store",
+        });
 
-      const res = await fetch(getHealthCheckUrl(), {
-        method: "GET",
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      clearTimeout(timeout);
-
-      if (res.ok) {
-        setFailureCount(0);
-        setState("ONLINE");
-      } else {
-        setFailureCount((prev) => prev + 1);
+        if (res.ok) {
+          setFailureCount(0);
+          setState("ONLINE");
+        } else {
+          setFailureCount((prev) => prev + 1);
+        }
+      } finally {
+        clearTimeout(timeout);
       }
     } catch {
       setFailureCount((prev) => prev + 1);

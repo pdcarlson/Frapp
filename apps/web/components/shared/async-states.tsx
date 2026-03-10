@@ -16,17 +16,23 @@ export function EmptyState({
   title,
   description,
   actionLabel,
+  onAction,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card p-6 text-center">
       <FolderOpen className="h-6 w-6 text-muted-foreground" />
       <h2 className="text-base font-semibold">{title}</h2>
       <p className="max-w-lg text-sm text-muted-foreground">{description}</p>
-      {actionLabel ? <Button variant="outline">{actionLabel}</Button> : null}
+      {actionLabel && onAction ? (
+        <Button variant="outline" onClick={onAction}>
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   );
 }

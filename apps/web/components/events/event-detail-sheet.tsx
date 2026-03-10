@@ -75,6 +75,10 @@ export function EventDetailSheet({
   const description =
     typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
   const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+  const attendanceActionsAvailable = false;
+  const attendanceActionDisabledReason = !canMutate
+    ? "Sign in with chapter permissions to run attendance actions."
+    : "Attendance actions are coming soon.";
 
   async function handleDelete() {
     if (!eventId) return;
@@ -85,44 +89,30 @@ export function EventDetailSheet({
 
     try {
       await deleteEventMutation.mutateAsync(eventId);
-      toast({
-        title: "Event deleted",
-        description: `${eventName} was removed from the calendar.`,
-      });
-      await onEventDeleted();
-      onOpenChange(false);
     } catch (error) {
       toast({
         title: "Could not delete event",
         description: getErrorMessage(error),
         variant: "destructive",
       });
-    }
-  }
-
-  function handleAttendanceAction(action: "queue" | "reminder") {
-    if (!resolvedEvent) return;
-
-    if (!canMutate) {
-      toast({
-        title: "Preview mode",
-        description: "Sign in to run live attendance actions for this event.",
-      });
-      return;
-    }
-
-    if (action === "queue") {
-      toast({
-        title: "Attendance queue opened",
-        description: "You can now verify check-ins and adjust attendance records.",
-      });
       return;
     }
 
     toast({
-      title: "Reminder scheduled",
-      description: "A check-in reminder will be sent to eligible members.",
+      title: "Event deleted",
+      description: `${eventName} was removed from the calendar.`,
     });
+    onOpenChange(false);
+
+    try {
+      await onEventDeleted();
+    } catch {
+      toast({
+        title: "Event deleted, but refresh failed",
+        description: "Reload this page to sync the latest event list.",
+        variant: "destructive",
+      });
+    }
   }
 
   return (
@@ -187,8 +177,9 @@ export function EventDetailSheet({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => handleAttendanceAction("queue")}
-                disabled={!resolvedEvent}
+                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
+                title={attendanceActionDisabledReason}
+                aria-label={`Open attendance queue. ${attendanceActionDisabledReason}`}
               >
                 <UsersRound className="h-4 w-4" />
                 Open attendance queue
@@ -196,8 +187,9 @@ export function EventDetailSheet({
               <Button
                 size="sm"
                 variant="secondary"
-                onClick={() => handleAttendanceAction("reminder")}
-                disabled={!resolvedEvent}
+                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
+                title={attendanceActionDisabledReason}
+                aria-label={`Send check-in reminder. ${attendanceActionDisabledReason}`}
               >
                 <BellRing className="h-4 w-4" />
                 Send check-in reminder

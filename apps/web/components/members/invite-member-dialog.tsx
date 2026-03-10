@@ -166,7 +166,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const isSubmitting =
     createInviteMutation.isPending || createBatchInvitesMutation.isPending;
 
-  const activeInviteRows = inviteRows.filter((invite) => invite.used_at === null).slice(0, 6);
+  const activeInviteRows = inviteRows.filter((invite) => invite.used_at === null);
 
   async function handleGenerateInvites() {
     if (!roleName) return;
