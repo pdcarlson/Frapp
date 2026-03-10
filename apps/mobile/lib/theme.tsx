@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  useCallback,
   createContext,
   useContext,
   useEffect,
@@ -68,13 +69,13 @@ export function FrappThemeProvider({ children }: { children: React.ReactNode }) 
 
   const tokens = useMemo(() => getFrappTokens(resolvedTheme), [resolvedTheme]);
 
-  function setThemePreference(nextThemePreference: ThemePreference) {
+  const setThemePreference = useCallback((nextThemePreference: ThemePreference) => {
     setThemePreferenceState(nextThemePreference);
     void AsyncStorage.setItem(
       MOBILE_THEME_PREFERENCE_STORAGE_KEY,
       nextThemePreference,
     );
-  }
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -83,7 +84,7 @@ export function FrappThemeProvider({ children }: { children: React.ReactNode }) 
       tokens,
       setThemePreference,
     }),
-    [resolvedTheme, themePreference, tokens],
+    [resolvedTheme, setThemePreference, themePreference, tokens],
   );
 
   return (

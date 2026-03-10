@@ -95,9 +95,13 @@ const faqs = [
 ];
 
 export default function Home() {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.frapp.live/signup";
-  const normalizedAppUrl = appUrl.replace(/\/$/, "");
-  const loginUrl = `${normalizedAppUrl}/login`;
+  const appBaseUrlRaw = process.env.NEXT_PUBLIC_APP_URL ?? "https://app.frapp.live";
+  const trimmedAppBaseUrl = appBaseUrlRaw.replace(/\/$/, "");
+  const appBaseUrl = trimmedAppBaseUrl.endsWith("/signup")
+    ? trimmedAppBaseUrl.slice(0, -"/signup".length)
+    : trimmedAppBaseUrl;
+  const signupUrl = new URL("/signup", `${appBaseUrl}/`).toString();
+  const loginUrl = new URL("/login", `${appBaseUrl}/`).toString();
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
@@ -143,7 +147,7 @@ export default function Home() {
               Log In
             </Link>
             <Link
-              href={appUrl}
+              href={signupUrl}
               className="inline-flex items-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
               Get Started
@@ -167,7 +171,7 @@ export default function Home() {
             </p>
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href={appUrl}
+                href={signupUrl}
                 className="inline-flex h-11 items-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
               >
                 Get Started
@@ -335,7 +339,7 @@ export default function Home() {
               ))}
             </ul>
             <Link
-              href={appUrl}
+              href={signupUrl}
               className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-md bg-primary px-6 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
             >
               Start free trial
@@ -377,7 +381,7 @@ export default function Home() {
             Join the chapters using Frapp to consolidate operations, reduce leadership overhead, and improve member engagement.
           </p>
           <Link
-            href={appUrl}
+            href={signupUrl}
             className="mt-8 inline-flex h-11 items-center rounded-md bg-white px-6 text-sm font-semibold text-navy hover:bg-slate-200"
           >
             Get Started
@@ -392,7 +396,7 @@ export default function Home() {
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li><Link href="#features">Features</Link></li>
               <li><Link href="#pricing">Pricing</Link></li>
-              <li><Link href={appUrl}>Get Started</Link></li>
+              <li><Link href={signupUrl}>Get Started</Link></li>
             </ul>
           </div>
           <div>

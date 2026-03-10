@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
@@ -65,6 +65,15 @@ export default function ChatThreadScreen() {
     "Draft preserved locally with retry metadata. Sending resumes automatically once connection improves.",
   );
   const [isRetrying, setIsRetrying] = useState(false);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function handleRetryUpload() {
     if (isRetrying) {
@@ -77,9 +86,14 @@ export default function ChatThreadScreen() {
       "Retry requested. Upload requeued and compression fallback is running.",
     );
 
-    setTimeout(() => {
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+    }
+
+    retryTimeoutRef.current = setTimeout(() => {
       setPendingActions((current) => Math.max(current - 1, 0));
       setIsRetrying(false);
+      retryTimeoutRef.current = null;
     }, 800);
   }
 

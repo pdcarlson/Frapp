@@ -35,8 +35,11 @@ export function LegalDocument({ title, lastUpdated, sections }: LegalDocumentPro
           {sections.map((section) => (
             <section key={section.heading} className="space-y-3">
               <h2 className="text-lg font-semibold sm:text-xl">{section.heading}</h2>
-              {section.paragraphs.map((paragraph) => (
-                <p key={paragraph} className="text-sm leading-7 text-muted-foreground sm:text-base">
+              {section.paragraphs.map((paragraph, paragraphIndex) => (
+                <p
+                  key={`${section.heading}-${paragraphIndex}`}
+                  className="text-sm leading-7 text-muted-foreground sm:text-base"
+                >
                   {paragraph}
                 </p>
               ))}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Moon, Monitor, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,18 @@ const THEME_LABEL = {
 
 export function ThemeToggle() {
   const { theme = "system", setTheme } = useTheme();
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const resolvedTheme = isMounted ? theme : "system";
 
   const icon =
-    theme === "dark" ? (
+    resolvedTheme === "dark" ? (
       <Moon className="h-4 w-4" />
-    ) : theme === "light" ? (
+    ) : resolvedTheme === "light" ? (
       <Sun className="h-4 w-4" />
     ) : (
       <Monitor className="h-4 w-4" />
@@ -30,7 +38,7 @@ export function ThemeToggle() {
           type="button"
           variant="outline"
           size="icon"
-          aria-label={`Theme mode: ${THEME_LABEL[theme as keyof typeof THEME_LABEL] ?? "System"}`}
+          aria-label={`Theme mode: ${THEME_LABEL[resolvedTheme as keyof typeof THEME_LABEL] ?? "System"}`}
         >
           {icon}
         </Button>

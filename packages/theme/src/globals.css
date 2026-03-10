@@ -2,77 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+@layer base {
+  :root {
     /* ── Surface ─────────────────────────────────────────── */
-    --background: 210 40% 98%;        /* #F8FAFC Slate-50 */
-    --foreground: 222 47% 11%;        /* #0F172A Navy */
-    --card: 0 0% 100%;                /* #FFFFFF */
-    --card-foreground: 222 47% 11%;   /* #0F172A */
+    --background: 210 40% 98%; /* #F8FAFC Slate-50 */
+    --foreground: 222 47% 11%; /* #0F172A Navy */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 222 47% 11%; /* #0F172A */
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
     /* ── Primary (Royal Blue — CTAs, links, active states) ─ */
-    --primary: 217 91% 60%;           /* #2563EB */
+    --primary: 217 91% 60%; /* #2563EB */
     --primary-foreground: 210 40% 98%;
 
     /* ── Primary scale ────────────────────────────────────── */
-    --primary-50: 214 100% 97%;       /* #EFF6FF */
-    --primary-100: 214 95% 93%;       /* #DBEAFE */
-    --primary-200: 213 97% 87%;       /* #BFDBFE */
-    --primary-300: 212 96% 78%;       /* #93C5FD */
-    --primary-400: 213 94% 68%;       /* #60A5FA */
-    --primary-500: 217 91% 60%;       /* #2563EB */
-    --primary-600: 221 83% 53%;       /* #2563EB */
-    --primary-700: 224 76% 48%;       /* #1D4ED8 */
-    --primary-800: 226 71% 40%;       /* #1E40AF */
-    --primary-900: 224 64% 33%;       /* #1E3A8A */
-    --primary-950: 226 57% 21%;       /* #172554 */
+    --primary-50: 214 100% 97%; /* #EFF6FF */
+    --primary-100: 214 95% 93%; /* #DBEAFE */
+    --primary-200: 213 97% 87%; /* #BFDBFE */
+    --primary-300: 212 96% 78%; /* #93C5FD */
+    --primary-400: 213 94% 68%; /* #60A5FA */
+    --primary-500: 217 91% 60%; /* #2563EB */
+    --primary-600: 221 83% 53%; /* #2563EB */
+    --primary-700: 224 76% 48%; /* #1D4ED8 */
+    --primary-800: 226 71% 40%; /* #1E40AF */
+    --primary-900: 224 64% 33%; /* #1E3A8A */
+    --primary-950: 226 57% 21%; /* #172554 */
 
     /* ── Success (Emerald — positive actions, growth) ───── */
-    --success: 160 84% 39%;           /* #10B981 */
+    --success: 160 84% 39%; /* #10B981 */
     --success-foreground: 210 40% 98%;
 
     /* ── Muted ────────────────────────────────────────────── */
-    --muted: 210 40% 96%;             /* #F1F5F9 Slate-100 */
-    --muted-foreground: 215 16% 47%;  /* #64748B Slate-500 */
+    --muted: 210 40% 96%; /* #F1F5F9 Slate-100 */
+    --muted-foreground: 215 16% 47%; /* #64748B Slate-500 */
 
     /* ── Accent ───────────────────────────────────────────── */
     --accent: 210 40% 96%;
     --accent-foreground: 222 47% 11%;
 
     /* ── Destructive ──────────────────────────────────────── */
-    --destructive: 0 84% 60%;         /* #EF4444 Red-500 */
+    --destructive: 0 84% 60%; /* #EF4444 Red-500 */
     --destructive-foreground: 0 0% 98%;
 
     /* ── Borders & inputs ─────────────────────────────────── */
-    --border: 214 32% 91%;            /* #E2E8F0 Slate-200 */
+    --border: 214 32% 91%; /* #E2E8F0 Slate-200 */
     --input: 214 32% 91%;
-    --ring: 217 91% 60%;              /* Royal Blue focus ring */
+    --ring: 217 91% 60%; /* Royal Blue focus ring */
 
     /* ── Radius ───────────────────────────────────────────── */
-    --radius: 0.625rem;               /* 10px — slightly tighter for dashboard density */
+    --radius: 0.625rem; /* 10px — slightly tighter for dashboard density */
   }
 
-.dark {
+  .dark {
     /* ── Surface ─────────────────────────────────────────── */
-    --background: 222 47% 11%;        /* #0F172A Navy */
-    --foreground: 210 40% 98%;        /* #F8FAFC */
-    --card: 217 33% 17%;              /* #1E293B Slate-800 */
+    --background: 222 47% 11%; /* #0F172A Navy */
+    --foreground: 210 40% 98%; /* #F8FAFC */
+    --card: 217 33% 17%; /* #1E293B Slate-800 */
     --card-foreground: 210 40% 98%;
     --popover: 217 33% 17%;
     --popover-foreground: 210 40% 98%;
 
     /* ── Primary (Royal Blue — brighter for dark bg) ─────── */
-    --primary: 213 94% 68%;           /* #60A5FA Blue-400 */
+    --primary: 213 94% 68%; /* #60A5FA Blue-400 */
     --primary-foreground: 222 47% 11%;
 
     /* ── Success (Emerald — brighter for dark bg) ─────────── */
-    --success: 160 67% 52%;           /* #34D399 Emerald-400 */
+    --success: 160 67% 52%; /* #34D399 Emerald-400 */
     --success-foreground: 222 47% 11%;
 
     /* ── Muted ────────────────────────────────────────────── */
-    --muted: 217 33% 17%;             /* Slate-800 */
-    --muted-foreground: 215 20% 65%;  /* Slate-400 */
+    --muted: 217 33% 17%; /* Slate-800 */
+    --muted-foreground: 215 20% 65%; /* Slate-400 */
 
     /* ── Accent ───────────────────────────────────────────── */
     --accent: 217 33% 17%;
@@ -86,9 +87,8 @@
     --border: 217 33% 17%;
     --input: 217 33% 17%;
     --ring: 213 94% 68%;
-}
+  }
 
-@layer base {
   * {
     border-color: hsl(var(--border));
   }

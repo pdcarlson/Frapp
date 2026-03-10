@@ -80,7 +80,9 @@ export function PreviewSessionProvider({
         }
 
         hydratedSession = parsedSession;
-        setSession(parsedSession);
+        if (isMounted) {
+          setSession(parsedSession);
+        }
       } catch {
         await AsyncStorage.removeItem(PREVIEW_SESSION_STORAGE_KEY);
       } finally {

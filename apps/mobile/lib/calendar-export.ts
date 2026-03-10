@@ -12,7 +12,8 @@ type CalendarExportInput = {
 };
 
 function escapeIcsText(value: string): string {
-  return value
+  const normalizedValue = value.replace(/\r\n?/g, "\n");
+  return normalizedValue
     .replace(/\\/g, "\\\\")
     .replace(/\n/g, "\\n")
     .replace(/,/g, "\\,")
@@ -20,7 +21,11 @@ function escapeIcsText(value: string): string {
 }
 
 function toIcsTimestamp(isoString: string): string {
-  return new Date(isoString).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const parsedDate = new Date(isoString);
+  if (Number.isNaN(parsedDate.getTime())) {
+    throw new Error(`Invalid calendar timestamp: ${isoString}`);
+  }
+  return `${parsedDate.toISOString().replace(/[-:]/g, "").split(".")[0]}Z`;
 }
 
 function buildIcsContent(input: CalendarExportInput): string {
@@ -63,24 +68,24 @@ function downloadCalendarOnWeb(icsContent: string, filename: string) {
 export async function exportEventToCalendar(
   input: CalendarExportInput,
 ): Promise<boolean> {
-  const icsContent = buildIcsContent(input);
-  const filename = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "frapp-event"}.ics`;
-
-  if (Platform.OS === "web" && typeof document !== "undefined") {
-    downloadCalendarOnWeb(icsContent, filename);
-    return true;
-  }
-
-  const exportDirectory =
-    FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
-
-  if (!exportDirectory) {
-    return false;
-  }
-
-  const fileUri = `${exportDirectory}${filename}`;
-
   try {
+    const icsContent = buildIcsContent(input);
+    const filename = `${input.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "frapp-event"}.ics`;
+
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      downloadCalendarOnWeb(icsContent, filename);
+      return true;
+    }
+
+    const exportDirectory =
+      FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+
+    if (!exportDirectory) {
+      return false;
+    }
+
+    const fileUri = `${exportDirectory}${filename}`;
+
     await FileSystem.writeAsStringAsync(fileUri, icsContent, {
       encoding: FileSystem.EncodingType.UTF8,
     });
