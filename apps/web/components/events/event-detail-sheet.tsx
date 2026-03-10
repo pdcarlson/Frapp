@@ -195,6 +195,11 @@ export function EventDetailSheet({
                 Send check-in reminder
               </Button>
             </div>
+            {!attendanceActionsAvailable || !canMutate ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                {attendanceActionDisabledReason}
+              </p>
+            ) : null}
           </div>
 
           <div className="rounded-md border border-border p-3">
