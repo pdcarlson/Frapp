@@ -35,6 +35,15 @@ gh pr create \
   --body-file docs/internal/PR_CONSOLIDATION_CANONICAL_PR_BODY.md
 ```
 
+Optional helper:
+
+```bash
+# After the canonical PR is opened, use this helper to print/execute
+# the close + verification sequence.
+scripts/pr-consolidation-helper.sh --canonical-pr-number <NEW_PR_NUMBER>
+scripts/pr-consolidation-helper.sh --canonical-pr-number <NEW_PR_NUMBER> --apply
+```
+
 ## Step 2 — Close superseded/stale PRs with redirect note
 
 After canonical PR is open, close these PRs in this order:
