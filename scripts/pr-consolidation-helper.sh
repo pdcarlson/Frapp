@@ -54,29 +54,36 @@ if [[ -z "$CANONICAL_PR_NUMBER" ]]; then
   exit 1
 fi
 
+if ! [[ "$CANONICAL_PR_NUMBER" =~ ^[0-9]+$ ]]; then
+  echo "Error: --canonical-pr-number must be numeric." >&2
+  exit 1
+fi
+
 CANONICAL_PR_URL="$(gh pr view "$CANONICAL_PR_NUMBER" --json url --jq '.url')"
 REDIRECT_MSG="Superseded by canonical implementation PR: ${CANONICAL_PR_URL}. This is now the single review source of truth."
 
-read -r -d '' COMMANDS <<EOF || true
-gh pr close 30 --comment "${REDIRECT_MSG}"
-gh pr close 32 --comment "${REDIRECT_MSG}"
-gh pr close 33 --comment "${REDIRECT_MSG}"
-gh pr close 31 --comment "${REDIRECT_MSG}"
-gh pr checks ${CANONICAL_PR_NUMBER}
-gh pr view ${CANONICAL_PR_NUMBER}
-gh pr list --state open
-EOF
+run_or_print() {
+  if [[ "$APPLY" == "true" ]]; then
+    echo "+ $*"
+    "$@"
+  else
+    printf '%q ' "$@"
+    echo
+  fi
+}
 
 if [[ "$APPLY" == "true" ]]; then
   echo "Executing consolidation commands for canonical PR #${CANONICAL_PR_NUMBER}..."
-  while IFS= read -r command; do
-    [[ -z "$command" ]] && continue
-    echo "+ $command"
-    eval "$command"
-  done <<< "$COMMANDS"
 else
   echo "Dry run. Use --apply to execute."
   echo "Canonical PR URL: ${CANONICAL_PR_URL}"
   echo
-  echo "$COMMANDS"
 fi
+
+run_or_print gh pr close 30 --comment "$REDIRECT_MSG"
+run_or_print gh pr close 32 --comment "$REDIRECT_MSG"
+run_or_print gh pr close 33 --comment "$REDIRECT_MSG"
+run_or_print gh pr close 31 --comment "$REDIRECT_MSG"
+run_or_print gh pr checks "$CANONICAL_PR_NUMBER"
+run_or_print gh pr view "$CANONICAL_PR_NUMBER"
+run_or_print gh pr list --state open
