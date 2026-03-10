@@ -89,6 +89,16 @@ gh pr view <NEW_PR_NUMBER>
 gh pr list --state open
 ```
 
+Optional helper:
+
+```bash
+# Auto-detect canonical PR by head branch and run phase-4 checks.
+scripts/verify-pr-consolidation.sh
+
+# Or explicitly target a PR number.
+scripts/verify-pr-consolidation.sh --pr-number <NEW_PR_NUMBER>
+```
+
 ## Step 4 — Completion criteria
 
 Consolidation is complete only when:
