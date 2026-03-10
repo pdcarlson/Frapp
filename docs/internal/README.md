@@ -32,5 +32,6 @@ Use this area for:
 - `MOBILE_INTERACTION_SMOKE_CHECKLIST.md`
 - `MOBILE_THREAD_RESOLUTION_MAP.md`
 - `PR_CONSOLIDATION_CANONICAL_PR_BODY.md`
+- `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
 
 Public-facing product docs live in `apps/docs/`.
