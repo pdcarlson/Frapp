@@ -1,4 +1,8 @@
 import type { Config } from "tailwindcss";
+import { frappTokens } from "./tokens";
+
+const motionDuration = frappTokens.motion.duration;
+const motionEasing = frappTokens.motion.easing;
 
 const config: Partial<Config> = {
   theme: {
@@ -108,11 +112,11 @@ const config: Partial<Config> = {
         },
       },
       animation: {
-        "fade-up": "fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        "fade-in": "fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        "count-up": "count-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        "slide-down": "slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-        "slide-in-right": "slide-in-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards",
+        "fade-up": `fade-up ${motionDuration.context}ms ${motionEasing.standard} forwards`,
+        "fade-in": `fade-in ${motionDuration.standard}ms ${motionEasing.standard} forwards`,
+        "count-up": `count-up ${motionDuration.standard}ms ${motionEasing.standard} forwards`,
+        "slide-down": `slide-down ${motionDuration.context}ms ${motionEasing.entrance} forwards`,
+        "slide-in-right": `slide-in-right ${motionDuration.context}ms ${motionEasing.entrance} forwards`,
       },
     },
   },
