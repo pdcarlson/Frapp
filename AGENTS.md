@@ -10,7 +10,7 @@
 | `RENDER_APIKEY` | Render API access for service/deploy status checks | Render service management |
 | `SUPABASE_API_KEY` | Supabase API access for schema/project checks | Supabase project management |
 | `VERCEL_API_KEY` | Vercel API access for build/deployment checks | Vercel project management |
-| `CURSOR_USER_API_KEY` | Jules API access for agent-related automations | Jules user-scoped automation |
+| `JULES_USER_API_KEY` | Jules API access for agent-related automations | Jules user-scoped automation |
 
 ### Research-first agent workflow
 
@@ -109,7 +109,7 @@ To reconfigure branch protection after changing CI job names:
 ```bash
 GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run  # Review
 GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection               # Apply
-```
+```text
 
 ### Infisical sync map
 
@@ -193,13 +193,13 @@ When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN
 
 Skills are detailed SOPs in `Appendix: `. Reference them when working in the relevant area:
 
-| Skill | File | Use when |
+| Skill | Section | Use when |
 |-------|------|----------|
-| Testing | `Appendix: testing.md` | Running tests, verifying changes, CI parity checks |
-| UI Development | `Appendix: ui-development.md` | Building/modifying web dashboard, landing, or shared UI components |
-| API Development | `Appendix: api-development.md` | Adding NestJS endpoints, services, repositories, or updating the API contract |
-| Audit & Quality | `Appendix: audit.md` | Code quality reviews, security audits, dependency checks, migration reviews |
-| Infrastructure Research | `Appendix: infrastructure-research.md` | Investigating deployments, CI failures, secret sync, or service health |
+| Testing | `§ Testing` | Running tests, verifying changes, CI parity checks |
+| UI Development | `§ UI Development` | Building/modifying web dashboard, landing, or shared UI components |
+| API Development | `§ API Development` | Adding NestJS endpoints, services, repositories, or updating the API contract |
+| Audit & Quality | `§ Audit | `Appendix: audit.md` | Quality` | Code quality reviews, security audits, dependency checks, migration reviews |
+| Infrastructure Research | `§ Infrastructure Research` | Investigating deployments, CI failures, secret sync, or service health |
 
 ### Gotchas
 
@@ -260,7 +260,7 @@ export interface Widget {
   name: string;
   created_at: string;
 }
-```
+```text
 
 ### 2. Define the repository interface
 
@@ -273,7 +273,7 @@ export interface IWidgetRepository {
   findByChapterId(chapterId: string): Promise<Widget[]>;
   create(data: Partial<Widget>): Promise<Widget>;
 }
-```
+```text
 
 ### 3. Implement the Supabase repository
 
@@ -293,7 +293,7 @@ export class SupabaseWidgetRepository implements IWidgetRepository {
     return data ?? [];
   }
 }
-```
+```text
 
 Conventions:
 - Single row: `.maybeSingle()` (returns `null`), not `.single()` (throws)
@@ -313,7 +313,7 @@ export class WidgetService {
     return this.widgetRepo.findByChapterId(chapterId);
   }
 }
-```
+```text
 
 ### 5. Create DTOs
 
@@ -326,7 +326,7 @@ export class CreateWidgetDto {
   @MaxLength(255)
   name: string;
 }
-```
+```text
 
 ### 6. Create the controller
 
@@ -356,7 +356,7 @@ export class WidgetController {
     return this.widgetService.create(chapterId, dto);
   }
 }
-```
+```text
 
 ### 7. Wire the module
 
@@ -372,7 +372,7 @@ export class WidgetController {
   exports: [WidgetService],
 })
 export class WidgetModule {}
-```
+```text
 
 Import in `app.module.ts`.
 
@@ -388,14 +388,14 @@ const module = await Test.createTestingModule({
     { provide: WIDGET_REPOSITORY, useValue: mockRepo },
   ],
 }).compile();
-```
+```text
 
 ### 9. Update contract artifacts
 
 ```bash
 npm run openapi:export -w apps/api
 npm run generate -w packages/api-sdk
-```
+```text
 
 Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
@@ -407,13 +407,13 @@ Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
 Recommended per-route pattern (applied in this order):
 
-```
+```text
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
              → AuthSyncInterceptor (syncs to users table, sets request.appUser)
              → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)
              → PermissionsGuard (checks @RequirePermissions against member's roles)
              → Controller
-```
+```text
 
 ### How to apply
 
@@ -474,7 +474,7 @@ Additionally, `PointsService` enforces 50 point adjustments per hour per admin.
 - If the Supabase repository conventions change, update section 3.
 - If rate limits change, update the rate limiting table.
 
-#### Audit
+### Audit
 > Use when performing code audits, security reviews, dependency checks, migration reviews, or quality assessments.
 
 ---
@@ -515,7 +515,7 @@ Check that new code follows established patterns:
 
 ```bash
 npm run check-types   # Turbo runs tsc --noEmit across all workspaces
-```
+```text
 
 Check for `any` types, `@ts-ignore`, and untyped function parameters.
 
@@ -523,7 +523,7 @@ Check for `any` types, `@ts-ignore`, and untyped function parameters.
 
 ```bash
 npm run lint   # ESLint across all lint-enabled workspaces
-```
+```text
 
 The API has strict lint rules. Warnings are tracked but currently tolerated — see AGENTS.md gotchas.
 
@@ -550,7 +550,7 @@ To verify:
 ```bash
 # Check all CREATE TABLE statements have RLS
 grep -A5 "CREATE TABLE" supabase/migrations/*.sql | grep -c "ROW LEVEL SECURITY"
-```
+```text
 
 ### Input validation
 
@@ -567,7 +567,7 @@ Check for:
 
 ```bash
 npm audit   # Check for known vulnerabilities in dependencies
-```
+```text
 
 ---
 
@@ -577,7 +577,7 @@ npm audit   # Check for known vulnerabilities in dependencies
 npm audit                    # Vulnerability scan
 npm outdated                 # Check for outdated packages
 npm outdated -w apps/api     # Per-workspace
-```
+```text
 
 Key dependencies to watch:
 - `@supabase/supabase-js` and `@supabase/ssr` — breaking changes between major versions
@@ -594,7 +594,7 @@ Key dependencies to watch:
 
 ```bash
 npm run check:api-contract
-```
+```text
 
 This uses git diff to verify `openapi.json` and `types.ts` are updated when API source changes. Run after any controller or DTO change.
 
@@ -613,7 +613,7 @@ This uses git diff to verify `openapi.json` and `types.ts` are updated when API 
 
 ```bash
 npm run check:migration-safety
-```
+```text
 
 Validates:
 - Filenames match `{14-digit-timestamp}_{snake_case}.sql`
@@ -653,7 +653,7 @@ For each migration:
 
 ```bash
 GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-```
+```text
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 
@@ -688,7 +688,7 @@ Structure your findings as:
 
 ### Recommendations
 - ...
-```
+```text
 
 Reference existing audit docs in `docs/archive/audits/` for format precedent.
 
@@ -700,7 +700,7 @@ Reference existing audit docs in `docs/archive/audits/` for format precedent.
 - When new CI checks are added, update the CI/CD audit table.
 - When CodeRabbit rules change (`.coderabbit.yaml`), document the new path instructions.
 
-#### Infrastructure Research
+### Infrastructure Research
 > Use when investigating deployment state, CI failures, environment configuration, or service health before proposing changes. Also applies when reviewing PRs, debugging production issues, or syncing secrets.
 
 ---
@@ -728,32 +728,32 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 
 ```bash
 GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch preview --limit 5
-```
+```text
 
 ### View failed CI job logs
 
 ```bash
 GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run view <run_id> --log-failed
-```
+```text
 
 ### Check PR status and reviews
 
 ```bash
 GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr view <number>
 GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr checks <number>
-```
+```text
 
 ### Branch protection state
 
 ```bash
 GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-```
+```text
 
 ### Find recent PRs touching a path
 
 ```bash
 GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr list --search "supabase/migrations" --state merged --limit 5
-```
+```text
 
 ---
 
@@ -765,7 +765,7 @@ GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr list --search "supabase/
 npx supabase status          # Running services, ports, keys
 npx supabase db diff --local  # Uncommitted schema changes
 npx supabase migration list --local  # Applied migrations
-```
+```text
 
 ### Remote project (staging/production)
 
@@ -773,13 +773,13 @@ npx supabase migration list --local  # Applied migrations
 export SUPABASE_ACCESS_TOKEN="$PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN"
 npx supabase projects list
 npx supabase migration list --project-ref <ref>
-```
+```text
 
 ### Compare local vs remote schema
 
 ```bash
 npx supabase db diff --linked  # Requires project to be linked
-```
+```text
 
 ---
 
@@ -790,21 +790,21 @@ npx supabase db diff --linked  # Requires project to be linked
 ```bash
 curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
   "https://api.render.com/v1/services?type=web_service&limit=10" | python3 -m json.tool
-```
+```text
 
 ### Recent deploys
 
 ```bash
 curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
   "https://api.render.com/v1/services/<service_id>/deploys?limit=5" | python3 -m json.tool
-```
+```text
 
 ### Health check
 
 ```bash
 curl -s https://api-staging.frapp.live/health   # Staging
 curl -s https://api.frapp.live/health           # Production
-```
+```text
 
 ---
 
@@ -815,14 +815,14 @@ curl -s https://api.frapp.live/health           # Production
 ```bash
 curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
   "https://api.vercel.com/v6/deployments?projectId=<project_id>&limit=5" | python3 -m json.tool
-```
+```text
 
 ### Check build logs
 
 ```bash
 curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
   "https://api.vercel.com/v2/deployments/<deployment_id>/events" | python3 -m json.tool
-```
+```text
 
 ---
 
@@ -834,7 +834,7 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
 curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
   "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=staging&secretPath=/" \
   | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]"
-```
+```text
 
 ### Compare environments
 
@@ -847,7 +847,7 @@ for env in staging production; do
     "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=$env&secretPath=/" \
     | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]" | sort
 done
-```
+```text
 
 **Never print secret values.** Only reference variable names and presence/absence.
 
@@ -903,7 +903,7 @@ done
 - When the Infisical sync map changes, update the quick reference table.
 - When new API keys become available as env vars, add them to the credentials table.
 
-#### Testing
+### Testing
 > Use when running tests, verifying changes, or setting up the test environment.
 
 ---
@@ -933,7 +933,7 @@ npm install
 npm run lint
 npm run test -w apps/api
 npm run check-types
-```
+```text
 
 ### Full (integration / manual testing)
 
@@ -947,20 +947,20 @@ npx supabase start
 npx supabase db push --local
 npm run dev:api     # Infisical-injected, port 3001
 npm run dev:web     # Infisical-injected, port 3000
-```
+```text
 
 Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`):
 ```bash
 npm run start:dev -w apps/api   # reads .env.local, port 3001
 npm run dev -w apps/web         # reads .env.local, port 3000
-```
+```text
 
 ### Health verification
 
 ```bash
 curl http://localhost:3001/health
 # {"status":"ok","database":"connected","uptime":...}
-```
+```text
 
 ---
 
@@ -986,7 +986,7 @@ const module: TestingModule = await Test.createTestingModule({
     { provide: SUPABASE_CLIENT, useValue: mockSupabase },
   ],
 }).compile();
-```
+```text
 
 Repositories and adapters are mocked via `jest.fn()` on each method. No shared mock factories — each spec defines its own fixtures inline.
 
@@ -998,7 +998,7 @@ npm run test -w apps/api -- --testPathPattern="event.service"
 
 # Pattern match
 npm run test -w apps/api -- --testPathPattern="billing"
-```
+```text
 
 ---
 
@@ -1012,7 +1012,7 @@ If this fails after changing API endpoints:
 ```bash
 npm run openapi:export -w apps/api
 npm run generate -w packages/api-sdk
-```
+```text
 
 ### Migration safety (`check:migration-safety`)
 
@@ -1030,13 +1030,13 @@ curl -X POST http://127.0.0.1:54321/auth/v1/signup \
   -H "apikey: <ANON_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"Password123!"}'
-```
+```text
 
 2. Use the returned `access_token` to hit the API:
 ```bash
 curl http://localhost:3001/v1/users/me \
   -H "Authorization: Bearer <access_token>"
-```
+```text
 
 The API's `AuthSyncInterceptor` auto-creates a `users` row on first authenticated request.
 
@@ -1048,14 +1048,14 @@ curl -X POST http://localhost:3001/v1/chapters \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"name":"Test Chapter","greek_letters":"ΑΒΓ","university":"Test University"}'
-```
+```text
 
 Then use the chapter ID:
 ```bash
 curl http://localhost:3001/v1/events \
   -H "Authorization: Bearer <token>" \
   -H "x-chapter-id: <chapter_id>"
-```
+```text
 
 ### Web dashboard (GUI)
 
@@ -1082,7 +1082,7 @@ When you discover new testing patterns, fixtures, or gotchas:
 2. If a new test utility or shared mock factory is created, document it under "Mocking pattern".
 3. If new CI checks are added, update the "CI parity checklist" and "Quick reference" sections.
 
-#### Ui Development
+### Ui Development
 > Use when building or modifying UI in the web dashboard, landing site, or shared component packages.
 
 ---
@@ -1109,7 +1109,7 @@ Located in `packages/ui/src/`. Each component is a separate file with barrel exp
 ```typescript
 import { Button } from "@repo/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@repo/ui/card";
-```
+```text
 
 These use `joinClassNames` from `@repo/ui/utils` for class merging.
 
@@ -1173,13 +1173,13 @@ const config: Config = {
     "../../packages/ui/src/**/*.{js,ts,jsx,tsx}",
   ],
 };
-```
+```text
 
 Global CSS imports the theme's base styles:
 ```css
 /* apps/web/app/globals.css */
 @import "../../../packages/theme/src/globals.css";
-```
+```text
 
 ---
 
@@ -1195,7 +1195,7 @@ All data fetching uses TanStack Query via shared hooks. Import from the package 
 
 ```typescript
 import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
-```
+```text
 
 Pattern:
 - `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
@@ -1204,12 +1204,12 @@ Pattern:
 
 ### Provider chain (web app)
 
-```
+```text
 QueryProvider (TanStack Query)
   └─ FrappProvider (API client with Supabase auth token + chapter ID)
        └─ NetworkProvider (online/offline state)
             └─ App content
-```
+```text
 
 These providers are defined in `apps/web/lib/providers/` but not yet wired into the root layout — they must be added when building real pages.
 
@@ -1218,7 +1218,7 @@ These providers are defined in `apps/web/lib/providers/` but not yet wired into 
 Shared Zod schemas for form validation:
 ```typescript
 import { CreateChapterSchema, UpdateUserSchema } from "@repo/validation";
-```
+```text
 
 Use with React Hook Form or direct `parse`/`safeParse` for client-side validation that matches API expectations.
 
@@ -1239,7 +1239,7 @@ After making UI changes, start the dev server and verify in-browser:
 ```bash
 npm run dev -w apps/web   # http://localhost:3000
 npm run dev -w apps/landing  # http://localhost:3002
-```
+```text
 
 ### Dark mode
 
