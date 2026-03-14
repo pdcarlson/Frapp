@@ -191,7 +191,7 @@ When using the PAT, always use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN
 
 ### Agent skills
 
-Skills are detailed SOPs in `Appendix: `. Reference them when working in the relevant area:
+Skills are detailed SOPs in the appendix below. Reference them when working in the relevant area:
 
 | Skill | Section | Use when |
 |-------|------|----------|
@@ -1309,3 +1309,5 @@ Key points:
 - All data fetching uses TanStack Query via `@repo/hooks` — never raw fetch
 - ShadCN components are copy-pasted, not CLI-installed — use `cn()` for class merging
 - Shared Zod schemas in `@repo/validation` for form validation that matches API expectations
+
+To resolve PR comments: When addressing PR review feedback, ensure any GitHub comments related to those fixes are marked as resolved in the GitHub UI, as unresolved comments block merging.
