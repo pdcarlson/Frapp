@@ -121,7 +121,7 @@ Pattern:
 
 ### Provider chain (web app)
 
-```
+```text
 QueryProvider (TanStack Query)
   └─ FrappProvider (API client with Supabase auth token + chapter ID)
        └─ NetworkProvider (online/offline state)

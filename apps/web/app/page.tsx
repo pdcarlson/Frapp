@@ -17,8 +17,8 @@ export default function Home() {
             being rolled out incrementally.
           </p>
           <div className="flex flex-wrap gap-3">
-            <Button disabled>Sign in (in progress)</Button>
-            <Button variant="secondary" disabled>
+            <Button disabled aria-label="Sign in feature is currently in progress">Sign in (in progress)</Button>
+            <Button variant="secondary" disabled aria-label="Dashboard routes are currently in progress">
               Dashboard routes (in progress)
             </Button>
           </div>
