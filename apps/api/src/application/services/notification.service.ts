@@ -120,10 +120,8 @@ export class NotificationService {
       hour12: false,
     });
     const parts = formatter.formatToParts(now);
-    const hour = parseInt(
-      parts.find((p) => p.type === 'hour')?.value ?? '0',
-      10,
-    );
+    const hour =
+      parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10) % 24;
     const minute = parseInt(
       parts.find((p) => p.type === 'minute')?.value ?? '0',
       10,

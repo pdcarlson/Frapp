@@ -12,6 +12,8 @@ node_modules
 
 # Testing
 coverage
+apps/web/playwright-report/
+apps/web/test-results/
 
 # Turbo
 .turbo
@@ -39,5 +41,9 @@ supabase/.branches/
 .DS_Store
 *.pem
 
-# Cursor
-.cursor
+# Cursor (keep skills and rules tracked)
+.cursor/*
+!.cursor/skills/
+!.cursor/skills/**
+!.cursor/rules/
+!.cursor/rules/**

@@ -1,16 +1,42 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { ScreenShell } from "@/components/screen-shell";
+import { NavTile } from "@/components/nav-tile";
+import { TaskLoopCard } from "@/components/task-loop-card";
 
 export default function EventsScreen() {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Events</Text>
-      <Text style={styles.subtitle}>Coming soon</Text>
-    </View>
+    <ScreenShell
+      title="Events"
+      subtitle="Upcoming windows, check-in eligibility, and recovery states when connectivity degrades."
+    >
+      <NavTile
+        href="/event-details"
+        title="Open Chapter Meeting details"
+        description="View check-in rules, role targeting, and calendar export status."
+        accessibilityHint="Open detailed event check-in and calendar export states."
+      />
+      <TaskLoopCard
+        category="Today"
+        state="pending"
+        title="Chapter Meeting • 6:00 PM"
+        body="Check-in opens 15 minutes before start and closes 15 minutes after end."
+        meta="Mandatory for executive board"
+        actionHint="Open details to verify your role requirement."
+      />
+      <TaskLoopCard
+        category="Saturday"
+        state="synced"
+        title="Philanthropy Showcase"
+        body="Optional attendance • 15 points available for successful check-in."
+        meta="Calendar export is ready"
+      />
+      <TaskLoopCard
+        category="Check-in"
+        state="cached"
+        title="Offline check-in receipt stored locally"
+        body="If the API is unreachable, Frapp stores your check-in and resubmits automatically."
+        meta="Pending submissions: 1"
+        actionHint="Stay online until you see a synced state."
+      />
+    </ScreenShell>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' },
-  title: { fontSize: 24, fontWeight: 'bold', color: '#0f172a' },
-  subtitle: { fontSize: 16, color: '#94a3b8', marginTop: 8 },
-});
