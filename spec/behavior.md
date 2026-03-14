@@ -354,6 +354,10 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 5. Send push notification via Expo Push Service with the appropriate priority.
 6. If delivery fails (invalid token, Expo error), remove the invalid token from `push_tokens`.
 
+### Performance and Parallelism
+
+To ensure low latency for the sender, notifications are delivered concurrently. When notifying multiple users (e.g., in a Group DM or a Chapter-wide announcement), the system triggers all notification requests in parallel rather than sequentially. This is implemented using `Promise.all` to ensure that independent notification deliveries do not block each other.
+
 ### Deep Linking
 
 Every notification payload includes a `target` object with screen and parameters:
