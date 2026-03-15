@@ -198,6 +198,6 @@ done
 
 ## Updating this skill
 
-- When new provider integrations are added (e.g., Sentry API, Expo EAS), add their research patterns.
-- When the Infisical sync map changes, update the quick reference table.
-- When new API keys become available as env vars, add them to the credentials table.
+- Add research patterns for new provider integrations (e.g., Sentry API, Expo EAS).
+- Update the quick reference table if the Infisical sync map changes.
+- Add new API keys to the credentials table as they become available.

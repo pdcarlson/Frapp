@@ -236,7 +236,7 @@ Configured in `app.module.ts`:
 | Read | 100 req | 60s |
 | Write | 30 req | 60s |
 
-Additionally, `PointsService` enforces 50 point adjustments per hour per admin.
+Additionally, `PointsService` enforces 50 point-adjustments per hour per admin.
 
 ---
 

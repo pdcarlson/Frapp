@@ -16,8 +16,8 @@ test.describe("dashboard route visual baselines", () => {
   for (const route of dashboardRouteSnapshots) {
     test(`matches baseline for ${route.path}`, async ({ page }) => {
       await page.goto(route.path);
-      await expect(page.locator("main#main-content")).toBeVisible();
-      await expect(page.locator("main#main-content")).toHaveScreenshot(route.snapshotName, {
+      await expect(page.locator("main")).toBeVisible();
+      await expect(page.locator("main")).toHaveScreenshot(route.snapshotName, {
         animations: "disabled",
         caret: "hide",
       });
