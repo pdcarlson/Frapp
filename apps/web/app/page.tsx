@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@repo
 
 export default function Home() {
   return (
-    <main id="main-content" className="flex min-h-screen items-center justify-center p-8">
+    <main className="flex min-h-screen items-center justify-center p-8">
       <Card className="w-full max-w-lg">
         <CardHeader>
           <CardTitle>Frapp Admin Dashboard</CardTitle>

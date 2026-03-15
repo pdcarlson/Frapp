@@ -164,6 +164,10 @@ The theme supports dark mode via the `.dark` class. Toggle by adding/removing th
 
 ### Responsive design
 
+## Accessibility
+Preserve ARIA attributes, test keyboard navigation (Tab, Shift+Tab, Enter, Escape, Arrow keys), ensure visible focus indicators using the `ring` theme token, use semantic HTML (`button`, `nav`, `main`), provide alt text and aria-labels for icon-only buttons, and test with screen readers (VoiceOver, NVDA). Reference Radix UI Accessibility and keep Radix primitives' defaults when implementing custom components.
+
+
 Tailwind breakpoints are standard: `sm` (640px), `md` (768px), `lg` (1024px), `xl` (1280px). The web dashboard targets desktop-first; landing targets mobile-first.
 
 ---
