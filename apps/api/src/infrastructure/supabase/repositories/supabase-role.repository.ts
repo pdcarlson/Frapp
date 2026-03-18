@@ -70,7 +70,7 @@ export class SupabaseRoleRepository implements IRoleRepository {
       .insert(rolesData as never)
       .select();
     if (error) throw error;
-    return data || [];
+    return data ?? [];
   }
 
   async update(id: string, roleData: Partial<Role>): Promise<Role> {

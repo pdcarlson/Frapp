@@ -158,6 +158,15 @@ describe('ChapterService', () => {
       university: 'State U',
     });
     expect(mockRoleRepo.createMany).toHaveBeenCalledTimes(1);
+    const expectedRolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
+      chapter_id: chapter.id,
+      name: roleDef.name,
+      permissions: [...roleDef.permissions],
+      is_system: roleDef.is_system,
+      display_order: roleDef.display_order,
+      color: roleDef.color ?? null,
+    }));
+    expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
     expect(result).toEqual(chapter);
   });
 

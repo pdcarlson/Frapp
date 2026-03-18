@@ -952,7 +952,3 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 
 ### React Query Hooks Testing
 - All React Query hooks related to roles (like `useRoles`, `useCreateRole`) are tested in `packages/hooks/src/use-roles.spec.tsx`. They verify successful requests and cache invalidation rules (e.g. `queryClient.invalidateQueries({ queryKey: ["roles"] })`).
-
-### Performance: Concurrent Notifications
-
-To mitigate N+1 scaling issues, multiple non-critical tasks such as dispatching push notifications across lists of recipients (e.g. DMs, events) should be dispatched concurrently. Specifically, use `Promise.allSettled()` over sequentially awaiting them to optimize execution time without allowing isolated failures to break the flow.
