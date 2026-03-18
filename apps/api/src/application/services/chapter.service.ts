@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Inject,
+  InternalServerErrorException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
@@ -25,9 +27,13 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 
 const BRANDING_BUCKET = 'branding';
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
+const CHANNEL_SEEDING_ERROR_MESSAGE =
+  'Unable to create default chat channels for this chapter';
 
 @Injectable()
 export class ChapterService {
+  private readonly logger = new Logger(ChapterService.name);
+
   constructor(
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
@@ -78,7 +84,17 @@ export class ChapterService {
       is_read_only: channelDef.is_read_only,
     }));
 
-    await this.supabase.from('chat_channels').insert(defaultChannels);
+    const { error } = await this.supabase
+      .from('chat_channels')
+      .insert(defaultChannels);
+
+    if (error) {
+      this.logger.error(
+        `Failed to insert default chat channels for chapter ${chapter.id}`,
+        error.message,
+      );
+      throw new InternalServerErrorException(CHANNEL_SEEDING_ERROR_MESSAGE);
+    }
 
     return chapter;
   }

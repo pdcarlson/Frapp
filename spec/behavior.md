@@ -253,6 +253,7 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - **Channel categories** (like Discord): chapters can organize channels into named groups (e.g. "General", "Executive", "Committees"). Categories are display-only grouping with a sort order. Channels not assigned to a category appear in a default "Channels" group.
 - **Default channels** created on chapter setup: `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
 - **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
+- **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
 
 ### Direct Messages
 
