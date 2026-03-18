@@ -101,6 +101,9 @@ type(scope): description
 
 ### 3. Open a PR targeting `preview`
 
+- Run the local gate first: `npm run ci:local-gate`
+  - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
+- If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/main`
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `apps/docs/` or `spec/`.
 - CI and Vercel checks will run automatically.

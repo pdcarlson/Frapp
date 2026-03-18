@@ -143,13 +143,18 @@ export class PollService {
           v.option_index,
         );
       }
-      for (const idx of optionIndexes) {
-        await this.voteRepo.create({
+
+      if (optionIndexes.length === 0) {
+        return;
+      }
+
+      await this.voteRepo.createMany(
+        optionIndexes.map((idx) => ({
           message_id: messageId,
           user_id: userId,
           option_index: idx,
-        });
-      }
+        })),
+      );
     }
   }
 
