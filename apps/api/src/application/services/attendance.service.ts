@@ -194,8 +194,9 @@ export class AttendanceService {
 
     let requiredMembers: typeof allMembers;
     if (event.required_role_ids && event.required_role_ids.length > 0) {
+      const requiredRoleIdSet = new Set(event.required_role_ids);
       requiredMembers = allMembers.filter((m) =>
-        m.role_ids.some((r) => event.required_role_ids!.includes(r)),
+        m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
       );
     } else {
       requiredMembers = allMembers;
