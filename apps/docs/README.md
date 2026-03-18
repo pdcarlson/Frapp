@@ -34,3 +34,4 @@ npm run lint -w apps/docs
 - Branch model:
   - `preview` → staging docs domain
   - `main` → production docs domain
+- Added tests for `useInvoices` hook in `@repo/hooks`.

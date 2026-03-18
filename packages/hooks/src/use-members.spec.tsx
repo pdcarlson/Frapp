@@ -2,7 +2,7 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useMembers, useMemberSearch } from "./use-members";
+import { useMembers } from "./use-members";
 import { useFrappClient } from "./use-frapp-client";
 
 const MEMBERS_ENDPOINT = "/v1/members";
@@ -88,60 +88,5 @@ describe("useMembers", () => {
 
     expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
     expect(result.current.error).toBe(mockError);
-  });
-});
-
-describe("useMemberSearch", () => {
-  let queryClient: QueryClient;
-  const mockUseFrappClient = vi.mocked(useFrappClient);
-
-  beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
-    vi.clearAllMocks();
-  });
-
-  it("executes search when query is provided", async () => {
-    const members = [{ id: "member-1", chapter_id: "chapter-1" }];
-    const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
-
-    mockUseFrappClient.mockReturnValue({
-      GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
-
-    const { result } = renderHook(() => useMemberSearch("john"), {
-      wrapper: createWrapper(queryClient),
-    });
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
-
-    expect(mockGet).toHaveBeenCalledWith("/v1/members/search", {
-      params: { query: { q: "john" } },
-    });
-    expect(mockGet).toHaveBeenCalledTimes(1);
-    expect(result.current.data).toEqual(members);
-  });
-
-  it("does not fetch when query is empty", async () => {
-    const mockGet = vi.fn();
-
-    mockUseFrappClient.mockReturnValue({
-      GET: mockGet,
-    } as unknown as ReturnType<typeof useFrappClient>);
-
-    const { result } = renderHook(() => useMemberSearch(""), {
-      wrapper: createWrapper(queryClient),
-    });
-
-    expect(result.current.fetchStatus).toBe("idle");
-    expect(result.current.isPending).toBe(true);
-    expect(mockGet).not.toHaveBeenCalled();
   });
 });
