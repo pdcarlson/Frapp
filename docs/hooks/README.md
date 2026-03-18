@@ -44,7 +44,7 @@ Core expectations for mutation hooks:
 - requesting upload URLs with exact POST payload wiring
 - surfacing upload URL API errors to the hook consumer
 
-`useMembers` has dedicated tests in `packages/hooks/src/use-members.spec.tsx` for:
+`useMembers` and `useMemberSearch` have dedicated tests in `packages/hooks/src/use-members.spec.tsx` for:
 
 - successful `GET /v1/members` data flow
 - propagating API errors to the hook consumer
