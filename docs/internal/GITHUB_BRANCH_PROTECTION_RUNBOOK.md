@@ -52,14 +52,14 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Linear history | Yes |
 | Force pushes | Blocked |
 | Deletions | Blocked |
-| Conversation resolution | Required |
+| Conversation resolution | Branch-specific (disabled on `preview`, required on `main`) |
 
 ### Branch-specific PR review rules
 
-| Branch | Required approving reviews | Dismiss stale reviews |
-| --- | --- | --- |
-| `preview` | Disabled | N/A |
-| `main` | 1 | Enabled |
+| Branch | Required approving reviews | Dismiss stale reviews | Require conversation resolution |
+| --- | --- | --- | --- |
+| `preview` | Disabled | N/A | Disabled |
+| `main` | 1 | Enabled | Enabled |
 
 ### Required Status Checks
 

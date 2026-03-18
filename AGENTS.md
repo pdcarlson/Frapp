@@ -115,8 +115,8 @@ Key principles:
 | **Deploy gating** | API deploys only after CI passes; production migrations require manual approval |
 
 PR review policy:
-- `preview`: no required approving review (CodeRabbit suggestions are advisory).
-- `main`: 1 required approving review remains enabled for promotion control.
+- `preview`: no required approving review and no required conversation resolution (CodeRabbit suggestions are advisory).
+- `main`: 1 required approving review and required conversation resolution remain enabled for promotion control.
 
 To reconfigure branch protection after changing CI job names:
 ```bash

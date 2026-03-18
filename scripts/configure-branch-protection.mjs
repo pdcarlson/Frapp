@@ -107,6 +107,7 @@ async function callGitHubApi({ token, method, path, body }) {
 
 function buildProtectionPayload(branch) {
   const requiresApprovingReview = branch === "main";
+  const requiresConversationResolution = branch === "main";
   const payload = {
     required_status_checks: {
       strict: true,
@@ -126,12 +127,12 @@ function buildProtectionPayload(branch) {
     allow_force_pushes: false,
     allow_deletions: false,
     block_creations: false,
-    required_conversation_resolution: true,
+    required_conversation_resolution: requiresConversationResolution,
     lock_branch: false,
     allow_fork_syncing: true,
   };
 
-  // main has stricter policy: branch source enforcement + required review.
+  // main has stricter policy: branch source enforcement + required review + required conversation resolution.
   if (branch === "main") {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
@@ -170,7 +171,7 @@ async function main() {
     }
     console.log(`  Linear history: ${payload.required_linear_history}`);
     console.log(`  Force pushes: ${payload.allow_force_pushes}`);
-    console.log(`  Conversation resolution: ${payload.required_conversation_resolution}`);
+    console.log(`  Conversation resolution required: ${payload.required_conversation_resolution}`);
     console.log("");
 
     if (!dryRun) {

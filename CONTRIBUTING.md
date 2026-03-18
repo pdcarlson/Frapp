@@ -66,7 +66,8 @@ Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploy
 ### PR review requirement policy
 
 - `preview`: approving review is **not required** (CodeRabbit feedback is advisory).
-- `main`: **1 approving review required** (promotion/control gate).
+- `preview`: conversation resolution is **not required** (you can choose whether to act on CodeRabbit comment threads).
+- `main`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
 ---
 

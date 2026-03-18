@@ -153,7 +153,8 @@ These checks are also required for merge:
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
 - On `preview`, CodeRabbit feedback is advisory (no required approving review).
-- On `main`, branch protection requires one approving review, so review outcomes remain a promotion gate.
+- On `preview`, conversation resolution is also disabled, so unresolved CodeRabbit threads do not block merge.
+- On `main`, branch protection requires one approving review and conversation resolution, so review outcomes remain a promotion gate.
 
 ### Key Design Decisions
 
