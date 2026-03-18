@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarPlus2, Loader2, Save } from "lucide-react";
 import { useCreateEvent, useUpdateEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
@@ -108,6 +108,12 @@ export function EventEditorDialog({
     }
     return mode === "create" ? "Create event" : "Save changes";
   }, [isSubmitting, mode]);
+
+    const handlePointValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const parsed = Number(event.target.value);
+    if (Number.isNaN(parsed)) return;
+    setPointValue(Math.max(0, parsed));
+  };
 
   async function handleSubmit() {
     if (!name.trim()) {
@@ -252,11 +258,7 @@ export function EventEditorDialog({
                 type="number"
                 min={0}
                 value={pointValue}
-                onChange={(eventValue) => {
-                  const parsed = Number(eventValue.target.value);
-                  if (Number.isNaN(parsed)) return;
-                  setPointValue(Math.max(0, parsed));
-                }}
+                onChange={handlePointValueChange}
               />
             </label>
           </div>
