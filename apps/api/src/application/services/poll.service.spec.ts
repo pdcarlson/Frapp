@@ -264,7 +264,7 @@ describe('PollService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should cast multi-choice votes using bulk insert', async () => {
+    it('should replace multi-choice votes with one bulk delete', async () => {
       mockMessageRepo.findById.mockResolvedValue({
         ...basePollMessage,
         metadata: {
@@ -273,8 +273,7 @@ describe('PollService', () => {
         },
       });
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
-      mockVoteRepo.findByMessageAndUser.mockResolvedValue([baseVote]);
-      mockVoteRepo.deleteByMessageUserAndOption.mockResolvedValue();
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
       mockVoteRepo.createMany.mockResolvedValue([
         { ...baseVote, option_index: 0 },
         { ...baseVote, option_index: 2 },
@@ -282,11 +281,12 @@ describe('PollService', () => {
 
       await service.vote('msg-1', 'user-2', 'ch-1', [0, 2]);
 
-      expect(mockVoteRepo.deleteByMessageUserAndOption).toHaveBeenCalledWith(
+      expect(mockVoteRepo.deleteByMessageAndUser).toHaveBeenCalledWith(
         'msg-1',
         'user-2',
-        1,
       );
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+      expect(mockVoteRepo.deleteByMessageUserAndOption).not.toHaveBeenCalled();
       expect(mockVoteRepo.createMany).toHaveBeenCalledWith([
         {
           message_id: 'msg-1',
