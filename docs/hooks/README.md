@@ -44,11 +44,18 @@ Core expectations for mutation hooks:
 - requesting upload URLs with exact POST payload wiring
 - surfacing upload URL API errors to the hook consumer
 
+`useMembers` has dedicated tests in `packages/hooks/src/use-members.spec.tsx` for:
+
+- successful `GET /v1/members` data flow
+- propagating API errors to the hook consumer
+- preventing immediate remount refetches to guard stale-time behavior
+
 Current targeted specs include:
 
 - `use-documents.spec.tsx` — query + mutation request-shape and error behavior
 - `use-roles.spec.tsx` — query success/error behavior for `GET /v1/roles`
 - `use-attendance.spec.tsx` — query success/error/disabled behavior for attendance
+- `use-members.spec.tsx` — query success/error behavior for `GET /v1/members`
 
 ## Running hook tests
 
@@ -58,4 +65,5 @@ From `packages/hooks` run:
 - `npm exec --workspace packages/hooks vitest run src/use-documents.spec.tsx` for focused `useDocuments` coverage
 - `npx vitest run src/use-invoices.spec.tsx` for the focused invoice hook tests
 - `npm exec --workspace packages/hooks vitest run src/use-attendance.spec.tsx` for focused `useAttendance` coverage
+- `npm exec --workspace packages/hooks vitest run src/use-members.spec.tsx` for focused `useMembers` coverage
 - `npx vitest run` for the full hooks package suite
