@@ -5,9 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useMembers } from "./use-members";
 import { useFrappClient } from "./use-frapp-client";
 
-const MEMBERS_QUERY_KEY = ["members"];
 const MEMBERS_ENDPOINT = "/v1/members";
-const MEMBERS_STALE_TIME_MS = 60_000;
 
 vi.mock("./use-frapp-client", () => ({
   useFrappClient: vi.fn(),
@@ -59,10 +57,17 @@ describe("useMembers", () => {
     expect(mockGet).toHaveBeenCalledTimes(1);
     expect(result.current.data).toEqual(members);
 
-    const membersQuery = queryClient.getQueryCache().find({
-      queryKey: MEMBERS_QUERY_KEY,
+    const secondRender = renderHook(() => useMembers(), {
+      wrapper: createWrapper(queryClient),
     });
-    expect(membersQuery?.options.staleTime).toBe(MEMBERS_STALE_TIME_MS);
+
+    await waitFor(() => {
+      expect(secondRender.result.current.isSuccess).toBe(true);
+    });
+
+    // useMembers sets staleTime to 60s, so remounting immediately should reuse
+    // fresh cache data instead of refetching.
+    expect(mockGet).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces API errors when the members request fails", async () => {

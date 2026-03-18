@@ -48,7 +48,7 @@ Core expectations for mutation hooks:
 
 - successful `GET /v1/members` data flow
 - propagating API errors to the hook consumer
-- preserving `["members"]` query caching options (including stale-time configuration)
+- preventing immediate remount refetches to guard stale-time behavior
 
 Current targeted specs include:
 
