@@ -56,27 +56,20 @@ export class ChapterService {
   ): Promise<Chapter> {
     const chapter = await this.chapterRepo.create(data);
 
-    const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
-      chapter_id: chapter.id,
-      name: roleDef.name,
-      permissions: [...roleDef.permissions],
-      is_system: roleDef.is_system,
-      display_order: roleDef.display_order,
-      color: roleDef.color ?? null,
-    }));
-
-    const roles = await this.roleRepo.createMany(rolesData);
-
-    if (!roles || roles.length === 0) {
-      this.logger.error(`Failed to create default roles for chapter ${chapter.id}`);
-      throw new InternalServerErrorException('Failed to create default roles');
+    const roles = [];
+    for (const roleDef of DEFAULT_SYSTEM_ROLES) {
+      const role = await this.roleRepo.create({
+        chapter_id: chapter.id,
+        name: roleDef.name,
+        permissions: [...roleDef.permissions],
+        is_system: roleDef.is_system,
+        display_order: roleDef.display_order,
+        color: roleDef.color ?? null,
+      });
+      roles.push(role);
     }
 
     const presidentRole = roles.find((r) => r.name === 'President');
-    if (!presidentRole) {
-      this.logger.error(`President role missing after default role creation for chapter ${chapter.id}`);
-      throw new InternalServerErrorException('President role not found during chapter creation');
-    }
     await this.memberRepo.create({
       user_id: userId,
       chapter_id: chapter.id,
