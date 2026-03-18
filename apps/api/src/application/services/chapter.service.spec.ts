@@ -57,6 +57,7 @@ describe('ChapterService', () => {
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -145,12 +146,7 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
     }));
 
-    mockRoleRepo.create
-      .mockResolvedValueOnce(roles[0])
-      .mockResolvedValueOnce(roles[1])
-      .mockResolvedValueOnce(roles[2])
-      .mockResolvedValueOnce(roles[3])
-      .mockResolvedValueOnce(roles[4]);
+    mockRoleRepo.createMany.mockResolvedValueOnce(roles);
 
     const result = await service.create('user-1', {
       name: 'Alpha',
@@ -161,7 +157,16 @@ describe('ChapterService', () => {
       name: 'Alpha',
       university: 'State U',
     });
-    expect(mockRoleRepo.create).toHaveBeenCalledTimes(5);
+    expect(mockRoleRepo.createMany).toHaveBeenCalledTimes(1);
+    const expectedRolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
+      chapter_id: chapter.id,
+      name: roleDef.name,
+      permissions: [...roleDef.permissions],
+      is_system: roleDef.is_system,
+      display_order: roleDef.display_order,
+      color: roleDef.color ?? null,
+    }));
+    expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
     expect(result).toEqual(chapter);
   });
 
@@ -203,12 +208,10 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
     }));
 
-    mockRoleRepo.create
-      .mockResolvedValueOnce(presidentRole)
-      .mockResolvedValueOnce(otherRoles[0])
-      .mockResolvedValueOnce(otherRoles[1])
-      .mockResolvedValueOnce(otherRoles[2])
-      .mockResolvedValueOnce(otherRoles[3]);
+    mockRoleRepo.createMany.mockResolvedValueOnce([
+      presidentRole,
+      ...otherRoles,
+    ]);
 
     const member: Member = {
       id: 'member-1',
@@ -257,17 +260,19 @@ describe('ChapterService', () => {
       color: r.color ?? null,
       created_at: '2024-01-01',
     }));
-    mockRoleRepo.create.mockImplementation((data) =>
-      Promise.resolve({
-        id: `role-${roles.length}`,
-        chapter_id: data.chapter_id!,
-        name: data.name!,
-        permissions: data.permissions ?? [],
-        is_system: data.is_system ?? false,
-        display_order: data.display_order ?? 0,
-        color: data.color ?? null,
-        created_at: '2024-01-01',
-      }),
+    mockRoleRepo.createMany.mockImplementation((dataArr) =>
+      Promise.resolve(
+        dataArr.map((data, i) => ({
+          id: `role-${i}`,
+          chapter_id: data.chapter_id!,
+          name: data.name!,
+          permissions: data.permissions ?? [],
+          is_system: data.is_system ?? false,
+          display_order: data.display_order ?? 0,
+          color: data.color ?? null,
+          created_at: '2024-01-01',
+        })),
+      ),
     );
     mockMemberRepo.create.mockResolvedValue({
       id: 'member-1',
@@ -308,17 +313,19 @@ describe('ChapterService', () => {
       updated_at: '2024-01-01',
     };
     mockChapterRepo.create.mockResolvedValue(chapter);
-    mockRoleRepo.create.mockImplementation((data) =>
-      Promise.resolve({
-        id: `role-${data.display_order ?? 0}`,
-        chapter_id: data.chapter_id!,
-        name: data.name!,
-        permissions: data.permissions ?? [],
-        is_system: data.is_system ?? false,
-        display_order: data.display_order ?? 0,
-        color: data.color ?? null,
-        created_at: '2024-01-01',
-      }),
+    mockRoleRepo.createMany.mockImplementation((dataArr) =>
+      Promise.resolve(
+        dataArr.map((data, i) => ({
+          id: `role-${data.display_order ?? 0}`,
+          chapter_id: data.chapter_id!,
+          name: data.name!,
+          permissions: data.permissions ?? [],
+          is_system: data.is_system ?? false,
+          display_order: data.display_order ?? 0,
+          color: data.color ?? null,
+          created_at: '2024-01-01',
+        })),
+      ),
     );
     mockMemberRepo.create.mockResolvedValue({
       id: 'member-1',
