@@ -10,36 +10,28 @@
  *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
- * Required status checks map to the job names in .github/workflows/ci.yml
- * and the external status contexts from Vercel.
+ * Required status checks map to emitted GitHub check-run names.
  */
 
 import { execSync } from "node:child_process";
 
 // ── Required status checks ──────────────────────────────────────────────────
-// These must match the job names in ci.yml (prefixed with "CI / ") and the
-// external status context names from Vercel.
+// These must match check-run names exactly as reported on PRs.
 
 const CI_CHECKS = [
-  "CI / packages-build",
-  "CI / lint-and-typecheck",
-  "CI / api-tests",
-  "CI / api-contract-check",
-  "CI / migration-safety",
-  "CI / mobile-validate",
-];
-
-const VERCEL_CHECKS = [
-  "Vercel – frapp-web",
-  "Vercel – frapp-landing",
-  "Vercel – frapp-docs",
+  "packages-build",
+  "lint-and-typecheck",
+  "api-tests",
+  "api-contract-check",
+  "migration-safety",
+  "mobile-validate",
 ];
 
 const DOCS_CHECKS = [
-  "Docs / build-and-lint",
+  "build-and-lint",
 ];
 
-const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...VERCEL_CHECKS, ...DOCS_CHECKS];
+const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
@@ -114,36 +106,37 @@ async function callGitHubApi({ token, method, path, body }) {
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
+  const requiresApprovingReview = branch === "main";
+  const requiresConversationResolution = branch === "main";
   const payload = {
     required_status_checks: {
       strict: true,
       contexts: ALL_REQUIRED_CHECKS,
     },
     enforce_admins: true,
-    required_pull_request_reviews: {
-      dismiss_stale_reviews: true,
-      require_code_owner_reviews: false,
-      // Require at least 1 approving review. CodeRabbit acts as a reviewer
-      // via request_changes_workflow, so its approval satisfies this. As admin,
-      // you can also approve your own PRs when CodeRabbit has no objections.
-      required_approving_review_count: 1,
-      require_last_push_approval: false,
-    },
+    required_pull_request_reviews: requiresApprovingReview
+      ? {
+          dismiss_stale_reviews: true,
+          require_code_owner_reviews: false,
+          required_approving_review_count: 1,
+          require_last_push_approval: false,
+        }
+      : null,
     restrictions: null,
     required_linear_history: true,
     allow_force_pushes: false,
     allow_deletions: false,
     block_creations: false,
-    required_conversation_resolution: true,
+    required_conversation_resolution: requiresConversationResolution,
     lock_branch: false,
     allow_fork_syncing: true,
   };
 
-  // main has an additional branch-policy check
+  // main has stricter policy: branch source enforcement + required review + required conversation resolution.
   if (branch === "main") {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
-      "CI / branch-policy",
+      "branch-policy",
     ];
   }
 
@@ -170,11 +163,15 @@ async function main() {
       console.log(`    - ${check}`);
     }
     console.log(`  Enforce admins: ${payload.enforce_admins}`);
-    console.log(`  Dismiss stale reviews: ${payload.required_pull_request_reviews.dismiss_stale_reviews}`);
-    console.log(`  Required approving reviews: ${payload.required_pull_request_reviews.required_approving_review_count}`);
+    if (payload.required_pull_request_reviews) {
+      console.log(`  Dismiss stale reviews: ${payload.required_pull_request_reviews.dismiss_stale_reviews}`);
+      console.log(`  Required approving reviews: ${payload.required_pull_request_reviews.required_approving_review_count}`);
+    } else {
+      console.log("  Required approving reviews: disabled");
+    }
     console.log(`  Linear history: ${payload.required_linear_history}`);
     console.log(`  Force pushes: ${payload.allow_force_pushes}`);
-    console.log(`  Conversation resolution: ${payload.required_conversation_resolution}`);
+    console.log(`  Conversation resolution required: ${payload.required_conversation_resolution}`);
     console.log("");
 
     if (!dryRun) {
