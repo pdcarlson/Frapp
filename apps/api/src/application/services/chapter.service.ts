@@ -71,14 +71,14 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
-    for (const channelDef of DEFAULT_CHANNELS) {
-      await this.supabase.from('chat_channels').insert({
-        chapter_id: chapter.id,
-        name: channelDef.name,
-        type: channelDef.type,
-        is_read_only: channelDef.is_read_only,
-      });
-    }
+    const defaultChannels = DEFAULT_CHANNELS.map((channelDef) => ({
+      chapter_id: chapter.id,
+      name: channelDef.name,
+      type: channelDef.type,
+      is_read_only: channelDef.is_read_only,
+    }));
+
+    await this.supabase.from('chat_channels').insert(defaultChannels);
 
     return chapter;
   }
