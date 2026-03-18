@@ -262,6 +262,37 @@ describe('PollService', () => {
         service.vote('msg-1', 'user-2', 'ch-1', [0, 1]),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should replace multi-choice votes with one bulk delete', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        metadata: {
+          ...basePollMessage.metadata,
+          choice_mode: 'multi',
+        },
+      });
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
+      mockVoteRepo.create.mockResolvedValue(baseVote);
+
+      await service.vote('msg-1', 'user-2', 'ch-1', [0, 2]);
+
+      expect(mockVoteRepo.deleteByMessageAndUser).toHaveBeenCalledWith(
+        'msg-1',
+        'user-2',
+      );
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+      expect(mockVoteRepo.create).toHaveBeenNthCalledWith(1, {
+        message_id: 'msg-1',
+        user_id: 'user-2',
+        option_index: 0,
+      });
+      expect(mockVoteRepo.create).toHaveBeenNthCalledWith(2, {
+        message_id: 'msg-1',
+        user_id: 'user-2',
+        option_index: 2,
+      });
+    });
   });
 
   describe('removeVote', () => {
