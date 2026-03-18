@@ -212,13 +212,14 @@ export class AttendanceService {
         )
         .map((r) => r.user_id),
     );
+    const usersWithAttendanceRecords = new Set(
+      existingRecords.map((r) => r.user_id),
+    );
 
     let marked = 0;
     for (const member of requiredMembers) {
       if (!checkedInOrExcused.has(member.user_id)) {
-        const existing = existingRecords.find(
-          (r) => r.user_id === member.user_id,
-        );
+        const existing = usersWithAttendanceRecords.has(member.user_id);
         if (!existing) {
           await this.attendanceRepo.create({
             event_id: eventId,
