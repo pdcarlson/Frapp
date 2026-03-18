@@ -56,18 +56,16 @@ export class ChapterService {
   ): Promise<Chapter> {
     const chapter = await this.chapterRepo.create(data);
 
-    const roles = [];
-    for (const roleDef of DEFAULT_SYSTEM_ROLES) {
-      const role = await this.roleRepo.create({
-        chapter_id: chapter.id,
-        name: roleDef.name,
-        permissions: [...roleDef.permissions],
-        is_system: roleDef.is_system,
-        display_order: roleDef.display_order,
-        color: roleDef.color ?? null,
-      });
-      roles.push(role);
-    }
+    const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
+      chapter_id: chapter.id,
+      name: roleDef.name,
+      permissions: [...roleDef.permissions],
+      is_system: roleDef.is_system,
+      display_order: roleDef.display_order,
+      color: roleDef.color ?? null,
+    }));
+
+    const roles = await this.roleRepo.createMany(rolesData);
 
     const presidentRole = roles.find((r) => r.name === 'President');
     await this.memberRepo.create({

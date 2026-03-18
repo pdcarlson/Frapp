@@ -64,6 +64,15 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data;
   }
 
+  async createMany(rolesData: Partial<Role>[]): Promise<Role[]> {
+    const { data, error } = await this.supabase
+      .from('roles')
+      .insert(rolesData as never)
+      .select();
+    if (error) throw error;
+    return data || [];
+  }
+
   async update(id: string, roleData: Partial<Role>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
