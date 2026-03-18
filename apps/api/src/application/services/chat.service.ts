@@ -278,26 +278,19 @@ export class ChatService {
       const recipientIds = (channel.member_ids ?? []).filter(
         (id) => id !== input.sender_id,
       );
-      const results = await Promise.allSettled(
-        recipientIds.map((recipientId) =>
-          this.notificationService.notifyUser(recipientId, channel.chapter_id, {
+      for (const recipientId of recipientIds) {
+        await this.notificationService.notifyUser(
+          recipientId,
+          channel.chapter_id,
+          {
             title: 'New Message',
             body: input.content.slice(0, 200),
             priority: 'NORMAL',
             category: 'chat',
             data: { target: { screen: 'chat', channelId: channel.id } },
-          }),
-        ),
-      );
-
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          this.logger.warn(
-            `Failed to notify user ${recipientIds[index]}`,
-            result.reason,
-          );
-        }
-      });
+          },
+        );
+      }
     }
   }
 
