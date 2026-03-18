@@ -5,6 +5,22 @@ import React from "react";
 import { useRoles, useCreateRole } from "./use-roles";
 import { FrappClientProvider } from "./use-frapp-client";
 
+const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <FrappClientProvider
+      client={
+        mockClient as unknown as ReturnType<
+          typeof import("@repo/api-sdk").createFrappClient
+        >
+      }
+    >
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </FrappClientProvider>
+  );
+  Wrapper.displayName = "Wrapper";
+  return Wrapper;
+};
+
 describe("useRoles", () => {
   let queryClient: QueryClient;
 
@@ -18,22 +34,6 @@ describe("useRoles", () => {
     });
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={
-          mockClient as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "Wrapper";
-    return Wrapper;
-  };
-
   it("returns roles when request succeeds", async () => {
     const mockRoles = [
       { id: "role-1", name: "President", permissions: ["members.read"] },
@@ -45,10 +45,10 @@ describe("useRoles", () => {
     });
 
     const { result } = renderHook(() => useRoles(), {
-      wrapper: createWrapper({ GET: mockGet }),
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
 
-    await waitFor(async () => {
+    await waitFor(() => {
       expect(result.current.isSuccess).toBe(true);
     });
 
@@ -65,10 +65,10 @@ describe("useRoles", () => {
     });
 
     const { result } = renderHook(() => useRoles(), {
-      wrapper: createWrapper({ GET: mockGet }),
+      wrapper: createWrapper(queryClient, { GET: mockGet }),
     });
 
-    await waitFor(async () => {
+    await waitFor(() => {
       expect(result.current.isError).toBe(true);
     });
 
@@ -76,7 +76,6 @@ describe("useRoles", () => {
     expect(result.current.error).toEqual(mockError);
   });
 });
-
 
 describe("useCreateRole", () => {
   let queryClient: QueryClient;
@@ -92,22 +91,6 @@ describe("useCreateRole", () => {
     vi.spyOn(queryClient, "invalidateQueries");
   });
 
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider
-        client={
-          mockClient as unknown as ReturnType<
-            typeof import("@repo/api-sdk").createFrappClient
-          >
-        }
-      >
-        <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "Wrapper";
-    return Wrapper;
-  };
-
   it("creates a role and invalidates queries on success", async () => {
     const mockRole = { id: "role-3", name: "Secretary", permissions: ["members.read"] };
     const mockPost = vi.fn().mockResolvedValue({
@@ -116,7 +99,7 @@ describe("useCreateRole", () => {
     });
 
     const { result } = renderHook(() => useCreateRole(), {
-      wrapper: createWrapper({ POST: mockPost }),
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
     });
 
     const payload = {
@@ -126,14 +109,16 @@ describe("useCreateRole", () => {
       color: "#000000",
     };
 
-    await waitFor(async () => {
-      await expect(result.current.mutateAsync(payload)).resolves.toEqual(mockRole);
-    });
+    const promise = result.current.mutateAsync(payload);
+    await expect(promise).resolves.toEqual(mockRole);
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
     expect(mockPost).toHaveBeenCalledTimes(1);
-    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-      queryKey: ["roles"],
+
+    await waitFor(() => {
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["roles"],
+      });
     });
   });
 
@@ -145,7 +130,7 @@ describe("useCreateRole", () => {
     });
 
     const { result } = renderHook(() => useCreateRole(), {
-      wrapper: createWrapper({ POST: mockPost }),
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
     });
 
     const payload = {
@@ -153,11 +138,12 @@ describe("useCreateRole", () => {
       permissions: ["members.read"],
     };
 
-    await waitFor(async () => {
-      await expect(result.current.mutateAsync(payload)).rejects.toThrow(mockError);
-    });
+    const promise = result.current.mutateAsync(payload);
+    await expect(promise).rejects.toThrow(mockError);
 
     expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
     expect(queryClient.invalidateQueries).not.toHaveBeenCalled();
   });
 });
