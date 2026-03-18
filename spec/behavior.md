@@ -949,3 +949,6 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 - Chapter branding applies only within the chapter context (when a user is viewing that chapter's data).
 - The Frapp brand (navigation shell, splash screen, landing site, docs site) is NOT affected by chapter branding.
 - Accent color must meet WCAG AA contrast requirements against the background. The API validates this on save and rejects colors with insufficient contrast.
+
+### React Query Hooks Testing
+- All React Query hooks related to roles (like `useRoles`, `useCreateRole`) are tested in `packages/hooks/src/use-roles.spec.tsx`. They verify successful requests and cache invalidation rules (e.g. `queryClient.invalidateQueries({ queryKey: ["roles"] })`).
