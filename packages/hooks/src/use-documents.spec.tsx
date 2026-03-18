@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   useConfirmDocumentUpload,
   useRequestDocumentUploadUrl,
+  useDocuments,
 } from "./use-documents";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
@@ -20,13 +21,67 @@ function createTestQueryClient() {
 
 function createWrapper(queryClient: QueryClient, mockClient: unknown) {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
-    <FrappClientProvider client={mockClient as unknown as ReturnType<typeof import("@repo/api-sdk").createFrappClient>}>
+    <FrappClientProvider
+      client={
+        mockClient as unknown as ReturnType<
+          typeof import("@repo/api-sdk").createFrappClient
+        >
+      }
+    >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
   );
   Wrapper.displayName = "Wrapper";
   return Wrapper;
 }
+
+describe("useDocuments", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = createTestQueryClient();
+  });
+
+  it("passes folder in query params when provided", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [{ id: "doc-1" }],
+      error: null,
+    });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useDocuments("finance"), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      params: { query: { folder: "finance" } },
+    });
+  });
+
+  it("passes undefined folder in query params when omitted", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [{ id: "doc-1" }],
+      error: null,
+    });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useDocuments(), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      params: { query: { folder: undefined } },
+    });
+  });
+});
 
 describe("useConfirmDocumentUpload", () => {
   let queryClient: QueryClient;
@@ -45,7 +100,6 @@ describe("useConfirmDocumentUpload", () => {
       POST: mockPost,
     };
 
-    // Spy on invalidateQueries
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useConfirmDocumentUpload(), {
@@ -65,12 +119,10 @@ describe("useConfirmDocumentUpload", () => {
       expect(result.current.isSuccess).toBe(true);
     });
 
-    // Check if the client POST was called with the correct path and body
     expect(mockPost).toHaveBeenCalledWith("/v1/documents", {
       body: mockPayload,
     });
 
-    // Check if invalidateQueries was called with the exact expected query key
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["documents"] });
   });
 

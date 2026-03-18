@@ -36,9 +36,17 @@ Core expectations for mutation hooks:
 - propagating API errors to the hook consumer
 - disabled query behavior when `eventId` is empty
 
+`useDocuments` has dedicated tests in `packages/hooks/src/use-documents.spec.tsx` for:
+
+- optional `folder` query parameter behavior (`folder` provided vs omitted)
+- confirming upload mutations invalidate `["documents"]` on success
+- propagating upload-confirmation API errors to the hook consumer
+- requesting upload URLs with exact POST payload wiring
+- surfacing upload URL API errors to the hook consumer
+
 Current targeted specs include:
 
-- `use-documents.spec.tsx` — mutation success/error behavior
+- `use-documents.spec.tsx` — query + mutation request-shape and error behavior
 - `use-roles.spec.tsx` — query success/error behavior for `GET /v1/roles`
 - `use-attendance.spec.tsx` — query success/error/disabled behavior for attendance
 
@@ -47,6 +55,7 @@ Current targeted specs include:
 From `packages/hooks` run:
 
 - `npx vitest run --config packages/hooks/vitest.config.ts packages/hooks/src/use-roles.spec.tsx` for focused `useRoles` coverage
+- `npm exec --workspace packages/hooks vitest run src/use-documents.spec.tsx` for focused `useDocuments` coverage
 - `npx vitest run src/use-invoices.spec.tsx` for the focused invoice hook tests
 - `npm exec --workspace packages/hooks vitest run src/use-attendance.spec.tsx` for focused `useAttendance` coverage
 - `npx vitest run` for the full hooks package suite
