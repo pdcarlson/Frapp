@@ -133,6 +133,28 @@ export default function MembersPage() {
     [activeMemberId, visibleMembers],
   );
 
+  function toggleAllVisibleSelection(checked: boolean) {
+    if (checked) {
+      setSelectedMemberIds((previous) => [
+        ...new Set([...previous, ...visibleMemberIds]),
+      ]);
+      return;
+    }
+    setSelectedMemberIds((previous) =>
+      previous.filter((memberId) => !visibleMemberIds.includes(memberId)),
+    );
+  }
+
+  function toggleMemberSelection(memberId: string, checked: boolean) {
+    if (checked) {
+      setSelectedMemberIds((previous) => [...new Set([...previous, memberId])]);
+      return;
+    }
+    setSelectedMemberIds((previous) =>
+      previous.filter((candidateId) => candidateId !== memberId),
+    );
+  }
+
   function notifyBulkAction(actionLabel: string) {
     toast({
       title: "Bulk member action queued",
@@ -304,17 +326,7 @@ export default function MembersPage() {
                       aria-label="Select all visible members"
                       className={dashboardTableCheckboxClassName}
                       checked={allVisibleSelected}
-                      onChange={(event) => {
-                        if (event.target.checked) {
-                          setSelectedMemberIds((previous) => [
-                            ...new Set([...previous, ...visibleMemberIds]),
-                          ]);
-                          return;
-                        }
-                        setSelectedMemberIds((previous) =>
-                          previous.filter((memberId) => !visibleMemberIds.includes(memberId)),
-                        );
-                      }}
+                      onChange={(event) => toggleAllVisibleSelection(event.target.checked)}
                     />
                   </TableHead>
                   <TableHead>Member</TableHead>
@@ -345,15 +357,7 @@ export default function MembersPage() {
                           aria-label={`Select ${displayName}`}
                           className={dashboardTableCheckboxClassName}
                           checked={selectedMemberIds.includes(memberId)}
-                          onChange={(event) => {
-                            if (event.target.checked) {
-                              setSelectedMemberIds((previous) => [...new Set([...previous, memberId])]);
-                              return;
-                            }
-                            setSelectedMemberIds((previous) =>
-                              previous.filter((candidateId) => candidateId !== memberId),
-                            );
-                          }}
+                          onChange={(event) => toggleMemberSelection(memberId, event.target.checked)}
                         />
                       </TableCell>
                       <TableCell className="font-medium">
