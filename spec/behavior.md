@@ -525,7 +525,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 - If a token is expired or already used, the API returns 410 Gone.
 - Each token carries a `role` that determines the joining member's initial role.
 - Only users with the `members:invite` permission can generate tokens.
-- Admins can generate multiple tokens at once (batch invite).
+- Admins can generate multiple tokens at once (batch invite). Batch creation is optimized to use a single bulk database operation to minimize network roundtrips and ensure efficiency.
 
 ### Edge Cases
 

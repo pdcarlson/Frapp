@@ -22,6 +22,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 ## Reviewer workflow
 
 1. **Author opens PR to `preview`**
+   - Run the local gate before opening: `npm run ci:local-gate`
+   - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref origin/main`.
    - Fill out `.github/pull_request_template.md` completely.
    - Include a rollback note for infra changes.
 2. **Automation pass**

@@ -80,6 +80,7 @@ describe('PollService', () => {
       findByMessage: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       deleteByMessageAndUser: jest.fn(),
       deleteByMessageUserAndOption: jest.fn(),
     };
@@ -273,7 +274,10 @@ describe('PollService', () => {
       });
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
-      mockVoteRepo.create.mockResolvedValue(baseVote);
+      mockVoteRepo.createMany.mockResolvedValue([
+        { ...baseVote, option_index: 0 },
+        { ...baseVote, option_index: 2 },
+      ]);
 
       await service.vote('msg-1', 'user-2', 'ch-1', [0, 2]);
 
@@ -282,16 +286,20 @@ describe('PollService', () => {
         'user-2',
       );
       expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
-      expect(mockVoteRepo.create).toHaveBeenNthCalledWith(1, {
-        message_id: 'msg-1',
-        user_id: 'user-2',
-        option_index: 0,
-      });
-      expect(mockVoteRepo.create).toHaveBeenNthCalledWith(2, {
-        message_id: 'msg-1',
-        user_id: 'user-2',
-        option_index: 2,
-      });
+      expect(mockVoteRepo.deleteByMessageUserAndOption).not.toHaveBeenCalled();
+      expect(mockVoteRepo.createMany).toHaveBeenCalledWith([
+        {
+          message_id: 'msg-1',
+          user_id: 'user-2',
+          option_index: 0,
+        },
+        {
+          message_id: 'msg-1',
+          user_id: 'user-2',
+          option_index: 2,
+        },
+      ]);
+      expect(mockVoteRepo.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

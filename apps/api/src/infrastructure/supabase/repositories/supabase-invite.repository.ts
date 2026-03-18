@@ -21,6 +21,15 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
+  async createMany(inviteData: Partial<Invite>[]): Promise<Invite[]> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .insert(inviteData as any)
+      .select();
+    if (error) throw error;
+    return data || [];
+  }
+
   async findByToken(token: string): Promise<Invite | null> {
     const { data, error } = await this.supabase
       .from('invites')
@@ -44,7 +53,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async create(inviteData: Partial<Invite>): Promise<Invite> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData as never)
+      .insert(inviteData as any)
       .select()
       .single();
     if (error) throw error;
@@ -54,7 +63,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsed(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as never)
+      .update({ used_at: new Date().toISOString() } as any)
       .eq('id', id);
     if (error) throw error;
   }
@@ -62,7 +71,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsedAtomically(id: string): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as never)
+      .update({ used_at: new Date().toISOString() } as any)
       .eq('id', id)
       .is('used_at', null)
       .select('id');
