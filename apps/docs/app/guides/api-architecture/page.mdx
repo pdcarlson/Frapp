@@ -117,3 +117,12 @@ When you add new modules:
 
 - Reuse existing logging patterns in services and repositories.
 - Do not add ad‑hoc `console.log` — use the injected logger or rely on the interceptors.
+
+## 6. Performance patterns for services
+
+When a service does repeated membership checks in hot loops, prefer a `Set` lookup over nested
+`Array.includes` calls.
+
+Example: attendance auto-absent filtering now precomputes `required_role_ids` into a `Set` before
+iterating members, reducing per-check lookup cost from O(K) to O(1) while keeping behavior
+unchanged.
