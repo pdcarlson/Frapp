@@ -29,10 +29,18 @@ Core expectations for mutation hooks:
 - propagating API errors to the hook consumer
 - not invalidating invoice queries when the mutation fails
 
+`useAttendance` has dedicated tests in `packages/hooks/src/use-attendance.spec.tsx` for:
+
+- successful fetch for a valid `eventId`
+- correct endpoint wiring for `GET /v1/events/{eventId}/attendance`
+- propagating API errors to the hook consumer
+- disabled query behavior when `eventId` is empty
+
 Current targeted specs include:
 
 - `use-documents.spec.tsx` — mutation success/error behavior
 - `use-roles.spec.tsx` — query success/error behavior for `GET /v1/roles`
+- `use-attendance.spec.tsx` — query success/error/disabled behavior for attendance
 
 ## Running hook tests
 
@@ -40,4 +48,5 @@ From `packages/hooks` run:
 
 - `npx vitest run --config packages/hooks/vitest.config.ts packages/hooks/src/use-roles.spec.tsx` for focused `useRoles` coverage
 - `npx vitest run src/use-invoices.spec.tsx` for the focused invoice hook tests
+- `npm exec --workspace packages/hooks vitest run src/use-attendance.spec.tsx` for focused `useAttendance` coverage
 - `npx vitest run` for the full hooks package suite
