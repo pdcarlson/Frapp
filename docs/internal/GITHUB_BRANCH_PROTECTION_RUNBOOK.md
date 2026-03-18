@@ -67,18 +67,18 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 | Check name | What it validates |
 | --- | --- |
-| `CI / packages-build` | Shared packages compile |
-| `CI / lint-and-typecheck` | ESLint + TypeScript (all workspaces) |
-| `CI / api-tests` | API Jest unit tests |
-| `CI / api-contract-check` | openapi.json + api-sdk freshness |
-| `CI / migration-safety` | Migration filename + docs validation |
-| `CI / mobile-validate` | Mobile lint + typecheck |
+| `packages-build` | Shared packages compile |
+| `lint-and-typecheck` | ESLint + TypeScript (all workspaces) |
+| `api-tests` | API Jest unit tests |
+| `api-contract-check` | openapi.json + api-sdk freshness |
+| `migration-safety` | Migration filename + docs validation |
+| `mobile-validate` | Mobile lint + typecheck |
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
 | Check name | What it validates |
 | --- | --- |
-| `Docs / build-and-lint` | Docs build + lint + spec sync |
+| `build-and-lint` | Docs build + lint + spec sync |
 
 ### Vercel policy (not a required check)
 
@@ -88,7 +88,7 @@ Vercel deployments are intentionally limited to `preview` and `main` branches vi
 
 | Check name | What it validates |
 | --- | --- |
-| `CI / branch-policy` | Source branch must be `preview` |
+| `branch-policy` | Source branch must be `preview` |
 
 ### CodeRabbit (Review-Based Blocker)
 
@@ -116,7 +116,7 @@ GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
 ```
 
 3. Compare names exactly (including capitalization and punctuation):
-   - Required checks are workflow/job scoped (`CI / api-tests`, `Docs / build-and-lint`)
+   - Required checks use emitted check-run names (`api-tests`, `build-and-lint`)
 
 Common causes and fixes:
 

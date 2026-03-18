@@ -149,7 +149,7 @@ These checks are also required for merge:
 
 | Check | Provider | What it validates |
 | --- | --- | --- |
-| `Docs / build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
+| `build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
 - On `preview`, CodeRabbit feedback is advisory (no required approving review).

@@ -10,25 +10,25 @@
  *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
- * Required status checks map to the job names in .github/workflows/ci.yml.
+ * Required status checks map to emitted GitHub check-run names.
  */
 
 import { execSync } from "node:child_process";
 
 // ── Required status checks ──────────────────────────────────────────────────
-// These must match the job names in ci.yml (prefixed with "CI / ").
+// These must match check-run names exactly as reported on PRs.
 
 const CI_CHECKS = [
-  "CI / packages-build",
-  "CI / lint-and-typecheck",
-  "CI / api-tests",
-  "CI / api-contract-check",
-  "CI / migration-safety",
-  "CI / mobile-validate",
+  "packages-build",
+  "lint-and-typecheck",
+  "api-tests",
+  "api-contract-check",
+  "migration-safety",
+  "mobile-validate",
 ];
 
 const DOCS_CHECKS = [
-  "Docs / build-and-lint",
+  "build-and-lint",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
@@ -136,7 +136,7 @@ function buildProtectionPayload(branch) {
   if (branch === "main") {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
-      "CI / branch-policy",
+      "branch-policy",
     ];
   }
 

@@ -1080,11 +1080,11 @@ Open `http://localhost:3000` in browser. Auth flows go through Supabase — the 
 
 Before pushing, verify these pass locally (mirrors the CI pipeline):
 
-1. `npm run lint` → `CI / lint-and-typecheck`
-2. `npm run check-types` → `CI / lint-and-typecheck`
-3. `npm run test -w apps/api` → `CI / api-tests`
-4. `npm run check:api-contract` → `CI / api-contract-check`
-5. `npm run check:migration-safety` → `CI / migration-safety`
+1. `npm run lint` → `lint-and-typecheck`
+2. `npm run check-types` → `lint-and-typecheck`
+3. `npm run test -w apps/api` → `api-tests`
+4. `npm run check:api-contract` → `api-contract-check`
+5. `npm run check:migration-safety` → `migration-safety`
 
 ---
 

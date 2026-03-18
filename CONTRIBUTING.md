@@ -44,14 +44,14 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 | Check | What it validates |
 | --- | --- |
-| `CI / packages-build` | Shared packages compile |
-| `CI / lint-and-typecheck` | ESLint + TypeScript across all workspaces |
-| `CI / api-tests` | API Jest unit tests |
-| `CI / api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness |
-| `CI / migration-safety` | Migration filename validation + promotion docs |
-| `CI / mobile-validate` | Mobile app lint + typecheck |
-| `Docs / build-and-lint` | Docs build + lint + docs/spec sync checks |
-| `CI / branch-policy` | `main`-targeting PRs must come from `preview` (required on `main` only) |
+| `packages-build` | Shared packages compile |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces |
+| `api-tests` | API Jest unit tests |
+| `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness |
+| `migration-safety` | Migration filename validation + promotion docs |
+| `mobile-validate` | Mobile app lint + typecheck |
+| `build-and-lint` | Docs build + lint + docs/spec sync checks |
+| `branch-policy` | `main`-targeting PRs must come from `preview` (required on `main` only) |
 
 ### Vercel deployment policy
 
