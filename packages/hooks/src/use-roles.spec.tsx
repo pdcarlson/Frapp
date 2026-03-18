@@ -122,6 +122,35 @@ describe("useCreateRole", () => {
     });
   });
 
+  it("creates a role with only required fields and invalidates queries on success", async () => {
+    const mockRole = { id: "role-4", name: "Guest", permissions: [] };
+    const mockPost = vi.fn().mockResolvedValue({
+      data: mockRole,
+      error: null,
+    });
+
+    const { result } = renderHook(() => useCreateRole(), {
+      wrapper: createWrapper(queryClient, { POST: mockPost }),
+    });
+
+    const payload = {
+      name: "Guest",
+      permissions: [],
+    };
+
+    const promise = result.current.mutateAsync(payload);
+    await expect(promise).resolves.toEqual(mockRole);
+
+    expect(mockPost).toHaveBeenCalledWith("/v1/roles", { body: payload });
+    expect(mockPost).toHaveBeenCalledTimes(1);
+
+    await waitFor(() => {
+      expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["roles"],
+      });
+    });
+  });
+
   it("surfaces an error when request fails", async () => {
     const mockError = new Error("Failed to create role");
     const mockPost = vi.fn().mockResolvedValue({
