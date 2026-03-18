@@ -55,7 +55,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 ### Vercel deployment policy
 
-Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploymentEnabled` in each app's `vercel.json`. Feature/PR branches do not trigger Vercel deployments, which avoids build-rate-limit failures during high PR volume.
+Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped.
 
 ### Review Blockers (not status checks)
 

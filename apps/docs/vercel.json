@@ -5,7 +5,7 @@
     "deploymentEnabled": {
       "preview": true,
       "main": true,
-      "*": false
+      "**": false
     }
   },
   "ignoreCommand": "npx turbo-ignore docs",

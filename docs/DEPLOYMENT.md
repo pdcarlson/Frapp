@@ -97,7 +97,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 | **Preview** (pre-production) | Push to `preview` | `docs.staging.frapp.live` |
 | **Disabled** | Any other branch / PR | No auto deployment |
 
-The `preview` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `preview` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `preview` and `main` auto-deploy.
+The `preview` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `preview` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `preview` and `main` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
 
 ---
 
@@ -161,7 +161,7 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
 
-The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `preview`/`main`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
+The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `preview`/`main`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
 
 ### 4.2 Environment Variables per Project
 
