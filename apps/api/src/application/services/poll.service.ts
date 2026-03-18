@@ -132,18 +132,7 @@ export class PollService {
         option_index: optionIndexes[0],
       });
     } else {
-      const existing = await this.voteRepo.findByMessageAndUser(
-        messageId,
-        userId,
-      );
-      for (const v of existing) {
-        await this.voteRepo.deleteByMessageUserAndOption(
-          messageId,
-          userId,
-          v.option_index,
-        );
-      }
-
+      await this.voteRepo.deleteByMessageAndUser(messageId, userId);
       if (optionIndexes.length === 0) {
         return;
       }

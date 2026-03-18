@@ -540,6 +540,8 @@ While a study session is active, the app displays a dedicated study mode screen:
 - Users with `polls:create` permission can create polls in any channel they have access to.
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
+- When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.
+- For multi-choice polls, the replacement flow clears existing votes for `(message_id, user_id)` in a single scoped delete operation before inserting the newly selected options.
 - Results are visible in real-time as votes come in.
 - Once expired (or manually closed by the creator), the poll is locked — no more votes.
 - Polls are stored as a special message type (`type: POLL`) in `chat_messages` with poll data in `metadata`, plus a `poll_votes` table for individual votes.
