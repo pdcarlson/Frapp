@@ -2,7 +2,7 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useMembers } from "./use-members";
+import { useMembers, useMemberSearch } from "./use-members";
 import { useFrappClient } from "./use-frapp-client";
 
 const MEMBERS_ENDPOINT = "/v1/members";
@@ -88,5 +88,64 @@ describe("useMembers", () => {
 
     expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
     expect(result.current.error).toBe(mockError);
+  });
+});
+
+describe("useMemberSearch", () => {
+  let queryClient: QueryClient;
+  const mockUseFrappClient = vi.mocked(useFrappClient);
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+    vi.clearAllMocks();
+  });
+
+  it("returns members matching the query when the API request succeeds", async () => {
+    const query = "test";
+    const members = [
+      { id: "member-1", name: "Test User 1" },
+    ];
+    const mockGet = vi.fn().mockResolvedValue({ data: members, error: null });
+
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberSearch(query), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/members/search", {
+      params: { query: { q: query } },
+    });
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(result.current.data).toEqual(members);
+  });
+
+  it("is disabled and does not fetch when the query is empty", async () => {
+    const query = "";
+    const mockGet = vi.fn();
+
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberSearch(query), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(result.current.status).toBe("pending");
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });
