@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ChapterService } from './chapter.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -28,6 +32,7 @@ describe('ChapterService', () => {
     deleteFile: jest.Mock;
   };
   let mockSupabase: { from: jest.Mock };
+  let mockInsert: jest.Mock;
 
   beforeEach(async () => {
     mockStorageProvider = {
@@ -65,7 +70,7 @@ describe('ChapterService', () => {
       delete: jest.fn(),
     };
 
-    const mockInsert = jest.fn().mockResolvedValue({});
+    mockInsert = jest.fn().mockResolvedValue({ error: null });
     mockSupabase = {
       from: jest.fn().mockReturnValue({ insert: mockInsert }),
     };
@@ -277,15 +282,68 @@ describe('ChapterService', () => {
     await service.create('user-1', { name: 'Alpha', university: 'State U' });
 
     expect(mockSupabase.from).toHaveBeenCalledWith('chat_channels');
-    expect(mockSupabase.from().insert).toHaveBeenCalledTimes(3);
-    for (const channelDef of DEFAULT_CHANNELS) {
-      expect(mockSupabase.from().insert).toHaveBeenCalledWith({
+    expect(mockSupabase.from().insert).toHaveBeenCalledTimes(1);
+    expect(mockSupabase.from().insert).toHaveBeenCalledWith(
+      DEFAULT_CHANNELS.map((channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
-      });
-    }
+      })),
+    );
+  });
+
+  it('should fail chapter creation when default channel insert returns an error', async () => {
+    const chapter: Chapter = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: null,
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockChapterRepo.create.mockResolvedValue(chapter);
+    mockRoleRepo.create.mockImplementation((data) =>
+      Promise.resolve({
+        id: `role-${data.display_order ?? 0}`,
+        chapter_id: data.chapter_id!,
+        name: data.name!,
+        permissions: data.permissions ?? [],
+        is_system: data.is_system ?? false,
+        display_order: data.display_order ?? 0,
+        color: data.color ?? null,
+        created_at: '2024-01-01',
+      }),
+    );
+    mockMemberRepo.create.mockResolvedValue({
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: chapter.id,
+      role_ids: ['role-0'],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+    mockInsert.mockResolvedValueOnce({
+      error: { message: 'insert failed' },
+    });
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      service.create('user-1', { name: 'Alpha', university: 'State U' }),
+    ).rejects.toThrow(InternalServerErrorException);
+
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      'Failed to insert default chat channels for chapter ch-1',
+      'insert failed',
+    );
   });
 
   it('should update chapter data with valid WCAG accent color', async () => {

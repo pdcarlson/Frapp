@@ -4,7 +4,6 @@ import { execSync } from "node:child_process";
 
 const DEFAULT_BASE_REF = "origin/preview";
 const BASE_REF_FLAG = "--base-ref";
-const SKIP_DOCS_SYNC_FLAG = "--skip-docs-sync";
 
 function getArgValue(flagName) {
   const flagIndex = process.argv.indexOf(flagName);
@@ -55,16 +54,10 @@ function runDocsSyncCheck(baseRef) {
 function runLocalGate() {
   const baseRef =
     getArgValue(BASE_REF_FLAG) ?? process.env.CI_GATE_BASE_REF ?? DEFAULT_BASE_REF;
-  const shouldSkipDocsSync = process.argv.includes(SKIP_DOCS_SYNC_FLAG);
 
   console.log("Running local CI gate...");
   console.log(`Base ref: ${baseRef}`);
-
-  if (!shouldSkipDocsSync) {
-    runDocsSyncCheck(baseRef);
-  } else {
-    console.log("Skipping docs/spec sync check.");
-  }
+  runDocsSyncCheck(baseRef);
 
   const gateChecks = [
     ["npm run lint", "Run monorepo lint"],

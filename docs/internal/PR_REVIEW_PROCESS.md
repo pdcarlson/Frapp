@@ -18,12 +18,17 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
      - `CONTRIBUTING.md`
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
+5. **Docs/spec delta is mandatory for every non-doc change**
+   - Any PR that changes files outside `apps/docs/`, `docs/`, or `spec/` must also update related docs/spec in the same PR.
+   - This is enforced by `scripts/check-docs-impact.mjs` in the Docs workflow and local CI gate.
+   - No local bypass is allowed for this check.
 
 ## Reviewer workflow
 
 1. **Author opens PR to `preview`**
    - Run the local gate before opening: `npm run ci:local-gate`
    - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref origin/main`.
+   - Ensure the PR includes docs/spec changes that explain every non-doc code change.
    - Fill out `.github/pull_request_template.md` completely.
    - Include a rollback note for infra changes.
 2. **Automation pass**
