@@ -1,9 +1,73 @@
 import { renderHook, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useConfirmDocumentUpload } from "./use-documents";
+import { useConfirmDocumentUpload, useDocuments } from "./use-documents";
 import { FrappClientProvider } from "./use-frapp-client";
 import React from "react";
+
+function createWrapper(mockClient: unknown, queryClient: QueryClient) {
+  const Wrapper = ({ children }: { children: React.ReactNode }) => (
+    <FrappClientProvider client={mockClient as unknown as ReturnType<typeof import("@repo/api-sdk").createFrappClient>}>
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    </FrappClientProvider>
+  );
+  Wrapper.displayName = "Wrapper";
+  return Wrapper;
+}
+
+describe("useDocuments", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+  });
+
+  it("passes folder in query params when provided", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [{ id: "doc-1" }],
+      error: null,
+    });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useDocuments("finance"), {
+      wrapper: createWrapper(mockClient, queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      params: { query: { folder: "finance" } },
+    });
+  });
+
+  it("passes undefined folder in query params when omitted", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [{ id: "doc-1" }],
+      error: null,
+    });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useDocuments(), {
+      wrapper: createWrapper(mockClient, queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      params: { query: { folder: undefined } },
+    });
+  });
+});
 
 describe("useConfirmDocumentUpload", () => {
   let queryClient: QueryClient;
@@ -17,18 +81,6 @@ describe("useConfirmDocumentUpload", () => {
       },
     });
   });
-
-  const createWrapper = (mockClient: unknown) => {
-    const Wrapper = ({ children }: { children: React.ReactNode }) => (
-      <FrappClientProvider client={mockClient as unknown as ReturnType<typeof import("@repo/api-sdk").createFrappClient>}>
-        <QueryClientProvider client={queryClient}>
-          {children}
-        </QueryClientProvider>
-      </FrappClientProvider>
-    );
-    Wrapper.displayName = "Wrapper";
-    return Wrapper;
-  };
 
   it("should successfully confirm a document upload and invalidate queries", async () => {
     const mockPost = vi.fn().mockResolvedValue({
@@ -44,7 +96,7 @@ describe("useConfirmDocumentUpload", () => {
     const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
 
     const { result } = renderHook(() => useConfirmDocumentUpload(), {
-      wrapper: createWrapper(mockClient),
+      wrapper: createWrapper(mockClient, queryClient),
     });
 
     const mockPayload = {
@@ -82,7 +134,7 @@ describe("useConfirmDocumentUpload", () => {
     };
 
     const { result } = renderHook(() => useConfirmDocumentUpload(), {
-      wrapper: createWrapper(mockClient),
+      wrapper: createWrapper(mockClient, queryClient),
     });
 
     const mockPayload = {
