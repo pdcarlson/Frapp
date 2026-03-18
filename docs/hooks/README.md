@@ -71,3 +71,4 @@ From `packages/hooks` run:
 ## Testing Additions
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.
+Update: Added tests for useCheckIn hook
