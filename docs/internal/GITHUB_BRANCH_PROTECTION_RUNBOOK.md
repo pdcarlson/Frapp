@@ -5,7 +5,6 @@
 Configure merge-blocking branch protections for `preview` and `main`. This ensures:
 
 - All required CI checks pass before merge
-- All Vercel builds succeed before merge
 - CodeRabbit review is addressed before merge
 - PRs to `main` must come from `preview`
 - No force pushes, no direct commits, no bypasses (even for admins)
@@ -70,19 +69,15 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `CI / migration-safety` | Migration filename + docs validation |
 | `CI / mobile-validate` | Mobile lint + typecheck |
 
-**Vercel checks (external):**
-
-| Check name | What it validates |
-| --- | --- |
-| `Vercel – frapp-web` | Web dashboard Next.js build |
-| `Vercel – frapp-landing` | Landing page Next.js build |
-| `Vercel – frapp-docs` | Docs site Next.js build |
-
 **Docs check (from `.github/workflows/docs.yml`):**
 
 | Check name | What it validates |
 | --- | --- |
 | `Docs / build-and-lint` | Docs build + lint + spec sync |
+
+### Vercel policy (not a required check)
+
+Vercel deployments are intentionally limited to `preview` and `main` branches via `git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming Vercel build quota while CI remains the merge gate.
 
 **main branch only:**
 
@@ -114,7 +109,6 @@ GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
 
 3. Compare names exactly (including capitalization and punctuation):
    - Required checks are workflow/job scoped (`CI / api-tests`, `Docs / build-and-lint`)
-   - External checks are status contexts (`Vercel – frapp-web`)
 
 Common causes and fixes:
 
@@ -122,8 +116,8 @@ Common causes and fixes:
   **Fix:** required workflows must run on every PR to protected branches.
 - **Job/workflow renames:** required check name no longer matches emitted name.  
   **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
-- **External app outage/stuck status (Vercel/CodeRabbit):** check context does not finalize.  
-  **Fix:** rerun provider check or temporarily remove that check per Emergency Override, then re-apply protections.
+- **External app outage/stuck status (CodeRabbit):** review gate does not finalize.  
+  **Fix:** rerun provider check or temporarily dismiss stale review per review policy.
 
 ## Verification Checklist
 
@@ -150,7 +144,7 @@ If you need to merge urgently and a check is broken:
 
 If CI job names change (e.g., renaming a workflow job), update:
 
-1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `VERCEL_CHECKS`, `DOCS_CHECKS` arrays
+1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays
 2. This runbook — required checks tables
 3. `CONTRIBUTING.md` — required checks section
 4. `spec/environments.md` — CI job matrix

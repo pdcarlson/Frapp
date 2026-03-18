@@ -14,7 +14,7 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 | --- | --- | --- |
 | `main` | Production-ready code | Triggers production deploys (Vercel, Render) |
 | `preview` | Staging integration | Triggers staging deploys (Vercel preview, Render staging) |
-| `feature/*` | Short-lived feature work | PR preview URLs only; merged into `preview` |
+| `feature/*` | Short-lived feature work | No automatic Vercel deploys; merged into `preview` |
 | `hotfix/*` | Emergency production fixes | Branch from `preview`, PR to `preview`, then fast-track promotion PR to `main` |
 
 ### Rules
@@ -53,13 +53,9 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `Docs / build-and-lint` | Docs build + lint + docs/spec sync checks |
 | `CI / branch-policy` | `main`-targeting PRs must come from `preview` (required on `main` only) |
 
-### External Checks
+### Vercel deployment policy
 
-| Check | Provider |
-| --- | --- |
-| `Vercel – frapp-web` | Vercel (Next.js build) |
-| `Vercel – frapp-landing` | Vercel (Next.js build) |
-| `Vercel – frapp-docs` | Vercel (Next.js build) |
+Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploymentEnabled` in each app's `vercel.json`. Feature/PR branches do not trigger Vercel deployments, which avoids build-rate-limit failures during high PR volume.
 
 ### Review Blockers (not status checks)
 
@@ -106,7 +102,7 @@ type(scope): description
 - If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/main`
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `apps/docs/` or `spec/`.
-- CI and Vercel checks will run automatically.
+- CI checks will run automatically.
 - CodeRabbit will post an AI review.
 
 ### 4. Address feedback

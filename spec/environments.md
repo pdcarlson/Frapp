@@ -25,7 +25,7 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 | ------ | ------- | ------------------- |
 | `main` | Production | Triggers production deployments |
 | `preview` | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
-| `feature/*` | Short-lived feature work | PR preview deployments only; merged into `preview` |
+| `feature/*` | Short-lived feature work | No automatic Vercel deployments; merged into `preview` |
 
 ---
 
@@ -145,20 +145,17 @@ CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Eac
 
 ### Additional Required Checks
 
-These checks are also required for merge. Some come from third-party integrations, others from separate GitHub Actions workflows:
+These checks are also required for merge:
 
 | Check | Provider | What it validates |
 | --- | --- | --- |
-| `Vercel – frapp-web` | Vercel | Next.js build succeeds (web dashboard) |
-| `Vercel – frapp-landing` | Vercel | Next.js build succeeds (landing page) |
-| `Vercel – frapp-docs` | Vercel | Next.js build succeeds (docs site) |
 | `Docs / build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
 
 **CodeRabbit** is not a required status check — it is enforced as a **review-based blocker** via the `request_changes_workflow` setting in `.coderabbit.yaml`. When CodeRabbit finds issues, it posts a "Request Changes" review which blocks merge through GitHub's PR review mechanism. Push new commits to dismiss the stale review and trigger a re-review. As admin, you can manually dismiss the review if you disagree.
 
 ### Key Design Decisions
 
-- **No CI build job.** Vercel performs its own builds with its own environment variables. Vercel's status checks serve as the build gate, eliminating the need for placeholder secrets in CI.
+- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles frontend deployments on `preview`/`main` only.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
@@ -169,13 +166,13 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are still push-triggered and enforced at merge time via required status checks.
+GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are push-triggered only for `preview` and `main`.
 
 ### Deploy Pipeline (on merge)
 
 ```text
 CI passes → DB migration (dry-run then apply) → API deploy (Render)
-Vercel preview/production deployments are push-triggered and can proceed in parallel, subject to required checks
+Vercel preview/production deployments are push-triggered from `preview`/`main` and can proceed in parallel
 ```
 
 Production deployments additionally require manual approval before the migration step runs.
@@ -184,9 +181,9 @@ Production deployments additionally require manual approval before the migration
 
 - Push to `main` triggers **production** Vercel deployments (custom domains).
 - Push to `preview` triggers **preview** Vercel deployments (staging domains).
-- PRs get ephemeral preview URLs automatically.
+- Feature/PR branches do not auto-deploy on Vercel.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
-- Vercel builds are also required status checks — if the Vercel build fails, the PR cannot merge.
+- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json`.
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 
 ### API (Render)

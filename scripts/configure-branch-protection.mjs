@@ -10,15 +10,13 @@
  *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
- * Required status checks map to the job names in .github/workflows/ci.yml
- * and the external status contexts from Vercel.
+ * Required status checks map to the job names in .github/workflows/ci.yml.
  */
 
 import { execSync } from "node:child_process";
 
 // ── Required status checks ──────────────────────────────────────────────────
-// These must match the job names in ci.yml (prefixed with "CI / ") and the
-// external status context names from Vercel.
+// These must match the job names in ci.yml (prefixed with "CI / ").
 
 const CI_CHECKS = [
   "CI / packages-build",
@@ -29,17 +27,11 @@ const CI_CHECKS = [
   "CI / mobile-validate",
 ];
 
-const VERCEL_CHECKS = [
-  "Vercel – frapp-web",
-  "Vercel – frapp-landing",
-  "Vercel – frapp-docs",
-];
-
 const DOCS_CHECKS = [
   "Docs / build-and-lint",
 ];
 
-const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...VERCEL_CHECKS, ...DOCS_CHECKS];
+const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 
