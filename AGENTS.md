@@ -114,6 +114,10 @@ Key principles:
 | **Vercel builds** | Auto-deploy only from `preview` and `main`; PR branches are disabled via `git.deploymentEnabled` |
 | **Deploy gating** | API deploys only after CI passes; production migrations require manual approval |
 
+PR review policy:
+- `preview`: no required approving review (CodeRabbit suggestions are advisory).
+- `main`: 1 required approving review remains enabled for promotion control.
+
 To reconfigure branch protection after changing CI job names:
 ```bash
 GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run  # Review

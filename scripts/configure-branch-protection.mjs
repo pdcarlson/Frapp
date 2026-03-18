@@ -106,21 +106,21 @@ async function callGitHubApi({ token, method, path, body }) {
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
+  const requiresApprovingReview = branch === "main";
   const payload = {
     required_status_checks: {
       strict: true,
       contexts: ALL_REQUIRED_CHECKS,
     },
     enforce_admins: true,
-    required_pull_request_reviews: {
-      dismiss_stale_reviews: true,
-      require_code_owner_reviews: false,
-      // Require at least 1 approving review. CodeRabbit acts as a reviewer
-      // via request_changes_workflow, so its approval satisfies this. As admin,
-      // you can also approve your own PRs when CodeRabbit has no objections.
-      required_approving_review_count: 1,
-      require_last_push_approval: false,
-    },
+    required_pull_request_reviews: requiresApprovingReview
+      ? {
+          dismiss_stale_reviews: true,
+          require_code_owner_reviews: false,
+          required_approving_review_count: 1,
+          require_last_push_approval: false,
+        }
+      : null,
     restrictions: null,
     required_linear_history: true,
     allow_force_pushes: false,
@@ -131,7 +131,7 @@ function buildProtectionPayload(branch) {
     allow_fork_syncing: true,
   };
 
-  // main has an additional branch-policy check
+  // main has stricter policy: branch source enforcement + required review.
   if (branch === "main") {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
@@ -162,8 +162,12 @@ async function main() {
       console.log(`    - ${check}`);
     }
     console.log(`  Enforce admins: ${payload.enforce_admins}`);
-    console.log(`  Dismiss stale reviews: ${payload.required_pull_request_reviews.dismiss_stale_reviews}`);
-    console.log(`  Required approving reviews: ${payload.required_pull_request_reviews.required_approving_review_count}`);
+    if (payload.required_pull_request_reviews) {
+      console.log(`  Dismiss stale reviews: ${payload.required_pull_request_reviews.dismiss_stale_reviews}`);
+      console.log(`  Required approving reviews: ${payload.required_pull_request_reviews.required_approving_review_count}`);
+    } else {
+      console.log("  Required approving reviews: disabled");
+    }
     console.log(`  Linear history: ${payload.required_linear_history}`);
     console.log(`  Force pushes: ${payload.allow_force_pushes}`);
     console.log(`  Conversation resolution: ${payload.required_conversation_resolution}`);

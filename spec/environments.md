@@ -151,7 +151,9 @@ These checks are also required for merge:
 | --- | --- | --- |
 | `Docs / build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
 
-**CodeRabbit** is not a required status check — it is enforced as a **review-based blocker** via the `request_changes_workflow` setting in `.coderabbit.yaml`. When CodeRabbit finds issues, it posts a "Request Changes" review which blocks merge through GitHub's PR review mechanism. Push new commits to dismiss the stale review and trigger a re-review. As admin, you can manually dismiss the review if you disagree.
+**CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
+- On `preview`, CodeRabbit feedback is advisory (no required approving review).
+- On `main`, branch protection requires one approving review, so review outcomes remain a promotion gate.
 
 ### Key Design Decisions
 

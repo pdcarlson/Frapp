@@ -63,6 +63,11 @@ Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploy
 | --- | --- |
 | CodeRabbit review (`request_changes_workflow`) | CodeRabbit (AI code review) |
 
+### PR review requirement policy
+
+- `preview`: approving review is **not required** (CodeRabbit feedback is advisory).
+- `main`: **1 approving review required** (promotion/control gate).
+
 ---
 
 ## PR Workflow

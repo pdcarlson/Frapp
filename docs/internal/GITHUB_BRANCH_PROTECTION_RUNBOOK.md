@@ -49,12 +49,17 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Required status checks | See table below |
 | Require branches up to date | Yes |
 | Enforce admins | Yes |
-| Dismiss stale reviews | Yes |
-| Required approving reviews | 1 (CodeRabbit acts as reviewer via request_changes_workflow) |
 | Linear history | Yes |
 | Force pushes | Blocked |
 | Deletions | Blocked |
 | Conversation resolution | Required |
+
+### Branch-specific PR review rules
+
+| Branch | Required approving reviews | Dismiss stale reviews |
+| --- | --- | --- |
+| `preview` | Disabled | N/A |
+| `main` | 1 | Enabled |
 
 ### Required Status Checks
 
@@ -87,7 +92,10 @@ Vercel deployments are intentionally limited to `preview` and `main` branches vi
 
 ### CodeRabbit (Review-Based Blocker)
 
-CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review. Since branch protection requires "Dismiss stale reviews", pushing new commits dismisses the stale CodeRabbit review and triggers a new one. As admin, you can manually dismiss CodeRabbit's review if you disagree, then add a human approval to satisfy the required review count.
+CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review.
+
+- On `preview`, this feedback is advisory (no required approving review gate).
+- On `main`, branch protection requires one approval and stale reviews are dismissed on push, so CodeRabbit/human review remains a merge-control gate.
 
 `CodeRabbit` is intentionally **not** a required status check. It is enforced through PR reviews only.
 
