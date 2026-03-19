@@ -521,7 +521,7 @@ describe('AttendanceService', () => {
 
       expect(result.marked).toBe(0);
       expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
     });
   });
 });

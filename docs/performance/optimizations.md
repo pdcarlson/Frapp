@@ -8,7 +8,7 @@ Previously, the service looped through all required members and executed an `awa
 
 ### Fix
 *   Introduced a new `createMany(data: Partial<EventAttendance>[]): Promise<void>` method in the `IAttendanceRepository` interface.
-*   Implemented `createMany` in `SupabaseAttendanceRepository` using Supabase's native array `.insert()` to execute a single bulk SQL insert.
+*   Implemented `createMany` in `SupabaseAttendanceRepository` using Supabase's conflict-tolerant array `.upsert(records, { onConflict: 'event_id,user_id', ignoreDuplicates: true })` to execute a single, duplicate-safe bulk SQL write.
 *   Refactored `markAutoAbsent` to accumulate the necessary absent records in an array and dispatch a single `createMany` call.
 
 This optimization ensures that the auto-absent process remains fast and scales efficiently regardless of chapter size.

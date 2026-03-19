@@ -60,7 +60,10 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
 
     const { error } = await this.supabase
       .from('event_attendance')
-      .upsert(data as never, { ignoreDuplicates: true });
+      .upsert(data as never, {
+        onConflict: 'event_id,user_id',
+        ignoreDuplicates: true,
+      });
 
     if (error) throw error;
   }
