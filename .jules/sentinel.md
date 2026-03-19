@@ -1,0 +1,4 @@
+## 2026-03-19 - [Supabase/PostgREST Filter Injection]
+**Vulnerability:** Unsanitized user inputs in `.or()` filter strings
+**Learning:** Supabase uses PostgREST which parses string values within `.or()` filters. When values are dynamically injected via template strings without escaping (e.g. `col.ilike.${value}`), an attacker can supply characters like `,` or `()` to break the query logic, leading to unexpected behaviors or data exposure. This project's `.or()` filters were constructing queries directly from user-provided search strings without quoting.
+**Prevention:** All dynamic inputs used within Supabase/PostgREST `.or()` string filters must be escaped. Create and use an `escapeFilterValue` utility (e.g., `"${value.replace(/"/g, '""')}"`) to properly quote the values and double-escape internal double quotes according to PostgREST specification.

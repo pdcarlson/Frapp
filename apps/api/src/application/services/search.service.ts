@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
 import type { Event } from '../../domain/entities/event.entity';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
@@ -73,11 +74,12 @@ export class SearchService {
     chapterId: string,
     pattern: string,
   ): Promise<BackworkResource[]> {
+    const safePattern = escapeFilterValue(pattern);
     const { data, error } = (await this.supabase
       .from('backwork_resources')
       .select('*')
       .eq('chapter_id', chapterId)
-      .or(`title.ilike.${pattern},course_number.ilike.${pattern}`)
+      .or(`title.ilike.${safePattern},course_number.ilike.${safePattern}`)
       .limit(SEARCH_LIMIT)) as QueryResult<BackworkResource>;
     throwIfError(error);
     return data ?? [];
@@ -87,11 +89,12 @@ export class SearchService {
     chapterId: string,
     pattern: string,
   ): Promise<Event[]> {
+    const safePattern = escapeFilterValue(pattern);
     const { data, error } = (await this.supabase
       .from('events')
       .select('*')
       .eq('chapter_id', chapterId)
-      .or(`name.ilike.${pattern},description.ilike.${pattern}`)
+      .or(`name.ilike.${safePattern},description.ilike.${safePattern}`)
       .limit(SEARCH_LIMIT)) as QueryResult<Event>;
     throwIfError(error);
     return data ?? [];
