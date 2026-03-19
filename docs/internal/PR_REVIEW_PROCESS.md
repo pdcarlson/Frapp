@@ -25,9 +25,9 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 
 ## Reviewer workflow
 
-1. **Author opens PR to `preview`**
+1. **Author opens PR to `main`**
    - Run the local gate before opening: `npm run ci:local-gate`
-   - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref origin/main`.
+   - If targeting a different base branch, use `npm run ci:local-gate -- --base-ref origin/production`.
    - Ensure the PR includes docs/spec changes that explain every non-doc code change.
    - Fill out `.github/pull_request_template.md` completely.
    - Include a rollback note for infra changes.
@@ -38,8 +38,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - At least one approval from a write-access reviewer.
    - All review threads resolved.
 4. **Merge**
-   - Feature work: squash merge into `preview`.
-   - Promotion: merge `preview` into `main` via dedicated PR.
+   - Feature work: squash merge into `main`.
+   - Promotion: merge `main` into `production` via dedicated PR.
 
 ## CI/CD change rollout plan (replace a mega-PR like #20)
 
@@ -67,7 +67,7 @@ Each PR should merge before opening the next one, unless you explicitly need sta
 If a required check is stuck on `Expected — Waiting for status to be reported`:
 
 1. Compare required checks vs reported checks:
-   - `gh api repos/pdcarlson/Frapp/branches/preview/protection`
+   - `gh api repos/pdcarlson/Frapp/branches/main/protection`
    - `gh pr checks <PR_NUMBER>`
 2. If a required workflow did not run, remove workflow-level `paths` filters.
 3. If check names changed, update branch protection config and re-apply it.

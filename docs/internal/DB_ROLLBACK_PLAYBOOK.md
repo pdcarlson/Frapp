@@ -3,7 +3,7 @@
 ## Automated Migration Context
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
-- **Staging:** Runs automatically on merge to `preview` (no approval needed)
+- **Staging:** Runs automatically on merge to `main` (no approval needed)
 - **Production:** Requires manual approval in GitHub Actions before applying
 
 If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.

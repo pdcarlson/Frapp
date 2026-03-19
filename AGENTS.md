@@ -50,12 +50,12 @@ Frapp is a Turborepo + npm workspaces monorepo with 5 apps and 7 shared packages
 
 ### Branch model
 
-Two long-lived branches: `preview` (staging) and `main` (production). See `CONTRIBUTING.md` for the full model.
+Two long-lived branches: `main` (staging) and `production` (production). See `CONTRIBUTING.md` for the full model.
 
-- **Feature work:** branch from `preview` → PR to `preview`
-- **Production promotion:** PR from `preview` → `main`
-- **Direct pushes to `preview` and `main` are blocked** by branch protection
-- PRs to `main` from non-`preview` branches are rejected by CI
+- **Feature work:** branch from `main` → PR to `main`
+- **Production promotion:** PR from `main` → `production`
+- **Direct pushes to `main` and `production` are blocked** by branch protection
+- PRs to `production` from non-`main` branches are rejected by CI
 
 ### Documentation sync mandate (non-optional)
 
@@ -107,16 +107,16 @@ Key principles:
 |---------|---------|
 | **CI workflow** | `.github/workflows/ci.yml` — 7 parallel domain-specific jobs |
 | **Deploy workflow** | `.github/workflows/deploy-api.yml` — triggers after CI passes (`workflow_run`) |
-| **Release workflow** | `.github/workflows/release.yml` — auto-tags on preview→main merge |
+| **Release workflow** | `.github/workflows/release.yml` — auto-tags on main→production merge |
 | **Docs workflow** | `.github/workflows/docs.yml` — docs build + lint + spec sync check |
-| **Branch protection** | 7 required checks on preview, 8 on main (includes branch-policy) |
+| **Branch protection** | 7 required checks on main, 8 on production (includes branch-policy) |
 | **CodeRabbit** | Review-based blocker via `request_changes_workflow` in `.coderabbit.yaml` |
-| **Vercel builds** | Auto-deploy only from `preview` and `main`; PR branches are disabled via `git.deploymentEnabled` |
+| **Vercel builds** | Auto-deploy only from `main` and `production`; PR branches are disabled via `git.deploymentEnabled` |
 | **Deploy gating** | API deploys only after CI passes; production migrations require manual approval |
 
 PR review policy:
-- `preview`: no required approving review and no required conversation resolution (CodeRabbit suggestions are advisory).
-- `main`: 1 required approving review and required conversation resolution remain enabled for promotion control.
+- `main`: no required approving review and no required conversation resolution (CodeRabbit suggestions are advisory).
+- `production`: 1 required approving review and required conversation resolution remain enabled for promotion control.
 
 To reconfigure branch protection after changing CI job names:
 ```bash
@@ -142,7 +142,7 @@ GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protect
 
 | Name | Protection | Purpose |
 |------|-----------|---------|
-| `staging` | None | Staging deploys (preview branch) |
+| `staging` | None | Staging deploys (main branch) |
 | `production` | Required reviewer (pdcarlson) | Production deploys + migration approval gate |
 
 **Repository Secrets (3 — Infisical bootstrap):**
@@ -159,7 +159,7 @@ GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protect
 
 | Label | Purpose |
 |-------|---------|
-| `release:major` | Bump major version on preview→main merge |
+| `release:major` | Bump major version on main→production merge |
 | `release:minor` | Bump minor version |
 | `release:patch` | Bump patch version (default) |
 
@@ -740,7 +740,7 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 ### Check CI status on a branch
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch preview --limit 5
+GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch main --limit 5
 ```
 
 ### View failed CI job logs
@@ -885,7 +885,7 @@ done
 ### "Did a migration land in production?"
 
 1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
-2. Cross-reference with `supabase/migrations/` in the `main` branch
+2. Cross-reference with `supabase/migrations/` in the `production` branch
 3. Check `docs/internal/DB_PROMOTION_RUNBOOK.md` for promotion status
 
 ### "Are secrets in sync?"

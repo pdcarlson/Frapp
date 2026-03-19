@@ -8,7 +8,7 @@
 | ------------ | --------------------------------- | ---------------------------------------- | ------------------------------------- |
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live      | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live  | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render (`preview` branch service)         | Render (`main` branch service)         |
+| **API**      | localhost:3001                    | Render (`main` branch service)            | Render (`production` branch service)   |
 | **Docs**     | localhost:3005                    | Vercel preview / docs.staging.frapp.live | docs.frapp.live                       |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution                | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                 | Supabase production project           |
@@ -23,9 +23,9 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 | Branch | Purpose | Deployment behavior |
 | ------ | ------- | ------------------- |
-| `main` | Production | Triggers production deployments |
-| `preview` | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
-| `feature/*` | Short-lived feature work | No automatic Vercel deployments; merged into `preview` |
+| `main` | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
+| `production` | Production | Triggers production deployments |
+| `feature/*` | Short-lived feature work | No automatic Vercel deployments; merged into `main` |
 
 ---
 
@@ -101,10 +101,10 @@ npm run generate -w packages/api-sdk
 ## 3. Staging
 
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
-- **Git branch:** `preview` — pushes trigger staging/pre-production deployments.
+- **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `preview` branch.
-- **API:** Render staging service (`frapp-api-staging`), auto-deploys from `preview`, pointing at Supabase staging.
+- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `main` branch.
+- **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
 - **Data:** May contain seed data. Never production user data.
@@ -113,12 +113,12 @@ npm run generate -w packages/api-sdk
 
 ## 4. Production
 
-- **Git branch:** `main` — pushes trigger production deployments.
+- **Git branch:** `production` — pushes trigger production deployments.
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
-- **Web App:** `app.frapp.live` (Vercel, production deploy from `main`).
-- **Landing:** `frapp.live` (Vercel, production deploy from `main`).
-- **Docs:** `docs.frapp.live` (Vercel, production deploy from `main`).
-- **API:** Render production service (`frapp-api-prod`), auto-deploys from `main`, pointing at Supabase production + Stripe live keys.
+- **Web App:** `app.frapp.live` (Vercel, production deploy from `production`).
+- **Landing:** `frapp.live` (Vercel, production deploy from `production`).
+- **Docs:** `docs.frapp.live` (Vercel, production deploy from `production`).
+- **API:** Render production service (`frapp-api-prod`), auto-deploys from `production`, pointing at Supabase production + Stripe live keys.
 - **Mobile:** App Store and Google Play via EAS Submit.
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
@@ -129,7 +129,7 @@ npm run generate -w packages/api-sdk
 
 ## 5. Continuous Integration (CI)
 
-CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Each job is an independent required status check — failures are visible per domain, not hidden behind a single monolith gate.
+CI runs as domain-specific parallel jobs on every PR to `main` or `production`. Each job is an independent required status check — failures are visible per domain, not hidden behind a single monolith gate.
 
 ### CI Job Matrix
 
@@ -141,7 +141,7 @@ CI runs as domain-specific parallel jobs on every PR to `preview` or `main`. Eac
 | `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes |
 | `migration-safety` | Migration filename validation + promotion docs | Yes |
 | `mobile-validate` | Mobile app lint + typecheck | Yes |
-| `branch-policy` | PRs to `main` must come from `preview` | Yes |
+| `branch-policy` | PRs to `production` must come from `main` | Yes |
 
 ### Additional Required Checks
 
@@ -152,13 +152,13 @@ These checks are also required for merge:
 | `build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
-- On `preview`, CodeRabbit feedback is advisory (no required approving review).
-- On `preview`, conversation resolution is also disabled, so unresolved CodeRabbit threads do not block merge.
-- On `main`, branch protection requires one approving review and conversation resolution, so review outcomes remain a promotion gate.
+- On `main`, CodeRabbit feedback is advisory (no required approving review).
+- On `main`, conversation resolution is also disabled, so unresolved CodeRabbit threads do not block merge.
+- On `production`, branch protection requires one approving review and conversation resolution, so review outcomes remain a promotion gate.
 
 ### Key Design Decisions
 
-- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles frontend deployments on `preview`/`main` only.
+- **No CI frontend build gate.** CI focuses on lint/type/tests/docs gates; Vercel handles frontend deployments on `main`/`production` only.
 - **No placeholder secrets.** CI never sets `NEXT_PUBLIC_SUPABASE_URL` or similar to dummy values. All env-dependent builds happen in the provider (Vercel/Render).
 - **API contract check uses git-diff.** The `openapi.json` is committed as a source-of-truth artifact. CI checks freshness via `git diff` — it does not bootstrap the NestJS application, avoiding the need for Supabase/Stripe credentials in CI.
 - **Mobile CI is lint + typecheck only.** EAS builds are expensive and slow; they run on-demand, not per-PR.
@@ -169,31 +169,31 @@ If any required check fails, the PR cannot be merged. Branch protection rules en
 
 ## 6. Continuous Deployment (CD)
 
-GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are push-triggered only for `preview` and `main`.
+GitHub Actions-managed deploy steps are gated by CI. After CI succeeds, the deploy workflow runs database migrations and triggers the Render API deploy. Vercel deployments are push-triggered only for `main` and `production`.
 
 ### Deploy Pipeline (on merge)
 
 ```text
 CI passes → DB migration (dry-run then apply) → API deploy (Render)
-Vercel preview/production deployments are push-triggered from `preview`/`main` and can proceed in parallel
+Vercel preview/production deployments are push-triggered from `main`/`production` and can proceed in parallel
 ```
 
 Production deployments additionally require manual approval before the migration step runs.
 
 ### Web, Landing, Docs (Vercel)
 
-- Push to `main` triggers **production** Vercel deployments (custom domains).
-- Push to `preview` triggers **preview** Vercel deployments (staging domains).
+- Push to `production` triggers **production** Vercel deployments (custom domains).
+- Push to `main` triggers **preview** Vercel deployments (staging domains).
 - Feature/PR branches do not auto-deploy on Vercel.
 - Each app uses `turbo-ignore` to skip rebuilds when its files haven't changed.
-- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json`.
+- Branch filtering is controlled with `git.deploymentEnabled` in each app's `vercel.json` (`main` and `production` enabled, all others disabled).
 - Vercel detects the monorepo structure and builds the appropriate app via `vercel.json` build commands.
 
 ### API (Render)
 
 - API deploys are gated behind CI success using `workflow_run` triggers.
-- Push to `main` (after CI) → GitHub Actions triggers Render production deploy hook.
-- Push to `preview` (after CI) → GitHub Actions triggers Render staging deploy hook.
+- Push to `production` (after CI) → GitHub Actions triggers Render production deploy hook.
+- Push to `main` (after CI) → GitHub Actions triggers Render staging deploy hook.
 - Render builds the Docker image from `apps/api/Dockerfile` and performs zero-downtime swap.
 - Database migrations run automatically before deploy (see Section 8).
 - See `render.yaml` for the infrastructure-as-code definition.
@@ -218,7 +218,7 @@ Because Vercel deploys are push-triggered, hold frontend merges until the API is
 
 ### Release labels for version tags
 
-Version bumps are derived from labels on the `preview` → `main` promotion PR (the PR merged into `main`):
+Version bumps are derived from labels on the `main` → `production` promotion PR (the PR merged into `production`):
 
 - No release label → patch bump
 - `release:minor` → minor bump

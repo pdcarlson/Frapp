@@ -15,7 +15,7 @@
 Create PR from:
 
 - **head:** `c/mobile-ui-ux-quality-plan-29ef`
-- **base:** `preview`
+- **base:** `main`
 
 Title recommendation:
 
@@ -29,7 +29,7 @@ Suggested command (maintainer/write-capable environment):
 
 ```bash
 gh pr create \
-  --base preview \
+  --base main \
   --head c/mobile-ui-ux-quality-plan-29ef \
   --title "feat(ui): consolidate mobile/web UX remediation into canonical PR" \
   --body-file docs/internal/PR_CONSOLIDATION_CANONICAL_PR_BODY.md

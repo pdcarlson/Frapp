@@ -2,7 +2,7 @@
 
 import { execSync } from "node:child_process";
 
-const DEFAULT_BASE_REF = "origin/preview";
+const DEFAULT_BASE_REF = "origin/main";
 const BASE_REF_FLAG = "--base-ref";
 
 function getArgValue(flagName) {

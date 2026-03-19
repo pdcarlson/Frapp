@@ -8,16 +8,16 @@ This guide defines how we work on Frapp: branch workflow, commit messages, and t
 
 We use a two-environment branch model:
 
-- `main` — production branch (deployed to production environments)
-- `preview` — pre-production integration branch (deployed to Vercel Preview domains and staging infrastructure)
+- `main` — pre-production integration branch (deployed to Vercel Preview domains and staging infrastructure)
+- `production` — production branch (deployed to production environments)
 - `feature/*` — short-lived branches for individual features and fixes
 
 Typical flow:
 
-1. Branch from `preview` into `feature/*`.
-2. Open a PR from `feature/*` to `preview`.
+1. Branch from `main` into `feature/*`.
+2. Open a PR from `feature/*` to `main`.
 3. Validate behavior in staging/preview environments.
-4. Open a promotion PR from `preview` to `main` for production release.
+4. Open a promotion PR from `main` to `production` for production release.
 
 Example feature branch names:
 
@@ -78,8 +78,8 @@ When opening a PR:
 
 PR targets:
 
-- Feature work: `feature/*` → `preview`
-- Production promotion: `preview` → `main`
+- Feature work: `feature/*` → `main`
+- Production promotion: `main` → `production`
 
 ## 5. Linting, types, and tests
 

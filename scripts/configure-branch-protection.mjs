@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Configure branch protection rules for preview and main.
+ * Configure branch protection rules for main and production.
  *
  * Usage:
  *   GITHUB_PAT=ghp_xxx node scripts/configure-branch-protection.mjs
@@ -106,8 +106,8 @@ async function callGitHubApi({ token, method, path, body }) {
 // ── Branch protection payloads ──────────────────────────────────────────────
 
 function buildProtectionPayload(branch) {
-  const requiresApprovingReview = branch === "main";
-  const requiresConversationResolution = branch === "main";
+  const requiresApprovingReview = branch === "production";
+  const requiresConversationResolution = branch === "production";
   const payload = {
     required_status_checks: {
       strict: true,
@@ -132,8 +132,8 @@ function buildProtectionPayload(branch) {
     allow_fork_syncing: true,
   };
 
-  // main has stricter policy: branch source enforcement + required review + required conversation resolution.
-  if (branch === "main") {
+  // production has stricter policy: branch source enforcement + required review + required conversation resolution.
+  if (branch === "production") {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
       "branch-policy",
@@ -153,7 +153,7 @@ async function main() {
   console.log(`Mode: ${dryRun ? "DRY RUN" : "LIVE"}`);
   console.log("");
 
-  for (const branch of ["preview", "main"]) {
+  for (const branch of ["main", "production"]) {
     const payload = buildProtectionPayload(branch);
     const checks = payload.required_status_checks.contexts;
 
@@ -197,7 +197,7 @@ async function main() {
     console.log("Dry run complete. No changes were made.");
     console.log("Remove --dry-run to apply these settings.");
   } else {
-    console.log("Branch protection configured successfully for both branches.");
+    console.log("Branch protection configured successfully for main and production.");
   }
 }
 

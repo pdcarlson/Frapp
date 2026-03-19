@@ -59,8 +59,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Environment | Slug | Maps to |
 | --- | --- | --- |
 | Local | `local` | Local development via `infisical run` |
-| Staging | `staging` | `preview` branch deploys |
-| Production | `production` | `main` branch deploys |
+| Staging | `staging` | `main` branch deploys |
+| Production | `production` | `production` branch deploys |
 
 ### 3. Add Canonical Values
 

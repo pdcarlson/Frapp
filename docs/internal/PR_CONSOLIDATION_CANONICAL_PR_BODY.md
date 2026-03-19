@@ -1,6 +1,6 @@
 # Canonical PR Body Draft — Mobile/UI UX Consolidation
 
-> Use this text when opening the canonical replacement PR from `c/mobile-ui-ux-quality-plan-29ef` into `preview`.
+> Use this text when opening the canonical replacement PR from `c/mobile-ui-ux-quality-plan-29ef` into `main`.
 
 ## Why this PR exists
 

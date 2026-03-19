@@ -26,7 +26,7 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 ### Check CI status on a branch
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch preview --limit 5
+GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch main --limit 5
 ```
 
 ### View failed CI job logs
@@ -171,7 +171,7 @@ done
 ### "Did a migration land in production?"
 
 1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
-2. Cross-reference with `supabase/migrations/` in the `main` branch
+2. Cross-reference with `supabase/migrations/` in the `production` branch
 3. Check `docs/internal/DB_PROMOTION_RUNBOOK.md` for promotion status
 
 ### "Are secrets in sync?"

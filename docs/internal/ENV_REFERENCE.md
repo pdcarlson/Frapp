@@ -26,10 +26,10 @@ Change SUPABASE_URL → both references update instantly.
 | Environment | When it's used | Maps to |
 |---|---|---|
 | `local` | Running the app on your machine against local Docker Supabase | `npm run dev:api`, `npm run dev:web`, etc. |
-| `staging` | Deployed to staging infra when code merges to `preview` branch | Vercel Preview, Render staging, Supabase staging project |
-| `production` | Deployed to production infra when code merges to `main` branch | Vercel Production, Render production, Supabase production project |
+| `staging` | Deployed to staging infra when code merges to `main` branch | Vercel Preview, Render staging, Supabase staging project |
+| `production` | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project |
 
-**Local uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to preview. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
+**Local uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to main. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
 
 ---
 

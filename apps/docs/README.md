@@ -32,5 +32,5 @@ npm run lint -w apps/docs
 
 - Vercel config: `apps/docs/vercel.json`
 - Branch model:
-  - `preview` → staging docs domain
-  - `main` → production docs domain
+  - `main` → staging docs domain
+  - `production` → production docs domain

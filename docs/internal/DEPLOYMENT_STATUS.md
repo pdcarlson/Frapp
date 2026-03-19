@@ -4,12 +4,12 @@ Last updated: 2026-03-04
 
 ## Environment branch model
 
-- `preview` → staging / pre-production
-- `main` → production
+- `main` → staging / pre-production
+- `production` → production
 
 ## Surface rollout status
 
-| Surface | Staging (`preview`) | Production (`main`) | Notes |
+| Surface | Staging (`main`) | Production (`production`) | Notes |
 | ------- | ------------------- | ------------------- | ----- |
 | Landing (Vercel) | ✅ | ✅ | Branch-filtered staging domain configured |
 | Web dashboard (Vercel) | ✅ | ✅ | Branch-filtered staging domain configured |

@@ -2,9 +2,9 @@ name: Docs
 
 on:
   pull_request:
-    branches: [main, preview]
+    branches: [main, production]
   push:
-    branches: [main, preview]
+    branches: [main, production]
 
 jobs:
   build-and-lint:

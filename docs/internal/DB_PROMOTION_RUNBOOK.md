@@ -7,8 +7,8 @@ Use this runbook whenever `supabase/migrations/**` changes need to be promoted.
 ## Promotion order (never skip)
 
 1. **Local** (`npx supabase db push --local`)
-2. **Staging** (`preview` environment Supabase project)
-3. **Production** (`main` environment Supabase project)
+2. **Staging** (`main` branch / staging Supabase project)
+3. **Production** (`production` branch / production Supabase project)
 
 ## Preflight checklist
 

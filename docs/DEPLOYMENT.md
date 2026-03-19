@@ -4,9 +4,9 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 
 ## Current rollout status
 
-- ✅ Landing, web, and docs are configured in Vercel with `preview` and `main` environments.
+- ✅ Landing, web, and docs are configured in Vercel with Preview and Production environments.
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
-- ✅ Branch protection enforced on `preview` and `main`.
+- ✅ Branch protection enforced on `main` and `production`.
 - 🚧 API deployment wiring is in progress (Render services + deploy hooks + smoke checks).
 - 🚧 Infisical centralized secrets management is being set up.
 - 🚧 Automated database migrations in the deploy pipeline are planned.
@@ -71,33 +71,33 @@ Two long-lived branches map to environments:
 
 | Branch | Environment | Vercel | Render | Supabase |
 |--------|-------------|--------|--------|----------|
-| `main` | **Production** | Production deploys → prod domains | `frapp-api-prod` | Production project |
-| `preview` | **Staging** | Preview deploys → staging domains | `frapp-api-staging` | Staging project |
+| `main` | **Staging** | Preview deploys → staging domains | `frapp-api-staging` | Staging project |
+| `production` | **Production** | Production deploys → prod domains | `frapp-api-prod` | Production project |
 | `feature/*` | **Ephemeral** | No automatic Vercel deploys | — | — |
 
 **How it flows:**
 
 ```
-feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (production)
+feature/xyz ──PR──▶ main (staging) ──PR──▶ production (production)
 ```
 
-1. Feature branches are typically created from `preview`.
-2. Feature PRs target `preview`. Merging triggers staging deployments.
+1. Feature branches are typically created from `main`.
+2. Feature PRs target `main`. Merging triggers staging deployments.
 3. Test on staging domains (e.g. `app.staging.frapp.live`).
-4. When ready for production, open a promotion PR from `preview` → `main`.
-5. Merging to `main` triggers production deployments.
+4. When ready for production, open a promotion PR from `main` → `production`.
+5. Merging to `production` triggers production deployments.
 
-> `develop` is not used. `preview` is the active staging integration branch. See `CONTRIBUTING.md` for the full branch model, merge strategy, and required checks.
+> `develop` is not used. `main` is the active staging integration branch. See `CONTRIBUTING.md` for the full branch model, merge strategy, and required checks.
 
 **Vercel environment mapping:**
 
 | Vercel environment | Git trigger | Domain example |
 |---|---|---|
-| **Production** | Push to `main` | `docs.frapp.live` |
-| **Preview** (pre-production) | Push to `preview` | `docs.staging.frapp.live` |
+| **Production** | Push to `production` | `docs.frapp.live` |
+| **Preview** (pre-production) | Push to `main` | `docs.staging.frapp.live` |
 | **Disabled** | Any other branch / PR | No auto deployment |
 
-The `preview` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `preview` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `preview` and `main` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
+The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
 
 ---
 
@@ -161,11 +161,11 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
 
-The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `preview`/`main`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
+The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `main`/`production`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
 
 ### 4.2 Environment Variables per Project
 
-Vercel scopes env vars to **Production** and **Preview**. The `preview` branch triggers Preview deploys, which use Preview env vars. The `main` branch triggers Production deploys.
+Vercel scopes env vars to **Production** and **Preview**. The `main` branch triggers Preview deploys, which use Preview env vars. The `production` branch triggers Production deploys.
 
 #### `frapp-web` (Web Dashboard)
 
@@ -197,15 +197,15 @@ In each Vercel project → Settings → Domains:
 | `frapp-landing` | `frapp.live` + `www.frapp.live` |
 | `frapp-docs` | `docs.frapp.live` |
 
-#### Staging Domains (connected to Preview environment, filtered to `preview` branch)
+#### Staging Domains (connected to Preview environment, filtered to `main` branch)
 
 | Project | Domain | Environment | Branch filter |
 |---------|--------|-------------|---------------|
-| `frapp-web` | `app.staging.frapp.live` | Preview | `preview` |
-| `frapp-landing` | `staging.frapp.live` | Preview | `preview` |
-| `frapp-docs` | `docs.staging.frapp.live` | Preview | `preview` |
+| `frapp-web` | `app.staging.frapp.live` | Preview | `main` |
+| `frapp-landing` | `staging.frapp.live` | Preview | `main` |
+| `frapp-docs` | `docs.staging.frapp.live` | Preview | `main` |
 
-**To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `preview`.
+**To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
 ### 4.4 DNS Records (Squarespace Domains)
 
@@ -232,7 +232,7 @@ api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
 
 For each project, verify:
 
-- **Settings → Git → Production Branch**: `main`
+- **Settings → Git → Production Branch**: `production`
 
 ---
 
@@ -248,7 +248,7 @@ Create **two** Render Web Services: one for production, one for staging.
 | Setting | Production | Staging |
 |---------|-----------|---------|
 | **Name** | `frapp-api-prod` | `frapp-api-staging` |
-| **Branch** | `main` | `preview` |
+| **Branch** | `production` | `main` |
 | **Root Directory** | (leave empty — Dockerfile uses repo root) | (same) |
 | **Runtime** | Docker | Docker |
 | **Dockerfile Path** | `apps/api/Dockerfile` | `apps/api/Dockerfile` |
@@ -362,25 +362,25 @@ Same steps but toggle to Live mode in Stripe dashboard. Requires business verifi
 ### Phase 1: Staging (do this first)
 
 - [ ] Create Supabase staging project, apply migrations
-- [ ] Create Render staging service (`preview` branch), add env vars
+- [ ] Create Render staging service (`main` branch), add env vars
 - [ ] Import repo to Vercel 3 times (web, landing, docs)
 - [ ] Add Preview env vars to each Vercel project
-- [ ] Assign staging domains to `preview` branch in Vercel
+- [ ] Assign staging domains to `main` branch in Vercel
 - [ ] Configure DNS records for staging subdomains
 - [ ] Set up Stripe test mode webhook for staging API URL
-- [ ] Push to `preview` → verify all staging sites deploy
+- [ ] Push to `main` → verify all staging sites deploy
 - [ ] Test mobile with Expo Go pointing at staging API
 - [ ] Run through core flows: sign up, create chapter, invite member
 
 ### Phase 2: Production
 
 - [ ] Create Supabase production project, apply migrations
-- [ ] Create Render production service (`main` branch), add env vars
+- [ ] Create Render production service (`production` branch), add env vars
 - [ ] Add Production env vars to each Vercel project
 - [ ] Assign production domains in Vercel
 - [ ] Configure DNS records for production domains
 - [ ] Set up Stripe live mode (after business verification)
-- [ ] Merge `preview` → `main` via PR
+- [ ] Merge `main` → `production` via PR
 - [ ] Verify all production sites deploy
 - [ ] Set up Sentry for error tracking (API + web)
 - [ ] Build production mobile app with EAS

@@ -5,7 +5,7 @@ services:
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    branch: main
+    branch: production
     plan: starter
     healthCheckPath: /health
     envVars:
@@ -34,7 +34,7 @@ services:
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
-    branch: preview
+    branch: main
     plan: free
     healthCheckPath: /health
     envVars:

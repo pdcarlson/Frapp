@@ -34,5 +34,5 @@ npm run check-types -w apps/landing
 ## Deployment
 
 - Vercel config: `apps/landing/vercel.json`
-- `preview` branch deploys to staging landing domain
-- `main` branch deploys to production landing domain
+- `main` branch deploys to staging landing domain
+- `production` branch deploys to production landing domain

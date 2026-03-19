@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Configure merge-blocking branch protections for `preview` and `main`. This ensures:
+Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
 - CodeRabbit review is addressed before merge
-- PRs to `main` must come from `preview`
+- PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
 ## Prerequisites
@@ -42,7 +42,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 ## What Gets Configured
 
-### Both branches (preview and main)
+### Both branches (main and production)
 
 | Setting | Value |
 | --- | --- |
@@ -52,14 +52,14 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | Linear history | Yes |
 | Force pushes | Blocked |
 | Deletions | Blocked |
-| Conversation resolution | Branch-specific (disabled on `preview`, required on `main`) |
+| Conversation resolution | Branch-specific (disabled on `main`, required on `production`) |
 
 ### Branch-specific PR review rules
 
 | Branch | Required approving reviews | Dismiss stale reviews | Require conversation resolution |
 | --- | --- | --- | --- |
-| `preview` | Disabled | N/A | Disabled |
-| `main` | 1 | Enabled | Enabled |
+| `main` | Disabled | N/A | Disabled |
+| `production` | 1 | Enabled | Enabled |
 
 ### Required Status Checks
 
@@ -82,20 +82,20 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 ### Vercel policy (not a required check)
 
-Vercel deployments are intentionally limited to `preview` and `main` branches via `git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming Vercel build quota while CI remains the merge gate.
+Vercel deployments are intentionally limited to `main` and `production` branches via `git.deploymentEnabled` in each app `vercel.json`. This keeps PR traffic from consuming Vercel build quota while CI remains the merge gate.
 
-**main branch only:**
+**production branch only:**
 
 | Check name | What it validates |
 | --- | --- |
-| `branch-policy` | Source branch must be `preview` |
+| `branch-policy` | Source branch must be `main` |
 
 ### CodeRabbit (Review-Based Blocker)
 
 CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review.
 
-- On `preview`, this feedback is advisory (no required approving review gate).
-- On `main`, branch protection requires one approval and stale reviews are dismissed on push, so CodeRabbit/human review remains a merge-control gate.
+- On `main`, this feedback is advisory (no required approving review gate).
+- On `production`, branch protection requires one approval and stale reviews are dismissed on push, so CodeRabbit/human review remains a merge-control gate.
 
 `CodeRabbit` is intentionally **not** a required status check. It is enforced through PR reviews only.
 
@@ -106,7 +106,7 @@ Use this sequence:
 1. Inspect what branch protection currently requires:
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PAT" gh api repos/pdcarlson/Frapp/branches/preview/protection
+GITHUB_TOKEN="$GITHUB_PAT" gh api repos/pdcarlson/Frapp/branches/main/protection
 ```
 
 2. Inspect what the PR actually reported:
@@ -131,7 +131,7 @@ Common causes and fixes:
 
 After running the script, verify in the GitHub UI (Settings → Branches):
 
-- [ ] Branch protection rules exist for `preview` and `main`
+- [ ] Branch protection rules exist for `main` and `production`
 - [ ] All required status checks are listed
 - [ ] "Include administrators" is checked
 - [ ] "Require linear history" is checked

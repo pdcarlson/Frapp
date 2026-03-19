@@ -11,13 +11,13 @@ use the repository file `docs/DEPLOYMENT.md`.
 
 Frapp uses two long-lived environment branches:
 
-- `preview` → pre-production/staging environments
-- `main` → production environments
+- `main` → pre-production/staging environments
+- `production` → production environments
 
-Feature branches (`feature/*`) merge into `preview` first, then `preview` is promoted into `main`.
+Feature branches (`feature/*`) merge into `main` first, then `main` is promoted into `production`.
 
 <Callout type="info">
-  `develop` is not part of the active workflow. `preview` is the integration
+  `develop` is not part of the active workflow. `main` is the integration
   branch for staging.
 </Callout>
 
@@ -27,8 +27,8 @@ Feature branches (`feature/*`) merge into `preview` first, then `preview` is pro
   - landing (`frapp.live`)
   - web dashboard (`app.frapp.live`)
   - docs (`docs.frapp.live`)
-- ✅ Preview deployments are triggered by pushes to `preview`.
-- ✅ Automatic Vercel deployments are limited to `preview` and `main` (feature/PR branches are skipped).
+- ✅ Preview deployments are triggered by pushes to `main`.
+- ✅ Automatic Vercel deployments are limited to `main` and `production` (feature/PR branches are skipped).
 - 🚧 API deployment is still being finalized.
 - 🚧 Mobile App Store / Play Store deployment is still being finalized.
 

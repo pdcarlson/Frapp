@@ -4,26 +4,26 @@
 
 ## Branch Model
 
-Frapp uses a **two-branch model** with `preview` (staging) and `main` (production). There is no `develop` branch.
+Frapp uses a **two-branch model** with `main` (staging) and `production` (production). There is no `develop` branch.
 
 ```text
-feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (production)
+feature/xyz ──PR──▶ main (staging) ──PR──▶ production (production)
 ```
 
 | Branch | Purpose | Deployment |
 | --- | --- | --- |
-| `main` | Production-ready code | Triggers production deploys (Vercel, Render) |
-| `preview` | Staging integration | Triggers staging deploys (Vercel preview, Render staging) |
-| `feature/*` | Short-lived feature work | No automatic Vercel deploys; merged into `preview` |
-| `hotfix/*` | Emergency production fixes | Branch from `preview`, PR to `preview`, then fast-track promotion PR to `main` |
+| `main` | Staging integration | Triggers staging deploys (Vercel preview, Render staging) |
+| `production` | Production-ready code | Triggers production deploys (Vercel, Render) |
+| `feature/*` | Short-lived feature work | No automatic Vercel deploys; merged into `main` |
+| `hotfix/*` | Emergency production fixes | Branch from `main`, PR to `main`, then fast-track promotion PR to `production` |
 
 ### Rules
 
-- **Never commit directly** to `main` or `preview`. All changes go through PRs.
-- **Feature branches** are created from `preview` and target `preview` via PR.
-- **Production promotion** is done via PR from `preview` → `main`.
-- **PRs to `main`** must come from `preview` (enforced by CI).
-- **Hotfixes** branch from `preview`, merge to `preview`, then fast-track a promotion PR to `main`.
+- **Never commit directly** to `main` or `production`. All changes go through PRs.
+- **Feature branches** are created from `main` and target `main` via PR.
+- **Production promotion** is done via PR from `main` → `production`.
+- **PRs to `production`** must come from `main` (enforced by CI).
+- **Hotfixes** branch from `main`, merge to `main`, then fast-track a promotion PR to `production`.
 
 ---
 
@@ -31,8 +31,8 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 
 | Merge type | Strategy | Rationale |
 | --- | --- | --- |
-| Feature → preview | **Squash merge** | Clean history, one commit per feature |
-| preview → main | **Merge commit** | Preserves promotion audit trail, triggers version tag |
+| Feature → main | **Squash merge** | Clean history, one commit per feature |
+| main → production | **Merge commit** | Preserves promotion audit trail, triggers version tag |
 
 ---
 
@@ -51,11 +51,11 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `migration-safety` | Migration filename validation + promotion docs |
 | `mobile-validate` | Mobile app lint + typecheck |
 | `build-and-lint` | Docs build + lint + docs/spec sync checks |
-| `branch-policy` | `main`-targeting PRs must come from `preview` (required on `main` only) |
+| `branch-policy` | `production`-targeting PRs must come from `main` (required on `production` only) |
 
 ### Vercel deployment policy
 
-Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped.
+Vercel is configured to auto-deploy only on `main` and `production` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped.
 
 ### Review Blockers (not status checks)
 
@@ -65,9 +65,9 @@ Vercel is configured to auto-deploy only on `preview` and `main` via `git.deploy
 
 ### PR review requirement policy
 
-- `preview`: approving review is **not required** (CodeRabbit feedback is advisory).
-- `preview`: conversation resolution is **not required** (you can choose whether to act on CodeRabbit comment threads).
-- `main`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
+- `main`: approving review is **not required** (CodeRabbit feedback is advisory).
+- `main`: conversation resolution is **not required** (you can choose whether to act on CodeRabbit comment threads).
+- `production`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
 ---
 
@@ -78,8 +78,8 @@ For infrastructure-heavy work (CI/CD, branch protection, release automation), fo
 ### 1. Create a feature branch
 
 ```bash
-git checkout preview
-git pull origin preview
+git checkout main
+git pull origin main
 git checkout -b feature/123-my-feature
 ```
 
@@ -101,11 +101,11 @@ type(scope): description
 | `test` | Adding tests |
 | `chore` | Maintenance tasks |
 
-### 3. Open a PR targeting `preview`
+### 3. Open a PR targeting `main`
 
 - Run the local gate first: `npm run ci:local-gate`
   - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
-- If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/main`
+- If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/production`
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `apps/docs/` or `spec/`.
 - CI checks will run automatically.
@@ -162,11 +162,11 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 
 ## Version Tagging
 
-Versions are automatically created when the `preview` → `main` promotion PR merges:
+Versions are automatically created when the `main` → `production` promotion PR merges:
 
 - **Default:** Patch bump when the promotion PR has no release label (`v1.0.0` → `v1.0.1`)
-- **Minor:** Add label `release:minor` to the `preview` → `main` promotion PR (`v1.0.0` → `v1.1.0`)
-- **Major:** Add label `release:major` to the `preview` → `main` promotion PR (`v1.0.0` → `v2.0.0`)
+- **Minor:** Add label `release:minor` to the `main` → `production` promotion PR (`v1.0.0` → `v1.1.0`)
+- **Major:** Add label `release:major` to the `main` → `production` promotion PR (`v1.0.0` → `v2.0.0`)
 
 The version tag and GitHub Release are created automatically by the release workflow.
 

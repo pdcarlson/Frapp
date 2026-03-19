@@ -14,8 +14,8 @@ reviews:
     enabled: true
     drafts: false
     base_branches:
-      - preview
       - main
+      - production
 
   # Domain-specific review instructions
   path_instructions:

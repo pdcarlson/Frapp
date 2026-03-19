@@ -29,7 +29,7 @@
 - [ ] If this PR changes non-doc files, it also updates related files in `apps/docs/`, `docs/`, or `spec/`.
 - [ ] If I changed API/domain/workflows, I updated docs/spec in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `api-sdk/types.ts`.
-- [ ] If targeting `main`, this PR source branch is `preview`.
+- [ ] If targeting `production`, this PR source branch is `main`.
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.
 - [ ] No secrets committed (`.env*`, credentials, private keys).
 - [ ] No placeholder secrets in CI/CD workflows.
@@ -45,6 +45,6 @@
 - [ ] No dead-end controls: every actionable-looking control has behavior or explicit disabled rationale.
 - [ ] If this PR changes UX patterns, `docs/internal/UI_UX_SYSTEM.md` and/or `docs/internal/UX_WRITING_GUIDE.md` were updated.
 
-## Release label (preview → main only)
+## Release label (main → production only)
 
 - [ ] `release:patch` (default) / `release:minor` / `release:major`

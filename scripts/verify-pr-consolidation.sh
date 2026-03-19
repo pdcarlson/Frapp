@@ -69,8 +69,8 @@ echo "Head/Base: $CANONICAL_HEAD -> $CANONICAL_BASE"
 echo "State: $CANONICAL_STATE"
 echo
 
-if [[ "$CANONICAL_BASE" != "preview" ]]; then
-  echo "❌ Canonical PR base is '$CANONICAL_BASE' (expected 'preview')."
+if [[ "$CANONICAL_BASE" != "main" ]]; then
+  echo "❌ Canonical PR base is '$CANONICAL_BASE' (expected 'main')."
   exit 3
 fi
 

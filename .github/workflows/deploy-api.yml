@@ -11,7 +11,7 @@ on:
   workflow_run:
     workflows: ["CI"]
     types: [completed]
-    branches: [main, preview]
+    branches: [main, production]
 
 jobs:
   # ── Check if deploy-relevant files changed ─────────────────────────────
@@ -58,7 +58,7 @@ jobs:
     if: |
       needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.migrations-changed == 'true' &&
-      github.event.workflow_run.head_branch == 'preview'
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -93,7 +93,7 @@ jobs:
     if: |
       needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.migrations-changed == 'true' &&
-      github.event.workflow_run.head_branch == 'main'
+      github.event.workflow_run.head_branch == 'production'
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -127,7 +127,7 @@ jobs:
       always() &&
       needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.api-changed == 'true' &&
-      github.event.workflow_run.head_branch == 'preview' &&
+      github.event.workflow_run.head_branch == 'main' &&
       (needs.migrate-staging.result == 'success' || needs.migrate-staging.result == 'skipped')
     runs-on: ubuntu-latest
     environment: staging
@@ -173,7 +173,7 @@ jobs:
       always() &&
       needs.check-changes.result == 'success' &&
       needs.check-changes.outputs.api-changed == 'true' &&
-      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_branch == 'production' &&
       (needs.migrate-production.result == 'success' || needs.migrate-production.result == 'skipped')
     runs-on: ubuntu-latest
     environment: production

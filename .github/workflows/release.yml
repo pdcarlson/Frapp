@@ -1,9 +1,9 @@
 name: Release
 
-# Automatically creates a version tag and GitHub Release when preview merges into main.
+# Automatically creates a version tag and GitHub Release when main merges into production.
 on:
   push:
-    branches: [main]
+    branches: [production]
 
 permissions:
   contents: write
