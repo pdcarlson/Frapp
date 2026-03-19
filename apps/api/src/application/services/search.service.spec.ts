@@ -170,8 +170,12 @@ describe('SearchService', () => {
       // The expected escaped pattern would be `"%test\\query\"()%"`
       const expectedSafePattern = '"%test\\\\query\\"()%"';
 
-      expect(backworkOrCall).toBe(`title.ilike.${expectedSafePattern},course_number.ilike.${expectedSafePattern}`);
-      expect(eventsOrCall).toBe(`name.ilike.${expectedSafePattern},description.ilike.${expectedSafePattern}`);
+      expect(backworkOrCall).toBe(
+        `title.ilike.${expectedSafePattern},course_number.ilike.${expectedSafePattern}`,
+      );
+      expect(eventsOrCall).toBe(
+        `name.ilike.${expectedSafePattern},description.ilike.${expectedSafePattern}`,
+      );
     });
   });
 });

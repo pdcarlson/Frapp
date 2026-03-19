@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type {
@@ -59,8 +60,9 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       query = query.eq('document_variant', filters.document_variant);
     }
     if (filters?.search) {
+      const safePattern = escapeFilterValue(`%${filters.search}%`);
       query = query.or(
-        `title.ilike.%${filters.search}%,course_number.ilike.%${filters.search}%`,
+        `title.ilike.${safePattern},course_number.ilike.${safePattern}`,
       );
     }
 
