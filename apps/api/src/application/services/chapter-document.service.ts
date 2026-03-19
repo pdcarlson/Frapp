@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
@@ -38,7 +39,7 @@ export class ChapterDocumentService {
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
     const documentId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${input.filename}`;
+    const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${path.basename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       DOCUMENTS_BUCKET,

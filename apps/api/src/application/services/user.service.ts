@@ -1,3 +1,4 @@
+import * as path from 'path';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
@@ -33,7 +34,7 @@ export class UserService {
     filename: string,
     contentType: string,
   ): Promise<{ signedUrl: string; storagePath: string }> {
-    const storagePath = `chapters/${chapterId}/profiles/${userId}/${filename}`;
+    const storagePath = `chapters/${chapterId}/profiles/${userId}/${path.basename(filename)}`;
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       PROFILES_BUCKET,
       storagePath,
