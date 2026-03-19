@@ -71,6 +71,7 @@ describe('AttendanceService', () => {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -399,10 +400,12 @@ describe('AttendanceService', () => {
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       expect(result.marked).toBe(3);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(3);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
         expect.objectContaining({ status: 'ABSENT', user_id: 'user-1' }),
-      );
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-2' }),
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-3' }),
+      ]);
     });
 
     it('should mark ABSENT for role-targeted event (only required role members)', async () => {
@@ -420,10 +423,10 @@ describe('AttendanceService', () => {
 
       // Only user-3 has role-exec
       expect(result.marked).toBe(1);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(1);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
         expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
-      );
+      ]);
     });
 
     it('should skip members who already checked in (PRESENT)', async () => {

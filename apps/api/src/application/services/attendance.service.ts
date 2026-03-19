@@ -217,12 +217,13 @@ export class AttendanceService {
       existingRecords.map((r) => r.user_id),
     );
 
-    let marked = 0;
+    const absentRecordsToCreate: Partial<EventAttendance>[] = [];
+
     for (const member of requiredMembers) {
       if (!checkedInOrExcused.has(member.user_id)) {
         const existing = usersWithAttendanceRecords.has(member.user_id);
         if (!existing) {
-          await this.attendanceRepo.create({
+          absentRecordsToCreate.push({
             event_id: eventId,
             user_id: member.user_id,
             status: 'ABSENT',
@@ -230,11 +231,14 @@ export class AttendanceService {
             excuse_reason: null,
             marked_by: null,
           });
-          marked++;
         }
       }
     }
 
-    return { marked };
+    if (absentRecordsToCreate.length > 0) {
+      await this.attendanceRepo.createMany(absentRecordsToCreate);
+    }
+
+    return { marked: absentRecordsToCreate.length };
   }
 }
