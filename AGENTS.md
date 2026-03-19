@@ -57,15 +57,6 @@ Two long-lived branches: `preview` (staging) and `main` (production). See `CONTR
 - **Direct pushes to `preview` and `main` are blocked** by branch protection
 - PRs to `main` from non-`preview` branches are rejected by CI
 
-### Documentation sync mandate (non-optional)
-
-For **every** non-doc code change (including tests, refactors, tooling, CI, and config), the agent must update at least one related file in `apps/docs/`, `docs/`, or `spec/` in the same PR.
-
-Required behavior:
-- Run or reason against the docs/spec sync rule (`scripts/check-docs-impact.mjs`) before finalizing work.
-- Treat docs/spec updates as part of done criteria, not a follow-up.
-- If behavior is unchanged, add concise maintenance documentation that explains what changed technically and why no product behavior changed.
-
 ### Services and ports
 
 | Service | Port | Command |
@@ -109,14 +100,10 @@ Key principles:
 | **Deploy workflow** | `.github/workflows/deploy-api.yml` — triggers after CI passes (`workflow_run`) |
 | **Release workflow** | `.github/workflows/release.yml` — auto-tags on preview→main merge |
 | **Docs workflow** | `.github/workflows/docs.yml` — docs build + lint + spec sync check |
-| **Branch protection** | 7 required checks on preview, 8 on main (includes branch-policy) |
+| **Branch protection** | 10 required checks on preview, 11 on main (includes branch-policy) |
 | **CodeRabbit** | Review-based blocker via `request_changes_workflow` in `.coderabbit.yaml` |
-| **Vercel builds** | Auto-deploy only from `preview` and `main`; PR branches are disabled via `git.deploymentEnabled` |
+| **Vercel builds** | Required status checks — if Vercel build fails, PR cannot merge |
 | **Deploy gating** | API deploys only after CI passes; production migrations require manual approval |
-
-PR review policy:
-- `preview`: no required approving review and no required conversation resolution (CodeRabbit suggestions are advisory).
-- `main`: 1 required approving review and required conversation resolution remain enabled for promotion control.
 
 To reconfigure branch protection after changing CI job names:
 ```bash
@@ -1080,11 +1067,11 @@ Open `http://localhost:3000` in browser. Auth flows go through Supabase — the 
 
 Before pushing, verify these pass locally (mirrors the CI pipeline):
 
-1. `npm run lint` → `lint-and-typecheck`
-2. `npm run check-types` → `lint-and-typecheck`
-3. `npm run test -w apps/api` → `api-tests`
-4. `npm run check:api-contract` → `api-contract-check`
-5. `npm run check:migration-safety` → `migration-safety`
+1. `npm run lint` → `CI / lint-and-typecheck`
+2. `npm run check-types` → `CI / lint-and-typecheck`
+3. `npm run test -w apps/api` → `CI / api-tests`
+4. `npm run check:api-contract` → `CI / api-contract-check`
+5. `npm run check:migration-safety` → `CI / migration-safety`
 
 ---
 

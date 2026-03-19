@@ -172,16 +172,6 @@ export function MemberDetailSheet({
     }
   }
 
-  function handleRoleChange(roleId: string, isChecked: boolean) {
-    if (isChecked) {
-      setSelectedRoleIds((previous) => [...new Set([...previous, roleId])]);
-      return;
-    }
-    setSelectedRoleIds((previous) =>
-      previous.filter((id) => id !== roleId),
-    );
-  }
-
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
@@ -254,7 +244,15 @@ export function MemberDetailSheet({
                     className={dashboardTableCheckboxClassName}
                     checked={checked}
                     disabled={!canMutate}
-                    onChange={(event) => handleRoleChange(role.id, event.target.checked)}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setSelectedRoleIds((previous) => [...new Set([...previous, role.id])]);
+                        return;
+                      }
+                      setSelectedRoleIds((previous) =>
+                        previous.filter((roleId) => roleId !== role.id),
+                      );
+                    }}
                   />
                 </label>
               );

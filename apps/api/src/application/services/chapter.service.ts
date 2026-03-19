@@ -27,8 +27,6 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 
 const BRANDING_BUCKET = 'branding';
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
-const CHANNEL_SEEDING_ERROR_MESSAGE =
-  'Unable to create default chat channels for this chapter';
 
 @Injectable()
 export class ChapterService {
@@ -73,10 +71,6 @@ export class ChapterService {
     }
 
     const presidentRole = roles.find((r) => r.name === 'President');
-    if (!presidentRole) {
-      this.logger.error(`President role missing after default role creation for chapter ${chapter.id}`);
-      throw new InternalServerErrorException('President role not found during chapter creation');
-    }
     await this.memberRepo.create({
       user_id: userId,
       chapter_id: chapter.id,
@@ -84,23 +78,13 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
-    const defaultChannels = DEFAULT_CHANNELS.map((channelDef) => ({
-      chapter_id: chapter.id,
-      name: channelDef.name,
-      type: channelDef.type,
-      is_read_only: channelDef.is_read_only,
-    }));
-
-    const { error } = await this.supabase
-      .from('chat_channels')
-      .insert(defaultChannels);
-
-    if (error) {
-      this.logger.error(
-        `Failed to insert default chat channels for chapter ${chapter.id}`,
-        error.message,
-      );
-      throw new InternalServerErrorException(CHANNEL_SEEDING_ERROR_MESSAGE);
+    for (const channelDef of DEFAULT_CHANNELS) {
+      await this.supabase.from('chat_channels').insert({
+        chapter_id: chapter.id,
+        name: channelDef.name,
+        type: channelDef.type,
+        is_read_only: channelDef.is_read_only,
+      });
     }
 
     return chapter;

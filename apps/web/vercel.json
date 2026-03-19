@@ -1,14 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "git": {
-    "deploymentEnabled": {
-      "preview": true,
-      "main": true,
-      "**": false
-    }
-  },
-  "ignoreCommand": "npx turbo-ignore web",
+  "ignoreCommand": "if [ \"$VERCEL_GIT_COMMIT_REF\" != \"preview\" ] && [ \"$VERCEL_GIT_COMMIT_REF\" != \"main\" ]; then echo \"Skipping non-preview/main deployment\"; exit 0; fi; npx turbo-ignore web",
   "headers": [
     {
       "source": "/(.*)",
