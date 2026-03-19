@@ -50,18 +50,18 @@ export class ChapterService {
   ): Promise<Chapter> {
     const chapter = await this.chapterRepo.create(data);
 
-    const roles = [];
-    for (const roleDef of DEFAULT_SYSTEM_ROLES) {
-      const role = await this.roleRepo.create({
-        chapter_id: chapter.id,
-        name: roleDef.name,
-        permissions: [...roleDef.permissions],
-        is_system: roleDef.is_system,
-        display_order: roleDef.display_order,
-        color: roleDef.color ?? null,
-      });
-      roles.push(role);
-    }
+    const roles = await Promise.all(
+      DEFAULT_SYSTEM_ROLES.map((roleDef) =>
+        this.roleRepo.create({
+          chapter_id: chapter.id,
+          name: roleDef.name,
+          permissions: [...roleDef.permissions],
+          is_system: roleDef.is_system,
+          display_order: roleDef.display_order,
+          color: roleDef.color ?? null,
+        }),
+      ),
+    );
 
     const presidentRole = roles.find((r) => r.name === 'President');
     await this.memberRepo.create({
@@ -71,14 +71,14 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
-    for (const channelDef of DEFAULT_CHANNELS) {
-      await this.supabase.from('chat_channels').insert({
+    await this.supabase.from('chat_channels').insert(
+      DEFAULT_CHANNELS.map((channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
-      });
-    }
+      })),
+    );
 
     return chapter;
   }

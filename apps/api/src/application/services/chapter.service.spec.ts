@@ -277,15 +277,15 @@ describe('ChapterService', () => {
     await service.create('user-1', { name: 'Alpha', university: 'State U' });
 
     expect(mockSupabase.from).toHaveBeenCalledWith('chat_channels');
-    expect(mockSupabase.from().insert).toHaveBeenCalledTimes(3);
-    for (const channelDef of DEFAULT_CHANNELS) {
-      expect(mockSupabase.from().insert).toHaveBeenCalledWith({
+    expect(mockSupabase.from().insert).toHaveBeenCalledTimes(1);
+    expect(mockSupabase.from().insert).toHaveBeenCalledWith(
+      DEFAULT_CHANNELS.map((channelDef) => ({
         chapter_id: chapter.id,
         name: channelDef.name,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
-      });
-    }
+      })),
+    );
   });
 
   it('should update chapter data with valid WCAG accent color', async () => {
