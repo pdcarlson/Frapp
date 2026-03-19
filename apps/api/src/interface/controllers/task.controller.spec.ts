@@ -4,7 +4,11 @@ import { TaskService } from '../../application/services/task.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { ForbiddenException } from '@nestjs/common';
-import { CreateTaskDto, UpdateTaskStatusDto, RejectTaskCompletionDto } from '../dtos/task.dto';
+import {
+  CreateTaskDto,
+  UpdateTaskStatusDto,
+  RejectTaskCompletionDto,
+} from '../dtos/task.dto';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -61,7 +65,11 @@ describe('TaskController', () => {
 
       const result = await controller.list(chapterId, userId);
 
-      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(chapterId, userId, [SystemPermissions.TASKS_MANAGE]);
+      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        [SystemPermissions.TASKS_MANAGE],
+      );
       expect(taskService.list).toHaveBeenCalledWith(chapterId, userId, true);
       expect(result).toBe(mockTasks);
     });
@@ -114,7 +122,9 @@ describe('TaskController', () => {
       taskService.findById.mockResolvedValue(mockTask);
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
 
-      await expect(controller.getOne(chapterId, userId, taskId)).rejects.toThrow(ForbiddenException);
+      await expect(
+        controller.getOne(chapterId, userId, taskId),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -177,12 +187,30 @@ describe('TaskController', () => {
       const taskId = 'task-1';
       const dto: UpdateTaskStatusDto = { status: 'IN_PROGRESS' };
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
-      taskService.updateStatus.mockResolvedValue({ id: taskId, status: 'IN_PROGRESS' } as any);
+      taskService.updateStatus.mockResolvedValue({
+        id: taskId,
+        status: 'IN_PROGRESS',
+      } as any);
 
-      const result = await controller.updateStatus(chapterId, userId, taskId, dto);
+      const result = await controller.updateStatus(
+        chapterId,
+        userId,
+        taskId,
+        dto,
+      );
 
-      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(chapterId, userId, [SystemPermissions.TASKS_MANAGE]);
-      expect(taskService.updateStatus).toHaveBeenCalledWith(taskId, chapterId, userId, false, dto.status);
+      expect(rbacService.memberHasAnyPermission).toHaveBeenCalledWith(
+        chapterId,
+        userId,
+        [SystemPermissions.TASKS_MANAGE],
+      );
+      expect(taskService.updateStatus).toHaveBeenCalledWith(
+        taskId,
+        chapterId,
+        userId,
+        false,
+        dto.status,
+      );
       expect(result).toEqual({ id: taskId, status: 'IN_PROGRESS' });
     });
   });
@@ -191,11 +219,17 @@ describe('TaskController', () => {
     it('should confirm task completion', async () => {
       const chapterId = 'chapter-1';
       const taskId = 'task-1';
-      taskService.confirmCompletion.mockResolvedValue({ id: taskId, points_awarded: true } as any);
+      taskService.confirmCompletion.mockResolvedValue({
+        id: taskId,
+        points_awarded: true,
+      } as any);
 
       const result = await controller.confirmCompletion(chapterId, taskId);
 
-      expect(taskService.confirmCompletion).toHaveBeenCalledWith(taskId, chapterId);
+      expect(taskService.confirmCompletion).toHaveBeenCalledWith(
+        taskId,
+        chapterId,
+      );
       expect(result).toEqual({ id: taskId, points_awarded: true });
     });
   });
@@ -205,11 +239,18 @@ describe('TaskController', () => {
       const chapterId = 'chapter-1';
       const taskId = 'task-1';
       const dto: RejectTaskCompletionDto = { comment: 'Needs more work' };
-      taskService.rejectCompletion.mockResolvedValue({ id: taskId, status: 'IN_PROGRESS' } as any);
+      taskService.rejectCompletion.mockResolvedValue({
+        id: taskId,
+        status: 'IN_PROGRESS',
+      } as any);
 
       const result = await controller.rejectCompletion(chapterId, taskId, dto);
 
-      expect(taskService.rejectCompletion).toHaveBeenCalledWith(taskId, chapterId, dto.comment);
+      expect(taskService.rejectCompletion).toHaveBeenCalledWith(
+        taskId,
+        chapterId,
+        dto.comment,
+      );
       expect(result).toEqual({ id: taskId, status: 'IN_PROGRESS' });
     });
 
@@ -217,11 +258,18 @@ describe('TaskController', () => {
       const chapterId = 'chapter-1';
       const taskId = 'task-1';
       const dto: RejectTaskCompletionDto = {};
-      taskService.rejectCompletion.mockResolvedValue({ id: taskId, status: 'IN_PROGRESS' } as any);
+      taskService.rejectCompletion.mockResolvedValue({
+        id: taskId,
+        status: 'IN_PROGRESS',
+      } as any);
 
       await controller.rejectCompletion(chapterId, taskId, dto);
 
-      expect(taskService.rejectCompletion).toHaveBeenCalledWith(taskId, chapterId, null);
+      expect(taskService.rejectCompletion).toHaveBeenCalledWith(
+        taskId,
+        chapterId,
+        null,
+      );
     });
   });
 

@@ -63,7 +63,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsed(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as any)
+      .update({ used_at: new Date().toISOString() } as never)
       .eq('id', id);
     if (error) throw error;
   }
@@ -71,7 +71,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async markUsedAtomically(id: string): Promise<boolean> {
     const { data, error } = await this.supabase
       .from('invites')
-      .update({ used_at: new Date().toISOString() } as any)
+      .update({ used_at: new Date().toISOString() } as never)
       .eq('id', id)
       .is('used_at', null)
       .select('id');
