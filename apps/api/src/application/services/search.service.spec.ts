@@ -138,5 +138,40 @@ describe('SearchService', () => {
       expect(fromCalls).toContain('chat_channels');
       expect(fromCalls).toContain('chat_messages');
     });
+
+    it('should escape filter values in .or queries', async () => {
+      let backworkOrCall = '';
+      let eventsOrCall = '';
+
+      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        Object.assign(chain, {
+          select: jest.fn().mockReturnValue(chain),
+          eq: jest.fn().mockReturnValue(chain),
+          in: jest.fn().mockReturnValue(chain),
+          ilike: jest.fn().mockReturnValue(chain),
+          or: jest.fn().mockImplementation((query) => {
+            if (table === 'backwork_resources') backworkOrCall = query;
+            if (table === 'events') eventsOrCall = query;
+            return chain;
+          }),
+          limit: jest.fn().mockReturnValue(chain),
+          order: jest.fn().mockReturnValue(chain),
+          then: (resolve: (v: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve),
+          catch: () => Promise.reject().catch(() => {}),
+        });
+        return chain;
+      });
+
+      await service.search('ch-1', 'test\\query"()');
+
+      // Given the pattern is `%test\query"()%`
+      // The expected escaped pattern would be `"%test\\query\"()%"`
+      const expectedSafePattern = '"%test\\\\query\\"()%"';
+
+      expect(backworkOrCall).toBe(`title.ilike.${expectedSafePattern},course_number.ilike.${expectedSafePattern}`);
+      expect(eventsOrCall).toBe(`name.ilike.${expectedSafePattern},description.ilike.${expectedSafePattern}`);
+    });
   });
 });
