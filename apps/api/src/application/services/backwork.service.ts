@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   Inject,
   Injectable,
@@ -69,7 +70,7 @@ export class BackworkService {
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
     const resourceId = crypto.randomUUID();
-    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${input.filename}`;
+    const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${path.basename(input.filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       BACKWORK_BUCKET,

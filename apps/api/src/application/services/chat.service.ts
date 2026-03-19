@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   Inject,
   Injectable,
@@ -448,7 +449,7 @@ export class ChatService {
     }
 
     const messageId = crypto.randomUUID();
-    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${filename}`;
+    const storagePath = `chapters/${chapterId}/chat/${channelId}/${messageId}/${path.basename(filename)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       CHAT_BUCKET,

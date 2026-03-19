@@ -1,3 +1,4 @@
+import * as path from 'path';
 import {
   BadRequestException,
   Inject,
@@ -131,7 +132,7 @@ export class ChapterService {
     const ext = filename.includes('.')
       ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
       : 'png';
-    const storagePath = `chapters/${chapterId}/branding/logo.${ext}`;
+    const storagePath = `chapters/${chapterId}/branding/logo.${path.basename(ext)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       BRANDING_BUCKET,
