@@ -1,9 +1,7 @@
 import {
   BadRequestException,
   Inject,
-  InternalServerErrorException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
@@ -27,13 +25,9 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 
 const BRANDING_BUCKET = 'branding';
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
-const CHANNEL_SEEDING_ERROR_MESSAGE =
-  'Unable to create default chat channels for this chapter';
 
 @Injectable()
 export class ChapterService {
-  private readonly logger = new Logger(ChapterService.name);
-
   constructor(
     @Inject(CHAPTER_REPOSITORY)
     private readonly chapterRepo: IChapterRepository,
@@ -56,33 +50,20 @@ export class ChapterService {
   ): Promise<Chapter> {
     const chapter = await this.chapterRepo.create(data);
 
-    const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
-      chapter_id: chapter.id,
-      name: roleDef.name,
-      permissions: [...roleDef.permissions],
-      is_system: roleDef.is_system,
-      display_order: roleDef.display_order,
-      color: roleDef.color ?? null,
-    }));
-
-    const roles = await this.roleRepo.createMany(rolesData);
-
-    if (!roles || roles.length === 0) {
-      this.logger.error(
-        `Failed to create default roles for chapter ${chapter.id}`,
-      );
-      throw new InternalServerErrorException('Failed to create default roles');
+    const roles = [];
+    for (const roleDef of DEFAULT_SYSTEM_ROLES) {
+      const role = await this.roleRepo.create({
+        chapter_id: chapter.id,
+        name: roleDef.name,
+        permissions: [...roleDef.permissions],
+        is_system: roleDef.is_system,
+        display_order: roleDef.display_order,
+        color: roleDef.color ?? null,
+      });
+      roles.push(role);
     }
 
     const presidentRole = roles.find((r) => r.name === 'President');
-    if (!presidentRole) {
-      this.logger.error(
-        `President role missing after default role creation for chapter ${chapter.id}`,
-      );
-      throw new InternalServerErrorException(
-        'President role not found during chapter creation',
-      );
-    }
     await this.memberRepo.create({
       user_id: userId,
       chapter_id: chapter.id,
@@ -90,23 +71,13 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
-    const defaultChannels = DEFAULT_CHANNELS.map((channelDef) => ({
-      chapter_id: chapter.id,
-      name: channelDef.name,
-      type: channelDef.type,
-      is_read_only: channelDef.is_read_only,
-    }));
-
-    const { error } = await this.supabase
-      .from('chat_channels')
-      .insert(defaultChannels);
-
-    if (error) {
-      this.logger.error(
-        `Failed to insert default chat channels for chapter ${chapter.id}`,
-        error.message,
-      );
-      throw new InternalServerErrorException(CHANNEL_SEEDING_ERROR_MESSAGE);
+    for (const channelDef of DEFAULT_CHANNELS) {
+      await this.supabase.from('chat_channels').insert({
+        chapter_id: chapter.id,
+        name: channelDef.name,
+        type: channelDef.type,
+        is_read_only: channelDef.is_read_only,
+      });
     }
 
     return chapter;

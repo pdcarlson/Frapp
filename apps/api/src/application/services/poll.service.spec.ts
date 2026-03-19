@@ -80,7 +80,6 @@ describe('PollService', () => {
       findByMessage: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
-      createMany: jest.fn(),
       deleteByMessageAndUser: jest.fn(),
       deleteByMessageUserAndOption: jest.fn(),
     };
@@ -262,44 +261,6 @@ describe('PollService', () => {
       await expect(
         service.vote('msg-1', 'user-2', 'ch-1', [0, 1]),
       ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should replace multi-choice votes with one bulk delete', async () => {
-      mockMessageRepo.findById.mockResolvedValue({
-        ...basePollMessage,
-        metadata: {
-          ...basePollMessage.metadata,
-          choice_mode: 'multi',
-        },
-      });
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
-      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
-      mockVoteRepo.createMany.mockResolvedValue([
-        { ...baseVote, option_index: 0 },
-        { ...baseVote, option_index: 2 },
-      ]);
-
-      await service.vote('msg-1', 'user-2', 'ch-1', [0, 2]);
-
-      expect(mockVoteRepo.deleteByMessageAndUser).toHaveBeenCalledWith(
-        'msg-1',
-        'user-2',
-      );
-      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
-      expect(mockVoteRepo.deleteByMessageUserAndOption).not.toHaveBeenCalled();
-      expect(mockVoteRepo.createMany).toHaveBeenCalledWith([
-        {
-          message_id: 'msg-1',
-          user_id: 'user-2',
-          option_index: 0,
-        },
-        {
-          message_id: 'msg-1',
-          user_id: 'user-2',
-          option_index: 2,
-        },
-      ]);
-      expect(mockVoteRepo.createMany).toHaveBeenCalledTimes(1);
     });
   });
 

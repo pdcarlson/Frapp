@@ -132,18 +132,24 @@ export class PollService {
         option_index: optionIndexes[0],
       });
     } else {
-      await this.voteRepo.deleteByMessageAndUser(messageId, userId);
-      if (optionIndexes.length === 0) {
-        return;
+      const existing = await this.voteRepo.findByMessageAndUser(
+        messageId,
+        userId,
+      );
+      for (const v of existing) {
+        await this.voteRepo.deleteByMessageUserAndOption(
+          messageId,
+          userId,
+          v.option_index,
+        );
       }
-
-      await this.voteRepo.createMany(
-        optionIndexes.map((idx) => ({
+      for (const idx of optionIndexes) {
+        await this.voteRepo.create({
           message_id: messageId,
           user_id: userId,
           option_index: idx,
-        })),
-      );
+        });
+      }
     }
   }
 

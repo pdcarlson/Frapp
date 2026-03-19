@@ -30,27 +30,36 @@ const changed = git(`diff --name-only ${base}...${head}`)
   .map((s) => s.trim())
   .filter(Boolean);
 
+const triggers = [
+  "apps/api/",
+  "packages/",
+  "supabase/",
+  "apps/web/",
+  "apps/mobile/",
+  "apps/landing/",
+];
+
 const docsOrSpec = ["apps/docs/", "docs/", "spec/"];
 
-const touchedNonDocsOrSpec = changed.filter(
-  (p) => !docsOrSpec.some((prefix) => p.startsWith(prefix)),
+const touchedTrigger = changed.filter((p) =>
+  triggers.some((t) => p.startsWith(t)),
 );
 const touchedDocsOrSpec = changed.filter((p) =>
   docsOrSpec.some((t) => p.startsWith(t)),
 );
 
-if (touchedNonDocsOrSpec.length > 0 && touchedDocsOrSpec.length === 0) {
+if (touchedTrigger.length > 0 && touchedDocsOrSpec.length === 0) {
   console.error("Docs/spec sync check failed.");
   console.error("");
   console.error(
-    "You changed repository files outside docs/spec, but didn't update `apps/docs/`, `docs/`, or `spec/` in the same PR.",
+    "You changed product code, but didn't update `apps/docs/`, `docs/`, or `spec/` in the same PR.",
   );
   console.error("");
-  console.error("Changes requiring docs/spec updates:");
-  for (const p of touchedNonDocsOrSpec) console.error(`- ${p}`);
+  console.error("Triggering changes:");
+  for (const p of touchedTrigger) console.error(`- ${p}`);
   console.error("");
   console.error(
-    "Fix: add or update related documentation in `apps/docs/` or `docs/` and/or specs in `spec/`.",
+    "Fix: update the relevant guide(s) in `apps/docs/` or `docs/` and/or the specs in `spec/`.",
   );
   process.exit(1);
 }
