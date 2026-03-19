@@ -89,7 +89,10 @@ describe('StudyController', () => {
 
         const result = await geofenceController.create(chapterId, dto);
 
-        expect(studyService.createGeofence).toHaveBeenCalledWith(chapterId, dto);
+        expect(studyService.createGeofence).toHaveBeenCalledWith(
+          chapterId,
+          dto,
+        );
         expect(result).toEqual(expectedResult);
       });
     });
@@ -102,7 +105,11 @@ describe('StudyController', () => {
         const expectedResult = { id: geofenceId, ...dto };
         studyService.updateGeofence.mockResolvedValue(expectedResult as any);
 
-        const result = await geofenceController.update(chapterId, geofenceId, dto);
+        const result = await geofenceController.update(
+          chapterId,
+          geofenceId,
+          dto,
+        );
 
         expect(studyService.updateGeofence).toHaveBeenCalledWith(
           geofenceId,
@@ -164,7 +171,11 @@ describe('StudyController', () => {
         const expectedResult = { status: 'ok' };
         studyService.heartbeat.mockResolvedValue(expectedResult as any);
 
-        const result = await sessionController.heartbeat(userId, chapterId, dto);
+        const result = await sessionController.heartbeat(
+          userId,
+          chapterId,
+          dto,
+        );
 
         expect(studyService.heartbeat).toHaveBeenCalledWith(
           userId,
