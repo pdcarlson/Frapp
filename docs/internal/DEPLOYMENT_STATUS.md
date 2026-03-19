@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-03-04
+Last updated: 2026-03-19
 
 ## Environment branch model
 
@@ -9,13 +9,42 @@ Last updated: 2026-03-04
 
 ## Surface rollout status
 
-| Surface | Staging (`main`) | Production (`production`) | Notes |
-| ------- | ------------------- | ------------------- | ----- |
-| Landing (Vercel) | ✅ | ✅ | Branch-filtered staging domain configured |
-| Web dashboard (Vercel) | ✅ | ✅ | Branch-filtered staging domain configured |
-| Docs (Vercel) | ✅ | ✅ | Public docs live |
-| API (Render) | 🚧 | 🚧 | Deployment configuration in progress |
-| Mobile (EAS/App Stores) | 🚧 | 🚧 | Build and store pipeline not finalized |
+| Surface                 | Staging (`main`) | Production (`production`) | Notes                                                                                                      |
+| ----------------------- | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Landing (Vercel)        | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| Web dashboard (Vercel)  | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| Docs (Vercel)           | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| API (Render)            | ✅               | ✅                        | `frapp-api-staging -> main`, `frapp-api-prod -> production` verified via Render API                        |
+| Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
+
+## Provider branch wiring audit (2026-03-19)
+
+| Provider | Resource                          | Expected      | Current          | Status                              |
+| -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------- |
+| Render   | `frapp-api-staging`               | `main`        | `main`           | ✅                                  |
+| Render   | `frapp-api-prod`                  | `production`  | `production`     | ✅ (corrected on 2026-03-19)        |
+| Vercel   | `frapp-web` production branch     | `production`  | `main`           | ⚠️ manual dashboard update required |
+| Vercel   | `frapp-landing` production branch | `production`  | `main`           | ⚠️ manual dashboard update required |
+| Vercel   | `frapp-docs` production branch    | `production`  | `main`           | ⚠️ manual dashboard update required |
+| Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
+| Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                  |
+
+### Vercel caveat
+
+The public Vercel REST API currently exposes `productionBranch` in project responses but does not expose a supported write field for changing it through `PATCH /v9|v10/projects/{idOrName}`.
+
+For this repository, set the production branch manually in the Vercel dashboard for each project:
+
+1. `frapp-web`
+2. `frapp-landing`
+3. `frapp-docs`
+
+Path: **Project → Settings → Git → Production Branch = `production`**
+
+After changes, verify deployment routing:
+
+- `target=production` uses branch `production`
+- `target=preview` uses branch `main`
 
 ## API deployment pending checklist
 

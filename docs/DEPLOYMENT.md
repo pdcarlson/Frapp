@@ -53,13 +53,13 @@ For live rollout tracking, see `docs/internal/DEPLOYMENT_STATUS.md`.
 
 Before you begin, you need accounts on:
 
-| Service | URL | Free Tier? |
-|---------|-----|------------|
-| **Vercel** | https://vercel.com | Yes (Hobby) |
-| **Render** | https://render.com | Yes (free web service) |
-| **Supabase** | https://supabase.com | Yes (2 free projects) |
-| **Stripe** | https://stripe.com | Yes (test mode) |
-| **Expo (EAS)** | https://expo.dev | Yes (free builds) |
+| Service        | URL                  | Free Tier?             |
+| -------------- | -------------------- | ---------------------- |
+| **Vercel**     | https://vercel.com   | Yes (Hobby)            |
+| **Render**     | https://render.com   | Yes (free web service) |
+| **Supabase**   | https://supabase.com | Yes (2 free projects)  |
+| **Stripe**     | https://stripe.com   | Yes (test mode)        |
+| **Expo (EAS)** | https://expo.dev     | Yes (free builds)      |
 
 You also need the `frapp.live` domain registered and DNS managed (Squarespace Domains or Vercel).
 
@@ -69,11 +69,11 @@ You also need the `frapp.live` domain registered and DNS managed (Squarespace Do
 
 Two long-lived branches map to environments:
 
-| Branch | Environment | Vercel | Render | Supabase |
-|--------|-------------|--------|--------|----------|
-| `main` | **Staging** | Preview deploys → staging domains | `frapp-api-staging` | Staging project |
-| `production` | **Production** | Production deploys → prod domains | `frapp-api-prod` | Production project |
-| `feature/*` | **Ephemeral** | No automatic Vercel deploys | — | — |
+| Branch       | Environment    | Vercel                            | Render              | Supabase           |
+| ------------ | -------------- | --------------------------------- | ------------------- | ------------------ |
+| `main`       | **Staging**    | Preview deploys → staging domains | `frapp-api-staging` | Staging project    |
+| `production` | **Production** | Production deploys → prod domains | `frapp-api-prod`    | Production project |
+| `feature/*`  | **Ephemeral**  | No automatic Vercel deploys       | —                   | —                  |
 
 **How it flows:**
 
@@ -91,11 +91,11 @@ feature/xyz ──PR──▶ main (staging) ──PR──▶ production (produ
 
 **Vercel environment mapping:**
 
-| Vercel environment | Git trigger | Domain example |
-|---|---|---|
-| **Production** | Push to `production` | `docs.frapp.live` |
-| **Preview** (pre-production) | Push to `main` | `docs.staging.frapp.live` |
-| **Disabled** | Any other branch / PR | No auto deployment |
+| Vercel environment           | Git trigger           | Domain example            |
+| ---------------------------- | --------------------- | ------------------------- |
+| **Production**               | Push to `production`  | `docs.frapp.live`         |
+| **Preview** (pre-production) | Push to `main`        | `docs.staging.frapp.live` |
+| **Disabled**                 | Any other branch / PR | No auto deployment        |
 
 The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
 
@@ -132,10 +132,10 @@ Follow the internal promotion and rollback runbooks when promoting schema change
 
 From each project's dashboard → Settings → API, note:
 
-| Key | Where it goes |
-|-----|--------------|
-| **Project URL** | `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL` |
-| **anon public key** | `SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` |
+| Key                         | Where it goes                                                  |
+| --------------------------- | -------------------------------------------------------------- |
+| **Project URL**             | `SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_URL`                    |
+| **anon public key**         | `SUPABASE_ANON_KEY` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`          |
 | **service_role secret key** | `SUPABASE_SERVICE_ROLE_KEY` (API only, never expose to client) |
 
 ---
@@ -150,13 +150,14 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 2. **Import** your `pdcarlson/Frapp` repo.
 3. Configure:
 
-| Setting | Web Dashboard | Landing | Docs |
-|---------|--------------|---------|------|
-| **Project Name** | `frapp-web` | `frapp-landing` | `frapp-docs` |
-| **Framework** | Next.js (auto-detected) | Next.js | Next.js |
-| **Root Directory** | `apps/web` | `apps/landing` | `apps/docs` |
+| Setting            | Web Dashboard           | Landing         | Docs         |
+| ------------------ | ----------------------- | --------------- | ------------ |
+| **Project Name**   | `frapp-web`             | `frapp-landing` | `frapp-docs` |
+| **Framework**      | Next.js (auto-detected) | Next.js         | Next.js      |
+| **Root Directory** | `apps/web`              | `apps/landing`  | `apps/docs`  |
 
 **Build and Output Settings:** Leave all toggles OFF. Vercel auto-detects the correct commands for Turborepo monorepos:
+
 - **Install:** `npm install --prefix=../..` (installs from monorepo root)
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
@@ -169,16 +170,16 @@ Vercel scopes env vars to **Production** and **Preview**. The `main` branch trig
 
 #### `frapp-web` (Web Dashboard)
 
-| Variable | Production | Preview (Staging) |
-|----------|-----------|-------------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>` | `<staging anon key>` |
-| `NEXT_PUBLIC_API_URL` | `https://api.frapp.live/v1` | `https://api-staging.frapp.live/v1` |
+| Variable                        | Production                       | Preview (Staging)                   |
+| ------------------------------- | -------------------------------- | ----------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>`                | `<staging anon key>`                |
+| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live/v1`      | `https://api-staging.frapp.live/v1` |
 
 #### `frapp-landing` (Marketing Site)
 
-| Variable | Production | Preview (Staging) |
-|----------|-----------|-------------------|
+| Variable              | Production               | Preview (Staging)                |
+| --------------------- | ------------------------ | -------------------------------- |
 | `NEXT_PUBLIC_APP_URL` | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 
 #### `frapp-docs` (Documentation)
@@ -191,19 +192,19 @@ In each Vercel project → Settings → Domains:
 
 #### Production Domains (connected to Production environment)
 
-| Project | Domain |
-|---------|--------|
-| `frapp-web` | `app.frapp.live` |
+| Project         | Domain                          |
+| --------------- | ------------------------------- |
+| `frapp-web`     | `app.frapp.live`                |
 | `frapp-landing` | `frapp.live` + `www.frapp.live` |
-| `frapp-docs` | `docs.frapp.live` |
+| `frapp-docs`    | `docs.frapp.live`               |
 
 #### Staging Domains (connected to Preview environment, filtered to `main` branch)
 
-| Project | Domain | Environment | Branch filter |
-|---------|--------|-------------|---------------|
-| `frapp-web` | `app.staging.frapp.live` | Preview | `main` |
-| `frapp-landing` | `staging.frapp.live` | Preview | `main` |
-| `frapp-docs` | `docs.staging.frapp.live` | Preview | `main` |
+| Project         | Domain                    | Environment | Branch filter |
+| --------------- | ------------------------- | ----------- | ------------- |
+| `frapp-web`     | `app.staging.frapp.live`  | Preview     | `main`        |
+| `frapp-landing` | `staging.frapp.live`      | Preview     | `main`        |
+| `frapp-docs`    | `docs.staging.frapp.live` | Preview     | `main`        |
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
@@ -234,6 +235,25 @@ For each project, verify:
 
 - **Settings → Git → Production Branch**: `production`
 
+> **Operational note (2026-03-19):** The public Vercel REST API exposes `link.productionBranch` as a readable field but does not currently provide a documented/working write field to update it via `PATCH /v9|v10/projects/{idOrName}`.  
+> In practice, changing the production branch must be done in the Vercel dashboard UI.
+
+### 4.6 Vercel Branch Wiring Verification
+
+After setting Production Branch to `production` for each project, validate:
+
+1. Push to `production` branch → deployment target should be `production`.
+2. Push to `main` branch → deployment target should be `preview`.
+3. Feature branches should stay disabled by `vercel.json` (`"**": false`).
+
+Quick API read check (requires valid `VERCEL_API_KEY`):
+
+```bash
+curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
+  "https://api.vercel.com/v10/projects/<project-id>" \
+  | jq '{name, productionBranch: .link.productionBranch, targets: .targets}'
+```
+
 ---
 
 ## 5. Render Setup (API)
@@ -245,28 +265,28 @@ Create **two** Render Web Services: one for production, one for staging.
 1. Go to https://dashboard.render.com → **New** → **Web Service**.
 2. Connect your GitHub repo.
 
-| Setting | Production | Staging |
-|---------|-----------|---------|
-| **Name** | `frapp-api-prod` | `frapp-api-staging` |
-| **Branch** | `production` | `main` |
-| **Root Directory** | (leave empty — Dockerfile uses repo root) | (same) |
-| **Runtime** | Docker | Docker |
-| **Dockerfile Path** | `apps/api/Dockerfile` | `apps/api/Dockerfile` |
-| **Instance Type** | Starter ($7/mo) or Free | Free |
+| Setting             | Production                                | Staging               |
+| ------------------- | ----------------------------------------- | --------------------- |
+| **Name**            | `frapp-api-prod`                          | `frapp-api-staging`   |
+| **Branch**          | `production`                              | `main`                |
+| **Root Directory**  | (leave empty — Dockerfile uses repo root) | (same)                |
+| **Runtime**         | Docker                                    | Docker                |
+| **Dockerfile Path** | `apps/api/Dockerfile`                     | `apps/api/Dockerfile` |
+| **Instance Type**   | Starter ($7/mo) or Free                   | Free                  |
 
 ### 5.2 Environment Variables
 
-| Variable | Production | Staging |
-|----------|-----------|---------|
-| `SUPABASE_URL` | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | `<prod service role key>` | `<staging service role key>` |
-| `SUPABASE_ANON_KEY` | `<prod anon key>` | `<staging anon key>` |
-| `STRIPE_SECRET_KEY` | `sk_live_...` | `sk_test_...` |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (prod) | `whsec_...` (test) |
-| `STRIPE_PRICE_ID` | `price_...` (prod) | `price_...` (test) |
-| `SENTRY_DSN` | `<prod sentry dsn>` | `<staging sentry dsn>` |
-| `PORT` | `3001` | `3001` |
-| `NODE_ENV` | `production` | `production` |
+| Variable                    | Production                       | Staging                             |
+| --------------------------- | -------------------------------- | ----------------------------------- |
+| `SUPABASE_URL`              | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
+| `SUPABASE_SERVICE_ROLE_KEY` | `<prod service role key>`        | `<staging service role key>`        |
+| `SUPABASE_ANON_KEY`         | `<prod anon key>`                | `<staging anon key>`                |
+| `STRIPE_SECRET_KEY`         | `sk_live_...`                    | `sk_test_...`                       |
+| `STRIPE_WEBHOOK_SECRET`     | `whsec_...` (prod)               | `whsec_...` (test)                  |
+| `STRIPE_PRICE_ID`           | `price_...` (prod)               | `price_...` (test)                  |
+| `SENTRY_DSN`                | `<prod sentry dsn>`              | `<staging sentry dsn>`              |
+| `PORT`                      | `3001`                           | `3001`                              |
+| `NODE_ENV`                  | `production`                     | `production`                        |
 
 ### 5.3 Custom Domains
 
@@ -395,15 +415,15 @@ Same steps but toggle to Live mode in Stripe dashboard. Requires business verifi
 
 ## 9. Cost Estimate (Hobby/Starter Tier)
 
-| Service | Staging | Production | Notes |
-|---------|---------|------------|-------|
-| **Vercel** | Free (Preview) | Free (Hobby, 1 member) | Upgrade to Pro ($20/mo) for team |
-| **Render** | Free | $7/mo (Starter) | Free tier sleeps after inactivity |
-| **Supabase** | Free | Free | 2 free projects; Pro is $25/mo |
-| **Stripe** | Free (test mode) | 2.9% + $0.30 per txn | No monthly fee |
-| **EAS** | Free (30 builds/mo) | Free | Priority builds are $99/mo |
-| **Domain** | — | ~$12/yr | frapp.live |
-| **Total** | ~$0/mo | ~$7–19/mo | Before Stripe transaction fees |
+| Service      | Staging             | Production             | Notes                             |
+| ------------ | ------------------- | ---------------------- | --------------------------------- |
+| **Vercel**   | Free (Preview)      | Free (Hobby, 1 member) | Upgrade to Pro ($20/mo) for team  |
+| **Render**   | Free                | $7/mo (Starter)        | Free tier sleeps after inactivity |
+| **Supabase** | Free                | Free                   | 2 free projects; Pro is $25/mo    |
+| **Stripe**   | Free (test mode)    | 2.9% + $0.30 per txn   | No monthly fee                    |
+| **EAS**      | Free (30 builds/mo) | Free                   | Priority builds are $99/mo        |
+| **Domain**   | —                   | ~$12/yr                | frapp.live                        |
+| **Total**    | ~$0/mo              | ~$7–19/mo              | Before Stripe transaction fees    |
 
 ---
 
@@ -430,12 +450,12 @@ See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 
 **CD (deploy workflows)** uses environment-scoped secrets injected from Infisical. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. GitHub's `environment:` feature routes the right values per job:
 
-| Secret | Purpose |
-| --- | --- |
-| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment) |
-| `API_HEALTHCHECK_URL` | Post-deploy health check (value differs per environment) |
-| `SUPABASE_ACCESS_TOKEN` | Supabase CLI auth for migrations |
-| `SUPABASE_PROJECT_REF` | Target DB for migrations (value differs per environment) |
+| Secret                   | Purpose                                                  |
+| ------------------------ | -------------------------------------------------------- |
+| `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment)       |
+| `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
+| `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
+| `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
 
 3 permanent GitHub Secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The deploy secrets above (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`) are transitional — they'll be replaced by Infisical runtime injection once the `@infisical/secrets-action` is integrated.
 
@@ -456,15 +476,15 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 
 ### Sync Map (7 of 10 free-tier integrations)
 
-| # | Infisical env | Destination |
-| --- | --- | --- |
-| 1 | staging | Vercel → frapp-web (Preview scope) |
-| 2 | production | Vercel → frapp-web (Production scope) |
-| 3 | staging | Vercel → frapp-landing (Preview scope) |
-| 4 | production | Vercel → frapp-landing (Production scope) |
-| 5 | staging | Render → frapp-api-staging |
-| 6 | production | Render → frapp-api-prod |
-| 7 | per-env | GitHub Actions (OIDC) |
+| #   | Infisical env | Destination                               |
+| --- | ------------- | ----------------------------------------- |
+| 1   | staging       | Vercel → frapp-web (Preview scope)        |
+| 2   | production    | Vercel → frapp-web (Production scope)     |
+| 3   | staging       | Vercel → frapp-landing (Preview scope)    |
+| 4   | production    | Vercel → frapp-landing (Production scope) |
+| 5   | staging       | Render → frapp-api-staging                |
+| 6   | production    | Render → frapp-api-prod                   |
+| 7   | per-env       | GitHub Actions (OIDC)                     |
 
 > **frapp-docs** has no environment variables — no sync needed.
 
