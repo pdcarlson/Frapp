@@ -348,3 +348,6 @@ Configurable alerts via the monitoring provider:
 - **Type safety:** TypeScript strict mode across all apps and packages.
 - **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
 - **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint (100 req/min read, 30 req/min write). File upload MIME type validation.
+
+<!-- Added note about bulk insert for default channels -->
+_Note_: Default channels created during chapter initialization are inserted using a bulk operation to prevent N+1 query latency against Supabase.
