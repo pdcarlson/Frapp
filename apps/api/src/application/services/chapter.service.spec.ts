@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ChapterService } from './chapter.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
@@ -28,6 +32,7 @@ describe('ChapterService', () => {
     deleteFile: jest.Mock;
   };
   let mockSupabase: { from: jest.Mock };
+  let mockInsert: jest.Mock;
 
   beforeEach(async () => {
     mockStorageProvider = {
@@ -52,6 +57,7 @@ describe('ChapterService', () => {
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -65,7 +71,7 @@ describe('ChapterService', () => {
       delete: jest.fn(),
     };
 
-    const mockInsert = jest.fn().mockResolvedValue({});
+    mockInsert = jest.fn().mockResolvedValue({ error: null });
     mockSupabase = {
       from: jest.fn().mockReturnValue({ insert: mockInsert }),
     };
@@ -140,12 +146,7 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
     }));
 
-    mockRoleRepo.create
-      .mockResolvedValueOnce(roles[0])
-      .mockResolvedValueOnce(roles[1])
-      .mockResolvedValueOnce(roles[2])
-      .mockResolvedValueOnce(roles[3])
-      .mockResolvedValueOnce(roles[4]);
+    mockRoleRepo.createMany.mockResolvedValueOnce(roles);
 
     const result = await service.create('user-1', {
       name: 'Alpha',
@@ -156,7 +157,16 @@ describe('ChapterService', () => {
       name: 'Alpha',
       university: 'State U',
     });
-    expect(mockRoleRepo.create).toHaveBeenCalledTimes(5);
+    expect(mockRoleRepo.createMany).toHaveBeenCalledTimes(1);
+    const expectedRolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
+      chapter_id: chapter.id,
+      name: roleDef.name,
+      permissions: [...roleDef.permissions],
+      is_system: roleDef.is_system,
+      display_order: roleDef.display_order,
+      color: roleDef.color ?? null,
+    }));
+    expect(mockRoleRepo.createMany).toHaveBeenCalledWith(expectedRolesData);
     expect(result).toEqual(chapter);
   });
 
@@ -198,12 +208,10 @@ describe('ChapterService', () => {
       created_at: '2024-01-01',
     }));
 
-    mockRoleRepo.create
-      .mockResolvedValueOnce(presidentRole)
-      .mockResolvedValueOnce(otherRoles[0])
-      .mockResolvedValueOnce(otherRoles[1])
-      .mockResolvedValueOnce(otherRoles[2])
-      .mockResolvedValueOnce(otherRoles[3]);
+    mockRoleRepo.createMany.mockResolvedValueOnce([
+      presidentRole,
+      ...otherRoles,
+    ]);
 
     const member: Member = {
       id: 'member-1',
@@ -252,17 +260,19 @@ describe('ChapterService', () => {
       color: r.color ?? null,
       created_at: '2024-01-01',
     }));
-    mockRoleRepo.create.mockImplementation((data) =>
-      Promise.resolve({
-        id: `role-${roles.length}`,
-        chapter_id: data.chapter_id!,
-        name: data.name!,
-        permissions: data.permissions ?? [],
-        is_system: data.is_system ?? false,
-        display_order: data.display_order ?? 0,
-        color: data.color ?? null,
-        created_at: '2024-01-01',
-      }),
+    mockRoleRepo.createMany.mockImplementation((dataArr) =>
+      Promise.resolve(
+        dataArr.map((data, i) => ({
+          id: `role-${i}`,
+          chapter_id: data.chapter_id!,
+          name: data.name!,
+          permissions: data.permissions ?? [],
+          is_system: data.is_system ?? false,
+          display_order: data.display_order ?? 0,
+          color: data.color ?? null,
+          created_at: '2024-01-01',
+        })),
+      ),
     );
     mockMemberRepo.create.mockResolvedValue({
       id: 'member-1',
@@ -278,13 +288,69 @@ describe('ChapterService', () => {
 
     expect(mockSupabase.from).toHaveBeenCalledWith('chat_channels');
     expect(mockSupabase.from().insert).toHaveBeenCalledTimes(1);
-    const channelsToInsert = DEFAULT_CHANNELS.map((channelDef) => ({
+    expect(mockSupabase.from().insert).toHaveBeenCalledWith(
+      DEFAULT_CHANNELS.map((channelDef) => ({
+        chapter_id: chapter.id,
+        name: channelDef.name,
+        type: channelDef.type,
+        is_read_only: channelDef.is_read_only,
+      })),
+    );
+  });
+
+  it('should fail chapter creation when default channel insert returns an error', async () => {
+    const chapter: Chapter = {
+      id: 'ch-1',
+      name: 'Alpha',
+      university: 'State U',
+      stripe_customer_id: null,
+      subscription_status: 'active',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: null,
+      donation_url: null,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockChapterRepo.create.mockResolvedValue(chapter);
+    mockRoleRepo.createMany.mockImplementation((dataArr) =>
+      Promise.resolve(
+        dataArr.map((data, i) => ({
+          id: `role-${data.display_order ?? 0}`,
+          chapter_id: data.chapter_id!,
+          name: data.name!,
+          permissions: data.permissions ?? [],
+          is_system: data.is_system ?? false,
+          display_order: data.display_order ?? 0,
+          color: data.color ?? null,
+          created_at: '2024-01-01',
+        })),
+      ),
+    );
+    mockMemberRepo.create.mockResolvedValue({
+      id: 'member-1',
+      user_id: 'user-1',
       chapter_id: chapter.id,
-      name: channelDef.name,
-      type: channelDef.type,
-      is_read_only: channelDef.is_read_only,
-    }));
-    expect(mockSupabase.from().insert).toHaveBeenCalledWith(channelsToInsert);
+      role_ids: ['role-0'],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+    mockInsert.mockResolvedValueOnce({
+      error: { message: 'insert failed' },
+    });
+    const loggerErrorSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      service.create('user-1', { name: 'Alpha', university: 'State U' }),
+    ).rejects.toThrow(InternalServerErrorException);
+
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      'Failed to insert default chat channels for chapter ch-1',
+      'insert failed',
+    );
   });
 
   it('should update chapter data with valid WCAG accent color', async () => {

@@ -252,6 +252,8 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Channels can require **any permission string** (including custom chapter-defined permissions) for visibility and posting. This is how ROLE_GATED channels work — the `required_permissions` field holds one or more permission strings.
 - **Channel categories** (like Discord): chapters can organize channels into named groups (e.g. "General", "Executive", "Committees"). Categories are display-only grouping with a sort order. Channels not assigned to a category appear in a default "Channels" group.
 - **Default channels** created on chapter setup: `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
+- **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
+- **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
 
 ### Direct Messages
 
@@ -525,7 +527,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 - If a token is expired or already used, the API returns 410 Gone.
 - Each token carries a `role` that determines the joining member's initial role.
 - Only users with the `members:invite` permission can generate tokens.
-- Admins can generate multiple tokens at once (batch invite).
+- Admins can generate multiple tokens at once (batch invite). Batch creation is optimized to use a single bulk database operation to minimize network roundtrips and ensure efficiency.
 
 ### Edge Cases
 
@@ -540,6 +542,8 @@ While a study session is active, the app displays a dedicated study mode screen:
 - Users with `polls:create` permission can create polls in any channel they have access to.
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
+- When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.
+- For multi-choice polls, the replacement flow clears existing votes for `(message_id, user_id)` in a single scoped delete operation before inserting the newly selected options.
 - Results are visible in real-time as votes come in.
 - Once expired (or manually closed by the creator), the poll is locked — no more votes.
 - Polls are stored as a special message type (`type: POLL`) in `chat_messages` with poll data in `metadata`, plus a `poll_votes` table for individual votes.
@@ -945,3 +949,6 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 - Chapter branding applies only within the chapter context (when a user is viewing that chapter's data).
 - The Frapp brand (navigation shell, splash screen, landing site, docs site) is NOT affected by chapter branding.
 - Accent color must meet WCAG AA contrast requirements against the background. The API validates this on save and rejects colors with insufficient contrast.
+
+### React Query Hooks Testing
+- All React Query hooks related to roles (like `useRoles`, `useCreateRole`) are tested in `packages/hooks/src/use-roles.spec.tsx`. They verify successful requests and cache invalidation rules (e.g. `queryClient.invalidateQueries({ queryKey: ["roles"] })`).
