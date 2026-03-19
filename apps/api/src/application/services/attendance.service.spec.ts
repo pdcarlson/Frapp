@@ -215,6 +215,28 @@ describe('AttendanceService', () => {
       jest.useRealTimers();
     });
 
+    it('should swallow rollback error and re-throw original error when both fail', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockPointTxnRepo.create.mockRejectedValue(
+        new Error('original points error'),
+      );
+      mockAttendanceRepo.delete.mockRejectedValue(
+        new Error('rollback delete error'),
+      );
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'original points error',
+      );
+      expect(mockAttendanceRepo.delete).toHaveBeenCalledWith('att-1');
+      jest.useRealTimers();
+    });
+
     it('should throw NotFoundException when event does not exist', async () => {
       mockEventRepo.findById.mockResolvedValue(null);
 
