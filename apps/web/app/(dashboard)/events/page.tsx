@@ -172,7 +172,6 @@ export default function EventsPage() {
             <div className="relative max-w-md">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                aria-label="Search events by name or location"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search events by name or location"
