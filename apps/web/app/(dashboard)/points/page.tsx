@@ -149,6 +149,30 @@ export default function PointsPage() {
     });
   }
 
+  function toggleAllTransactions(checked: boolean) {
+    if (checked) {
+      setSelectedTransactionIds((previous) => [
+        ...new Set([...previous, ...transactionIds]),
+      ]);
+      return;
+    }
+    setSelectedTransactionIds((previous) =>
+      previous.filter((id) => !transactionIds.includes(id)),
+    );
+  }
+
+  function toggleTransaction(id: string, checked: boolean) {
+    if (checked) {
+      setSelectedTransactionIds((previous) => [
+        ...new Set([...previous, id]),
+      ]);
+      return;
+    }
+    setSelectedTransactionIds((previous) =>
+      previous.filter((prevId) => prevId !== id),
+    );
+  }
+
   if (isOffline) {
     return (
       <OfflineState
@@ -357,17 +381,7 @@ export default function PointsPage() {
                         aria-label="Select all visible transactions"
                         className={dashboardTableCheckboxClassName}
                         checked={allTransactionsSelected}
-                        onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedTransactionIds((previous) => [
-                              ...new Set([...previous, ...transactionIds]),
-                            ]);
-                            return;
-                          }
-                          setSelectedTransactionIds((previous) =>
-                            previous.filter((id) => !transactionIds.includes(id)),
-                          );
-                        }}
+                        onChange={(event) => toggleAllTransactions(event.target.checked)}
                       />
                     </TableHead>
                     <TableHead>Amount</TableHead>
@@ -385,17 +399,7 @@ export default function PointsPage() {
                           aria-label={`Select ${transaction.description}`}
                           className={dashboardTableCheckboxClassName}
                           checked={selectedTransactionIds.includes(transaction.id)}
-                          onChange={(event) => {
-                            if (event.target.checked) {
-                              setSelectedTransactionIds((previous) => [
-                                ...new Set([...previous, transaction.id]),
-                              ]);
-                              return;
-                            }
-                            setSelectedTransactionIds((previous) =>
-                              previous.filter((id) => id !== transaction.id),
-                            );
-                          }}
+                          onChange={(event) => toggleTransaction(transaction.id, event.target.checked)}
                         />
                       </TableCell>
                       <TableCell

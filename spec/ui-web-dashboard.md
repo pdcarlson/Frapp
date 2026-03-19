@@ -619,3 +619,13 @@ Step 1: Chapter Info     → Step 2: Accept Terms     → Step 3: Payment
 | Reduced motion | `prefers-reduced-motion` → disable animations |
 | Skip to content | Hidden "Skip to main content" link, visible on focus |
 | Form errors | Associated `aria-describedby` with error messages, `aria-invalid` on fields |
+
+## Checkbox Component Handlers
+
+- Checkbox handlers for lists of data (such as the My Transactions table in the points page) should avoid inline `onChange` function definitions to reduce nesting depth.
+- Instead, extract handlers into dedicated functions inside the component (e.g., `toggleAllTransactions` and `toggleTransaction`) and pass them to the checkbox.
+
+## Code Health Notes
+
+### Events Table Refactoring
+- The deeply nested inline `onChange` event handlers for the checkboxes in the events table (in `apps/web/app/(dashboard)/events/page.tsx`) have been extracted into named functions (`toggleAllVisibleEvents` and `toggleEventSelection`) to improve maintainability and readability without altering UI functionality.

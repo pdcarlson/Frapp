@@ -457,6 +457,26 @@ describe('AttendanceService', () => {
       expect(createdUserIds).not.toContain('user-1');
     });
 
+    it('should not create duplicate ABSENT records when one already exists', async () => {
+      const absentRecord: EventAttendance = {
+        ...baseAttendance,
+        user_id: 'user-2',
+        status: 'ABSENT',
+      };
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([absentRecord]);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(result.marked).toBe(2);
+      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
+        (call) => call[0].user_id,
+      );
+      expect(createdUserIds).not.toContain('user-2');
+    });
+
     it('should skip members who are EXCUSED', async () => {
       const excusedRecord: EventAttendance = {
         ...baseAttendance,

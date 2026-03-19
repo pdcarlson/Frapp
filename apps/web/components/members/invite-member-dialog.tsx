@@ -168,6 +168,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
   const activeInviteRows = inviteRows.filter((invite) => invite.used_at === null);
 
+  function handleInviteCountChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const parsed = Number(event.target.value);
+    if (Number.isNaN(parsed)) return;
+    setInviteCount(Math.min(50, Math.max(1, parsed)));
+  }
+
   async function handleGenerateInvites() {
     if (!roleName) return;
 
@@ -284,11 +290,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
               min={1}
               max={50}
               value={inviteCount}
-              onChange={(event) => {
-                const parsed = Number(event.target.value);
-                if (Number.isNaN(parsed)) return;
-                setInviteCount(Math.min(50, Math.max(1, parsed)));
-              }}
+              onChange={handleInviteCountChange}
             />
           </label>
           <div className="flex items-end">

@@ -26,6 +26,7 @@
 ## Checklist
 
 - [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
+- [ ] If this PR changes non-doc files, it also updates related files in `apps/docs/`, `docs/`, or `spec/`.
 - [ ] If I changed API/domain/workflows, I updated docs/spec in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `api-sdk/types.ts`.
 - [ ] If targeting `main`, this PR source branch is `preview`.

@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { VersioningType } from '@nestjs/common';
+import { VersioningType, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -37,11 +37,11 @@ async function exportOpenApi() {
   const document = SwaggerModule.createDocument(app, config);
   const outPath = join(__dirname, '..', 'openapi.json');
   writeFileSync(outPath, JSON.stringify(document, null, 2), 'utf-8');
-  console.log(`Wrote ${outPath}`);
+  Logger.log(`Wrote ${outPath}`, 'OpenAPIExport');
   await app.close();
 }
 
 exportOpenApi().catch((err) => {
-  console.error(err);
+  Logger.error(err, 'OpenAPIExport');
   process.exit(1);
 });
