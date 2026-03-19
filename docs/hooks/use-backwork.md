@@ -1,0 +1,1 @@
+# Backwork Hooks Refactor\n\nRefactored `useConfirmBackworkUpload` to use the OpenAPI generated schema for its input parameter instead of an inline type. This improves maintainability and ensures the frontend and backend stay in sync.
