@@ -24,7 +24,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async createMany(inviteData: Partial<Invite>[]): Promise<Invite[]> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData as any)
+      .insert(inviteData as never)
       .select();
     if (error) throw error;
     return data || [];
@@ -53,7 +53,7 @@ export class SupabaseInviteRepository implements IInviteRepository {
   async create(inviteData: Partial<Invite>): Promise<Invite> {
     const { data, error } = await this.supabase
       .from('invites')
-      .insert(inviteData as any)
+      .insert(inviteData as never)
       .select()
       .single();
     if (error) throw error;
