@@ -10,3 +10,6 @@ To fix this, an `escapeFilterValue` utility was created in `apps/api/src/infrast
 
 ### Prevention
 Always use `escapeFilterValue` when injecting dynamic user inputs into PostgREST/Supabase string filters.
+
+## PostgREST filter injection in supabase-backwork-resource.repository.ts
+Added `escapeFilterValue` to sanitize search input in `SupabaseBackworkResourceRepository` to prevent PostgREST grammar elements from being injected into `.or()` filters.
