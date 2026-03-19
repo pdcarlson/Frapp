@@ -177,5 +177,32 @@ describe('SearchService', () => {
         `name.ilike.${expectedSafePattern},description.ilike.${expectedSafePattern}`,
       );
     });
+    it('should escape commas in filter values to prevent PostgREST injection', async () => {
+      let backworkOrCall = '';
+
+      (mockSupabase.from as jest.Mock).mockImplementation((table: string) => {
+        const chain: Record<string, unknown> = {};
+        Object.assign(chain, {
+          select: jest.fn().mockReturnValue(chain),
+          eq: jest.fn().mockReturnValue(chain),
+          in: jest.fn().mockReturnValue(chain),
+          ilike: jest.fn().mockReturnValue(chain),
+          or: jest.fn().mockImplementation((query) => {
+            if (table === 'backwork_resources') backworkOrCall = query;
+            return chain;
+          }),
+          limit: jest.fn().mockReturnValue(chain),
+          order: jest.fn().mockReturnValue(chain),
+          then: (resolve: (v: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve),
+          catch: () => Promise.reject().catch(() => {}),
+        });
+        return chain;
+      });
+
+      await service.search('ch-1', 'test,id.eq.secret');
+
+      expect(backworkOrCall).toContain('"%test,id.eq.secret%"');
+    });
   });
 });
