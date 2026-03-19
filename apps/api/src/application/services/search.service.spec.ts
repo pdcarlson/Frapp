@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { InternalServerErrorException } from '@nestjs/common';
 import { SearchService } from './search.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -137,6 +138,16 @@ describe('SearchService', () => {
       expect(fromCalls).toContain('members');
       expect(fromCalls).toContain('chat_channels');
       expect(fromCalls).toContain('chat_messages');
+    });
+
+    it('should throw InternalServerErrorException when a query fails', async () => {
+      (mockSupabase.from as jest.Mock).mockImplementation(() =>
+        makeChain({ data: null, error: { message: 'Supabase error' } }),
+      );
+
+      await expect(service.search('ch-1', 'test')).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
   });
 });
