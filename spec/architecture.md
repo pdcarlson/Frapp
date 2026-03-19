@@ -348,3 +348,7 @@ Configurable alerts via the monitoring provider:
 - **Type safety:** TypeScript strict mode across all apps and packages.
 - **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
 - **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint (100 req/min read, 30 req/min write). File upload MIME type validation.
+
+### Chapter Initialization Optimization
+During chapter creation, default system roles (`President`, `Treasurer`, `Member`, etc.) and chat channels (`general`, `announcements`, `alumni`) must be provisioned.
+To avoid N+1 sequential database query latency, the `ChapterService` utilizes `Promise.all()` to insert all system roles concurrently and performs a single bulk `.insert([])` query into `chat_channels`. This optimizes database roundtrips and significantly speeds up the transaction.

@@ -43,6 +43,19 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return created as PollVote;
   }
 
+  async createMany(data: Partial<PollVote>[]): Promise<PollVote[]> {
+    if (data.length === 0) {
+      return [];
+    }
+
+    const { data: created, error } = await this.supabase
+      .from('poll_votes')
+      .insert(data as never)
+      .select();
+    if (error) throw error;
+    return (created as PollVote[]) || [];
+  }
+
   async deleteByMessageAndUser(
     messageId: string,
     userId: string,
