@@ -488,3 +488,5 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/int
 
 **Preview deploys on Vercel use wrong env vars**
 → Check that you scoped the env vars to the correct environment (Production vs Preview) in Vercel dashboard.
+
+-   **API Logging:** The NestJS API now uses the built-in `@nestjs/common` `Logger` instead of `console.log` during bootstrap. This ensures consistent log formatting and integration with application log transports.
