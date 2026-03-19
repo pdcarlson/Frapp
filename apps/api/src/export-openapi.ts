@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { VersioningType } from '@nestjs/common';
+import { VersioningType, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -42,6 +42,6 @@ async function exportOpenApi() {
 }
 
 exportOpenApi().catch((err) => {
-  console.error(err);
+  Logger.error(err);
   process.exit(1);
 });
