@@ -194,8 +194,9 @@ export class AttendanceService {
 
     let requiredMembers: typeof allMembers;
     if (event.required_role_ids && event.required_role_ids.length > 0) {
+      const requiredRoleIdSet = new Set(event.required_role_ids);
       requiredMembers = allMembers.filter((m) =>
-        m.role_ids.some((r) => event.required_role_ids!.includes(r)),
+        m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
       );
     } else {
       requiredMembers = allMembers;
@@ -212,13 +213,14 @@ export class AttendanceService {
         )
         .map((r) => r.user_id),
     );
+    const usersWithAttendanceRecords = new Set(
+      existingRecords.map((r) => r.user_id),
+    );
 
     let marked = 0;
     for (const member of requiredMembers) {
       if (!checkedInOrExcused.has(member.user_id)) {
-        const existing = existingRecords.find(
-          (r) => r.user_id === member.user_id,
-        );
+        const existing = usersWithAttendanceRecords.has(member.user_id);
         if (!existing) {
           await this.attendanceRepo.create({
             event_id: eventId,
