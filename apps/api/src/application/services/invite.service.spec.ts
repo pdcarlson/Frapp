@@ -40,6 +40,7 @@ describe('InviteService', () => {
       findByToken: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       markUsed: jest.fn(),
       markUsedAtomically: jest.fn(),
     };
@@ -188,24 +189,37 @@ describe('InviteService', () => {
       updated_at: '2024-01-01',
     };
     mockChapterRepo.findById.mockResolvedValue(chapter);
-    let inviteCount = 0;
-    mockInviteRepo.create.mockImplementation((data) =>
-      Promise.resolve({
-        id: `inv-${++inviteCount}`,
-        token: data.token!,
-        chapter_id: data.chapter_id!,
-        role: data.role!,
-        expires_at: data.expires_at!,
-        created_by: data.created_by!,
-        used_at: null,
-        created_at: '2024-01-01',
-      }),
+    mockInviteRepo.createMany.mockImplementation((data) =>
+      Promise.resolve(
+        data.map((d, index) => ({
+          id: `inv-${index + 1}`,
+          token: d.token!,
+          chapter_id: d.chapter_id!,
+          role: d.role!,
+          expires_at: d.expires_at!,
+          created_by: d.created_by!,
+          used_at: null,
+          created_at: '2024-01-01',
+        })),
+      ),
     );
 
     const result = await service.createBatch('ch-1', 'user-1', 'Member', 3);
 
-    expect(mockInviteRepo.create).toHaveBeenCalledTimes(3);
+    expect(mockChapterRepo.findById).toHaveBeenCalledWith('ch-1');
+    expect(mockInviteRepo.createMany).toHaveBeenCalledTimes(1);
+    expect(mockInviteRepo.createMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          token: 'test-uuid',
+          chapter_id: 'ch-1',
+          role: 'Member',
+          created_by: 'user-1',
+        }),
+      ]),
+    );
     expect(result).toHaveLength(3);
+    expect(result[0].id).toBe('inv-1');
   });
 
   it('should redeem valid invite', async () => {

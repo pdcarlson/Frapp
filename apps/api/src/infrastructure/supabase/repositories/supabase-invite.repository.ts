@@ -51,6 +51,15 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
+  async createMany(inviteData: Partial<Invite>[]): Promise<Invite[]> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .insert(inviteData as never)
+      .select();
+    if (error) throw error;
+    return data || [];
+  }
+
   async markUsed(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('invites')

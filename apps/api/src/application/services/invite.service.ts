@@ -36,22 +36,13 @@ export class InviteService {
     createdBy: string,
     role: string,
   ): Promise<Invite> {
-    const chapter = await this.chapterRepo.findById(chapterId);
-    if (chapter?.subscription_status !== 'active') {
-      throw new HttpException(
-        'Chapter subscription is not active',
-        HttpStatus.PAYMENT_REQUIRED,
-      );
-    }
-
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    await this.ensureActiveSubscription(chapterId);
 
     return this.inviteRepo.create({
       token: uuidv4(),
       chapter_id: chapterId,
       role,
-      expires_at: expiresAt.toISOString(),
+      expires_at: this.getInviteExpiry(),
       created_by: createdBy,
     });
   }
@@ -62,11 +53,37 @@ export class InviteService {
     role: string,
     count: number,
   ): Promise<Invite[]> {
-    const invites: Invite[] = [];
-    for (let i = 0; i < count; i++) {
-      invites.push(await this.create(chapterId, createdBy, role));
+    await this.ensureActiveSubscription(chapterId);
+
+    const expiresAtStr = this.getInviteExpiry();
+
+    const inviteData: Partial<Invite>[] = Array.from({ length: count }).map(
+      () => ({
+        token: uuidv4(),
+        chapter_id: chapterId,
+        role,
+        expires_at: expiresAtStr,
+        created_by: createdBy,
+      }),
+    );
+
+    return this.inviteRepo.createMany(inviteData);
+  }
+
+  private async ensureActiveSubscription(chapterId: string): Promise<void> {
+    const chapter = await this.chapterRepo.findById(chapterId);
+    if (chapter?.subscription_status !== 'active') {
+      throw new HttpException(
+        'Chapter subscription is not active',
+        HttpStatus.PAYMENT_REQUIRED,
+      );
     }
-    return invites;
+  }
+
+  private getInviteExpiry(): string {
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+    return expiresAt.toISOString();
   }
 
   async redeem(
