@@ -32,7 +32,7 @@ describe('TaskService', () => {
     description: 'Test description',
     assignee_id: 'user-1',
     created_by: 'admin-1',
-    due_date: '2026-03-15',
+    due_date: '2030-03-15',
     status: 'TODO',
     point_reward: 10,
     points_awarded: false,
@@ -116,7 +116,7 @@ describe('TaskService', () => {
         description: 'Test description',
         assignee_id: 'user-1',
         created_by: 'admin-1',
-        due_date: '2026-03-15',
+        due_date: '2030-03-15',
         point_reward: 10,
       });
 
@@ -130,7 +130,7 @@ describe('TaskService', () => {
         description: 'Test description',
         assignee_id: 'user-1',
         created_by: 'admin-1',
-        due_date: '2026-03-15',
+        due_date: '2030-03-15',
         status: 'TODO',
         point_reward: 10,
         points_awarded: false,
@@ -149,7 +149,7 @@ describe('TaskService', () => {
           title: 'Test Task',
           assignee_id: 'user-1',
           created_by: 'admin-1',
-          due_date: '2026-03-15',
+          due_date: '2030-03-15',
         }),
       ).rejects.toThrow(BadRequestException);
       await expect(
@@ -158,7 +158,7 @@ describe('TaskService', () => {
           title: 'Test Task',
           assignee_id: 'user-1',
           created_by: 'admin-1',
-          due_date: '2026-03-15',
+          due_date: '2030-03-15',
         }),
       ).rejects.toThrow('Assignee must be a member of the chapter');
 
@@ -576,7 +576,7 @@ describe('TaskService', () => {
         title: 'Test Task',
         assignee_id: 'user-1',
         created_by: 'admin-1',
-        due_date: '2026-03-15',
+        due_date: '2030-03-15',
         point_reward: 10,
       });
 
