@@ -2,6 +2,9 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
+import type { components } from "@repo/api-sdk";
+
+type ConfirmBackworkUploadDto = components["schemas"]["ConfirmBackworkUploadDto"];
 
 export function useBackworkResources(filters?: {
   department_id?: string;
@@ -86,31 +89,7 @@ export function useConfirmBackworkUpload() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: {
-      storage_path: string;
-      file_hash: string;
-      title?: string;
-      department_code?: string;
-      course_number?: string;
-      professor_name?: string;
-      year?: number;
-      semester?: "Spring" | "Summer" | "Fall" | "Winter";
-      assignment_type?:
-        | "Exam"
-        | "Midterm"
-        | "Final Exam"
-        | "Quiz"
-        | "Homework"
-        | "Lab"
-        | "Project"
-        | "Study Guide"
-        | "Notes"
-        | "Other";
-      assignment_number?: number;
-      document_variant?: "Student Copy" | "Blank Copy" | "Answer Key";
-      tags?: string[];
-      is_redacted: boolean;
-    }) => {
+    mutationFn: async (body: ConfirmBackworkUploadDto) => {
       const { data, error } = await client.POST("/v1/backwork", { body });
       if (error) throw error;
       return data;
