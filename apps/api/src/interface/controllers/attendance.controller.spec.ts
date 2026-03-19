@@ -146,7 +146,9 @@ describe('AttendanceController', () => {
       const chapterId = 'chapter-1';
       const expectedResult = { marked: 5 };
 
-      attendanceService.markAutoAbsent!.mockResolvedValue(expectedResult as any);
+      attendanceService.markAutoAbsent!.mockResolvedValue(
+        expectedResult as any,
+      );
 
       const result = await controller.markAutoAbsent(eventId, chapterId);
 
