@@ -31,11 +31,7 @@ export class InviteService {
     private readonly notificationService: NotificationService,
   ) {}
 
-  async create(
-    chapterId: string,
-    createdBy: string,
-    role: string,
-  ): Promise<Invite> {
+  private async validateChapterSubscription(chapterId: string): Promise<void> {
     const chapter = await this.chapterRepo.findById(chapterId);
     if (chapter?.subscription_status !== 'active') {
       throw new HttpException(
@@ -43,17 +39,33 @@ export class InviteService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
+  }
 
+  private prepareInviteData(
+    chapterId: string,
+    createdBy: string,
+    role: string,
+  ): Partial<Invite> {
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 24);
 
-    return this.inviteRepo.create({
+    return {
       token: uuidv4(),
       chapter_id: chapterId,
       role,
       expires_at: expiresAt.toISOString(),
       created_by: createdBy,
-    });
+    };
+  }
+
+  async create(
+    chapterId: string,
+    createdBy: string,
+    role: string,
+  ): Promise<Invite> {
+    await this.validateChapterSubscription(chapterId);
+    const data = this.prepareInviteData(chapterId, createdBy, role);
+    return this.inviteRepo.create(data);
   }
 
   async createBatch(
@@ -62,11 +74,13 @@ export class InviteService {
     role: string,
     count: number,
   ): Promise<Invite[]> {
-    const invites: Invite[] = [];
-    for (let i = 0; i < count; i++) {
-      invites.push(await this.create(chapterId, createdBy, role));
-    }
-    return invites;
+    await this.validateChapterSubscription(chapterId);
+
+    const inviteData: Partial<Invite>[] = Array.from({ length: count }, () =>
+      this.prepareInviteData(chapterId, createdBy, role),
+    );
+
+    return this.inviteRepo.createMany(inviteData);
   }
 
   async redeem(

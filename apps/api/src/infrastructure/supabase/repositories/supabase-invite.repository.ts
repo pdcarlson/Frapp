@@ -21,6 +21,15 @@ export class SupabaseInviteRepository implements IInviteRepository {
     return data;
   }
 
+  async createMany(inviteData: Partial<Invite>[]): Promise<Invite[]> {
+    const { data, error } = await this.supabase
+      .from('invites')
+      .insert(inviteData as never)
+      .select();
+    if (error) throw error;
+    return data || [];
+  }
+
   async findByToken(token: string): Promise<Invite | null> {
     const { data, error } = await this.supabase
       .from('invites')
