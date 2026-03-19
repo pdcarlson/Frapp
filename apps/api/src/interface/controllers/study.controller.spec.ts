@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { StudyGeofenceController, StudySessionController } from './study.controller';
-import { StudyService } from '../../application/services/study.service';
 import {
-  CreateGeofenceDto,
-  UpdateGeofenceDto,
-  StartStudySessionDto,
-  StudySessionHeartbeatDto,
-} from '../dtos/study.dto';
+  StudyGeofenceController,
+  StudySessionController,
+} from './study.controller';
+import { StudyService } from '../../application/services/study.service';
+import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
 
-describe('Study Controllers', () => {
+describe('StudyController', () => {
   let geofenceController: StudyGeofenceController;
   let sessionController: StudySessionController;
   let studyService: jest.Mocked<StudyService>;
@@ -28,16 +28,30 @@ describe('Study Controllers', () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [StudyGeofenceController, StudySessionController],
       providers: [
-        { provide: 'SUPABASE_CLIENT', useValue: {} },
         {
           provide: StudyService,
           useValue: mockStudyService,
         },
+        {
+          provide: 'SUPABASE_CLIENT',
+          useValue: {},
+        },
       ],
-    }).compile();
+    })
+      .overrideGuard(SupabaseAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(ChapterGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
-    geofenceController = module.get<StudyGeofenceController>(StudyGeofenceController);
-    sessionController = module.get<StudySessionController>(StudySessionController);
+    geofenceController = module.get<StudyGeofenceController>(
+      StudyGeofenceController,
+    );
+    sessionController = module.get<StudySessionController>(
+      StudySessionController,
+    );
     studyService = module.get(StudyService);
   });
 
@@ -47,9 +61,9 @@ describe('Study Controllers', () => {
     });
 
     describe('list', () => {
-      it('should return a list of geofences', async () => {
-        const chapterId = 'chapter-1';
-        const expectedResult = [{ id: 'geo-1', name: 'Test Geofence' }];
+      it('should call studyService.listGeofences with correct chapterId', async () => {
+        const chapterId = 'chapter-123';
+        const expectedResult = [{ id: 'geo-1' }];
         studyService.listGeofences.mockResolvedValue(expectedResult as any);
 
         const result = await geofenceController.list(chapterId);
@@ -60,57 +74,57 @@ describe('Study Controllers', () => {
     });
 
     describe('create', () => {
-      it('should create a geofence', async () => {
-        const chapterId = 'chapter-1';
-        const dto: CreateGeofenceDto = {
-          name: 'New Geofence',
-          coordinates: [{ lat: 1, lng: 2 }],
+      it('should call studyService.createGeofence with correct payload', async () => {
+        const chapterId = 'chapter-123';
+        const dto = {
+          name: 'Library',
+          coordinates: [{ lat: 1, lng: 1 }],
           is_active: true,
-          minutes_per_point: 30,
+          minutes_per_point: 60,
           points_per_interval: 1,
-          min_session_minutes: 15,
+          min_session_minutes: 30,
         };
-        const expectedResult = { id: 'geo-new', ...dto };
+        const expectedResult = { id: 'geo-1', ...dto };
         studyService.createGeofence.mockResolvedValue(expectedResult as any);
 
         const result = await geofenceController.create(chapterId, dto);
 
-        expect(studyService.createGeofence).toHaveBeenCalledWith(chapterId, {
-          name: dto.name,
-          coordinates: dto.coordinates,
-          is_active: dto.is_active,
-          minutes_per_point: dto.minutes_per_point,
-          points_per_interval: dto.points_per_interval,
-          min_session_minutes: dto.min_session_minutes,
-        });
+        expect(studyService.createGeofence).toHaveBeenCalledWith(chapterId, dto);
         expect(result).toEqual(expectedResult);
       });
     });
 
     describe('update', () => {
-      it('should update a geofence', async () => {
-        const chapterId = 'chapter-1';
-        const id = 'geo-1';
-        const dto: UpdateGeofenceDto = { name: 'Updated Geofence' };
-        const expectedResult = { id, chapter_id: chapterId, ...dto };
+      it('should call studyService.updateGeofence with correct id, chapterId, and payload', async () => {
+        const chapterId = 'chapter-123';
+        const geofenceId = 'geo-1';
+        const dto = { name: 'Updated Library' };
+        const expectedResult = { id: geofenceId, ...dto };
         studyService.updateGeofence.mockResolvedValue(expectedResult as any);
 
-        const result = await geofenceController.update(chapterId, id, dto);
+        const result = await geofenceController.update(chapterId, geofenceId, dto);
 
-        expect(studyService.updateGeofence).toHaveBeenCalledWith(id, chapterId, dto);
+        expect(studyService.updateGeofence).toHaveBeenCalledWith(
+          geofenceId,
+          chapterId,
+          dto,
+        );
         expect(result).toEqual(expectedResult);
       });
     });
 
     describe('delete', () => {
-      it('should delete a geofence', async () => {
-        const chapterId = 'chapter-1';
-        const id = 'geo-1';
-        studyService.deleteGeofence.mockResolvedValue(undefined);
+      it('should call studyService.deleteGeofence and return success', async () => {
+        const chapterId = 'chapter-123';
+        const geofenceId = 'geo-1';
+        studyService.deleteGeofence.mockResolvedValue(undefined as any);
 
-        const result = await geofenceController.delete(chapterId, id);
+        const result = await geofenceController.delete(chapterId, geofenceId);
 
-        expect(studyService.deleteGeofence).toHaveBeenCalledWith(id, chapterId);
+        expect(studyService.deleteGeofence).toHaveBeenCalledWith(
+          geofenceId,
+          chapterId,
+        );
         expect(result).toEqual({ success: true });
       });
     });
@@ -122,15 +136,11 @@ describe('Study Controllers', () => {
     });
 
     describe('start', () => {
-      it('should start a study session', async () => {
-        const userId = 'user-1';
-        const chapterId = 'chapter-1';
-        const dto: StartStudySessionDto = {
-          geofence_id: 'geo-1',
-          lat: 10,
-          lng: 20,
-        };
-        const expectedResult = { id: 'session-1', user_id: userId, chapter_id: chapterId, geofence_id: dto.geofence_id };
+      it('should call studyService.startSession with correct arguments', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const dto = { geofence_id: 'geo-1', lat: 10, lng: 20 };
+        const expectedResult = { id: 'session-1' };
         studyService.startSession.mockResolvedValue(expectedResult as any);
 
         const result = await sessionController.start(userId, chapterId, dto);
@@ -147,14 +157,11 @@ describe('Study Controllers', () => {
     });
 
     describe('heartbeat', () => {
-      it('should send a heartbeat', async () => {
-        const userId = 'user-1';
-        const chapterId = 'chapter-1';
-        const dto: StudySessionHeartbeatDto = {
-          lat: 10,
-          lng: 20,
-        };
-        const expectedResult = { id: 'session-1', status: 'ACTIVE' };
+      it('should call studyService.heartbeat with correct arguments', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const dto = { lat: 10, lng: 20 };
+        const expectedResult = { status: 'ok' };
         studyService.heartbeat.mockResolvedValue(expectedResult as any);
 
         const result = await sessionController.heartbeat(userId, chapterId, dto);
@@ -170,29 +177,35 @@ describe('Study Controllers', () => {
     });
 
     describe('stop', () => {
-      it('should stop a study session', async () => {
-        const userId = 'user-1';
-        const chapterId = 'chapter-1';
-        const expectedResult = { id: 'session-1', status: 'COMPLETED' };
+      it('should call studyService.stopSession with correct arguments', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const expectedResult = { id: 'session-1', points: 10 };
         studyService.stopSession.mockResolvedValue(expectedResult as any);
 
         const result = await sessionController.stop(userId, chapterId);
 
-        expect(studyService.stopSession).toHaveBeenCalledWith(userId, chapterId);
+        expect(studyService.stopSession).toHaveBeenCalledWith(
+          userId,
+          chapterId,
+        );
         expect(result).toEqual(expectedResult);
       });
     });
 
     describe('list', () => {
-      it('should return a list of study sessions', async () => {
-        const userId = 'user-1';
-        const chapterId = 'chapter-1';
+      it('should call studyService.listSessions with correct arguments', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
         const expectedResult = [{ id: 'session-1' }];
         studyService.listSessions.mockResolvedValue(expectedResult as any);
 
         const result = await sessionController.list(userId, chapterId);
 
-        expect(studyService.listSessions).toHaveBeenCalledWith(userId, chapterId);
+        expect(studyService.listSessions).toHaveBeenCalledWith(
+          userId,
+          chapterId,
+        );
         expect(result).toEqual(expectedResult);
       });
     });
