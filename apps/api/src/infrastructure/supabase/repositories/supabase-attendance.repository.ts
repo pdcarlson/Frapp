@@ -60,7 +60,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
 
     const { error } = await this.supabase
       .from('event_attendance')
-      .insert(data as never);
+      .upsert(data as never, { ignoreDuplicates: true });
 
     if (error) throw error;
   }

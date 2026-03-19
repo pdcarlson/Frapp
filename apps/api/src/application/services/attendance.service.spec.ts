@@ -438,12 +438,17 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([presentRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockAttendanceRepo.createMany.mockResolvedValue(undefined);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       // user-1 is skipped; user-2, user-3 are marked absent
       expect(result.marked).toBe(2);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'user-2', status: 'ABSENT' }),
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      ]);
     });
 
     it('should not create duplicate ABSENT records when one already exists', async () => {
@@ -455,15 +460,16 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([absentRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockAttendanceRepo.createMany.mockResolvedValue(undefined);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       expect(result.marked).toBe(2);
-      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
-        (call) => call[0].user_id,
-      );
-      expect(createdUserIds).not.toContain('user-2');
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'user-1', status: 'ABSENT' }),
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      ]);
     });
 
     it('should skip members who are EXCUSED', async () => {
@@ -476,16 +482,17 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([excusedRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockAttendanceRepo.createMany.mockResolvedValue(undefined);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       expect(result.marked).toBe(2);
       // user-2 should not have been marked
-      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
-        (c) => c[0].user_id,
-      );
-      expect(createdUserIds).not.toContain('user-2');
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'user-1', status: 'ABSENT' }),
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      ]);
     });
 
     it('should reject if called before grace period ends', async () => {
