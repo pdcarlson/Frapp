@@ -104,26 +104,6 @@ export default function EventsPage() {
     visibleEventIds.length > 0 &&
     visibleEventIds.every((eventId) => selectedEventIds.includes(eventId));
 
-  function toggleAllVisibleEvents(checked: boolean) {
-    if (checked) {
-      setSelectedEventIds((previous) => [...new Set([...previous, ...visibleEventIds])]);
-      return;
-    }
-    setSelectedEventIds((previous) =>
-      previous.filter((eventId) => !visibleEventIds.includes(eventId)),
-    );
-  }
-
-  function toggleEventSelection(eventId: string, checked: boolean) {
-    if (checked) {
-      setSelectedEventIds((previous) => [...new Set([...previous, eventId])]);
-      return;
-    }
-    setSelectedEventIds((previous) =>
-      previous.filter((candidate) => candidate !== eventId),
-    );
-  }
-
   function handleBulkAction(actionLabel: string) {
     toast({
       title: "Bulk event action queued",
@@ -290,7 +270,17 @@ export default function EventsPage() {
                       aria-label="Select all visible events"
                       className={dashboardTableCheckboxClassName}
                       checked={allVisibleSelected}
-                      onChange={(event) => toggleAllVisibleEvents(event.target.checked)}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedEventIds((previous) => [
+                            ...new Set([...previous, ...visibleEventIds]),
+                          ]);
+                          return;
+                        }
+                        setSelectedEventIds((previous) =>
+                          previous.filter((eventId) => !visibleEventIds.includes(eventId)),
+                        );
+                      }}
                     />
                   </TableHead>
                   <TableHead>Event</TableHead>
@@ -319,7 +309,17 @@ export default function EventsPage() {
                           aria-label={`Select ${eventName}`}
                           className={dashboardTableCheckboxClassName}
                           checked={selectedEventIds.includes(eventId)}
-                          onChange={(eventValue) => toggleEventSelection(eventId, eventValue.target.checked)}
+                          onChange={(eventValue) => {
+                            if (eventValue.target.checked) {
+                              setSelectedEventIds((previous) => [
+                                ...new Set([...previous, eventId]),
+                              ]);
+                              return;
+                            }
+                            setSelectedEventIds((previous) =>
+                              previous.filter((candidate) => candidate !== eventId),
+                            );
+                          }}
                         />
                       </TableCell>
                       <TableCell className="font-medium">{eventName}</TableCell>

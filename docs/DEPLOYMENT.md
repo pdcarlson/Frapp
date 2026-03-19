@@ -73,7 +73,7 @@ Two long-lived branches map to environments:
 |--------|-------------|--------|--------|----------|
 | `main` | **Production** | Production deploys → prod domains | `frapp-api-prod` | Production project |
 | `preview` | **Staging** | Preview deploys → staging domains | `frapp-api-staging` | Staging project |
-| `feature/*` | **Ephemeral** | No automatic Vercel deploys | — | — |
+| `feature/*` | **Ephemeral** | Auto-generated preview URLs | — | — |
 
 **How it flows:**
 
@@ -95,9 +95,9 @@ feature/xyz ──PR──▶ preview (staging) ──PR──▶ main (producti
 |---|---|---|
 | **Production** | Push to `main` | `docs.frapp.live` |
 | **Preview** (pre-production) | Push to `preview` | `docs.staging.frapp.live` |
-| **Disabled** | Any other branch / PR | No auto deployment |
+| **Preview** (ephemeral) | Any other branch / PR | `frapp-docs-abc123.vercel.app` |
 
-The `preview` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `preview` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `preview` and `main` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
+The `preview` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `preview` branch in Vercel's domain settings.
 
 ---
 
@@ -161,7 +161,7 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 - **Build:** `turbo run build` (auto-scoped to the current workspace)
 - **Output:** Next.js default (`.next`)
 
-The `vercel.json` in each app adds `git.deploymentEnabled` (deploy only `preview`/`main`, disable all others with `"**": false`), `turbo-ignore` (skip rebuilds when files haven't changed), and security headers.
+The `vercel.json` in each app adds `turbo-ignore` (skip rebuilds when files haven't changed) and security headers — no command overrides needed.
 
 ### 4.2 Environment Variables per Project
 
@@ -413,7 +413,7 @@ Same steps but toggle to Live mode in Stripe dashboard. Requires business verifi
 
 All deployments are gated behind CI success. The flow is:
 
-1. **PR created** → CI runs domain-specific jobs in parallel. Vercel deployments do not run for feature/PR branches.
+1. **PR created** → CI runs domain-specific jobs in parallel. Vercel builds previews.
 2. **All checks pass** → PR is mergeable (branch protection enforced).
 3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
 4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
@@ -422,7 +422,7 @@ Production deploys additionally require manual approval before the migration ste
 
 ### Required Status Checks
 
-See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
+See `CONTRIBUTING.md` for the full list of CI jobs and external checks required for merge.
 
 ### Secrets in CI vs CD
 

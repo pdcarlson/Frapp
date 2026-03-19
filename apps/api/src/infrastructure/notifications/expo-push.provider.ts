@@ -31,15 +31,13 @@ export class ExpoPushProvider implements INotificationProvider {
 
     const chunks = this.expo.chunkPushNotifications(messages);
 
-    await Promise.allSettled(
-      chunks.map(async (chunk) => {
-        try {
-          const receipts = await this.expo.sendPushNotificationsAsync(chunk);
-          this.logger.debug(`Sent ${receipts.length} push notifications`);
-        } catch (error) {
-          this.logger.error('Failed to send push notifications', error);
-        }
-      }),
-    );
+    for (const chunk of chunks) {
+      try {
+        const receipts = await this.expo.sendPushNotificationsAsync(chunk);
+        this.logger.debug(`Sent ${receipts.length} push notifications`);
+      } catch (error) {
+        this.logger.error('Failed to send push notifications', error);
+      }
+    }
   }
 }

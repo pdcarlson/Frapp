@@ -1,8 +1,8 @@
 import {
   BadRequestException,
   Inject,
-  InternalServerErrorException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -27,6 +27,7 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 
 const BRANDING_BUCKET = 'branding';
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
+
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
 

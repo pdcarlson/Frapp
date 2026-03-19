@@ -10,7 +10,6 @@
     "dev:mobile": "npx --no-install infisical run --env=local --path=/ -- npm run start -w apps/mobile",
     "lint": "turbo run lint",
     "lint:api": "npm run lint -w apps/api",
-    "ci:local-gate": "node scripts/run-local-ci-gate.mjs",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
