@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
@@ -144,11 +145,7 @@ describe("useCheckIn", () => {
       wrapper: createWrapper(mockClient),
     });
 
-    result.current.mutate("event-123");
-
-    await waitFor(() => {
-      expect(result.current.isSuccess).toBe(true);
-    });
+    await expect(result.current.mutateAsync("event-123")).resolves.toBeDefined();
 
     expect(mockPost).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/check-in", {
       params: { path: { eventId: "event-123" } },
@@ -175,12 +172,30 @@ describe("useCheckIn", () => {
       wrapper: createWrapper(mockClient),
     });
 
-    result.current.mutate("event-999");
+    await expect(result.current.mutateAsync("event-999")).rejects.toThrowError(mockError);
+  });
 
-    await waitFor(() => {
-      expect(result.current.isError).toBe(true);
+  it("ensures queryClient.invalidateQueries is called on success", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: null,
     });
 
-    expect(result.current.error).toBe(mockError);
+    const mockClient = {
+      POST: mockPost,
+    };
+
+    const invalidateQueriesSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    const { result } = renderHook(() => useCheckIn(), {
+      wrapper: createWrapper(mockClient),
+    });
+
+    await expect(result.current.mutateAsync("event-123")).resolves.toBeDefined();
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: ["attendance", "event-123"],
+    });
   });
+
 });
