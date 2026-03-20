@@ -1,5 +1,8 @@
 "use client";
 
+import "./globals.css";
+import { Button } from "@repo/ui/button";
+
 export default function GlobalError({
   reset,
 }: {
@@ -9,11 +12,11 @@ export default function GlobalError({
   return (
     <html lang="en">
       <body>
-        <div style={{ padding: "2rem", textAlign: "center" }}>
+        <div className="p-8 text-center">
           <h2>Something went wrong</h2>
-          <button onClick={() => reset()} style={{ marginTop: "1rem", padding: "0.5rem 1rem" }}>
+          <Button onClick={() => reset()} className="mt-4">
             Try again
-          </button>
+          </Button>
         </div>
       </body>
     </html>
