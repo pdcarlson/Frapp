@@ -27,6 +27,21 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
 const BRANDING_BUCKET = 'branding';
+const ALLOWED_LOGO_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'image/svg+xml',
+]);
+const ALLOWED_LOGO_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'svg',
+]);
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
@@ -132,6 +147,19 @@ export class ChapterService {
     const ext = filename.includes('.')
       ? (filename.split('.').pop()?.toLowerCase() ?? 'png')
       : 'png';
+
+    if (!ALLOWED_LOGO_CONTENT_TYPES.has(contentType)) {
+      throw new BadRequestException(
+        'Invalid content type. Only images are allowed.',
+      );
+    }
+
+    if (!ALLOWED_LOGO_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(
+        'Invalid file extension. Only image files are allowed.',
+      );
+    }
+
     const storagePath = `chapters/${chapterId}/branding/logo.${path.basename(ext)}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
