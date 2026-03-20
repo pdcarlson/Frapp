@@ -12,3 +12,10 @@ This document details the test scenarios for `ChatService` in the `apps/api` wor
   - Setup: Mock the `findByChannel` repository method to return an array of `ChatMessage`.
   - Execution: Call `getMessages` with a `channelId` and an options object (e.g., `{ limit: 20, before: 'msg-5' }`).
   - Assertion: Verify the repository method is called with the provided options object and the returned messages match the mock.
+
+## deleteCategory
+
+- **Should delete category by id:**
+  - Setup: Mock the `categoryRepo.delete` method to resolve correctly.
+  - Execution: Call `deleteCategory` with a category id.
+  - Assertion: Verify the repository method `categoryRepo.delete` is called with the provided category id.
