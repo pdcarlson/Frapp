@@ -308,3 +308,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
 - Every migration should have a documented rollback strategy in `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/DEPLOYMENT.md` for the full migration deployment workflow.
+
+## Jules Cloud Environment
+The Jules agent execution environment uses a pre-configured headless cloud VM.
+A setup script is provided at `.jules/setup.sh` which can be pasted directly into the Jules UI "Initial Setup" window to automatically bootstrap the environment (Docker, dependencies, database, and validations).
