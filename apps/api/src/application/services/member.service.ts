@@ -100,13 +100,19 @@ export class MemberService {
 
     const userIds = [...new Set(members.map((m) => m.user_id))];
     const users = await this.userRepo.findByIds(userIds);
-    const userMap = new Map(users.map((u) => [u.id, u]));
 
     const q = query.trim().toLowerCase();
+    const filteredUsers = users.filter((u) =>
+      u.display_name.toLowerCase().includes(q),
+    );
+    if (!filteredUsers.length) return [];
+
+    const userMap = new Map(filteredUsers.map((u) => [u.id, u]));
+
     const results: MemberProfile[] = [];
     for (const member of members) {
       const user = userMap.get(member.user_id);
-      if (user && user.display_name.toLowerCase().includes(q)) {
+      if (user) {
         results.push(this.mergeMemberWithUser(member, user));
       }
     }
@@ -124,47 +130,53 @@ export class MemberService {
     if (!alumniRole) return [];
 
     const members = await this.memberRepo.findByChapter(chapterId);
-    const alumniMembers = members.filter((m) =>
-      m.role_ids.includes(alumniRole.id),
-    );
+
+    const alumniMembers: Member[] = [];
+    const userIdsSet = new Set<string>();
+    for (const m of members) {
+      if (m.role_ids.includes(alumniRole.id)) {
+        alumniMembers.push(m);
+        userIdsSet.add(m.user_id);
+      }
+    }
     if (!alumniMembers.length) return [];
 
-    const userIds = [...new Set(alumniMembers.map((m) => m.user_id))];
+    const userIds = Array.from(userIdsSet);
     const users = await this.userRepo.findByIds(userIds);
-    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const filteredUsers = users.filter((u) =>
+      this.matchesUserFilter(u, filter),
+    );
+    if (!filteredUsers.length) return [];
+
+    const userMap = new Map(filteredUsers.map((u) => [u.id, u]));
 
     const results: MemberProfile[] = [];
     for (const member of alumniMembers) {
       const user = userMap.get(member.user_id);
       if (user) {
-        const profile = this.mergeMemberWithUser(member, user);
-        if (this.matchesAlumniFilter(profile, filter)) {
-          results.push(profile);
-        }
+        results.push(this.mergeMemberWithUser(member, user));
       }
     }
     return results;
   }
 
-  private matchesAlumniFilter(
-    profile: MemberProfile,
-    filter?: AlumniFilter,
-  ): boolean {
+  private matchesUserFilter(user: User, filter?: AlumniFilter): boolean {
     if (!filter) return true;
     if (
       filter.graduation_year !== undefined &&
-      profile.graduation_year !== filter.graduation_year
+      user.graduation_year !== filter.graduation_year
     ) {
       return false;
     }
     if (filter.city !== undefined) {
-      const cityMatch = profile.current_city
+      const cityMatch = user.current_city
         ?.toLowerCase()
         .includes(filter.city.toLowerCase());
       if (!cityMatch) return false;
     }
     if (filter.company !== undefined) {
-      const companyMatch = profile.current_company
+      const companyMatch = user.current_company
         ?.toLowerCase()
         .includes(filter.company.toLowerCase());
       if (!companyMatch) return false;
