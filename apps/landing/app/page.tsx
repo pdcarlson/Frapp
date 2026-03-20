@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { FrappLockup } from "../components/frapp-lockup";
 import {
   BookOpen,
   CalendarDays,
@@ -141,12 +142,7 @@ export default function Home() {
       />
       <header className="sticky top-0 z-40 border-b border-border bg-background">
         <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
-          <Link
-            href="/"
-            className="text-xl font-bold tracking-tight text-navy dark:text-white"
-          >
-            frapp
-          </Link>
+          <FrappLockup />
           <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
             <Link
               href="#features"

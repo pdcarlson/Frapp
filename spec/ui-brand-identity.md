@@ -83,6 +83,7 @@ Avoid as **default** patterns:
 | [ui-brand-identity.md](ui-brand-identity.md) (this file) | Cross-app identity               |
 | [ui-landing.md](ui-landing.md)                           | frapp.live layout and sections   |
 | [ui-web-dashboard.md](ui-web-dashboard.md)               | app.frapp.live shell and screens |
+| [ui-assets.md](ui-assets.md)                             | Logos, favicons, OG, asset sync  |
 | [product.md](product.md)                                 | Surfaces and features            |
 
 ---
@@ -94,4 +95,9 @@ Avoid as **default** patterns:
 | CSS variables + Tailwind preset      | `packages/theme/src/globals.css`, `packages/theme/src/tailwind.config.ts` |
 | TS tokens (motion, radius, feedback) | `packages/theme/src/tokens.ts`                                            |
 | Chapter accent validation            | `packages/theme/src/accent.ts`                                            |
+| Frapp mark + lockup (canonical)      | `packages/brand-assets/assets/` — see [ui-assets.md](ui-assets.md)       |
+| Synced app icons (`app/icon.svg`)    | `apps/landing`, `apps/web`, `apps/docs` — copied from brand-assets by `scripts/sync-brand-assets.mjs` |
+| Open Graph preview image             | `apps/landing/app/opengraph-image.tsx` — social cards when links are shared; do not reference missing static URLs |
+| Chapter logo (tenant)                | Supabase Storage `chapters/{id}/branding/logo.*` — **never** replaces Frapp marketing assets |
 | Next apps                            | `apps/landing`, `apps/web`, `apps/docs` — all use `@repo/theme` preset    |
+| Email / external templates           | Embed or host files from `@repo/brand-assets` per [docs/internal/BRAND_ASSETS.md](../docs/internal/BRAND_ASSETS.md) |

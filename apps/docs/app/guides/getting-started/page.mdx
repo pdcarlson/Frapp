@@ -51,6 +51,13 @@ You can open Supabase Studio at:
   also adding a migration.
 </Callout>
 
+<Callout type="info">
+  Frapp icons and the marketing lockup are synced from `packages/brand-assets/`
+  into each Next app on **`next build`** (`prebuild`). After changing those SVGs,
+  run `npm run sync:brand-assets` from the repo root (or build once). See
+  `docs/internal/BRAND_ASSETS.md` and `spec/ui-assets.md`.
+</Callout>
+
 ## 4. Configure environment variables
 
 When `supabase start` finishes, it prints the local project URL and keys:

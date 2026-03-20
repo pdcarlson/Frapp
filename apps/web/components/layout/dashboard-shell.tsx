@@ -15,6 +15,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
+import { useCurrentChapter } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -66,12 +68,6 @@ const navItems = [
   },
 ] satisfies NavItem[];
 
-const chapterPreview = {
-  name: "Alpha Beta Chapter",
-  university: "University of State",
-  requestedAccent: "#93C5FD",
-};
-
 const sidebarFocusRingClassName =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950";
 const navIconClassName = "h-4 w-4";
@@ -85,14 +81,105 @@ function withAlpha(hexColor: string, opacity: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
 }
 
+type ChapterPayload = {
+  name: string;
+  university: string;
+  accent_color?: string | null;
+};
+
+function DashboardChapterPanel({
+  variant,
+}: {
+  variant: "sidebar" | "sheet";
+}) {
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const { data, isPending, isError, isFetching } = useCurrentChapter({
+    enabled: !!activeChapterId,
+  });
+
+  const labelMuted =
+    variant === "sidebar" ? "text-slate-400" : "text-muted-foreground";
+  const nameClass = "mt-1 text-sm font-semibold text-white";
+  const uniClass =
+    variant === "sidebar"
+      ? "mt-1 text-xs text-slate-400"
+      : "mt-1 text-xs text-slate-400";
+  const shellClass =
+    variant === "sidebar"
+      ? "mt-10 rounded-lg border border-border bg-navy-900/80 p-4"
+      : "mt-8 rounded-lg border border-border bg-navy-900/80 p-4";
+
+  if (!activeChapterId) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Select an active chapter to load branding from the API.
+        </p>
+      </div>
+    );
+  }
+
+  if (isPending || isFetching) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-navy-800" />
+        <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-navy-800" />
+        <div className="mt-4 h-8 w-full animate-pulse rounded-full bg-navy-800" />
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-amber-200/90">
+          Could not load chapter details.
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Check your session, permissions, and chapter selection.
+        </p>
+      </div>
+    );
+  }
+
+  const payload = data as ChapterPayload;
+  const chapterAccent = resolveChapterAccentColor(
+    payload.accent_color ?? undefined,
+  );
+
+  return (
+    <div className={shellClass}>
+      <p className={cn("text-xs", labelMuted)}>Chapter</p>
+      <p className={nameClass}>{payload.name}</p>
+      <p className={uniClass}>{payload.university}</p>
+      <div
+        className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
+        style={{
+          color: chapterAccent.resolvedAccent,
+          borderColor: withAlpha(chapterAccent.resolvedAccent, 0.45),
+          backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
+        }}
+      >
+        <ShieldCheck className={statusIconClassName} />
+        <span>Subscription Active</span>
+      </div>
+      {chapterAccent.fallbackApplied ? (
+        <p className="mt-2 text-[11px] text-slate-500">
+          Accent adjusted for contrast safety.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const chapterAccent = resolveChapterAccentColor(
-    chapterPreview.requestedAccent,
-  );
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -187,15 +274,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <nav className="mt-6 space-y-1">
             {renderNavItems(() => setMobileNavOpen(false))}
           </nav>
-          <div className="mt-8 rounded-lg border border-border bg-navy-900/80 p-4">
-            <p className="text-xs text-muted-foreground">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">
-              {chapterPreview.name}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {chapterPreview.university}
-            </p>
-          </div>
+          <DashboardChapterPanel variant="sheet" />
         </SheetContent>
       </Sheet>
       <a
@@ -216,31 +295,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           </div>
           <nav className="space-y-1">{renderNavItems()}</nav>
 
-          <div className="mt-10 rounded-lg border border-border bg-navy-900/80 p-4">
-            <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">
-              {chapterPreview.name}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {chapterPreview.university}
-            </p>
-            <div
-              className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
-              style={{
-                color: chapterAccent.resolvedAccent,
-                borderColor: withAlpha(chapterAccent.resolvedAccent, 0.45),
-                backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
-              }}
-            >
-              <ShieldCheck className={statusIconClassName} />
-              <span>Subscription Active</span>
-            </div>
-            {chapterAccent.fallbackApplied ? (
-              <p className="mt-2 text-[11px] text-slate-500">
-                Accent adjusted for contrast safety.
-              </p>
-            ) : null}
-          </div>
+          <DashboardChapterPanel variant="sidebar" />
         </aside>
 
         <div className="min-h-screen flex-1">

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FrappLockup } from "../../components/frapp-lockup";
 
 type LegalSection = {
   heading: string;
@@ -16,9 +17,7 @@ export function LegalDocument({ title, lastUpdated, sections }: LegalDocumentPro
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-4">
-          <Link href="/" className="text-lg font-bold tracking-tight text-navy dark:text-white">
-            frapp
-          </Link>
+          <FrappLockup />
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
             <Link href="/terms">Terms</Link>
             <Link href="/privacy">Privacy</Link>

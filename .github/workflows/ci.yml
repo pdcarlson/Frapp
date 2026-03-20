@@ -66,6 +66,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Brand assets (icon sync)
+        run: npm run check:brand-assets
+
   # ── API unit tests ──────────────────────────────────────────────────────
   api-tests:
     needs: packages-build

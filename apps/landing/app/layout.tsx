@@ -20,21 +20,12 @@ export const metadata: Metadata = {
       "One platform for chat, events, study hours, points, backwork, and billing.",
     type: "website",
     url: "https://frapp.live",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "Frapp — The Operating System for Greek Life",
-      },
-    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Frapp — The Operating System for Greek Life",
     description:
       "One platform for chat, events, study hours, points, backwork, and billing.",
-    images: ["/og-image.png"],
   },
 };
 

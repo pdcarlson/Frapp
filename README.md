@@ -13,6 +13,7 @@ apps/
   docs/       — Next.js documentation site (docs.frapp.live)
 packages/
   api-sdk/    — Generated TypeScript API client
+  brand-assets/ — Canonical Frapp SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
   hooks/      — Shared React hooks
   ui/         — Shared UI components
   theme/      — Tailwind config + global styles

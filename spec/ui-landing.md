@@ -76,7 +76,7 @@ Do not use scale-on-hover on marketing cards as a default; prefer border/color t
 [Logo]                    [Features] [Pricing] [Docs]        [Log In]  [Get Started →]
 ```
 
-- Logo: Frapp wordmark (text: "frapp" in lowercase, weight 700, Navy color) or SVG logo when available
+- Logo: Frapp lockup SVG (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)
 - Nav links: Regular weight, slate-600 color, hover: royal-blue, transition 150ms
 - "Log In": Ghost button (border, transparent bg), links to `app.frapp.live/login`
 - "Get Started →": Solid button (royal-blue bg, white text, rounded-lg), links to `app.frapp.live/signup`

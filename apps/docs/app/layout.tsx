@@ -19,9 +19,6 @@ export const metadata: Metadata = {
   title: "Frapp Docs",
   description:
     "Guides and references for building and running Frapp — The Operating System for Greek Life.",
-  icons: {
-    icon: "/favicon.png",
-  },
 };
 
 export default function RootLayout({

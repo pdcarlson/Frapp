@@ -107,3 +107,7 @@ Icon sizing and usage standards are documented in:
 Typography roles and usage standards are documented in:
 - `docs/internal/TYPOGRAPHY_GUIDELINES.md`
 
+Frapp logos, favicons, Open Graph, and asset sync are documented in:
+- `spec/ui-assets.md`
+- `docs/internal/BRAND_ASSETS.md`
+

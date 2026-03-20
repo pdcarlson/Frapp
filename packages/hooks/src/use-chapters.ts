@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
-export function useCurrentChapter() {
+export function useCurrentChapter(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   return useQuery({
     queryKey: ["chapters", "current"],
@@ -13,6 +13,7 @@ export function useCurrentChapter() {
       return data;
     },
     staleTime: 300_000,
+    enabled: options?.enabled ?? true,
   });
 }
 
@@ -27,6 +28,7 @@ export function useCreateChapter() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -49,6 +51,7 @@ export function useUpdateChapter() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -81,6 +84,7 @@ export function useConfirmLogo() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -98,6 +102,7 @@ export function useDeleteLogo() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
