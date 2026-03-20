@@ -5,3 +5,6 @@
 ## 2024-05-18 - Optimize Event Recurring Instance Generation
 **Learning:** Promise.all for database operations causes N+1 connection overhead and blocks thread. Bulk inserts via arrays (e.g. `createMany`) drastically improve execution speed.
 **Action:** Always prefer bulk insert methods like `createMany` over `Promise.all(mapped array of creates)` for entity generation.
+## 2024-03-20 - [Performance] Optimize Map Lookups and Filtering
+ **Learning:** In NestJS services performing filtering/searching across merged resources (like Members and Users), it is often a significant performance bottleneck to fetch all related resources, merge them into a new object structure, and *then* apply search filters.
+ **Action:** Apply search queries and simple field filters to the base entities (e.g., `users.filter()`) *before* constructing maps or iterating to merge them into larger DTOs. This reduces iteration count and the number of transient objects created.

@@ -47,7 +47,10 @@ describe('AlumniController', () => {
     });
 
     it('should require MEMBERS_VIEW permission', () => {
-      const requiredPermissions = Reflect.getMetadata('permissions', AlumniController);
+      const requiredPermissions = Reflect.getMetadata(
+        'permissions',
+        AlumniController,
+      );
       expect(requiredPermissions).toBeDefined();
       expect(requiredPermissions).toContain(SystemPermissions.MEMBERS_VIEW);
     });
@@ -69,7 +72,10 @@ describe('AlumniController', () => {
 
       const result = await controller.list(chapterId);
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, undefined);
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        undefined,
+      );
       expect(result).toEqual(mockAlumni);
     });
 
@@ -78,9 +84,12 @@ describe('AlumniController', () => {
 
       await controller.list(chapterId, '2020');
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, {
-        graduation_year: 2020,
-      });
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        {
+          graduation_year: 2020,
+        },
+      );
     });
 
     it('should pass city and company filters correctly', async () => {
@@ -88,10 +97,13 @@ describe('AlumniController', () => {
 
       await controller.list(chapterId, undefined, 'New York', 'Acme Corp');
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, {
-        city: 'New York',
-        company: 'Acme Corp',
-      });
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        {
+          city: 'New York',
+          company: 'Acme Corp',
+        },
+      );
     });
 
     it('should pass all filters correctly', async () => {
@@ -99,11 +111,14 @@ describe('AlumniController', () => {
 
       await controller.list(chapterId, '2020', 'New York', 'Acme Corp');
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, {
-        graduation_year: 2020,
-        city: 'New York',
-        company: 'Acme Corp',
-      });
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        {
+          graduation_year: 2020,
+          city: 'New York',
+          company: 'Acme Corp',
+        },
+      );
     });
 
     it('should ignore empty strings for filters', async () => {
@@ -111,7 +126,10 @@ describe('AlumniController', () => {
 
       await controller.list(chapterId, '', '', '');
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, undefined);
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        undefined,
+      );
     });
 
     it('should ignore invalid graduation_year', async () => {
@@ -119,7 +137,10 @@ describe('AlumniController', () => {
 
       await controller.list(chapterId, 'invalid-year');
 
-      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(chapterId, undefined);
+      expect(memberService.findAlumniByChapter).toHaveBeenCalledWith(
+        chapterId,
+        undefined,
+      );
     });
   });
 });
