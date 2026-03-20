@@ -501,4 +501,10 @@ describe('ChapterService', () => {
     });
     expect(result.logo_path).toBeNull();
   });
+
+  it('should throw NotFoundException when chapter to delete logo from is not found', async () => {
+    mockChapterRepo.findById.mockResolvedValue(null);
+
+    await expect(service.deleteLogo('ch-1')).rejects.toThrow(NotFoundException);
+  });
 });
