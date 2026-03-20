@@ -11,4 +11,14 @@ This document describes the test suite for the `BillingService` within the API a
 
 ## `handleWebhookEvent`
 
+- Tests cover all webhook event types (`checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.paid`).
+- Tests ensure fallback paths, missing fields, and unknown states are handled correctly without throwing unhandled exceptions.
+- **Coverage Details:**
+  - Fallbacks for missing session properties.
+  - Ignoring notification errors.
+  - Handling of non-existent chapters or subscriptions during events.
+
+## Exception Logging & Wrapping
+
+- **Non-Error Objects**: Both `createCheckoutSession` and `createPortalSession` handle scenarios where the Stripe API or `billingProvider` rejects with non-`Error` objects (like strings), logging them appropriately via the ternary operator logic `error instanceof Error ? error.stack : error`.
 - **should handle errors when notifying chapter president**: Ensures that if an internal error occurs while trying to notify the chapter president of a status change (such as `roleRepo.findByChapterAndName` throwing an error), the error is gracefully caught and a warning is logged using `logger.warn`, without throwing an exception and failing the webhook handling process.
