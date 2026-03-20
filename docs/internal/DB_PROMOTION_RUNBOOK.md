@@ -63,3 +63,8 @@ Post-apply production checks:
 - Do not apply production migrations before staging validation.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
+
+## 2025-02-26: Add `get_points_report` RPC
+* **Migration**: `20250226120000_add_get_points_report_rpc.sql`
+* **Purpose**: Creates an RPC for faster points report aggregation.
+* **Checks**: Verify the RPC exists using `select has_function_privilege('get_points_report(uuid, uuid, text)', 'execute');`.

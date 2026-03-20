@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 describe('ReportService', () => {
   let service: ReportService;
-  let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from'>>;
+  let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from' | 'rpc'>>;
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
     const chain: Record<string, unknown> = {};
@@ -26,6 +26,9 @@ describe('ReportService', () => {
   beforeEach(async () => {
     mockSupabase = {
       from: jest
+        .fn()
+        .mockImplementation(() => makeChain({ data: [], error: null })),
+      rpc: jest
         .fn()
         .mockImplementation(() => makeChain({ data: [], error: null })),
     };
@@ -97,21 +100,21 @@ describe('ReportService', () => {
 
   describe('getPointsReport', () => {
     it('should return points report with breakdown by category', async () => {
-      const txnChain = makeChain({
+      const rpcChain = makeChain({
         data: [
-          { user_id: 'u-1', amount: 10, category: 'ATTENDANCE' },
-          { user_id: 'u-1', amount: 5, category: 'SERVICE' },
+          {
+            member_name: 'Jane',
+            total_points: 15,
+            breakdown_by_category: {
+              ATTENDANCE: 10,
+              SERVICE: 5,
+            },
+          },
         ],
         error: null,
       });
-      const usersChain = makeChain({
-        data: [{ id: 'u-1', display_name: 'Jane' }],
-        error: null,
-      });
 
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) =>
-        t === 'point_transactions' ? txnChain : usersChain,
-      );
+      (mockSupabase.rpc as jest.Mock).mockReturnValue(rpcChain);
 
       const result = await service.getPointsReport('ch-1', {});
 
@@ -125,7 +128,7 @@ describe('ReportService', () => {
     });
 
     it('should return empty array when no transactions', async () => {
-      (mockSupabase.from as jest.Mock).mockReturnValue(
+      (mockSupabase.rpc as jest.Mock).mockReturnValue(
         makeChain({ data: [], error: null }),
       );
 

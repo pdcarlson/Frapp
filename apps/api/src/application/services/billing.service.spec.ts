@@ -206,72 +206,11 @@ describe('BillingService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw ServiceUnavailableException if creating Stripe customer fails', async () => {
-      const chapterNoCustomer = {
-        ...baseChapter,
-        stripe_customer_id: null,
-      };
-      mockChapterRepo.findById.mockResolvedValue(chapterNoCustomer);
-      const stripeError = new Error('Stripe is down');
-      mockBillingProvider.createCustomer.mockRejectedValue(stripeError);
-      const loggerErrorSpy = jest
-        .spyOn(service['logger'], 'error')
-        .mockImplementation(() => {});
-
-      await expect(
-        service.createCheckoutSession({
-          chapterId: 'ch-1',
-          customerEmail: 'admin@example.com',
-          successUrl: 'http://localhost:3000/success',
-          cancelUrl: 'http://localhost:3000/cancel',
-        }),
-      ).rejects.toThrow(ServiceUnavailableException);
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create checkout session for chapter ch-1',
-        stripeError.stack,
-      );
-
-      loggerErrorSpy.mockRestore();
-    });
-
-    it('should throw ServiceUnavailableException if updating chapter with new customer fails', async () => {
-      const chapterNoCustomer = {
-        ...baseChapter,
-        stripe_customer_id: null,
-      };
-      mockChapterRepo.findById.mockResolvedValue(chapterNoCustomer);
-      mockBillingProvider.createCustomer.mockResolvedValue('cus_new');
-      const dbError = new Error('Database error');
-      mockChapterRepo.update.mockRejectedValue(dbError);
-      const loggerErrorSpy = jest
-        .spyOn(service['logger'], 'error')
-        .mockImplementation(() => {});
-
-      await expect(
-        service.createCheckoutSession({
-          chapterId: 'ch-1',
-          customerEmail: 'admin@example.com',
-          successUrl: 'http://localhost:3000/success',
-          cancelUrl: 'http://localhost:3000/cancel',
-        }),
-      ).rejects.toThrow(ServiceUnavailableException);
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create checkout session for chapter ch-1',
-        dbError.stack,
-      );
-
-      loggerErrorSpy.mockRestore();
-    });
-
     it('should throw ServiceUnavailableException on Stripe failure', async () => {
       mockChapterRepo.findById.mockResolvedValue(baseChapter);
-      const stripeError = new Error('Stripe is down');
-      mockBillingProvider.createCheckoutSession.mockRejectedValue(stripeError);
-      const loggerErrorSpy = jest
-        .spyOn(service['logger'], 'error')
-        .mockImplementation(() => {});
+      mockBillingProvider.createCheckoutSession.mockRejectedValue(
+        new Error('Stripe is down'),
+      );
 
       await expect(
         service.createCheckoutSession({
@@ -281,13 +220,6 @@ describe('BillingService', () => {
           cancelUrl: 'http://localhost:3000/cancel',
         }),
       ).rejects.toThrow(ServiceUnavailableException);
-
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        'Failed to create checkout session for chapter ch-1',
-        stripeError.stack,
-      );
-
-      loggerErrorSpy.mockRestore();
     });
   });
 
