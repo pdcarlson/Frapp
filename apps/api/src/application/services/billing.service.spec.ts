@@ -224,6 +224,17 @@ describe('BillingService', () => {
   });
 
   describe('createPortalSession', () => {
+    it('should throw NotFoundException for non-existent chapter', async () => {
+      mockChapterRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.createPortalSession({
+          chapterId: 'ch-missing',
+          returnUrl: 'http://localhost:3000/billing',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
     it('should create a portal session for a chapter with billing', async () => {
       mockChapterRepo.findById.mockResolvedValue(baseChapter);
       mockBillingProvider.createCustomerPortalSession.mockResolvedValue(
@@ -261,9 +272,9 @@ describe('BillingService', () => {
 
     it('should throw ServiceUnavailableException on Stripe failure', async () => {
       mockChapterRepo.findById.mockResolvedValue(baseChapter);
-      mockBillingProvider.createCustomerPortalSession.mockRejectedValue(
-        new Error('Stripe is down'),
-      );
+      const stripeError = new Error('Stripe is down');
+      mockBillingProvider.createCustomerPortalSession.mockRejectedValue(stripeError);
+      const loggerErrorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
 
       await expect(
         service.createPortalSession({
@@ -271,6 +282,13 @@ describe('BillingService', () => {
           returnUrl: 'http://localhost:3000/billing',
         }),
       ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Failed to create portal session for chapter ch-1',
+        stripeError.stack,
+      );
+
+      loggerErrorSpy.mockRestore();
     });
   });
 
