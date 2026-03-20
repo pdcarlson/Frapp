@@ -4,6 +4,8 @@ import { UserService } from '../../application/services/user.service';
 import { UpdateUserDto, RequestAvatarUploadUrlDto } from '../dtos/user.dto';
 import { UseGuards, UseInterceptors } from '@nestjs/common';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { SystemPermissions } from '../../domain/constants/permissions';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { User } from '../../domain/entities/user.entity';
@@ -40,6 +42,10 @@ describe('UserController', () => {
       .useValue({ canActivate: () => true })
       .overrideGuard(ChapterGuard)
       .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
       .overrideInterceptor(AuthSyncInterceptor)
       .useValue({ intercept: (context, next) => next.handle() })
       .compile();
@@ -52,6 +58,26 @@ describe('UserController', () => {
   });
 
   describe('Guards and Interceptors', () => {
+    it('should have PermissionsGuard applied to the controller', () => {
+      const guards = Reflect.getMetadata('__guards__', UserController);
+      expect(guards).toBeDefined();
+      expect(guards).toContain(PermissionsGuard);
+    });
+
+    it('should have empty permissions or specific permissions for getMe', () => {
+      const permissions = Reflect.getMetadata('permissions', controller.getMe) || Reflect.getMetadata('permissions', UserController);
+      expect(permissions).toEqual([]); // or whatever we define
+    });
+
+    it('should have empty permissions or specific permissions for updateMe', () => {
+      const permissions = Reflect.getMetadata('permissions', controller.updateMe) || Reflect.getMetadata('permissions', UserController);
+      expect(permissions).toEqual([]);
+    });
+
+    it('should have appropriate permissions for requestAvatarUploadUrl', () => {
+      const permissions = Reflect.getMetadata('permissions', controller.requestAvatarUploadUrl);
+      expect(permissions).toEqual([]);
+    });
     it('should have SupabaseAuthGuard applied to the controller', () => {
       const guards = Reflect.getMetadata('__guards__', UserController);
       expect(guards).toBeDefined();

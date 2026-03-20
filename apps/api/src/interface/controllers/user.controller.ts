@@ -11,6 +11,9 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '../../domain/constants/permissions';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CurrentUser,
@@ -20,19 +23,21 @@ import { UpdateUserDto, RequestAvatarUploadUrlDto } from '../dtos/user.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard)
+@UseGuards(SupabaseAuthGuard, PermissionsGuard)
 @UseInterceptors(AuthSyncInterceptor)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get('me')
+  @RequirePermissions()
   @ApiOperation({ summary: 'Get current user profile' })
   async getMe(@CurrentUser('id') userId: string) {
     return this.userService.findById(userId);
   }
 
   @Patch('me')
+  @RequirePermissions()
   @ApiOperation({ summary: 'Update current user profile' })
   async updateMe(
     @CurrentUser('id') userId: string,
@@ -43,6 +48,7 @@ export class UserController {
 
   @Post('me/avatar-url')
   @UseGuards(ChapterGuard)
+  @RequirePermissions()
   @ApiOperation({ summary: 'Get signed upload URL for profile photo' })
   async requestAvatarUploadUrl(
     @CurrentUser('id') userId: string,

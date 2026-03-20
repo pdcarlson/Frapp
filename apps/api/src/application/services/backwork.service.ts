@@ -3,7 +3,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  BadRequestException,
   ConflictException,
 } from '@nestjs/common';
 import {
@@ -31,39 +30,6 @@ import {
 } from '../../domain/adapters/storage.interface';
 
 const BACKWORK_BUCKET = 'backwork';
-
-const ALLOWED_CONTENT_TYPES = new Set([
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/msword',
-  'application/vnd.ms-excel',
-  'application/vnd.ms-powerpoint',
-  'text/plain',
-  'text/csv',
-]);
-
-const ALLOWED_EXTENSIONS = new Set([
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.txt',
-  '.csv',
-]);
 
 export interface RequestUploadUrlInput {
   chapterId: string;
@@ -103,20 +69,6 @@ export class BackworkService {
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
-    const ext = input.filename.includes('.')
-      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
-      : '';
-
-    if (!ALLOWED_EXTENSIONS.has(ext)) {
-      throw new BadRequestException(`File extension "${ext}" is not allowed`);
-    }
-
-    if (!ALLOWED_CONTENT_TYPES.has(input.contentType)) {
-      throw new BadRequestException(
-        `Content type "${input.contentType}" is not allowed`,
-      );
-    }
-
     const resourceId = crypto.randomUUID();
     const storagePath = `chapters/${input.chapterId}/backwork/${resourceId}/${path.basename(input.filename)}`;
 

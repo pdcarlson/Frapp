@@ -1,9 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  NotFoundException,
-  BadRequestException,
-  ConflictException,
-} from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
 import { BackworkService } from './backwork.service';
 import {
   BACKWORK_RESOURCE_REPOSITORY,
@@ -133,25 +129,6 @@ describe('BackworkService', () => {
       expect(result.storagePath).toContain('chapters/ch-1/backwork/');
       expect(result.storagePath).toContain('midterm1.pdf');
       expect(result.resourceId).toBeDefined();
-    });
-    it('should throw BadRequestException for disallowed extensions', async () => {
-      await expect(
-        service.requestUploadUrl({
-          chapterId: 'ch-1',
-          filename: 'malicious.exe',
-          contentType: 'application/pdf', // Even with a valid content type
-        }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException for disallowed content types', async () => {
-      await expect(
-        service.requestUploadUrl({
-          chapterId: 'ch-1',
-          filename: 'valid.pdf',
-          contentType: 'application/x-msdownload',
-        }),
-      ).rejects.toThrow(BadRequestException);
     });
   });
 
