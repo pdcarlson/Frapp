@@ -4,7 +4,11 @@ import { FinancialInvoiceService } from '../../application/services/financial-in
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { CreateFinancialInvoiceDto, UpdateFinancialInvoiceDto, TransitionInvoiceStatusDto } from '../dtos/financial-invoice.dto';
+import {
+  CreateFinancialInvoiceDto,
+  UpdateFinancialInvoiceDto,
+  TransitionInvoiceStatusDto,
+} from '../dtos/financial-invoice.dto';
 import { Reflector } from '@nestjs/core';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { RequirePermissions } from '../decorators/permissions.decorator';
@@ -46,7 +50,9 @@ describe('FinancialInvoiceController', () => {
       .useValue({ canActivate: jest.fn().mockReturnValue(true) })
       .compile();
 
-    controller = module.get<FinancialInvoiceController>(FinancialInvoiceController);
+    controller = module.get<FinancialInvoiceController>(
+      FinancialInvoiceController,
+    );
   });
 
   it('should be defined', () => {
@@ -127,7 +133,10 @@ describe('FinancialInvoiceController', () => {
 
       const result = await controller.create(chapterId, dto);
 
-      expect(service.create).toHaveBeenCalledWith({ chapter_id: chapterId, ...dto });
+      expect(service.create).toHaveBeenCalledWith({
+        chapter_id: chapterId,
+        ...dto,
+      });
       expect(result).toBe(mockResult);
     });
 
@@ -173,7 +182,11 @@ describe('FinancialInvoiceController', () => {
 
       const result = await controller.transitionStatus(chapterId, id, dto);
 
-      expect(service.transitionStatus).toHaveBeenCalledWith(id, chapterId, dto.status);
+      expect(service.transitionStatus).toHaveBeenCalledWith(
+        id,
+        chapterId,
+        dto.status,
+      );
       expect(result).toBe(mockResult);
     });
 
@@ -193,7 +206,10 @@ describe('FinancialInvoiceController', () => {
 
       const result = await controller.getInvoiceTransactions(chapterId, id);
 
-      expect(service.getInvoiceTransactions).toHaveBeenCalledWith(id, chapterId);
+      expect(service.getInvoiceTransactions).toHaveBeenCalledWith(
+        id,
+        chapterId,
+      );
       expect(result).toBe(mockResult);
     });
 

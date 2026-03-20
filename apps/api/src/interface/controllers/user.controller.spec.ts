@@ -65,17 +65,24 @@ describe('UserController', () => {
     });
 
     it('should have empty permissions or specific permissions for getMe', () => {
-      const permissions = Reflect.getMetadata('permissions', controller.getMe) || Reflect.getMetadata('permissions', UserController);
+      const permissions =
+        Reflect.getMetadata('permissions', controller.getMe) ||
+        Reflect.getMetadata('permissions', UserController);
       expect(permissions).toEqual([]); // or whatever we define
     });
 
     it('should have empty permissions or specific permissions for updateMe', () => {
-      const permissions = Reflect.getMetadata('permissions', controller.updateMe) || Reflect.getMetadata('permissions', UserController);
+      const permissions =
+        Reflect.getMetadata('permissions', controller.updateMe) ||
+        Reflect.getMetadata('permissions', UserController);
       expect(permissions).toEqual([]);
     });
 
     it('should have appropriate permissions for requestAvatarUploadUrl', () => {
-      const permissions = Reflect.getMetadata('permissions', controller.requestAvatarUploadUrl);
+      const permissions = Reflect.getMetadata(
+        'permissions',
+        controller.requestAvatarUploadUrl,
+      );
       expect(permissions).toEqual([]);
     });
     it('should have SupabaseAuthGuard applied to the controller', () => {
@@ -85,13 +92,19 @@ describe('UserController', () => {
     });
 
     it('should have AuthSyncInterceptor applied to the controller', () => {
-      const interceptors = Reflect.getMetadata('__interceptors__', UserController);
+      const interceptors = Reflect.getMetadata(
+        '__interceptors__',
+        UserController,
+      );
       expect(interceptors).toBeDefined();
       expect(interceptors).toContain(AuthSyncInterceptor);
     });
 
     it('should have ChapterGuard applied to requestAvatarUploadUrl', () => {
-      const guards = Reflect.getMetadata('__guards__', controller.requestAvatarUploadUrl);
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        controller.requestAvatarUploadUrl,
+      );
       expect(guards).toBeDefined();
       expect(guards).toContain(ChapterGuard);
     });
@@ -138,7 +151,11 @@ describe('UserController', () => {
       };
       userService.requestAvatarUploadUrl!.mockResolvedValue(expectedResponse);
 
-      const result = await controller.requestAvatarUploadUrl(userId, chapterId, dto);
+      const result = await controller.requestAvatarUploadUrl(
+        userId,
+        chapterId,
+        dto,
+      );
 
       expect(userService.requestAvatarUploadUrl).toHaveBeenCalledWith(
         chapterId,
