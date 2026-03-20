@@ -1,4 +1,8 @@
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
@@ -35,7 +39,7 @@ interface QueryResult<T> {
 
 function throwIfError(error: QueryError | null): void {
   if (error) {
-    throw new Error(error.message);
+    throw new InternalServerErrorException(error.message);
   }
 }
 

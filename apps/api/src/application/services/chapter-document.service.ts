@@ -1,5 +1,10 @@
 import * as path from 'path';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import {
   CHAPTER_DOCUMENT_REPOSITORY,
   type ChapterDocumentFilter,
@@ -10,6 +15,21 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
+
+const ALLOWED_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/csv',
+]);
+
+const BLOCKED_EXTENSIONS = new Set(['.exe', '.sh', '.bat', '.cmd']);
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -38,6 +58,22 @@ export class ChapterDocumentService {
   ) {}
 
   async requestUploadUrl(input: RequestUploadUrlInput) {
+    const ext = input.filename.includes('.')
+      ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
+      : '';
+
+    if (BLOCKED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException(
+        'File type is not allowed: executable files are blocked',
+      );
+    }
+
+    if (!ALLOWED_CONTENT_TYPES.has(input.contentType)) {
+      throw new BadRequestException(
+        `Content type "${input.contentType}" is not allowed`,
+      );
+    }
+
     const documentId = crypto.randomUUID();
     const storagePath = `chapters/${input.chapterId}/documents/${documentId}/${path.basename(input.filename)}`;
 

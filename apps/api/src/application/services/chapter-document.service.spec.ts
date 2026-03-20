@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { ChapterDocumentService } from './chapter-document.service';
 import { CHAPTER_DOCUMENT_REPOSITORY } from '../../domain/repositories/chapter-document.repository.interface';
 import type { IChapterDocumentRepository } from '../../domain/repositories/chapter-document.repository.interface';
@@ -70,6 +70,26 @@ describe('ChapterDocumentService', () => {
       expect(result.storagePath).toContain('chapters/ch-1/documents/');
       expect(result.storagePath).toContain('bylaws.pdf');
       expect(result.documentId).toBeDefined();
+    });
+
+    it('should throw BadRequestException if file extension is blocked', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'script.sh',
+          contentType: 'text/plain',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if content type is not allowed', async () => {
+      await expect(
+        service.requestUploadUrl({
+          chapterId: 'ch-1',
+          filename: 'video.mp4',
+          contentType: 'video/mp4',
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
