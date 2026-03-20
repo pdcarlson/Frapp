@@ -456,6 +456,15 @@ describe('NotificationService', () => {
   });
 
   describe('listNotifications', () => {
+    it('should list notifications for user without limit option', async () => {
+      mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
+
+      const result = await service.listNotifications('u-1');
+
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', undefined);
+      expect(result).toEqual([baseNotification]);
+    });
+
     it('should list notifications for user', async () => {
       mockNotificationRepo.findByUser.mockResolvedValue([baseNotification]);
 
