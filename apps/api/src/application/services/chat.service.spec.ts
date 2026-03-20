@@ -260,6 +260,15 @@ describe('ChatService', () => {
     });
   });
 
+  describe('deleteCategory', () => {
+    it('should delete category by id', async () => {
+      mockCategoryRepo.delete.mockResolvedValue();
+
+      await service.deleteCategory('cat-1');
+      expect(mockCategoryRepo.delete).toHaveBeenCalledWith('cat-1');
+    });
+  });
+
   // ── Messages ─────────────────────────────────────────────────────────
 
   describe('getMessages', () => {

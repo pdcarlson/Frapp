@@ -12,12 +12,18 @@ if (!process.env.SUPABASE_SERVICE_ROLE_KEY)
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'placeholder-key';
 if (!process.env.SUPABASE_ANON_KEY)
   process.env.SUPABASE_ANON_KEY = 'placeholder-anon-key';
-if (!process.env.STRIPE_SECRET_KEY)
-  process.env.STRIPE_SECRET_KEY = 'openapi_export_stub'; // pragma: allowlist secret
-if (!process.env.STRIPE_WEBHOOK_SECRET)
-  process.env.STRIPE_WEBHOOK_SECRET = 'openapi_export_stub'; // pragma: allowlist secret
-if (!process.env.STRIPE_PRICE_ID)
-  process.env.STRIPE_PRICE_ID = 'openapi_export_stub'; // pragma: allowlist secret
+const requiredEnvVars = [
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_ID',
+];
+
+const missingVars = requiredEnvVars.filter((v) => !process.env[v]);
+if (missingVars.length > 0) {
+  throw new Error(
+    `Missing required environment variables for OpenAPI export: ${missingVars.join(', ')}`,
+  );
+}
 
 async function exportOpenApi() {
   const app = await NestFactory.create(AppModule, { logger: false });
