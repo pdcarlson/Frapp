@@ -137,6 +137,49 @@ describe('ChatService', () => {
     service = module.get(ChatService);
   });
 
+  // ── Categories ───────────────────────────────────────────────────────
+
+  describe('createCategory', () => {
+    it('should create a category with provided display_order', async () => {
+      const mockCategory: ChatChannelCategory = {
+        id: 'cat-1',
+        chapter_id: 'ch-1',
+        name: 'General',
+        display_order: 5,
+        created_at: '2026-01-01T00:00:00.000Z',
+      };
+      mockCategoryRepo.create.mockResolvedValue(mockCategory);
+
+      const result = await service.createCategory({
+        chapter_id: 'ch-1',
+        name: 'General',
+        display_order: 5,
+      });
+
+      expect(result).toEqual(mockCategory);
+      expect(mockCategoryRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        name: 'General',
+        display_order: 5,
+      });
+    });
+
+    it('should create a category with default display_order of 0 if not provided', async () => {
+      mockCategoryRepo.create.mockResolvedValue({} as ChatChannelCategory);
+
+      await service.createCategory({
+        chapter_id: 'ch-1',
+        name: 'Announcements',
+      });
+
+      expect(mockCategoryRepo.create).toHaveBeenCalledWith({
+        chapter_id: 'ch-1',
+        name: 'Announcements',
+        display_order: 0,
+      });
+    });
+  });
+
   // ── Channels ─────────────────────────────────────────────────────────
 
   describe('createChannel', () => {
