@@ -39,6 +39,7 @@ export function ThemeToggle() {
           variant="outline"
           size="icon"
           aria-label={`Theme mode: ${THEME_LABEL[resolvedTheme as keyof typeof THEME_LABEL] ?? "System"}`}
+          title="Toggle theme"
         >
           {icon}
         </Button>
