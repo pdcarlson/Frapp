@@ -325,10 +325,15 @@ describe('BillingService', () => {
         subscription_status: 'active',
       });
 
+      const debugSpy = jest.spyOn(service['logger'], 'debug');
+
       await service.handleWebhookEvent(event);
       await service.handleWebhookEvent(event);
 
       expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(debugSpy).toHaveBeenCalledWith(`Skipping already-processed event ${event.id}`);
+
+      debugSpy.mockRestore();
     });
 
     it('should handle checkout with missing chapter_id gracefully', async () => {
