@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { UserService } from './user.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
@@ -102,6 +102,44 @@ describe('UserService', () => {
   });
 
   describe('requestAvatarUploadUrl', () => {
+    it('should throw BadRequestException if file extension is not allowed', async () => {
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.exe',
+          'image/jpeg',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.exe',
+          'image/jpeg',
+        ),
+      ).rejects.toThrow('File extension ".exe" is not allowed');
+    });
+
+    it('should throw BadRequestException if content type is not allowed', async () => {
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.jpg',
+          'application/pdf',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.requestAvatarUploadUrl(
+          'ch-1',
+          'user-1',
+          'avatar.jpg',
+          'application/pdf',
+        ),
+      ).rejects.toThrow('Content type "application/pdf" is not allowed');
+    });
+
     it('should return signed URL and storage path for profile photo', async () => {
       mockStorageProvider.getSignedUploadUrl.mockResolvedValue(
         'https://storage.supabase.co/profiles/upload/signed',
