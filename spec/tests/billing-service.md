@@ -21,3 +21,4 @@ This document describes the test suite for the `BillingService` within the API a
 ## Exception Logging & Wrapping
 
 - **Non-Error Objects**: Both `createCheckoutSession` and `createPortalSession` handle scenarios where the Stripe API or `billingProvider` rejects with non-`Error` objects (like strings), logging them appropriately via the ternary operator logic `error instanceof Error ? error.stack : error`.
+- **should handle errors when notifying chapter president**: Ensures that if an internal error occurs while trying to notify the chapter president of a status change (such as `roleRepo.findByChapterAndName` throwing an error), the error is gracefully caught and a warning is logged using `logger.warn`, without throwing an exception and failing the webhook handling process.
