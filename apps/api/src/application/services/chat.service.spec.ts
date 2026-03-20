@@ -278,7 +278,10 @@ describe('ChatService', () => {
 
       const result = await service.getMessages('ch-chan-1');
 
-      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', undefined);
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
+        'ch-chan-1',
+        undefined,
+      );
       expect(result).toEqual(messages);
     });
 
@@ -289,7 +292,10 @@ describe('ChatService', () => {
       const options = { limit: 20, before: 'msg-5' };
       const result = await service.getMessages('ch-chan-1', options);
 
-      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', options);
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
+        'ch-chan-1',
+        options,
+      );
       expect(result).toEqual(messages);
     });
   });

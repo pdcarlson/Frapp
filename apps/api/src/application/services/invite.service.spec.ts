@@ -509,7 +509,6 @@ describe('InviteService', () => {
     });
   });
 
-
   it('should reject if existing member redeeming invite in InviteService', async () => {
     const invite: Invite = {
       id: 'inv-1',
@@ -536,7 +535,10 @@ describe('InviteService', () => {
     const promise = service.redeem('test-uuid', 'user-2');
     await expect(promise).rejects.toThrow(ConflictException);
     await expect(promise).rejects.toThrow('Already a member of this chapter');
-    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
+    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+      'user-2',
+      'ch-1',
+    );
   });
 
   describe('revoke', () => {
