@@ -4,9 +4,18 @@ import { ReportService } from '../../application/services/report.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { AttendanceReportDto, PointsReportDto, ServiceReportDto } from '../dtos/report.dto';
+import {
+  AttendanceReportDto,
+  PointsReportDto,
+  ServiceReportDto,
+} from '../dtos/report.dto';
 import { toCSV } from '../../domain/utils/csv';
-import { ATTENDANCE_COLUMNS, POINTS_COLUMNS, ROSTER_COLUMNS, SERVICE_COLUMNS } from './report-columns';
+import {
+  ATTENDANCE_COLUMNS,
+  POINTS_COLUMNS,
+  ROSTER_COLUMNS,
+  SERVICE_COLUMNS,
+} from './report-columns';
 
 // Mock the toCSV utility function
 jest.mock('../../domain/utils/csv', () => ({
@@ -55,18 +64,29 @@ describe('ReportController', () => {
       start_date: '2024-01-01',
       end_date: '2024-01-31',
     };
-    const mockData = [{ member_name: 'John Doe', event_name: 'Meeting', event_date: '2024-01-15', status: 'PRESENT', check_in_time: '2024-01-15T10:00:00Z' }];
+    const mockData = [
+      {
+        member_name: 'John Doe',
+        event_name: 'Meeting',
+        event_date: '2024-01-15',
+        status: 'PRESENT',
+        check_in_time: '2024-01-15T10:00:00Z',
+      },
+    ];
 
     it('should return attendance report data as JSON', async () => {
       reportService.getAttendanceReport.mockResolvedValue(mockData);
 
       const result = await controller.attendance(chapterId, dto);
 
-      expect(reportService.getAttendanceReport).toHaveBeenCalledWith(chapterId, {
-        event_id: dto.event_id,
-        start_date: dto.start_date,
-        end_date: dto.end_date,
-      });
+      expect(reportService.getAttendanceReport).toHaveBeenCalledWith(
+        chapterId,
+        {
+          event_id: dto.event_id,
+          start_date: dto.start_date,
+          end_date: dto.end_date,
+        },
+      );
       expect(result).toBe(mockData);
     });
 
@@ -77,7 +97,10 @@ describe('ReportController', () => {
       const result = await controller.attendance(chapterId, dto, 'csv', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv');
-      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="attendance-report.csv"');
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="attendance-report.csv"',
+      );
       expect(toCSV).toHaveBeenCalledWith(mockData, ATTENDANCE_COLUMNS);
       expect(result).toBe('mocked,csv,content');
     });
@@ -89,7 +112,13 @@ describe('ReportController', () => {
       user_id: 'user-123',
       window: 'Fall 2024',
     };
-    const mockData = [{ member_name: 'John Doe', total_points: 100, breakdown_by_category: { 'Meeting': 50 } }];
+    const mockData = [
+      {
+        member_name: 'John Doe',
+        total_points: 100,
+        breakdown_by_category: { Meeting: 50 },
+      },
+    ];
 
     it('should return points report data as JSON', async () => {
       reportService.getPointsReport.mockResolvedValue(mockData);
@@ -110,7 +139,10 @@ describe('ReportController', () => {
       const result = await controller.points(chapterId, dto, 'csv', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv');
-      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="points-report.csv"');
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="points-report.csv"',
+      );
       expect(toCSV).toHaveBeenCalledWith(mockData, POINTS_COLUMNS);
       expect(result).toBe('mocked,csv,content');
     });
@@ -118,7 +150,15 @@ describe('ReportController', () => {
 
   describe('roster', () => {
     const chapterId = 'chapter-123';
-    const mockData = [{ name: 'John Doe', email: 'john@example.com', roles: ['Member'], join_date: '2024-01-01', point_balance: 50 }];
+    const mockData = [
+      {
+        name: 'John Doe',
+        email: 'john@example.com',
+        roles: ['Member'],
+        join_date: '2024-01-01',
+        point_balance: 50,
+      },
+    ];
 
     it('should return roster report data as JSON', async () => {
       reportService.getRosterReport.mockResolvedValue(mockData);
@@ -136,7 +176,10 @@ describe('ReportController', () => {
       const result = await controller.roster(chapterId, 'csv', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv');
-      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="roster-report.csv"');
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="roster-report.csv"',
+      );
       expect(toCSV).toHaveBeenCalledWith(mockData, ROSTER_COLUMNS);
       expect(result).toBe('mocked,csv,content');
     });
@@ -149,7 +192,15 @@ describe('ReportController', () => {
       start_date: '2024-01-01',
       end_date: '2024-01-31',
     };
-    const mockData = [{ member_name: 'John Doe', date: '2024-01-15', duration_minutes: 120, description: 'Volunteering', status: 'APPROVED' }];
+    const mockData = [
+      {
+        member_name: 'John Doe',
+        date: '2024-01-15',
+        duration_minutes: 120,
+        description: 'Volunteering',
+        status: 'APPROVED',
+      },
+    ];
 
     it('should return service report data as JSON', async () => {
       reportService.getServiceReport.mockResolvedValue(mockData);
@@ -171,7 +222,10 @@ describe('ReportController', () => {
       const result = await controller.service(chapterId, dto, 'csv', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/csv');
-      expect(res.setHeader).toHaveBeenCalledWith('Content-Disposition', 'attachment; filename="service-report.csv"');
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="service-report.csv"',
+      );
       expect(toCSV).toHaveBeenCalledWith(mockData, SERVICE_COLUMNS);
       expect(result).toBe('mocked,csv,content');
     });
