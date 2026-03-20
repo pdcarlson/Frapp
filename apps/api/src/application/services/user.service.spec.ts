@@ -104,40 +104,16 @@ describe('UserService', () => {
   describe('requestAvatarUploadUrl', () => {
     it('should throw BadRequestException if file extension is not allowed', async () => {
       await expect(
-        service.requestAvatarUploadUrl(
-          'ch-1',
-          'user-1',
-          'avatar.exe',
-          'image/jpeg',
-        ),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.requestAvatarUploadUrl(
-          'ch-1',
-          'user-1',
-          'avatar.exe',
-          'image/jpeg',
-        ),
+        service.requestAvatarUploadUrl('ch-1', 'user-1', 'avatar.exe', 'image/jpeg')
       ).rejects.toThrow('File extension ".exe" is not allowed');
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException if content type is not allowed', async () => {
       await expect(
-        service.requestAvatarUploadUrl(
-          'ch-1',
-          'user-1',
-          'avatar.jpg',
-          'application/pdf',
-        ),
-      ).rejects.toThrow(BadRequestException);
-      await expect(
-        service.requestAvatarUploadUrl(
-          'ch-1',
-          'user-1',
-          'avatar.jpg',
-          'application/pdf',
-        ),
+        service.requestAvatarUploadUrl('ch-1', 'user-1', 'avatar.jpg', 'application/pdf')
       ).rejects.toThrow('Content type "application/pdf" is not allowed');
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
 
     it('should return signed URL and storage path for profile photo', async () => {

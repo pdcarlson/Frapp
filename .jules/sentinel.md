@@ -7,7 +7,7 @@
  **Learning:** When accepting file uploads by generating signed storage URLs dynamically, relying purely on the client's `contentType` or assuming safe filenames based on context (like "backwork") is insufficient. A lack of backend validation opens up arbitrary file upload vulnerabilities.
  **Prevention:** Enforce strict allowlists (e.g., via JavaScript Sets like `ALLOWED_EXTENSIONS` and `ALLOWED_CONTENT_TYPES`) to validate both the file's extension and its reported MIME type. Never use blocklists, as they are easily bypassed. Ensure the extracted extension logic is robust against double extensions.
 
-## 2024-03-20 - [UserService Avatar Upload Content Type & Extension Validation]
+## 2026-03-20 - [UserService Avatar Upload Content Type & Extension Validation]
 **Vulnerability:** The `requestAvatarUploadUrl` endpoint in `UserService` did not validate `filename` extensions or `contentType` before generating a signed Supabase storage upload URL. This allowed arbitrary file uploads (e.g. `.exe`, `.html`) to the `profiles` bucket.
 **Learning:** While other services (like `BackworkService` and `ChapterDocumentService`) successfully implemented explicit allowlists for their upload buckets, `UserService` missed this constraint. This demonstrates how upload validations can easily be missed on a per-service basis if there isn't a centralized upload validation middleware or utility.
 **Prevention:** Always implement explicit allowlists for both MIME types and file extensions when generating signed upload URLs, and consider centralizing this validation logic for reuse across all bucket upload flows.
