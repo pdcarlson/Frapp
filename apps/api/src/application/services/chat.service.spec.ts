@@ -547,7 +547,7 @@ describe('ChatService', () => {
       );
     });
 
-    it('should reject blocked executable content types', async () => {
+    it('should reject not allowed file extensions', async () => {
       await expect(
         service.requestChatUploadUrl(
           'ch-chan-1',
@@ -555,7 +555,8 @@ describe('ChatService', () => {
           'virus.exe',
           'application/x-msdownload',
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('File extension ".exe" is not allowed');
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
 
     it('should reject blocked .sh files', async () => {

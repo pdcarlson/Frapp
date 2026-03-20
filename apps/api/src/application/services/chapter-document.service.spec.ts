@@ -72,14 +72,15 @@ describe('ChapterDocumentService', () => {
       expect(result.documentId).toBeDefined();
     });
 
-    it('should throw BadRequestException if file extension is blocked', async () => {
+    it('should throw BadRequestException if file extension is not allowed', async () => {
       await expect(
         service.requestUploadUrl({
           chapterId: 'ch-1',
           filename: 'script.sh',
           contentType: 'text/plain',
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('File extension ".sh" is not allowed');
+      expect(mockStorageProvider.getSignedUploadUrl).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException if content type is not allowed', async () => {

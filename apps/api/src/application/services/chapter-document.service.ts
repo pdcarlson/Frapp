@@ -29,7 +29,22 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'text/csv',
 ]);
 
-const BLOCKED_EXTENSIONS = new Set(['.exe', '.sh', '.bat', '.cmd']);
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.csv',
+]);
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -62,9 +77,9 @@ export class ChapterDocumentService {
       ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (BLOCKED_EXTENSIONS.has(ext)) {
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
       throw new BadRequestException(
-        'File type is not allowed: executable files are blocked',
+        `File extension "${ext}" is not allowed`,
       );
     }
 
