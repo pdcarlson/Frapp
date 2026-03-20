@@ -456,6 +456,89 @@ describe('InviteService', () => {
     );
   });
 
+  it('should reject if invite not found', async () => {
+    mockInviteRepo.findByToken.mockResolvedValue(null);
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(GoneException);
+    await expect(promise).rejects.toThrow('Invite not found');
+  });
+
+  it('should reject if invite is not atomically claimed', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(false);
+
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(GoneException);
+    await expect(promise).rejects.toThrow('Invite already used');
+  });
+
+  it('should create member without roles if no matching role and no Member role found', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Admin',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockRoleRepo.findByChapter.mockResolvedValue([]);
+    mockMemberRepo.create.mockResolvedValue({} as any);
+
+    await service.redeem('test-uuid', 'user-2');
+
+    expect(mockMemberRepo.create).toHaveBeenCalledWith({
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: [],
+    });
+  });
+
+
+  it('should reject if existing member redeeming invite in InviteService', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const existingMember: Member = {
+      id: 'member-1',
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: ['role-1'],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(existingMember);
+
+    const promise = service.redeem('test-uuid', 'user-2');
+    await expect(promise).rejects.toThrow(ConflictException);
+    await expect(promise).rejects.toThrow('Already a member of this chapter');
+    expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith('user-2', 'ch-1');
+  });
+
   describe('revoke', () => {
     it('should mark invite as used', async () => {
       const invite: Invite = {
