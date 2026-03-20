@@ -7,6 +7,5 @@ export interface IEventRepository {
   findByChapter(chapterId: string): Promise<Event[]>;
   create(data: Partial<Event>): Promise<Event>;
   update(id: string, chapterId: string, data: Partial<Event>): Promise<Event>;
-  createMany(data: Partial<Event>[]): Promise<void>;
   delete(id: string, chapterId: string): Promise<void>;
 }
