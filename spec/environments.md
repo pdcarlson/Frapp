@@ -312,3 +312,5 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 ## Jules Cloud Environment
 The Jules agent execution environment uses a pre-configured headless cloud VM.
 A setup script is provided at `.jules/setup.sh` which can be pasted directly into the Jules UI "Initial Setup" window to automatically bootstrap the environment (Docker, dependencies, database, and validations).
+
+All AI agent configuration files, rules, and skills are maintained in the `.jules` directory (e.g., `.jules/rules`, `.jules/skills`).
