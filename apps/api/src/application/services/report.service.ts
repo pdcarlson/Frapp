@@ -66,12 +66,6 @@ interface AttendanceJoinedRow {
   users: { display_name: string } | null;
 }
 
-interface PointsTransactionRow {
-  user_id: string;
-  amount: number;
-  category: string | null;
-}
-
 interface UserNameRow {
   id: string;
   display_name: string;
@@ -105,6 +99,12 @@ interface ServiceEntryRow {
   duration_minutes: number;
   description: string;
   status: string;
+}
+
+interface PointsReportRpcRow {
+  member_name: string;
+  total_points: number;
+  breakdown_by_category: Record<string, number>;
 }
 
 function throwIfError(error: QueryError | null): void {
@@ -190,59 +190,20 @@ export class ReportService {
     chapterId: string,
     input: PointsReportInput,
   ): Promise<PointsReportRow[]> {
-    let query = this.supabase
-      .from('point_transactions')
-      .select('user_id, amount, category')
-      .eq('chapter_id', chapterId);
+    const query = this.supabase.rpc('get_points_report', {
+      p_chapter_id: chapterId,
+      p_user_id: input.user_id || null,
+      p_window: input.window || null,
+    });
 
-    if (input.user_id) {
-      query = query.eq('user_id', input.user_id);
-    }
-    if (input.window) {
-      // Window could be a semester; for now we don't have a formal window column
-      // so we ignore it unless we add created_at filtering
-      // Placeholder: could filter by created_at if window is date range
-    }
-
-    const { data: txns, error } =
-      (await query) as QueryResult<PointsTransactionRow>;
+    const { data, error } = (await query) as QueryResult<PointsReportRpcRow>;
     throwIfError(error);
 
-    const byUser = new Map<
-      string,
-      { total: number; byCategory: Record<string, number> }
-    >();
-
-    for (const t of txns ?? []) {
-      const uid = t.user_id;
-      if (!byUser.has(uid)) {
-        byUser.set(uid, { total: 0, byCategory: {} });
-      }
-      const entry = byUser.get(uid)!;
-      entry.total += t.amount ?? 0;
-      const cat = t.category ?? 'OTHER';
-      entry.byCategory[cat] = (entry.byCategory[cat] ?? 0) + (t.amount ?? 0);
-    }
-
-    const userIds = [...byUser.keys()];
-    if (userIds.length === 0) return [];
-
-    const { data: users, error: userError } = (await this.supabase
-      .from('users')
-      .select('id, display_name')
-      .in('id', userIds)) as QueryResult<UserNameRow>;
-    throwIfError(userError);
-
-    const userMap = new Map((users ?? []).map((u) => [u.id, u.display_name]));
-
-    return userIds.map((uid) => {
-      const entry = byUser.get(uid)!;
-      return {
-        member_name: userMap.get(uid) ?? '',
-        total_points: entry.total,
-        breakdown_by_category: entry.byCategory,
-      };
-    });
+    return (data ?? []).map((row) => ({
+      member_name: row.member_name,
+      total_points: Number(row.total_points),
+      breakdown_by_category: row.breakdown_by_category || {},
+    }));
   }
 
   async getRosterReport(chapterId: string): Promise<RosterReportRow[]> {
