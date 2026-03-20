@@ -24,7 +24,7 @@ A change passes only if all are true:
 3. Contrast requirements are met:
    - text contrast ≥ 4.5:1
    - non-text UI contrast ≥ 3:1
-4. Icon-only controls expose a clear accessible label.
+4. Icon-only controls expose a clear accessible label (e.g., `aria-label`) and a visual tooltip (e.g., `title`) for sighted users.
 5. Async states are understandable without color-only signals.
 
 ## 3) Automated checks (required)
