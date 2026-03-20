@@ -20,6 +20,7 @@ describe('EventService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -177,19 +178,21 @@ describe('EventService', () => {
         recurrence_rule: 'WEEKLY',
       });
 
-      // 1 parent + 12 instances = 13 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(13);
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
 
-      // Verify first instance has correct parent_event_id and null recurrence_rule
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const createdInstances = mockEventRepo.createMany.mock.calls[0][0];
+      expect(createdInstances).toHaveLength(12);
+
+      const firstInstance = createdInstances[0];
+      expect(firstInstance.parent_event_id).toBe('evt-1');
+      expect(firstInstance.recurrence_rule).toBeNull();
 
       // Verify start_time is 7 days after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setDate(expectedStart.getDate() + 7);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstInstance.start_time).toBe(expectedStart.toISOString());
     });
 
     it('should generate 6 instances for BIWEEKLY recurrence', async () => {
@@ -207,18 +210,21 @@ describe('EventService', () => {
         recurrence_rule: 'BIWEEKLY',
       });
 
-      // 1 parent + 6 instances = 7 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
 
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const createdInstances = mockEventRepo.createMany.mock.calls[0][0];
+      expect(createdInstances).toHaveLength(6);
+
+      const firstInstance = createdInstances[0];
+      expect(firstInstance.parent_event_id).toBe('evt-1');
+      expect(firstInstance.recurrence_rule).toBeNull();
 
       // Verify start_time is 14 days after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setDate(expectedStart.getDate() + 14);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstInstance.start_time).toBe(expectedStart.toISOString());
     });
 
     it('should generate 6 instances for MONTHLY recurrence', async () => {
@@ -236,18 +242,21 @@ describe('EventService', () => {
         recurrence_rule: 'MONTHLY',
       });
 
-      // 1 parent + 6 instances = 7 total create calls
-      expect(mockEventRepo.create).toHaveBeenCalledTimes(7);
+      expect(mockEventRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockEventRepo.createMany).toHaveBeenCalledTimes(1);
 
-      const secondCall = mockEventRepo.create.mock.calls[1][0];
-      expect(secondCall.parent_event_id).toBe('evt-1');
-      expect(secondCall.recurrence_rule).toBeNull();
+      const createdInstances = mockEventRepo.createMany.mock.calls[0][0];
+      expect(createdInstances).toHaveLength(6);
+
+      const firstInstance = createdInstances[0];
+      expect(firstInstance.parent_event_id).toBe('evt-1');
+      expect(firstInstance.recurrence_rule).toBeNull();
 
       // Verify start_time is 1 month after parent for the first instance
       const parentStart = new Date(baseEvent.start_time);
       const expectedStart = new Date(parentStart);
       expectedStart.setMonth(expectedStart.getMonth() + 1);
-      expect(secondCall.start_time).toBe(expectedStart.toISOString());
+      expect(firstInstance.start_time).toBe(expectedStart.toISOString());
     });
 
     it('each instance should have correct parent_event_id and null recurrence_rule', async () => {
@@ -265,10 +274,11 @@ describe('EventService', () => {
         recurrence_rule: 'WEEKLY',
       });
 
-      for (let i = 1; i <= 12; i++) {
-        const call = mockEventRepo.create.mock.calls[i][0];
-        expect(call.parent_event_id).toBe('evt-1');
-        expect(call.recurrence_rule).toBeNull();
+      const createdInstances = mockEventRepo.createMany.mock.calls[0][0];
+      expect(createdInstances).toHaveLength(12);
+      for (const instance of createdInstances) {
+        expect(instance.parent_event_id).toBe('evt-1');
+        expect(instance.recurrence_rule).toBeNull();
       }
     });
 

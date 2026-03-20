@@ -43,6 +43,12 @@ export class SupabaseEventRepository implements IEventRepository {
     return created as Event;
   }
 
+  async createMany(data: Partial<Event>[]): Promise<void> {
+    if (!data.length) return;
+    const { error } = await this.supabase.from('events').insert(data as never);
+    if (error) throw error;
+  }
+
   async update(
     id: string,
     chapterId: string,
