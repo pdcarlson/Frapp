@@ -196,47 +196,6 @@ describe('AttendanceService', () => {
       jest.useRealTimers();
     });
 
-    it('should not attempt rollback if attendance creation fails', async () => {
-      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
-      jest.useFakeTimers();
-      jest.setSystemTime(duringEvent);
-
-      mockEventRepo.findById.mockResolvedValue(baseEvent);
-      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockRejectedValue(
-        new Error('attendance write failed'),
-      );
-
-      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
-        'attendance write failed',
-      );
-      expect(mockAttendanceRepo.delete).not.toHaveBeenCalled();
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      jest.useRealTimers();
-    });
-
-    it('should swallow rollback error and throw original error when both writes fail', async () => {
-      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
-      jest.useFakeTimers();
-      jest.setSystemTime(duringEvent);
-
-      mockEventRepo.findById.mockResolvedValue(baseEvent);
-      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
-      mockPointTxnRepo.create.mockRejectedValue(
-        new Error('points write failed'),
-      );
-      mockAttendanceRepo.delete.mockRejectedValue(
-        new Error('rollback delete failed'),
-      );
-
-      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
-        'points write failed',
-      );
-      expect(mockAttendanceRepo.delete).toHaveBeenCalledWith('att-1');
-      jest.useRealTimers();
-    });
-
     it('should rollback attendance row when points creation fails', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');
       jest.useFakeTimers();

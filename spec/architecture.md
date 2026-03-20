@@ -348,3 +348,9 @@ Configurable alerts via the monitoring provider:
 - **Type safety:** TypeScript strict mode across all apps and packages.
 - **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
 - **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint (100 req/min read, 30 req/min write). File upload MIME type validation.
+
+## Database Performance
+
+* For complex aggregations, computation should be pushed down to the Postgres database via RPC functions using `this.supabase.rpc('func_name')`.
+* This approach avoids querying large amounts of raw data into application memory just to group and calculate totals.
+* Examples of this pattern include `get_points_report` which aggregates point transactions by user and category.
