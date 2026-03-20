@@ -6,7 +6,7 @@ import { OfflineBanner } from "@/components/shared/offline-banner";
 import { Toaster } from "@/components/ui/toaster";
 
 const geistSans = localFont({
-  src: "./fonts/GeistVF.woff2",
+  src: "../../../packages/theme/fonts/GeistVF.woff2",
   variable: "--font-geist-sans",
   weight: "100 900",
   display: "swap",

@@ -52,12 +52,25 @@ The spec is the single source of truth. Implementation follows the spec.
 
 ## Quick Start
 
-Run each app command below in its own terminal (they are long-running dev servers).
+**Bootstrap Supabase + deps (WSL/Linux, Docker running):**
 
 ```bash
-npm install
-npx supabase start
-npx supabase db push --local
+bash scripts/local-dev-setup.sh
+```
+
+Then run each app command below in its own terminal (they are long-running dev servers). Prefer Infisical-injected env from the repo root:
+
+```bash
+npm run dev:api
+npm run dev:web
+npm run dev:landing
+npm run dev -w apps/docs
+```
+
+Without Infisical (use `.env.local` per `docs/internal/ENV_REFERENCE.md`):
+
+```bash
+bash scripts/local-dev-setup.sh
 npm run start:dev -w apps/api
 npm run dev -w apps/web
 npm run dev -w apps/landing

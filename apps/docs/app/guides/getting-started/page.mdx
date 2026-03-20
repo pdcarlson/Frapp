@@ -12,20 +12,31 @@ This guide walks you through setting up the Frapp monorepo and running the full 
 - **Supabase CLI**: `npm install -g supabase` or `npx supabase --version`
 - **Git**
 
-## 1. Clone and install
+## 1. Clone the repository
 
 ```bash
 git clone git@github.com:pdcarlson/Frapp.git
 cd Frapp
-npm install
 ```
 
-## 2. Start local Supabase
+## 2. Bootstrap Docker + Supabase (recommended)
 
-From the repo root:
+With **Docker running** (`docker info` succeeds — e.g. Docker Desktop with WSL integration, or Docker Engine on Linux):
 
 ```bash
+bash scripts/local-dev-setup.sh
+```
+
+This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then optional typecheck and migration-safety checks. Use `bash scripts/local-dev-setup.sh --quick` to skip the checks. It does **not** start `dockerd`; Jules cloud VMs use `scripts/jules-setup.sh` when no Docker Desktop exists.
+
+## 3. Start local Supabase (manual alternative)
+
+From the repo root, if you skipped the script:
+
+```bash
+npm install
 npx supabase start
+npx supabase db push --local
 ```
 
 This spins up the local Supabase stack (Postgres, Auth, Storage, Realtime, Studio) using Docker and applies our migrations from `supabase/migrations/`.
@@ -40,7 +51,7 @@ You can open Supabase Studio at:
   also adding a migration.
 </Callout>
 
-## 3. Configure environment variables
+## 4. Configure environment variables
 
 When `supabase start` finishes, it prints the local project URL and keys:
 
@@ -81,7 +92,7 @@ npm run start -w apps/mobile
 
 Then open the Expo QR code in Expo Go on your phone.
 
-## 5. Verify everything is healthy
+## 6. Verify everything is healthy
 
 - **API health check**: `http://localhost:3001/health`
 - **Web app**: `http://localhost:3000`

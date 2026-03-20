@@ -3,10 +3,27 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Menu, Settings, ShieldCheck, Star, Users } from "lucide-react";
+import {
+  Bell,
+  BookOpen,
+  CalendarDays,
+  CircleDollarSign,
+  LayoutDashboard,
+  Menu,
+  Settings,
+  ShieldCheck,
+  Star,
+  Users,
+} from "lucide-react";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
@@ -29,7 +46,12 @@ const navItems = [
   { icon: Users, label: "Members", href: "/members", status: "available" },
   { icon: CalendarDays, label: "Events", href: "/events", status: "available" },
   { icon: Star, label: "Points", href: "/points", status: "available" },
-  { icon: CircleDollarSign, label: "Billing", href: "/billing", status: "available" },
+  {
+    icon: CircleDollarSign,
+    label: "Billing",
+    href: "/billing",
+    status: "available",
+  },
   {
     icon: BookOpen,
     label: "Backwork",
@@ -51,7 +73,7 @@ const chapterPreview = {
 };
 
 const sidebarFocusRingClassName =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950";
 const navIconClassName = "h-4 w-4";
 const statusIconClassName = "h-3.5 w-3.5";
 
@@ -68,7 +90,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const chapterAccent = resolveChapterAccentColor(chapterPreview.requestedAccent);
+  const chapterAccent = resolveChapterAccentColor(
+    chapterPreview.requestedAccent,
+  );
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -87,7 +111,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const pageAction = actionByPath[pathname] ?? "Open Action";
 
   function renderNavItems(onNavigate?: () => void) {
-    return navItems.map((item) => (
+    return navItems.map((item) =>
       item.href ? (
         <Link
           key={item.label}
@@ -97,8 +121,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
             "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
             sidebarFocusRingClassName,
             pathname === item.href
-              ? "bg-primary/20 text-white"
-              : "text-slate-300 hover:bg-slate-800 hover:text-white",
+              ? "border-l-2 border-primary bg-primary/15 text-white"
+              : "border-l-2 border-transparent text-slate-300 hover:bg-navy-900 hover:text-white",
           )}
         >
           <item.icon className={navIconClassName} />
@@ -118,13 +142,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <item.icon className={navIconClassName} />
           <span>{item.label}</span>
           {item.statusLabel ? (
-            <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+            <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
               {item.statusLabel}
             </span>
           ) : null}
         </button>
-      )
-    ));
+      ),
+    );
   }
 
   useEffect(() => {
@@ -150,20 +174,27 @@ export function DashboardShell({ children }: DashboardShellProps) {
         onOpenChange={setNotificationDrawerOpen}
       />
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="border-slate-800 bg-slate-950 px-4 py-6 text-slate-100">
+        <SheetContent
+          side="left"
+          className="border-border bg-navy-950 px-4 py-6 text-slate-100"
+        >
           <SheetHeader>
             <SheetTitle className="text-white">Navigation</SheetTitle>
-            <SheetDescription className="text-slate-400">
+            <SheetDescription className="text-muted-foreground">
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
           <nav className="mt-6 space-y-1">
             {renderNavItems(() => setMobileNavOpen(false))}
           </nav>
-          <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
-            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
+          <div className="mt-8 rounded-lg border border-border bg-navy-900/80 p-4">
+            <p className="text-xs text-muted-foreground">Chapter</p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              {chapterPreview.name}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {chapterPreview.university}
+            </p>
           </div>
         </SheetContent>
       </Sheet>
@@ -174,19 +205,25 @@ export function DashboardShell({ children }: DashboardShellProps) {
         Skip to main content
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">
-        <aside className="hidden min-h-screen w-72 border-r border-border bg-slate-950 px-4 py-6 text-slate-100 lg:block">
-          <div className="mb-8 px-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Frapp</p>
-            <p className="mt-2 text-lg font-semibold text-white">Operations Console</p>
+        <aside className="hidden min-h-screen w-72 border-r border-border bg-navy-950 px-4 py-6 text-slate-100 lg:block">
+          <div className="mb-8 border-b border-border pb-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+              Frapp
+            </p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              Operations Console
+            </p>
           </div>
-          <nav className="space-y-1">
-            {renderNavItems()}
-          </nav>
+          <nav className="space-y-1">{renderNavItems()}</nav>
 
-          <div className="mt-10 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
+          <div className="mt-10 rounded-lg border border-border bg-navy-900/80 p-4">
             <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
-            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
+            <p className="mt-1 text-sm font-semibold text-white">
+              {chapterPreview.name}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {chapterPreview.university}
+            </p>
             <div
               className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
               style={{
