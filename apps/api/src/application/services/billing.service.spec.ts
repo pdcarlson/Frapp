@@ -273,8 +273,12 @@ describe('BillingService', () => {
     it('should throw ServiceUnavailableException on Stripe failure', async () => {
       mockChapterRepo.findById.mockResolvedValue(baseChapter);
       const stripeError = new Error('Stripe is down');
-      mockBillingProvider.createCustomerPortalSession.mockRejectedValue(stripeError);
-      const loggerErrorSpy = jest.spyOn(service['logger'], 'error').mockImplementation(() => {});
+      mockBillingProvider.createCustomerPortalSession.mockRejectedValue(
+        stripeError,
+      );
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => {});
 
       await expect(
         service.createPortalSession({
