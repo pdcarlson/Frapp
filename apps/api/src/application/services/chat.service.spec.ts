@@ -262,6 +262,29 @@ describe('ChatService', () => {
 
   // ── Messages ─────────────────────────────────────────────────────────
 
+  describe('getMessages', () => {
+    it('should return messages without pagination options', async () => {
+      const messages = [baseMessage];
+      mockMessageRepo.findByChannel.mockResolvedValue(messages);
+
+      const result = await service.getMessages('ch-chan-1');
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', undefined);
+      expect(result).toEqual(messages);
+    });
+
+    it('should pass pagination options to repository', async () => {
+      const messages = [baseMessage];
+      mockMessageRepo.findByChannel.mockResolvedValue(messages);
+
+      const options = { limit: 20, before: 'msg-5' };
+      const result = await service.getMessages('ch-chan-1', options);
+
+      expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith('ch-chan-1', options);
+      expect(result).toEqual(messages);
+    });
+  });
+
   describe('sendMessage', () => {
     it('should send a message', async () => {
       mockChannelRepo.findById.mockResolvedValue(baseChannel);
