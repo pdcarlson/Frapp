@@ -574,6 +574,44 @@ describe('BillingService', () => {
       );
     });
 
+    it('should handle errors when notifying chapter president', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_update_notify_error',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+            status: 'past_due',
+          },
+        },
+      };
+
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'past_due',
+      });
+      mockRoleRepo.findByChapterAndName.mockRejectedValue(new Error('Database error'));
+
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      await service.handleWebhookEvent(event);
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        'Failed to notify president for chapter ch-1'
+      );
+
+      loggerWarnSpy.mockRestore();
+    });
+
     it('should notify chapter president on subscription deletion', async () => {
       const event: WebhookEvent = {
         id: 'evt_sub_delete_notify',
