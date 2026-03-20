@@ -283,7 +283,7 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(null);
 
       await expect(service.getAttendance('evt-1', 'ch-1')).rejects.toThrow(
-        NotFoundException,
+        new NotFoundException('Event not found'),
       );
       expect(mockAttendanceRepo.findByEvent).not.toHaveBeenCalled();
     });
