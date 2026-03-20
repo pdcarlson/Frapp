@@ -219,6 +219,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   size="icon"
                   className="lg:hidden"
                   aria-label="Open navigation menu"
+                  title="Open navigation menu"
                   onClick={() => setMobileNavOpen(true)}
                 >
                   <Menu className="h-4 w-4" />
@@ -226,18 +227,17 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="inline-flex gap-2 text-muted-foreground"
+                  className="inline-flex"
+                  title="Search commands and resources"
                   onClick={() => setCommandMenuOpen(true)}
                 >
-                  <span>Search</span>
-                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
-                    <span className="text-xs">⌘</span>K
-                  </kbd>
+                  Search (⌘K)
                 </Button>
                 <Button
                   variant="outline"
                   size="icon"
                   aria-label="Notifications"
+                  title="Notifications"
                   onClick={() => setNotificationDrawerOpen(true)}
                 >
                   <Bell className="h-4 w-4" />
