@@ -409,6 +409,18 @@ describe('ChapterService', () => {
     });
   });
 
+  it('should reject logo upload with invalid content type', async () => {
+    await expect(
+      service.requestLogoUploadUrl('ch-1', 'logo.png', 'application/pdf'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('should reject logo upload with invalid extension', async () => {
+    await expect(
+      service.requestLogoUploadUrl('ch-1', 'logo.pdf', 'image/png'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('should confirm logo upload and update logo_path', async () => {
     const updatedChapter: Chapter = {
       id: 'ch-1',
