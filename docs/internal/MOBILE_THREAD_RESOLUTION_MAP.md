@@ -65,3 +65,9 @@ Use this checklist in the canonical PR description:
 - `npm run lint`
 - `npm run check-types`
 - Manual walkthrough artifact (mobile + web interaction/theme matrix)
+
+### Code Health Improvements
+
+| Review finding | File(s) | Fix implemented | Evidence |
+|---|---|---|---|
+| Avoid generic Error for invalid state in calendar export | `apps/mobile/lib/calendar-export.ts`, `apps/mobile/lib/errors.ts` | Created `InvalidArgumentException` and replaced generic `Error` in `toIcsTimestamp` | Lint/typecheck pass |
