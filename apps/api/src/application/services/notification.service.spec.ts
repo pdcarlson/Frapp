@@ -461,7 +461,10 @@ describe('NotificationService', () => {
 
       const result = await service.listNotifications('u-1');
 
-      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith('u-1', undefined);
+      expect(mockNotificationRepo.findByUser).toHaveBeenCalledWith(
+        'u-1',
+        undefined,
+      );
       expect(result).toEqual([baseNotification]);
     });
 
