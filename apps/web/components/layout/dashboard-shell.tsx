@@ -226,10 +226,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="inline-flex"
+                  className="inline-flex gap-2 text-muted-foreground"
                   onClick={() => setCommandMenuOpen(true)}
                 >
-                  Search (⌘K)
+                  <span>Search</span>
+                  <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100 sm:flex">
+                    <span className="text-xs">⌘</span>K
+                  </kbd>
                 </Button>
                 <Button
                   variant="outline"
