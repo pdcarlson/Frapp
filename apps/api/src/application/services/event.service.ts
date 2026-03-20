@@ -125,7 +125,7 @@ export class EventService {
 
     // ⚡ Bolt: Optimize recurring instance creation using Promise.all
     // Eliminates N+1 sequential database queries by executing them concurrently.
-    const promises = Array.from({ length: count }, (_, idx) => {
+    const instances = Array.from({ length: count }, (_, idx) => {
       const i = idx + 1;
       const instanceStart = new Date(start);
       const instanceEnd = new Date(end);
@@ -158,7 +158,7 @@ export class EventService {
         instanceEnd.setDate(Math.min(end.getDate(), maxEndDay));
       }
 
-      return this.eventRepo.create({
+      return {
         chapter_id: parent.chapter_id,
         name: parent.name,
         description: parent.description,
@@ -171,10 +171,10 @@ export class EventService {
         parent_event_id: parent.id,
         required_role_ids: parent.required_role_ids,
         notes: parent.notes,
-      });
+      };
     });
 
-    await Promise.all(promises);
+    await this.eventRepo.createMany(instances);
   }
 
   async update(
