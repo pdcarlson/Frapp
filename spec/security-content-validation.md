@@ -10,10 +10,10 @@ A strict `ALLOWED_CONTENT_TYPES` Set must be maintained in the service to valida
 - Images: `image/jpeg`, `image/png`, `image/gif`, `image/webp`
 - Documents: `application/pdf`, `text/plain`, `text/csv`, Office documents (`.docx`, `.xlsx`, `.pptx`)
 
-### 2. Blocked File Extensions
-A strict `BLOCKED_EXTENSIONS` Set must be maintained to explicitly block executables and scripts. If the user's `input.filename` contains these extensions, the upload must be rejected.
-Example blocked extensions:
-- `.exe`, `.sh`, `.bat`, `.cmd`
+### 2. Allowed File Extensions
+A strict `ALLOWED_EXTENSIONS` Set must be maintained to explicitly allow only safe file extensions. If the user's `input.filename` extension is not in this list, the upload must be rejected. Blocklists must not be used.
+Example allowed extensions:
+- `.pdf`, `.docx`, `.jpg`, `.png`
 
 ## Error Handling
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
