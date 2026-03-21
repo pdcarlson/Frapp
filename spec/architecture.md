@@ -354,3 +354,8 @@ Configurable alerts via the monitoring provider:
 * For complex aggregations, computation should be pushed down to the Postgres database via RPC functions using `this.supabase.rpc('func_name')`.
 * This approach avoids querying large amounts of raw data into application memory just to group and calculate totals.
 * Examples of this pattern include `get_points_report` which aggregates point transactions by user and category.
+
+## Refactoring Note: TaskStatus Enum
+
+The `TaskStatus` type, originally implemented as a string literal union, has been promoted to a TypeScript string `enum`.
+This ensures greater type safety and consistency across `apps/api` DTOs, service transition logic (`VALID_ASSIGNEE_TRANSITIONS`), and other modules utilizing task statuses. This does not change runtime behavior but improves compile-time checks and API documentation generation.

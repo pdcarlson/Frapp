@@ -9,7 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import type { TaskStatus } from '../../domain/entities/task.entity';
+import { TaskStatus } from '../../domain/entities/task.entity';
 
 export class CreateTaskDto {
   @ApiProperty()
@@ -38,8 +38,8 @@ export class CreateTaskDto {
 }
 
 export class UpdateTaskStatusDto {
-  @ApiProperty({ enum: ['TODO', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'] })
-  @IsEnum(['TODO', 'IN_PROGRESS', 'COMPLETED', 'OVERDUE'])
+  @ApiProperty({ enum: TaskStatus })
+  @IsEnum(TaskStatus)
   status: TaskStatus;
 }
 
