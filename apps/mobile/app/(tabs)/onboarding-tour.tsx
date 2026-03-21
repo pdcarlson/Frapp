@@ -1,4 +1,5 @@
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { FrappTokens } from "@repo/theme/tokens";
@@ -7,31 +8,38 @@ import { useFrappTheme } from "@/lib/theme";
 const ONBOARDING_STEPS = [
   {
     title: "Welcome to Frapp",
-    detail: "Understand chapter expectations, notification priorities, and where daily updates live.",
+    detail:
+      "Understand chapter expectations, notification priorities, and where daily updates live.",
   },
   {
     title: "Chat foundations",
-    detail: "Learn how channel permissions, announcement rules, and message reliability states work.",
+    detail:
+      "Learn how channel permissions, announcement rules, and message reliability states work.",
   },
   {
     title: "Events and attendance",
-    detail: "See check-in windows, grace periods, and calendar export actions before your first meeting.",
+    detail:
+      "See check-in windows, grace periods, and calendar export actions before your first meeting.",
   },
   {
     title: "Backwork access",
-    detail: "Find chapter documents quickly with role-aware visibility and offline fallback guidance.",
+    detail:
+      "Find chapter documents quickly with role-aware visibility and offline fallback guidance.",
   },
   {
     title: "Study and service loops",
-    detail: "Understand how session tracking and service approvals convert into chapter points.",
+    detail:
+      "Understand how session tracking and service approvals convert into chapter points.",
   },
   {
     title: "Profile and preferences",
-    detail: "Set quiet hours, theme mode, and communication defaults to match your routine.",
+    detail:
+      "Set quiet hours, theme mode, and communication defaults to match your routine.",
   },
   {
     title: "You’re ready",
-    detail: "Review key actions for your first week and revisit this tutorial from Profile anytime.",
+    detail:
+      "Review key actions for your first week and revisit this tutorial from Profile anytime.",
   },
 ];
 
@@ -66,7 +74,7 @@ export default function OnboardingTourScreen() {
         ))}
       </View>
 
-      <Link href="/profile" asChild>
+      <Link href={asRoute("/profile")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to profile</Text>
         </Pressable>

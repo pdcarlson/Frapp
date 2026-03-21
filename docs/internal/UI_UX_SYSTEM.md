@@ -26,15 +26,16 @@ Never treat emerald as global primary action color.
 
 ## 3) Component Ownership Matrix
 
-| Layer | Location | Ownership |
-|---|---|---|
-| Shared primitives | `packages/ui` | Cross-app foundational controls only |
-| Theme/tokens | `packages/theme` | Semantic tokens + animation/elevation defaults |
-| Dashboard composites | `apps/web/components/*` | Workflow-specific and shadcn/radix compositions |
-| Landing sections | `apps/landing/app/*` | Marketing-specific content modules |
-| Mobile composites | `apps/mobile/components/*` | React Native/Expo-specific UX patterns |
+| Layer                | Location                   | Ownership                                       |
+| -------------------- | -------------------------- | ----------------------------------------------- |
+| Shared primitives    | `packages/ui`              | Cross-app foundational controls only            |
+| Theme/tokens         | `packages/theme`           | Semantic tokens + animation/elevation defaults  |
+| Dashboard composites | `apps/web/components/*`    | Workflow-specific and shadcn/radix compositions |
+| Landing sections     | `apps/landing/app/*`       | Marketing-specific content modules              |
+| Mobile composites    | `apps/mobile/components/*` | React Native/Expo-specific UX patterns          |
 
 Rules:
+
 1. If a component is workflow-specific, keep it app-local.
 2. If a component is style-agnostic + reusable across web/landing/docs, promote to `packages/ui`.
 3. Never duplicate token values in app-local files when semantic tokens exist.
@@ -63,6 +64,7 @@ Minimum release requirements:
 - Dialogs trap focus and return focus to trigger on close
 
 Execution protocol and evidence requirements are documented in:
+
 - `docs/internal/ACCESSIBILITY_TESTING_PROTOCOL.md`
 
 ## 6) Motion and Feedback
@@ -76,6 +78,7 @@ Adopt these timing ranges:
 Motion must remain subtle, functional, and compatible with reduced-motion preferences.
 
 Motion token source:
+
 - `packages/theme/src/tokens.ts` (`motion.duration`, `motion.easing`)
 
 ## 7) Chapter Accent Safety Rules
@@ -87,6 +90,7 @@ Chapter-provided accent colors must pass minimum contrast thresholds before use:
 - Failing colors are automatically replaced with the fallback accent (`royalBlue`)
 
 Implementation reference:
+
 - `packages/theme/src/accent.ts` (`resolveChapterAccentColor`)
 
 ## 8) Quality Gate Checklist
@@ -102,12 +106,14 @@ A UI change is not ready unless it passes:
 7. Trust/copy clarity (no placeholder language)
 
 Icon sizing and usage standards are documented in:
+
 - `docs/internal/ICONOGRAPHY_GUIDELINES.md`
 
 Typography roles and usage standards are documented in:
+
 - `docs/internal/TYPOGRAPHY_GUIDELINES.md`
 
 Frapp logos, favicons, Open Graph, and asset sync are documented in:
+
 - `spec/ui-assets.md`
 - `docs/internal/BRAND_ASSETS.md`
-

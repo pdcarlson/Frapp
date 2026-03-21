@@ -24,4 +24,4 @@ echo "Validating environment setup..."
 npm run check-types
 npm run check:migration-safety
 
-echo "✅ Environment setup complete! Database and dependencies are ready."
+echo "âœ… Environment setup complete! Database and dependencies are ready."

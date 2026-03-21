@@ -1,4 +1,5 @@
 import { Link, useRouter } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
@@ -69,7 +70,7 @@ export default function ProfileScreen() {
           })}
         </View>
       </View>
-      <Link href="/onboarding-tour" asChild>
+      <Link href={asRoute("/onboarding-tour")} asChild>
         <Pressable style={styles.tutorialButton}>
           <Text style={styles.tutorialText}>Revisit onboarding tutorial</Text>
         </Pressable>
@@ -81,7 +82,7 @@ export default function ProfileScreen() {
         }}
         style={styles.signOutButton}
       >
-          <Text style={styles.signOutText}>Sign out of preview session</Text>
+        <Text style={styles.signOutText}>Sign out of preview session</Text>
       </Pressable>
     </ScreenShell>
   );

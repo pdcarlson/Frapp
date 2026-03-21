@@ -21,23 +21,23 @@ If `infisical run` fails (no session, wrong project, or API key without `local` 
 
 ## Ports and URLs
 
-| Service         | Port  | URL                          |
-| --------------- | ----- | ---------------------------- |
-| Web             | 3000  | http://localhost:3000        |
-| API             | 3001  | http://localhost:3001        |
-| Swagger         | —     | http://localhost:3001/docs   |
-| Landing         | 3002  | http://localhost:3002        |
-| Docs            | 3005  | http://localhost:3005        |
-| Supabase Studio | 54323 | http://127.0.0.1:54323       |
+| Service         | Port  | URL                        |
+| --------------- | ----- | -------------------------- |
+| Web             | 3000  | http://localhost:3000      |
+| API             | 3001  | http://localhost:3001      |
+| Swagger         | —     | http://localhost:3001/docs |
+| Landing         | 3002  | http://localhost:3002      |
+| Docs            | 3005  | http://localhost:3005      |
+| Supabase Studio | 54323 | http://127.0.0.1:54323     |
 
 ## Per-app commands (only if you are not using `dev:stack`)
 
-| App            | With Infisical        | Without Infisical               |
-| -------------- | --------------------- | ------------------------------- |
-| API            | `npm run dev:api`     | `npm run start:dev -w apps/api` |
-| Web            | `npm run dev:web`     | `npm run dev -w apps/web`       |
-| Landing        | `npm run dev:landing` | `npm run dev -w apps/landing` |
-| Docs           | `npm run dev:docs`    | `npm run dev -w apps/docs`      |
+| App     | With Infisical        | Without Infisical               |
+| ------- | --------------------- | ------------------------------- |
+| API     | `npm run dev:api`     | `npm run start:dev -w apps/api` |
+| Web     | `npm run dev:web`     | `npm run dev -w apps/web`       |
+| Landing | `npm run dev:landing` | `npm run dev -w apps/landing`   |
+| Docs    | `npm run dev:docs`    | `npm run dev -w apps/docs`      |
 
 ## `dev:stack` vs separate terminals
 

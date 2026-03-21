@@ -79,7 +79,7 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 
 ### 2.4 Documentation — docs.frapp.live
 
-User-facing documentation (`apps/docs`). Audience: chapter admins learning how to use Frapp.
+Developer documentation: canonical markdown in [`docs/guides/`](../docs/guides/README.md); the Next.js site (`apps/docs`) is a shell with frozen guide stubs linking to those files. Audience for guides: contributors and operators; chapter-admin product help may grow separately.
 
 - Getting started (create chapter, invite members).
 - Feature guides (Backwork, events, points, chat, study hours, billing, roles).
@@ -321,20 +321,22 @@ Design inspiration: Stripe Docs, Vercel Docs, Tailwind Docs. Clean sidebar navig
 
 Frapp balances the prestige of traditional Greek life with the clean feel of modern SaaS.
 
+**Cross-app tokens, CTA color semantics, and motifs** are specified in **[spec/ui-brand-identity.md](ui-brand-identity.md)** and implemented in `@repo/theme`. This section summarizes product-facing labels; where naming differs, **ui-brand-identity wins** (e.g., ShadCN **`primary`** is royal blue for buttons and links, not navy).
+
 ### Color Palette
 
-| Role                   | Color                         | Hex       |
-| ---------------------- | ----------------------------- | --------- |
-| Primary (Navy)         | Professional, trustworthy     | `#0F172A` |
-| Secondary (Royal Blue) | Action-oriented               | `#2563EB` |
-| Success (Emerald)      | Growth, positive transactions | `#10B981` |
-| Background (Slate)     | Clean, focused                | `#F8FAFC` |
+| Role                                    | Color                         | Hex       |
+| --------------------------------------- | ----------------------------- | --------- |
+| Navy (headlines, body text, trust)      | Professional, trustworthy     | `#0F172A` |
+| Royal blue (**primary** actions, links) | Action-oriented CTAs          | `#2563EB` |
+| Success (Emerald)                       | Growth, positive transactions | `#10B981` |
+| Background (Slate)                      | Clean, focused                | `#F8FAFC` |
 
 Dark mode variants defined in `@repo/theme`. Dark mode respects system preference with manual override.
 
 ### Typography
 
-- **Primary font:** Geist or Inter (clean sans-serif).
+- **Primary font:** Geist Sans (see [spec/ui-brand-identity.md](ui-brand-identity.md) §4).
 - **Web dashboards:** High density, compact spacing.
 - **Mobile:** Generous spacing, touch-friendly targets (minimum 44x44px).
 

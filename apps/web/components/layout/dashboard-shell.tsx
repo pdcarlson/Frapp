@@ -87,11 +87,7 @@ type ChapterPayload = {
   accent_color?: string | null;
 };
 
-function DashboardChapterPanel({
-  variant,
-}: {
-  variant: "sidebar" | "sheet";
-}) {
+function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data, isPending, isError, isFetching } = useCurrentChapter({
     enabled: !!activeChapterId,

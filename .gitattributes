@@ -1,0 +1,2 @@
+# Shell scripts must use LF so WSL/Linux shebangs work (CRLF causes `env: 'bash\r'`).
+*.sh text eol=lf

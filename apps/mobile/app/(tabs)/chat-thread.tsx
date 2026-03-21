@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
@@ -172,7 +173,7 @@ export default function ChatThreadScreen() {
         </View>
       </View>
 
-      <Link href="/chat" asChild>
+      <Link href={asRoute("/chat")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to chat overview</Text>
         </Pressable>

@@ -51,7 +51,10 @@ export function FrappLockup({ asLink = true, className }: FrappLockupProps) {
 
   if (asLink) {
     return (
-      <Link href="/" className="inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+      <Link
+        href="/"
+        className="inline-flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+      >
         {inner}
       </Link>
     );

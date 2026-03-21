@@ -75,10 +75,9 @@ export function useConfirmLogo() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: { storage_path: string }) => {
-      const { data, error } = await client.POST(
-        "/v1/chapters/current/logo",
-        { body },
-      );
+      const { data, error } = await client.POST("/v1/chapters/current/logo", {
+        body,
+      });
       if (error) throw error;
       return data;
     },
@@ -94,9 +93,7 @@ export function useDeleteLogo() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await client.DELETE(
-        "/v1/chapters/current/logo",
-      );
+      const { data, error } = await client.DELETE("/v1/chapters/current/logo");
       if (error) throw error;
       return data;
     },

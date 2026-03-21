@@ -6,14 +6,14 @@ Concise operating guide for AI agents and developers. **Deep detail:** [`docs/in
 
 These environment variables sometimes exist in hosted agent VMs. Omit on a normal laptop; use `npx infisical login` for local app secrets.
 
-| Env var                                    | Purpose                                        |
-| ------------------------------------------ | ---------------------------------------------- |
-| `INFISICAL_API_KEY`                        | Infisical API (may not include `local` env)    |
-| `RENDER_APIKEY` / `VERCEL_API_KEY`         | Provider APIs                                  |
-| `SUPABASE_API_KEY`                         | Supabase Management API                        |
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`        | `gh` CLI, branch protection script             |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                   |
-| `JULES_USER_API_KEY`                       | Jules automation (if used)                     |
+| Env var                                    | Purpose                                     |
+| ------------------------------------------ | ------------------------------------------- |
+| `INFISICAL_API_KEY`                        | Infisical API (may not include `local` env) |
+| `RENDER_APIKEY` / `VERCEL_API_KEY`         | Provider APIs                               |
+| `SUPABASE_API_KEY`                         | Supabase Management API                     |
+| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`        | `gh` CLI, branch protection script          |
+| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                |
+| `JULES_USER_API_KEY`                       | Jules automation (if used)                  |
 
 **Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values. Full policy and CI tables: [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md).
 
@@ -41,14 +41,14 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 ## Services and ports
 
-| What            | Port  | Notes                                        |
-| --------------- | ----- | -------------------------------------------- |
+| What            | Port  | Notes                                            |
+| --------------- | ----- | ------------------------------------------------ |
 | **Default run** | —     | `npm run dev:stack` (API + web + landing + docs) |
-| Web             | 3000  |                                              |
-| API / Swagger   | 3001  | `/docs` for Swagger                          |
-| Landing         | 3002  |                                              |
-| Docs            | 3005  |                                              |
-| Supabase Studio | 54323 | After `npx supabase start`                   |
+| Web             | 3000  |                                                  |
+| API / Swagger   | 3001  | `/docs` for Swagger                              |
+| Landing         | 3002  |                                                  |
+| Docs            | 3005  |                                                  |
+| Supabase Studio | 54323 | After `npx supabase start`                       |
 
 Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).
 
@@ -75,25 +75,25 @@ See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md). Deploy archi
 
 ## Lint, test, build, type-check
 
-| Step            | Command                          |
-| --------------- | -------------------------------- |
-| Lint            | `npm run lint` / `npm run lint:api` |
-| Tests           | `npm run test -w apps/api`       |
-| Build           | `npm run build`                  |
-| Types           | `npm run check-types`            |
-| API contract    | `npm run check:api-contract`     |
-| Migrations      | `npm run check:migration-safety` |
+| Step         | Command                             |
+| ------------ | ----------------------------------- |
+| Lint         | `npm run lint` / `npm run lint:api` |
+| Tests        | `npm run test -w apps/api`          |
+| Build        | `npm run build`                     |
+| Types        | `npm run check-types`               |
+| API contract | `npm run check:api-contract`        |
+| Migrations   | `npm run check:migration-safety`    |
 
 CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testing.md).
 
 ## Task skills (read the matching file before deep work)
 
-| Area                    | File                                      |
-| ----------------------- | ----------------------------------------- |
-| NestJS API / contract   | `.cursor/skills/api-development.md`       |
-| Web / landing / UI      | `.cursor/skills/ui-development.md`        |
-| Tests / verification    | `.cursor/skills/testing.md`               |
-| Audits / quality        | `.cursor/skills/audit.md`                 |
+| Area                    | File                                        |
+| ----------------------- | ------------------------------------------- |
+| NestJS API / contract   | `.cursor/skills/api-development.md`         |
+| Web / landing / UI      | `.cursor/skills/ui-development.md`          |
+| Tests / verification    | `.cursor/skills/testing.md`                 |
+| Audits / quality        | `.cursor/skills/audit.md`                   |
 | Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
 
 Cursor rules under `.cursor/rules/` point at these same skill files.

@@ -4,13 +4,13 @@
 
 ## Locations
 
-| What | Path |
-| ---- | ---- |
-| Source SVGs | `packages/brand-assets/assets/app-icon.svg`, `frapp-lockup.svg` |
-| Synced tab icons | `apps/landing/app/icon.svg`, `apps/web/app/icon.svg`, `apps/docs/app/icon.svg` |
-| Landing lockup (React) | `apps/landing/components/frapp-lockup.tsx` — inline SVG; keep visually aligned with `frapp-lockup.svg` |
-| Landing public copy (optional embeds) | `apps/landing/public/frapp-lockup.svg` (synced for “right-click save” / docs) |
-| OG image | `apps/landing/app/opengraph-image.tsx` |
+| What                                  | Path                                                                                                   |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Source SVGs                           | `packages/brand-assets/assets/app-icon.svg`, `frapp-lockup.svg`                                        |
+| Synced tab icons                      | `apps/landing/app/icon.svg`, `apps/web/app/icon.svg`, `apps/docs/app/icon.svg`                         |
+| Landing lockup (React)                | `apps/landing/components/frapp-lockup.tsx` — inline SVG; keep visually aligned with `frapp-lockup.svg` |
+| Landing public copy (optional embeds) | `apps/landing/public/frapp-lockup.svg` (synced for “right-click save” / docs)                          |
+| OG image                              | `apps/landing/app/opengraph-image.tsx`                                                                 |
 
 ## Sync command
 

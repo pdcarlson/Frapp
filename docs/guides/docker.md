@@ -1,0 +1,105 @@
+# Docker (API)
+
+This guide explains the Frapp API Dockerfile and local container workflows.
+
+## 1. API Dockerfile overview
+
+The NestJS API lives in `apps/api/` and is built with a multi-stage Dockerfile at `apps/api/Dockerfile`.
+
+Because this is a monorepo (workspaces + shared packages), the **build context is the repo root**.
+
+Key points:
+
+- **deps stage**: installs the workspace dependencies needed to build the API.
+- **builder stage**: compiles shared packages + the API to `dist/`.
+- **prod-deps stage**: installs production-only dependencies.
+- **runner stage**: slim runtime image that runs as a **non-root** `frapp` user.
+- Exposes port **3001** and defines a `/health` **HEALTHCHECK**.
+
+## 2. .dockerignore
+
+Because the build context is the **repo root**, the **root** `.dockerignore` keeps the image small and builds fast:
+
+```text
+apps/web
+apps/mobile
+apps/landing
+apps/docs
+**/node_modules
+**/dist
+**/.turbo
+**/.env*
+```
+
+We rely on the builder stage to compile TypeScript and only copy `dist/` into the runtime image.
+
+## 3. Local container testing
+
+From the repo root:
+
+```bash
+docker build -f apps/api/Dockerfile -t frapp-api .
+```
+
+To run the container against your local Supabase instance:
+
+```bash
+docker run --rm -p 3001:3001 \
+  -e SUPABASE_URL=http://host.docker.internal:54321 \
+  -e SUPABASE_SERVICE_ROLE_KEY=... \
+  -e SUPABASE_ANON_KEY=... \
+  -e STRIPE_SECRET_KEY=... \
+  -e STRIPE_WEBHOOK_SECRET=... \
+  -e STRIPE_PRICE_ID=... \
+  frapp-api
+```
+
+Then hit:
+
+- `http://localhost:3001/health`
+
+> **Tip:** Use `host.docker.internal` so the API container can talk to Supabase running on your host machine (`npx supabase start`).
+
+## 4. docker-compose (optional convenience)
+
+At the repo root we maintain a minimal `docker-compose.yml` for the API:
+
+```yaml
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - SUPABASE_URL=http://host.docker.internal:54321
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - STRIPE_PRICE_ID=${STRIPE_PRICE_ID}
+      - PORT=3001
+      - NODE_ENV=production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+Usage:
+
+```bash
+docker compose up --build api
+```
+
+## 5. Production deployment target
+
+The current target platform for the API is **Render**.
+
+- Use `apps/api/Dockerfile`.
+- Set root build context to the monorepo root.
+- Configure required env vars in Render service settings.
+- Keep staging (`main`) and production (`production`) services isolated.
+
+For the full rollout checklist (including current status and pending items), use the repository runbook: `docs/DEPLOYMENT.md`.
+
+> **Note:** We deliberately avoid containerizing the Next.js apps and Supabase. Next.js deploys best on Vercel, and Supabase Cloud manages its own Postgres/Auth/Storage/Realtime stack.

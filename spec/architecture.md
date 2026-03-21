@@ -4,22 +4,22 @@
 
 ## 1. High-Level Stack
 
-| Layer         | Technology                                   | Notes                                                                                   |
-| ------------- | -------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Monorepo      | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                               |
-| Landing       | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                     |
-| Web App       | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                          |
-| Mobile App    | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                        |
-| Docs Site     | Next.js, Tailwind                            | `apps/docs` at docs.frapp.live. User-facing guides.                                     |
-| API           | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                   |
-| Database      | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                  |
-| Auth          | Supabase Auth                                | Email/password, magic link, OAuth.                                                      |
-| Storage       | Supabase Storage                             | Private buckets for Backwork and chat files. Signed URLs.                               |
-| Realtime      | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status. |
-| Billing       | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                            |
-| Push          | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                        |
-| Observability | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                               |
-| CI/CD         | GitHub Actions + Vercel + EAS                | Lint, typecheck, test, deploy.                                                          |
+| Layer         | Technology                                   | Notes                                                                                                                                                                  |
+| ------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Monorepo      | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                                                                                                              |
+| Landing       | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                                                                    |
+| Web App       | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                                                                         |
+| Mobile App    | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                                                                       |
+| Docs Site     | Next.js, Tailwind                            | `apps/docs` at docs.frapp.live. Shell + spec browser; **canonical developer guides:** [`docs/guides/`](../docs/guides/README.md) (site guide pages on content freeze). |
+| API           | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                                                                  |
+| Database      | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                                                                 |
+| Auth          | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                                                                     |
+| Storage       | Supabase Storage                             | Private buckets for Backwork and chat files. Signed URLs.                                                                                                              |
+| Realtime      | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status.                                                                                |
+| Billing       | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                                                                           |
+| Push          | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                                                                       |
+| Observability | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                                                                                                              |
+| CI/CD         | GitHub Actions + Vercel + EAS                | Lint, typecheck, test, deploy.                                                                                                                                         |
 
 ---
 
@@ -92,11 +92,11 @@ Frapp/
 ### 3.5 Docs (`apps/docs`)
 
 - **Framework:** Next.js, Tailwind, MDX or Markdown rendering.
-- **Content source:** Authored content (how-to guides, FAQ). May reference `spec/` for domain definitions.
+- **Content source:** Developer-facing guides are authored in **[`docs/guides/`](../docs/guides/README.md)** (markdown in-repo). The `apps/docs` site keeps navigation and renders `spec/` at `/docs/[slug]`; curated MDX guide **bodies** are on **content freeze** and link to `docs/guides/*.md` on GitHub.
 - **Design:** Inspired by Stripe Docs / Vercel Docs. Clean sidebar navigation, search, dark mode, polished typography.
 - **Deployment:** Vercel at docs.frapp.live.
-- **Sync rule:** Documentation is treated as part of the product. When behavior, architecture, or workflows change, the corresponding pages in `apps/docs` and the specs in `spec/` **must** be updated in the same change set. Divergence between docs and implementation is considered a bug.
-  - **Enforcement:** CI fails PRs that change product code (e.g. `apps/api/`, `packages/`, `supabase/`, or app shells) without also updating `apps/docs/` and/or `spec/`.
+- **Sync rule:** Documentation is treated as part of the product. When behavior, architecture, or workflows change, update **`docs/`** (e.g. `docs/guides/`) and/or **`spec/`** in the same change set. Divergence between docs and implementation is considered a bug.
+  - **Enforcement:** CI fails PRs that change product code (e.g. `apps/api/`, `packages/`, `supabase/`, or app shells) without also updating **`docs/`**, **`spec/`**, and/or **`apps/docs/`** (any one satisfies the gate; prefer `docs/` + `spec/`). See `docs/internal/DOCS_CI.md`.
   - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
 ---
@@ -351,9 +351,9 @@ Configurable alerts via the monitoring provider:
 
 ## Database Performance
 
-* For complex aggregations, computation should be pushed down to the Postgres database via RPC functions using `this.supabase.rpc('func_name')`.
-* This approach avoids querying large amounts of raw data into application memory just to group and calculate totals.
-* Examples of this pattern include `get_points_report` which aggregates point transactions by user and category.
+- For complex aggregations, computation should be pushed down to the Postgres database via RPC functions using `this.supabase.rpc('func_name')`.
+- This approach avoids querying large amounts of raw data into application memory just to group and calculate totals.
+- Examples of this pattern include `get_points_report` which aggregates point transactions by user and category.
 
 ## Refactoring Note: TaskStatus Enum
 

@@ -43,4 +43,6 @@ for (const dest of targets) {
 if (failed) {
   process.exit(1);
 }
-console.log("brand-assets: all app/icon.svg files match canonical app-icon.svg");
+console.log(
+  "brand-assets: all app/icon.svg files match canonical app-icon.svg",
+);

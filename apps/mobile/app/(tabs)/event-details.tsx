@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
@@ -42,7 +43,9 @@ export default function EventDetailsScreen() {
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Check-in window</Text>
         <Text style={styles.summaryValue}>5:45 PM → 6:15 PM</Text>
-        <Text style={styles.summaryMeta}>Required for Executive Board roles</Text>
+        <Text style={styles.summaryMeta}>
+          Required for Executive Board roles
+        </Text>
       </View>
 
       <TaskLoopCard
@@ -102,7 +105,7 @@ export default function EventDetailsScreen() {
           Calendar export failed. Retry from a stable network connection.
         </Text>
       ) : null}
-      <Link href="/events" asChild>
+      <Link href={asRoute("/events")} asChild>
         <Pressable style={styles.secondaryButton}>
           <Text style={styles.secondaryButtonText}>Back to events</Text>
         </Pressable>

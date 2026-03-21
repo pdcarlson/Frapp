@@ -12,7 +12,11 @@ type LegalDocumentProps = {
   sections: LegalSection[];
 };
 
-export function LegalDocument({ title, lastUpdated, sections }: LegalDocumentProps) {
+export function LegalDocument({
+  title,
+  lastUpdated,
+  sections,
+}: LegalDocumentProps) {
   return (
     <main className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border bg-background/90 backdrop-blur">
@@ -27,13 +31,19 @@ export function LegalDocument({ title, lastUpdated, sections }: LegalDocumentPro
       </header>
 
       <article className="mx-auto w-full max-w-3xl px-6 py-14">
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{title}</h1>
-        <p className="mt-3 text-sm text-muted-foreground">Last updated: {lastUpdated}</p>
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+          {title}
+        </h1>
+        <p className="mt-3 text-sm text-muted-foreground">
+          Last updated: {lastUpdated}
+        </p>
 
         <div className="mt-10 space-y-9">
           {sections.map((section) => (
             <section key={section.heading} className="space-y-3">
-              <h2 className="text-lg font-semibold sm:text-xl">{section.heading}</h2>
+              <h2 className="text-lg font-semibold sm:text-xl">
+                {section.heading}
+              </h2>
               {section.paragraphs.map((paragraph, paragraphIndex) => (
                 <p
                   key={`${section.heading}-${paragraphIndex}`}

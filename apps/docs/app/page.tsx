@@ -60,6 +60,15 @@ const sections = [
 export default function Home() {
   return (
     <div className="space-y-16">
+      <div className="rounded-xl border border-amber-500/35 bg-amber-500/[0.07] px-4 py-3 text-[13px] leading-relaxed text-muted-foreground sm:px-5">
+        <span className="font-semibold text-amber-100/95">
+          Site on content freeze.{" "}
+        </span>
+        Developer guides are maintained in markdown under{" "}
+        <code className="text-foreground/80">docs/guides/</code> in the repo.
+        Links below still work but each page points to the canonical file on
+        GitHub.
+      </div>
       {/* Hero */}
       <header className="space-y-5">
         <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/[0.06] px-3 py-1">

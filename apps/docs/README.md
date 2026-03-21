@@ -1,6 +1,6 @@
 # Frapp Docs Site (`apps/docs`)
 
-Public documentation site for Frapp (`docs.frapp.live`).
+Public documentation shell for Frapp (`docs.frapp.live`). **Guide content is frozen here**; canonical markdown lives in [`docs/guides/`](../../docs/guides/README.md) at the repo root.
 
 ## Local development
 
@@ -24,7 +24,7 @@ npm run lint -w apps/docs
 
 ## Content structure
 
-- `app/guides/*` — curated docs pages written as MDX.
+- `app/guides/*` — MDX routes that link to canonical guides under `docs/guides/*.md` (content freeze).
 - `app/docs/[slug]` — renders Markdown docs sourced from `spec/`.
 - `components/navigation.ts` — sidebar and mobile nav structure.
 

@@ -70,33 +70,24 @@ Do not use scale-on-hover on marketing cards as a default; prefer border/color t
 
 **Sticky** at the top of the viewport. Use solid **`bg-background`** and **`border-b border-border`** for a flat, ledger-adjacent chrome (aligned with [ui-brand-identity.md](ui-brand-identity.md) §2.2). Optional subtle backdrop blur is allowed if contrast remains sufficient.
 
-**Desktop layout (≥1024px):**
+**Layout (reference: `apps/landing/app/page.tsx`):**
 
 ```
-[Logo]                    [Features] [Pricing] [Docs]        [Log In]  [Get Started →]
+[Logo]     [Features] [How it works] [Pricing]     [Log In]  [Get Started]
 ```
 
-- Logo: Frapp lockup SVG (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)
-- Nav links: Regular weight, slate-600 color, hover: royal-blue, transition 150ms
-- "Log In": Ghost button (border, transparent bg), links to `app.frapp.live/login`
-- "Get Started →": Solid button (royal-blue bg, white text, rounded-lg), links to `app.frapp.live/signup`
-- Buttons have hover scale(1.02) + shadow transition
+- **md and up:** Show inline nav: Features (`#features`), How it works (`#how-it-works`), Pricing (`#pricing`). Documentation lives in the footer link to `docs.frapp.live` (not duplicated in the header).
+- **Below md:** Nav links are hidden; logo + primary **Get Started** CTA remain visible. **Log In** is shown from `md` upward (`hidden md:inline-flex` pattern). A full-screen hamburger menu is optional and not part of the current home implementation.
 
-**Mobile layout (<1024px):**
-
-```
-[Logo]                                         [☰ Menu]
-```
-
-- Hamburger icon opens a full-screen overlay (slide down, 300ms)
-- Overlay: white bg, centered nav links (24px each), CTA buttons at bottom
-- Close button (X) top-right
+- Logo: Frapp lockup (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)
+- Nav links: `text-muted-foreground`, hover to `text-foreground` (or equivalent), color transitions only — **no** hover scale on primary chrome per [ui-brand-identity.md](ui-brand-identity.md) §5
+- "Log In": Ghost-style link/button to signup base + `/login`
+- "Get Started": `bg-primary` / `text-primary-foreground`, hover `bg-primary/90` (semantic primary = royal blue in light mode)
 
 **Scroll behavior:**
 
-- Header height: 72px (desktop), 64px (mobile)
-- `z-50` to stay above all content
-- Transition: `background-color 300ms, box-shadow 300ms`
+- Sticky header with `z-40` in the reference layout (`sticky top-0 z-40`)
+- Flat chrome: `border-b border-border bg-background`
 
 ### Footer
 
@@ -119,9 +110,9 @@ Two sections: links grid + bottom bar.
 - Social icons: 24x24, slate-400, hover: royal-blue
 - Footer bg: `slate-900` (light mode), `slate-950` (dark mode), text white/slate-300
 
-### Dark Mode Toggle
+### Dark mode
 
-Small icon button in the header (sun/moon icon). Three states: Light, Dark, System. Click cycles through them. Persisted in `localStorage`.
+Dark styles use shared `@repo/theme` tokens (`dark:` utilities). The home page does **not** ship a header theme toggle; system preference applies unless a future control is added (e.g. sun/moon persisted in `localStorage`).
 
 ---
 
@@ -192,47 +183,28 @@ Horizontal strip between hero and features. Provides immediate credibility.
 
 ### Section 3: Feature Highlights
 
-**6 feature cards** in a 3x2 grid (desktop), 2x3 (tablet), 1x6 stacked (mobile).
+**Six capabilities** in a **single bordered card** with **stacked rows** (`divide-y`), not a 3×2 icon grid. Each row: **icon** (Lucide, `text-primary`) + **title** + **short description** (`text-muted-foreground`).
 
-Each card:
+**Rows (representative copy — adjust in code as product evolves):**
 
-```
-┌──────────────────────┐
-│  [Icon]              │
-│                      │
-│  Feature Name        │
-│                      │
-│  Short description   │
-│  (2-3 lines max)     │
-│                      │
-└──────────────────────┘
-```
+| Icon / area | Title                | Description (intent)                                                                |
+| ----------- | -------------------- | ----------------------------------------------------------------------------------- |
+| Book        | Backwork Library     | Search study resources by department, course, professor, semester, assignment type. |
+| Message     | Real-Time Chat       | Channels, role-gated rooms, announcements, DMs — chapter-native comms.              |
+| Calendar    | Events & Attendance  | Self-check-in, role-targeted events, automatic point awards.                        |
+| Star        | Points & Leaderboard | Transparent points, audit-friendly ledger, semester-aware rankings.                 |
+| Grad cap    | Study Hours          | Verified study sessions in approved geofences with anti-spoof feedback.             |
+| Dollar      | Billing & Dues       | Subscription visibility, invoices, payment status for treasurers.                   |
 
-**Cards:**
+**Container styling:**
 
-| Icon          | Title                | Description                                                                                                                |
-| ------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 📚 (book)     | Backwork Library     | Search exams, homeworks, and study guides by course, professor, and semester. Uploaded by brothers, for brothers.          |
-| 💬 (chat)     | Real-Time Chat       | Channels, DMs, and announcements — like Discord, built for your chapter. Role-gated channels keep conversations organized. |
-| 📅 (calendar) | Events & Attendance  | Create events, track check-ins, auto-award points. Members check in from their phones — no paper sign-in sheets.           |
-| ⭐ (star)     | Points & Leaderboard | Gamified engagement. Points for attendance, study hours, and service. Leaderboard drives healthy competition.              |
-| 📍 (pin)      | Study Hours          | Geofenced study tracking at approved locations. Members earn points for focused study time — no GPS spoofing.              |
-| 💰 (dollar)   | Billing & Dues       | One-click dues collection with Stripe. Invoices, payment tracking, and overdue alerts for treasurers.                      |
-
-**Card styling:**
-
-- `bg-white` (light) / `bg-slate-800` (dark), `rounded-2xl`, `p-8`
-- Subtle `border border-slate-200` (light) / `border-slate-700` (dark)
-- Hover: `shadow-lg`, `translate-y-[-2px]`, 200ms transition
-- Icon: 48x48, in a rounded-xl bg (emerald-50 light / emerald-900/20 dark), emerald-600 color
-- Title: H3, Navy, weight 600
-- Description: Body Small, slate-600
+- Outer: `rounded-lg border border-border bg-card`, optional `motion-safe:animate-fade-up`
+- Rows: `flex` layout, `p-6`, `gap` between icon and text; icon ~`h-8 w-8`
 
 **Section header:**
 
-- Overline: "EVERYTHING YOUR CHAPTER NEEDS"
-- H2: "Six tools, one platform."
-- Centered, max-width 600px
+- Ledger line + overline: e.g. **"Core capabilities"** (`text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground`)
+- H2: e.g. **"One ledger for communication, events, points, and dues."** (`text-navy` / `dark:text-white`)
 
 ### Section 4: How It Works
 
@@ -438,25 +410,18 @@ All three share the same layout:
 
 ## 6. SEO & Metadata
 
-```html
-<title>Frapp — The Operating System for Greek Life</title>
-<meta
-  name="description"
-  content="Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters."
-/>
-<meta
-  property="og:title"
-  content="Frapp — The Operating System for Greek Life"
-/>
-<meta
-  property="og:description"
-  content="One platform for chat, events, study hours, points, backwork, and billing."
-/>
-<meta property="og:image" content="/og-image.png" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-```
+Use the **Next.js App Router** `metadata` export in `apps/landing/app/layout.tsx` for `title`, `description`, `metadataBase`, `openGraph`, and `twitter` (card type `summary_large_image`).
+
+**Do not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` unless that file exists in `public/`. The canonical approach is the dynamic route **`apps/landing/app/opengraph-image.tsx`** (1200×630, navy + accent) — see [spec/ui-assets.md](ui-assets.md) §3–4.
+
+Equivalent values (for reference):
+
+| Field            | Value                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Title            | Frapp — The Operating System for Greek Life                                                                                 |
+| Meta description | Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters. |
+| OG description   | One platform for chat, events, study hours, points, backwork, and billing.                                                  |
 
 - Generate `sitemap.xml` via `next-sitemap`
 - `robots.txt` allowing all crawlers
-- Structured data: Organization schema (JSON-LD)
+- Structured data: e.g. `SoftwareApplication` JSON-LD in the page when appropriate

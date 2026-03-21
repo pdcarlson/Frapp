@@ -9,10 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
-const canonicalIcon = join(
-  root,
-  "packages/brand-assets/assets/app-icon.svg",
-);
+const canonicalIcon = join(root, "packages/brand-assets/assets/app-icon.svg");
 const canonicalLockup = join(
   root,
   "packages/brand-assets/assets/frapp-lockup.svg",

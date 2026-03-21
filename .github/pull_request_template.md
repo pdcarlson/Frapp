@@ -8,10 +8,10 @@
 
 ## Docs / Spec impact
 
-- **Docs impact**: (None / Updated / Follow-up)
+- **Docs impact**: (None / Updated / Follow-up) — prefer [`docs/`](docs/) (e.g. [`docs/guides/`](docs/guides/)) or internal runbooks; the published docs app at `apps/docs` is **frozen** for content.
 - **Spec impact**: (None / Updated / Follow-up)
 - **Links**:
-  - Docs page(s):
+  - Doc path(s) (`docs/…`, `spec/…`):
   - Spec section(s):
 
 ## Test plan
@@ -26,8 +26,8 @@
 ## Checklist
 
 - [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
-- [ ] If this PR changes non-doc files, it also updates related files in `apps/docs/`, `docs/`, or `spec/`.
-- [ ] If I changed API/domain/workflows, I updated docs/spec in the same change set.
+- [ ] If this PR changes non-doc files, it also updates related files in `docs/`, `spec/`, and/or `apps/docs/` (any one satisfies `check-docs-impact.mjs`; prefer `docs/` + `spec/`).
+- [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `api-sdk/types.ts`.
 - [ ] If targeting `production`, this PR source branch is `main`.
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.

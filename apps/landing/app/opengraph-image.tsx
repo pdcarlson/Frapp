@@ -17,75 +17,73 @@ export const contentType = "image/png";
  */
 export default function OpenGraphImage() {
   return new ImageResponse(
-    (
+    <div
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#0F172A",
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+      }}
+    >
       <div
         style={{
-          width: "100%",
-          height: "100%",
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
-          justifyContent: "center",
-          backgroundColor: "#0F172A",
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
+          gap: 28,
         }}
       >
         <div
           style={{
+            width: 120,
+            height: 120,
+            borderRadius: 28,
+            backgroundColor: "#0F172A",
+            border: "4px solid #60A5FA",
             display: "flex",
             alignItems: "center",
-            gap: 28,
+            justifyContent: "center",
+            color: "#60A5FA",
+            fontSize: 72,
+            fontWeight: 800,
           }}
         >
-          <div
+          F
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+          }}
+        >
+          <span
             style={{
-              width: 120,
-              height: 120,
-              borderRadius: 28,
-              backgroundColor: "#0F172A",
-              border: "4px solid #60A5FA",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#60A5FA",
-              fontSize: 72,
+              fontSize: 96,
               fontWeight: 800,
+              color: "#60A5FA",
+              letterSpacing: "-0.04em",
             }}
           >
-            F
-          </div>
-          <div
+            frapp
+          </span>
+          <span
             style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 12,
+              fontSize: 28,
+              fontWeight: 600,
+              color: "#94A3B8",
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
             }}
           >
-            <span
-              style={{
-                fontSize: 96,
-                fontWeight: 800,
-                color: "#60A5FA",
-                letterSpacing: "-0.04em",
-              }}
-            >
-              frapp
-            </span>
-            <span
-              style={{
-                fontSize: 28,
-                fontWeight: 600,
-                color: "#94A3B8",
-                letterSpacing: "0.08em",
-                textTransform: "uppercase",
-              }}
-            >
-              The operating system for Greek life
-            </span>
-          </div>
+            The operating system for Greek life
+          </span>
         </div>
       </div>
-    ),
+    </div>,
     {
       ...size,
     },
