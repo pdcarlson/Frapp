@@ -1,15 +1,16 @@
 # Attendance Marking Optimization
 
-**Date:** 2026-03-19
+**Date:** 2026-03-21
 
 ## Overview
-Replaced sequential `await` in `markAutoAbsent` with `Promise.allSettled(array.map(...))`.
+Replaced `Promise.allSettled(array.map(...))` in `markAutoAbsent` with `createMany` bulk insert.
 
 ## Details
-Previously, iterating over multiple required members and awaiting database creates (`await this.attendanceRepo.create()`) sequentially caused significant N+1 queries issues and slowed down processing when marking members absent in large chapters.
+Previously, iterating over multiple required members and using `Promise.allSettled` around individual `create` operations caused unnecessary network overhead by executing N separate insert queries for large chapters.
 
-By using `Promise.allSettled()`, we:
-1. Run all operations concurrently, reducing overall execution time and avoiding the N+1 queries bottleneck.
-2. Prevent a single database failure from interrupting the entire loop.
+By using `this.attendanceRepo.createMany()` (which utilizes Supabase's native array `.insert()`), we:
+1. Drastically reduce concurrent database connections and latency by executing a single query.
+2. Avoid rate-limiting issues for large batch operations.
+3. Optimize database inserts from O(N) queries to O(1) query.
 
-This aligns with our guidelines for handling N+1 queries and concurrent execution.
+This replaces the previous `Promise.allSettled` implementation to be significantly more efficient for large-scale operations.
