@@ -1,3 +1,4 @@
+import { TaskStatus } from '../../domain/entities/task.entity';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TaskController } from './task.controller';
 import { TaskService } from '../../application/services/task.service';
@@ -185,11 +186,11 @@ describe('TaskController', () => {
       const chapterId = 'chapter-1';
       const userId = 'user-1';
       const taskId = 'task-1';
-      const dto: UpdateTaskStatusDto = { status: 'IN_PROGRESS' };
+      const dto: UpdateTaskStatusDto = { status: TaskStatus.IN_PROGRESS };
       rbacService.memberHasAnyPermission.mockResolvedValue(false);
       taskService.updateStatus.mockResolvedValue({
         id: taskId,
-        status: 'IN_PROGRESS',
+        status: TaskStatus.IN_PROGRESS,
       } as any);
 
       const result = await controller.updateStatus(
@@ -211,7 +212,7 @@ describe('TaskController', () => {
         false,
         dto.status,
       );
-      expect(result).toEqual({ id: taskId, status: 'IN_PROGRESS' });
+      expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });
   });
 
@@ -241,7 +242,7 @@ describe('TaskController', () => {
       const dto: RejectTaskCompletionDto = { comment: 'Needs more work' };
       taskService.rejectCompletion.mockResolvedValue({
         id: taskId,
-        status: 'IN_PROGRESS',
+        status: TaskStatus.IN_PROGRESS,
       } as any);
 
       const result = await controller.rejectCompletion(chapterId, taskId, dto);
@@ -251,7 +252,7 @@ describe('TaskController', () => {
         chapterId,
         dto.comment,
       );
-      expect(result).toEqual({ id: taskId, status: 'IN_PROGRESS' });
+      expect(result).toEqual({ id: taskId, status: TaskStatus.IN_PROGRESS });
     });
 
     it('should reject task completion without a comment', async () => {
@@ -260,7 +261,7 @@ describe('TaskController', () => {
       const dto: RejectTaskCompletionDto = {};
       taskService.rejectCompletion.mockResolvedValue({
         id: taskId,
-        status: 'IN_PROGRESS',
+        status: TaskStatus.IN_PROGRESS,
       } as any);
 
       await controller.rejectCompletion(chapterId, taskId, dto);
