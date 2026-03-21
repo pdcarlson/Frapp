@@ -223,20 +223,21 @@ export class AttendanceService {
       return !isCheckedInOrExcused && !hasExistingRecord;
     });
 
-    const results = await Promise.allSettled(
-      membersToMark.map((member) =>
-        this.attendanceRepo.create({
-          event_id: eventId,
-          user_id: member.user_id,
-          status: 'ABSENT',
-          check_in_time: null,
-          excuse_reason: null,
-          marked_by: null,
-        }),
-      ),
-    );
+    // ⚡ Bolt: Optimize bulk auto-absent creation with single query
+    const attendanceData = membersToMark.map((member) => ({
+      event_id: eventId,
+      user_id: member.user_id,
+      status: 'ABSENT' as const,
+      check_in_time: null,
+      excuse_reason: null,
+      marked_by: null,
+    }));
 
-    const marked = results.filter((r) => r.status === 'fulfilled').length;
+    let marked = 0;
+    if (attendanceData.length > 0) {
+      const results = await this.attendanceRepo.createMany(attendanceData);
+      marked = results.length;
+    }
 
     return { marked };
   }

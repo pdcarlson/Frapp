@@ -10,3 +10,7 @@
 **Vulnerability:** The \`getPointsReport\` method was fetching all raw point transactions from Supabase into memory and looping over them to aggregate points and categorizations per user. This creates a severe memory and CPU bottleneck for large datasets (O(N) memory, O(N) processing).
 **Learning:** Supabase's standard \`.from().select()\` JS client does not natively support complex \`GROUP BY\` and JSON aggregation operations. Pulling raw records into Node.js for grouping is a common anti-pattern that drastically reduces performance and scalability.
 **Prevention:** For large aggregations, always push the computation down to the Postgres database by writing a dedicated RPC function in a migration file. Use native Postgres functions like \`jsonb_object_agg\` and \`group by\` to perform the transformations efficiently, and execute it using \`supabase.rpc('func_name', { args })\`. Ensure RPCs default to \`security invoker\` to maintain proper RLS boundaries.
+
+## 2024-05-15 - Optimize markAutoAbsent with createMany bulk insert
+**Learning:** Found that AttendanceService was generating N separate queries using Promise.allSettled with single \`.create()\` calls for auto-absent markers. This caused high database overhead and latency for large chapters.
+**Action:** When performing bulk creations, always ensure the repository interface supports a \`createMany\` method utilizing Supabase's array \`.insert()\` to perform a single query instead of executing N separate queries.
