@@ -112,8 +112,6 @@ In **all three environments**, add these references (they're the same in every e
 | 3   | staging       | frapp-landing  | Preview      |
 | 4   | production    | frapp-landing  | Production   |
 
-> **frapp-docs** has no environment variables — no sync needed.
-
 #### Render Syncs (2 syncs)
 
 1. Infisical → Integrations → Add Sync → Render

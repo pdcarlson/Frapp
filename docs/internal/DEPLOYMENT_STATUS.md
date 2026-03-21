@@ -13,7 +13,7 @@ Last updated: 2026-03-19
 | ----------------------- | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Landing (Vercel)        | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
 | Web dashboard (Vercel)  | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
-| Docs (Vercel)           | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)   |
 | API (Render)            | ✅               | ✅                        | `frapp-api-staging -> main`, `frapp-api-prod -> production` verified via Render API                        |
 | Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
 
@@ -25,7 +25,6 @@ Last updated: 2026-03-19
 | Render   | `frapp-api-prod`                  | `production`  | `production`     | ✅ (corrected on 2026-03-19)        |
 | Vercel   | `frapp-web` production branch     | `production`  | `main`           | ⚠️ manual dashboard update required |
 | Vercel   | `frapp-landing` production branch | `production`  | `main`           | ⚠️ manual dashboard update required |
-| Vercel   | `frapp-docs` production branch    | `production`  | `main`           | ⚠️ manual dashboard update required |
 | Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
 | Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                  |
 
@@ -37,7 +36,6 @@ For this repository, set the production branch manually in the Vercel dashboard 
 
 1. `frapp-web`
 2. `frapp-landing`
-3. `frapp-docs`
 
 Path: **Project → Settings → Git → Production Branch = `production`**
 

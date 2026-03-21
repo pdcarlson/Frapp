@@ -20,7 +20,6 @@ Feature branches (`feature/*`) merge into `main` first, then `main` is promoted 
 - Vercel projects are active for:
   - landing (`frapp.live`)
   - web dashboard (`app.frapp.live`)
-  - docs (`docs.frapp.live`)
 - Preview deployments are triggered by pushes to `main`.
 - Automatic Vercel deployments are limited to `main` and `production` (feature/PR branches are skipped).
 - API deployment is still being finalized.

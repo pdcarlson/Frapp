@@ -18,7 +18,6 @@ const canonicalLockup = join(
 const iconTargets = [
   join(root, "apps/landing/app/icon.svg"),
   join(root, "apps/web/app/icon.svg"),
-  join(root, "apps/docs/app/icon.svg"),
 ];
 
 const lockupPublic = join(root, "apps/landing/public/frapp-lockup.svg");

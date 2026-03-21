@@ -9,7 +9,6 @@
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live      | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live  | app.frapp.live                        |
 | **API**      | localhost:3001                    | Render (`main` branch service)           | Render (`production` branch service)  |
-| **Docs**     | localhost:3005                    | Vercel preview / docs.staging.frapp.live | docs.frapp.live                       |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution                | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                 | Supabase production project           |
 | **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)          | Supabase Auth (production project)    |
@@ -92,7 +91,6 @@ npx infisical run --env=local -- npm run start:dev -w apps/api
 | API              | http://localhost:3001      |
 | API Swagger Docs | http://localhost:3001/docs |
 | Landing          | http://localhost:3002      |
-| Docs             | http://localhost:3005      |
 | Supabase Studio  | http://127.0.0.1:54323     |
 
 ### Running Mobile
@@ -120,7 +118,7 @@ npm run generate -w packages/api-sdk
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `main` branch.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -134,7 +132,6 @@ npm run generate -w packages/api-sdk
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
 - **Web App:** `app.frapp.live` (Vercel, production deploy from `production`).
 - **Landing:** `frapp.live` (Vercel, production deploy from `production`).
-- **Docs:** `docs.frapp.live` (Vercel, production deploy from `production`).
 - **API:** Render production service (`frapp-api-prod`), auto-deploys from `production`, pointing at Supabase production + Stripe live keys.
 - **Mobile:** App Store and Google Play via EAS Submit.
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
@@ -166,7 +163,7 @@ These checks are also required for merge:
 
 | Check            | Provider       | What it validates                         |
 | ---------------- | -------------- | ----------------------------------------- |
-| `build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
+| `build-and-lint` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
 
@@ -198,7 +195,7 @@ Vercel preview/production deployments are push-triggered from `main`/`production
 
 Production deployments additionally require manual approval before the migration step runs.
 
-### Web, Landing, Docs (Vercel)
+### Web and Landing (Vercel)
 
 - Push to `production` triggers **production** Vercel deployments (custom domains).
 - Push to `main` triggers **preview** Vercel deployments (staging domains).
@@ -279,7 +276,7 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 ```bash
 npx infisical login       # One-time setup
-npm run dev:stack         # Default: API + web + landing + docs (repo root)
+npm run dev:stack         # Default: API + web + landing (repo root)
 ```
 
 Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.

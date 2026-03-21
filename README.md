@@ -10,7 +10,7 @@ apps/
   web/        — Next.js admin dashboard (app.frapp.live)
   mobile/     — Expo mobile app (iOS + Android)
   landing/    — Next.js marketing site (frapp.live)
-  docs/       — Next.js documentation site (docs.frapp.live)
+  (Developer docs: repo-root `docs/guides/` — no Next.js docs app.)
 packages/
   api-sdk/    — Generated TypeScript API client
   brand-assets/ — Canonical Frapp SVG marks (favicon + lockup); sync via `npm run sync:brand-assets`
@@ -29,7 +29,7 @@ supabase/     — Supabase project config + migrations
 | Layer                | Technology                                  |
 | -------------------- | ------------------------------------------- |
 | Monorepo             | Turborepo + npm workspaces                  |
-| Web + Landing + Docs | Next.js (App Router), Tailwind, ShadCN UI   |
+| Web + Landing        | Next.js (App Router), Tailwind, ShadCN UI   |
 | Mobile               | Expo, React Native, Expo Router, NativeWind |
 | API                  | NestJS 11, TypeScript (strict)              |
 | Database             | PostgreSQL via Supabase                     |

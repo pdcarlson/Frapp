@@ -77,16 +77,13 @@ The member experience (`apps/mobile`). Expo with Expo Router.
 - **Onboarding Tutorial** — Guided walkthrough on first launch: Welcome, Chat, Events, Backwork, Study Hours, Profile Setup, Done. Skippable and revisitable from settings.
 - **Polls** — Vote on active polls. View results. Create polls (if permitted).
 
-### 2.4 Documentation — docs.frapp.live
+### 2.4 Documentation (repo markdown today)
 
-Developer documentation: canonical markdown in [`docs/guides/`](../docs/guides/README.md); the Next.js site (`apps/docs`) is a shell with frozen guide stubs linking to those files. Audience for guides: contributors and operators; chapter-admin product help may grow separately.
+Developer documentation: canonical markdown in [`docs/guides/`](../docs/guides/README.md) and product detail in **`spec/`**. There is **no** separate public docs website in the monorepo for now; contributors read on GitHub (or locally). A polished public docs site (and possibly changelog, feedback, etc.) is a **post-launch** candidate.
 
-- Getting started (create chapter, invite members).
-- Feature guides (Backwork, events, points, chat, study hours, billing, roles).
-- FAQ and troubleshooting.
-- (Future) API reference for power users / integrations.
-
-Design inspiration: Stripe Docs, Vercel Docs, Tailwind Docs. Clean sidebar navigation, search, dark mode, polished typography.
+- Getting started and engineering guides: `docs/guides/`.
+- Product behavior and architecture: `spec/`.
+- Audience: contributors and operators; chapter-admin-facing help may grow separately.
 
 ---
 

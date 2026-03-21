@@ -8,7 +8,7 @@
 
 ## Docs / Spec impact
 
-- **Docs impact**: (None / Updated / Follow-up) — prefer [`docs/`](docs/) (e.g. [`docs/guides/`](docs/guides/)) or internal runbooks; the published docs app at `apps/docs` is **frozen** for content.
+- **Docs impact**: (None / Updated / Follow-up) — prefer [`docs/`](docs/) (e.g. [`docs/guides/`](docs/guides/)) or internal runbooks.
 - **Spec impact**: (None / Updated / Follow-up)
 - **Links**:
   - Doc path(s) (`docs/…`, `spec/…`):
@@ -17,7 +17,7 @@
 ## Test plan
 
 - [ ] CI checks pass (all domain-specific jobs green)
-- [ ] Vercel preview builds succeed (web, landing, docs)
+- [ ] Vercel preview builds succeed (web, landing)
 - [ ] API unit tests: `npm run test -w apps/api`
 - [ ] `npm run check:api-contract` (if API source changes)
 - [ ] `npm run check:migration-safety` (if schema/migration changes)
@@ -26,7 +26,7 @@
 ## Checklist
 
 - [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
-- [ ] If this PR changes non-doc files, it also updates related files in `docs/`, `spec/`, and/or `apps/docs/` (any one satisfies `check-docs-impact.mjs`; prefer `docs/` + `spec/`).
+- [ ] If this PR changes non-doc files, it also updates related files in `docs/` and/or `spec/` (satisfies `check-docs-impact.mjs`).
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
 - [ ] If I changed API source, I regenerated `openapi.json` and `api-sdk/types.ts`.
 - [ ] If targeting `production`, this PR source branch is `main`.

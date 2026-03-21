@@ -78,7 +78,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 | Check name | What it validates |
 | --- | --- |
-| `build-and-lint` | Docs build + lint + spec sync |
+| `build-and-lint` | Docs/spec sync on PRs (`check-docs-impact.mjs`; no `apps/docs` build) |
 
 ### Vercel policy (not a required check)
 

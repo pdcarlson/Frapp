@@ -539,12 +539,14 @@ export default function Home() {
             <p className="text-sm font-semibold">Resources</p>
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               <li>
-                <Link
-                  href="https://docs.frapp.live"
+                <a
+                  href="https://github.com/pdcarlson/Frapp/tree/main/docs/guides"
                   className="hover:text-foreground"
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
                   Documentation
-                </Link>
+                </a>
               </li>
               <li>
                 <Link href={loginUrl} className="hover:text-foreground">

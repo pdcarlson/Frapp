@@ -13,7 +13,6 @@ const canonical = join(root, "packages/brand-assets/assets/app-icon.svg");
 const targets = [
   join(root, "apps/landing/app/icon.svg"),
   join(root, "apps/web/app/icon.svg"),
-  join(root, "apps/docs/app/icon.svg"),
 ];
 
 function sha256(buf) {

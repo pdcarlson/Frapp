@@ -10,7 +10,7 @@
 | Landing       | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                                                                    |
 | Web App       | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                                                                         |
 | Mobile App    | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                                                                       |
-| Docs Site     | Next.js, Tailwind                            | `apps/docs` at docs.frapp.live. Shell + spec browser; **canonical developer guides:** [`docs/guides/`](../docs/guides/README.md) (site guide pages on content freeze). |
+| Developer docs | Markdown in-repo                         | [`docs/guides/`](../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API           | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                                                                  |
 | Database      | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                                                                 |
 | Auth          | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                                                                     |
@@ -32,7 +32,6 @@ Frapp/
     web/            # Next.js admin dashboard (app.frapp.live)
     mobile/         # Expo mobile app (iOS + Android)
     landing/        # Next.js marketing site (frapp.live)
-    docs/           # Next.js documentation site (docs.frapp.live)
   packages/
     api-sdk/        # Generated API client + TypeScript types
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
@@ -89,14 +88,12 @@ Frapp/
 - **Role:** Marketing, pricing, CTA. No auth state. Links to app.frapp.live for sign-up/log-in.
 - **Deployment:** Vercel, independent from the web app.
 
-### 3.5 Docs (`apps/docs`)
+### 3.5 Documentation (no `apps/docs` web app)
 
-- **Framework:** Next.js, Tailwind, MDX or Markdown rendering.
-- **Content source:** Developer-facing guides are authored in **[`docs/guides/`](../docs/guides/README.md)** (markdown in-repo). The `apps/docs` site keeps navigation and renders `spec/` at `/docs/[slug]`; curated MDX guide **bodies** are on **content freeze** and link to `docs/guides/*.md` on GitHub.
-- **Design:** Inspired by Stripe Docs / Vercel Docs. Clean sidebar navigation, search, dark mode, polished typography.
-- **Deployment:** Vercel at docs.frapp.live.
-- **Sync rule:** Documentation is treated as part of the product. When behavior, architecture, or workflows change, update **`docs/`** (e.g. `docs/guides/`) and/or **`spec/`** in the same change set. Divergence between docs and implementation is considered a bug.
-  - **Enforcement:** CI fails PRs that change product code (e.g. `apps/api/`, `packages/`, `supabase/`, or app shells) without also updating **`docs/`**, **`spec/`**, and/or **`apps/docs/`** (any one satisfies the gate; prefer `docs/` + `spec/`). See `docs/internal/DOCS_CI.md`.
+- **Authoring:** Developer guides in **[`docs/guides/`](../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
+- **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
+- **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Divergence is a bug.
+  - **Enforcement:** CI fails PRs that change product code without also updating **`docs/`** or **`spec/`**. See [`docs/internal/DOCS_CI.md`](../docs/internal/DOCS_CI.md).
   - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
 ---

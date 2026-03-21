@@ -24,7 +24,6 @@ Because the build context is the **repo root**, the **root** `.dockerignore` kee
 apps/web
 apps/mobile
 apps/landing
-apps/docs
 **/node_modules
 **/dist
 **/.turbo

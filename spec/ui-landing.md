@@ -76,7 +76,7 @@ Do not use scale-on-hover on marketing cards as a default; prefer border/color t
 [Logo]     [Features] [How it works] [Pricing]     [Log In]  [Get Started]
 ```
 
-- **md and up:** Show inline nav: Features (`#features`), How it works (`#how-it-works`), Pricing (`#pricing`). Documentation lives in the footer link to `docs.frapp.live` (not duplicated in the header).
+- **md and up:** Show inline nav: Features (`#features`), How it works (`#how-it-works`), Pricing (`#pricing`). Documentation lives in the footer link to the repo’s `docs/guides/` on GitHub (not duplicated in the header).
 - **Below md:** Nav links are hidden; logo + primary **Get Started** CTA remain visible. **Log In** is shown from `md` upward (`hidden md:inline-flex` pattern). A full-screen hamburger menu is optional and not part of the current home implementation.
 
 - Logo: Frapp lockup (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)

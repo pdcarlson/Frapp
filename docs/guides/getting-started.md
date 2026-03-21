@@ -92,7 +92,7 @@ When `supabase start` finishes, it prints the local project URL and keys (`API U
 npm run dev:stack
 ```
 
-This starts API, web, landing, and docs in one terminal (prefixed logs). It matches what `scripts/local-dev-setup.sh` prints when it finishes.
+This starts API, web, and landing in one terminal (prefixed logs). It matches what `scripts/local-dev-setup.sh` prints when it finishes.
 
 **Everything else** — separate terminals per app, running without Infisical, mobile (Expo), Turbo vs API, and the URL table — lives in one place: **[`docs/internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md)**. Do not duplicate those lists in other docs; link there instead.
 
@@ -101,7 +101,6 @@ This starts API, web, landing, and docs in one terminal (prefixed logs). It matc
 - **API health check**: `http://localhost:3001/health`
 - **Web app**: `http://localhost:3000`
 - **Landing**: `http://localhost:3002`
-- **Docs**: `http://localhost:3005`
 - **Supabase Studio**: `http://127.0.0.1:54323`
 
 If `/health` responds with a JSON status and no errors appear in the API logs, your local environment is ready.

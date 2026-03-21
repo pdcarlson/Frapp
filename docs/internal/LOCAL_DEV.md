@@ -27,7 +27,6 @@ If `infisical run` fails (no session, wrong project, or API key without `local` 
 | API             | 3001  | http://localhost:3001      |
 | Swagger         | —     | http://localhost:3001/docs |
 | Landing         | 3002  | http://localhost:3002      |
-| Docs            | 3005  | http://localhost:3005      |
 | Supabase Studio | 54323 | http://127.0.0.1:54323     |
 
 ## Per-app commands (only if you are not using `dev:stack`)
@@ -37,14 +36,13 @@ If `infisical run` fails (no session, wrong project, or API key without `local` 
 | API     | `npm run dev:api`     | `npm run start:dev -w apps/api` |
 | Web     | `npm run dev:web`     | `npm run dev -w apps/web`       |
 | Landing | `npm run dev:landing` | `npm run dev -w apps/landing`   |
-| Docs    | `npm run dev:docs`    | `npm run dev -w apps/docs`      |
 
 ## `dev:stack` vs separate terminals
 
-- **`npm run dev:stack`** — default; one `infisical run` runs API + web + landing + docs via `concurrently` (prefixed, color-coded logs). Ctrl+C stops all four.
+- **`npm run dev:stack`** — default; one `infisical run` runs API + web + landing via `concurrently` (prefixed, color-coded logs). Ctrl+C stops all three app processes (plus the parent).
 - **Separate `npm run dev:*`** — use when you want one process per terminal or to run a subset.
 
-`npm run dev` at the root runs **Turbo `dev` only for workspaces that define a `dev` script** (web, landing, docs). The API uses `start:dev`, not `dev`, so it is **not** included in plain `turbo run dev`. Use `dev:stack` or run the API explicitly.
+`npm run dev` at the root runs **Turbo `dev` only for workspaces that define a `dev` script** (web, landing). The API uses `start:dev`, not `dev`, so it is **not** included in plain `turbo run dev`. Use `dev:stack` or run the API explicitly.
 
 ## Mobile
 

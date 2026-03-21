@@ -4,7 +4,7 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 
 ## Current rollout status
 
-- ✅ Landing, web, and docs are configured in Vercel with Preview and Production environments.
+- ✅ Landing and web are configured in Vercel with Preview and Production environments.
 - ✅ CI pipeline uses domain-specific parallel jobs with required status checks.
 - ✅ Branch protection enforced on `main` and `production`.
 - 🚧 API deployment wiring is in progress (Render services + deploy hooks + smoke checks).
@@ -20,11 +20,11 @@ For live rollout tracking, see `docs/internal/DEPLOYMENT_STATUS.md`.
 ## Architecture Overview
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Landing   │     │     Web     │     │    Docs     │
-│  (Vercel)   │     │  (Vercel)   │     │  (Vercel)   │
-│ frapp.live  │     │app.frapp.live│    │docs.frapp.live│
-└──────┬──────┘     └──────┬──────┘     └─────────────┘
+┌─────────────┐     ┌─────────────┐
+│   Landing   │     │     Web     │
+│  (Vercel)   │     │  (Vercel)   │
+│ frapp.live  │     │app.frapp.live│
+└──────┬──────┘     └──────┬──────┘
        │                   │
        │                   ▼
        │            ┌─────────────┐
@@ -93,8 +93,8 @@ feature/xyz ──PR──▶ main (staging) ──PR──▶ production (produ
 
 | Vercel environment           | Git trigger           | Domain example            |
 | ---------------------------- | --------------------- | ------------------------- |
-| **Production**               | Push to `production`  | `docs.frapp.live`         |
-| **Preview** (pre-production) | Push to `main`        | `docs.staging.frapp.live` |
+| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live` |
+| **Preview** (pre-production) | Push to `main`        | `app.staging.frapp.live`, `staging.frapp.live` |
 | **Disabled**                 | Any other branch / PR | No auto deployment        |
 
 The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
@@ -142,7 +142,7 @@ From each project's dashboard → Settings → API, note:
 
 ## 4. Vercel Setup
 
-You import the **same GitHub repo three times** — once for each Next.js app. Each import becomes a separate Vercel project with its own domains and env vars.
+You import the **same GitHub repo twice** — once per Next.js app (`apps/web`, `apps/landing`). Each import becomes a separate Vercel project with its own domains and env vars.
 
 ### 4.1 Import the Repo (repeat for each app)
 
@@ -150,11 +150,11 @@ You import the **same GitHub repo three times** — once for each Next.js app. E
 2. **Import** your `pdcarlson/Frapp` repo.
 3. Configure:
 
-| Setting            | Web Dashboard           | Landing         | Docs         |
-| ------------------ | ----------------------- | --------------- | ------------ |
-| **Project Name**   | `frapp-web`             | `frapp-landing` | `frapp-docs` |
-| **Framework**      | Next.js (auto-detected) | Next.js         | Next.js      |
-| **Root Directory** | `apps/web`              | `apps/landing`  | `apps/docs`  |
+| Setting            | Web Dashboard           | Landing         |
+| ------------------ | ----------------------- | --------------- |
+| **Project Name**   | `frapp-web`             | `frapp-landing` |
+| **Framework**      | Next.js (auto-detected) | Next.js         |
+| **Root Directory** | `apps/web`              | `apps/landing`  |
 
 **Build and Output Settings:** Leave all toggles OFF. Vercel auto-detects the correct commands for Turborepo monorepos:
 
@@ -182,10 +182,6 @@ Vercel scopes env vars to **Production** and **Preview**. The `main` branch trig
 | --------------------- | ------------------------ | -------------------------------- |
 | `NEXT_PUBLIC_APP_URL` | `https://app.frapp.live` | `https://app.staging.frapp.live` |
 
-#### `frapp-docs` (Documentation)
-
-No environment variables needed (static content).
-
 ### 4.3 Domain Configuration
 
 In each Vercel project → Settings → Domains:
@@ -196,7 +192,6 @@ In each Vercel project → Settings → Domains:
 | --------------- | ------------------------------- |
 | `frapp-web`     | `app.frapp.live`                |
 | `frapp-landing` | `frapp.live` + `www.frapp.live` |
-| `frapp-docs`    | `docs.frapp.live`               |
 
 #### Staging Domains (connected to Preview environment, filtered to `main` branch)
 
@@ -204,7 +199,6 @@ In each Vercel project → Settings → Domains:
 | --------------- | ------------------------- | ----------- | ------------- |
 | `frapp-web`     | `app.staging.frapp.live`  | Preview     | `main`        |
 | `frapp-landing` | `staging.frapp.live`      | Preview     | `main`        |
-| `frapp-docs`    | `docs.staging.frapp.live` | Preview     | `main`        |
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
@@ -217,17 +211,27 @@ In Squarespace Domains → `frapp.live` → DNS Settings → Custom Records:
 frapp.live          A      76.76.21.21
 www.frapp.live      CNAME  cname.vercel-dns.com
 app.frapp.live      CNAME  cname.vercel-dns.com
-docs.frapp.live     CNAME  cname.vercel-dns.com
 
 # Staging
 staging.frapp.live       CNAME  cname.vercel-dns.com
 app.staging.frapp.live   CNAME  cname.vercel-dns.com
-docs.staging.frapp.live  CNAME  cname.vercel-dns.com
 
 # API (Render — fill in after creating Render services)
 api.frapp.live           CNAME  <frapp-api-prod>.onrender.com
 api-staging.frapp.live   CNAME  <frapp-api-staging>.onrender.com
 ```
+
+### Retired: `frapp-docs` and docs.frapp.live
+
+The monorepo **no longer contains** `apps/docs`. Developer documentation is markdown under `docs/guides/` in GitHub.
+
+**Operator checklist (outside git):**
+
+1. **Vercel** — Pause or delete the `frapp-docs` project (builds would fail: missing `apps/docs`).
+2. **DNS** — Remove or repoint `docs.frapp.live` and `docs.staging.frapp.live` if they still CNAME to Vercel.
+3. **Infisical** — Remove any integration row that synced only to `frapp-docs`, if still present.
+
+A future public documentation site is possible post-launch; treat as a separate initiative.
 
 ### 4.5 Vercel Project Settings
 
@@ -474,7 +478,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
 - **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/LOCAL_DEV.md`](internal/LOCAL_DEV.md).
 
-### Sync Map (7 of 10 free-tier integrations)
+### Sync Map (7 of 10 free-tier integrations; docs Vercel project retired)
 
 | #   | Infisical env | Destination                               |
 | --- | ------------- | ----------------------------------------- |
@@ -485,8 +489,6 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 | 5   | staging       | Render → frapp-api-staging                |
 | 6   | production    | Render → frapp-api-prod                   |
 | 7   | per-env       | GitHub Actions (OIDC)                     |
-
-> **frapp-docs** has no environment variables — no sync needed.
 
 See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/ENV_REFERENCE.md` for the complete variable list.
 

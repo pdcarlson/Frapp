@@ -15,21 +15,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-
       - name: Enforce docs/spec sync (PR only)
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build docs
-        run: npm run build -w docs
-
-      - name: Lint docs
-        run: npm run lint -w docs

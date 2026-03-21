@@ -103,6 +103,6 @@ In CI, we also run:
 
 ### CI enforcement (`scripts/check-docs-impact.mjs`)
 
-PRs that change files **outside** `docs/`, `spec/`, and `apps/docs/` must also change **at least one** file under **`docs/`**, **`spec/`**, or **`apps/docs/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`**; touching `apps/docs/` alone also passes the check but the docs site content is frozen.
+PRs that change files **outside** `docs/` and `spec/` must also change **at least one** file under **`docs/`** or **`spec/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`** together when behavior changes.
 
 See also [`docs/internal/DOCS_CI.md`](../internal/DOCS_CI.md) for rationale and optional future tightening of the gate.

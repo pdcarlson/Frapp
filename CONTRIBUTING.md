@@ -107,7 +107,7 @@ type(scope): description
   - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
 - If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/production`
 - Fill out the PR template completely.
-- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/` (CI also accepts `apps/docs/`, but canonical guides are in `docs/guides/`; the docs site content is frozen).
+- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`.
 - CI checks will run automatically.
 - CodeRabbit will post an AI review.
 

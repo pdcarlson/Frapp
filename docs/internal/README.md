@@ -39,4 +39,4 @@ Use this area for:
 - `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
 - `DOCS_CI.md` — docs/spec PR gate (`check-docs-impact.mjs`) and trade-offs
 
-Developer-facing guides (canonical, markdown) live in [`docs/guides/`](../guides/README.md). The Next.js site at `apps/docs` is a shell with guide routes on **content freeze** (links to those files on GitHub).
+Developer-facing guides (canonical, markdown) live in [`docs/guides/`](../guides/README.md). There is no separate docs web app in the monorepo; a public docs site may be added later.

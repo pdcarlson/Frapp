@@ -19,7 +19,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
 5. **Docs/spec delta is mandatory for every non-doc change**
-   - Any PR that changes files outside `apps/docs/`, `docs/`, or `spec/` must also touch at least one path under those prefixes in the same PR (usually **`docs/`** — e.g. [`docs/guides/`](../guides/README.md) — and/or **`spec/`**; `apps/docs/` also satisfies CI but guide bodies are frozen there).
+   - Any PR that changes files outside `docs/` or `spec/` must also touch at least one path under those prefixes in the same PR (usually **`docs/`** — e.g. [`docs/guides/`](../guides/README.md) — and/or **`spec/`**).
    - This is enforced by `scripts/check-docs-impact.mjs` in the Docs workflow and local CI gate. Rationale: [`DOCS_CI.md`](./DOCS_CI.md).
    - No local bypass is allowed for this check.
 

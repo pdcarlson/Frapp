@@ -8,7 +8,7 @@
 
 | Asset kind                              | Owner   | Purpose                                                                                                               |
 | --------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Frapp app icon** (favicon / tab icon) | Product | Same mark on `frapp.live`, `app.frapp.live`, `docs.frapp.live`                                                        |
+| **Frapp app icon** (favicon / tab icon) | Product | Same mark on `frapp.live` and `app.frapp.live`                                                        |
 | **Frapp lockup** (icon + wordmark)      | Product | Landing header, marketing email headers, future templates                                                             |
 | **Open Graph image**                    | Product | Preview card when a **Frapp marketing URL** is shared (Slack, iMessage, etc.)                                         |
 | **Chapter logo**                        | Tenant  | In-app surfaces, PDFs, onboarding — from Storage (`logo_path`); **does not** replace Frapp marks on marketing or docs |

@@ -26,7 +26,7 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 
 ## Project overview
 
-Frapp is a Turborepo + npm workspaces monorepo (5 apps, 7 shared packages). Structure: `README.md`. Product/architecture: `spec/`.
+Frapp is a Turborepo + npm workspaces monorepo (4 apps, 7 shared packages). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
 
 ## Branch model
 
@@ -34,7 +34,7 @@ Frapp is a Turborepo + npm workspaces monorepo (5 apps, 7 shared packages). Stru
 
 ## Documentation sync mandate (non-optional)
 
-For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Touching **`apps/docs/`** alone also satisfies CI, but **canonical developer guides** live under [`docs/guides/`](docs/guides/README.md); prefer updating those and specs rather than the Next.js docs site (site content is frozen).
+For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
 
 - Run or reason against `scripts/check-docs-impact.mjs` before finishing.
 - If user-visible behavior is unchanged, add brief maintenance notes on what changed technically.
@@ -43,11 +43,10 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 | What            | Port  | Notes                                            |
 | --------------- | ----- | ------------------------------------------------ |
-| **Default run** | —     | `npm run dev:stack` (API + web + landing + docs) |
+| **Default run** | —     | `npm run dev:stack` (API + web + landing)        |
 | Web             | 3000  |                                                  |
 | API / Swagger   | 3001  | `/docs` for Swagger                              |
 | Landing         | 3002  |                                                  |
-| Docs            | 3005  |                                                  |
 | Supabase Studio | 54323 | After `npx supabase start`                       |
 
 Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).

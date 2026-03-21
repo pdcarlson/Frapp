@@ -1,6 +1,6 @@
 # Developer guides (canonical)
 
-These markdown files are the **source of truth** for Frapp developer-facing guides. The published Next.js app at `apps/docs` (e.g. docs.frapp.live) is on **content freeze**; it links here so navigation stays stable while edits happen only in this folder.
+These markdown files are the **source of truth** for Frapp developer-facing guides. There is no separate docs website in the monorepo right now—read here on GitHub or in your editor. A public docs site is a possible **post-launch** follow-up.
 
 | Guide                | File                                       |
 | -------------------- | ------------------------------------------ |
@@ -13,6 +13,6 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 | Testing              | [testing.md](testing.md)                   |
 | Contributing         | [contributing.md](contributing.md)         |
 
-**Default local run (all apps):** `npm run dev:stack` from repo root after Infisical login — full detail and alternatives in [`../internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md).
+**Default local run (API + web + landing):** `npm run dev:stack` from repo root after Infisical login — full detail and alternatives in [`../internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md).
 
 **Also read:** product and implementation specs in [`spec/`](../../spec/), and operator runbooks in [`docs/internal/`](../internal/README.md).
