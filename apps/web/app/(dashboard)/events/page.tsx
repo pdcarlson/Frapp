@@ -180,6 +180,7 @@ export default function EventsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <select
+                aria-label="Filter events by attendance policy"
                 value={attendanceFilter}
                 onChange={(event) =>
                   setAttendanceFilter(
@@ -193,6 +194,7 @@ export default function EventsPage() {
                 <option value="optional">Attendance: Optional</option>
               </select>
               <select
+                aria-label="Filter events by recurrence"
                 value={recurrenceFilter}
                 onChange={(event) =>
                   setRecurrenceFilter(

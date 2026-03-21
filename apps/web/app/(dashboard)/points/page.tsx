@@ -317,6 +317,7 @@ export default function PointsPage() {
                 />
               </div>
               <select
+                aria-label="Filter transactions by amount"
                 value={amountFilter}
                 onChange={(event) =>
                   setAmountFilter(
@@ -330,6 +331,7 @@ export default function PointsPage() {
                 <option value="negative">Amount: Negative</option>
               </select>
               <select
+                aria-label="Filter transactions by category"
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 className={dashboardFilterSelectClassName}
