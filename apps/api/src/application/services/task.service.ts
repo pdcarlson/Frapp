@@ -12,24 +12,26 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import type { Task, TaskStatus } from '../../domain/entities/task.entity';
+import type { Task } from '../../domain/entities/task.entity';
+import { TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  TODO: ['IN_PROGRESS'],
-  IN_PROGRESS: ['COMPLETED'],
-  COMPLETED: [],
-  OVERDUE: ['IN_PROGRESS'],
+  [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
+  [TaskStatus.IN_PROGRESS]: [TaskStatus.COMPLETED],
+  [TaskStatus.COMPLETED]: [],
+  [TaskStatus.OVERDUE]: [TaskStatus.IN_PROGRESS],
 };
 
 function toDisplayStatus(task: Task): Task {
   const today = new Date().toISOString().slice(0, 10);
   if (
-    (task.status === 'TODO' || task.status === 'IN_PROGRESS') &&
+    (task.status === TaskStatus.TODO ||
+      task.status === TaskStatus.IN_PROGRESS) &&
     task.due_date < today
   ) {
-    return { ...task, status: 'OVERDUE' as TaskStatus };
+    return { ...task, status: TaskStatus.OVERDUE };
   }
   return task;
 }
@@ -114,7 +116,7 @@ export class TaskService {
       assignee_id: input.assignee_id,
       created_by: input.created_by,
       due_date: input.due_date,
-      status: 'TODO',
+      status: TaskStatus.TODO,
       point_reward: input.point_reward ?? null,
       points_awarded: false,
       completed_at: null,
@@ -160,8 +162,8 @@ export class TaskService {
     if (!allowed?.includes(newStatus)) {
       if (
         isAdmin &&
-        newStatus === 'IN_PROGRESS' &&
-        task.status === 'COMPLETED'
+        newStatus === TaskStatus.IN_PROGRESS &&
+        task.status === TaskStatus.COMPLETED
       ) {
         // Admin can revert (reject) - handled in rejectCompletion
         throw new BadRequestException(
@@ -174,7 +176,7 @@ export class TaskService {
     }
 
     const updateData: Partial<Task> = { status: newStatus };
-    if (newStatus === 'COMPLETED') {
+    if (newStatus === TaskStatus.COMPLETED) {
       updateData.completed_at = new Date().toISOString();
     }
 
@@ -188,7 +190,7 @@ export class TaskService {
       throw new NotFoundException('Task not found');
     }
 
-    if (task.status !== 'COMPLETED') {
+    if (task.status !== TaskStatus.COMPLETED) {
       throw new BadRequestException(
         'Task must be marked COMPLETED by assignee before confirmation',
       );
@@ -247,7 +249,7 @@ export class TaskService {
       throw new NotFoundException('Task not found');
     }
 
-    if (task.status !== 'COMPLETED') {
+    if (task.status !== TaskStatus.COMPLETED) {
       throw new BadRequestException('Only completed tasks can be rejected');
     }
 
@@ -258,7 +260,7 @@ export class TaskService {
     }
 
     const updated = await this.taskRepo.update(id, chapterId, {
-      status: 'IN_PROGRESS',
+      status: TaskStatus.IN_PROGRESS,
       completed_at: null,
     });
 
