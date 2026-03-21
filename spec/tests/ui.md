@@ -1,0 +1,1 @@
+- Added tests for @repo/ui button component using Vitest and React Testing Library
