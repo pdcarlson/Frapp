@@ -47,9 +47,13 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 bash scripts/local-dev-setup.sh
 # Skip typecheck / migration-safety for a faster loop:
 # bash scripts/local-dev-setup.sh --quick
+# Stuck or exited Supabase containers (this repo only; keeps volumes):
+# bash scripts/local-dev-setup.sh --reset-supabase
+# Wipe local Supabase data volumes (destructive; confirm in terminal):
+# bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints the `npm run dev:*` commands. It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints the `npm run dev:*` commands. It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -274,13 +278,16 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 ```bash
 npx infisical login       # One-time setup
+npm run dev:stack         # Optional: API + web + landing + docs in one terminal
+# Or per app:
 npm run dev:api           # Injects from Infisical local env
 npm run dev:web
 npm run dev:landing
+npm run dev:docs
 npm run dev:mobile
 ```
 
-**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`.
+**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`. See **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.
 
 ### Rules
 

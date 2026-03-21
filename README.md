@@ -59,14 +59,24 @@ The spec is the single source of truth. Implementation follows the spec.
 bash scripts/local-dev-setup.sh
 ```
 
-Then run each app command below in its own terminal (they are long-running dev servers). Prefer Infisical-injected env from the repo root:
+If local Supabase containers are stuck or exited: `bash scripts/local-dev-setup.sh --reset-supabase`. If Postgres fails with **incompatible data directory** (e.g. after a CLI / `major_version` bump), wipe local volumes once: `bash scripts/local-dev-setup.sh --reset-supabase-data`. Details: **Getting Started** in `apps/docs` (Postgres 17 + volumes) and `bash scripts/local-dev-setup.sh --help`.
+
+Authenticate Infisical once (`npx infisical login`); see [docs/internal/SECRETS_MANAGEMENT.md](docs/internal/SECRETS_MANAGEMENT.md). Then start apps from the repo root (long-running servers). **One terminal** (API + web + landing + docs, prefixed logs):
+
+```bash
+npm run dev:stack
+```
+
+**Or** separate terminals with Infisical-injected env:
 
 ```bash
 npm run dev:api
 npm run dev:web
 npm run dev:landing
-npm run dev -w apps/docs
+npm run dev:docs
 ```
+
+More detail: [docs/internal/LOCAL_DEV.md](docs/internal/LOCAL_DEV.md).
 
 Without Infisical (use `.env.local` per `docs/internal/ENV_REFERENCE.md`):
 

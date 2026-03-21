@@ -15,7 +15,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
 
-4. **No `.env.local` files (primary path).** Local development uses `npm run dev:api` (etc.), which injects secrets from Infisical's `local` environment via the CLI.
+4. **No `.env.local` files (primary path).** Local development uses `npm run dev:api`, `npm run dev:web`, `npm run dev:landing`, `npm run dev:docs`, or **`npm run dev:stack`** (all four apps in one terminal with prefixed logs), which inject secrets from Infisical's `local` environment via the CLI. Requires `npx infisical login` on the machine. See [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ## Architecture
 

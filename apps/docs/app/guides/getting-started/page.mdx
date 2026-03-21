@@ -27,7 +27,31 @@ With **Docker running** (`docker info` succeeds — e.g. Docker Desktop with WSL
 bash scripts/local-dev-setup.sh
 ```
 
-This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then optional typecheck and migration-safety checks. Use `bash scripts/local-dev-setup.sh --quick` to skip the checks. It does **not** start `dockerd`; Jules cloud VMs use `scripts/jules-setup.sh` when no Docker Desktop exists.
+This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then optional typecheck and migration-safety checks. Flags: `--quick` skips checks; **`--reset-supabase`** runs `supabase stop` first for **this project only** (good for **stuck or exited containers**—it **keeps** Docker volumes); **`--reset-supabase-data`** stops with `supabase stop --no-backup` and **wipes local Supabase data volumes** (destructive—see `bash scripts/local-dev-setup.sh --help`). Use **`--reset-supabase-data`** when local Postgres data was created under an older major version than `supabase/config.toml` (see troubleshooting below). It does **not** stop unrelated Docker containers. If `supabase start` fails, an interactive terminal may offer a **volume-preserving** retry (not a fix for Postgres major-version mismatch). It does **not** start `dockerd`; Jules cloud VMs use `scripts/jules-setup.sh` when no Docker Desktop exists.
+
+If `./scripts/local-dev-setup.sh` fails with `env: 'bash\r': No such file`, the file had Windows (CRLF) line endings. Prefer `bash scripts/local-dev-setup.sh`, or re-checkout after `.gitattributes` normalizes `*.sh` to LF.
+
+If the script exits after **`[local-dev-setup] ERROR: Docker daemon is not reachable`**, read the **docker info** lines it prints (e.g. `npipe` / `dockerDesktopLinuxEngine` means Docker Desktop is not fully up). Start **Docker Desktop**, wait until the engine is running, and run `docker info` in the **same** terminal (Git Bash or WSL). If Git Bash still cannot see the daemon, use **WSL** with Docker Desktop WSL integration enabled, or **PowerShell**.
+
+### Windows, Git Bash, and `turbo check-types`
+
+**`@repo/brand-assets`** is SVG-only and is **not** part of the Turbo `build` / `lint` / `check-types` graph (no `scripts` in that package), so Windows/Git Bash does not spawn `npm.cmd` there. Root **`turbo.json`** still uses **`"ui": "stream"`** for reliable logs on Windows; you can set **`TURBO_UI=stream`** if you override UI.
+
+### Postgres 17 and local Supabase volumes
+
+Frapp pins **Postgres 17** locally via `supabase/config.toml` (`[db] major_version = 17`). Docker **volumes** from an older stack (e.g. Postgres 15) are **not** upgraded in place: Postgres will log errors such as **database files are incompatible with server** or **The data directory was initialized by PostgreSQL version X, which is not compatible with this version Y**.
+
+- **Fix:** reset local data once, then start clean and re-apply migrations:
+
+  ```bash
+  bash scripts/local-dev-setup.sh --reset-supabase-data
+  ```
+
+  Equivalent manual steps: `npx supabase stop --no-backup`, then `npx supabase start`, then `npx supabase db push --local`. Local DB contents are recreated from migrations (anything only in local data is lost).
+
+- **`--reset-supabase`** (without `--no-backup`) is for **stuck or exited containers**; it **does not** remove volumes and **will not** fix a Postgres major-version mismatch.
+
+Supabase CLI: [`supabase stop`](https://supabase.com/docs/reference/cli/supabase-stop) documents **`--no-backup`** (delete data volumes after stopping) for resetting local development data between restarts.
 
 ## 3. Start local Supabase (manual alternative)
 
@@ -53,26 +77,21 @@ You can open Supabase Studio at:
 
 <Callout type="info">
   Frapp icons and the marketing lockup are synced from `packages/brand-assets/`
-  into each Next app on **`next build`** (`prebuild`). After changing those SVGs,
-  run `npm run sync:brand-assets` from the repo root (or build once). See
+  into each Next app on **`next build`** (`prebuild`). After changing those
+  SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See
   `docs/internal/BRAND_ASSETS.md` and `spec/ui-assets.md`.
 </Callout>
 
 ## 4. Configure environment variables
 
-When `supabase start` finishes, it prints the local project URL and keys:
+**Recommended:** use **Infisical** so you do not maintain `.env.local` copies for every app.
 
-- `API URL`
-- `anon key`
-- `service_role key`
+1. From the repo root, authenticate once: `npx infisical login`.
+2. Ensure the Infisical **`local`** environment is populated (Supabase values from `npx supabase status -o env`, plus keys per <a href="https://github.com/pdcarlson/Frapp/blob/main/docs/internal/ENV_REFERENCE.md"><code>docs/internal/ENV_REFERENCE.md</code></a>). See <a href="https://github.com/pdcarlson/Frapp/blob/main/docs/internal/SECRETS_MANAGEMENT.md"><code>docs/internal/SECRETS_MANAGEMENT.md</code></a> for project setup and syncs.
 
-Create `.env.local` files for each app using these values. See <a href="https://github.com/pdcarlson/Frapp/blob/main/docs/internal/ENV_REFERENCE.md"><code>docs/internal/ENV_REFERENCE.md</code></a> for the exact variables each app needs and their local values.
+When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `local` or when building `.env.local` manually.
 
-**Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical at runtime:
-
-```bash
-npx infisical run --env=local -- npm run start:dev -w apps/api
-```
+**Fallback:** create `.env.local` per app from those values and <code>docs/internal/ENV_REFERENCE.md</code>, then run the non-Infisical commands in <a href="https://github.com/pdcarlson/Frapp/blob/main/docs/internal/LOCAL_DEV.md"><code>docs/internal/LOCAL_DEV.md</code></a>.
 
 <Callout type="warning">
   Never commit `.env.local` files. They contain real secrets. All staging and
@@ -80,21 +99,33 @@ npx infisical run --env=local -- npm run start:dev -w apps/api
   `docs/internal/SECRETS_MANAGEMENT.md`.
 </Callout>
 
-## 4. Run the dev servers
+## 5. Run the dev servers
 
-In separate terminals from the repo root:
+From the **repo root**, scripts that start with `dev:` inject secrets via Infisical (`--env=local`).
+
+**Single terminal (API + web + landing + docs, prefixed logs):**
 
 ```bash
-npm run start:dev -w apps/api
-npm run dev -w apps/web
-npm run dev -w apps/landing
-npm run dev -w apps/docs
+npm run dev:stack
 ```
 
-For mobile:
+**Or separate terminals:**
 
 ```bash
-npm run start -w apps/mobile
+npm run dev:api
+npm run dev:web
+npm run dev:landing
+npm run dev:docs
+```
+
+Without Infisical, use `npm run start:dev -w apps/api`, `npm run dev -w apps/web`, etc., after configuring `.env.local`.
+
+Root `npm run dev` runs Turbo **only for workspaces with a `dev` script** (web, landing, docs) — it does **not** start the API. Use `dev:stack` or `dev:api` when you need the backend.
+
+For mobile (Expo):
+
+```bash
+npm run dev:mobile
 ```
 
 Then open the Expo QR code in Expo Go on your phone.
