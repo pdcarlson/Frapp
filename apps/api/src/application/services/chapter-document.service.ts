@@ -25,11 +25,29 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
   'text/plain',
   'text/csv',
 ]);
 
-const BLOCKED_EXTENSIONS = new Set(['.exe', '.sh', '.bat', '.cmd']);
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.pdf',
+  '.docx',
+  '.xlsx',
+  '.pptx',
+  '.doc',
+  '.xls',
+  '.ppt',
+  '.txt',
+  '.csv',
+]);
 
 const DOCUMENTS_BUCKET = 'documents';
 
@@ -62,10 +80,8 @@ export class ChapterDocumentService {
       ? input.filename.slice(input.filename.lastIndexOf('.')).toLowerCase()
       : '';
 
-    if (BLOCKED_EXTENSIONS.has(ext)) {
-      throw new BadRequestException(
-        'File type is not allowed: executable files are blocked',
-      );
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException('File extension is not allowed');
     }
 
     if (!ALLOWED_CONTENT_TYPES.has(input.contentType)) {

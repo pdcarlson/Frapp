@@ -1008,7 +1008,9 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockRejectedValue(new Error('Database error'));
+      mockRoleRepo.findByChapterAndName.mockRejectedValue(
+        new Error('Database error'),
+      );
 
       const loggerWarnSpy = jest
         .spyOn(service['logger'], 'warn')
@@ -1017,7 +1019,7 @@ describe('BillingService', () => {
       await service.handleWebhookEvent(event);
 
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        'Failed to notify president for chapter ch-1'
+        'Failed to notify president for chapter ch-1',
       );
 
       loggerWarnSpy.mockRestore();
