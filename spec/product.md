@@ -344,3 +344,5 @@ Dark mode variants defined in `@repo/theme`. Dark mode respects system preferenc
 - System-adaptive design via NativeWind. No platform-specific UI forks.
 - Haptic feedback on key actions (check-in, point award, reactions).
 - Swipe gestures for chat (swipe to reply, swipe to archive DM).
+
+- [Accessibility] Filter selects in Events and Points dashboards use aria-labels.
