@@ -8,3 +8,5 @@ Removed hardcoded Stripe credential fallbacks in `apps/api/src/export-openapi.ts
 
 ## Test Coverage
 Added comprehensive unit tests for `NotificationController` in `apps/api/src/interface/controllers/notification.controller.spec.ts` to ensure stability of notification and user settings endpoints.
+
+Added comprehensive unit tests for `joinClassNames` in `packages/ui/src/utils.test.ts` to ensure stability of UI utility functions.
