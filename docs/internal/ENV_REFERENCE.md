@@ -25,7 +25,7 @@ Change SUPABASE_URL → both references update instantly.
 
 | Environment | When it's used | Maps to |
 |---|---|---|
-| `local` | Running the app on your machine against local Docker Supabase | `npm run dev:api`, `npm run dev:web`, etc. |
+| `local` | Running the app on your machine against local Docker Supabase | `npm run dev:stack` (default); per-app: see [`LOCAL_DEV.md`](./LOCAL_DEV.md) |
 | `staging` | Deployed to staging infra when code merges to `main` branch | Vercel Preview, Render staging, Supabase staging project |
 | `production` | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project |
 
@@ -185,16 +185,14 @@ These are used by `deploy-api.yml` via `${{ secrets.* }}`. Set them as GitHub **
 **Primary method (recommended — no `.env.local` files):**
 
 ```bash
-# One-time: install Infisical CLI and login
-npm install -g @infisical/cli
+# One-time: Infisical CLI (also available via repo devDependency / npx)
 npx infisical login
 
-# Then run any app:
-npm run dev:api      # Injects local env vars → starts API on :3001
-npm run dev:web      # Injects local env vars → starts web on :3000
-npm run dev:landing  # Injects local env vars → starts landing on :3002
-npm run dev:mobile   # Injects local env vars → starts Expo
+# Default — all four Node apps from repo root:
+npm run dev:stack
 ```
+
+Mobile and per-app `dev:*` commands: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 **Fallback (if you don't want to use Infisical CLI):**
 

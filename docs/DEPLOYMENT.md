@@ -472,7 +472,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **Canonical values stored once** per environment — no duplication.
 - **Secret references** handle framework prefixes (`NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}`).
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
-- **No `.env.local` files needed** — local dev uses `npm run dev:api` (injects from Infisical CLI).
+- **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/LOCAL_DEV.md`](internal/LOCAL_DEV.md).
 
 ### Sync Map (7 of 10 free-tier integrations)
 

@@ -34,23 +34,23 @@ Frapp is a Turborepo + npm workspaces monorepo (5 apps, 7 shared packages). Stru
 
 ## Documentation sync mandate (non-optional)
 
-For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under `apps/docs/`, `docs/`, or `spec/` in the same change.
+For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Touching **`apps/docs/`** alone also satisfies CI, but **canonical developer guides** live under [`docs/guides/`](docs/guides/README.md); prefer updating those and specs rather than the Next.js docs site (site content is frozen).
 
 - Run or reason against `scripts/check-docs-impact.mjs` before finishing.
 - If user-visible behavior is unchanged, add brief maintenance notes on what changed technically.
 
 ## Services and ports
 
-| Service        | Port  | Command (Infisical-injected from repo root)   |
-| -------------- | ----- | --------------------------------------------- |
-| API            | 3001  | `npm run dev:api`                             |
-| Web            | 3000  | `npm run dev:web`                             |
-| Landing        | 3002  | `npm run dev:landing`                         |
-| Docs           | 3005  | `npm run dev:docs`                            |
-| All four       | —     | `npm run dev:stack`                           |
-| Supabase Studio | 54323 | After `npx supabase start`                    |
+| What            | Port  | Notes                                        |
+| --------------- | ----- | -------------------------------------------- |
+| **Default run** | —     | `npm run dev:stack` (API + web + landing + docs) |
+| Web             | 3000  |                                              |
+| API / Swagger   | 3001  | `/docs` for Swagger                          |
+| Landing         | 3002  |                                              |
+| Docs            | 3005  |                                              |
+| Supabase Studio | 54323 | After `npx supabase start`                   |
 
-Non-Infisical fallbacks and Turbo behavior (`npm run dev` does not start the API): [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).
+Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).
 
 ## Starting the dev environment
 
@@ -58,7 +58,7 @@ Non-Infisical fallbacks and Turbo behavior (`npm run dev` does not start the API
 
 **Headless cloud VM (e.g. Jules):** `scripts/jules-setup.sh` may start Docker differently; do not copy that pattern to a normal laptop.
 
-**Secrets:** Prefer `npx infisical login` and `npm run dev:*` / `dev:stack`. See [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) and [`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md).
+**Secrets:** `npx infisical login` once, then **`npm run dev:stack`** from repo root. See [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) and [`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md).
 
 ## Secrets and environment variables
 

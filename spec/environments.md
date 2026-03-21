@@ -53,7 +53,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints the `npm run dev:*` commands. It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)). It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -67,8 +67,9 @@ npx supabase start
 # 3. Apply database migrations (--local targets the local Supabase instance)
 npx supabase db push --local
 
-# 4. Start all apps
-npm run dev
+# 4. Start apps — default (with Infisical — see docs/internal/LOCAL_DEV.md):
+npm run dev:stack
+# Per-app, no Infisical, Turbo caveats: docs/internal/LOCAL_DEV.md
 ```
 
 ### Environment Variables
@@ -278,16 +279,10 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 ```bash
 npx infisical login       # One-time setup
-npm run dev:stack         # Optional: API + web + landing + docs in one terminal
-# Or per app:
-npm run dev:api           # Injects from Infisical local env
-npm run dev:web
-npm run dev:landing
-npm run dev:docs
-npm run dev:mobile
+npm run dev:stack         # Default: API + web + landing + docs (repo root)
 ```
 
-**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`. See **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.
+Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.
 
 ### Rules
 
@@ -334,6 +329,6 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 ## Jules Cloud Environment
 
 The Jules agent execution environment uses a pre-configured headless cloud VM.
-A setup script is provided at `.jules/setup.sh` which can be pasted directly into the Jules UI "Initial Setup" window to automatically bootstrap the environment (Docker, dependencies, database, and validations).
+Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
-All AI agent configuration files, rules, and skills are maintained in the `.jules` directory (e.g., `.jules/rules`, `.jules/skills`).
+Agent-oriented rules and skills also live under `.jules/` (e.g., `.jules/rules`, `.jules/skills`) alongside the root `.cursor/` copies where applicable.

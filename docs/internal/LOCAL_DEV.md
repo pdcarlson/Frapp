@@ -1,6 +1,14 @@
 # Local development
 
-How to run Frapp on your machine after Docker and Supabase are up. Bootstrap first with [`scripts/local-dev-setup.sh`](../../scripts/local-dev-setup.sh) from the repo root (see also the published guide under **Getting started** in `apps/docs`).
+**Canonical run command (after bootstrap + Infisical login):** from the repo root,
+
+```bash
+npm run dev:stack
+```
+
+This is what `scripts/local-dev-setup.sh` prints at the end. For step-by-step setup, see **[`docs/guides/getting-started.md`](../guides/getting-started.md)**. This file is the **single place** for alternatives (per-app terminals, no Infisical, mobile, Turbo quirks, URLs).
+
+Bootstrap Supabase + deps: [`scripts/local-dev-setup.sh`](../../scripts/local-dev-setup.sh) from the repo root.
 
 ## Infisical (primary path)
 
@@ -11,22 +19,30 @@ Root scripts wrap apps with `npx infisical run --env=local --path=/` so secrets 
 
 If `infisical run` fails (no session, wrong project, or API key without `local` access), use the **fallback** below.
 
-## Ports and commands
+## Ports and URLs
 
-| Service        | Port  | With Infisical              | Without Infisical                    |
-| -------------- | ----- | --------------------------- | ------------------------------------ |
-| API (NestJS)   | 3001  | `npm run dev:api`           | `npm run start:dev -w apps/api`      |
-| Web            | 3000  | `npm run dev:web`           | `npm run dev -w apps/web`            |
-| Landing        | 3002  | `npm run dev:landing`       | `npm run dev -w apps/landing`        |
-| Docs           | 3005  | `npm run dev:docs`          | `npm run dev -w apps/docs`           |
-| Supabase Studio | 54323 | (from `npx supabase start`) | Same                                 |
+| Service         | Port  | URL                          |
+| --------------- | ----- | ---------------------------- |
+| Web             | 3000  | http://localhost:3000        |
+| API             | 3001  | http://localhost:3001        |
+| Swagger         | —     | http://localhost:3001/docs   |
+| Landing         | 3002  | http://localhost:3002        |
+| Docs            | 3005  | http://localhost:3005        |
+| Supabase Studio | 54323 | http://127.0.0.1:54323       |
 
-Swagger: `http://localhost:3001/docs`.
+## Per-app commands (only if you are not using `dev:stack`)
 
-## One command vs multiple terminals
+| App            | With Infisical        | Without Infisical               |
+| -------------- | --------------------- | ------------------------------- |
+| API            | `npm run dev:api`     | `npm run start:dev -w apps/api` |
+| Web            | `npm run dev:web`     | `npm run dev -w apps/web`       |
+| Landing        | `npm run dev:landing` | `npm run dev -w apps/landing` |
+| Docs           | `npm run dev:docs`    | `npm run dev -w apps/docs`      |
 
-- **`npm run dev:stack`** — single terminal; one `infisical run` parents API + web + landing + docs via `concurrently` with named, color-coded log prefixes. Stopping the process stops all four. Logs are interleaved (prefixes keep them readable).
-- **Separate `npm run dev:*` terminals** — clearer isolation and independent restarts; use when you only need one app.
+## `dev:stack` vs separate terminals
+
+- **`npm run dev:stack`** — default; one `infisical run` runs API + web + landing + docs via `concurrently` (prefixed, color-coded logs). Ctrl+C stops all four.
+- **Separate `npm run dev:*`** — use when you want one process per terminal or to run a subset.
 
 `npm run dev` at the root runs **Turbo `dev` only for workspaces that define a `dev` script** (web, landing, docs). The API uses `start:dev`, not `dev`, so it is **not** included in plain `turbo run dev`. Use `dev:stack` or run the API explicitly.
 

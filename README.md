@@ -59,41 +59,14 @@ The spec is the single source of truth. Implementation follows the spec.
 bash scripts/local-dev-setup.sh
 ```
 
-If local Supabase containers are stuck or exited: `bash scripts/local-dev-setup.sh --reset-supabase`. If Postgres fails with **incompatible data directory** (e.g. after a CLI / `major_version` bump), wipe local volumes once: `bash scripts/local-dev-setup.sh --reset-supabase-data`. Details: **Getting Started** in `apps/docs` (Postgres 17 + volumes) and `bash scripts/local-dev-setup.sh --help`.
+If local Supabase containers are stuck or exited: `bash scripts/local-dev-setup.sh --reset-supabase`. If Postgres fails with **incompatible data directory** (e.g. after a CLI / `major_version` bump), wipe local volumes once: `bash scripts/local-dev-setup.sh --reset-supabase-data`. Full walkthrough: [docs/guides/getting-started.md](docs/guides/getting-started.md) and `bash scripts/local-dev-setup.sh --help`.
 
-Authenticate Infisical once (`npx infisical login`); see [docs/internal/SECRETS_MANAGEMENT.md](docs/internal/SECRETS_MANAGEMENT.md). Then start apps from the repo root (long-running servers). **One terminal** (API + web + landing + docs, prefixed logs):
+**Run all app dev servers (default):** from the repo root, after `npx infisical login` once — see [docs/internal/SECRETS_MANAGEMENT.md](docs/internal/SECRETS_MANAGEMENT.md):
 
 ```bash
 npm run dev:stack
 ```
 
-**Or** separate terminals with Infisical-injected env:
+Per-app commands, no-Infisical fallback, mobile, and URLs: **[docs/internal/LOCAL_DEV.md](docs/internal/LOCAL_DEV.md)** (single reference for anything beyond `dev:stack`).
 
-```bash
-npm run dev:api
-npm run dev:web
-npm run dev:landing
-npm run dev:docs
-```
-
-More detail: [docs/internal/LOCAL_DEV.md](docs/internal/LOCAL_DEV.md).
-
-Without Infisical (use `.env.local` per `docs/internal/ENV_REFERENCE.md`):
-
-```bash
-bash scripts/local-dev-setup.sh
-npm run start:dev -w apps/api
-npm run dev -w apps/web
-npm run dev -w apps/landing
-npm run dev -w apps/docs
-```
-
-| Service         | URL                        |
-| --------------- | -------------------------- |
-| Web App         | http://localhost:3000      |
-| API             | http://localhost:3001      |
-| Swagger         | http://localhost:3001/docs |
-| Docs            | http://localhost:3005      |
-| Supabase Studio | http://127.0.0.1:54323     |
-
-See [spec/environments.md](spec/environments.md) for full setup details and environment variables.
+See [spec/environments.md](spec/environments.md) for environment model and variables.
