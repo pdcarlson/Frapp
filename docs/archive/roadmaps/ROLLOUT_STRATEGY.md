@@ -1,5 +1,7 @@
 # Frapp — Application Rollout Strategy
 
+> **Historical (2026-02-27 snapshot).** For current documentation layout, see [`docs/README.md`](../../README.md), [`docs/guides/`](../../guides/README.md), and [`spec/`](../../../spec/README.md). Mentions of `apps/docs` or `docs.frapp.live` here reflect the old plan, not the current repo.
+
 > Master plan for completing and launching the Frapp platform.
 > Generated from a full codebase audit on 2026-02-27.
 
@@ -26,39 +28,39 @@
 
 **Implemented (8 domains):**
 
-| Domain | Controllers | Services | Repositories | Tests | Notes |
-|--------|-------------|----------|-------------|-------|-------|
-| Auth/User Sync | — (interceptor) | AuthService | SupabaseUserRepository | 3 | JWT validation, user sync from Supabase |
-| Users | UserController | UserService | SupabaseUserRepository | 3 | GET/PATCH /users/me |
-| Chapters | ChapterController | ChapterService | SupabaseChapterRepository | 5 | Create, get current, update settings |
-| Members | MemberController | MemberService | SupabaseMemberRepository | 4 | List, role update, onboarding, remove |
-| Roles/RBAC | RbacController | RbacService | SupabaseRoleRepository | 10 | CRUD, presidency transfer, permissions catalog |
-| Invites | InviteController | InviteService | SupabaseInviteRepository | 12 | Generate, batch, redeem with atomic validation |
-| Events | EventController | EventService | SupabaseEventRepository | 8 | CRUD with recurrence, role targeting |
-| Attendance | AttendanceController | AttendanceService | SupabaseAttendanceRepository | 11 | Check-in, grace period, excuse workflow |
-| Points | PointsController | PointsService | SupabasePointTransactionRepository | 10 | Leaderboard, time windows, admin adjust, anomaly flagging |
-| Health | HealthController | — | — | 0 | GET /health |
-| Observability | — (interceptors/filters) | — | — | 1 | RequestId, Logging, AllExceptionsFilter |
-| Infrastructure | — | StripeBillingService, SupabaseStorageService | — | 0 | Stripe + Storage adapters (no endpoints) |
+| Domain         | Controllers              | Services                                     | Repositories                       | Tests | Notes                                                     |
+| -------------- | ------------------------ | -------------------------------------------- | ---------------------------------- | ----- | --------------------------------------------------------- |
+| Auth/User Sync | — (interceptor)          | AuthService                                  | SupabaseUserRepository             | 3     | JWT validation, user sync from Supabase                   |
+| Users          | UserController           | UserService                                  | SupabaseUserRepository             | 3     | GET/PATCH /users/me                                       |
+| Chapters       | ChapterController        | ChapterService                               | SupabaseChapterRepository          | 5     | Create, get current, update settings                      |
+| Members        | MemberController         | MemberService                                | SupabaseMemberRepository           | 4     | List, role update, onboarding, remove                     |
+| Roles/RBAC     | RbacController           | RbacService                                  | SupabaseRoleRepository             | 10    | CRUD, presidency transfer, permissions catalog            |
+| Invites        | InviteController         | InviteService                                | SupabaseInviteRepository           | 12    | Generate, batch, redeem with atomic validation            |
+| Events         | EventController          | EventService                                 | SupabaseEventRepository            | 8     | CRUD with recurrence, role targeting                      |
+| Attendance     | AttendanceController     | AttendanceService                            | SupabaseAttendanceRepository       | 11    | Check-in, grace period, excuse workflow                   |
+| Points         | PointsController         | PointsService                                | SupabasePointTransactionRepository | 10    | Leaderboard, time windows, admin adjust, anomaly flagging |
+| Health         | HealthController         | —                                            | —                                  | 0     | GET /health                                               |
+| Observability  | — (interceptors/filters) | —                                            | —                                  | 1     | RequestId, Logging, AllExceptionsFilter                   |
+| Infrastructure | —                        | StripeBillingService, SupabaseStorageService | —                                  | 0     | Stripe + Storage adapters (no endpoints)                  |
 
 **Total: 9 controllers, 9 services, 8 repositories, 84 passing tests.**
 
 **Not implemented (12 domains):**
 
-| Domain | Spec Reference | Complexity | Priority |
-|--------|---------------|------------|----------|
-| Backwork (Academic Library) | product §3.2, behavior §3 | High | P1 |
-| Chat (Channels, Messages, Reactions) | product §3.4, behavior §6 | Very High | P2 |
-| Notifications (Push, In-App) | product §3.4, behavior §7 | High | P2 |
-| Study Hours (Geofences, Sessions) | product §3.5, behavior §8 | High | P3 |
-| Financials (Billing endpoints, Member Invoices) | product §3.3, behavior §5 | Medium | P1 |
-| Service Hours (Log, Approve) | product §3.11, behavior §20 | Medium | P2 |
-| Tasks (Create, Assign, Confirm) | product §3.12, behavior §21 | Medium | P2 |
-| Chapter Documents (Upload, Browse) | product §3.13, behavior §22 | Low | P3 |
-| Semester Rollover | product §3.14, behavior §23 | Low | P3 |
-| Reports & Export (CSV/PDF) | product §3.15, behavior §24 | Medium | P3 |
-| Global Search | product §3.10, behavior §14 | Medium | P3 |
-| Polls & Voting | product §3.7, behavior §11 | Low | P3 |
+| Domain                                          | Spec Reference              | Complexity | Priority |
+| ----------------------------------------------- | --------------------------- | ---------- | -------- |
+| Backwork (Academic Library)                     | product §3.2, behavior §3   | High       | P1       |
+| Chat (Channels, Messages, Reactions)            | product §3.4, behavior §6   | Very High  | P2       |
+| Notifications (Push, In-App)                    | product §3.4, behavior §7   | High       | P2       |
+| Study Hours (Geofences, Sessions)               | product §3.5, behavior §8   | High       | P3       |
+| Financials (Billing endpoints, Member Invoices) | product §3.3, behavior §5   | Medium     | P1       |
+| Service Hours (Log, Approve)                    | product §3.11, behavior §20 | Medium     | P2       |
+| Tasks (Create, Assign, Confirm)                 | product §3.12, behavior §21 | Medium     | P2       |
+| Chapter Documents (Upload, Browse)              | product §3.13, behavior §22 | Low        | P3       |
+| Semester Rollover                               | product §3.14, behavior §23 | Low        | P3       |
+| Reports & Export (CSV/PDF)                      | product §3.15, behavior §24 | Medium     | P3       |
+| Global Search                                   | product §3.10, behavior §14 | Medium     | P3       |
+| Polls & Voting                                  | product §3.7, behavior §11  | Low        | P3       |
 
 ### 1.2 Web Dashboard (`apps/web`) — ~1% Complete
 
@@ -83,15 +85,15 @@
 
 ### 1.5 Shared Packages — ~75% Complete
 
-| Package | Status | Notes |
-|---------|--------|-------|
-| `@repo/api-sdk` | ✅ Complete | Auto-generated types from OpenAPI spec |
-| `@repo/hooks` | ⚠️ Partial | `useFrappClient` works; data hooks are stubs |
-| `@repo/ui` | ⚠️ Minimal | 3 placeholder components (Button, Card, Code) |
-| `@repo/theme` | ✅ Complete | Full Tailwind config with emerald palette, dark mode |
-| `@repo/validation` | ✅ Complete | Zod schemas for all implemented domains |
-| `@repo/eslint-config` | ✅ Complete | Base, Next.js, React Internal configs |
-| `@repo/typescript-config` | ✅ Complete | Base, Next.js, React Library configs |
+| Package                   | Status      | Notes                                                |
+| ------------------------- | ----------- | ---------------------------------------------------- |
+| `@repo/api-sdk`           | ✅ Complete | Auto-generated types from OpenAPI spec               |
+| `@repo/hooks`             | ⚠️ Partial  | `useFrappClient` works; data hooks are stubs         |
+| `@repo/ui`                | ⚠️ Minimal  | 3 placeholder components (Button, Card, Code)        |
+| `@repo/theme`             | ✅ Complete | Full Tailwind config with emerald palette, dark mode |
+| `@repo/validation`        | ✅ Complete | Zod schemas for all implemented domains              |
+| `@repo/eslint-config`     | ✅ Complete | Base, Next.js, React Internal configs                |
+| `@repo/typescript-config` | ✅ Complete | Base, Next.js, React Library configs                 |
 
 ### 1.6 Database Schema — ✅ Complete
 
@@ -112,7 +114,7 @@
 Phase 1: Complete the API (backend-first)
     ↓
 Phase 2: Landing Page (drive sales, minimal logic)
-    ↓  
+    ↓
 Phase 3: Web Dashboard (admin experience)
     ↓
 Phase 4: Mobile App (member experience)
@@ -121,6 +123,7 @@ Phase 5: Integration, Polish, Launch Prep
 ```
 
 **Rationale:**
+
 - The API is the foundation. Frontend work without API endpoints produces throw-away code.
 - The landing page is "sales-first" — it needs no backend and can ship concurrently with API completion.
 - The web dashboard is simpler than mobile (fewer interaction patterns, no native concerns) and unlocks admin workflows.
@@ -137,6 +140,7 @@ Phase 5: Integration, Polish, Launch Prep
 ### Sprint 1: Financials & Backwork (P1 — Core Value)
 
 #### 1A. Billing Endpoints
+
 Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) but has no controllers.
 
 - [ ] `POST /v1/billing/checkout` — Generate Stripe Checkout URL for chapter subscription
@@ -149,6 +153,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: webhook scenarios, checkout flow, subscription status transitions
 
 #### 1B. Member Invoices (Dues)
+
 - [ ] `POST /v1/invoices` — Create invoice for a member
 - [ ] `GET /v1/invoices` — List chapter invoices (admin) or own invoices (member)
 - [ ] `PATCH /v1/invoices/:id` — Update invoice (status transitions, void)
@@ -157,6 +162,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: invoice lifecycle, payment confirmation
 
 #### 1C. Backwork
+
 - [ ] Domain: `BackworkResource`, `BackworkDepartment`, `BackworkProfessor` entities
 - [ ] Repos: `IBackworkRepository`, `IBackworkDepartmentRepository`, `IBackworkProfessorRepository`
 - [ ] `POST /v1/backwork/upload-url` — Generate signed upload URL
@@ -173,6 +179,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 ### Sprint 2: Chat Foundation (P2 — Core Value)
 
 #### 2A. Channel Management
+
 - [ ] `POST /v1/channels` — Create channel (PUBLIC, PRIVATE, ROLE_GATED)
 - [ ] `GET /v1/channels` — List channels (respecting permissions)
 - [ ] `PATCH /v1/channels/:id` — Update channel settings
@@ -184,6 +191,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: channel types, permission gating, DM deduplication
 
 #### 2B. Messaging
+
 - [ ] `POST /v1/channels/:id/messages` — Send message
 - [ ] `GET /v1/channels/:id/messages` — Get message history (paginated)
 - [ ] `PATCH /v1/messages/:id` — Edit message (own only)
@@ -197,6 +205,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 ### Sprint 3: Notifications & Service/Tasks (P2)
 
 #### 3A. Notification System
+
 - [ ] Domain: `Notification`, `NotificationPreference`, `PushToken`, `UserSettings` entities
 - [ ] `NotificationService` — `notifyUser()`, `notifyChapter()` (decoupled architecture per spec)
 - [ ] `POST /v1/push-tokens` — Register push token
@@ -211,6 +220,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: notification delivery flow, quiet hours, preferences, token management
 
 #### 3B. Service Hours
+
 - [ ] `POST /v1/service-entries` — Log service entry
 - [ ] `GET /v1/service-entries` — List entries (own or all for admin)
 - [ ] `PATCH /v1/service-entries/:id/review` — Approve/reject (admin)
@@ -220,6 +230,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: approval workflow, points award, double-award prevention
 
 #### 3C. Tasks
+
 - [ ] `POST /v1/tasks` — Create task (admin)
 - [ ] `GET /v1/tasks` — List tasks (own or all for admin)
 - [ ] `PATCH /v1/tasks/:id/status` — Update task status (assignee)
@@ -231,6 +242,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 ### Sprint 4: Study Hours, Documents, Remaining Domains (P3)
 
 #### 4A. Study Hours
+
 - [ ] `GET /v1/geofences` — List chapter geofences
 - [ ] `POST /v1/geofences` — Create geofence (admin)
 - [ ] `PATCH /v1/geofences/:id` — Update geofence
@@ -245,6 +257,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: session lifecycle, heartbeat validation, point calculation, edge cases
 
 #### 4B. Chapter Documents
+
 - [ ] `POST /v1/documents/upload-url` — Generate signed upload URL
 - [ ] `POST /v1/documents` — Confirm upload with metadata
 - [ ] `GET /v1/documents` — List documents (with folder filter)
@@ -254,6 +267,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: upload, browse, folder operations
 
 #### 4C. Polls
+
 - [ ] `POST /v1/channels/:id/polls` — Create poll (special message type)
 - [ ] `POST /v1/polls/:id/vote` — Cast vote
 - [ ] `DELETE /v1/polls/:id/vote` — Remove vote
@@ -262,6 +276,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: poll lifecycle, voting rules, expiration
 
 #### 4D. Semester Rollover
+
 - [ ] `POST /v1/chapters/current/rollover` — Trigger rollover
 - [ ] `GET /v1/semesters` — List archived semesters
 - [ ] Archive current period, reset leaderboard window
@@ -270,6 +285,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: rollover flow, cooldown, historical data preservation
 
 #### 4E. Reports & Export
+
 - [ ] `POST /v1/reports/attendance` — Generate attendance report
 - [ ] `POST /v1/reports/points` — Generate points report
 - [ ] `POST /v1/reports/roster` — Generate member roster
@@ -279,6 +295,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Tests: report generation, date range filtering
 
 #### 4F. Global Search
+
 - [ ] `GET /v1/search?q=...` — Cross-domain search
 - [ ] Search across: Backwork, chat messages, events, members
 - [ ] Results grouped by domain, respecting permissions
@@ -310,6 +327,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 **Duration estimate:** 1–2 sprints
 
 ### Design Principles
+
 - **"Modern Ivy"** — prestige meets clean SaaS. Navy + Royal Blue + Emerald palette.
 - **Inspiration:** Linear.app, Stripe.com, Vercel.com — refined, confident, kinetic.
 - **Mobile-first responsive.** Most prospects will first see the site on mobile.
@@ -318,6 +336,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 ### Pages and Sections
 
 #### Home Page (frapp.live)
+
 - [ ] **Hero Section** — Bold headline ("The Operating System for Greek Life"), subheadline explaining the value prop, CTA buttons ("Get Started" → app.frapp.live, "Watch Demo" → scroll to demo), hero image/mockup of the app
 - [ ] **Social Proof Bar** — Logos or stats ("Trusted by X chapters", "Y+ members")
 - [ ] **Feature Highlights** — 4–6 feature cards with icons/illustrations:
@@ -335,17 +354,20 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] **Footer** — Links to Terms, Privacy, FERPA, Contact, social media. Frapp branding.
 
 #### Legal Pages
+
 - [ ] `/terms` — Terms of Service (content from spec §25)
 - [ ] `/privacy` — Privacy Policy (content from spec §25)
 - [ ] `/ferpa` — FERPA Notice (content from spec §25)
 
 #### Global Elements
+
 - [ ] **Header/Nav** — Logo, nav links (Features, Pricing, Docs), "Log In" and "Get Started" buttons
 - [ ] **Dark mode support** — System preference detection, toggle in header
 - [ ] **Animations** — Subtle scroll-triggered animations (Framer Motion or CSS)
 - [ ] **SEO** — Meta tags, Open Graph, structured data, sitemap
 
 ### Technical Implementation
+
 - [ ] Install ShadCN UI components in landing app
 - [ ] Apply `@repo/theme` (tailwind config)
 - [ ] Add Geist or Inter font
@@ -365,6 +387,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 ### Foundation Sprint (Sprint 1)
 
 #### Auth & Layout Shell
+
 - [ ] Supabase Auth integration (sign-up, sign-in, magic link, OAuth)
 - [ ] Next.js middleware for protected routes
 - [ ] Session management with `@supabase/ssr`
@@ -378,6 +401,7 @@ Stripe infrastructure exists (`StripeBillingService`, `SupabaseStorageService`) 
 - [ ] Breadcrumb navigation
 
 #### Dashboard Home
+
 - [ ] Active members count
 - [ ] Upcoming events list
 - [ ] Subscription status badge
@@ -391,6 +415,7 @@ Ordered by admin workflow priority:
 #### Sprint 2: Core Admin Screens
 
 **Members Screen**
+
 - [ ] Searchable member directory with profile cards
 - [ ] Role badges and point display
 - [ ] Role assignment (multi-select dropdown)
@@ -399,6 +424,7 @@ Ordered by admin workflow priority:
 - [ ] Member profile detail panel
 
 **Roles & Permissions**
+
 - [ ] Role list with drag-to-reorder (display_order)
 - [ ] Create/edit role modal (name, permissions checklist, color picker)
 - [ ] System role indicator (cannot delete)
@@ -406,6 +432,7 @@ Ordered by admin workflow priority:
 - [ ] Permission catalog reference
 
 **Events Screen**
+
 - [ ] Event list (upcoming + past tabs)
 - [ ] Calendar view (FullCalendar or similar)
 - [ ] Create/edit event form (all fields from spec)
@@ -418,6 +445,7 @@ Ordered by admin workflow priority:
 #### Sprint 3: Engagement & Content Screens
 
 **Points Ledger**
+
 - [ ] Leaderboard table with rank, name, points
 - [ ] Time window selector (All-time, Semester, Month)
 - [ ] Full transaction log with filters
@@ -426,6 +454,7 @@ Ordered by admin workflow priority:
 - [ ] Audit tab (flagged transactions)
 
 **Backwork Admin**
+
 - [ ] Resource browser with rich filters (department, course, professor, semester, year, type, variant)
 - [ ] Search bar (full-text)
 - [ ] Resource detail with download link
@@ -434,6 +463,7 @@ Ordered by admin workflow priority:
 - [ ] Professor management (list, edit names)
 
 **Chat Admin**
+
 - [ ] Channel list with types (PUBLIC, PRIVATE, ROLE_GATED)
 - [ ] Create/edit channel form (name, description, type, permissions, category)
 - [ ] Category management (create, reorder, delete)
@@ -443,12 +473,14 @@ Ordered by admin workflow priority:
 #### Sprint 4: Operations & Settings Screens
 
 **Billing**
+
 - [ ] Subscription status card (active, past_due, canceled)
 - [ ] Payment history timeline
 - [ ] "Manage Subscription" button → Stripe Customer Portal
 - [ ] Upgrade/downgrade prompts
 
 **Financial Invoices**
+
 - [ ] Invoice list with status filters (DRAFT, OPEN, PAID, VOID)
 - [ ] Create invoice form (select member, amount, description, due date)
 - [ ] Send invoice action (DRAFT → OPEN)
@@ -456,41 +488,48 @@ Ordered by admin workflow priority:
 - [ ] Overdue indicators
 
 **Tasks**
+
 - [ ] Task list with status filters
 - [ ] Create task form (title, description, assignee, due date, point reward)
 - [ ] Completion confirmation workflow
 - [ ] Overdue indicators
 
 **Service Hours**
+
 - [ ] Admin review queue (PENDING entries)
 - [ ] Approve/reject with optional comment
 - [ ] Chapter-wide service report table
 - [ ] Points-per-hour configuration
 
 **Study Geofences**
+
 - [ ] Map view with polygon drawing tool (Google Maps or Mapbox)
 - [ ] Geofence list with configuration (name, minutes per point, min session)
 - [ ] Create/edit/delete geofences
 - [ ] Active session indicators
 
 **Chapter Documents**
+
 - [ ] Document browser with folder navigation
 - [ ] Upload form (file + title + description + folder)
 - [ ] Folder management
 - [ ] Download links
 
 **Reports & Export**
+
 - [ ] Report type selection
 - [ ] Date range picker
 - [ ] Scope selector (chapter-wide or per-member)
 - [ ] Generate and download (CSV/PDF)
 
 **Polls**
+
 - [ ] Poll list with status (active, expired)
 - [ ] Create poll form
 - [ ] Results visualization (bar chart)
 
 **Settings**
+
 - [ ] Chapter profile form (name, university)
 - [ ] Chapter branding (logo upload, accent color picker with contrast preview)
 - [ ] Notification defaults
@@ -524,12 +563,14 @@ Ordered by admin workflow priority:
 #### Sprint 2: Core Member Screens
 
 **Home / Activity Feed**
+
 - [ ] Point balance summary card
 - [ ] Unified feed (events, announcements, backwork, milestones, new members)
 - [ ] Pull-to-refresh
 - [ ] Tap-to-navigate (deep links to relevant screens)
 
 **Events**
+
 - [ ] Upcoming events list
 - [ ] Event detail screen
 - [ ] Check-in button (with time window validation)
@@ -538,12 +579,14 @@ Ordered by admin workflow priority:
 - [ ] "Add to Calendar" action (.ics generation)
 
 **My Points**
+
 - [ ] Current balance display
 - [ ] Recent transactions list (with category icons and descriptions)
 - [ ] Leaderboard (chapter rank, top members)
 - [ ] Time window selector
 
 **Profile**
+
 - [ ] Display name, photo, bio (editable)
 - [ ] Push notification preferences
 - [ ] Quiet hours configuration
@@ -552,6 +595,7 @@ Ordered by admin workflow priority:
 - [ ] "Replay Tutorial" link
 
 **Member Directory**
+
 - [ ] Searchable member list
 - [ ] Profile cards (name, role, points, join date)
 - [ ] Tap to view profile or start DM
@@ -559,6 +603,7 @@ Ordered by admin workflow priority:
 #### Sprint 3: Communication
 
 **Chat**
+
 - [ ] Channel list organized by categories
 - [ ] DMs tab (1-on-1 and group)
 - [ ] Message input with Markdown support
@@ -572,6 +617,7 @@ Ordered by admin workflow priority:
 - [ ] #announcements special handling (read-only for non-admins)
 
 **Notifications**
+
 - [ ] In-app notification center
 - [ ] Deep linking to relevant content
 - [ ] Mark as read
@@ -581,12 +627,14 @@ Ordered by admin workflow priority:
 #### Sprint 4: Remaining Screens
 
 **Backwork**
+
 - [ ] Browse by filters (department, course, professor, semester, year, type)
 - [ ] Upload flow (file picker → metadata form → confirm)
 - [ ] Download with signed URL
 - [ ] Full-text search
 
 **Study Hours**
+
 - [ ] Geofence selection (map with polygon overlays)
 - [ ] Study mode screen (timer, location status, progress, streak)
 - [ ] Foreground enforcement (AppState API)
@@ -594,31 +642,37 @@ Ordered by admin workflow priority:
 - [ ] Session history with points earned
 
 **Tasks**
+
 - [ ] Task list (own tasks)
 - [ ] Status updates (IN_PROGRESS, COMPLETED)
 - [ ] Due date and point reward display
 
 **Service Hours**
+
 - [ ] Log entry form (date, duration, description, proof upload)
 - [ ] Own history with status
 - [ ] Service leaderboard
 
 **Chapter Documents**
+
 - [ ] Browse and download
 - [ ] Folder navigation
 - [ ] Search
 
 **Polls**
+
 - [ ] Vote on active polls
 - [ ] View results
 - [ ] Create polls (if permitted)
 
 **Alumni Directory**
+
 - [ ] Searchable alumni list
 - [ ] Filter by graduation year, city, company
 - [ ] "Support the Chapter" donation link
 
 **Onboarding Tutorial**
+
 - [ ] Swipeable card walkthrough (7 screens)
 - [ ] Skip button
 - [ ] Revisitable from settings
@@ -631,12 +685,14 @@ Ordered by admin workflow priority:
 **Duration estimate:** 1–2 sprints
 
 ### Cross-Platform Integration
+
 - [ ] API SDK regeneration from final OpenAPI spec
 - [ ] Shared hooks (`@repo/hooks`) — TanStack Query wrappers for all endpoints
 - [ ] Consistent error handling across web + mobile
 - [ ] Supabase Realtime integration (chat messages, reactions, typing, presence)
 
 ### Quality & Testing
+
 - [ ] API: ≥80% test coverage across all modules
 - [ ] Web: Component tests for critical flows (Playwright or Cypress)
 - [ ] Mobile: Detox or Maestro E2E tests for critical flows
@@ -645,6 +701,7 @@ Ordered by admin workflow priority:
 - [ ] Security audit (OWASP top 10, rate limiting verification, SQL injection prevention)
 
 ### Documentation (`apps/docs`)
+
 - [ ] Getting Started guide (create chapter, invite members)
 - [ ] Feature guides for each domain (Backwork, Events, Points, Chat, Study Hours, etc.)
 - [ ] FAQ and troubleshooting
@@ -652,6 +709,7 @@ Ordered by admin workflow priority:
 - [ ] Update docs with all new features
 
 ### CI/CD
+
 - [ ] GitHub Actions workflow: lint, typecheck, test, contract check
 - [ ] Vercel deployment config for web, landing, docs
 - [ ] API Docker image + deployment pipeline
@@ -659,6 +717,7 @@ Ordered by admin workflow priority:
 - [ ] Database migration strategy for staging/production
 
 ### Launch Checklist
+
 - [ ] Stripe live mode setup (KYC verification)
 - [ ] Custom domains: frapp.live, app.frapp.live, docs.frapp.live
 - [ ] SSL certificates
@@ -686,16 +745,16 @@ Ordered by admin workflow priority:
 
 ### Issues to Address
 
-| Issue | Location | Severity | Recommendation |
-|-------|----------|----------|----------------|
-| Minor TS error in invite test | `invite.service.spec.ts:129` | Low | Add non-null assertion or type guard for `expires_at` |
-| Theme color mismatch | `@repo/theme` uses emerald; spec says Navy + Royal Blue | Medium | Align theme with "Modern Ivy" spec palette (Navy #0F172A, Royal Blue #2563EB, Emerald #10B981) |
-| `useMembers` hook is a stub | `packages/hooks/src/use-members.ts` | Low | Replace when web dashboard is built |
-| `@repo/ui` placeholder components | `packages/ui/src/` | Medium | Replace with ShadCN UI components during Phase 3 |
-| No OpenAPI spec committed | `apps/api/openapi.json` not in git | Medium | Commit or add CI step to generate |
-| Missing eslint configs | `packages/validation`, `packages/api-sdk` | Low | Add eslint configs or exclude from monorepo lint |
-| No seed data | `supabase/seed.sql` is empty | Low | Add development seed data for local testing |
-| E2E tests only check auth rejection | `test/attendance-points.e2e-spec.ts` | Medium | Add tests with mocked auth for positive flows |
+| Issue                               | Location                                                | Severity | Recommendation                                                                                 |
+| ----------------------------------- | ------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| Minor TS error in invite test       | `invite.service.spec.ts:129`                            | Low      | Add non-null assertion or type guard for `expires_at`                                          |
+| Theme color mismatch                | `@repo/theme` uses emerald; spec says Navy + Royal Blue | Medium   | Align theme with "Modern Ivy" spec palette (Navy #0F172A, Royal Blue #2563EB, Emerald #10B981) |
+| `useMembers` hook is a stub         | `packages/hooks/src/use-members.ts`                     | Low      | Replace when web dashboard is built                                                            |
+| `@repo/ui` placeholder components   | `packages/ui/src/`                                      | Medium   | Replace with ShadCN UI components during Phase 3                                               |
+| No OpenAPI spec committed           | `apps/api/openapi.json` not in git                      | Medium   | Commit or add CI step to generate                                                              |
+| Missing eslint configs              | `packages/validation`, `packages/api-sdk`               | Low      | Add eslint configs or exclude from monorepo lint                                               |
+| No seed data                        | `supabase/seed.sql` is empty                            | Low      | Add development seed data for local testing                                                    |
+| E2E tests only check auth rejection | `test/attendance-points.e2e-spec.ts`                    | Medium   | Add tests with mocked auth for positive flows                                                  |
 
 ---
 
@@ -703,16 +762,17 @@ Ordered by admin workflow priority:
 
 ### Development Timeline (from git history)
 
-| Phase | Scope | Key Commits | Status |
-|-------|-------|-------------|--------|
-| **Infrastructure** | NestJS scaffold, Drizzle (later replaced), Clerk (later replaced) | Initial commits | ✅ Superseded |
-| **Ground-Up Rebuild** | Supabase migration, spec-driven architecture | `731029b` | ✅ Complete |
-| **Phase 1: Foundation** | Auth, Users, Chapters, Members, Roles, Invites, Health | Multiple commits | ✅ Complete |
-| **Phase 2: Events/Points** | Events, Attendance, Points, OpenAPI/SDK | `22c83a2`, `b3e589f` | ✅ Complete |
-| **Spec Hardening** | Behavior spec, architecture spec, environment spec | Various docs commits | ✅ Complete |
-| **Audit & Integration** | Phase 2 audit, branch integration, next steps planning | `040838e`, `4549691` | ✅ Complete |
+| Phase                      | Scope                                                             | Key Commits          | Status        |
+| -------------------------- | ----------------------------------------------------------------- | -------------------- | ------------- |
+| **Infrastructure**         | NestJS scaffold, Drizzle (later replaced), Clerk (later replaced) | Initial commits      | ✅ Superseded |
+| **Ground-Up Rebuild**      | Supabase migration, spec-driven architecture                      | `731029b`            | ✅ Complete   |
+| **Phase 1: Foundation**    | Auth, Users, Chapters, Members, Roles, Invites, Health            | Multiple commits     | ✅ Complete   |
+| **Phase 2: Events/Points** | Events, Attendance, Points, OpenAPI/SDK                           | `22c83a2`, `b3e589f` | ✅ Complete   |
+| **Spec Hardening**         | Behavior spec, architecture spec, environment spec                | Various docs commits | ✅ Complete   |
+| **Audit & Integration**    | Phase 2 audit, branch integration, next steps planning            | `040838e`, `4549691` | ✅ Complete   |
 
 ### Key Artifacts Produced
+
 - 4 comprehensive spec documents (`spec/product.md`, `behavior.md`, `architecture.md`, `environments.md`)
 - 84 passing unit tests
 - OpenAPI export script and auto-generated TypeScript SDK
@@ -723,6 +783,7 @@ Ordered by admin workflow priority:
 - Pull request template with docs/spec impact section
 
 ### Key Decisions Made
+
 1. **Supabase over Clerk** — Auth migrated to Supabase Auth (unified platform)
 2. **Supabase over Drizzle ORM** — Direct Supabase JS client (no ORM layer)
 3. **Repository pattern** — Clean abstractions for future provider changes
@@ -733,24 +794,24 @@ Ordered by admin workflow priority:
 
 ## 10. Risk Register
 
-| Risk | Impact | Likelihood | Mitigation |
-|------|--------|------------|------------|
-| Chat complexity underestimated | High | Medium | Start with basic messaging; add reactions/typing/presence incrementally |
-| Supabase Realtime limitations | Medium | Low | Socket.io fallback documented in architecture spec |
-| Stripe KYC delays | High | Medium | Start KYC process during Phase 1; use test mode until approved |
-| Mobile app review delays (Apple/Google) | Medium | Medium | Submit early beta builds; use EAS OTA for JS-only updates |
-| Study hours GPS accuracy on mobile | Medium | Medium | Generous accuracy threshold; clear user feedback on location status |
-| Performance at scale (many chapters) | Medium | Low | Database indexing, connection pooling, query optimization in Phase 5 |
-| Legal content (Terms, Privacy) | Medium | High | Draft content early; get legal review before public launch |
-| Landing page design quality | High | Medium | Consider hiring a designer or using a premium template for initial version |
+| Risk                                    | Impact | Likelihood | Mitigation                                                                 |
+| --------------------------------------- | ------ | ---------- | -------------------------------------------------------------------------- |
+| Chat complexity underestimated          | High   | Medium     | Start with basic messaging; add reactions/typing/presence incrementally    |
+| Supabase Realtime limitations           | Medium | Low        | Socket.io fallback documented in architecture spec                         |
+| Stripe KYC delays                       | High   | Medium     | Start KYC process during Phase 1; use test mode until approved             |
+| Mobile app review delays (Apple/Google) | Medium | Medium     | Submit early beta builds; use EAS OTA for JS-only updates                  |
+| Study hours GPS accuracy on mobile      | Medium | Medium     | Generous accuracy threshold; clear user feedback on location status        |
+| Performance at scale (many chapters)    | Medium | Low        | Database indexing, connection pooling, query optimization in Phase 5       |
+| Legal content (Terms, Privacy)          | Medium | High       | Draft content early; get legal review before public launch                 |
+| Landing page design quality             | High   | Medium     | Consider hiring a designer or using a premium template for initial version |
 
 ---
 
 ## Appendix: Decision Log
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-02-27 | API-first rollout strategy | 12/21 domains not implemented; frontend without API produces throwaway work |
-| 2026-02-27 | Landing page can run in parallel | No API dependency; sales-critical for launch |
-| 2026-02-27 | Web before mobile | Simpler to develop, unlocks admin workflows needed for mobile testing |
-| 2026-02-27 | 4-sprint API plan | Ordered by value: Financials/Backwork → Chat → Notifications/Tasks → Study/Docs/Polls |
+| Date       | Decision                         | Rationale                                                                             |
+| ---------- | -------------------------------- | ------------------------------------------------------------------------------------- |
+| 2026-02-27 | API-first rollout strategy       | 12/21 domains not implemented; frontend without API produces throwaway work           |
+| 2026-02-27 | Landing page can run in parallel | No API dependency; sales-critical for launch                                          |
+| 2026-02-27 | Web before mobile                | Simpler to develop, unlocks admin workflows needed for mobile testing                 |
+| 2026-02-27 | 4-sprint API plan                | Ordered by value: Financials/Backwork → Chat → Notifications/Tasks → Study/Docs/Polls |

@@ -50,7 +50,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                    |
 | `migration-safety`   | Migration filename validation + promotion docs                                   |
 | `mobile-validate`    | Mobile app lint + typecheck                                                      |
-| `build-and-lint`     | Docs build + lint + docs/spec sync checks                                        |
+| `build-and-lint`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)  |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only) |
 
 ### Vercel deployment policy
@@ -107,7 +107,7 @@ type(scope): description
   - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
 - If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/production`
 - Fill out the PR template completely.
-- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`.
+- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
 - CodeRabbit will post an AI review.
 

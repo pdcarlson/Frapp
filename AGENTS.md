@@ -28,6 +28,8 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 
 Frapp is a Turborepo + npm workspaces monorepo (4 apps, 7 shared packages). Structure: `README.md`. Product/architecture: `spec/`. Developer docs: markdown in [`docs/guides/`](docs/guides/README.md) (no separate docs web app in-repo).
 
+- **Documentation map:** [`docs/README.md`](docs/README.md) — how `docs/` and `spec/` fit together. **Conventions:** [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
+
 ## Branch model
 
 `main` = staging, `production` = production. Feature branches from `main` → PR to `main`. Promotion: PR `main` → `production`. Direct pushes to `main` / `production` are blocked. PRs to `production` from branches other than `main` are rejected by CI. Details: `CONTRIBUTING.md`.
@@ -41,13 +43,13 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 ## Services and ports
 
-| What            | Port  | Notes                                            |
-| --------------- | ----- | ------------------------------------------------ |
-| **Default run** | —     | `npm run dev:stack` (API + web + landing)        |
-| Web             | 3000  |                                                  |
-| API / Swagger   | 3001  | `/docs` for Swagger                              |
-| Landing         | 3002  |                                                  |
-| Supabase Studio | 54323 | After `npx supabase start`                       |
+| What            | Port  | Notes                                     |
+| --------------- | ----- | ----------------------------------------- |
+| **Default run** | —     | `npm run dev:stack` (API + web + landing) |
+| Web             | 3000  |                                           |
+| API / Swagger   | 3001  | `/docs` for Swagger                       |
+| Landing         | 3002  |                                           |
+| Supabase Studio | 54323 | After `npx supabase start`                |
 
 Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).
 

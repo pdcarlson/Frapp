@@ -26,19 +26,19 @@ supabase/     — Supabase project config + migrations
 
 ## Tech Stack
 
-| Layer                | Technology                                  |
-| -------------------- | ------------------------------------------- |
-| Monorepo             | Turborepo + npm workspaces                  |
-| Web + Landing        | Next.js (App Router), Tailwind, ShadCN UI   |
-| Mobile               | Expo, React Native, Expo Router, NativeWind |
-| API                  | NestJS 11, TypeScript (strict)              |
-| Database             | PostgreSQL via Supabase                     |
-| Auth                 | Supabase Auth                               |
-| Storage              | Supabase Storage                            |
-| Realtime             | Supabase Realtime                           |
-| Billing              | Stripe                                      |
-| Push                 | Expo Push Service                           |
-| CI/CD                | GitHub Actions + Vercel + EAS               |
+| Layer         | Technology                                  |
+| ------------- | ------------------------------------------- |
+| Monorepo      | Turborepo + npm workspaces                  |
+| Web + Landing | Next.js (App Router), Tailwind, ShadCN UI   |
+| Mobile        | Expo, React Native, Expo Router, NativeWind |
+| API           | NestJS 11, TypeScript (strict)              |
+| Database      | PostgreSQL via Supabase                     |
+| Auth          | Supabase Auth                               |
+| Storage       | Supabase Storage                            |
+| Realtime      | Supabase Realtime                           |
+| Billing       | Stripe                                      |
+| Push          | Expo Push Service                           |
+| CI/CD         | GitHub Actions + Vercel + EAS               |
 
 ## Spec-Driven Development
 
@@ -50,6 +50,8 @@ All product decisions, behavior rules, and architecture are documented in the `s
 - **[spec/environments.md](spec/environments.md)** — Local, staging, production setup; CI/CD.
 
 The spec is the single source of truth. Implementation follows the spec.
+
+**Documentation map (guides + runbooks + how they relate to spec):** [docs/README.md](docs/README.md).
 
 ## Quick Start
 

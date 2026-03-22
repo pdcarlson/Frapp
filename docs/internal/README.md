@@ -38,5 +38,6 @@ Use this area for:
 - `PR_CONSOLIDATION_CANONICAL_PR_BODY.md`
 - `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
 - `DOCS_CI.md` — docs/spec PR gate (`check-docs-impact.mjs`) and trade-offs
+- `DOCUMENTATION_CONVENTIONS.md` — where to put updates (`docs/` vs `spec/`), DRY, CI alignment
 
 Developer-facing guides (canonical, markdown) live in [`docs/guides/`](../guides/README.md). There is no separate docs web app in the monorepo; a public docs site may be added later.

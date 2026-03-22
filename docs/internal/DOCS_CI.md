@@ -16,7 +16,7 @@ So a single edit under `docs/guides/`, `docs/internal/`, or `spec/` satisfies th
 ## Trade-offs
 
 - **Noise:** Mechanical edits (e.g. `AGENTS.md` at repo root) still need a `docs/` or `spec/` touch unless the PR is docs-only in a sense the script does not recognize (root-level `.md` files are _not_ exempt).
-- **Ambiguity:** Contributors should default to [`docs/guides/`](../guides/README.md) and `spec/` for product-code PRs; there is no `apps/docs` workspace.
+- **Ambiguity:** Contributors should default to [`docs/guides/`](../guides/README.md) and `spec/` for product-code PRs; there is no `apps/docs` workspace. Where to put updates: [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md).
 
 ## Optional future tightening (not implemented)
 
