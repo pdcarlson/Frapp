@@ -4,10 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
+  AlertCircle,
+  Ban,
   Bell,
   BookOpen,
   CalendarDays,
   CircleDollarSign,
+  Clock,
   LayoutDashboard,
   Menu,
   Settings,
@@ -17,7 +20,10 @@ import {
 } from "lucide-react";
 import { useCurrentChapter } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
-import { CurrentChapterPayloadSchema } from "@repo/validation";
+import {
+  CurrentChapterPayloadSchema,
+  type CurrentChapterPayload,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -74,12 +80,40 @@ const sidebarFocusRingClassName =
 const navIconClassName = "h-4 w-4";
 const statusIconClassName = "h-3.5 w-3.5";
 
-function withAlpha(hexColor: string, opacity: number): string {
-  const normalized = hexColor.replace("#", "");
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+function subscriptionStatusPresentation(
+  status: CurrentChapterPayload["subscription_status"],
+): {
+  label: string;
+  className: string;
+  Icon: React.ComponentType<{ className?: string }>;
+} {
+  switch (status) {
+    case "active":
+      return {
+        label: "Subscription active",
+        className:
+          "border-emerald-500/45 text-emerald-100 bg-emerald-500/15",
+        Icon: ShieldCheck,
+      };
+    case "past_due":
+      return {
+        label: "Payment past due",
+        className: "border-amber-500/45 text-amber-100 bg-amber-500/15",
+        Icon: AlertCircle,
+      };
+    case "canceled":
+      return {
+        label: "Subscription canceled",
+        className: "border-slate-500/50 text-slate-300 bg-slate-500/10",
+        Icon: Ban,
+      };
+    case "incomplete":
+      return {
+        label: "Subscription incomplete",
+        className: "border-sky-500/40 text-sky-100 bg-sky-500/10",
+        Icon: Clock,
+      };
+  }
 }
 
 function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
@@ -108,7 +142,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     );
   }
 
-  if (isPending || isFetching) {
+  if (isPending || (isFetching && data === undefined)) {
     return (
       <div className={shellClass}>
         <p className={cn("text-xs", labelMuted)}>Chapter</p>
@@ -137,6 +171,8 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   const chapterAccent = resolveChapterAccentColor(
     payload.accent_color ?? undefined,
   );
+  const sub = subscriptionStatusPresentation(payload.subscription_status);
+  const SubIcon = sub.Icon;
 
   return (
     <div className={shellClass}>
@@ -144,15 +180,13 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
       <p className={nameClass}>{payload.name}</p>
       <p className={uniClass}>{payload.university}</p>
       <div
-        className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
-        style={{
-          color: chapterAccent.resolvedAccent,
-          borderColor: withAlpha(chapterAccent.resolvedAccent, 0.45),
-          backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
-        }}
+        className={cn(
+          "mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs",
+          sub.className,
+        )}
       >
-        <ShieldCheck className={statusIconClassName} />
-        <span>Subscription Active</span>
+        <SubIcon className={statusIconClassName} />
+        <span>{sub.label}</span>
       </div>
       {chapterAccent.fallbackApplied ? (
         <p className="mt-2 text-[11px] text-slate-500">

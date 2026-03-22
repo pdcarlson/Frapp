@@ -183,10 +183,13 @@ This uses git diff to verify `openapi.json` and `types.ts` are updated when API 
 npm run check:migration-safety
 ```
 
-Validates:
+Implemented by `scripts/check-migration-safety.mjs`. It validates **only**:
+
 - Filenames match `{14-digit-timestamp}_{snake_case}.sql`
 - No duplicate timestamps
 - Promotion docs updated when migrations change
+
+It does **not** inspect migration SQL for RLS. For per-table RLS coverage, use the **RLS coverage** section above and its Python verification script.
 
 ### Content review checklist
 

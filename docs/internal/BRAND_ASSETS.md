@@ -38,6 +38,8 @@ Fails if synced icons differ from the canonical file.
 
 Social platforms cache preview images aggressively. If you replace the generated OG route, use Vercel’s redeploy or the platform’s debugger to refresh.
 
+Landing `metadata` in `apps/landing/app/layout.tsx` should reference the App Router OG route (`openGraph.images` / `twitter.images` → `/opengraph-image` against `metadataBase`), not a static `/og-image.png` in `public/` unless that file exists.
+
 ## Expo / mobile rasters
 
 `apps/mobile/app.json` references PNGs under `assets/images/`. SVG cannot be used as the store icon. After changing the master mark:

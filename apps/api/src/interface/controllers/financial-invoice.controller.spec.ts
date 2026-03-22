@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FinancialInvoiceController } from './financial-invoice.controller';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -16,8 +17,12 @@ import { RequirePermissions } from '../decorators/permissions.decorator';
 describe('FinancialInvoiceController', () => {
   let controller: FinancialInvoiceController;
   let service: jest.Mocked<Partial<FinancialInvoiceService>>;
+  let rbacService: jest.Mocked<Pick<RbacService, 'memberHasAnyPermission'>>;
 
   beforeEach(async () => {
+    rbacService = {
+      memberHasAnyPermission: jest.fn(),
+    };
     service = {
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
@@ -36,6 +41,7 @@ describe('FinancialInvoiceController', () => {
           provide: FinancialInvoiceService,
           useValue: service,
         },
+        { provide: RbacService, useValue: rbacService },
         {
           provide: 'SUPABASE_CLIENT',
           useValue: {},
@@ -53,6 +59,7 @@ describe('FinancialInvoiceController', () => {
     controller = module.get<FinancialInvoiceController>(
       FinancialInvoiceController,
     );
+    rbacService.memberHasAnyPermission.mockResolvedValue(false);
   });
 
   it('should be defined', () => {
@@ -60,11 +67,12 @@ describe('FinancialInvoiceController', () => {
   });
 
   describe('list', () => {
-    it('should call findByUser if filterUserId is provided', async () => {
+    it('should call findByUser for another user when caller has billing view', async () => {
       const chapterId = 'chapter-1';
       const userId = 'user-1';
       const filterUserId = 'user-2';
       const mockResult = [{ id: 'invoice-1' }];
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
       service.findByUser.mockResolvedValue(mockResult as any);
 
       const result = await controller.list(chapterId, userId, filterUserId);
@@ -73,10 +81,24 @@ describe('FinancialInvoiceController', () => {
       expect(result).toBe(mockResult);
     });
 
-    it('should call findByChapter if filterUserId is not provided', async () => {
+    it('should call findByUser for self when caller lacks billing view', async () => {
       const chapterId = 'chapter-1';
       const userId = 'user-1';
       const mockResult = [{ id: 'invoice-1' }];
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+      service.findByUser.mockResolvedValue(mockResult as any);
+
+      const result = await controller.list(chapterId, userId);
+
+      expect(service.findByUser).toHaveBeenCalledWith(userId, chapterId);
+      expect(result).toBe(mockResult);
+    });
+
+    it('should call findByChapter when caller has billing view', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const mockResult = [{ id: 'invoice-1' }];
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
       service.findByChapter.mockResolvedValue(mockResult as any);
 
       const result = await controller.list(chapterId, userId);
@@ -106,15 +128,30 @@ describe('FinancialInvoiceController', () => {
   });
 
   describe('getOne', () => {
-    it('should call findById', async () => {
+    it('should return invoice for owner', async () => {
       const chapterId = 'chapter-1';
+      const userId = 'user-1';
       const id = 'invoice-1';
-      const mockResult = { id: 'invoice-1' };
+      const mockResult = { id: 'invoice-1', user_id: userId };
       service.findById.mockResolvedValue(mockResult as any);
+      rbacService.memberHasAnyPermission.mockResolvedValue(false);
 
-      const result = await controller.getOne(chapterId, id);
+      const result = await controller.getOne(chapterId, userId, id);
 
       expect(service.findById).toHaveBeenCalledWith(id, chapterId);
+      expect(result).toBe(mockResult);
+    });
+
+    it('should return invoice for billing viewer when not owner', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const id = 'invoice-1';
+      const mockResult = { id: 'invoice-1', user_id: 'user-2' };
+      service.findById.mockResolvedValue(mockResult as any);
+      rbacService.memberHasAnyPermission.mockResolvedValue(true);
+
+      const result = await controller.getOne(chapterId, userId, id);
+
       expect(result).toBe(mockResult);
     });
   });

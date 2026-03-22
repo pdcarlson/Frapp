@@ -40,7 +40,7 @@ The landing page uses the Frapp brand palette — not chapter branding. It must 
 
 | Breakpoint | Width       | Layout                                          |
 | ---------- | ----------- | ----------------------------------------------- |
-| Mobile     | < 640px     | Single column, stacked sections, hamburger nav  |
+| Mobile     | < 640px     | Single column, stacked sections; hamburger nav optional (not in current home) |
 | Tablet     | 640–1024px  | Two-column grids, compressed hero               |
 | Desktop    | 1024–1280px | Full layout, centered max-width container       |
 | Wide       | > 1280px    | max-width: 1280px centered, comfortable margins |
@@ -57,10 +57,10 @@ Follow **[spec/ui-brand-identity.md](ui-brand-identity.md) §5 (Motion budget).*
 | ----------------------------- | ----------------------------- | --------------------------------------------------------- |
 | Hero headline + primary CTA   | **None** (static first paint) | —                                                         |
 | Below-fold sections           | Optional `fade-up`            | Viewport entry, `motion-safe` only                        |
-| Feature list / pricing / FAQs | Optional `fade-up`            | Viewport entry                                            |
-| Stats row                     | Optional `fade-up`            | Viewport entry (no count-up unless real data warrants it) |
+| Feature list / pricing / FAQs | Optional `fade-up`            | Viewport entry, `motion-safe` only (no count-up here)     |
+| Stats row                     | Optional `fade-up`            | Viewport entry; **count-up numbers only here** and only when real data warrants it |
 
-Do not use scale-on-hover on marketing cards as a default; prefer border/color transitions per brand anti-patterns.
+Do not use scale-on-hover on marketing cards, pricing card, feature rows, or FAQs as a default; prefer **border/color** transitions (and shadow tweaks without scale) per brand anti-patterns. Match **[spec/ui-brand-identity.md](ui-brand-identity.md) §5** motion budget everywhere below the fold.
 
 ---
 
@@ -77,7 +77,7 @@ Do not use scale-on-hover on marketing cards as a default; prefer border/color t
 ```
 
 - **md and up:** Show inline nav: Features (`#features`), How it works (`#how-it-works`), Pricing (`#pricing`). Documentation lives in the footer link to the repo’s `docs/guides/` on GitHub (not duplicated in the header).
-- **Below md:** Nav links are hidden; logo + primary **Get Started** CTA remain visible. **Log In** is shown from `md` upward (`hidden md:inline-flex` pattern). A full-screen hamburger menu is optional and not part of the current home implementation.
+- **Below md:** Nav links are hidden; logo + primary **Get Started** CTA remain visible. **Log In** is shown from `md` upward (`hidden md:inline-flex` pattern). A full-screen **hamburger** menu is **optional** and **not** part of the current home implementation (aligns with the Mobile breakpoint row above).
 
 - Logo: Frapp lockup (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)
 - Nav links: `text-muted-foreground`, hover to `text-foreground` (or equivalent), color transitions only — **no** hover scale on primary chrome per [ui-brand-identity.md](ui-brand-identity.md) §5
@@ -152,7 +152,7 @@ Dark styles use shared `@repo/theme` tokens (`dark:` utilities). The home page d
 - Overline: Uppercase, letter-spacing 2px, emerald-500, font-weight 500, 14px
 - H1: "Replace Discord, OmegaFi, and Life360 with one app." — Navy, 64px, weight 800
 - Subheadline: Slate-600, 20px, max-width 600px
-- Primary CTA: "Get Started Free →" — royal-blue bg, white text, px-8 py-4, rounded-xl, shadow-lg, hover shadow-xl + scale(1.02)
+- Primary CTA: "Get Started Free →" — royal-blue bg, white text, px-8 py-4, rounded-xl, shadow-lg; hover **shadow-xl** and **border/color** transitions only — **no** hover scale (same motion rules as marketing cards)
 - Secondary CTA: "Watch Demo ▶" — ghost button, royal-blue text, border royal-blue/20
 - Hero image: App mockup showing the mobile dashboard (perspective tilt, subtle shadow). Use Next.js Image with priority loading.
 
@@ -177,7 +177,7 @@ Horizontal strip between hero and features. Provides immediate credibility.
 ```
 
 - Background: slightly darker than hero (`slate-50` light, `slate-800/50` dark)
-- Stats in a row (3 items), each with a large number (count-up animation) and label
+- Stats in a row (3 items), each with a large number and label; **count-up animation is allowed only in this stats row** and only when displaying real metrics (not placeholder copy)
 - If no real logos yet: use placeholder university names in muted text
 - Horizontal scroll on mobile if needed
 
@@ -200,6 +200,7 @@ Horizontal strip between hero and features. Provides immediate credibility.
 
 - Outer: `rounded-lg border border-border bg-card`, optional `motion-safe:animate-fade-up`
 - Rows: `flex` layout, `p-6`, `gap` between icon and text; icon ~`h-8 w-8`
+- Row hover: **border/color** (e.g. `hover:border-primary/30`, subtle bg) — **no** scale-on-hover
 
 **Section header:**
 
@@ -289,8 +290,8 @@ Single plan, clean and simple. No confusion.
 - `bg-white` with `border-2 border-royal-blue` (light), `bg-slate-800 border-emerald-500` (dark)
 - Price: 48px weight 800 + "/month" in 18px weight 400
 - Feature list: emerald checkmarks, 16px, comfortable line-height
-- CTA: full-width royal-blue button
-- Below card: expandable FAQ accordion (4-6 questions)
+- CTA: full-width royal-blue button; hover via **color/shadow/border** only — **no** scale-on-hover
+- Below card: expandable FAQ accordion (4-6 questions); accordion triggers use **border/color** hover states, optional `motion-safe` transitions, **no** default scale-on-hover
 
 **FAQ items:**
 
@@ -321,7 +322,7 @@ Each card:
 
 **Styling:**
 
-- `bg-white`, `rounded-2xl`, `p-8`, `shadow-sm`
+- `bg-white`, `rounded-2xl`, `p-8`, `shadow-sm`; card hover: **border/color** emphasis if interactive — **no** scale-on-hover by default
 - Quote in italic, slate-700, 18px
 - Attribution: weight 600 for name, weight 400 for chapter/university, slate-500
 - Optional: small avatar circle (48x48) next to attribution
@@ -412,7 +413,7 @@ All three share the same layout:
 
 Use the **Next.js App Router** `metadata` export in `apps/landing/app/layout.tsx` for `title`, `description`, `metadataBase`, `openGraph`, and `twitter` (card type `summary_large_image`).
 
-**Do not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` unless that file exists in `public/`. The canonical approach is the dynamic route **`apps/landing/app/opengraph-image.tsx`** (1200×630, navy + accent) — see [spec/ui-assets.md](ui-assets.md) §3–4.
+**Do not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` unless that file exists in `public/`. The canonical approach is the dynamic route **`apps/landing/app/opengraph-image.tsx`** (1200×630, navy + accent) — see [spec/ui-assets.md](ui-assets.md) §3–4. Implementation must set **`openGraph.images`** and **`twitter.images`** to the App Router OG entry (e.g. `{ url: "/opengraph-image", width: 1200, height: 630 }` resolved against **`metadataBase`**, same path for Twitter) so previews use the generated image at runtime.
 
 Equivalent values (for reference):
 

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -15,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -36,20 +38,34 @@ import {
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('invoices')
 export class FinancialInvoiceController {
-  constructor(private readonly invoiceService: FinancialInvoiceService) {}
+  constructor(
+    private readonly invoiceService: FinancialInvoiceService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List invoices (admin: all, member: own)' })
+  @ApiOperation({ summary: 'List invoices (billing: all, member: own)' })
   @ApiQuery({ name: 'user_id', required: false })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query('user_id') filterUserId?: string,
   ) {
+    const canViewAll = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BILLING_VIEW],
+    );
     if (filterUserId) {
+      if (filterUserId !== userId && !canViewAll) {
+        throw new ForbiddenException('Access denied to these invoices');
+      }
       return this.invoiceService.findByUser(filterUserId, chapterId);
     }
-    return this.invoiceService.findByChapter(chapterId);
+    if (canViewAll) {
+      return this.invoiceService.findByChapter(chapterId);
+    }
+    return this.invoiceService.findByUser(userId, chapterId);
   }
 
   @Get('overdue')
@@ -61,8 +77,21 @@ export class FinancialInvoiceController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get invoice by ID' })
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.invoiceService.findById(id, chapterId);
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const invoice = await this.invoiceService.findById(id, chapterId);
+    const canViewAll = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BILLING_VIEW],
+    );
+    if (invoice.user_id !== userId && !canViewAll) {
+      throw new ForbiddenException('Access denied to this invoice');
+    }
+    return invoice;
   }
 
   @Post()

@@ -14,12 +14,25 @@ export const ChapterSchema = z.object({
   donationUrl: z.string().url().optional(),
 });
 
-/** Shape returned by `GET /v1/chapters/current` (snake_case fields). */
-export const CurrentChapterPayloadSchema = z.object({
-  name: z.string(),
-  university: z.string(),
-  accent_color: z.string().nullable().optional(),
-});
+const subscriptionStatusEnum = z.enum([
+  "incomplete",
+  "active",
+  "past_due",
+  "canceled",
+]);
+
+/**
+ * Subset of the chapter payload consumed by dashboard UI (`GET /v1/chapters/current`).
+ * Extra API fields are allowed via `.passthrough()` so this stays a projection, not a strict full-entity schema.
+ */
+export const CurrentChapterPayloadSchema = z
+  .object({
+    name: z.string(),
+    university: z.string(),
+    accent_color: z.string().nullable().optional(),
+    subscription_status: subscriptionStatusEnum,
+  })
+  .passthrough();
 
 export const CreateChapterSchema = z.object({
   name: z.string().min(3, "Chapter name must be at least 3 characters"),

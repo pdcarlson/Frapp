@@ -737,7 +737,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List invoices (admin: all, member: own) */
+        /** List invoices (billing: all, member: own) */
         get: operations["FinancialInvoiceController_list_v1"];
         put?: never;
         /** Create a member invoice */

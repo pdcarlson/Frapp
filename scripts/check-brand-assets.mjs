@@ -24,7 +24,7 @@ let expectedHash;
 
 if (!existsSync(canonical)) {
   console.error(
-    `missing: ${canonical}\n  run: node scripts/sync-brand-assets.mjs`,
+    `missing: ${canonical} — restore or create the canonical asset before running sync`,
   );
   failed = true;
 } else {

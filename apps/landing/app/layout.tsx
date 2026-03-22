@@ -9,6 +9,9 @@ const geistSans = localFont({
   display: "swap",
 });
 
+const ogDescription =
+  "One platform for chat, events, study hours, points, backwork, and billing.";
+
 export const metadata: Metadata = {
   title: "Frapp — The Operating System for Greek Life",
   description:
@@ -16,16 +19,23 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://frapp.live"),
   openGraph: {
     title: "Frapp — The Operating System for Greek Life",
-    description:
-      "One platform for chat, events, study hours, points, backwork, and billing.",
+    description: ogDescription,
     type: "website",
     url: "https://frapp.live",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Frapp — The Operating System for Greek Life",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Frapp — The Operating System for Greek Life",
-    description:
-      "One platform for chat, events, study hours, points, backwork, and billing.",
+    description: ogDescription,
+    images: ["/opengraph-image"],
   },
 };
 

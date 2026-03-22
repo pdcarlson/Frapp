@@ -6,9 +6,10 @@ import { SupabaseFinancialTransactionRepository } from '../../infrastructure/sup
 import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, RbacModule],
   controllers: [FinancialInvoiceController],
   providers: [
     FinancialInvoiceService,

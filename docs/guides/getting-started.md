@@ -42,7 +42,7 @@ If the script exits after **`[local-dev-setup] ERROR: Docker daemon is not reach
 
 ### Postgres 17 and local Supabase volumes
 
-Frapp pins **Postgres 17** locally via `supabase/config.toml` (`[db] major_version = 17`). Docker **volumes** from an older stack (e.g. Postgres 15) are **not** upgraded in place: Postgres will log errors such as **database files are incompatible with server** or **The data directory was initialized by PostgreSQL version X, which is not compatible with this version Y**.
+Frapp pins **Postgres 17** locally via `supabase/config.toml` (`[db] major_version = 17`). Docker **volumes** from an older stack (e.g. Postgres 15) are **not** upgraded in place: Postgres will log errors such as **database files are incompatible with server** or **The data directory was initialized by PostgreSQL version X, incompatible with this version Y**.
 
 - **Fix:** reset local data once, then start clean and re-apply migrations:
 
@@ -73,7 +73,6 @@ You can open Supabase Studio at:
 - `http://127.0.0.1:54323`
 
 > **Note:** The `supabase/` directory in the repo is the single source of truth for the database schema and seed data. Never edit tables manually in Studio without also adding a migration.
->
 > **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `docs/internal/BRAND_ASSETS.md` and `spec/ui-assets.md`.
 
 ## 4. Configure environment variables
