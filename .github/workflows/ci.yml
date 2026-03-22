@@ -42,6 +42,8 @@ jobs:
   lint-and-typecheck:
     needs: packages-build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,6 +70,10 @@ jobs:
 
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
+
+      - name: Docs/spec impact (check-docs-impact.mjs)
+        if: github.event_name == 'pull_request'
+        run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
   # ── API unit tests ──────────────────────────────────────────────────────
   api-tests:
