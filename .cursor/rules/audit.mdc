@@ -6,6 +6,8 @@ globs:
   - ".coderabbit.yaml"
   - "docs/internal/**"
   - "spec/**"
+  - "apps/api/src/interface/controllers/**/*.ts"
+  - "apps/api/src/interface/dtos/**/*.ts"
 alwaysApply: false
 ---
 

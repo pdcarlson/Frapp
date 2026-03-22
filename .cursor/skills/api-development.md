@@ -180,7 +180,7 @@ Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
 Recommended per-route pattern (applied in this order):
 
-```
+```text
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
              → AuthSyncInterceptor (syncs to users table, sets request.appUser)
              → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)

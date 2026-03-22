@@ -5,6 +5,8 @@ globs:
   - "apps/api/src/**/*.service.ts"
   - "apps/api/src/**/*.guard.ts"
   - "apps/api/src/**/*.interceptor.ts"
+  - "apps/api/src/interface/controllers/**/*.ts"
+  - "apps/api/src/interface/dtos/**/*.ts"
   - ".github/workflows/ci.yml"
 alwaysApply: false
 ---

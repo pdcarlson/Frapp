@@ -71,10 +71,53 @@ The API has strict lint rules. Warnings are tracked but currently tolerated — 
 
 All tables in `supabase/migrations/` must have `ENABLE ROW LEVEL SECURITY`. The current design uses no permissive policies (default deny) — all data access goes through the `service_role` client in the API.
 
-To verify:
+To verify (per migration file, each `CREATE TABLE` must have a matching `ALTER TABLE … ENABLE ROW LEVEL SECURITY` in the same file):
+
 ```bash
-# Check all CREATE TABLE statements have RLS
-grep -A5 "CREATE TABLE" supabase/migrations/*.sql | grep -c "ROW LEVEL SECURITY"
+python3 <<'PY'
+import glob
+import re
+from pathlib import Path
+
+# Matches: create table [public.]users ( ... ) — quoted or unquoted identifiers
+create_re = re.compile(
+    r"""
+    CREATE\s+TABLE\s+
+    (?:IF\s+NOT\s+EXISTS\s+)?
+    (?:(?P<schema>[a-zA-Z0-9_]+)\.)?
+    (?:"(?P<qname>[a-zA-Z0-9_]+)"|(?P<uname>[a-zA-Z0-9_]+))
+    \s*\(
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def rls_pattern(table: str) -> re.Pattern:
+    esc = re.escape(table)
+    return re.compile(
+        rf'ALTER\s+TABLE\s+(?:[a-zA-Z0-9_]+\.)?(?:"{esc}"|{esc})\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY',
+        re.IGNORECASE,
+    )
+
+root = Path("supabase/migrations")
+failed = False
+for path in sorted(glob.glob(str(root / "*.sql"))):
+    text = Path(path).read_text(encoding="utf-8")
+    tables = []
+    for m in create_re.finditer(text):
+        name = m.group("qname") or m.group("uname")
+        tables.append(name)
+    if not tables:
+        continue
+    for t in tables:
+        if not rls_pattern(t).search(text):
+            print(f"MISSING RLS: {path} table {t}")
+            failed = True
+        else:
+            print(f"OK: {path} table {t}")
+if failed:
+    raise SystemExit(1)
+PY
 ```
 
 ### Input validation
@@ -177,8 +220,10 @@ For each migration:
 ### Branch protection
 
 ```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
+npm run configure:branch-protection -- --dry-run
 ```
+
+(`configure-branch-protection` reads `GITHUB_PAT` — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 

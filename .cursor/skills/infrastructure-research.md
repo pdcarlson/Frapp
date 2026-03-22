@@ -130,8 +130,9 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
 ### Check secret presence (no values)
 
 ```bash
+# workspaceId: export INFISICAL_PROJECT_ID from Infisical Project Settings, or read workspaceId from .infisical.json
 curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
-  "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=staging&secretPath=/" \
+  "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=staging&secretPath=/" \
   | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]"
 ```
 
@@ -143,7 +144,7 @@ Check that staging and production have the same secret keys:
 for env in staging production; do
   echo "=== $env ==="
   curl -s -H "Authorization: Bearer $INFISICAL_API_KEY" \
-    "https://app.infisical.com/api/v3/secrets/raw?workspaceId=a207b6c2-0be2-4507-a8fb-9a21ee8538bd&environment=$env&secretPath=/" \
+    "https://app.infisical.com/api/v3/secrets/raw?workspaceId=${INFISICAL_PROJECT_ID}&environment=$env&secretPath=/" \
     | python3 -c "import sys,json; [print(s['secretKey']) for s in json.load(sys.stdin).get('secrets',[])]" | sort
 done
 ```
@@ -201,3 +202,5 @@ done
 - Add research patterns for new provider integrations (e.g., Sentry API, Expo EAS).
 - Update the quick reference table if the Infisical sync map changes.
 - Add new API keys to the credentials table as they become available.
+- For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in `docs/internal/ENV_REFERENCE.md`), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.
+
