@@ -25,7 +25,12 @@ With **Docker running** (`docker info` succeeds — e.g. Docker Desktop with WSL
 bash scripts/local-dev-setup.sh
 ```
 
-This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then optional typecheck and migration-safety checks. Flags: `--quick` skips checks; **`--reset-supabase`** runs `supabase stop` first for **this project only** (good for **stuck or exited containers**—it **keeps** Docker volumes); **`--reset-supabase-data`** stops with `supabase stop --no-backup` and **wipes local Supabase data volumes** (destructive—see `bash scripts/local-dev-setup.sh --help`). Use **`--reset-supabase-data`** when local Postgres data was created under an older major version than `supabase/config.toml` (see troubleshooting below). It does **not** stop unrelated Docker containers. If `supabase start` fails, an interactive terminal may offer a **volume-preserving** retry (not a fix for Postgres major-version mismatch). It does **not** start `dockerd`; Jules cloud VMs use `scripts/jules-setup.sh` when no Docker Desktop exists.
+This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then optional typecheck and migration-safety checks.
+
+- **`--quick`** — Skips post-install checks (typecheck, migration-safety).
+- **`--reset-supabase`** — Runs `supabase stop` for **this project only** (good for stuck or exited containers); **keeps** Docker volumes.
+- **`--reset-supabase-data`** — Runs `supabase stop --no-backup` and **wipes local Supabase data volumes** (destructive). See `bash scripts/local-dev-setup.sh --help`. Use when local Postgres was created under an older major than `[db] major_version` in `supabase/config.toml`.
+- **Retries / Docker** — The script does **not** stop unrelated containers or start `dockerd`. If `supabase start` fails, you may get an interactive, **volume-preserving** retry (it does not fix Postgres major-version mismatches). On headless cloud VMs without Docker Desktop, use `scripts/jules-setup.sh`.
 
 If `./scripts/local-dev-setup.sh` fails with `env: 'bash\r': No such file`, the file had Windows (CRLF) line endings. Prefer `bash scripts/local-dev-setup.sh`, or re-checkout after `.gitattributes` normalizes `*.sh` to LF.
 
@@ -68,7 +73,7 @@ You can open Supabase Studio at:
 - `http://127.0.0.1:54323`
 
 > **Note:** The `supabase/` directory in the repo is the single source of truth for the database schema and seed data. Never edit tables manually in Studio without also adding a migration.
-
+>
 > **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `docs/internal/BRAND_ASSETS.md` and `spec/ui-assets.md`.
 
 ## 4. Configure environment variables

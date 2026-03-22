@@ -60,6 +60,8 @@ create table if not exists public.polls (
   created_by uuid not null references public.users(id),
   created_at timestamptz not null default now()
 );
+
+alter table public.polls enable row level security;
 ```
 
 3. Apply the migration locally:

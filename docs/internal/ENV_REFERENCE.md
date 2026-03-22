@@ -149,7 +149,7 @@ Reads the `EXPO_PUBLIC_*` references:
 | 6 | production | Render → frapp-api-prod | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
 | 7 | per-env | GitHub environment-scoped secrets (transitional) | `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`, `SUPABASE_*` |
 
-**6 of 10 free-tier integrations used** (web + landing Vercel syncs; no separate docs Vercel project in active use).
+**6 of 10 free-tier integrations used** (web + landing Vercel syncs; no separate docs Vercel project in active use) — as of **2026-03-22**; re-check in **Infisical → Integrations** (or your Infisical billing/plan view) before treating the count as current.
 
 ---
 

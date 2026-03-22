@@ -1,6 +1,6 @@
 # Performance notes
 
-Ad-hoc writeups for investigations and optimizations. They are **not** a second architecture spec; link new notes from the relevant guide (`docs/guides/`) or `spec/` section when the behavior is product-facing.
+Ad hoc writeups for investigations and optimizations. They are **not** a second architecture spec; link new notes from the relevant guide (`docs/guides/`) or `spec/` section when the behavior is product-facing.
 
 | Note                                                             | Topic          |
 | ---------------------------------------------------------------- | -------------- |

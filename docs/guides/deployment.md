@@ -17,13 +17,15 @@ Feature branches (`feature/*`) merge into `main` first, then `main` is promoted 
 
 ## Current rollout state
 
+> **Workflow:** Feature work branches from `main` → PR to `main` (branch protection blocks direct pushes to `main` / `production`). Verify live behavior against provider dashboards when in doubt.
+
 - Vercel projects are active for:
   - landing (`frapp.live`)
   - web dashboard (`app.frapp.live`)
-- Preview deployments are triggered by pushes to `main`.
-- Automatic Vercel deployments are limited to `main` and `production` (feature/PR branches are skipped).
-- API deployment is still being finalized.
-- Mobile App Store / Play Store deployment is still being finalized.
+- **Last verified: 2026-03-22** — Preview deployments for the web and landing apps are produced when changes are **merged** into `main` (not from direct pushes; protected branches require PR merge).
+- **Last verified: 2026-03-22** — Automatic production deployments on Vercel run from **`main`** and **`production`** only; feature/PR branches are not auto-deployed to production hosting.
+- **Last verified: 2026-03-22** — API deployment (Render) is still being finalized; confirm hooks and health checks in `docs/DEPLOYMENT.md` before relying on automation.
+- **Last verified: 2026-03-22** — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 
 ## Deployment sources of truth
 

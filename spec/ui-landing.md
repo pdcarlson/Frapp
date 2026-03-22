@@ -72,7 +72,7 @@ Do not use scale-on-hover on marketing cards as a default; prefer border/color t
 
 **Layout (reference: `apps/landing/app/page.tsx`):**
 
-```
+```text
 [Logo]     [Features] [How it works] [Pricing]     [Log In]  [Get Started]
 ```
 
@@ -103,7 +103,7 @@ Two sections: links grid + bottom bar.
 
 **Bottom bar:**
 
-```
+```text
 © 2026 Frapp. All rights reserved.                    [Twitter] [Instagram] [LinkedIn]
 ```
 
@@ -124,7 +124,7 @@ Dark styles use shared `@repo/theme` tokens (`dark:` utilities). The home page d
 
 **Desktop layout:**
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │   [Overline: "THE OPERATING SYSTEM FOR GREEK LIFE"]     │
@@ -168,7 +168,7 @@ Dark styles use shared `@repo/theme` tokens (`dark:` utilities). The home page d
 
 Horizontal strip between hero and features. Provides immediate credibility.
 
-```
+```text
 ┌───────────────────────────────────────────────────────┐
 │  Trusted by chapters at  [University logos / names]   │
 │                                                       │
@@ -210,7 +210,7 @@ Horizontal strip between hero and features. Provides immediate credibility.
 
 3-step horizontal flow (desktop), vertical stacked (mobile).
 
-```
+```text
    ①                    ②                    ③
    Create your       Invite your         Run your
    chapter           members             chapter
@@ -234,7 +234,7 @@ Interactive or static showcase of the app in action. Two approaches (pick based 
 
 **Option A: Side-by-side mockups**
 
-```
+```text
 [Mobile app mockup]     [Web dashboard mockup]
      ↑                         ↑
   "Member                  "Admin
@@ -255,7 +255,7 @@ Each tab shows a different screenshot/mockup with a brief description alongside.
 
 Single plan, clean and simple. No confusion.
 
-```
+```text
 ┌────────────────────────────────────┐
 │                                    │
 │         [Emerald checkmark]        │
@@ -307,7 +307,7 @@ Quote cards in a horizontal scroll (mobile) or 3-column grid (desktop).
 
 Each card:
 
-```
+```text
 ┌──────────────────────────────┐
 │  "Frapp replaced three apps  │
 │  for us. Our chapter is more │
@@ -331,7 +331,7 @@ Each card:
 
 Full-width section with high-contrast background.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │   Ready to modernize your chapter?                      │
@@ -364,7 +364,7 @@ Full-width section with high-contrast background.
 
 All three share the same layout:
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │  [Header/Nav — same as main page]       │
 │                                         │
