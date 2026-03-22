@@ -1,4 +1,4 @@
-name: Docs
+name: Docs spec sync
 
 on:
   pull_request:
@@ -7,7 +7,7 @@ on:
     branches: [main, production]
 
 jobs:
-  build-and-lint:
+  docs-spec-sync:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

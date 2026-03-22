@@ -42,7 +42,7 @@ Use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
 | CI                | `.github/workflows/ci.yml` — parallel jobs                                       |
 | API deploy        | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                   |
 | Release tags      | `.github/workflows/release.yml` — main → production merge                        |
-| Docs              | `.github/workflows/docs.yml` — build, lint, spec sync                            |
+| Docs              | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)       |
 | Branch protection | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md` |
 | CodeRabbit        | `.coderabbit.yaml` — review workflow                                             |
 | Vercel            | Deploys from `main` / `production` only (PR previews disabled via repo config)     |

@@ -166,7 +166,7 @@ For each migration:
 | CI | `.github/workflows/ci.yml` | All 7 jobs passing, correct branch triggers |
 | Deploy | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation |
-| Docs | `.github/workflows/docs.yml` | Spec sync enforcement |
+| Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
 
 ### Secret exposure in workflows
 

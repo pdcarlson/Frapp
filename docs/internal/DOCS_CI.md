@@ -2,7 +2,7 @@
 
 ## What runs
 
-On pull requests to `main` and `production`, `.github/workflows/docs.yml` runs `scripts/check-docs-impact.mjs` (after a full clone). The rule is intentionally simple:
+On pull requests to `main` and `production`, `.github/workflows/docs.yml` (workflow display name **Docs spec sync**; required check-run id **`docs-spec-sync`**) runs `scripts/check-docs-impact.mjs` (after a full clone). The rule is intentionally simple:
 
 - If the PR modifies **any** path **not** under `docs/` or `spec/`, the PR must **also** modify **at least one** path under **either** prefix.
 

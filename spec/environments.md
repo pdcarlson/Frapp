@@ -163,7 +163,7 @@ These checks are also required for merge:
 
 | Check            | Provider       | What it validates                         |
 | ---------------- | -------------- | ----------------------------------------- |
-| `build-and-lint` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
+| `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
 

@@ -50,7 +50,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                    |
 | `migration-safety`   | Migration filename validation + promotion docs                                   |
 | `mobile-validate`    | Mobile app lint + typecheck                                                      |
-| `build-and-lint`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)  |
+| `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)  |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only) |
 
 ### Vercel deployment policy
