@@ -21,10 +21,10 @@ export function FrappLockup({ asLink = true, className }: FrappLockupProps) {
       aria-label="Frapp"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect width="64" height="64" rx="16" fill="#0F172A" />
+      <rect width="64" height="64" rx="16" fill="hsl(var(--brand-lockup-bg))" />
       <path
         d="M20 18H46V25H27V31H43V38H27V52H20V18Z"
-        fill="#60A5FA"
+        fill="hsl(var(--primary))"
         aria-hidden="true"
       />
       <text
