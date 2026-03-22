@@ -28,7 +28,6 @@ export function useCreateChapter() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
-      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -51,7 +50,6 @@ export function useUpdateChapter() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
-      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -83,7 +81,6 @@ export function useConfirmLogo() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
-      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }
@@ -99,7 +96,6 @@ export function useDeleteLogo() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chapters"] });
-      queryClient.invalidateQueries({ queryKey: ["chapters", "current"] });
     },
   });
 }

@@ -27,7 +27,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Events')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('events')
 export class EventController {
   constructor(private readonly eventService: EventService) {}
@@ -45,7 +46,6 @@ export class EventController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_CREATE)
   @ApiOperation({ summary: 'Create an event' })
   async create(
@@ -59,7 +59,6 @@ export class EventController {
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update an event' })
   async update(
@@ -87,7 +86,6 @@ export class EventController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.EVENTS_DELETE)
   @ApiOperation({ summary: 'Delete an event' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {

@@ -28,23 +28,20 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Members')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('members')
 export class MemberController {
   constructor(private readonly memberService: MemberService) {}
 
   @Get()
   @ApiOperation({ summary: 'List chapter members' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   async list(@CurrentChapterId() chapterId: string) {
     return this.memberService.findByChapter(chapterId);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search members by name' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiQuery({ name: 'q', required: true, description: 'Search query (name)' })
   async search(
     @CurrentChapterId() chapterId: string,
@@ -55,15 +52,12 @@ export class MemberController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get member profile by ID' })
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.memberService.findProfileById(id, chapterId);
   }
 
   @Patch(':id/roles')
   @ApiOperation({ summary: 'Update member roles' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
     @Param('id') id: string,
@@ -86,7 +80,6 @@ export class MemberController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Remove member from chapter' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
   async remove(@Param('id') id: string) {
     await this.memberService.remove(id);

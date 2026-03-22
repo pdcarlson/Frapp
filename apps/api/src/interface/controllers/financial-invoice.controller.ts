@@ -32,7 +32,8 @@ import {
 
 @ApiTags('Financial Invoices')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('invoices')
 export class FinancialInvoiceController {
   constructor(private readonly invoiceService: FinancialInvoiceService) {}
@@ -52,7 +53,6 @@ export class FinancialInvoiceController {
   }
 
   @Get('overdue')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'List overdue invoices (OPEN past due_date)' })
   async listOverdue(@CurrentChapterId() chapterId: string) {
@@ -66,7 +66,6 @@ export class FinancialInvoiceController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create a member invoice' })
   async create(
@@ -80,7 +79,6 @@ export class FinancialInvoiceController {
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Update a draft invoice' })
   async update(
@@ -92,7 +90,6 @@ export class FinancialInvoiceController {
   }
 
   @Post(':id/status')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Transition invoice status (OPEN, PAID, VOID)' })
   async transitionStatus(
@@ -104,7 +101,6 @@ export class FinancialInvoiceController {
   }
 
   @Get(':id/transactions')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'Get transactions for an invoice' })
   async getInvoiceTransactions(

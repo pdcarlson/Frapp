@@ -29,7 +29,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Tasks')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('tasks')
 export class TaskController {
   constructor(
@@ -71,7 +72,6 @@ export class TaskController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Create a task' })
   async create(
@@ -113,7 +113,6 @@ export class TaskController {
   }
 
   @Post(':id/confirm')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Confirm task completion and award points' })
   async confirmCompletion(
@@ -124,7 +123,6 @@ export class TaskController {
   }
 
   @Post(':id/reject')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Reject task completion (revert to IN_PROGRESS)' })
   async rejectCompletion(
@@ -140,7 +138,6 @@ export class TaskController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.TASKS_MANAGE)
   @ApiOperation({ summary: 'Delete a task' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {

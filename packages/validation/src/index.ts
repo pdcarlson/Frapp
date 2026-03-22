@@ -14,6 +14,13 @@ export const ChapterSchema = z.object({
   donationUrl: z.string().url().optional(),
 });
 
+/** Shape returned by `GET /v1/chapters/current` (snake_case fields). */
+export const CurrentChapterPayloadSchema = z.object({
+  name: z.string(),
+  university: z.string(),
+  accent_color: z.string().nullable().optional(),
+});
+
 export const CreateChapterSchema = z.object({
   name: z.string().min(3, "Chapter name must be at least 3 characters"),
   university: z
@@ -136,6 +143,7 @@ export const ConfirmUploadSchema = z.object({
 // ── Type Exports ─────────────────────────────────────────────────────────────
 
 export type Chapter = z.infer<typeof ChapterSchema>;
+export type CurrentChapterPayload = z.infer<typeof CurrentChapterPayloadSchema>;
 export type CreateChapter = z.infer<typeof CreateChapterSchema>;
 export type CreateRole = z.infer<typeof CreateRoleSchema>;
 export type UpdateMemberRoles = z.infer<typeof UpdateMemberRolesSchema>;

@@ -22,13 +22,13 @@ import { CreatePollDto, VoteDto } from '../dtos/poll.dto';
 
 @ApiTags('Polls')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller()
 export class PollController {
   constructor(private readonly pollService: PollService) {}
 
   @Post('channels/:channelId/polls')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.POLLS_CREATE)
   @ApiOperation({ summary: 'Create a poll in a channel' })
   async createPoll(

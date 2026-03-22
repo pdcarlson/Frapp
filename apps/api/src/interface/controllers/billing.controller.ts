@@ -11,21 +11,19 @@ import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 
 @ApiTags('Billing')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.BILLING_VIEW)
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('status')
-  @UseGuards(PermissionsGuard)
-  @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'Get chapter billing status' })
   async getStatus(@CurrentChapterId() chapterId: string) {
     return this.billingService.getChapterBillingStatus(chapterId);
   }
 
   @Post('checkout')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create Stripe Checkout session' })
   async createCheckout(
@@ -42,7 +40,6 @@ export class BillingController {
   }
 
   @Post('portal')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create Stripe Customer Portal session' })
   async createPortal(

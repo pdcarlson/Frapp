@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useCurrentChapter } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import { CurrentChapterPayloadSchema } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -81,12 +82,6 @@ function withAlpha(hexColor: string, opacity: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
 }
 
-type ChapterPayload = {
-  name: string;
-  university: string;
-  accent_color?: string | null;
-};
-
 function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data, isPending, isError, isFetching } = useCurrentChapter({
@@ -96,10 +91,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   const labelMuted =
     variant === "sidebar" ? "text-slate-400" : "text-muted-foreground";
   const nameClass = "mt-1 text-sm font-semibold text-white";
-  const uniClass =
-    variant === "sidebar"
-      ? "mt-1 text-xs text-slate-400"
-      : "mt-1 text-xs text-slate-400";
+  const uniClass = "mt-1 text-xs text-slate-400";
   const shellClass =
     variant === "sidebar"
       ? "mt-10 rounded-lg border border-border bg-navy-900/80 p-4"
@@ -141,7 +133,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     );
   }
 
-  const payload = data as ChapterPayload;
+  const payload = CurrentChapterPayloadSchema.parse(data);
   const chapterAccent = resolveChapterAccentColor(
     payload.accent_color ?? undefined,
   );
