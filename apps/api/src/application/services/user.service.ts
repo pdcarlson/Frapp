@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import {
@@ -9,6 +9,21 @@ import {
 import { User } from '../../domain/entities/user.entity';
 
 const PROFILES_BUCKET = 'profiles';
+
+const ALLOWED_CONTENT_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+]);
+
+const ALLOWED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+]);
 
 @Injectable()
 export class UserService {
@@ -34,6 +49,20 @@ export class UserService {
     filename: string,
     contentType: string,
   ): Promise<{ signedUrl: string; storagePath: string }> {
+    const ext = filename.includes('.')
+      ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
+      : '';
+
+    if (!ALLOWED_EXTENSIONS.has(ext)) {
+      throw new BadRequestException('File extension is not allowed');
+    }
+
+    if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+      throw new BadRequestException(
+        `Content type "${contentType}" is not allowed`,
+      );
+    }
+
     const storagePath = `chapters/${chapterId}/profiles/${userId}/${path.basename(filename)}`;
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       PROFILES_BUCKET,
