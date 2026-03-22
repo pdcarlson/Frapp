@@ -16,3 +16,5 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 **Default local run (API + web + landing):** `npm run dev:stack` from repo root after Infisical login — full detail and alternatives in [`../internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md).
 
 **Also read:** product and implementation specs in [`spec/`](../../spec/README.md), operator runbooks in [`docs/internal/`](../internal/README.md), and **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md)** (where to document PR changes).
+
+**Maintenance:** `useCurrentChapter` in `@repo/hooks` keys the React Query cache by `chapterId` (`["chapters","current", chapterId]`) so switching the active chapter refetches; pass `chapterId` from the chapter store at call sites.

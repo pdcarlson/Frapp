@@ -92,25 +92,28 @@ function subscriptionStatusPresentation(
       return {
         label: "Subscription active",
         className:
-          "border-emerald-500/45 text-emerald-100 bg-emerald-500/15",
+          "border-success/45 bg-success/15 text-[hsl(var(--success-foreground))]",
         Icon: ShieldCheck,
       };
     case "past_due":
       return {
         label: "Payment past due",
-        className: "border-amber-500/45 text-amber-100 bg-amber-500/15",
+        className:
+          "border-destructive/45 bg-destructive/15 text-[hsl(var(--destructive-foreground))]",
         Icon: AlertCircle,
       };
     case "canceled":
       return {
         label: "Subscription canceled",
-        className: "border-slate-500/50 text-slate-300 bg-slate-500/10",
+        className:
+          "border-muted-foreground/40 bg-muted/25 text-muted-foreground",
         Icon: Ban,
       };
     case "incomplete":
       return {
         label: "Subscription incomplete",
-        className: "border-sky-500/40 text-sky-100 bg-sky-500/10",
+        className:
+          "border-primary/45 bg-primary/15 text-[hsl(var(--primary-foreground))]",
         Icon: Clock,
       };
   }
@@ -119,6 +122,7 @@ function subscriptionStatusPresentation(
 function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const { data, isPending, isError, isFetching } = useCurrentChapter({
+    chapterId: activeChapterId,
     enabled: !!activeChapterId,
   });
 
@@ -167,7 +171,22 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
     );
   }
 
-  const payload = CurrentChapterPayloadSchema.parse(data);
+  const parsed = CurrentChapterPayloadSchema.safeParse(data);
+  if (!parsed.success) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-amber-200/90">
+          Could not load chapter details.
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Check your session, permissions, and chapter selection.
+        </p>
+      </div>
+    );
+  }
+
+  const payload = parsed.data;
   const chapterAccent = resolveChapterAccentColor(
     payload.accent_color ?? undefined,
   );
@@ -226,6 +245,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
           key={item.label}
           href={item.href}
           onClick={onNavigate}
+          aria-current={pathname === item.href ? "page" : undefined}
           className={cn(
             "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
             sidebarFocusRingClassName,

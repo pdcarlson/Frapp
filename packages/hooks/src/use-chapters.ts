@@ -3,17 +3,24 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
-export function useCurrentChapter(options?: { enabled?: boolean }) {
+export function useCurrentChapter(options?: {
+  chapterId?: string | null;
+  enabled?: boolean;
+}) {
   const client = useFrappClient();
+  const chapterId = options?.chapterId ?? null;
+  const baseEnabled = options?.enabled ?? true;
+  const enabled = baseEnabled && !!chapterId;
+
   return useQuery({
-    queryKey: ["chapters", "current"],
+    queryKey: ["chapters", "current", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/chapters/current");
       if (error) throw error;
       return data;
     },
     staleTime: 300_000,
-    enabled: options?.enabled ?? true,
+    enabled,
   });
 }
 

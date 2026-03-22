@@ -51,18 +51,26 @@ export class FinancialInvoiceController {
     @CurrentUser('id') userId: string,
     @Query('user_id') filterUserId?: string,
   ) {
-    const canViewAll = await this.rbacService.memberHasAnyPermission(
-      chapterId,
-      userId,
-      [SystemPermissions.BILLING_VIEW],
-    );
     if (filterUserId) {
-      if (filterUserId !== userId && !canViewAll) {
+      if (filterUserId === userId) {
+        return this.invoiceService.findByUser(filterUserId, chapterId);
+      }
+      const canViewOthers = await this.rbacService.memberHasAnyPermission(
+        chapterId,
+        userId,
+        [SystemPermissions.BILLING_VIEW],
+      );
+      if (!canViewOthers) {
         throw new ForbiddenException('Access denied to these invoices');
       }
       return this.invoiceService.findByUser(filterUserId, chapterId);
     }
-    if (canViewAll) {
+    const canViewChapter = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BILLING_VIEW],
+    );
+    if (canViewChapter) {
       return this.invoiceService.findByChapter(chapterId);
     }
     return this.invoiceService.findByUser(userId, chapterId);
@@ -83,12 +91,15 @@ export class FinancialInvoiceController {
     @Param('id') id: string,
   ) {
     const invoice = await this.invoiceService.findById(id, chapterId);
+    if (invoice.user_id === userId) {
+      return invoice;
+    }
     const canViewAll = await this.rbacService.memberHasAnyPermission(
       chapterId,
       userId,
       [SystemPermissions.BILLING_VIEW],
     );
-    if (invoice.user_id !== userId && !canViewAll) {
+    if (!canViewAll) {
       throw new ForbiddenException('Access denied to this invoice');
     }
     return invoice;

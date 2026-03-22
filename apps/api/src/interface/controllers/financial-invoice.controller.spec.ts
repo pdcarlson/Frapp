@@ -106,6 +106,20 @@ describe('FinancialInvoiceController', () => {
       expect(service.findByChapter).toHaveBeenCalledWith(chapterId);
       expect(result).toBe(mockResult);
     });
+
+    it('should list own invoices when user_id filter matches caller without RBAC lookup', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const mockResult = [{ id: 'invoice-1' }];
+      rbacService.memberHasAnyPermission.mockClear();
+      service.findByUser.mockResolvedValue(mockResult as any);
+
+      const result = await controller.list(chapterId, userId, userId);
+
+      expect(rbacService.memberHasAnyPermission).not.toHaveBeenCalled();
+      expect(service.findByUser).toHaveBeenCalledWith(userId, chapterId);
+      expect(result).toBe(mockResult);
+    });
   });
 
   describe('listOverdue', () => {
@@ -134,11 +148,12 @@ describe('FinancialInvoiceController', () => {
       const id = 'invoice-1';
       const mockResult = { id: 'invoice-1', user_id: userId };
       service.findById.mockResolvedValue(mockResult as any);
-      rbacService.memberHasAnyPermission.mockResolvedValue(false);
+      rbacService.memberHasAnyPermission.mockClear();
 
       const result = await controller.getOne(chapterId, userId, id);
 
       expect(service.findById).toHaveBeenCalledWith(id, chapterId);
+      expect(rbacService.memberHasAnyPermission).not.toHaveBeenCalled();
       expect(result).toBe(mockResult);
     });
 
