@@ -68,9 +68,21 @@ export function EventEditorDialog({
   const [isMandatory, setIsMandatory] = useState(true);
   const [recurrenceRule, setRecurrenceRule] = useState("NONE");
   const [notes, setNotes] = useState("");
+  const [editScope, setEditScope] = useState<
+    "this_instance" | "this_and_future" | "entire_series"
+  >("this_instance");
 
   const eventId = typeof event?.id === "string" ? event.id : "";
   const isSubmitting = createEventMutation.isPending || updateEventMutation.isPending;
+
+  const isRecurringSeries = useMemo(() => {
+    if (!event || mode !== "edit") return false;
+    const rule = event.recurrence_rule;
+    const parentId = event.parent_event_id;
+    return (
+      (typeof rule === "string" && rule.length > 0) || typeof parentId === "string"
+    );
+  }, [event, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +100,7 @@ export function EventEditorDialog({
           : "NONE",
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
+      setEditScope("this_instance");
       return;
     }
 
@@ -100,6 +113,7 @@ export function EventEditorDialog({
     setIsMandatory(true);
     setRecurrenceRule("NONE");
     setNotes("");
+    setEditScope("this_instance");
   }, [event, mode, open]);
 
   const submitLabel = useMemo(() => {
@@ -153,6 +167,7 @@ export function EventEditorDialog({
       is_mandatory: isMandatory,
       recurrence_rule: recurrenceRule === "NONE" ? undefined : recurrenceRule,
       notes: notes.trim() || undefined,
+      ...(mode === "edit" && isRecurringSeries ? { scope: editScope } : {}),
     };
 
     try {
@@ -282,6 +297,12 @@ export function EventEditorDialog({
                 value={recurrenceRule}
                 onChange={(eventValue) => setRecurrenceRule(eventValue.target.value)}
                 className={dashboardFilterSelectClassName}
+                disabled={mode === "edit" && isRecurringSeries && editScope !== "entire_series"}
+                title={
+                  mode === "edit" && isRecurringSeries && editScope !== "entire_series"
+                    ? "Change recurrence for the whole series by choosing “Entire series” in Apply to."
+                    : undefined
+                }
               >
                 <option value="NONE">One-time</option>
                 <option value="WEEKLY">Weekly</option>
@@ -290,6 +311,25 @@ export function EventEditorDialog({
               </select>
             </label>
           </div>
+
+          {mode === "edit" && isRecurringSeries ? (
+            <label className="space-y-1 text-sm">
+              <span className="text-muted-foreground">Apply changes to</span>
+              <select
+                value={editScope}
+                onChange={(eventValue) =>
+                  setEditScope(
+                    eventValue.target.value as "this_instance" | "this_and_future" | "entire_series",
+                  )
+                }
+                className={dashboardFilterSelectClassName}
+              >
+                <option value="this_instance">This occurrence only</option>
+                <option value="this_and_future">This and future occurrences</option>
+                <option value="entire_series">Entire series</option>
+              </select>
+            </label>
+          ) : null}
 
           <label className="space-y-1 text-sm">
             <span className="text-muted-foreground">Description</span>

@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsISO8601,
   IsInt,
   IsOptional,
@@ -119,4 +120,13 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'For recurring events: this_instance (default), this_and_future, or entire_series',
+    enum: ['this_instance', 'this_and_future', 'entire_series'],
+  })
+  @IsOptional()
+  @IsIn(['this_instance', 'this_and_future', 'entire_series'])
+  scope?: 'this_instance' | 'this_and_future' | 'entire_series';
 }

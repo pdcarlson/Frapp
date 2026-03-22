@@ -1119,6 +1119,20 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "For recurring events: this_instance (default), this_and_future, or entire_series",
+            "schema": {
+              "enum": [
+                "this_instance",
+                "this_and_future",
+                "entire_series"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -4202,6 +4216,15 @@
           },
           "notes": {
             "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "description": "For recurring events: this_instance (default), this_and_future, or entire_series",
+            "enum": [
+              "this_instance",
+              "this_and_future",
+              "entire_series"
+            ]
           }
         }
       },

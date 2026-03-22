@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, BellRing, CalendarDays, Clock3, Loader2, MapPin, Trash2, UsersRound } from "lucide-react";
 import { useDeleteEvent, useEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
@@ -13,6 +13,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
 
 type EventRecord = Record<string, unknown>;
 
@@ -51,6 +52,9 @@ export function EventDetailSheet({
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
   const { toast } = useToast();
+  const [deleteScope, setDeleteScope] = useState<
+    "this_instance" | "this_and_future" | "entire_series"
+  >("this_instance");
 
   const resolvedEvent = useMemo(() => {
     if (!event) return null;
@@ -72,6 +76,19 @@ export function EventDetailSheet({
     typeof resolvedEvent?.recurrence_rule === "string" && resolvedEvent.recurrence_rule.length > 0
       ? resolvedEvent.recurrence_rule
       : "One-time";
+  const isRecurringSeries = useMemo(() => {
+    if (!resolvedEvent) return false;
+    const rule = resolvedEvent.recurrence_rule;
+    const parentId = resolvedEvent.parent_event_id;
+    return (
+      (typeof rule === "string" && rule.length > 0) || typeof parentId === "string"
+    );
+  }, [resolvedEvent]);
+
+  useEffect(() => {
+    if (!open) return;
+    setDeleteScope("this_instance");
+  }, [open, eventId]);
   const description =
     typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
   const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
@@ -88,7 +105,10 @@ export function EventDetailSheet({
     if (!confirmed) return;
 
     try {
-      await deleteEventMutation.mutateAsync(eventId);
+      await deleteEventMutation.mutateAsync({
+        id: eventId,
+        ...(isRecurringSeries ? { scope: deleteScope } : {}),
+      });
     } catch (error) {
       toast({
         title: "Could not delete event",
@@ -150,6 +170,25 @@ export function EventDetailSheet({
           >
             Edit event
           </Button>
+          {isRecurringSeries ? (
+            <label className="flex min-w-[220px] flex-1 flex-col gap-1 text-xs text-muted-foreground sm:max-w-xs">
+              <span>Delete scope</span>
+              <select
+                value={deleteScope}
+                onChange={(eventValue) =>
+                  setDeleteScope(
+                    eventValue.target.value as "this_instance" | "this_and_future" | "entire_series",
+                  )
+                }
+                className={dashboardFilterSelectClassName}
+                disabled={!canMutate || deleteEventMutation.isPending}
+              >
+                <option value="this_instance">This occurrence only</option>
+                <option value="this_and_future">This and future</option>
+                <option value="entire_series">Entire series</option>
+              </select>
+            </label>
+          ) : null}
           <Button
             variant="destructive"
             disabled={!canMutate || deleteEventMutation.isPending}

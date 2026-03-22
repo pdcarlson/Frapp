@@ -23,6 +23,12 @@ export interface CreateEventInput {
   notes?: string | null;
 }
 
+/** How a recurring event edit/delete applies (non-recurring events ignore this). */
+export type RecurringSeriesScope =
+  | 'this_instance'
+  | 'this_and_future'
+  | 'entire_series';
+
 export interface UpdateEventInput {
   name?: string;
   description?: string | null;
@@ -34,6 +40,12 @@ export interface UpdateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  /** When set on PATCH, controls propagation for recurring series. Defaults to this_instance. */
+  scope?: RecurringSeriesScope;
+}
+
+export interface DeleteEventInput {
+  scope?: RecurringSeriesScope;
 }
 
 @Injectable()
@@ -177,33 +189,166 @@ export class EventService {
     await Promise.all(promises);
   }
 
+  private isPartOfRecurringSeries(event: Event): boolean {
+    const hasRule =
+      typeof event.recurrence_rule === 'string' &&
+      event.recurrence_rule.length > 0;
+    return hasRule || event.parent_event_id != null;
+  }
+
+  private assertValidTimeRange(startIso: string, endIso: string): void {
+    const start = new Date(startIso);
+    const end = new Date(endIso);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new BadRequestException(
+        'start_time and end_time must be valid ISO dates',
+      );
+    }
+    if (end <= start) {
+      throw new BadRequestException('end_time must be after start_time');
+    }
+  }
+
+  private normalizeScope(scope: string | undefined): RecurringSeriesScope {
+    if (scope === undefined || scope === 'this_instance') {
+      return 'this_instance';
+    }
+    if (scope === 'this_and_future' || scope === 'entire_series') {
+      return scope;
+    }
+    throw new BadRequestException(
+      'scope must be this_instance, this_and_future, or entire_series',
+    );
+  }
+
+  private stripScopeFromUpdate(
+    input: UpdateEventInput,
+  ): Omit<UpdateEventInput, 'scope'> {
+    const rest = { ...input };
+    delete rest.scope;
+    return rest;
+  }
+
   async update(
     id: string,
     chapterId: string,
     input: UpdateEventInput,
   ): Promise<Event> {
-    if (input.start_time || input.end_time) {
-      const existing = await this.findById(id, chapterId);
-      const startTime = input.start_time ?? existing.start_time;
-      const endTime = input.end_time ?? existing.end_time;
+    const scope = this.normalizeScope(input.scope);
+    const payload = this.stripScopeFromUpdate(input);
 
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-        throw new BadRequestException(
-          'start_time and end_time must be valid ISO dates',
-        );
-      }
-      if (end <= start) {
-        throw new BadRequestException('end_time must be after start_time');
+    const target = await this.findById(id, chapterId);
+
+    if (payload.start_time || payload.end_time) {
+      const startTime = payload.start_time ?? target.start_time;
+      const endTime = payload.end_time ?? target.end_time;
+      this.assertValidTimeRange(startTime, endTime);
+    }
+
+    if (!this.isPartOfRecurringSeries(target) || scope === 'this_instance') {
+      const updated = await this.eventRepo.update(id, chapterId, {
+        ...payload,
+      });
+      await this.maybeNotifyEventUpdated(chapterId, updated, payload);
+      return updated;
+    }
+
+    const parent = target.parent_event_id
+      ? await this.findById(target.parent_event_id, chapterId)
+      : target;
+
+    const instances = await this.eventRepo.findInstancesByParentId(
+      parent.id,
+      chapterId,
+    );
+
+    const byStart = (a: Event, b: Event) =>
+      new Date(a.start_time).getTime() - new Date(b.start_time).getTime();
+
+    let rowsToUpdate: Event[];
+    if (scope === 'entire_series') {
+      rowsToUpdate = [parent, ...instances].sort(byStart);
+    } else {
+      // this_and_future
+      if (target.parent_event_id) {
+        const futureInstances = instances
+          .filter(
+            (row) => new Date(row.start_time) >= new Date(target.start_time),
+          )
+          .sort(byStart);
+        rowsToUpdate = [parent, ...futureInstances].sort(byStart);
+      } else {
+        rowsToUpdate = [parent, ...instances].sort(byStart);
       }
     }
 
-    const updated = await this.eventRepo.update(id, chapterId, {
-      ...input,
-    });
+    const anchor = rowsToUpdate.find((row) => row.id === id) ?? target;
+    const anchorIndex = rowsToUpdate.findIndex((row) => row.id === anchor.id);
+    if (anchorIndex < 0) {
+      throw new BadRequestException(
+        'Could not resolve recurring series anchor',
+      );
+    }
 
-    if (input.start_time || input.end_time || input.location !== undefined) {
+    let startDeltaMs = 0;
+    let endDeltaMs = 0;
+    if (payload.start_time || payload.end_time) {
+      const newStart = new Date(
+        payload.start_time ?? anchor.start_time,
+      ).getTime();
+      const newEnd = new Date(payload.end_time ?? anchor.end_time).getTime();
+      startDeltaMs = newStart - new Date(anchor.start_time).getTime();
+      endDeltaMs = newEnd - new Date(anchor.end_time).getTime();
+    }
+
+    const sharedFields: Partial<Event> = { ...payload };
+    delete sharedFields.start_time;
+    delete sharedFields.end_time;
+
+    let lastUpdated: Event | null = null;
+    for (let i = 0; i < rowsToUpdate.length; i++) {
+      const row = rowsToUpdate[i];
+      const patch: Partial<Event> = { ...sharedFields };
+      if (row.parent_event_id) {
+        delete patch.recurrence_rule;
+      }
+
+      if (payload.start_time || payload.end_time) {
+        const rel = i - anchorIndex;
+        if (rel === 0) {
+          patch.start_time = payload.start_time ?? row.start_time;
+          patch.end_time = payload.end_time ?? row.end_time;
+        } else {
+          patch.start_time = new Date(
+            new Date(row.start_time).getTime() + startDeltaMs,
+          ).toISOString();
+          patch.end_time = new Date(
+            new Date(row.end_time).getTime() + endDeltaMs,
+          ).toISOString();
+        }
+      }
+
+      if (Object.keys(patch).length === 0) {
+        continue;
+      }
+      lastUpdated = await this.eventRepo.update(row.id, chapterId, patch);
+    }
+
+    const updated = lastUpdated ?? (await this.findById(id, chapterId));
+    await this.maybeNotifyEventUpdated(chapterId, updated, payload);
+    return updated;
+  }
+
+  private async maybeNotifyEventUpdated(
+    chapterId: string,
+    updated: Event,
+    payload: Omit<UpdateEventInput, 'scope'>,
+  ): Promise<void> {
+    if (
+      payload.start_time ||
+      payload.end_time ||
+      payload.location !== undefined
+    ) {
       try {
         await this.notificationService.notifyChapter(chapterId, {
           title: 'Event Updated',
@@ -212,14 +357,61 @@ export class EventService {
           category: 'events',
           data: { target: { screen: 'events', eventId: updated.id } },
         });
-      } catch {}
+      } catch {
+        /* non-fatal */
+      }
     }
-
-    return updated;
   }
 
-  async delete(id: string, chapterId: string): Promise<void> {
-    await this.eventRepo.delete(id, chapterId);
+  async delete(
+    id: string,
+    chapterId: string,
+    input?: DeleteEventInput,
+  ): Promise<void> {
+    const scope = this.normalizeScope(input?.scope);
+    const target = await this.findById(id, chapterId);
+
+    if (!this.isPartOfRecurringSeries(target) || scope === 'this_instance') {
+      await this.eventRepo.delete(id, chapterId);
+      return;
+    }
+
+    const parent = target.parent_event_id
+      ? await this.findById(target.parent_event_id, chapterId)
+      : target;
+
+    const instances = await this.eventRepo.findInstancesByParentId(
+      parent.id,
+      chapterId,
+    );
+
+    const byStartDesc = (a: Event, b: Event) =>
+      new Date(b.start_time).getTime() - new Date(a.start_time).getTime();
+
+    let toDelete: Event[];
+    if (scope === 'entire_series') {
+      toDelete = [...instances, parent].sort(byStartDesc);
+    } else {
+      if (target.parent_event_id) {
+        toDelete = [
+          target,
+          ...instances.filter(
+            (row) => new Date(row.start_time) > new Date(target.start_time),
+          ),
+        ].sort(byStartDesc);
+      } else {
+        // Parent row is the series anchor; "this and future" from the first
+        // occurrence removes the whole generated series (same as entire_series).
+        toDelete = [...instances, parent].sort(byStartDesc);
+      }
+    }
+
+    const seen = new Set<string>();
+    for (const row of toDelete) {
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      await this.eventRepo.delete(row.id, chapterId);
+    }
   }
 
   async generateIcs(eventId: string, chapterId: string): Promise<string> {

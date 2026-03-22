@@ -32,6 +32,20 @@ export class SupabaseEventRepository implements IEventRepository {
     return (data as Event[]) || [];
   }
 
+  async findInstancesByParentId(
+    parentEventId: string,
+    chapterId: string,
+  ): Promise<Event[]> {
+    const { data, error } = await this.supabase
+      .from('events')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('parent_event_id', parentEventId)
+      .order('start_time', { ascending: true });
+    if (error) throw error;
+    return (data as Event[]) || [];
+  }
+
   async create(data: Partial<Event>): Promise<Event> {
     const { data: created, error } = await this.supabase
       .from('events')

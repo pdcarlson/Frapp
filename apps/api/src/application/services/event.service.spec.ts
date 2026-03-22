@@ -19,6 +19,7 @@ describe('EventService', () => {
     mockEventRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findInstancesByParentId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -152,11 +153,164 @@ describe('EventService', () => {
   });
 
   it('should delete event', async () => {
+    mockEventRepo.findById.mockResolvedValue(baseEvent);
     mockEventRepo.delete.mockResolvedValue();
 
     await service.delete('evt-1', 'ch-1');
 
     expect(mockEventRepo.delete).toHaveBeenCalledWith('evt-1', 'ch-1');
+  });
+
+  describe('recurring series scope (this_and_future / entire_series)', () => {
+    const parent: Event = {
+      ...baseEvent,
+      id: 'evt-parent',
+      recurrence_rule: 'WEEKLY',
+      parent_event_id: null,
+      start_time: '2026-03-01T18:00:00.000Z',
+      end_time: '2026-03-01T19:00:00.000Z',
+    };
+    const instanceA: Event = {
+      ...baseEvent,
+      id: 'evt-a',
+      recurrence_rule: null,
+      parent_event_id: 'evt-parent',
+      start_time: '2026-03-08T18:00:00.000Z',
+      end_time: '2026-03-08T19:00:00.000Z',
+    };
+    const instanceB: Event = {
+      ...baseEvent,
+      id: 'evt-b',
+      recurrence_rule: null,
+      parent_event_id: 'evt-parent',
+      start_time: '2026-03-15T18:00:00.000Z',
+      end_time: '2026-03-15T19:00:00.000Z',
+    };
+
+    it('this_and_future from an instance updates parent metadata and all matching instances', async () => {
+      mockEventRepo.findById
+        .mockResolvedValueOnce(instanceA)
+        .mockResolvedValueOnce(parent);
+      mockEventRepo.findInstancesByParentId.mockResolvedValue([
+        instanceA,
+        instanceB,
+      ]);
+      mockEventRepo.update.mockImplementation(
+        async (_id, _chapterId, data: Partial<Event>) =>
+          ({ ...instanceA, ...data }) as Event,
+      );
+
+      await service.update('evt-a', 'ch-1', {
+        name: 'Renamed series',
+        scope: 'this_and_future',
+      });
+
+      expect(mockEventRepo.findInstancesByParentId).toHaveBeenCalledWith(
+        'evt-parent',
+        'ch-1',
+      );
+      expect(mockEventRepo.update.mock.calls[0]).toEqual([
+        'evt-parent',
+        'ch-1',
+        { name: 'Renamed series' },
+      ]);
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-a', 'ch-1', {
+        name: 'Renamed series',
+      });
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-b', 'ch-1', {
+        name: 'Renamed series',
+      });
+    });
+
+    it('this_and_future time edit shifts this and later instances by the same delta', async () => {
+      mockEventRepo.findById
+        .mockResolvedValueOnce(instanceA)
+        .mockResolvedValueOnce(parent);
+      mockEventRepo.findInstancesByParentId.mockResolvedValue([
+        instanceA,
+        instanceB,
+      ]);
+      mockEventRepo.update.mockImplementation(
+        async (id, _chapterId, data: Partial<Event>) =>
+          ({ ...instanceA, id, ...data }) as Event,
+      );
+
+      await service.update('evt-a', 'ch-1', {
+        start_time: '2026-03-08T19:00:00.000Z',
+        end_time: '2026-03-08T20:00:00.000Z',
+        scope: 'this_and_future',
+      });
+
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-parent', 'ch-1', {
+        start_time: '2026-03-01T19:00:00.000Z',
+        end_time: '2026-03-01T20:00:00.000Z',
+      });
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-a', 'ch-1', {
+        start_time: '2026-03-08T19:00:00.000Z',
+        end_time: '2026-03-08T20:00:00.000Z',
+      });
+      expect(mockEventRepo.update).toHaveBeenCalledWith('evt-b', 'ch-1', {
+        start_time: '2026-03-15T19:00:00.000Z',
+        end_time: '2026-03-15T20:00:00.000Z',
+      });
+    });
+
+    it('entire_series propagates recurrence_rule only to the parent row', async () => {
+      mockEventRepo.findById.mockResolvedValue(parent);
+      mockEventRepo.findInstancesByParentId.mockResolvedValue([
+        instanceA,
+        instanceB,
+      ]);
+      mockEventRepo.update.mockImplementation(
+        async (id, _chapterId, data: Partial<Event>) =>
+          ({ ...parent, id, ...data }) as Event,
+      );
+
+      await service.update('evt-parent', 'ch-1', {
+        recurrence_rule: 'BIWEEKLY',
+        scope: 'entire_series',
+      });
+
+      const childUpdates = mockEventRepo.update.mock.calls.filter(
+        (c) => c[0] !== 'evt-parent',
+      );
+      for (const call of childUpdates) {
+        expect(call[2]).not.toHaveProperty('recurrence_rule');
+      }
+      expect(mockEventRepo.update).toHaveBeenCalledWith(
+        'evt-parent',
+        'ch-1',
+        expect.objectContaining({ recurrence_rule: 'BIWEEKLY' }),
+      );
+    });
+
+    it('delete entire_series removes child instances before the parent', async () => {
+      mockEventRepo.findById.mockResolvedValue(parent);
+      mockEventRepo.findInstancesByParentId.mockResolvedValue([
+        instanceA,
+        instanceB,
+      ]);
+      mockEventRepo.delete.mockResolvedValue();
+
+      await service.delete('evt-parent', 'ch-1', {
+        scope: 'entire_series',
+      });
+
+      expect(mockEventRepo.delete.mock.calls.map((c) => c[0])).toEqual([
+        'evt-b',
+        'evt-a',
+        'evt-parent',
+      ]);
+    });
+
+    it('rejects invalid scope', async () => {
+      await expect(
+        service.update('evt-1', 'ch-1', {
+          name: 'x',
+          scope: 'bogus' as never,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   // ── Recurring Instance Generation ───────────────────────────────────
@@ -365,6 +519,7 @@ describe('EventService', () => {
     });
 
     it('should notify chapter when event location is updated', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockEventRepo.update.mockResolvedValue({
         ...baseEvent,
         location: 'New Location',

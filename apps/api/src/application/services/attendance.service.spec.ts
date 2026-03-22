@@ -78,6 +78,7 @@ describe('AttendanceService', () => {
     mockEventRepo = {
       findById: jest.fn(),
       findByChapter: jest.fn(),
+      findInstancesByParentId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),

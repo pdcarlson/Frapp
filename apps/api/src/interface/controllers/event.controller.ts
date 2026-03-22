@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiProduces,
+  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
@@ -88,8 +90,20 @@ export class EventController {
   @Delete(':id')
   @RequirePermissions(SystemPermissions.EVENTS_DELETE)
   @ApiOperation({ summary: 'Delete an event' })
-  async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    await this.eventService.delete(id, chapterId);
+  @ApiQuery({
+    name: 'scope',
+    required: false,
+    enum: ['this_instance', 'this_and_future', 'entire_series'],
+    description:
+      'For recurring events: this_instance (default), this_and_future, or entire_series',
+  })
+  async delete(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Query('scope')
+    scope?: 'this_instance' | 'this_and_future' | 'entire_series',
+  ) {
+    await this.eventService.delete(id, chapterId, { scope });
     return { success: true };
   }
 }

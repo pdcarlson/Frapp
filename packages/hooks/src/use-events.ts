@@ -94,6 +94,7 @@ export function useUpdateEvent() {
         recurrence_rule?: string;
         required_role_ids?: string[];
         notes?: string;
+        scope?: "this_instance" | "this_and_future" | "entire_series";
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/events/{id}", {
@@ -113,9 +114,18 @@ export function useDeleteEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({
+      id,
+      scope,
+    }: {
+      id: string;
+      scope?: "this_instance" | "this_and_future" | "entire_series";
+    }) => {
       const { data, error } = await client.DELETE("/v1/events/{id}", {
-        params: { path: { id } },
+        params: {
+          path: { id },
+          query: scope ? { scope } : {},
+        },
       });
       if (error) throw error;
       return data;

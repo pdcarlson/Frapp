@@ -12,6 +12,8 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 | Database & Supabase  | [database.md](database.md)                 |
 | Testing              | [testing.md](testing.md)                   |
 | Contributing         | [contributing.md](contributing.md)         |
+| User-visible changelog | [changelog.md](changelog.md)             |
+| Behavior mapping (impl) | [../behavior.md](../behavior.md) (template vs instance writes) |
 
 **Default local run (API + web + landing):** `npm run dev:stack` from repo root after Infisical login — full detail and alternatives in [`../internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md).
 

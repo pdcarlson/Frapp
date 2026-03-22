@@ -1761,6 +1761,11 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /**
+             * @description For recurring events: this_instance (default), this_and_future, or entire_series
+             * @enum {string}
+             */
+            scope?: "this_instance" | "this_and_future" | "entire_series";
         };
         CheckInDto: Record<string, never>;
         UpdateAttendanceDto: {
@@ -2826,7 +2831,10 @@ export interface operations {
     };
     EventController_delete_v1: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description For recurring events: this_instance (default), this_and_future, or entire_series */
+                scope?: "this_instance" | "this_and_future" | "entire_series";
+            };
             header?: never;
             path: {
                 id: string;
