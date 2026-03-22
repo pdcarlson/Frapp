@@ -11,7 +11,7 @@ Where to put updates so **`docs/`** and **`spec/`** stay navigable and do not dr
 | Environments, CI/CD model                     | `spec/environments.md`                | Pair with `docs/DEPLOYMENT.md` when rollout steps change                                                       |
 | UI product requirements                       | `spec/ui-*.md`                        | Design-system ops: `docs/internal/UI_UX_SYSTEM.md`, `UX_WRITING_GUIDE.md`                                      |
 | Security requirements / threat notes          | `spec/security-*.md`                  | Historical fixes: `docs/SECURITY_FIXES.md`—do not duplicate long mitigation writeups; link to spec or runbooks |
-| Test intent / coverage targets                | `spec/tests/`                         | Prefer `*.spec.md` for **new** files; legacy names without `.spec` are OK                                      |
+| Test intent / coverage targets                | `spec/tests/*.spec.md`                | All test spec files use the `*.spec.md` suffix                                                                |
 | How to run locally, test, contribute          | `docs/guides/`                        |                                                                                                                |
 | Secrets, incidents, branch protection, agents | `docs/internal/`                      |                                                                                                                |
 | Full deployment procedures                    | `docs/DEPLOYMENT.md`                  | Short overview: `docs/guides/deployment.md`                                                                    |

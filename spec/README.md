@@ -28,14 +28,8 @@
 | [`security-path-traversal.md`](security-path-traversal.md)         | Path traversal     |
 | [`security-content-validation.md`](security-content-validation.md) | Content validation |
 
-## Other root specs
-
-| Document                                       | Purpose                    |
-| ---------------------------------------------- | -------------------------- |
-| [`points.controller.md`](points.controller.md) | Points controller behavior |
-
 ## Test specs (`spec/tests/`)
 
-Implementation-focused test and coverage notes. **Naming is mixed** (some `*.spec.md`, some `*.md`); new files should prefer `*.spec.md`. See [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../docs/internal/DOCUMENTATION_CONVENTIONS.md).
+Implementation-focused test and coverage notes. **Convention:** every file uses the **`*.spec.md`** suffix. Browse [`tests/`](tests/).
 
-Files include: `alumni.controller.spec.md`, `attendance-controller.md`, `attendance-service.spec.md`, `backwork-controller.md`, `backwork-service.spec.md`, `billing-controller.spec.md`, `billing-service.md`, `chapter-controller.md`, `chapter-service.md`, `chat.service.spec.md`, `chat-service-optimization.md`, `coverage-improvements.md`, `financial-invoice-controller.spec.md`, `invite-member-dialog.spec.md`, `invite.controller.md`, `invite.service.md`, `notification.service.spec.md`, `rbac.controller.md`, `report.controller.spec.md`, `search-service.md`, `study.controller.spec.md`, `task-controller.md`, `use-attendance.spec.md`, `use-members.md`.
+Conventions for documentation updates: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../docs/internal/DOCUMENTATION_CONVENTIONS.md).
