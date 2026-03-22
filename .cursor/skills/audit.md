@@ -79,12 +79,14 @@ import glob
 import re
 from pathlib import Path
 
-# Matches: create table [public.]users ( ... ) — quoted or unquoted identifiers
+# Matches: create table [schema.]name ( ... ) — schema and name quoted or unquoted
 create_re = re.compile(
     r"""
     CREATE\s+TABLE\s+
     (?:IF\s+NOT\s+EXISTS\s+)?
-    (?:(?P<schema>[a-zA-Z0-9_]+)\.)?
+    (?:
+      (?:"(?P<qschema>[a-zA-Z0-9_]+)"|(?P<uschema>[a-zA-Z0-9_]+))\.
+    )?
     (?:"(?P<qname>[a-zA-Z0-9_]+)"|(?P<uname>[a-zA-Z0-9_]+))
     \s*\(
     """,
@@ -93,15 +95,19 @@ create_re = re.compile(
 
 
 def rls_pattern(schema, table):
-    """Match ENABLE RLS for the same qualified name as CREATE TABLE (avoids cross-schema false OK)."""
+    """Match ENABLE RLS for the same table as CREATE (qualified ALTER or unqualified, Frapp-style)."""
     esc_t = re.escape(table)
     ident = rf'(?:"{esc_t}"|{esc_t})'
     if schema:
         esc_s = re.escape(schema)
-        return re.compile(
-            rf"ALTER\s+TABLE\s+{esc_s}\.{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
-            re.IGNORECASE,
+        qualified = (
+            rf"ALTER\s+TABLE\s+{esc_s}\.{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY"
         )
+        # Migrations often use `alter table users` without repeating the schema
+        unqualified = (
+            rf"ALTER\s+TABLE\s+{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY"
+        )
+        return re.compile(rf"(?:{qualified}|{unqualified})", re.IGNORECASE)
     return re.compile(
         rf"ALTER\s+TABLE\s+(?:[a-zA-Z0-9_]+\.)?{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
         re.IGNORECASE,
@@ -113,7 +119,7 @@ for path in sorted(glob.glob(str(root / "*.sql"))):
     text = Path(path).read_text(encoding="utf-8")
     tables = []
     for m in create_re.finditer(text):
-        sch = m.group("schema")
+        sch = m.group("qschema") or m.group("uschema")
         name = m.group("qname") or m.group("uname")
         tables.append((sch, name))
     if not tables:
@@ -219,7 +225,7 @@ For each migration:
 
 | Workflow | File | Key concerns |
 |----------|------|--------------|
-| CI | `.github/workflows/ci.yml` | All 7 jobs passing, correct branch triggers |
+| CI | `.github/workflows/ci.yml` | All required CI jobs passing, correct branch triggers |
 | Deploy | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
