@@ -92,10 +92,18 @@ create_re = re.compile(
 )
 
 
-def rls_pattern(table: str) -> re.Pattern:
-    esc = re.escape(table)
+def rls_pattern(schema, table):
+    """Match ENABLE RLS for the same qualified name as CREATE TABLE (avoids cross-schema false OK)."""
+    esc_t = re.escape(table)
+    ident = rf'(?:"{esc_t}"|{esc_t})'
+    if schema:
+        esc_s = re.escape(schema)
+        return re.compile(
+            rf"ALTER\s+TABLE\s+{esc_s}\.{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
+            re.IGNORECASE,
+        )
     return re.compile(
-        rf'ALTER\s+TABLE\s+(?:[a-zA-Z0-9_]+\.)?(?:"{esc}"|{esc})\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY',
+        rf"ALTER\s+TABLE\s+(?:[a-zA-Z0-9_]+\.)?{ident}\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY",
         re.IGNORECASE,
     )
 
@@ -105,16 +113,18 @@ for path in sorted(glob.glob(str(root / "*.sql"))):
     text = Path(path).read_text(encoding="utf-8")
     tables = []
     for m in create_re.finditer(text):
+        sch = m.group("schema")
         name = m.group("qname") or m.group("uname")
-        tables.append(name)
+        tables.append((sch, name))
     if not tables:
         continue
-    for t in tables:
-        if not rls_pattern(t).search(text):
-            print(f"MISSING RLS: {path} table {t}")
+    for sch, t in tables:
+        label = f"{sch}.{t}" if sch else t
+        if not rls_pattern(sch, t).search(text):
+            print(f"MISSING RLS: {path} table {label}")
             failed = True
         else:
-            print(f"OK: {path} table {t}")
+            print(f"OK: {path} table {label}")
 if failed:
     raise SystemExit(1)
 PY
