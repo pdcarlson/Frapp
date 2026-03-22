@@ -15,7 +15,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 3. **No environment suffixes.** There's no `RENDER_DEPLOY_HOOK_URL_STAGING` — just `RENDER_DEPLOY_HOOK_URL` with different values per environment. GitHub's `environment:` feature and Infisical's environment scoping handle the routing.
 
-4. **No `.env.local` files (primary path).** Local development uses `npm run dev:api` (etc.), which injects secrets from Infisical's `local` environment via the CLI.
+4. **No `.env.local` files (primary path).** Default local run is **`npm run dev:stack`** from the repo root (API + web + landing + docs; secrets from Infisical `local` via the CLI). Requires `npx infisical login` on the machine. Per-app `dev:*` and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ## Architecture
 
@@ -112,8 +112,6 @@ In **all three environments**, add these references (they're the same in every e
 | 3   | staging       | frapp-landing  | Preview      |
 | 4   | production    | frapp-landing  | Production   |
 
-> **frapp-docs** has no environment variables — no sync needed.
-
 #### Render Syncs (2 syncs)
 
 1. Infisical → Integrations → Add Sync → Render
@@ -167,9 +165,10 @@ Replace `REPLACE_WITH_INFISICAL_PROJECT_ID` in `.infisical.json` with the actual
 
 ```bash
 npx infisical login
-npm run dev:api    # Injects from Infisical local env → starts API
-npm run dev:web    # Injects from Infisical local env → starts web
+npm run dev:stack   # Default: API + web + landing + docs from repo root
 ```
+
+Per-app commands and fallbacks: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 ## Secret Rotation Policy
 

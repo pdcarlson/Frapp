@@ -28,7 +28,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('geofences')
 export class StudyGeofenceController {
   constructor(private readonly studyService: StudyService) {}
@@ -40,7 +41,6 @@ export class StudyGeofenceController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Create geofence (admin)' })
   async create(
@@ -58,7 +58,6 @@ export class StudyGeofenceController {
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Update geofence (admin)' })
   async update(
@@ -70,7 +69,6 @@ export class StudyGeofenceController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.GEOFENCES_MANAGE)
   @ApiOperation({ summary: 'Delete geofence (admin)' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
@@ -81,7 +79,8 @@ export class StudyGeofenceController {
 
 @ApiTags('Study Hours')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('study-sessions')
 export class StudySessionController {
   constructor(private readonly studyService: StudyService) {}

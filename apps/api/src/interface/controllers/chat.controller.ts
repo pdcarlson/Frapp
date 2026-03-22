@@ -41,7 +41,8 @@ import type { ChannelType } from '../../domain/entities/chat.entity';
 
 @ApiTags('Chat')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('channels')
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
@@ -64,7 +65,6 @@ export class ChatController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_CREATE)
   @ApiOperation({ summary: 'Create a channel' })
   async createChannel(
@@ -83,7 +83,6 @@ export class ChatController {
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Update a channel' })
   async updateChannel(
@@ -95,7 +94,6 @@ export class ChatController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Delete a channel' })
   async deleteChannel(
@@ -139,7 +137,6 @@ export class ChatController {
   }
 
   @Post('categories')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Create a channel category' })
   async createCategory(
@@ -154,7 +151,6 @@ export class ChatController {
   }
 
   @Patch('categories/:id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Update a channel category' })
   async updateCategory(
@@ -165,7 +161,6 @@ export class ChatController {
   }
 
   @Delete('categories/:id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Delete a channel category' })
   async deleteCategory(@Param('id') id: string) {
@@ -237,7 +232,6 @@ export class ChatController {
   }
 
   @Post('messages/:messageId/pin')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Pin a message' })
   async pinMessage(@Param('messageId') messageId: string) {
@@ -245,7 +239,6 @@ export class ChatController {
   }
 
   @Delete('messages/:messageId/pin')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Unpin a message' })
   async unpinMessage(@Param('messageId') messageId: string) {

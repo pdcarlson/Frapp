@@ -2,6 +2,8 @@
 
 > The landing page is Frapp's storefront. It must convey trust, modernity, and clarity. Every pixel should say: "This is the tool your chapter needs."
 
+**Cross-app identity:** Frapp-wide motifs, color roles, motion, and trust rules live in **[spec/ui-brand-identity.md](ui-brand-identity.md)**. This document specifies landing layout and content; where they conflict, **brand identity wins** for shared tokens and motifs.
+
 ---
 
 ## 1. Design System
@@ -10,38 +12,38 @@
 
 The landing page uses the Frapp brand palette — not chapter branding. It must feel premium, confident, and clean.
 
-| Token | Light Mode | Dark Mode | Usage |
-|-------|-----------|-----------|-------|
-| `--navy` | `#0F172A` | `#F8FAFC` | Headlines, hero text |
-| `--royal-blue` | `#2563EB` | `#60A5FA` | Primary CTA buttons, links |
-| `--emerald` | `#10B981` | `#34D399` | Success accents, feature highlights |
-| `--slate-bg` | `#F8FAFC` | `#0F172A` | Page background |
-| `--slate-50` | `#F8FAFC` | `#1E293B` | Section alternating bg |
-| `--slate-100` | `#F1F5F9` | `#1E293B` | Card backgrounds |
-| `--slate-400` | `#94A3B8` | `#64748B` | Body text (secondary) |
-| `--slate-600` | `#475569` | `#94A3B8` | Body text (primary) |
-| `--white` | `#FFFFFF` | `#0F172A` | Card surfaces |
+| Token          | Light Mode | Dark Mode | Usage                               |
+| -------------- | ---------- | --------- | ----------------------------------- |
+| `--navy`       | `#0F172A`  | `#F8FAFC` | Headlines, hero text                |
+| `--royal-blue` | `#2563EB`  | `#60A5FA` | Primary CTA buttons, links          |
+| `--emerald`    | `#10B981`  | `#34D399` | Success accents, feature highlights |
+| `--slate-bg`   | `#F8FAFC`  | `#0F172A` | Page background                     |
+| `--slate-50`   | `#F8FAFC`  | `#1E293B` | Section alternating bg              |
+| `--slate-100`  | `#F1F5F9`  | `#1E293B` | Card backgrounds                    |
+| `--slate-400`  | `#94A3B8`  | `#64748B` | Body text (secondary)               |
+| `--slate-600`  | `#475569`  | `#94A3B8` | Body text (primary)                 |
+| `--white`      | `#FFFFFF`  | `#0F172A` | Card surfaces                       |
 
 ### Typography
 
-| Element | Font | Weight | Size (Desktop) | Size (Mobile) |
-|---------|------|--------|----------------|---------------|
-| H1 (Hero) | Geist Sans | 800 | 64px / 1.1 | 40px / 1.15 |
-| H2 (Section) | Geist Sans | 700 | 40px / 1.2 | 28px / 1.25 |
-| H3 (Card title) | Geist Sans | 600 | 24px / 1.3 | 20px / 1.3 |
-| Body | Geist Sans | 400 | 18px / 1.6 | 16px / 1.6 |
-| Body Small | Geist Sans | 400 | 16px / 1.5 | 14px / 1.5 |
-| Label/Overline | Geist Sans | 500 | 14px / 1.4 | 12px / 1.4 |
-| CTA Button | Geist Sans | 600 | 16px | 16px |
+| Element         | Font       | Weight | Size (Desktop) | Size (Mobile) |
+| --------------- | ---------- | ------ | -------------- | ------------- |
+| H1 (Hero)       | Geist Sans | 800    | 64px / 1.1     | 40px / 1.15   |
+| H2 (Section)    | Geist Sans | 700    | 40px / 1.2     | 28px / 1.25   |
+| H3 (Card title) | Geist Sans | 600    | 24px / 1.3     | 20px / 1.3    |
+| Body            | Geist Sans | 400    | 18px / 1.6     | 16px / 1.6    |
+| Body Small      | Geist Sans | 400    | 16px / 1.5     | 14px / 1.5    |
+| Label/Overline  | Geist Sans | 500    | 14px / 1.4     | 12px / 1.4    |
+| CTA Button      | Geist Sans | 600    | 16px           | 16px          |
 
 ### Responsive Breakpoints
 
-| Breakpoint | Width | Layout |
-|-----------|-------|--------|
-| Mobile | < 640px | Single column, stacked sections, hamburger nav |
-| Tablet | 640–1024px | Two-column grids, compressed hero |
-| Desktop | 1024–1280px | Full layout, centered max-width container |
-| Wide | > 1280px | max-width: 1280px centered, comfortable margins |
+| Breakpoint | Width       | Layout                                          |
+| ---------- | ----------- | ----------------------------------------------- |
+| Mobile     | < 640px     | Single column, stacked sections; hamburger nav optional (not in current home) |
+| Tablet     | 640–1024px  | Two-column grids, compressed hero               |
+| Desktop    | 1024–1280px | Full layout, centered max-width container       |
+| Wide       | > 1280px    | max-width: 1280px centered, comfortable margins |
 
 ### Spacing Scale
 
@@ -49,16 +51,16 @@ Use Tailwind's spacing: `4` (16px), `6` (24px), `8` (32px), `12` (48px), `16` (6
 
 ### Animations
 
-All scroll-triggered animations use CSS `@keyframes` or Framer Motion with `once: true` (animate only on first viewport entry). Duration: 500-700ms. Easing: `cubic-bezier(0.16, 1, 0.3, 1)` (smooth deceleration).
+Follow **[spec/ui-brand-identity.md](ui-brand-identity.md) §5 (Motion budget).** Landing implementation uses Tailwind `animate-fade-up` from `@repo/theme` where appropriate.
 
-| Element | Animation | Trigger |
-|---------|-----------|---------|
-| Section headings | Fade up 20px | Viewport entry |
-| Feature cards | Stagger fade up, 100ms delay between | Viewport entry |
-| Stats counters | Count up from 0 | Viewport entry |
-| Hero text | Fade in + slide up | Page load (immediate) |
-| Hero CTA | Fade in, 200ms delay after text | Page load |
-| Pricing card | Scale from 0.95 + fade | Viewport entry |
+| Element                       | Animation                     | Trigger                                                   |
+| ----------------------------- | ----------------------------- | --------------------------------------------------------- |
+| Hero headline + primary CTA   | **None** (static first paint) | —                                                         |
+| Below-fold sections           | Optional `fade-up`            | Viewport entry, `motion-safe` only                        |
+| Feature list / pricing / FAQs | Optional `fade-up`            | Viewport entry, `motion-safe` only (no count-up here)     |
+| Stats row                     | Optional `fade-up`            | Viewport entry; **count-up numbers only here** and only when real data warrants it |
+
+Do not use scale-on-hover on marketing cards, pricing card, feature rows, or FAQs as a default; prefer **border/color** transitions (and shadow tweaks without scale) per brand anti-patterns. Match **[spec/ui-brand-identity.md](ui-brand-identity.md) §5** motion budget everywhere below the fold.
 
 ---
 
@@ -66,32 +68,26 @@ All scroll-triggered animations use CSS `@keyframes` or Framer Motion with `once
 
 ### Header / Navigation Bar
 
-**Sticky** at the top of the viewport. Background transparent on hero, transitions to `bg-white/80 backdrop-blur-lg` (light) or `bg-slate-900/80 backdrop-blur-lg` (dark) on scroll.
+**Sticky** at the top of the viewport. Use solid **`bg-background`** and **`border-b border-border`** for a flat, ledger-adjacent chrome (aligned with [ui-brand-identity.md](ui-brand-identity.md) §2.2). Optional subtle backdrop blur is allowed if contrast remains sufficient.
 
-**Desktop layout (≥1024px):**
-```
-[Logo]                    [Features] [Pricing] [Docs]        [Log In]  [Get Started →]
-```
+**Layout (reference: `apps/landing/app/page.tsx`):**
 
-- Logo: Frapp wordmark (text: "frapp" in lowercase, weight 700, Navy color) or SVG logo when available
-- Nav links: Regular weight, slate-600 color, hover: royal-blue, transition 150ms
-- "Log In": Ghost button (border, transparent bg), links to `app.frapp.live/login`
-- "Get Started →": Solid button (royal-blue bg, white text, rounded-lg), links to `app.frapp.live/signup`
-- Buttons have hover scale(1.02) + shadow transition
-
-**Mobile layout (<1024px):**
-```
-[Logo]                                         [☰ Menu]
+```text
+[Logo]     [Features] [How it works] [Pricing]     [Log In]  [Get Started]
 ```
 
-- Hamburger icon opens a full-screen overlay (slide down, 300ms)
-- Overlay: white bg, centered nav links (24px each), CTA buttons at bottom
-- Close button (X) top-right
+- **md and up:** Show inline nav: Features (`#features`), How it works (`#how-it-works`), Pricing (`#pricing`). Documentation lives in the footer link to the repo’s `docs/guides/` on GitHub (not duplicated in the header).
+- **Below md:** Nav links are hidden; logo + primary **Get Started** CTA remain visible. **Log In** is shown from `md` upward (`hidden md:inline-flex` pattern). A full-screen **hamburger** menu is **optional** and **not** part of the current home implementation (aligns with the Mobile breakpoint row above).
+
+- Logo: Frapp lockup (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [ui-assets.md](ui-assets.md)
+- Nav links: `text-muted-foreground`, hover to `text-foreground` (or equivalent), color transitions only — **no** hover scale on primary chrome per [ui-brand-identity.md](ui-brand-identity.md) §5
+- "Log In": Ghost-style link/button to signup base + `/login`
+- "Get Started": `bg-primary` / `text-primary-foreground`, hover `bg-primary/90` (semantic primary = royal blue in light mode)
 
 **Scroll behavior:**
-- Header height: 72px (desktop), 64px (mobile)
-- `z-50` to stay above all content
-- Transition: `background-color 300ms, box-shadow 300ms`
+
+- Sticky header with `z-40` in the reference layout (`sticky top-0 z-40`)
+- Flat chrome: `border-b border-border bg-background`
 
 ### Footer
 
@@ -99,23 +95,24 @@ Two sections: links grid + bottom bar.
 
 **Links grid (4 columns on desktop, 2 on tablet, 1 on mobile):**
 
-| Product | Resources | Legal | Company |
-|---------|-----------|-------|---------|
-| Features | Documentation | Terms of Service | About |
-| Pricing | API Reference (future) | Privacy Policy | Contact |
-| | Getting Started | FERPA Notice | |
+| Product  | Resources              | Legal            | Company |
+| -------- | ---------------------- | ---------------- | ------- |
+| Features | Documentation          | Terms of Service | About   |
+| Pricing  | API Reference (future) | Privacy Policy   | Contact |
+|          | Getting Started        | FERPA Notice     |         |
 
 **Bottom bar:**
-```
+
+```text
 © 2026 Frapp. All rights reserved.                    [Twitter] [Instagram] [LinkedIn]
 ```
 
 - Social icons: 24x24, slate-400, hover: royal-blue
 - Footer bg: `slate-900` (light mode), `slate-950` (dark mode), text white/slate-300
 
-### Dark Mode Toggle
+### Dark mode
 
-Small icon button in the header (sun/moon icon). Three states: Light, Dark, System. Click cycles through them. Persisted in `localStorage`.
+Dark styles use shared `@repo/theme` tokens (`dark:` utilities). The home page does **not** ship a header theme toggle; system preference applies unless a future control is added (e.g. sun/moon persisted in `localStorage`).
 
 ---
 
@@ -126,7 +123,8 @@ Small icon button in the header (sun/moon icon). Three states: Light, Dark, Syst
 **The most important section.** Must communicate the value proposition in under 5 seconds.
 
 **Desktop layout:**
-```
+
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │   [Overline: "THE OPERATING SYSTEM FOR GREEK LIFE"]     │
@@ -150,14 +148,16 @@ Small icon button in the header (sun/moon icon). Three states: Light, Dark, Syst
 ```
 
 **Content:**
+
 - Overline: Uppercase, letter-spacing 2px, emerald-500, font-weight 500, 14px
 - H1: "Replace Discord, OmegaFi, and Life360 with one app." — Navy, 64px, weight 800
 - Subheadline: Slate-600, 20px, max-width 600px
-- Primary CTA: "Get Started Free →" — royal-blue bg, white text, px-8 py-4, rounded-xl, shadow-lg, hover shadow-xl + scale(1.02)
+- Primary CTA: "Get Started Free →" — royal-blue bg, white text, px-8 py-4, rounded-xl, shadow-lg; hover **shadow-xl** and **border/color** transitions only — **no** hover scale (same motion rules as marketing cards)
 - Secondary CTA: "Watch Demo ▶" — ghost button, royal-blue text, border royal-blue/20
 - Hero image: App mockup showing the mobile dashboard (perspective tilt, subtle shadow). Use Next.js Image with priority loading.
 
 **Mobile layout:**
+
 - Text centered, H1 at 40px
 - CTAs stacked vertically, full width
 - Mockup below CTAs, width 100%
@@ -168,7 +168,7 @@ Small icon button in the header (sun/moon icon). Three states: Light, Dark, Syst
 
 Horizontal strip between hero and features. Provides immediate credibility.
 
-```
+```text
 ┌───────────────────────────────────────────────────────┐
 │  Trusted by chapters at  [University logos / names]   │
 │                                                       │
@@ -177,60 +177,45 @@ Horizontal strip between hero and features. Provides immediate credibility.
 ```
 
 - Background: slightly darker than hero (`slate-50` light, `slate-800/50` dark)
-- Stats in a row (3 items), each with a large number (count-up animation) and label
+- Stats in a row (3 items), each with a large number and label; **count-up animation is allowed only in this stats row** and only when displaying real metrics (not placeholder copy)
 - If no real logos yet: use placeholder university names in muted text
 - Horizontal scroll on mobile if needed
 
 ### Section 3: Feature Highlights
 
-**6 feature cards** in a 3x2 grid (desktop), 2x3 (tablet), 1x6 stacked (mobile).
+**Six capabilities** in a **single bordered card** with **stacked rows** (`divide-y`), not a 3×2 icon grid. Each row: **icon** (Lucide, `text-primary`) + **title** + **short description** (`text-muted-foreground`).
 
-Each card:
-```
-┌──────────────────────┐
-│  [Icon]              │
-│                      │
-│  Feature Name        │
-│                      │
-│  Short description   │
-│  (2-3 lines max)     │
-│                      │
-└──────────────────────┘
-```
+**Rows (representative copy — adjust in code as product evolves):**
 
-**Cards:**
+| Icon / area | Title                | Description (intent)                                                                |
+| ----------- | -------------------- | ----------------------------------------------------------------------------------- |
+| Book        | Backwork Library     | Search study resources by department, course, professor, semester, assignment type. |
+| Message     | Real-Time Chat       | Channels, role-gated rooms, announcements, DMs — chapter-native comms.              |
+| Calendar    | Events & Attendance  | Self-check-in, role-targeted events, automatic point awards.                        |
+| Star        | Points & Leaderboard | Transparent points, audit-friendly ledger, semester-aware rankings.                 |
+| Grad cap    | Study Hours          | Verified study sessions in approved geofences with anti-spoof feedback.             |
+| Dollar      | Billing & Dues       | Subscription visibility, invoices, payment status for treasurers.                   |
 
-| Icon | Title | Description |
-|------|-------|-------------|
-| 📚 (book) | Backwork Library | Search exams, homeworks, and study guides by course, professor, and semester. Uploaded by brothers, for brothers. |
-| 💬 (chat) | Real-Time Chat | Channels, DMs, and announcements — like Discord, built for your chapter. Role-gated channels keep conversations organized. |
-| 📅 (calendar) | Events & Attendance | Create events, track check-ins, auto-award points. Members check in from their phones — no paper sign-in sheets. |
-| ⭐ (star) | Points & Leaderboard | Gamified engagement. Points for attendance, study hours, and service. Leaderboard drives healthy competition. |
-| 📍 (pin) | Study Hours | Geofenced study tracking at approved locations. Members earn points for focused study time — no GPS spoofing. |
-| 💰 (dollar) | Billing & Dues | One-click dues collection with Stripe. Invoices, payment tracking, and overdue alerts for treasurers. |
+**Container styling:**
 
-**Card styling:**
-- `bg-white` (light) / `bg-slate-800` (dark), `rounded-2xl`, `p-8`
-- Subtle `border border-slate-200` (light) / `border-slate-700` (dark)
-- Hover: `shadow-lg`, `translate-y-[-2px]`, 200ms transition
-- Icon: 48x48, in a rounded-xl bg (emerald-50 light / emerald-900/20 dark), emerald-600 color
-- Title: H3, Navy, weight 600
-- Description: Body Small, slate-600
+- Outer: `rounded-lg border border-border bg-card`, optional `motion-safe:animate-fade-up`
+- Rows: `flex` layout, `p-6`, `gap` between icon and text; icon ~`h-8 w-8`
+- Row hover: **border/color** (e.g. `hover:border-primary/30`, subtle bg) — **no** scale-on-hover
 
 **Section header:**
-- Overline: "EVERYTHING YOUR CHAPTER NEEDS"
-- H2: "Six tools, one platform."
-- Centered, max-width 600px
+
+- Ledger line + overline: e.g. **"Core capabilities"** (`text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground`)
+- H2: e.g. **"One ledger for communication, events, points, and dues."** (`text-navy` / `dark:text-white`)
 
 ### Section 4: How It Works
 
 3-step horizontal flow (desktop), vertical stacked (mobile).
 
-```
+```text
    ①                    ②                    ③
    Create your       Invite your         Run your
    chapter           members             chapter
-   
+
    Sign up, pick     Share an invite     Events, chat,
    your plan, and    link. Members       backwork, study
    you're live in    join in one tap.    hours — all in
@@ -238,6 +223,7 @@ Each card:
 ```
 
 **Styling:**
+
 - Each step: numbered circle (royal-blue bg, white text, 48x48, rounded-full) + title + description
 - Connecting line between steps (dashed, slate-300) on desktop
 - Steps stagger-animate on viewport entry
@@ -248,7 +234,8 @@ Each card:
 Interactive or static showcase of the app in action. Two approaches (pick based on available assets):
 
 **Option A: Side-by-side mockups**
-```
+
+```text
 [Mobile app mockup]     [Web dashboard mockup]
      ↑                         ↑
   "Member                  "Admin
@@ -260,6 +247,7 @@ Horizontal tab bar: Chat | Events | Backwork | Points | Study
 Each tab shows a different screenshot/mockup with a brief description alongside.
 
 **Styling:**
+
 - Mockups in device frames (phone frame, browser frame)
 - Subtle shadow and rotation (`perspective: 1000px`, `rotateY(-5deg)`)
 - Tab bar: pill-shaped active indicator, smooth slide transition
@@ -268,7 +256,7 @@ Each tab shows a different screenshot/mockup with a brief description alongside.
 
 Single plan, clean and simple. No confusion.
 
-```
+```text
 ┌────────────────────────────────────┐
 │                                    │
 │         [Emerald checkmark]        │
@@ -297,14 +285,16 @@ Single plan, clean and simple. No confusion.
 ```
 
 **Styling:**
+
 - Single centered card, max-width 480px
 - `bg-white` with `border-2 border-royal-blue` (light), `bg-slate-800 border-emerald-500` (dark)
 - Price: 48px weight 800 + "/month" in 18px weight 400
 - Feature list: emerald checkmarks, 16px, comfortable line-height
-- CTA: full-width royal-blue button
-- Below card: expandable FAQ accordion (4-6 questions)
+- CTA: full-width royal-blue button; hover via **color/shadow/border** only — **no** scale-on-hover
+- Below card: expandable FAQ accordion (4-6 questions); accordion triggers use **border/color** hover states, optional `motion-safe` transitions, **no** default scale-on-hover
 
 **FAQ items:**
+
 1. "How does pricing work?" → Flat monthly per chapter. No per-member fees.
 2. "Is there a free trial?" → Yes, 14 days free. No credit card required.
 3. "Can we cancel anytime?" → Yes, cancel anytime. Your data is preserved.
@@ -317,7 +307,8 @@ Single plan, clean and simple. No confusion.
 Quote cards in a horizontal scroll (mobile) or 3-column grid (desktop).
 
 Each card:
-```
+
+```text
 ┌──────────────────────────────┐
 │  "Frapp replaced three apps  │
 │  for us. Our chapter is more │
@@ -330,7 +321,8 @@ Each card:
 ```
 
 **Styling:**
-- `bg-white`, `rounded-2xl`, `p-8`, `shadow-sm`
+
+- `bg-white`, `rounded-2xl`, `p-8`, `shadow-sm`; card hover: **border/color** emphasis if interactive — **no** scale-on-hover by default
 - Quote in italic, slate-700, 18px
 - Attribution: weight 600 for name, weight 400 for chapter/university, slate-500
 - Optional: small avatar circle (48x48) next to attribution
@@ -340,7 +332,7 @@ Each card:
 
 Full-width section with high-contrast background.
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                                                         │
 │   Ready to modernize your chapter?                      │
@@ -354,6 +346,7 @@ Full-width section with high-contrast background.
 ```
 
 **Styling:**
+
 - Background: `navy` (light) or `slate-800` (dark) — full bleed
 - Text: white, centered
 - H2: 40px weight 700
@@ -365,12 +358,14 @@ Full-width section with high-contrast background.
 ## 4. Legal Pages
 
 ### `/terms` — Terms of Service
+
 ### `/privacy` — Privacy Policy
+
 ### `/ferpa` — FERPA Notice
 
 All three share the same layout:
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │  [Header/Nav — same as main page]       │
 │                                         │
@@ -394,16 +389,17 @@ All three share the same layout:
 
 ## 5. Performance Targets
 
-| Metric | Target |
-|--------|--------|
-| Lighthouse Performance | ≥ 95 |
-| LCP (Largest Contentful Paint) | < 2.0s |
-| FID (First Input Delay) | < 100ms |
-| CLS (Cumulative Layout Shift) | < 0.1 |
-| Total page weight | < 500KB (gzipped) |
-| Time to Interactive | < 3.0s on 3G |
+| Metric                         | Target            |
+| ------------------------------ | ----------------- |
+| Lighthouse Performance         | ≥ 95              |
+| LCP (Largest Contentful Paint) | < 2.0s            |
+| FID (First Input Delay)        | < 100ms           |
+| CLS (Cumulative Layout Shift)  | < 0.1             |
+| Total page weight              | < 500KB (gzipped) |
+| Time to Interactive            | < 3.0s on 3G      |
 
 **Techniques:**
+
 - Next.js SSG (Static Site Generation) for all pages
 - `next/image` with WebP/AVIF auto-format, lazy loading (except hero)
 - Font: self-hosted Geist Sans (subset Latin, woff2 only)
@@ -415,16 +411,18 @@ All three share the same layout:
 
 ## 6. SEO & Metadata
 
-```html
-<title>Frapp — The Operating System for Greek Life</title>
-<meta name="description" content="Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters." />
-<meta property="og:title" content="Frapp — The Operating System for Greek Life" />
-<meta property="og:description" content="One platform for chat, events, study hours, points, backwork, and billing." />
-<meta property="og:image" content="/og-image.png" />
-<meta property="og:type" content="website" />
-<meta name="twitter:card" content="summary_large_image" />
-```
+Use the **Next.js App Router** `metadata` export in `apps/landing/app/layout.tsx` for `title`, `description`, `metadataBase`, `openGraph`, and `twitter` (card type `summary_large_image`).
+
+**Do not** point `openGraph.images` / `twitter.images` at a static `/og-image.png` unless that file exists in `public/`. The canonical approach is the dynamic route **`apps/landing/app/opengraph-image.tsx`** (1200×630, navy + accent) — see [spec/ui-assets.md](ui-assets.md) §3–4. Implementation must set **`openGraph.images`** and **`twitter.images`** to the App Router OG entry (e.g. `{ url: "/opengraph-image", width: 1200, height: 630 }` resolved against **`metadataBase`**, same path for Twitter) so previews use the generated image at runtime.
+
+Equivalent values (for reference):
+
+| Field            | Value                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Title            | Frapp — The Operating System for Greek Life                                                                                 |
+| Meta description | Replace Discord, OmegaFi, and Life360 with one app. Chat, events, study hours, points, and billing for fraternity chapters. |
+| OG description   | One platform for chat, events, study hours, points, backwork, and billing.                                                  |
 
 - Generate `sitemap.xml` via `next-sitemap`
 - `robots.txt` allowing all crawlers
-- Structured data: Organization schema (JSON-LD)
+- Structured data: e.g. `SoftwareApplication` JSON-LD in the page when appropriate

@@ -25,7 +25,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Points')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('points')
 export class PointsController {
   constructor(private readonly pointsService: PointsService) {}
@@ -52,7 +53,6 @@ export class PointsController {
   }
 
   @Get('members/:userId')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.POINTS_VIEW_ALL)
   @ApiOperation({ summary: 'Get point summary for a member' })
   async getMember(
@@ -65,7 +65,6 @@ export class PointsController {
   }
 
   @Post('adjust')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.POINTS_ADJUST)
   @ApiOperation({ summary: 'Manually adjust member points' })
   async adjust(

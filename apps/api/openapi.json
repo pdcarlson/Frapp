@@ -1580,7 +1580,7 @@
             "bearer": []
           }
         ],
-        "summary": "List invoices (admin: all, member: own)",
+        "summary": "List invoices (billing: all, member: own)",
         "tags": [
           "Financial Invoices"
         ]

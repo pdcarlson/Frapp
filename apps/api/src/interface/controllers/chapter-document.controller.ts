@@ -31,7 +31,8 @@ import {
 
 @ApiTags('Documents')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('documents')
 export class ChapterDocumentController {
   constructor(
@@ -39,7 +40,6 @@ export class ChapterDocumentController {
   ) {}
 
   @Post('upload-url')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
   @ApiOperation({ summary: 'Get signed upload URL' })
   async requestUploadUrl(
@@ -54,7 +54,6 @@ export class ChapterDocumentController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload with metadata' })
   async confirmUpload(
@@ -93,7 +92,6 @@ export class ChapterDocumentController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
   @ApiOperation({ summary: 'Delete a document' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {

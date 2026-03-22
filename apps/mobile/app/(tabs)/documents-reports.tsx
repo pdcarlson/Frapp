@@ -1,4 +1,5 @@
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
@@ -52,7 +53,7 @@ export default function DocumentsReportsScreen() {
         meta="Cached at 6:02 PM"
       />
 
-      <Link href="/more" asChild>
+      <Link href={asRoute("/more")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to more</Text>
         </Pressable>

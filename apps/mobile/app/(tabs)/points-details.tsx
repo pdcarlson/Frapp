@@ -1,4 +1,5 @@
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
@@ -87,8 +88,9 @@ export default function PointsDetailsScreen() {
       <View style={styles.tableCard}>
         <Text style={styles.tableTitle}>
           Top chapter ranks ·{" "}
-          {WINDOW_OPTIONS.find((windowOption) => windowOption.key === selectedWindow)
-            ?.label ?? "All time"}
+          {WINDOW_OPTIONS.find(
+            (windowOption) => windowOption.key === selectedWindow,
+          )?.label ?? "All time"}
         </Text>
         <View style={styles.tableRows}>
           {leaderboardRows.map((row) => (
@@ -128,7 +130,7 @@ export default function PointsDetailsScreen() {
         }
       />
 
-      <Link href="/points" asChild>
+      <Link href={asRoute("/points")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to points overview</Text>
         </Pressable>

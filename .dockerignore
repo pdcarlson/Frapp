@@ -15,7 +15,6 @@ supabase/
 apps/web
 apps/mobile
 apps/landing
-apps/docs
 
 # Packages not used by the API
 packages/ui

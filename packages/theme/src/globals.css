@@ -52,6 +52,9 @@
 
     /* ── Radius ───────────────────────────────────────────── */
     --radius: 0.625rem; /* 10px — slightly tighter for dashboard density */
+
+    /* Frapp app mark (inline SVG lockups) — navy tile stays #0F172A in both modes */
+    --brand-lockup-bg: 222 47% 11%;
   }
 
   .dark {
@@ -87,6 +90,8 @@
     --border: 217 33% 17%;
     --input: 217 33% 17%;
     --ring: 213 94% 68%;
+
+    --brand-lockup-bg: 222 47% 11%;
   }
 
   * {

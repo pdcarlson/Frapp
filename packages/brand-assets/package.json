@@ -1,0 +1,13 @@
+{
+  "name": "@repo/brand-assets",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Canonical Frapp SVG marks and lockup for web, email, and sync to Next app icons",
+  "exports": {
+    "./app-icon.svg": "./assets/app-icon.svg",
+    "./frapp-lockup.svg": "./assets/frapp-lockup.svg"
+  },
+  "files": [
+    "assets"
+  ]
+}

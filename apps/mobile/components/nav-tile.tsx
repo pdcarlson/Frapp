@@ -1,11 +1,11 @@
-import type { Href } from "expo-router";
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
+import { asRoute } from "@/lib/href";
 import { useFrappTheme } from "@/lib/theme";
 
 type NavTileProps = {
-  href: Href;
+  href: string;
   title: string;
   description: string;
   accessibilityHint?: string;
@@ -21,7 +21,7 @@ export function NavTile({
   const styles = createStyles(tokens);
 
   return (
-    <Link href={href} asChild>
+    <Link href={asRoute(href)} asChild>
       <Pressable
         style={styles.tile}
         accessibilityRole="button"

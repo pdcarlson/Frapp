@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -15,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FinancialInvoiceService } from '../../application/services/financial-invoice.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -32,13 +34,17 @@ import {
 
 @ApiTags('Financial Invoices')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('invoices')
 export class FinancialInvoiceController {
-  constructor(private readonly invoiceService: FinancialInvoiceService) {}
+  constructor(
+    private readonly invoiceService: FinancialInvoiceService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   @Get()
-  @ApiOperation({ summary: 'List invoices (admin: all, member: own)' })
+  @ApiOperation({ summary: 'List invoices (billing: all, member: own)' })
   @ApiQuery({ name: 'user_id', required: false })
   async list(
     @CurrentChapterId() chapterId: string,
@@ -46,13 +52,31 @@ export class FinancialInvoiceController {
     @Query('user_id') filterUserId?: string,
   ) {
     if (filterUserId) {
+      if (filterUserId === userId) {
+        return this.invoiceService.findByUser(filterUserId, chapterId);
+      }
+      const canViewOthers = await this.rbacService.memberHasAnyPermission(
+        chapterId,
+        userId,
+        [SystemPermissions.BILLING_VIEW],
+      );
+      if (!canViewOthers) {
+        throw new ForbiddenException('Access denied to these invoices');
+      }
       return this.invoiceService.findByUser(filterUserId, chapterId);
     }
-    return this.invoiceService.findByChapter(chapterId);
+    const canViewChapter = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BILLING_VIEW],
+    );
+    if (canViewChapter) {
+      return this.invoiceService.findByChapter(chapterId);
+    }
+    return this.invoiceService.findByUser(userId, chapterId);
   }
 
   @Get('overdue')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'List overdue invoices (OPEN past due_date)' })
   async listOverdue(@CurrentChapterId() chapterId: string) {
@@ -61,12 +85,27 @@ export class FinancialInvoiceController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get invoice by ID' })
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.invoiceService.findById(id, chapterId);
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const invoice = await this.invoiceService.findById(id, chapterId);
+    if (invoice.user_id === userId) {
+      return invoice;
+    }
+    const canViewAll = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.BILLING_VIEW],
+    );
+    if (!canViewAll) {
+      throw new ForbiddenException('Access denied to this invoice');
+    }
+    return invoice;
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Create a member invoice' })
   async create(
@@ -80,7 +119,6 @@ export class FinancialInvoiceController {
   }
 
   @Patch(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Update a draft invoice' })
   async update(
@@ -92,7 +130,6 @@ export class FinancialInvoiceController {
   }
 
   @Post(':id/status')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_MANAGE)
   @ApiOperation({ summary: 'Transition invoice status (OPEN, PAID, VOID)' })
   async transitionStatus(
@@ -104,7 +141,6 @@ export class FinancialInvoiceController {
   }
 
   @Get(':id/transactions')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
   @ApiOperation({ summary: 'Get transactions for an invoice' })
   async getInvoiceTransactions(

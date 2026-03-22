@@ -46,6 +46,8 @@ export class ServiceEntryController {
   ) {}
 
   @Get()
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'List service entries (own or all for admins)' })
   @ApiQuery({
     name: 'userId',
@@ -73,6 +75,8 @@ export class ServiceEntryController {
   }
 
   @Get(':id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get service entry by id' })
   async getOne(
     @CurrentChapterId() chapterId: string,

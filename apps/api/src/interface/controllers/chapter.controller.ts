@@ -13,6 +13,10 @@ import { ChapterService } from '../../application/services/chapter.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
+import {
+  RequireAnyOfPermissions,
+  RequirePermissions,
+} from '../decorators/permissions.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CurrentUser,
@@ -24,6 +28,7 @@ import {
   LogoUploadUrlDto,
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
 @ApiBearerAuth()
@@ -43,7 +48,8 @@ export class ChapterController {
   }
 
   @Get('current')
-  @UseGuards(SupabaseAuthGuard, ChapterGuard)
+  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get current chapter' })
   async getCurrent(@CurrentChapterId() chapterId: string) {
     return this.chapterService.findById(chapterId);
@@ -51,6 +57,10 @@ export class ChapterController {
 
   @Patch('current')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequireAnyOfPermissions(
+    SystemPermissions.ROLES_MANAGE,
+    SystemPermissions.BILLING_MANAGE,
+  )
   @ApiOperation({ summary: 'Update current chapter settings' })
   async update(
     @CurrentChapterId() chapterId: string,
@@ -61,6 +71,10 @@ export class ChapterController {
 
   @Post('current/logo-url')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequireAnyOfPermissions(
+    SystemPermissions.ROLES_MANAGE,
+    SystemPermissions.BILLING_MANAGE,
+  )
   @ApiOperation({ summary: 'Generate signed upload URL for chapter logo' })
   async requestLogoUploadUrl(
     @CurrentChapterId() chapterId: string,
@@ -75,6 +89,10 @@ export class ChapterController {
 
   @Post('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequireAnyOfPermissions(
+    SystemPermissions.ROLES_MANAGE,
+    SystemPermissions.BILLING_MANAGE,
+  )
   @ApiOperation({ summary: 'Confirm logo upload and update chapter' })
   async confirmLogoUpload(
     @CurrentChapterId() chapterId: string,
@@ -85,6 +103,10 @@ export class ChapterController {
 
   @Delete('current/logo')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+  @RequireAnyOfPermissions(
+    SystemPermissions.ROLES_MANAGE,
+    SystemPermissions.BILLING_MANAGE,
+  )
   @ApiOperation({ summary: 'Remove chapter logo' })
   async deleteLogo(@CurrentChapterId() chapterId: string) {
     return this.chapterService.deleteLogo(chapterId);

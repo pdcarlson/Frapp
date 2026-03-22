@@ -1,4 +1,5 @@
 import { Link } from "expo-router";
+import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { FrappTokens } from "@repo/theme/tokens";
@@ -46,7 +47,7 @@ export default function NotificationTargetsScreen() {
 
       <View style={styles.targetList}>
         {TARGETS.map((target) => (
-          <Link key={target.label} href={target.route} asChild>
+          <Link key={target.label} href={asRoute(target.route)} asChild>
             <Pressable style={styles.targetRow}>
               <Text style={styles.targetLabel}>{target.label}</Text>
               <Text style={styles.targetDescription}>{target.description}</Text>
@@ -55,7 +56,7 @@ export default function NotificationTargetsScreen() {
         ))}
       </View>
 
-      <Link href="/notifications" asChild>
+      <Link href={asRoute("/notifications")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to notifications</Text>
         </Pressable>

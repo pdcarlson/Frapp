@@ -10,12 +10,12 @@ Frapp uses a **two-branch model** with `main` (staging) and `production` (produc
 feature/xyz ──PR──▶ main (staging) ──PR──▶ production (production)
 ```
 
-| Branch | Purpose | Deployment |
-| --- | --- | --- |
-| `main` | Staging integration | Triggers staging deploys (Vercel preview, Render staging) |
-| `production` | Production-ready code | Triggers production deploys (Vercel, Render) |
-| `feature/*` | Short-lived feature work | No automatic Vercel deploys; merged into `main` |
-| `hotfix/*` | Emergency production fixes | Branch from `main`, PR to `main`, then fast-track promotion PR to `production` |
+| Branch       | Purpose                    | Deployment                                                                     |
+| ------------ | -------------------------- | ------------------------------------------------------------------------------ |
+| `main`       | Staging integration        | Triggers staging deploys (Vercel preview, Render staging)                      |
+| `production` | Production-ready code      | Triggers production deploys (Vercel, Render)                                   |
+| `feature/*`  | Short-lived feature work   | No automatic Vercel deploys; merged into `main`                                |
+| `hotfix/*`   | Emergency production fixes | Branch from `main`, PR to `main`, then fast-track promotion PR to `production` |
 
 ### Rules
 
@@ -29,9 +29,9 @@ feature/xyz ──PR──▶ main (staging) ──PR──▶ production (produ
 
 ## Merge Strategy
 
-| Merge type | Strategy | Rationale |
-| --- | --- | --- |
-| Feature → main | **Squash merge** | Clean history, one commit per feature |
+| Merge type        | Strategy         | Rationale                                             |
+| ----------------- | ---------------- | ----------------------------------------------------- |
+| Feature → main    | **Squash merge** | Clean history, one commit per feature                 |
 | main → production | **Merge commit** | Preserves promotion audit trail, triggers version tag |
 
 ---
@@ -42,16 +42,16 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 ### CI Jobs (GitHub Actions)
 
-| Check | What it validates |
-| --- | --- |
-| `packages-build` | Shared packages compile |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces |
-| `api-tests` | API Jest unit tests |
-| `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness |
-| `migration-safety` | Migration filename validation + promotion docs |
-| `mobile-validate` | Mobile app lint + typecheck |
-| `build-and-lint` | Docs build + lint + docs/spec sync checks |
-| `branch-policy` | `production`-targeting PRs must come from `main` (required on `production` only) |
+| Check                | What it validates                                                                |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `packages-build`     | Shared packages compile                                                          |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces                                        |
+| `api-tests`          | API Jest unit tests                                                              |
+| `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                    |
+| `migration-safety`   | Migration filename validation + promotion docs                                   |
+| `mobile-validate`    | Mobile app lint + typecheck                                                      |
+| `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)  |
+| `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only) |
 
 ### Vercel deployment policy
 
@@ -59,8 +59,8 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### Review Blockers (not status checks)
 
-| Check | Provider |
-| --- | --- |
+| Check                                          | Provider                    |
+| ---------------------------------------------- | --------------------------- |
 | CodeRabbit review (`request_changes_workflow`) | CodeRabbit (AI code review) |
 
 ### PR review requirement policy
@@ -91,15 +91,15 @@ Use conventional commit messages:
 type(scope): description
 ```
 
-| Type | Use for |
-| --- | --- |
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation changes |
-| `style` | Formatting, missing semicolons, etc. |
-| `refactor` | Code refactoring |
-| `test` | Adding tests |
-| `chore` | Maintenance tasks |
+| Type       | Use for                              |
+| ---------- | ------------------------------------ |
+| `feat`     | New feature                          |
+| `fix`      | Bug fix                              |
+| `docs`     | Documentation changes                |
+| `style`    | Formatting, missing semicolons, etc. |
+| `refactor` | Code refactoring                     |
+| `test`     | Adding tests                         |
+| `chore`    | Maintenance tasks                    |
 
 ### 3. Open a PR targeting `main`
 
@@ -107,7 +107,7 @@ type(scope): description
   - This runs docs/spec sync (`scripts/check-docs-impact.mjs`), docs build/lint, and the CI parity checks.
 - If the docs/spec check needs a different base branch, use: `npm run ci:local-gate -- --base-ref origin/production`
 - Fill out the PR template completely.
-- Check the "Docs / Spec impact" section — if you changed product code, update `apps/docs/` or `spec/`.
+- Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
 - CodeRabbit will post an AI review.
 
@@ -180,6 +180,6 @@ The version tag and GitHub Release are created automatically by the release work
 - **No magic numbers** — use named constants.
 - **Single responsibility** — keep functions small and focused.
 - **DRY** — extract repeated code into shared packages.
-- **Self-documenting code** — comments explain *why*, not *what*.
+- **Self-documenting code** — comments explain _why_, not _what_.
 
 See `spec/architecture.md` Section 11 for the full quality standards.

@@ -3,11 +3,14 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 
 const geistSans = localFont({
-  src: "./fonts/GeistVF.woff2",
+  src: "../../../packages/theme/fonts/GeistVF.woff2",
   variable: "--font-geist-sans",
   weight: "100 900",
   display: "swap",
 });
+
+const ogDescription =
+  "One platform for chat, events, study hours, points, backwork, and billing.";
 
 export const metadata: Metadata = {
   title: "Frapp — The Operating System for Greek Life",
@@ -16,13 +19,12 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://frapp.live"),
   openGraph: {
     title: "Frapp — The Operating System for Greek Life",
-    description:
-      "One platform for chat, events, study hours, points, backwork, and billing.",
+    description: ogDescription,
     type: "website",
     url: "https://frapp.live",
     images: [
       {
-        url: "/og-image.png",
+        url: "/opengraph-image",
         width: 1200,
         height: 630,
         alt: "Frapp — The Operating System for Greek Life",
@@ -32,9 +34,8 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Frapp — The Operating System for Greek Life",
-    description:
-      "One platform for chat, events, study hours, points, backwork, and billing.",
-    images: ["/og-image.png"],
+    description: ogDescription,
+    images: ["/opengraph-image"],
   },
 };
 

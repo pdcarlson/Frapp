@@ -27,7 +27,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Roles & Permissions')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('roles')
 export class RbacController {
   constructor(private readonly rbacService: RbacService) {}
@@ -46,7 +47,6 @@ export class RbacController {
 
   @Post()
   @ApiOperation({ summary: 'Create a custom role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async create(
     @CurrentChapterId() chapterId: string,
@@ -57,7 +57,6 @@ export class RbacController {
 
   @Patch(':id')
   @ApiOperation({ summary: 'Update a role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
     return this.rbacService.update(id, dto);
@@ -65,7 +64,6 @@ export class RbacController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a custom role' })
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async delete(@Param('id') id: string) {
     await this.rbacService.delete(id);
@@ -73,6 +71,7 @@ export class RbacController {
   }
 
   @Post('transfer-presidency')
+  @RequirePermissions(SystemPermissions.WILDCARD)
   @ApiOperation({ summary: 'Transfer presidency to another member' })
   async transferPresidency(
     @CurrentChapterId() chapterId: string,

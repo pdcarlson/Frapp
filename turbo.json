@@ -1,6 +1,6 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
-  "ui": "tui",
+  "ui": "stream",
   "globalEnv": ["CI", "PLAYWRIGHT_BASE_URL"],
   "tasks": {
     "build": {

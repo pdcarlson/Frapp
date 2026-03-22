@@ -8,8 +8,7 @@
 | ------------ | --------------------------------- | ---------------------------------------- | ------------------------------------- |
 | **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live      | frapp.live                            |
 | **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live  | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render (`main` branch service)            | Render (`production` branch service)   |
-| **Docs**     | localhost:3005                    | Vercel preview / docs.staging.frapp.live | docs.frapp.live                       |
+| **API**      | localhost:3001                    | Render (`main` branch service)           | Render (`production` branch service)  |
 | **Mobile**   | Expo Go (local network)           | EAS internal distribution                | App Store / Google Play               |
 | **Database** | Supabase local (`supabase start`) | Supabase staging project                 | Supabase production project           |
 | **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)          | Supabase Auth (production project)    |
@@ -21,11 +20,11 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 ### Branch-to-environment mapping
 
-| Branch | Purpose | Deployment behavior |
-| ------ | ------- | ------------------- |
-| `main` | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
-| `production` | Production | Triggers production deployments |
-| `feature/*` | Short-lived feature work | No automatic Vercel deployments; merged into `main` |
+| Branch       | Purpose                              | Deployment behavior                                    |
+| ------------ | ------------------------------------ | ------------------------------------------------------ |
+| `main`       | Pre-production / staging integration | Triggers staging and Vercel Preview domain deployments |
+| `production` | Production                           | Triggers production deployments                        |
+| `feature/*`  | Short-lived feature work             | No automatic Vercel deployments; merged into `main`    |
 
 ---
 
@@ -35,11 +34,27 @@ Each Supabase project (local, staging, production) is fully isolated: separate d
 
 - Node.js v18+
 - npm v10+
-- Docker Desktop (for Supabase local)
+- Docker available to your shell (Docker Desktop with **WSL integration** on Windows/WSL, or Docker Engine on Linux)
 - Supabase CLI (`npx supabase`)
 - Expo Go app on iOS/Android device
 
 ### Setup
+
+**One-shot bootstrap (recommended on WSL/Ubuntu):** from the repo root, with Docker already running:
+
+```bash
+bash scripts/local-dev-setup.sh
+# Skip typecheck / migration-safety for a faster loop:
+# bash scripts/local-dev-setup.sh --quick
+# Stuck or exited Supabase containers (this repo only; keeps volumes):
+# bash scripts/local-dev-setup.sh --reset-supabase
+# Wipe local Supabase data volumes (destructive; confirm in terminal):
+# bash scripts/local-dev-setup.sh --reset-supabase-data
+```
+
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)). It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+
+**Manual sequence** (equivalent):
 
 ```bash
 # 1. Install dependencies
@@ -51,8 +66,9 @@ npx supabase start
 # 3. Apply database migrations (--local targets the local Supabase instance)
 npx supabase db push --local
 
-# 4. Start all apps
-npm run dev
+# 4. Start apps — default (with Infisical — see docs/internal/LOCAL_DEV.md):
+npm run dev:stack
+# Per-app, no Infisical, Turbo caveats: docs/internal/LOCAL_DEV.md
 ```
 
 ### Environment Variables
@@ -75,7 +91,6 @@ npx infisical run --env=local -- npm run start:dev -w apps/api
 | API              | http://localhost:3001      |
 | API Swagger Docs | http://localhost:3001/docs |
 | Landing          | http://localhost:3002      |
-| Docs             | http://localhost:3005      |
 | Supabase Studio  | http://127.0.0.1:54323     |
 
 ### Running Mobile
@@ -103,7 +118,7 @@ npm run generate -w packages/api-sdk
 - **Purpose:** QA, stakeholder demos, mobile TestFlight/internal builds.
 - **Git branch:** `main` — pushes trigger staging/pre-production deployments.
 - **Supabase:** Dedicated staging project (separate from production). Create via Supabase dashboard or CLI.
-- **Web / Landing / Docs:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`, `docs.staging.frapp.live`), filtered to the `main` branch.
+- **Web / Landing:** Vercel Preview deployments with staging domains (`app.staging.frapp.live`, `staging.frapp.live`), filtered to the `main` branch.
 - **API:** Render staging service (`frapp-api-staging`), auto-deploys from `main`, pointing at Supabase staging.
 - **Mobile:** EAS internal distribution builds (`eas build --profile preview`).
 - **Stripe:** Test mode keys (`sk_test_`).
@@ -117,7 +132,6 @@ npm run generate -w packages/api-sdk
 - **Supabase:** Dedicated production project. Fully isolated users, database, storage.
 - **Web App:** `app.frapp.live` (Vercel, production deploy from `production`).
 - **Landing:** `frapp.live` (Vercel, production deploy from `production`).
-- **Docs:** `docs.frapp.live` (Vercel, production deploy from `production`).
 - **API:** Render production service (`frapp-api-prod`), auto-deploys from `production`, pointing at Supabase production + Stripe live keys.
 - **Mobile:** App Store and Google Play via EAS Submit.
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
@@ -133,25 +147,26 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 
 ### CI Job Matrix
 
-| Job | What it validates | Blocker? |
-| --- | --- | --- |
-| `packages-build` | Shared packages compile | Yes |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces | Yes |
-| `api-tests` | API Jest unit tests (377+ tests) | Yes (hard) |
-| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes |
-| `migration-safety` | Migration filename validation + promotion docs | Yes |
-| `mobile-validate` | Mobile app lint + typecheck | Yes |
-| `branch-policy` | PRs to `production` must come from `main` | Yes |
+| Job                  | What it validates                               | Blocker?   |
+| -------------------- | ----------------------------------------------- | ---------- |
+| `packages-build`     | Shared packages compile                         | Yes        |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces       | Yes        |
+| `api-tests`          | API Jest unit tests (377+ tests)                | Yes (hard) |
+| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes        |
+| `migration-safety`   | Migration filename validation + promotion docs  | Yes        |
+| `mobile-validate`    | Mobile app lint + typecheck                     | Yes        |
+| `branch-policy`      | PRs to `production` must come from `main`       | Yes        |
 
 ### Additional Required Checks
 
 These checks are also required for merge:
 
-| Check | Provider | What it validates |
-| --- | --- | --- |
-| `build-and-lint` | GitHub Actions | Docs build + lint + spec sync enforcement |
+| Check            | Provider       | What it validates                         |
+| ---------------- | -------------- | ----------------------------------------- |
+| `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
 **CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
+
 - On `main`, CodeRabbit feedback is advisory (no required approving review).
 - On `main`, conversation resolution is also disabled, so unresolved CodeRabbit threads do not block merge.
 - On `production`, branch protection requires one approving review and conversation resolution, so review outcomes remain a promotion gate.
@@ -180,7 +195,7 @@ Vercel preview/production deployments are push-triggered from `main`/`production
 
 Production deployments additionally require manual approval before the migration step runs.
 
-### Web, Landing, Docs (Vercel)
+### Web and Landing (Vercel)
 
 - Push to `production` triggers **production** Vercel deployments (custom domains).
 - Push to `main` triggers **preview** Vercel deployments (staging domains).
@@ -210,6 +225,7 @@ Production deployments additionally require manual approval before the migration
 **Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
 **Exception — breaking API changes:** Use the split-PR flow in `docs/internal/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
+
 1. Merge/deploy the backward-compatible API PR first.
 2. Verify the API health check passes.
 3. Merge frontend follow-up PRs only after API verification.
@@ -232,11 +248,11 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 
 ### Infisical Setup
 
-| Property | Value |
-| --- | --- |
-| **Project** | Frapp |
-| **Environments** | `local`, `staging`, `production` |
-| **Syncs** | Vercel (×3 apps), Render (×2 services), GitHub Actions |
+| Property         | Value                                                  |
+| ---------------- | ------------------------------------------------------ |
+| **Project**      | Frapp                                                  |
+| **Environments** | `local`, `staging`, `production`                       |
+| **Syncs**        | Vercel (×3 apps), Render (×2 services), GitHub Actions |
 
 ### How It Works
 
@@ -248,11 +264,11 @@ See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** fo
 
 Three secrets live directly in GitHub — these bootstrap the Infisical connection:
 
-| Secret | Purpose |
-| --- | --- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical |
-| `INFISICAL_CLIENT_SECRET` | Client Secret for Infisical machine identity auth |
-| `INFISICAL_PROJECT_ID` | Project identifier |
+| Secret                          | Purpose                                           |
+| ------------------------------- | ------------------------------------------------- |
+| `INFISICAL_MACHINE_IDENTITY_ID` | OIDC auth to Infisical                            |
+| `INFISICAL_CLIENT_SECRET`       | Client Secret for Infisical machine identity auth |
+| `INFISICAL_PROJECT_ID`          | Project identifier                                |
 
 ### Local Development
 
@@ -260,13 +276,10 @@ Three secrets live directly in GitHub — these bootstrap the Infisical connecti
 
 ```bash
 npx infisical login       # One-time setup
-npm run dev:api           # Injects from Infisical local env
-npm run dev:web
-npm run dev:landing
-npm run dev:mobile
+npm run dev:stack         # Default: API + web + landing (repo root)
 ```
 
-**Fallback:** Create `.env.local` files manually using values from `npx supabase status -o env`.
+Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.
 
 ### Rules
 
@@ -287,6 +300,7 @@ npm run dev:mobile
 ### Remote (Staging / Production)
 
 Two workflows exist for pushing migrations to remote projects:
+
 - **One-shot (CI/CD):** `npx supabase db push --project-ref <REF>` — no persistent link needed.
 - **Interactive (developer):** `npx supabase link --project-ref <REF>` followed by `npx supabase db push` — link persists in `.supabase/`.
 
@@ -310,7 +324,8 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - See `docs/DEPLOYMENT.md` for the full migration deployment workflow.
 
 ## Jules Cloud Environment
-The Jules agent execution environment uses a pre-configured headless cloud VM.
-A setup script is provided at `.jules/setup.sh` which can be pasted directly into the Jules UI "Initial Setup" window to automatically bootstrap the environment (Docker, dependencies, database, and validations).
 
-All AI agent configuration files, rules, and skills are maintained in the `.jules` directory (e.g., `.jules/rules`, `.jules/skills`).
+The Jules agent execution environment uses a pre-configured headless cloud VM.
+Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
+
+Agent-oriented rules and skills also live under `.jules/` (e.g., `.jules/rules`, `.jules/skills`) alongside the root `.cursor/` copies where applicable.

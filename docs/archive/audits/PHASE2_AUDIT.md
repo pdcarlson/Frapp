@@ -133,7 +133,7 @@ All routes are under **API version 1** (`/v1/`). Auth: `Authorization: Bearer <s
 
 1. **Commit or CI:** Either commit `openapi.json` so SDK generation is reproducible, or run `openapi:export` in CI and cache the artifact before `api-sdk generate`.
 2. **Contract CI:** Per architecture §10, CI should verify openapi.json is up to date and that `@repo/api-sdk` compiles. Confirm or add this.
-3. **Docs/spec:** If CI or PR rules require it, update `apps/docs` and/or `spec/` for any new endpoints or behaviors (e.g. points/attendance flows).
+3. **Docs/spec:** If CI or PR rules require it, update `docs/` (e.g. `docs/guides/`) and/or `spec/` for any new endpoints or behaviors (e.g. points/attendance flows).
 
 ---
 

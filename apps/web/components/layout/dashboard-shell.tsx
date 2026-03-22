@@ -3,14 +3,40 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Bell, BookOpen, CalendarDays, CircleDollarSign, LayoutDashboard, Menu, Settings, ShieldCheck, Star, Users } from "lucide-react";
+import {
+  AlertCircle,
+  Ban,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  CircleDollarSign,
+  Clock,
+  LayoutDashboard,
+  Menu,
+  Settings,
+  ShieldCheck,
+  Star,
+  Users,
+} from "lucide-react";
+import { useCurrentChapter } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
+import {
+  CurrentChapterPayloadSchema,
+  type CurrentChapterPayload,
+} from "@repo/validation";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -29,7 +55,12 @@ const navItems = [
   { icon: Users, label: "Members", href: "/members", status: "available" },
   { icon: CalendarDays, label: "Events", href: "/events", status: "available" },
   { icon: Star, label: "Points", href: "/points", status: "available" },
-  { icon: CircleDollarSign, label: "Billing", href: "/billing", status: "available" },
+  {
+    icon: CircleDollarSign,
+    label: "Billing",
+    href: "/billing",
+    status: "available",
+  },
   {
     icon: BookOpen,
     label: "Backwork",
@@ -44,23 +75,145 @@ const navItems = [
   },
 ] satisfies NavItem[];
 
-const chapterPreview = {
-  name: "Alpha Beta Chapter",
-  university: "University of State",
-  requestedAccent: "#93C5FD",
-};
-
 const sidebarFocusRingClassName =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950";
 const navIconClassName = "h-4 w-4";
 const statusIconClassName = "h-3.5 w-3.5";
 
-function withAlpha(hexColor: string, opacity: number): string {
-  const normalized = hexColor.replace("#", "");
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
+function subscriptionStatusPresentation(
+  status: CurrentChapterPayload["subscription_status"],
+): {
+  label: string;
+  className: string;
+  Icon: React.ComponentType<{ className?: string }>;
+} {
+  switch (status) {
+    case "active":
+      return {
+        label: "Subscription active",
+        className:
+          "border-success/45 bg-success/15 text-[hsl(var(--success-foreground))]",
+        Icon: ShieldCheck,
+      };
+    case "past_due":
+      return {
+        label: "Payment past due",
+        className:
+          "border-destructive/45 bg-destructive/15 text-[hsl(var(--destructive-foreground))]",
+        Icon: AlertCircle,
+      };
+    case "canceled":
+      return {
+        label: "Subscription canceled",
+        className:
+          "border-muted-foreground/40 bg-muted/25 text-muted-foreground",
+        Icon: Ban,
+      };
+    case "incomplete":
+      return {
+        label: "Subscription incomplete",
+        className:
+          "border-primary/45 bg-primary/15 text-[hsl(var(--primary-foreground))]",
+        Icon: Clock,
+      };
+  }
+}
+
+function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const { data, isPending, isError, isFetching } = useCurrentChapter({
+    chapterId: activeChapterId,
+    enabled: !!activeChapterId,
+  });
+
+  const labelMuted =
+    variant === "sidebar" ? "text-slate-400" : "text-muted-foreground";
+  const nameClass = "mt-1 text-sm font-semibold text-white";
+  const uniClass = "mt-1 text-xs text-slate-400";
+  const shellClass =
+    variant === "sidebar"
+      ? "mt-10 rounded-lg border border-border bg-navy-900/80 p-4"
+      : "mt-8 rounded-lg border border-border bg-navy-900/80 p-4";
+
+  if (!activeChapterId) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Select an active chapter to load branding from the API.
+        </p>
+      </div>
+    );
+  }
+
+  if (isPending || (isFetching && data === undefined)) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-navy-800" />
+        <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-navy-800" />
+        <div className="mt-4 h-8 w-full animate-pulse rounded-full bg-navy-800" />
+      </div>
+    );
+  }
+
+  if (isError || !data) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-amber-200/90">
+          Could not load chapter details.
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Check your session, permissions, and chapter selection.
+        </p>
+      </div>
+    );
+  }
+
+  const parsed = CurrentChapterPayloadSchema.safeParse(data);
+  if (!parsed.success) {
+    return (
+      <div className={shellClass}>
+        <p className={cn("text-xs", labelMuted)}>Chapter</p>
+        <p className="mt-2 text-sm text-amber-200/90">
+          Could not load chapter details.
+        </p>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Check your session, permissions, and chapter selection.
+        </p>
+      </div>
+    );
+  }
+
+  const payload = parsed.data;
+  const chapterAccent = resolveChapterAccentColor(
+    payload.accent_color ?? undefined,
+  );
+  const sub = subscriptionStatusPresentation(payload.subscription_status);
+  const SubIcon = sub.Icon;
+
+  return (
+    <div className={shellClass}>
+      <p className={cn("text-xs", labelMuted)}>Chapter</p>
+      <p className={nameClass}>{payload.name}</p>
+      <p className={uniClass}>{payload.university}</p>
+      <div
+        className={cn(
+          "mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs",
+          sub.className,
+        )}
+      >
+        <SubIcon className={statusIconClassName} />
+        <span>{sub.label}</span>
+      </div>
+      {chapterAccent.fallbackApplied ? (
+        <p className="mt-2 text-[11px] text-slate-500">
+          Accent adjusted for contrast safety.
+        </p>
+      ) : null}
+    </div>
+  );
 }
 
 export function DashboardShell({ children }: DashboardShellProps) {
@@ -68,7 +221,6 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const chapterAccent = resolveChapterAccentColor(chapterPreview.requestedAccent);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -87,18 +239,19 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const pageAction = actionByPath[pathname] ?? "Open Action";
 
   function renderNavItems(onNavigate?: () => void) {
-    return navItems.map((item) => (
+    return navItems.map((item) =>
       item.href ? (
         <Link
           key={item.label}
           href={item.href}
           onClick={onNavigate}
+          aria-current={pathname === item.href ? "page" : undefined}
           className={cn(
             "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
             sidebarFocusRingClassName,
             pathname === item.href
-              ? "bg-primary/20 text-white"
-              : "text-slate-300 hover:bg-slate-800 hover:text-white",
+              ? "border-l-2 border-primary bg-primary/15 text-white"
+              : "border-l-2 border-transparent text-slate-300 hover:bg-navy-900 hover:text-white",
           )}
         >
           <item.icon className={navIconClassName} />
@@ -118,13 +271,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
           <item.icon className={navIconClassName} />
           <span>{item.label}</span>
           {item.statusLabel ? (
-            <span className="ml-auto rounded-full border border-slate-700 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-400">
+            <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
               {item.statusLabel}
             </span>
           ) : null}
         </button>
-      )
-    ));
+      ),
+    );
   }
 
   useEffect(() => {
@@ -150,21 +303,20 @@ export function DashboardShell({ children }: DashboardShellProps) {
         onOpenChange={setNotificationDrawerOpen}
       />
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-        <SheetContent side="left" className="border-slate-800 bg-slate-950 px-4 py-6 text-slate-100">
+        <SheetContent
+          side="left"
+          className="border-border bg-navy-950 px-4 py-6 text-slate-100"
+        >
           <SheetHeader>
             <SheetTitle className="text-white">Navigation</SheetTitle>
-            <SheetDescription className="text-slate-400">
+            <SheetDescription className="text-muted-foreground">
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
           <nav className="mt-6 space-y-1">
             {renderNavItems(() => setMobileNavOpen(false))}
           </nav>
-          <div className="mt-8 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
-            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
-          </div>
+          <DashboardChapterPanel variant="sheet" />
         </SheetContent>
       </Sheet>
       <a
@@ -174,36 +326,18 @@ export function DashboardShell({ children }: DashboardShellProps) {
         Skip to main content
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">
-        <aside className="hidden min-h-screen w-72 border-r border-border bg-slate-950 px-4 py-6 text-slate-100 lg:block">
-          <div className="mb-8 px-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Frapp</p>
-            <p className="mt-2 text-lg font-semibold text-white">Operations Console</p>
+        <aside className="hidden min-h-screen w-72 border-r border-border bg-navy-950 px-4 py-6 text-slate-100 lg:block">
+          <div className="mb-8 border-b border-border pb-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+              Frapp
+            </p>
+            <p className="mt-2 text-lg font-semibold text-white">
+              Operations Console
+            </p>
           </div>
-          <nav className="space-y-1">
-            {renderNavItems()}
-          </nav>
+          <nav className="space-y-1">{renderNavItems()}</nav>
 
-          <div className="mt-10 rounded-lg border border-slate-800 bg-slate-900/80 p-4">
-            <p className="text-xs text-slate-400">Chapter</p>
-            <p className="mt-1 text-sm font-semibold text-white">{chapterPreview.name}</p>
-            <p className="mt-1 text-xs text-slate-400">{chapterPreview.university}</p>
-            <div
-              className="mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs"
-              style={{
-                color: chapterAccent.resolvedAccent,
-                borderColor: withAlpha(chapterAccent.resolvedAccent, 0.45),
-                backgroundColor: withAlpha(chapterAccent.resolvedAccent, 0.12),
-              }}
-            >
-              <ShieldCheck className={statusIconClassName} />
-              <span>Subscription Active</span>
-            </div>
-            {chapterAccent.fallbackApplied ? (
-              <p className="mt-2 text-[11px] text-slate-500">
-                Accent adjusted for contrast safety.
-              </p>
-            ) : null}
-          </div>
+          <DashboardChapterPanel variant="sidebar" />
         </aside>
 
         <div className="min-h-screen flex-1">

@@ -16,6 +16,7 @@ Use this area for:
 - `DB_PROMOTION_RUNBOOK.md`
 - `DB_ROLLBACK_PLAYBOOK.md`
 - `CODERABBIT_RUNBOOK.md`
+- `LOCAL_DEV.md` — **Default `npm run dev:stack`; ports, per-app commands, fallbacks**
 - `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
 - `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
 - `PR_REVIEW_PROCESS.md`
@@ -23,6 +24,7 @@ Use this area for:
 - `INCIDENT_RESPONSE_WEBHOOK_FAILURES.md`
 - `INCIDENT_RESPONSE_DB_LATENCY.md`
 - `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
+- `AGENT_INFRA.md` — CI/GitHub/PAT reference for agents
 - `ALERT_ROUTING.md`
 - `ACCESSIBILITY_TESTING_PROTOCOL.md`
 - `STATE_MICROCOPY_PACK.md`
@@ -30,9 +32,12 @@ Use this area for:
 - `ICONOGRAPHY_GUIDELINES.md`
 - `ICON_INTENT_MAP.md`
 - `TYPOGRAPHY_GUIDELINES.md`
+- `BRAND_ASSETS.md` — Frapp logos, favicons, OG, Expo export notes
 - `MOBILE_INTERACTION_SMOKE_CHECKLIST.md`
 - `MOBILE_THREAD_RESOLUTION_MAP.md`
 - `PR_CONSOLIDATION_CANONICAL_PR_BODY.md`
 - `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
+- `DOCS_CI.md` — docs/spec PR gate (`check-docs-impact.mjs`) and trade-offs
+- `DOCUMENTATION_CONVENTIONS.md` — where to put updates (`docs/` vs `spec/`), DRY, CI alignment
 
-Public-facing product docs live in `apps/docs/`.
+Developer-facing guides (canonical, markdown) live in [`docs/guides/`](../guides/README.md). There is no separate docs web app in the monorepo; a public docs site may be added later.

@@ -7,6 +7,7 @@
     "dev:api": "npx --no-install infisical run --env=local --path=/ -- npm run start:dev -w apps/api",
     "dev:web": "npx --no-install infisical run --env=local --path=/ -- npm run dev -w apps/web",
     "dev:landing": "npx --no-install infisical run --env=local --path=/ -- npm run dev -w apps/landing",
+    "dev:stack": "npx --no-install infisical run --env=local --path=/ -- concurrently -n api,web,landing -c blue,green,yellow \"npm run start:dev -w apps/api\" \"npm run dev -w apps/web\" \"npm run dev -w apps/landing\"",
     "dev:mobile": "npx --no-install infisical run --env=local --path=/ -- npm run start -w apps/mobile",
     "lint": "turbo run lint",
     "lint:api": "npm run lint -w apps/api",
@@ -15,9 +16,12 @@
     "check-types": "turbo run check-types",
     "check:api-contract": "node scripts/check-api-contract-drift.mjs",
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
+    "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
+    "check:brand-assets": "node scripts/check-brand-assets.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "@infisical/cli": "^0.43.40",
     "prettier": "^3.7.4",
     "turbo": "^2.8.7",

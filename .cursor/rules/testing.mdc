@@ -1,0 +1,23 @@
+---
+description: Running tests, verifying code changes, CI parity checks, or setting up the test environment
+globs:
+  - "apps/api/src/**/*.spec.ts"
+  - "apps/api/src/**/*.service.ts"
+  - "apps/api/src/**/*.guard.ts"
+  - "apps/api/src/**/*.interceptor.ts"
+  - "apps/api/src/interface/controllers/**/*.ts"
+  - "apps/api/src/interface/dtos/**/*.ts"
+  - ".github/workflows/ci.yml"
+alwaysApply: false
+---
+
+# Testing
+
+Read `.cursor/skills/testing.md` before running tests, writing test cases, or verifying changes.
+
+Key points:
+- Unit tests require only `npm install` — no Docker, Supabase, or env files needed
+- Manual/integration tests require Docker + Supabase. Prefer Infisical-injected envs (`npm run dev:api`) as the primary method; fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`, so `.env.local` is a fallback, not the primary method)
+- Always run the CI parity checklist before pushing: lint, check-types, api tests, contract check, migration check
+- Each spec defines its own mocks inline — no shared fixtures
+- Use `@nestjs/testing` TestingModule with `{ provide: TOKEN, useValue: mockObj }` pattern

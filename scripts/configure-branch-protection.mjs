@@ -28,7 +28,7 @@ const CI_CHECKS = [
 ];
 
 const DOCS_CHECKS = [
-  "build-and-lint",
+  "docs-spec-sync",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];

@@ -74,11 +74,13 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `migration-safety` | Migration filename + docs validation |
 | `mobile-validate` | Mobile lint + typecheck |
 
+**Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
+
 **Docs check (from `.github/workflows/docs.yml`):**
 
 | Check name | What it validates |
 | --- | --- |
-| `build-and-lint` | Docs build + lint + spec sync |
+| `docs-spec-sync` | Docs/spec sync on PRs (`check-docs-impact.mjs`; no `apps/docs` build) |
 
 ### Vercel policy (not a required check)
 
@@ -116,7 +118,7 @@ GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
 ```
 
 3. Compare names exactly (including capitalization and punctuation):
-   - Required checks use emitted check-run names (`api-tests`, `build-and-lint`)
+   - Required checks use emitted check-run names (`api-tests`, `docs-spec-sync`)
 
 Common causes and fixes:
 

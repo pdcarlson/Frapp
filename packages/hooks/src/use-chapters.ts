@@ -3,16 +3,24 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
-export function useCurrentChapter() {
+export function useCurrentChapter(options?: {
+  chapterId?: string | null;
+  enabled?: boolean;
+}) {
   const client = useFrappClient();
+  const chapterId = options?.chapterId ?? null;
+  const baseEnabled = options?.enabled ?? true;
+  const enabled = baseEnabled && !!chapterId;
+
   return useQuery({
-    queryKey: ["chapters", "current"],
+    queryKey: ["chapters", "current", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/chapters/current");
       if (error) throw error;
       return data;
     },
     staleTime: 300_000,
+    enabled,
   });
 }
 
@@ -72,10 +80,9 @@ export function useConfirmLogo() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: { storage_path: string }) => {
-      const { data, error } = await client.POST(
-        "/v1/chapters/current/logo",
-        { body },
-      );
+      const { data, error } = await client.POST("/v1/chapters/current/logo", {
+        body,
+      });
       if (error) throw error;
       return data;
     },
@@ -90,9 +97,7 @@ export function useDeleteLogo() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await client.DELETE(
-        "/v1/chapters/current/logo",
-      );
+      const { data, error } = await client.DELETE("/v1/chapters/current/logo");
       if (error) throw error;
       return data;
     },

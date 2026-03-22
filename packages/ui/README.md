@@ -8,7 +8,6 @@ This package contains reusable, style-consistent building blocks that can be sha
 
 - `apps/web`
 - `apps/landing`
-- `apps/docs`
 
 ## Current primitives
 

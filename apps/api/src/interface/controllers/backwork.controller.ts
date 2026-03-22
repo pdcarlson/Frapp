@@ -19,7 +19,10 @@ import { BackworkService } from '../../application/services/backwork.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { RequirePermissions } from '../decorators/permissions.decorator';
+import {
+  RequireAnyOfPermissions,
+  RequirePermissions,
+} from '../decorators/permissions.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -33,13 +36,16 @@ import {
 
 @ApiTags('Backwork')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, ChapterGuard)
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequireAnyOfPermissions(
+  SystemPermissions.BACKWORK_UPLOAD,
+  SystemPermissions.BACKWORK_ADMIN,
+)
 @Controller('backwork')
 export class BackworkController {
   constructor(private readonly backworkService: BackworkService) {}
 
   @Post('upload-url')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Request a signed upload URL' })
   async requestUploadUrl(
@@ -54,7 +60,6 @@ export class BackworkController {
   }
 
   @Post()
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Confirm upload and store resource metadata' })
   async confirmUpload(
@@ -109,7 +114,6 @@ export class BackworkController {
   }
 
   @Patch('departments/:id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Update department name' })
   async updateDepartment(
@@ -132,7 +136,6 @@ export class BackworkController {
   }
 
   @Delete(':id')
-  @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Delete a backwork resource' })
   async delete(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
