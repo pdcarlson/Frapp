@@ -71,7 +71,7 @@ describe('AttendanceService', () => {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
       create: jest.fn(),
-      createMany: jest.fn(),
+      createMany: jest.fn().mockImplementation(async (data) => data),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -122,6 +122,8 @@ describe('AttendanceService', () => {
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
       mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
       mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.checkIn('evt-1', 'user-1', 'ch-1');
 
@@ -193,6 +195,7 @@ describe('AttendanceService', () => {
         ForbiddenException,
       );
       expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
       jest.useRealTimers();
     });
@@ -204,10 +207,10 @@ describe('AttendanceService', () => {
 
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
       mockPointTxnRepo.create.mockRejectedValue(
         new Error('points write failed'),
       );
+      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         'points write failed',
@@ -395,7 +398,6 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
@@ -417,7 +419,6 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(roleEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
@@ -438,7 +439,6 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([presentRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
@@ -455,7 +455,6 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([absentRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
@@ -476,7 +475,6 @@ describe('AttendanceService', () => {
       mockEventRepo.findById.mockResolvedValue(pastEvent);
       mockMemberRepo.findByChapter.mockResolvedValue(members);
       mockAttendanceRepo.findByEvent.mockResolvedValue([excusedRecord]);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
 
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
@@ -486,6 +484,19 @@ describe('AttendanceService', () => {
         (c) => c.user_id,
       );
       expect(createdUserIds).not.toContain('user-2');
+    });
+
+    it('should propagate errors from createMany', async () => {
+      mockEventRepo.findById.mockResolvedValue(pastEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue(members);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+
+      const dbError = new Error('Database connection failed');
+      mockAttendanceRepo.createMany.mockRejectedValue(dbError);
+
+      await expect(service.markAutoAbsent('evt-1', 'ch-1')).rejects.toThrow(
+        dbError,
+      );
     });
 
     it('should reject if called before grace period ends', async () => {

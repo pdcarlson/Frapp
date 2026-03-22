@@ -232,13 +232,13 @@ export class AttendanceService {
       marked_by: null,
     }));
 
+    let marked = 0;
     if (recordsToCreate.length > 0) {
       // ⚡ Bolt: Optimize bulk database inserts
       // Uses createMany to perform a single query instead of N+1 sequential/concurrent queries.
-      await this.attendanceRepo.createMany(recordsToCreate);
+      const created = await this.attendanceRepo.createMany(recordsToCreate);
+      marked = created.length;
     }
-
-    const marked = recordsToCreate.length;
 
     return { marked };
   }

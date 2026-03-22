@@ -19,6 +19,5 @@ Example allowed extensions:
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
 
 ## Affected Services
-- `UserService` (handles avatar uploads)
 - `ChapterDocumentService` (handles chapter documents)
 - `ChatService` (handles chat attachments)

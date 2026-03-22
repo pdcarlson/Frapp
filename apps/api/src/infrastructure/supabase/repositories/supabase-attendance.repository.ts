@@ -55,12 +55,19 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     return created as EventAttendance;
   }
 
-  async createMany(data: Partial<EventAttendance>[]): Promise<void> {
-    if (data.length === 0) return;
-    const { error } = await this.supabase
+  async createMany(
+    data: Partial<EventAttendance>[],
+  ): Promise<EventAttendance[]> {
+    if (data.length === 0) return [];
+    const { data: created, error } = await this.supabase
       .from('event_attendance')
-      .insert(data as never[]);
+      .upsert(data as never[], {
+        onConflict: 'event_id,user_id',
+        ignoreDuplicates: true,
+      })
+      .select();
     if (error) throw error;
+    return (created as EventAttendance[]) || [];
   }
 
   async update(
