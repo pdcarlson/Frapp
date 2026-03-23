@@ -71,6 +71,7 @@ describe('AttendanceService', () => {
       findByEvent: jest.fn(),
       findByEventAndUser: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -399,10 +400,12 @@ describe('AttendanceService', () => {
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       expect(result.marked).toBe(3);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(3);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
         expect.objectContaining({ status: 'ABSENT', user_id: 'user-1' }),
-      );
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-2' }),
+        expect.objectContaining({ status: 'ABSENT', user_id: 'user-3' }),
+      ]);
     });
 
     it('should mark ABSENT for role-targeted event (only required role members)', async () => {
@@ -420,10 +423,10 @@ describe('AttendanceService', () => {
 
       // Only user-3 has role-exec
       expect(result.marked).toBe(1);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledTimes(1);
-      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
         expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
-      );
+      ]);
     });
 
     it('should skip members who already checked in (PRESENT)', async () => {
@@ -441,6 +444,11 @@ describe('AttendanceService', () => {
 
       // user-1 is skipped; user-2, user-3 are marked absent
       expect(result.marked).toBe(2);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledTimes(1);
+      expect(mockAttendanceRepo.createMany).toHaveBeenCalledWith([
+        expect.objectContaining({ user_id: 'user-2', status: 'ABSENT' }),
+        expect.objectContaining({ user_id: 'user-3', status: 'ABSENT' }),
+      ]);
     });
 
     it('should not create duplicate ABSENT records when one already exists', async () => {
@@ -457,8 +465,8 @@ describe('AttendanceService', () => {
       const result = await service.markAutoAbsent('evt-1', 'ch-1');
 
       expect(result.marked).toBe(2);
-      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
-        (call) => call[0].user_id,
+      const createdUserIds = mockAttendanceRepo.createMany.mock.calls[0][0].map(
+        (data) => data.user_id,
       );
       expect(createdUserIds).not.toContain('user-2');
     });
@@ -479,8 +487,8 @@ describe('AttendanceService', () => {
 
       expect(result.marked).toBe(2);
       // user-2 should not have been marked
-      const createdUserIds = mockAttendanceRepo.create.mock.calls.map(
-        (c) => c[0].user_id,
+      const createdUserIds = mockAttendanceRepo.createMany.mock.calls[0][0].map(
+        (c) => c.user_id,
       );
       expect(createdUserIds).not.toContain('user-2');
     });
@@ -512,6 +520,7 @@ describe('AttendanceService', () => {
       expect(result.marked).toBe(0);
       expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
       expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
     });
   });
 });

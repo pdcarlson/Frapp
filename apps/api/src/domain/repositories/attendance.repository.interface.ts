@@ -10,6 +10,7 @@ export interface IAttendanceRepository {
     userId: string,
   ): Promise<EventAttendance | null>;
   create(data: Partial<EventAttendance>): Promise<EventAttendance>;
+  createMany(data: Partial<EventAttendance>[]): Promise<void>;
   update(id: string, data: Partial<EventAttendance>): Promise<EventAttendance>;
   delete(id: string): Promise<void>;
 }
