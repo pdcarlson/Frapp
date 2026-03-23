@@ -37,7 +37,6 @@ import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 type DashboardShellProps = {
   children: React.ReactNode;
@@ -349,22 +348,16 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <h1 className="text-lg font-semibold">{pageTitle}</h1>
               </div>
               <div className="flex items-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="lg:hidden"
-                      aria-label="Open navigation menu"
-                      onClick={() => setMobileNavOpen(true)}
-                    >
-                      <Menu className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Open navigation menu</p>
-                  </TooltipContent>
-                </Tooltip>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="lg:hidden"
+                  aria-label="Open navigation menu"
+                  title="Open navigation menu"
+                  onClick={() => setMobileNavOpen(true)}
+                >
+                  <Menu className="h-4 w-4" />
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -374,21 +367,15 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 >
                   Search (⌘K)
                 </Button>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Notifications"
-                      onClick={() => setNotificationDrawerOpen(true)}
-                    >
-                      <Bell className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Notifications</p>
-                  </TooltipContent>
-                </Tooltip>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Notifications"
+                  title="Notifications"
+                  onClick={() => setNotificationDrawerOpen(true)}
+                >
+                  <Bell className="h-4 w-4" />
+                </Button>
                 <ThemeToggle />
                 <Button size="sm" asChild>
                   <Link href="#">{pageAction}</Link>
