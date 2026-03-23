@@ -5,6 +5,7 @@ import { Moon, Monitor, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const THEME_LABEL = {
   light: "Light",
@@ -33,17 +34,23 @@ export function ThemeToggle() {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon"
-          aria-label={`Theme mode: ${THEME_LABEL[resolvedTheme as keyof typeof THEME_LABEL] ?? "System"}`}
-          title="Toggle theme"
-        >
-          {icon}
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label={`Theme mode: ${THEME_LABEL[resolvedTheme as keyof typeof THEME_LABEL] ?? "System"}`}
+            >
+              {icon}
+            </Button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>
+          <p>Toggle theme</p>
+        </TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => setTheme("system")}>
           System
