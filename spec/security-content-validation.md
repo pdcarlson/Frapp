@@ -18,6 +18,9 @@ Example allowed extensions:
 ## Error Handling
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
 
+## SVG Upload Risks
+The `image/svg+xml` content type and `.svg` extension must **never** be included in these allowlists unless rigorous, server-side SVG sanitization is performed, as SVGs can embed arbitrary JavaScript (XSS).
+
 ## Affected Services
 - `UserService` (handles avatar uploads)
 - `ChapterDocumentService` (handles chapter documents)
