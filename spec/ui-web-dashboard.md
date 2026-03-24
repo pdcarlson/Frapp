@@ -661,6 +661,7 @@ Step 1: Chapter Info     → Step 2: Accept Terms     → Step 3: Payment
 | Reduced motion      | `prefers-reduced-motion` → disable animations                                   |
 | Skip to content     | Hidden "Skip to main content" link, visible on focus                            |
 | Form errors         | Associated `aria-describedby` with error messages, `aria-invalid` on fields     |
+| Command triggers    | Command menu triggers must spell out shortcuts in `aria-label` (e.g., "Command K") |
 
 ## Checkbox Component Handlers
 
