@@ -18,3 +18,7 @@ These markdown files are the **source of truth** for Frapp developer-facing guid
 **Also read:** product and implementation specs in [`spec/`](../../spec/README.md), operator runbooks in [`docs/internal/`](../internal/README.md), and **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../internal/DOCUMENTATION_CONVENTIONS.md)** (where to document PR changes).
 
 **Maintenance:** `useCurrentChapter` in `@repo/hooks` keys the React Query cache by `chapterId` (`["chapters","current", chapterId]`) so switching the active chapter refetches; pass `chapterId` from the chapter store at call sites.
+
+## Developer notes for agents
+
+- Replaced multiple individual \`create\` queries mapped inside \`Promise.allSettled\` in \`AttendanceService.markAutoAbsent\` with a single \`createMany\` repository method. This addresses an N+1 API call issue when bulk inserting via Supabase.

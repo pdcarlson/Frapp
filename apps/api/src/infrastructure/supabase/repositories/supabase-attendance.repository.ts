@@ -70,6 +70,14 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     return updated as EventAttendance;
   }
 
+  async createMany(data: Partial<EventAttendance>[]): Promise<void> {
+    if (data.length === 0) return;
+    const { error } = await this.supabase
+      .from('event_attendance')
+      .insert(data as never);
+    if (error) throw error;
+  }
+
   async delete(id: string): Promise<void> {
     const { error } = await this.supabase
       .from('event_attendance')
