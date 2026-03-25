@@ -102,7 +102,6 @@ describe('UserService', () => {
   });
 
   describe('requestAvatarUploadUrl', () => {
-
     it('should throw BadRequestException for invalid file extension', async () => {
       await expect(
         service.requestAvatarUploadUrl(
