@@ -409,18 +409,6 @@ describe('ChapterService', () => {
     });
   });
 
-  it('should reject logo upload with svg content type (XSS risk)', async () => {
-    await expect(
-      service.requestLogoUploadUrl('ch-1', 'logo.svg', 'image/svg+xml'),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it('should reject logo upload with svg extension (XSS risk)', async () => {
-    await expect(
-      service.requestLogoUploadUrl('ch-1', 'logo.svg', 'image/png'),
-    ).rejects.toThrow(BadRequestException);
-  });
-
   it('should reject logo upload with invalid content type', async () => {
     await expect(
       service.requestLogoUploadUrl('ch-1', 'logo.png', 'application/pdf'),

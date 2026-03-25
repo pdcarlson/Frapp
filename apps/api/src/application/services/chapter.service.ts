@@ -32,8 +32,16 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set([
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
 ]);
-const ALLOWED_LOGO_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
+const ALLOWED_LOGO_EXTENSIONS = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'svg',
+]);
 const LIGHT_MODE_BACKGROUND = '#F8FAFC';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
