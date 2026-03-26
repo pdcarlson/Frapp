@@ -672,6 +672,3 @@ Step 1: Chapter Info     → Step 2: Accept Terms     → Step 3: Payment
 ### Events Table Refactoring
 
 - The deeply nested inline `onChange` event handlers for the checkboxes in the events table (in `apps/web/app/(dashboard)/events/page.tsx`) have been extracted into named functions (`toggleAllVisibleEvents` and `toggleEventSelection`) to improve maintainability and readability without altering UI functionality.
-
-## Accessibility (a11y)
-- Search `<Input>` fields should always include an `aria-label` attribute describing their purpose, ensuring screen readers provide sufficient context (e.g., "Search events by name or location", "Search leaderboard by user id", "Search transaction descriptions").
