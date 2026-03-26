@@ -118,10 +118,11 @@ Example: attendance auto-absent filtering now precomputes `required_role_ids` in
 ### Bulk Insert Optimizations
 
 When performing multiple database insertions concurrently (e.g., via `Promise.allSettled` or `Promise.all`), there is a significant performance penalty due to N+1 network requests. Instead, utilize the Supabase JavaScript client's native support for bulk array inserts:
-\`\`\`ts
+
+```ts
 // BAD: N+1 sequential/concurrent requests
-await Promise.allSettled(items.map(i => repo.create(i)));
+await Promise.allSettled(items.map((i) => repo.create(i)));
 
 // GOOD: Single bulk atomic request
 await repo.createMany(items);
-\`\`\`
+```
