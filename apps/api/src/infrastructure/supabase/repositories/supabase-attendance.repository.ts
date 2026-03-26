@@ -55,6 +55,20 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
     return created as EventAttendance;
   }
 
+  async createMany(
+    rows: Partial<EventAttendance>[],
+  ): Promise<EventAttendance[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const { data, error } = await this.supabase
+      .from('event_attendance')
+      .insert(rows as never)
+      .select();
+    if (error) throw error;
+    return (data as EventAttendance[]) ?? [];
+  }
+
   async update(
     id: string,
     data: Partial<EventAttendance>,
