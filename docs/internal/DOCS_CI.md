@@ -27,3 +27,6 @@ If the team wants less noise or stricter mapping:
 - **Changelog:** allow a single audited file to count as the doc touch (still easy to make meaningless updates).
 
 Any change to the script should update this file, `AGENTS.md`, and the PR template so agents and humans share one story.
+
+## Maintenance Log
+* Added unit tests for React Query Backwork hooks (`packages/hooks/src/use-backwork.spec.tsx`).
