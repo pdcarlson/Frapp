@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import {
@@ -16,10 +16,10 @@ import {
 } from "./use-backwork";
 import { FrappClientProvider } from "./use-frapp-client";
 
-const BACKWORK_QUERY_KEY = ["backwork"] as const;
-const BACKWORK_DEPARTMENTS_QUERY_KEY = ["backwork", "departments"] as const;
-
 describe("useBackwork hooks", () => {
+const BACKWORK_KEY = ["backwork"];
+const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
+
   let queryClient: QueryClient;
 
   beforeEach(() => {
@@ -133,6 +133,7 @@ describe("useBackwork hooks", () => {
       await act(async () => {
         await Promise.resolve();
       });
+
       expect(mockGet).not.toHaveBeenCalled();
     });
 
@@ -275,7 +276,7 @@ describe("useBackwork hooks", () => {
 
       expect(mockPost).toHaveBeenCalledWith("/v1/backwork", { body });
       expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: BACKWORK_QUERY_KEY,
+        queryKey: BACKWORK_KEY,
       });
     });
 
@@ -315,7 +316,7 @@ describe("useBackwork hooks", () => {
         params: { path: { id: "res1" } },
       });
       expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: BACKWORK_QUERY_KEY,
+        queryKey: BACKWORK_KEY,
       });
     });
 
@@ -351,7 +352,7 @@ describe("useBackwork hooks", () => {
         body: { name: "Computer Science" },
       });
       expect(invalidateQueriesSpy).toHaveBeenCalledWith({
-        queryKey: BACKWORK_DEPARTMENTS_QUERY_KEY,
+        queryKey: BACKWORK_DEPARTMENTS_KEY,
       });
     });
 
