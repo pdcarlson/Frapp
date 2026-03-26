@@ -223,21 +223,21 @@ export class AttendanceService {
       return !isCheckedInOrExcused && !hasExistingRecord;
     });
 
-    const results = await Promise.allSettled(
-      membersToMark.map((member) =>
-        this.attendanceRepo.create({
-          event_id: eventId,
-          user_id: member.user_id,
-          status: 'ABSENT',
-          check_in_time: null,
-          excuse_reason: null,
-          marked_by: null,
-        }),
-      ),
-    );
+    if (membersToMark.length === 0) {
+      return { marked: 0 };
+    }
 
-    const marked = results.filter((r) => r.status === 'fulfilled').length;
+    const rows = membersToMark.map((member) => ({
+      event_id: eventId,
+      user_id: member.user_id,
+      status: 'ABSENT' as const,
+      check_in_time: null,
+      excuse_reason: null,
+      marked_by: null,
+    }));
 
-    return { marked };
+    const created = await this.attendanceRepo.createMany(rows);
+
+    return { marked: created.length };
   }
 }

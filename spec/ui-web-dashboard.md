@@ -661,6 +661,13 @@ Step 1: Chapter Info     → Step 2: Accept Terms     → Step 3: Payment
 | Reduced motion      | `prefers-reduced-motion` → disable animations                                   |
 | Skip to content     | Hidden "Skip to main content" link, visible on focus                            |
 | Form errors         | Associated `aria-describedby` with error messages, `aria-invalid` on fields     |
+| Command triggers    | Command menu triggers must spell out shortcuts in `aria-label` (e.g., "Command K") |
+
+### 2024-03-20 - Adding Accessibility Attributes to Command Menu Triggers
+
+**Learning:** Command menu triggers often rely on visual cues (like "⌘K") to indicate their functionality. Without an explicit `aria-label`, screen readers may simply read the button text "Search (⌘K)" which can be confusing or lack full context, particularly if the user relies on a keyboard.
+
+**Action:** When adding command menu triggers or other shortcut-bound buttons, ensure they have a descriptive `aria-label` that clarifies the action and spells out the keyboard shortcut in a readable format for AT users (e.g., "Command K").
 
 ## Checkbox Component Handlers
 

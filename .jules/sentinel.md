@@ -10,3 +10,7 @@
 **Vulnerability:** File extension validation relied on a blocklist (`BLOCKED_EXTENSIONS`) to prevent executable uploads (`.exe`, `.sh`, etc.). However, blocklists are inherently insecure because attackers can use obscure or unknown executable extensions to bypass the check.
 **Learning:** Security controls should always be positive (allowlists) rather than negative (blocklists). Only explicitly known safe values should be permitted. If legacy file formats are allowed, their corresponding MIME types must also be explicitly added to the content-type allowlist to ensure complete end-to-end validation.
 **Prevention:** Replaced `BLOCKED_EXTENSIONS` with `ALLOWED_EXTENSIONS` in `ChapterDocumentService` and `ChatService`. Updated the security specification to explicitly forbid the use of blocklists for file upload validations.
+## 2026-03-24 - [SVG Upload Stored XSS]
+**Vulnerability:** Allowed SVG file uploads for chapter branding/logos without sanitization.
+**Learning:** `image/svg+xml` was included in `ALLOWED_LOGO_CONTENT_TYPES` and `svg` in `ALLOWED_LOGO_EXTENSIONS`. SVGs can contain embedded JavaScript `<script>` tags, which execute in the browser when the image is rendered or viewed directly, leading to Stored XSS.
+**Prevention:** Strictly exclude `image/svg+xml` and `.svg` from image upload allowlists unless explicit, rigorous SVG sanitization (e.g., DOMPurify for SVGs) is implemented on the backend.

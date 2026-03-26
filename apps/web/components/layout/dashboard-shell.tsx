@@ -362,6 +362,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   variant="outline"
                   size="sm"
                   className="inline-flex"
+                  aria-label="Search commands and resources (Command K)"
                   title="Search commands and resources"
                   onClick={() => setCommandMenuOpen(true)}
                 >

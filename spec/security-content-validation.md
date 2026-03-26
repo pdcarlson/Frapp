@@ -6,7 +6,9 @@ When generating signed URLs for secure file uploads (such as uploading to Supaba
 ## Validations Required
 
 ### 1. Allowed Content Types
-A strict `ALLOWED_CONTENT_TYPES` Set must be maintained in the service to validate the `input.contentType`. Example safe content types:
+A strict `ALLOWED_CONTENT_TYPES` Set must be maintained in the service to validate the `input.contentType`. **IMPORTANT**: SVG files (`image/svg+xml`, `.svg`) must **never** be allowed in `ALLOWED_CONTENT_TYPES` or `ALLOWED_EXTENSIONS` without an explicit and robust server-side sanitization step. SVGs can contain embedded JavaScript `<script>` tags, leading to Stored XSS when rendered in the user's browser.
+
+Example safe content types:
 - Images: `image/jpeg`, `image/png`, `image/gif`, `image/webp`
 - Documents: `application/pdf`, `text/plain`, `text/csv`, Office documents (`.docx`, `.xlsx`, `.pptx`)
 
@@ -18,7 +20,11 @@ Example allowed extensions:
 ## Error Handling
 If either validation fails, the service must throw a `BadRequestException` immediately, returning an HTTP 400 response and preventing the signed URL from being generated.
 
+## SVG Upload Risks
+The `image/svg+xml` content type and `.svg` extension must **never** be included in these allowlists unless rigorous, server-side SVG sanitization is performed, as SVGs can embed arbitrary JavaScript (XSS).
+
 ## Affected Services
 - `UserService` (handles avatar uploads)
 - `ChapterDocumentService` (handles chapter documents)
 - `ChatService` (handles chat attachments)
+- `ChapterService` (handles chapter logos)
