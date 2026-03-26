@@ -264,7 +264,6 @@ export default function PointsPage() {
             <div className="mb-3 relative">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                aria-label="Search leaderboard by user id"
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by user id"
@@ -311,7 +310,6 @@ export default function PointsPage() {
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
-                  aria-label="Search transaction descriptions"
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
