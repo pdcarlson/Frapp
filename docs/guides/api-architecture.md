@@ -114,3 +114,15 @@ When you add new modules:
 When a service does repeated membership checks in hot loops, prefer a `Set` lookup over nested `Array.includes` calls.
 
 Example: attendance auto-absent filtering now precomputes `required_role_ids` into a `Set` before iterating members, reducing per-check lookup cost from O(K) to O(1) while keeping behavior unchanged.
+
+### Bulk Insert Optimizations
+
+When performing multiple database insertions concurrently (e.g., via `Promise.allSettled` or `Promise.all`), there is a significant performance penalty due to N+1 network requests. Instead, utilize the Supabase JavaScript client's native support for bulk array inserts:
+
+```ts
+// BAD: N+1 sequential/concurrent requests
+await Promise.allSettled(items.map((i) => repo.create(i)));
+
+// GOOD: Single bulk atomic request
+await repo.createMany(items);
+```
