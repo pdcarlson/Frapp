@@ -13,6 +13,9 @@
  * - In PR context (--base and --head provided): diffs the PR's changed files.
  * - In push context (no args): diffs HEAD against HEAD~1.
  * - If API source files changed but contract artifacts did not, the check fails.
+ * - Fallback: regenerates OpenAPI + SDK types; if they match the committed files,
+ *   the check passes (covers controller-only changes that do not affect the contract,
+ *   e.g. security decorators).
  */
 
 import { execSync } from "node:child_process";
@@ -195,7 +198,41 @@ function main() {
   console.error("Fix: run the following commands and commit the results:");
   console.error("  npm run openapi:export -w apps/api");
   console.error("  npm run generate -w packages/api-sdk");
-  process.exit(1);
+  try {
+    execSync("npm run openapi:export -w apps/api", {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+    execSync("npm run generate -w packages/api-sdk", {
+      encoding: "utf8",
+      stdio: "pipe",
+    });
+  } catch (e) {
+    console.error("");
+    console.error(
+      "Regeneration failed (install deps and ensure API bootstrap prerequisites).",
+    );
+    if (e instanceof Error && "stderr" in e && e.stderr) {
+      console.error(String(e.stderr));
+    }
+    process.exit(1);
+  }
+
+  try {
+    execSync("git diff --quiet -- apps/api/openapi.json packages/api-sdk/src/types.ts", {
+      encoding: "utf8",
+    });
+  } catch {
+    console.error("");
+    console.error(
+      "Regenerated contract differs from committed files. Commit the updated artifacts.",
+    );
+    process.exit(1);
+  }
+
+  console.log(
+    "API contract drift check passed (regenerated artifacts match committed files).",
+  );
 }
 
 main();

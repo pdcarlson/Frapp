@@ -98,7 +98,7 @@ Deploy workflow may still reference transitional GitHub secrets (`SUPABASE_ACCES
 - `npm run test -w apps/api` — Jest
 - `npm run build` — turbo build
 - `npm run check-types` — turbo TypeScript
-- `npm run check:api-contract` — OpenAPI / SDK drift
+- `npm run check:api-contract` — OpenAPI / SDK drift (diffs the changeset; if artifacts are missing, regenerates and passes when output matches committed files)
 - `npm run check:migration-safety` — migrations + promotion docs
 
 Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../.cursor/skills/testing.md).
