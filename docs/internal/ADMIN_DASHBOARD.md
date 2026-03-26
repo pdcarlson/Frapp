@@ -12,3 +12,5 @@ The main landing page for the admin dashboard provides an overview card indicati
 
 ## Roadmap
 As new administrative workflows are completed, the initial placeholder page will be expanded to support full navigation.
+
+- 🧪 [testing]: Added unit test coverage for SupabaseStorageService.
