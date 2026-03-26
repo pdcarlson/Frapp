@@ -10,7 +10,8 @@
     "start": "next start",
     "lint": "eslint --max-warnings 0",
     "check-types": "next typegen && tsc --noEmit",
-    "test:visual": "playwright test"
+    "test:visual": "playwright test",
+    "test": "vitest run"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",
@@ -55,10 +56,15 @@
     "@playwright/test": "^1.58.2",
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
     "eslint": "^9.39.1",
-    "typescript": "5.9.2"
+    "jsdom": "^29.0.1",
+    "typescript": "5.9.2",
+    "vitest": "^4.1.2"
   }
 }
