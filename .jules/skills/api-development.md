@@ -176,9 +176,7 @@ Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
 ## Auth and guard chain
 
-**Rate limiting is global.** `AppModule` registers `ThrottlerGuard` via `APP_GUARD` alongside `ThrottlerModule` (read/write named limits). Exempt external callbacks (e.g. Stripe webhooks) with `@SkipThrottle({ read: true, write: true })` on the controller when both named throttlers apply.
-
-**Auth-related guards are NOT globally registered.** There is no global `SupabaseAuthGuard` / `ChapterGuard` in `app.module.ts`. Apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()`. Missing a decorator means the route is unprotected for auth.
+**These guards are NOT globally registered.** There is no `APP_GUARD` or `APP_INTERCEPTOR` provider in `app.module.ts`. You must apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()`. Missing a decorator means the route is unprotected.
 
 Recommended per-route pattern (applied in this order):
 
@@ -209,9 +207,9 @@ Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
 
 ### Special cases
 
-- `/health` — no auth guards; still subject to global rate limits
+- `/health` — no guards at all
 - `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncInterceptor` only (no chapter exists yet)
-- `POST /v1/webhooks/stripe` — signature verification in controller; `@SkipThrottle` so provider bursts are not 429’d
+- `POST /v1/billing/webhook` — `StripeWebhookGuard` (signature verification, no JWT)
 
 ---
 

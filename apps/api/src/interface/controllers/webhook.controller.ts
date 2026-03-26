@@ -11,7 +11,6 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { SkipThrottle } from '@nestjs/throttler';
 import { BillingService } from '../../application/services/billing.service';
 import {
   BILLING_PROVIDER,
@@ -19,7 +18,6 @@ import {
 } from '../../domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
 
-@SkipThrottle({ read: true, write: true })
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhookController {

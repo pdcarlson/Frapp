@@ -10,7 +10,3 @@
 **Vulnerability:** File extension validation relied on a blocklist (`BLOCKED_EXTENSIONS`) to prevent executable uploads (`.exe`, `.sh`, etc.). However, blocklists are inherently insecure because attackers can use obscure or unknown executable extensions to bypass the check.
 **Learning:** Security controls should always be positive (allowlists) rather than negative (blocklists). Only explicitly known safe values should be permitted. If legacy file formats are allowed, their corresponding MIME types must also be explicitly added to the content-type allowlist to ensure complete end-to-end validation.
 **Prevention:** Replaced `BLOCKED_EXTENSIONS` with `ALLOWED_EXTENSIONS` in `ChapterDocumentService` and `ChatService`. Updated the security specification to explicitly forbid the use of blocklists for file upload validations.
-## 2026-03-26 - Missing global ThrottlerGuard registration
-**Vulnerability:** Missing rate limiting on the API layer, allowing unlimited requests that could lead to DoS.
-**Learning:** The `@nestjs/throttler` module was imported and configured in `AppModule`, but `ThrottlerGuard` was never registered globally via `APP_GUARD`, so the limits never applied.
-**Prevention:** After importing `ThrottlerModule`, register `ThrottlerGuard` as `APP_GUARD`. For external webhooks that arrive in bursts, exempt the controller with `@SkipThrottle({ read: true, write: true })` when using multiple named throttlers.
