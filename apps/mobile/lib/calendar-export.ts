@@ -12,7 +12,7 @@ type CalendarExportInput = {
   deepLinkUrl: string;
 };
 
-function escapeIcsText(value: string): string {
+export function escapeIcsText(value: string): string {
   const normalizedValue = value.replace(/\r\n?/g, "\n");
   return normalizedValue
     .replace(/\\/g, "\\\\")
@@ -21,7 +21,7 @@ function escapeIcsText(value: string): string {
     .replace(/;/g, "\\;");
 }
 
-function toIcsTimestamp(isoString: string): string {
+export function toIcsTimestamp(isoString: string): string {
   const parsedDate = new Date(isoString);
   if (Number.isNaN(parsedDate.getTime())) {
     throw new InvalidArgumentException(`Invalid calendar timestamp: ${isoString}`);
@@ -29,7 +29,7 @@ function toIcsTimestamp(isoString: string): string {
   return `${parsedDate.toISOString().replace(/[-:]/g, "").split(".")[0]}Z`;
 }
 
-function buildIcsContent(input: CalendarExportInput): string {
+export function buildIcsContent(input: CalendarExportInput): string {
   const now = toIcsTimestamp(new Date().toISOString());
   const startAt = toIcsTimestamp(input.startAtIso);
   const endAt = toIcsTimestamp(input.endAtIso);
@@ -46,7 +46,7 @@ function buildIcsContent(input: CalendarExportInput): string {
     `DTSTART:${startAt}`,
     `DTEND:${endAt}`,
     `SUMMARY:${escapeIcsText(input.title)}`,
-    `DESCRIPTION:${escapeIcsText(`${input.description}\\n${input.deepLinkUrl}`)}`,
+    `DESCRIPTION:${escapeIcsText(`${input.description}\n${input.deepLinkUrl}`)}`,
     `LOCATION:${escapeIcsText(input.location)}`,
     "END:VEVENT",
     "END:VCALENDAR",
