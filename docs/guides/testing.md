@@ -122,3 +122,16 @@ For the API we aim for:
 
 ### Stripe Billing Service Tests
 Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`.
+
+## Mobile Workspace Testing
+
+The `apps/mobile` workspace uses Jest and `@testing-library/react-native` for unit testing React Native components.
+
+### Configuration
+Tests are configured to use `jest-expo` with module resolution overrides via `moduleNameMapper` to prevent errors like "Cannot find module '@repo/theme/tokens'" and Expo module resolution issues during tests. `react-test-renderer` is kept in sync with the React version.
+
+### Running Mobile Tests
+To run tests for the mobile app, use the workspace command:
+```bash
+npm run test -w apps/mobile
+```
