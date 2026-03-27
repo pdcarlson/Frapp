@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -29,6 +30,34 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { validateEnv } from './config/env.validation';
 
+/** Methods throttled by the `read` bucket (100/min); mutating methods use `write` (30/min). */
+const READ_THROTTLE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function httpMethod(context: ExecutionContext): string | undefined {
+  try {
+    const req = context.switchToHttp().getRequest<{ method?: string }>();
+    return req?.method;
+  } catch {
+    return undefined;
+  }
+}
+
+function skipReadThrottler(context: ExecutionContext): boolean {
+  const method = httpMethod(context);
+  if (!method) {
+    return true;
+  }
+  return !READ_THROTTLE_METHODS.has(method.toUpperCase());
+}
+
+function skipWriteThrottler(context: ExecutionContext): boolean {
+  const method = httpMethod(context);
+  if (!method) {
+    return true;
+  }
+  return READ_THROTTLE_METHODS.has(method.toUpperCase());
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -37,8 +66,18 @@ import { validateEnv } from './config/env.validation';
       validate: validateEnv,
     }),
     ThrottlerModule.forRoot([
-      { name: 'read', ttl: 60_000, limit: 100 },
-      { name: 'write', ttl: 60_000, limit: 30 },
+      {
+        name: 'read',
+        ttl: 60_000,
+        limit: 100,
+        skipIf: skipReadThrottler,
+      },
+      {
+        name: 'write',
+        ttl: 60_000,
+        limit: 30,
+        skipIf: skipWriteThrottler,
+      },
     ]),
     ScheduleModule.forRoot(),
     SupabaseModule,
