@@ -18,3 +18,5 @@ The admin dashboard includes an `OfflineBanner` component to gracefully handle n
 
 
 **Maintenance Note:** Added unit tests covering ignored error path in points adjustment notifications.
+## 2024-05-24 Security Maintenance Note
+Global rate limits are now strictly enforced across the application using `ThrottlerGuard` in the root `AppModule`. The configured limits from `ThrottlerModule` (e.g., 100 reads/min, 30 writes/min) will apply to all endpoints unless specifically overridden.
