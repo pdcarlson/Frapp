@@ -31,7 +31,7 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://localhost:3002',
-      /\.frapp\.live$/,
+      /^https:\/\/([a-zA-Z0-9-]+\.)*frapp\.live$/,
     ],
     credentials: true,
   });
