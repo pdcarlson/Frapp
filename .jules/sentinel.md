@@ -14,3 +14,7 @@
 **Vulnerability:** Allowed SVG file uploads for chapter branding/logos without sanitization.
 **Learning:** `image/svg+xml` was included in `ALLOWED_LOGO_CONTENT_TYPES` and `svg` in `ALLOWED_LOGO_EXTENSIONS`. SVGs can contain embedded JavaScript `<script>` tags, which execute in the browser when the image is rendered or viewed directly, leading to Stored XSS.
 **Prevention:** Strictly exclude `image/svg+xml` and `.svg` from image upload allowlists unless explicit, rigorous SVG sanitization (e.g., DOMPurify for SVGs) is implemented on the backend.
+## 2024-05-24 - Missing Global Rate Limit Registration
+**Vulnerability:** ThrottlerModule was imported in app.module.ts but rate limits were never enforced because ThrottlerGuard was not bound globally via APP_GUARD.
+**Learning:** In NestJS applications, configuring ThrottlerModule does not automatically enforce rate limits. ThrottlerGuard must be explicitly registered either globally in the root module's providers, or at the controller/route level.
+**Prevention:** Always verify that ThrottlerGuard is actively registered globally when setting up application-wide rate limits with ThrottlerModule.
