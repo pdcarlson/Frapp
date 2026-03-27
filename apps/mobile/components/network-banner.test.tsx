@@ -3,7 +3,7 @@ jest.mock('expo', () => ({}));
 
 import { render } from "@testing-library/react-native";
 
-// Mock the network-banner module to isolate it from native imports
+// Mock the theme module to isolate theme utilities from native imports
 jest.mock("@/lib/theme", () => ({
   useFrappTheme: () => ({
     tokens: {
@@ -47,6 +47,19 @@ describe("NetworkBanner", () => {
   it("renders nothing when online and reachable", () => {
     const { queryByText } = render(
       <NetworkBanner isOnline={true} isInternetReachable={true} />
+    );
+
+    expect(
+      queryByText("You're offline. Showing available data until connection returns.")
+    ).toBeNull();
+    expect(
+      queryByText("Connection is unstable. Some actions may be delayed.")
+    ).toBeNull();
+  });
+
+  it("renders nothing when network state is unknown (null)", () => {
+    const { queryByText } = render(
+      <NetworkBanner isOnline={null} isInternetReachable={null} />
     );
 
     expect(

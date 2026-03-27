@@ -4,7 +4,7 @@ import { config as reactInternalConfig } from "@repo/eslint-config/react-interna
 export default [
   ...reactInternalConfig,
   {
-    files: ["*.js", "jest.config.js", "jest-setup.js", "jest-setup-pre.js", "__mocks__/**/*.js"],
+    files: ["*.js", "__mocks__/**/*.js"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
       "no-undef": "off",

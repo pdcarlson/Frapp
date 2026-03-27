@@ -128,7 +128,7 @@ Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stri
 The `apps/mobile` workspace uses Jest and `@testing-library/react-native` for unit testing React Native components.
 
 ### Configuration
-Tests are configured to use `jest-expo` with module resolution overrides via `moduleNameMapper` to prevent errors like "Cannot find module '@repo/theme/tokens'" and Expo module resolution issues during tests. `react-test-renderer` is kept in sync with the React version.
+Tests use `jest-expo` pinned to the same major/minor line as the mobile app’s Expo SDK (see `apps/mobile/package.json`) so the Jest preset matches the installed Expo version. Module resolution overrides via `moduleNameMapper` prevent errors like "Cannot find module '@repo/theme/tokens'" and other Expo resolution issues during tests. `react-test-renderer` is kept in sync with the React version.
 
 ### Running Mobile Tests
 To run tests for the mobile app, use the workspace command:
