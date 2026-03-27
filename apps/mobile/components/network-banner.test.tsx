@@ -44,9 +44,9 @@ describe("NetworkBanner", () => {
     ).toBeTruthy();
   });
 
-  it("renders nothing when online and reachable", () => {
+  it("renders nothing when network state is null or unknown", () => {
     const { queryByText } = render(
-      <NetworkBanner isOnline={true} isInternetReachable={true} />
+      <NetworkBanner isOnline={null} isInternetReachable={null} />
     );
 
     expect(
@@ -57,9 +57,9 @@ describe("NetworkBanner", () => {
     ).toBeNull();
   });
 
-  it("renders nothing when network state is unknown (null)", () => {
+  it("renders nothing when online and reachable", () => {
     const { queryByText } = render(
-      <NetworkBanner isOnline={null} isInternetReachable={null} />
+      <NetworkBanner isOnline={true} isInternetReachable={true} />
     );
 
     expect(
