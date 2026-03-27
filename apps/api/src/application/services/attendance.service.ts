@@ -203,16 +203,16 @@ export class AttendanceService {
     }
 
     const existingRecords = await this.attendanceRepo.findByEvent(eventId);
-    const checkedInOrExcused = new Set(
-      existingRecords
-        .filter(
-          (r) =>
-            r.status === 'PRESENT' ||
-            r.status === 'EXCUSED' ||
-            r.status === 'LATE',
-        )
-        .map((r) => r.user_id),
-    );
+    const checkedInOrExcused = existingRecords.reduce((acc, r) => {
+      if (
+        r.status === 'PRESENT' ||
+        r.status === 'EXCUSED' ||
+        r.status === 'LATE'
+      ) {
+        acc.add(r.user_id);
+      }
+      return acc;
+    }, new Set<string>());
     const usersWithAttendanceRecords = new Set(
       existingRecords.map((r) => r.user_id),
     );
