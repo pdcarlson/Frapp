@@ -15,3 +15,6 @@ As new administrative workflows are completed, the initial placeholder page will
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
+
+## 2026-03-27: Maintenance Note
+- Added comprehensive unit test coverage for the `UserController` endpoints (`getMe`, `updateMe`, `requestAvatarUploadUrl`) and verified correct application of guards (`SupabaseAuthGuard`, `ChapterGuard`) and interceptors (`AuthSyncInterceptor`).
