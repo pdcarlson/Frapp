@@ -12,3 +12,6 @@ The main landing page for the admin dashboard provides an overview card indicati
 
 ## Roadmap
 As new administrative workflows are completed, the initial placeholder page will be expanded to support full navigation.
+
+### Offline Support and Testing
+The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
