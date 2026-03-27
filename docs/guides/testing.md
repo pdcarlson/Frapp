@@ -119,3 +119,6 @@ For the API we aim for:
 - **Integration/E2E** — at least one end-to-end flow per major domain
 
 > **Warning:** Do not chase 100% coverage at the expense of meaningful tests. Focus on critical business rules, security boundaries, and regressions we've actually seen.
+
+### Stripe Billing Service Tests
+Unit tests for `StripeBillingService` (`apps/api/src/infrastructure/billing/stripe.service.ts`) isolate the Stripe client using `jest.mock('stripe')` and manually mock-inject nested client instances for properties like `.customers` and `.checkout.sessions`.
