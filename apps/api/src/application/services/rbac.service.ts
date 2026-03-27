@@ -69,8 +69,12 @@ export class RbacService {
     currentMemberId: string,
     targetMemberId: string,
   ): Promise<void> {
-    const currentMember = await this.memberRepo.findById(currentMemberId);
-    const targetMember = await this.memberRepo.findById(targetMemberId);
+    // ⚡ Bolt: Optimize sequential repository queries using Promise.all
+    const [currentMember, targetMember, roles] = await Promise.all([
+      this.memberRepo.findById(currentMemberId),
+      this.memberRepo.findById(targetMemberId),
+      this.roleRepo.findByChapter(chapterId),
+    ]);
 
     if (!currentMember || !targetMember) {
       throw new NotFoundException('Member not found');
@@ -79,8 +83,6 @@ export class RbacService {
     if (targetMember.chapter_id !== chapterId) {
       throw new BadRequestException('Target member is not in this chapter');
     }
-
-    const roles = await this.roleRepo.findByChapter(chapterId);
     const presidentRole = roles.find(
       (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
     );
@@ -105,10 +107,13 @@ export class RbacService {
       ...new Set([...targetMember.role_ids, presidentRole.id]),
     ];
 
-    await this.memberRepo.update(currentMember.id, {
-      role_ids: newCurrentRoles,
-    });
-    await this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles });
+    // ⚡ Bolt: Optimize sequential repository updates using Promise.all
+    await Promise.all([
+      this.memberRepo.update(currentMember.id, {
+        role_ids: newCurrentRoles,
+      }),
+      this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles }),
+    ]);
   }
 
   getPermissionsCatalog() {

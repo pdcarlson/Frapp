@@ -18,3 +18,5 @@ The admin dashboard includes an `OfflineBanner` component to gracefully handle n
 
 
 **Maintenance Note:** Added unit tests covering ignored error path in points adjustment notifications.
+## Maintenance Notes
+- 2026-03-27: Optimized `RbacService.transferPresidency` by parallelizing queries and updates with `Promise.all`.
