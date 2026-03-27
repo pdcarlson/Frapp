@@ -14,7 +14,7 @@
 **Vulnerability:** Allowed SVG file uploads for chapter branding/logos without sanitization.
 **Learning:** `image/svg+xml` was included in `ALLOWED_LOGO_CONTENT_TYPES` and `svg` in `ALLOWED_LOGO_EXTENSIONS`. SVGs can contain embedded JavaScript `<script>` tags, which execute in the browser when the image is rendered or viewed directly, leading to Stored XSS.
 **Prevention:** Strictly exclude `image/svg+xml` and `.svg` from image upload allowlists unless explicit, rigorous SVG sanitization (e.g., DOMPurify for SVGs) is implemented on the backend.
-## 2024-03-27 - Insecure CORS Regex
+## 2026-03-27 - Insecure CORS Regex
 
 **Vulnerability:** The NestJS CORS configuration used an unanchored regex `/\.frapp\.live$/` for the `origin` property. This allowed attackers to bypass CORS by registering domains like `attacker-frapp.live` or `my-malicious-domain.frapp.live` or serving malicious content from an arbitrary protocol (e.g., `http://`).
 **Learning:** Regexes used for security boundaries like CORS origins must be strictly anchored at both the beginning (`^`) and end (`$`), must enforce the protocol (e.g., `^https://`), and must clearly define the subdomain boundary (e.g., `(?:[a-zA-Z0-9-]+\.)*`).
