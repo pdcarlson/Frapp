@@ -409,6 +409,34 @@ describe('PointsService', () => {
     });
   });
 
+
+    it('should swallow notification errors and return the transaction', async () => {
+      const created: PointTransaction = {
+        id: 'pt-new',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 50,
+        category: 'MANUAL',
+        description: 'Good work',
+        metadata: { adjusted_by: 'admin-1', reason: 'Good work' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+      mockNotificationService.notifyUser.mockRejectedValue(new Error('Notification failed'));
+
+      const result = await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 50,
+        category: 'MANUAL',
+        reason: 'Good work',
+      });
+
+      expect(mockNotificationService.notifyUser).toHaveBeenCalled();
+      expect(result).toEqual(created);
+    });
+
   describe('semester-aware leaderboard', () => {
     it('should use semester archive dates when available', async () => {
       const archiveStart = '2026-01-15T00:00:00.000Z';
