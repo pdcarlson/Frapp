@@ -6,7 +6,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   // eslint-disable-next-line @typescript-eslint/require-await
   protected async getTracker(req: Record<string, any>): Promise<string> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
-    return req.ips.length ? req.ips[0] : req.ip;
+    return Array.isArray(req.ips) && req.ips.length > 0 ? req.ips[0] : req.ip;
   }
 
   protected async handleRequest(
@@ -16,9 +16,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     throttler: ThrottlerOptions,
   ): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{ method: string }>();
-    const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(
-      request.method,
-    );
+    const isWriteMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method);
 
     // Only apply the 'write' throttler to write methods
     if (throttler.name === 'write' && !isWriteMethod) {
