@@ -176,7 +176,7 @@ Commit source + `openapi.json` + `types.ts` together. CI rejects mismatches.
 
 ## Auth and guard chain
 
-**These guards are NOT globally registered.** There is no `APP_GUARD` or `APP_INTERCEPTOR` provider in `app.module.ts`. You must apply them manually per-controller or per-route using `@UseGuards()` and `@UseInterceptors()`. Missing a decorator means the route is unprotected.
+**Auth-related guards are not globally registered.** `app.module.ts` does not use `APP_GUARD` for Supabase, chapter, or permissions; you apply those per-controller or per-route with `@UseGuards()` and `@UseInterceptors()`. **Exception:** `CustomThrottlerGuard` is registered globally for HTTP rate limiting (read vs write buckets by HTTP method). Missing an auth decorator means the route is unprotected by that layer.
 
 Recommended per-route pattern (applied in this order):
 
