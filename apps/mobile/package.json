@@ -17,6 +17,7 @@
     "@react-navigation/native": "^7.1.8",
     "@repo/api-sdk": "*",
     "@repo/hooks": "*",
+    "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
     "@supabase/supabase-js": "^2.49.1",
     "@tanstack/react-query": "^5.90.21",
