@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import type { ExecutionContext } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { CustomThrottlerGuard } from './interface/guards/custom-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SupabaseModule } from './infrastructure/supabase/supabase.module';
@@ -30,34 +30,6 @@ import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { validateEnv } from './config/env.validation';
 
-/** Methods throttled by the `read` bucket (100/min); mutating methods use `write` (30/min). */
-const READ_THROTTLE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-function httpMethod(context: ExecutionContext): string | undefined {
-  try {
-    const req = context.switchToHttp().getRequest<{ method?: string }>();
-    return req?.method;
-  } catch {
-    return undefined;
-  }
-}
-
-function skipReadThrottler(context: ExecutionContext): boolean {
-  const method = httpMethod(context);
-  if (!method) {
-    return true;
-  }
-  return !READ_THROTTLE_METHODS.has(method.toUpperCase());
-}
-
-function skipWriteThrottler(context: ExecutionContext): boolean {
-  const method = httpMethod(context);
-  if (!method) {
-    return true;
-  }
-  return READ_THROTTLE_METHODS.has(method.toUpperCase());
-}
-
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -66,18 +38,8 @@ function skipWriteThrottler(context: ExecutionContext): boolean {
       validate: validateEnv,
     }),
     ThrottlerModule.forRoot([
-      {
-        name: 'read',
-        ttl: 60_000,
-        limit: 100,
-        skipIf: skipReadThrottler,
-      },
-      {
-        name: 'write',
-        ttl: 60_000,
-        limit: 30,
-        skipIf: skipWriteThrottler,
-      },
+      { name: 'read', ttl: 60_000, limit: 100 },
+      { name: 'write', ttl: 60_000, limit: 30 },
     ]),
     ScheduleModule.forRoot(),
     SupabaseModule,
@@ -108,7 +70,7 @@ function skipWriteThrottler(context: ExecutionContext): boolean {
   providers: [
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: CustomThrottlerGuard,
     },
   ],
 })
