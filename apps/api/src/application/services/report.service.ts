@@ -215,11 +215,25 @@ export class ReportService {
     if (!members?.length) return [];
 
     const userIds = members.map((m) => m.user_id);
-    const { data: users, error: userError } = (await this.supabase
-      .from('users')
-      .select('id, display_name, email')
-      .in('id', userIds)) as QueryResult<UserRosterRow>;
-    throwIfError(userError);
+
+    // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
+    // network roundtrips. Expected impact: Reduces latency during roster
+    // generation by fetching users and points transactions concurrently.
+    const [usersResult, txnsResult] = await Promise.all([
+      this.supabase
+        .from('users')
+        .select('id, display_name, email')
+        .in('id', userIds) as Promise<QueryResult<UserRosterRow>>,
+      this.supabase
+        .from('point_transactions')
+        .select('user_id, amount')
+        .eq('chapter_id', chapterId)
+        .in('user_id', userIds) as Promise<QueryResult<UserAmountRow>>,
+    ]);
+
+    throwIfError(usersResult.error);
+    const users = usersResult.data;
+    const allTxns = txnsResult.data;
 
     const userMap = new Map(
       (users ?? []).map((u) => [
@@ -227,12 +241,6 @@ export class ReportService {
         { display_name: u.display_name, email: u.email },
       ]),
     );
-
-    const { data: allTxns } = (await this.supabase
-      .from('point_transactions')
-      .select('user_id, amount')
-      .eq('chapter_id', chapterId)
-      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
 
     const balances = new Map<string, number>();
     for (const t of allTxns ?? []) {
