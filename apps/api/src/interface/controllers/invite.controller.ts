@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -29,7 +29,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiTags('Invites')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard)
-@UseInterceptors(AuthSyncInterceptor)
+@UseGuards(AuthSyncGuard)
 @Controller('invites')
 export class InviteController {
   constructor(private readonly inviteService: InviteService) {}

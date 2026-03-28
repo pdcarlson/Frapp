@@ -182,20 +182,17 @@ Recommended per-route pattern (applied in this order):
 
 ```text
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
-             → user sync (syncs to users table, sets request.appUser)
+             → AuthSyncInterceptor (syncs to users table, sets request.appUser)
              → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)
              → PermissionsGuard (checks @RequirePermissions against member's roles)
              → Controller
 ```
 
-Guards run **before** interceptors. If `ChapterGuard` is on the **controller class**, user sync must run in a **guard** (e.g. `AuthSyncGuard` on `UserController`, immediately after `SupabaseAuthGuard`) so `users` rows exist before `ChapterGuard` queries them. Elsewhere, `AuthSyncInterceptor` is still valid when chapter checks are route-scoped and run after the interceptor in the pipeline.
-
 ### How to apply
 
 - **Controller-level** (most common): `@UseGuards(SupabaseAuthGuard, ChapterGuard)` on the class
 - **Route-level permissions**: `@UseGuards(PermissionsGuard)` + `@RequirePermissions(...)` on individual methods
-- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` on invite, notification, and chapter-create controllers where chapter guards are not at class level before sync, or where sync after all route guards is acceptable.
-- **AuthSyncGuard**: Used on `UserController` (with `@UseGuards(SupabaseAuthGuard, AuthSyncGuard, ChapterGuard, PermissionsGuard)`) so sync runs before controller-level `ChapterGuard`.
+- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — currently only on user, invite, notification, and chapter-create controllers. Only needed where user auto-sync is required on first request.
 
 **Order matters.** `SupabaseAuthGuard` must run before `ChapterGuard` (which needs `request.supabaseUser`). `ChapterGuard` must run before `PermissionsGuard` (which needs `request.member`).
 

@@ -4,7 +4,7 @@ import { ChapterService } from '../../application/services/chapter.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
 import {
   CreateChapterDto,
   UpdateChapterDto,
@@ -36,7 +36,7 @@ describe('ChapterController', () => {
       .useValue({ canActivate: () => true })
       .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: () => true })
-      .overrideInterceptor(AuthSyncInterceptor)
+      .overrideGuard(AuthSyncGuard)
       .useValue({ intercept: (context: any, next: any) => next.handle() })
       .compile();
 

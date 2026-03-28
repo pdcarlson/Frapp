@@ -1,4 +1,4 @@
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationController } from './notification.controller';
 import { NotificationService } from '../../application/services/notification.service';
@@ -35,7 +35,7 @@ describe('NotificationController', () => {
         },
       ],
     })
-      .overrideInterceptor(AuthSyncInterceptor)
+      .overrideGuard(AuthSyncGuard)
       .useValue({ intercept: (context: any, next: any) => next.handle() })
       .overrideGuard(SupabaseAuthGuard)
       .useValue({ canActivate: () => true })

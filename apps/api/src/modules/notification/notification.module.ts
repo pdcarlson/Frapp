@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { NotificationService } from '../../application/services/notification.service';
 import { NotificationController } from '../../interface/controllers/notification.controller';
-import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../../interface/guards/auth-sync.guard';
 import { SupabaseNotificationRepository } from '../../infrastructure/supabase/repositories/supabase-notification.repository';
 import { SupabasePushTokenRepository } from '../../infrastructure/supabase/repositories/supabase-push-token.repository';
 import { SupabaseNotificationPreferenceRepository } from '../../infrastructure/supabase/repositories/supabase-notification-preference.repository';
@@ -21,7 +21,7 @@ import { ChapterModule } from '../chapter/chapter.module';
   imports: [AuthModule, ChapterModule],
   controllers: [NotificationController],
   providers: [
-    AuthSyncInterceptor,
+    AuthSyncGuard,
     NotificationService,
     {
       provide: NOTIFICATION_REPOSITORY,

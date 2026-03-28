@@ -14,7 +14,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationService } from '../../application/services/notification.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import {
   RegisterPushTokenDto,
@@ -25,7 +25,7 @@ import {
 @ApiTags('Notifications')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard)
-@UseInterceptors(AuthSyncInterceptor)
+@UseGuards(AuthSyncGuard)
 @Controller()
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}

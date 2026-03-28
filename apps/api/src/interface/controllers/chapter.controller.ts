@@ -17,7 +17,7 @@ import {
   RequireAnyOfPermissions,
   RequirePermissions,
 } from '../decorators/permissions.decorator';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -38,7 +38,7 @@ export class ChapterController {
 
   @Post()
   @UseGuards(SupabaseAuthGuard)
-  @UseInterceptors(AuthSyncInterceptor)
+  @UseGuards(AuthSyncGuard)
   @ApiOperation({ summary: 'Create a new chapter' })
   async create(
     @CurrentUser('id') userId: string,
