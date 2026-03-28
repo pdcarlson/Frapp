@@ -228,11 +228,15 @@ export class ReportService {
       ]),
     );
 
-    const { data: allTxns } = (await this.supabase
+    const { data: allTxns, error } = (await this.supabase
       .from('point_transactions')
       .select('user_id, amount')
       .eq('chapter_id', chapterId)
       .in('user_id', userIds)) as QueryResult<UserAmountRow>;
+
+    if (error) {
+      throw new Error(`Failed to fetch point transactions: ${error.message}`);
+    }
 
     const balances = new Map<string, number>();
     for (const t of allTxns ?? []) {
