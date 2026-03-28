@@ -31,7 +31,9 @@ async function bootstrap() {
     origin: [
       'http://localhost:3000',
       'http://localhost:3002',
-      /\.frapp\.live$/,
+      process.env.NODE_ENV === 'production'
+        ? /^https:\/\/(?:[a-zA-Z0-9-]+\.)*frapp\.live$/
+        : /\.frapp\.live$/,
     ],
     credentials: true,
   });
