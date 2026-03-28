@@ -9,10 +9,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
   protected async getTracker(req: Record<string, any>): Promise<string> {
     const ips = Array.isArray(req.ips) ? req.ips : [];
     if (ips.length > 0) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
       return ips[0];
     }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access
     return req.ip;
   }
 
