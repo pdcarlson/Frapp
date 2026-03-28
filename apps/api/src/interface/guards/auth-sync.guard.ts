@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  CanActivate,
-  ExecutionContext,
-} from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { AuthService } from '../../application/services/auth.service';
 import type { RequestContext } from '../types/request-context.types';
 

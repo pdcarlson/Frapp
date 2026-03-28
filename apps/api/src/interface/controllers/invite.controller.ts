@@ -6,7 +6,6 @@ import {
   Param,
   Post,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { InviteService } from '../../application/services/invite.service';

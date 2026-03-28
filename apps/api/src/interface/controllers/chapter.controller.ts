@@ -6,7 +6,6 @@ import {
   Patch,
   Post,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ChapterService } from '../../application/services/chapter.service';

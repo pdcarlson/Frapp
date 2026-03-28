@@ -45,7 +45,10 @@ describe('UserController', () => {
     });
 
     it('requestAvatarUploadUrl should have ChapterGuard applied', () => {
-      const guards = Reflect.getMetadata('__guards__', controller.requestAvatarUploadUrl);
+      const guards = Reflect.getMetadata(
+        '__guards__',
+        controller.requestAvatarUploadUrl,
+      );
       expect(guards).toBeDefined();
       expect(guards).toContain(ChapterGuard);
     });
@@ -89,7 +92,11 @@ describe('UserController', () => {
       const mockResult = { url: 'https://example.com/upload' };
       userService.requestAvatarUploadUrl.mockResolvedValue(mockResult);
 
-      const result = await controller.requestAvatarUploadUrl(userId, chapterId, dto);
+      const result = await controller.requestAvatarUploadUrl(
+        userId,
+        chapterId,
+        dto,
+      );
 
       expect(userService.requestAvatarUploadUrl).toHaveBeenCalledWith(
         chapterId,
