@@ -36,6 +36,8 @@ const API_SOURCE_EXCLUSIONS = [
   "apps/api/src/env.validation.ts",
   ".spec.ts",
   ".spec.js",
+  ".controller.spec.ts",
+  ".spec.js",
   ".e2e-spec.ts",
   "apps/api/src/config/",
   "apps/api/src/infrastructure/",
