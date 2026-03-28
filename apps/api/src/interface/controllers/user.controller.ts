@@ -7,11 +7,20 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiSecurity,
+  ApiHeader,
+} from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -20,7 +29,14 @@ import { UpdateUserDto, RequestAvatarUploadUrlDto } from '../dtos/user.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard)
+@ApiSecurity('chapter-id')
+@ApiHeader({
+  name: 'x-chapter-id',
+  required: true,
+  description: 'Active chapter context (required by ChapterGuard)',
+})
+@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @UseInterceptors(AuthSyncInterceptor)
 @Controller('users')
 export class UserController {
@@ -42,7 +58,6 @@ export class UserController {
   }
 
   @Post('me/avatar-url')
-  @UseGuards(ChapterGuard)
   @ApiOperation({ summary: 'Get signed upload URL for profile photo' })
   async requestAvatarUploadUrl(
     @CurrentUser('id') userId: string,
