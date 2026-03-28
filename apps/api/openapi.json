@@ -19,13 +19,26 @@
     "/v1/users/me": {
       "get": {
         "operationId": "UserController_getMe_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-chapter-id",
+            "in": "header",
+            "description": "Active chapter context (required by ChapterGuard)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
           }
         },
         "security": [
+          {
+            "chapter-id": []
+          },
           {
             "bearer": []
           }
@@ -37,7 +50,17 @@
       },
       "patch": {
         "operationId": "UserController_updateMe_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-chapter-id",
+            "in": "header",
+            "description": "Active chapter context (required by ChapterGuard)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -55,6 +78,9 @@
         },
         "security": [
           {
+            "chapter-id": []
+          },
+          {
             "bearer": []
           }
         ],
@@ -67,7 +93,17 @@
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "x-chapter-id",
+            "in": "header",
+            "description": "Active chapter context (required by ChapterGuard)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -84,6 +120,9 @@
           }
         },
         "security": [
+          {
+            "chapter-id": []
+          },
           {
             "bearer": []
           }

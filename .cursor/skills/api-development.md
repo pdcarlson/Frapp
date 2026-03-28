@@ -182,17 +182,19 @@ Recommended per-route pattern (applied in this order):
 
 ```text
 Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
-             → AuthSyncInterceptor (syncs to users table, sets request.appUser)
+             → AuthSyncGuard (syncs to users table, sets request.appUser)
              → ChapterGuard (validates x-chapter-id + membership, sets request.member, request.chapterId)
              → PermissionsGuard (checks @RequirePermissions against member's roles)
              → Controller
 ```
 
+Guards run **before** interceptors. **`AuthSyncGuard`** must run before any controller-level **`ChapterGuard`** that queries the `users` table.
+
 ### How to apply
 
 - **Controller-level** (most common): `@UseGuards(SupabaseAuthGuard, ChapterGuard)` on the class
 - **Route-level permissions**: `@UseGuards(PermissionsGuard)` + `@RequirePermissions(...)` on individual methods
-- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — currently only on user, invite, notification, and chapter-create controllers. Only needed where user auto-sync is required on first request.
+- **AuthSyncGuard**: `@UseGuards(SupabaseAuthGuard, AuthSyncGuard)` on user, invite, notification, and chapter-create controllers where first-request user sync is required (replaces `AuthSyncInterceptor` on those surfaces).
 
 **Order matters.** `SupabaseAuthGuard` must run before `ChapterGuard` (which needs `request.supabaseUser`). `ChapterGuard` must run before `PermissionsGuard` (which needs `request.member`).
 
@@ -208,7 +210,7 @@ Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
 ### Special cases
 
 - `/health` — no guards at all
-- `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncInterceptor` only (no chapter exists yet)
+- `POST /v1/chapters` — `SupabaseAuthGuard` + `AuthSyncGuard` only (no chapter exists yet)
 - `POST /v1/billing/webhook` — `StripeWebhookGuard` (signature verification, no JWT)
 
 ---

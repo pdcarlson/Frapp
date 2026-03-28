@@ -27,8 +27,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Invites')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard)
-@UseGuards(AuthSyncGuard)
+@UseGuards(SupabaseAuthGuard, AuthSyncGuard)
 @Controller('invites')
 export class InviteController {
   constructor(private readonly inviteService: InviteService) {}

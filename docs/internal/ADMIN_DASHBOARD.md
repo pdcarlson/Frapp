@@ -17,4 +17,4 @@ As new administrative workflows are completed, the initial placeholder page will
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
 
 ## 2026-03-27: Maintenance Note
-- Added comprehensive unit test coverage for the `UserController` endpoints (`getMe`, `updateMe`, `requestAvatarUploadUrl`) and verified correct application of guards (`SupabaseAuthGuard`, `ChapterGuard`) and interceptors (`AuthSyncInterceptor`).
+- Added comprehensive unit test coverage for the `UserController` endpoints (`getMe`, `updateMe`, `requestAvatarUploadUrl`) and verified guards: `SupabaseAuthGuard`, `AuthSyncGuard` (runs before `ChapterGuard` so first-time users sync into `users` before membership checks), `ChapterGuard`, `PermissionsGuard` with `members:view`. OpenAPI documents `chapter-id` / `x-chapter-id` on user operations; clients must send `x-chapter-id` for those routes.
