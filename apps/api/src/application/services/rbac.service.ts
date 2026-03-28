@@ -69,13 +69,8 @@ export class RbacService {
     currentMemberId: string,
     targetMemberId: string,
   ): Promise<void> {
-    // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
-    // network roundtrips. Expected impact: Reduces query latency by ~50%
-    // by fetching members concurrently.
-    const [currentMember, targetMember] = await Promise.all([
-      this.memberRepo.findById(currentMemberId),
-      this.memberRepo.findById(targetMemberId),
-    ]);
+    const currentMember = await this.memberRepo.findById(currentMemberId);
+    const targetMember = await this.memberRepo.findById(targetMemberId);
 
     if (!currentMember || !targetMember) {
       throw new NotFoundException('Member not found');
@@ -110,12 +105,10 @@ export class RbacService {
       ...new Set([...targetMember.role_ids, presidentRole.id]),
     ];
 
-    // ⚡ Bolt: Execute independent updates concurrently. Expected impact:
-    // Reduces write latency by 50% by avoiding a sequential await.
-    await Promise.all([
-      this.memberRepo.update(currentMember.id, { role_ids: newCurrentRoles }),
-      this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles }),
-    ]);
+    await this.memberRepo.update(currentMember.id, {
+      role_ids: newCurrentRoles,
+    });
+    await this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles });
   }
 
   getPermissionsCatalog() {
