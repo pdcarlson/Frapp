@@ -37,7 +37,7 @@ describe('ChapterController', () => {
       .overrideGuard(PermissionsGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(AuthSyncGuard)
-      .useValue({ intercept: (context: any, next: any) => next.handle() })
+      .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get<ChapterController>(ChapterController);

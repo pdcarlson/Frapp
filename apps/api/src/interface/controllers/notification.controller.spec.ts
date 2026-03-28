@@ -36,7 +36,7 @@ describe('NotificationController', () => {
       ],
     })
       .overrideGuard(AuthSyncGuard)
-      .useValue({ intercept: (context: any, next: any) => next.handle() })
+      .useValue({ canActivate: () => true })
       .overrideGuard(SupabaseAuthGuard)
       .useValue({ canActivate: () => true })
       .compile();
