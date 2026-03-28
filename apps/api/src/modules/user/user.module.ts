@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { UserService } from '../../application/services/user.service';
 import { UserController } from '../../interface/controllers/user.controller';
-import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
+import { AuthSyncGuard } from '../../interface/guards/auth-sync.guard';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
@@ -12,7 +12,7 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
   controllers: [UserController],
   providers: [
     UserService,
-    AuthSyncInterceptor,
+    AuthSyncGuard,
     { provide: STORAGE_PROVIDER, useClass: SupabaseStorageService },
   ],
   exports: [UserService],

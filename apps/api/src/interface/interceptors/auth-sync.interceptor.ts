@@ -7,6 +7,7 @@ import {
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { AuthService } from '../../application/services/auth.service';
+import { syncAppUserFromRequest } from '../auth/sync-app-user-from-request';
 import type { RequestContext } from '../types/request-context.types';
 
 @Injectable()
@@ -18,16 +19,7 @@ export class AuthSyncInterceptor implements NestInterceptor {
     next: CallHandler,
   ): Promise<Observable<unknown>> {
     const request = context.switchToHttp().getRequest<RequestContext>();
-    const supabaseUser = request.supabaseUser;
-
-    if (supabaseUser) {
-      const { id } = await this.authService.syncUser(
-        supabaseUser.id,
-        supabaseUser.email ?? '',
-      );
-      request.appUser = { id };
-    }
-
+    await syncAppUserFromRequest(this.authService, request);
     return next.handle().pipe(tap());
   }
 }

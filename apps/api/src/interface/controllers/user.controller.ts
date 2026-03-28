@@ -1,17 +1,18 @@
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 import {
-  Body,
-  Controller,
-  Get,
-  Patch,
-  Post,
-  UseGuards,
-  UseInterceptors,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+  ApiBearerAuth,
+  ApiTags,
+  ApiOperation,
+  ApiSecurity,
+  ApiHeader,
+} from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
-import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { PermissionsGuard } from '../guards/permissions.guard';
+import { RequirePermissions } from '../decorators/permissions.decorator';
+import { AuthSyncGuard } from '../guards/auth-sync.guard';
+import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -20,8 +21,19 @@ import { UpdateUserDto, RequestAvatarUploadUrlDto } from '../dtos/user.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard)
-@UseInterceptors(AuthSyncInterceptor)
+@ApiSecurity('chapter-id')
+@ApiHeader({
+  name: 'x-chapter-id',
+  required: true,
+  description: 'Active chapter context (required by ChapterGuard)',
+})
+@UseGuards(
+  SupabaseAuthGuard,
+  AuthSyncGuard,
+  ChapterGuard,
+  PermissionsGuard,
+)
+@RequirePermissions(SystemPermissions.MEMBERS_VIEW)
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
@@ -42,7 +54,6 @@ export class UserController {
   }
 
   @Post('me/avatar-url')
-  @UseGuards(ChapterGuard)
   @ApiOperation({ summary: 'Get signed upload URL for profile photo' })
   async requestAvatarUploadUrl(
     @CurrentUser('id') userId: string,
