@@ -47,8 +47,6 @@ For live rollout tracking, see `docs/internal/DEPLOYMENT_STATUS.md`.
 └─────────────┘
 ```
 
-The Nest API (`apps/api/src/main.ts`) allows browser-credentialed requests from local dev origins. For `*.frapp.live`, production uses an HTTPS-only origin regex (`^https://(?:[a-zA-Z0-9-]+\.)*frapp\.live$`); non-production (`NODE_ENV !== 'production'`) additionally allows any protocol matching `*.frapp.live` for preview/staging tooling.
-
 ---
 
 ## 1. Prerequisites

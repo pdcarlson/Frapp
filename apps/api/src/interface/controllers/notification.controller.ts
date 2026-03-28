@@ -23,7 +23,8 @@ import {
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
-@UseGuards(SupabaseAuthGuard, AuthSyncGuard)
+@UseGuards(SupabaseAuthGuard)
+@UseGuards(AuthSyncGuard)
 @Controller()
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}

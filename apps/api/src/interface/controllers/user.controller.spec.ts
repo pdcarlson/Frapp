@@ -1,39 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Reflector } from '@nestjs/core';
 import { UserController } from './user.controller';
 import { UserService } from '../../application/services/user.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
-import { PermissionsGuard } from '../guards/permissions.guard';
 import { AuthSyncGuard } from '../guards/auth-sync.guard';
-import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { SystemPermissions } from '../../domain/constants/permissions';
 import { RequestAvatarUploadUrlDto, UpdateUserDto } from '../dtos/user.dto';
-
-function mergeRouteGuards(
-  ControllerClass: typeof UserController,
-  handler: (...args: unknown[]) => unknown,
-): unknown[] {
-  const classGuards = Reflect.getMetadata('__guards__', ControllerClass) ?? [];
-  const methodGuards = Reflect.getMetadata('__guards__', handler) ?? [];
-  return [...classGuards, ...methodGuards];
-}
-
-function effectiveRequirePermissions(
-  reflector: Reflector,
-  ControllerClass: typeof UserController,
-  handler: (...args: unknown[]) => unknown,
-): unknown {
-  return (
-    reflector.get(PERMISSIONS_KEY, handler) ??
-    reflector.get(PERMISSIONS_KEY, ControllerClass)
-  );
-}
 
 describe('UserController', () => {
   let controller: UserController;
   let userService: jest.Mocked<UserService>;
-  let reflector: Reflector;
 
   beforeEach(async () => {
     userService = {
@@ -44,20 +19,17 @@ describe('UserController', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
-      providers: [{ provide: UserService, useValue: userService }, Reflector],
+      providers: [{ provide: UserService, useValue: userService }],
     })
       .overrideGuard(SupabaseAuthGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(AuthSyncGuard)
-      .useValue({ canActivate: () => true })
       .overrideGuard(ChapterGuard)
       .useValue({ canActivate: () => true })
-      .overrideGuard(PermissionsGuard)
+      .overrideGuard(AuthSyncGuard)
       .useValue({ canActivate: () => true })
       .compile();
 
     controller = module.get<UserController>(UserController);
-    reflector = module.get(Reflector);
   });
 
   it('should be defined', () => {
@@ -65,41 +37,20 @@ describe('UserController', () => {
   });
 
   describe('Guards', () => {
-    it('should have correct guards applied (AuthSyncGuard before chapter/permission checks)', () => {
+    it('should have correct guards applied', () => {
       const guards = Reflect.getMetadata('__guards__', UserController);
       expect(guards).toBeDefined();
       expect(guards).toContain(SupabaseAuthGuard);
       expect(guards).toContain(AuthSyncGuard);
-      expect(guards).toContain(ChapterGuard);
-      expect(guards).toContain(PermissionsGuard);
-
-      const requiredPermissions = reflector.get(
-        PERMISSIONS_KEY,
-        UserController,
-      );
-      expect(requiredPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
-
-      expect(
-        Reflect.getMetadata('__interceptors__', UserController),
-      ).toBeUndefined();
     });
 
-    it('requestAvatarUploadUrl should include PermissionsGuard and MEMBERS_VIEW metadata', () => {
-      const guards = mergeRouteGuards(
-        UserController,
+    it('requestAvatarUploadUrl should have ChapterGuard applied', () => {
+      const guards = Reflect.getMetadata(
+        '__guards__',
         controller.requestAvatarUploadUrl,
       );
-      expect(guards).toContain(SupabaseAuthGuard);
-      expect(guards).toContain(AuthSyncGuard);
+      expect(guards).toBeDefined();
       expect(guards).toContain(ChapterGuard);
-      expect(guards).toContain(PermissionsGuard);
-
-      const requiredPermissions = effectiveRequirePermissions(
-        reflector,
-        UserController,
-        controller.requestAvatarUploadUrl,
-      );
-      expect(requiredPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 

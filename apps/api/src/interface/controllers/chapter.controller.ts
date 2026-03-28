@@ -36,7 +36,8 @@ export class ChapterController {
   constructor(private readonly chapterService: ChapterService) {}
 
   @Post()
-  @UseGuards(SupabaseAuthGuard, AuthSyncGuard)
+  @UseGuards(SupabaseAuthGuard)
+  @UseGuards(AuthSyncGuard)
   @ApiOperation({ summary: 'Create a new chapter' })
   async create(
     @CurrentUser('id') userId: string,

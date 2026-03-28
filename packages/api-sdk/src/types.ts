@@ -2077,10 +2077,7 @@ export interface operations {
     UserController_getMe_v1: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Active chapter context (required by ChapterGuard) */
-                "x-chapter-id": string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2097,10 +2094,7 @@ export interface operations {
     UserController_updateMe_v1: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Active chapter context (required by ChapterGuard) */
-                "x-chapter-id": string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2121,10 +2115,7 @@ export interface operations {
     UserController_requestAvatarUploadUrl_v1: {
         parameters: {
             query?: never;
-            header: {
-                /** @description Active chapter context (required by ChapterGuard) */
-                "x-chapter-id": string;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
