@@ -61,6 +61,7 @@ describe('SemesterRolloverService', () => {
 
     it('should create semester archive when last rollover was in previous month', async () => {
       const lastMonth = new Date();
+      lastMonth.setUTCDate(15);
       lastMonth.setMonth(lastMonth.getMonth() - 1);
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
@@ -159,6 +160,7 @@ describe('SemesterRolloverService', () => {
   describe('rollover edge cases', () => {
     it('should succeed when last rollover was 2 months ago', async () => {
       const twoMonthsAgo = new Date();
+      twoMonthsAgo.setUTCDate(15);
       twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
