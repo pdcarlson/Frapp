@@ -215,21 +215,36 @@ export class ReportService {
     if (!members?.length) return [];
 
     const userIds = members.map((m) => m.user_id);
+    const roleIds = [...new Set(members.flatMap((m) => m.role_ids ?? []))];
 
     // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
     // network roundtrips. Expected impact: Reduces latency during roster
-    // generation by fetching users and points transactions concurrently.
-    const [usersResult, txnsResult] = await Promise.all([
+    // generation by fetching users, points transactions, and roles concurrently.
+    const promises: Promise<QueryResult<any>>[] = [
       this.supabase
         .from('users')
         .select('id, display_name, email')
-        .in('id', userIds) as Promise<QueryResult<UserRosterRow>>,
+        .in('id', userIds) as unknown as Promise<QueryResult<UserRosterRow>>,
       this.supabase
         .from('point_transactions')
         .select('user_id, amount')
         .eq('chapter_id', chapterId)
-        .in('user_id', userIds) as Promise<QueryResult<UserAmountRow>>,
-    ]);
+        .in('user_id', userIds) as unknown as Promise<
+        QueryResult<UserAmountRow>
+      >,
+    ];
+
+    if (roleIds.length > 0) {
+      promises.push(
+        this.supabase
+          .from('roles')
+          .select('id, name')
+          .eq('chapter_id', chapterId)
+          .in('id', roleIds) as unknown as Promise<QueryResult<RoleNameRow>>,
+      );
+    }
+
+    const [usersResult, txnsResult, rolesResult] = await Promise.all(promises);
 
     throwIfError(usersResult.error);
     const users = usersResult.data;
@@ -248,15 +263,10 @@ export class ReportService {
       balances.set(uid, (balances.get(uid) ?? 0) + (t.amount ?? 0));
     }
 
-    const roleIds = [...new Set(members.flatMap((m) => m.role_ids ?? []))];
     const roleMap = new Map<string, string>();
-    if (roleIds.length > 0) {
-      const { data: roles, error: rolesError } = (await this.supabase
-        .from('roles')
-        .select('id, name')
-        .eq('chapter_id', chapterId)
-        .in('id', roleIds)) as QueryResult<RoleNameRow>;
-      throwIfError(rolesError);
+    if (roleIds.length > 0 && rolesResult) {
+      throwIfError(rolesResult.error);
+      const roles = rolesResult.data;
       for (const r of roles ?? []) {
         roleMap.set(r.id, r.name);
       }

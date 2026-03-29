@@ -61,7 +61,8 @@ describe('SemesterRolloverService', () => {
 
     it('should create semester archive when last rollover was in previous month', async () => {
       const lastMonth = new Date();
-      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      lastMonth.setUTCDate(15);
+      lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
         created_at: lastMonth.toISOString(),
