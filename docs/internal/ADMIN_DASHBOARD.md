@@ -15,3 +15,4 @@ As new administrative workflows are completed, the initial placeholder page will
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
+\n- **Performance Note (2026-03-29):** Optimized Roster Report generation by moving the roles database query into the parallel `Promise.all` alongside users and transactions to avoid unnecessary sequential roundtrips.

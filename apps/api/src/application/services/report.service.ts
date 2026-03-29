@@ -244,7 +244,13 @@ export class ReportService {
       );
     }
 
-    const [usersResult, txnsResult, rolesResult] = await Promise.all(promises);
+    const [usersResult, txnsResult, rolesResult] = (await Promise.all(
+      promises,
+    )) as [
+      QueryResult<UserRosterRow>,
+      QueryResult<UserAmountRow>,
+      QueryResult<RoleNameRow> | undefined,
+    ];
 
     throwIfError(usersResult.error);
     const users = usersResult.data;
