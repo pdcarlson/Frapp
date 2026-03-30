@@ -32,3 +32,4 @@ Any change to the script should update this file, `AGENTS.md`, and the PR templa
 * Added unit tests for React Query Backwork hooks (`packages/hooks/src/use-backwork.spec.tsx`).
 * Backwork hooks tests: microtask flush before asserting `enabled: false` (empty id) does not call `GET`; shared `queryKey` constants for invalidation expectations.
 * Root `package-lock.json`: npm v10+ `peer: true` metadata on peer dependency entries (no dependency version changes).
+* Added `helmet` to `apps/api` for default HTTP security headers. Configured CSP to support Swagger UI.
