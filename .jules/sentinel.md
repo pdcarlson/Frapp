@@ -14,3 +14,7 @@
 **Vulnerability:** Allowed SVG file uploads for chapter branding/logos without sanitization.
 **Learning:** `image/svg+xml` was included in `ALLOWED_LOGO_CONTENT_TYPES` and `svg` in `ALLOWED_LOGO_EXTENSIONS`. SVGs can contain embedded JavaScript `<script>` tags, which execute in the browser when the image is rendered or viewed directly, leading to Stored XSS.
 **Prevention:** Strictly exclude `image/svg+xml` and `.svg` from image upload allowlists unless explicit, rigorous SVG sanitization (e.g., DOMPurify for SVGs) is implemented on the backend.
+## 2026-03-30 - Add Helmet Content Security Policy
+**Vulnerability:** Missing default HTTP security headers in NestJS application, potentially allowing XSS or other injection attacks.
+**Learning:** `helmet` was in the package.json as a dependency but not implemented. Setting up helmet with Swagger UI in NestJS requires explicitly allowing `validator.swagger.io` for `imgSrc` and `'unsafe-inline'` / `'unsafe-eval'` for `scriptSrc` in the CSP so the documentation UI doesn't break.
+**Prevention:** Always configure helmet globally in NestJS applications, taking care to whitelist necessary domains and directives for Swagger UI or other tools.

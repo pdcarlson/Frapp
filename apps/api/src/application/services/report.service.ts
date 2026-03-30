@@ -223,12 +223,12 @@ export class ReportService {
       this.supabase
         .from('users')
         .select('id, display_name, email')
-        .in('id', userIds) as Promise<QueryResult<UserRosterRow>>,
+        .in('id', userIds) as unknown as Promise<QueryResult<UserRosterRow>>,
       this.supabase
         .from('point_transactions')
         .select('user_id, amount')
         .eq('chapter_id', chapterId)
-        .in('user_id', userIds) as Promise<QueryResult<UserAmountRow>>,
+        .in('user_id', userIds) as unknown as Promise<QueryResult<UserAmountRow>>,
     ]);
 
     throwIfError(usersResult.error);
