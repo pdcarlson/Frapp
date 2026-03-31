@@ -85,15 +85,11 @@ export class PointsService {
     userId: string,
     window: PointsWindow = 'all',
   ): Promise<{ balance: number; transactions: PointTransaction[] }> {
-    // Performance Optimization: Fetch point transactions and semester range concurrently
-    // Expected impact: Removes sequential blocking wait times and saves ~50ms of network latency.
-    const [txns, semesterRange] = await Promise.all([
-      this.pointTxnRepo.findByUser(chapterId, userId),
+    const txns = await this.pointTxnRepo.findByUser(chapterId, userId);
+    const semesterRange =
       window === 'semester'
-        ? this.getSemesterRange(chapterId)
-        : Promise.resolve(undefined),
-    ]);
-
+        ? await this.getSemesterRange(chapterId)
+        : undefined;
     const filtered = this.filterByWindow(txns, window, semesterRange);
     const balance = filtered.reduce((sum, txn) => sum + txn.amount, 0);
 
@@ -109,15 +105,11 @@ export class PointsService {
       total: number;
     }[]
   > {
-    // Performance Optimization: Fetch point transactions and semester range concurrently
-    // Expected impact: Removes sequential blocking wait times and saves ~50ms of network latency.
-    const [txns, semesterRange] = await Promise.all([
-      this.pointTxnRepo.findByChapter(chapterId),
+    const txns = await this.pointTxnRepo.findByChapter(chapterId);
+    const semesterRange =
       window === 'semester'
-        ? this.getSemesterRange(chapterId)
-        : Promise.resolve(undefined),
-    ]);
-
+        ? await this.getSemesterRange(chapterId)
+        : undefined;
     const filtered = this.filterByWindow(txns, window, semesterRange);
 
     const totals = new Map<string, number>();

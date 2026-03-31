@@ -190,12 +190,7 @@ export class AttendanceService {
       return { marked: 0 };
     }
 
-    // Performance Optimization: Parallelize independent database queries
-    // Expected impact: Eliminates one sequential database roundtrip, saving ~50-150ms per call.
-    const [allMembers, existingRecords] = await Promise.all([
-      this.memberRepo.findByChapter(chapterId),
-      this.attendanceRepo.findByEvent(eventId),
-    ]);
+    const allMembers = await this.memberRepo.findByChapter(chapterId);
 
     let requiredMembers: typeof allMembers;
     if (event.required_role_ids && event.required_role_ids.length > 0) {
@@ -207,6 +202,7 @@ export class AttendanceService {
       requiredMembers = allMembers;
     }
 
+    const existingRecords = await this.attendanceRepo.findByEvent(eventId);
     const checkedInOrExcused = new Set(
       existingRecords
         .filter(
