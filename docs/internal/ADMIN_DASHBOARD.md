@@ -15,3 +15,6 @@ As new administrative workflows are completed, the initial placeholder page will
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
+
+### Accessibility Additions
+- Explicit `aria-label`s have been added to `<Input>` and `<select>` search/filter controls across the `/events` and `/points` administrative views to resolve Web Content Accessibility Guidelines (WCAG) compliance issues.
