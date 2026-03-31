@@ -264,6 +264,7 @@ export default function PointsPage() {
             <div className="mb-3 relative">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
+                aria-label="Search by user id"
                 value={leaderboardSearch}
                 onChange={(event) => setLeaderboardSearch(event.target.value)}
                 placeholder="Search by user id"
@@ -310,6 +311,7 @@ export default function PointsPage() {
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
+                  aria-label="Search transaction descriptions"
                   value={transactionSearch}
                   onChange={(event) => setTransactionSearch(event.target.value)}
                   placeholder="Search descriptions"
@@ -317,6 +319,7 @@ export default function PointsPage() {
                 />
               </div>
               <select
+                aria-label="Filter transactions by amount"
                 value={amountFilter}
                 onChange={(event) =>
                   setAmountFilter(
@@ -330,6 +333,7 @@ export default function PointsPage() {
                 <option value="negative">Amount: Negative</option>
               </select>
               <select
+                aria-label="Filter transactions by category"
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.target.value)}
                 className={dashboardFilterSelectClassName}
