@@ -15,3 +15,6 @@ As new administrative workflows are completed, the initial placeholder page will
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
+
+### Performance Optimizations
+- **Presidency Transfer (`transferPresidency`):** Optimized member fetching and role updates by leveraging `Promise.all` to execute independent database queries concurrently, eliminating N+1 sequential network roundtrips and significantly reducing request latency.
