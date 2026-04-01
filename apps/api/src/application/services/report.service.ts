@@ -219,17 +219,17 @@ export class ReportService {
     // ⚡ Bolt: Parallelize independent DB queries to eliminate sequential
     // network roundtrips. Expected impact: Reduces latency during roster
     // generation by fetching users and points transactions concurrently.
-    const [usersResult, txnsResult] = await Promise.all([
+    const [usersResult, txnsResult] = (await Promise.all([
       this.supabase
         .from('users')
         .select('id, display_name, email')
-        .in('id', userIds) as Promise<QueryResult<UserRosterRow>>,
+        .in('id', userIds),
       this.supabase
         .from('point_transactions')
         .select('user_id, amount')
         .eq('chapter_id', chapterId)
-        .in('user_id', userIds) as Promise<QueryResult<UserAmountRow>>,
-    ]);
+        .in('user_id', userIds),
+    ])) as [QueryResult<UserRosterRow>, QueryResult<UserAmountRow>];
 
     throwIfError(usersResult.error);
     const users = usersResult.data;
