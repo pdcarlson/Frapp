@@ -3,7 +3,6 @@ import { ValidationPipe, VersioningType, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as Sentry from '@sentry/nestjs';
 import helmet from 'helmet';
-import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { RequestIdInterceptor } from './interface/interceptors/request-id.interceptor';
@@ -40,26 +39,21 @@ async function bootstrap() {
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
-  const swaggerDocsHelmet = helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", 'data:', 'validator.swagger.io'],
-      },
-    },
-  });
-  const defaultApiHelmet = helmet();
-
-  app.use((req: Request, res: Response, next: NextFunction) => {
-    const path = req.path;
-    const isSwaggerDocsRoute =
-      path === '/docs' || path.startsWith('/docs/') || path.startsWith('/docs-');
-    if (isSwaggerDocsRoute) {
-      swaggerDocsHelmet(req, res, next);
+  // Apply strict CSP globally, but relax it specifically for the Swagger UI docs route
+  app.use((req: any, res: any, next: any) => {
+    if (req.url.startsWith('/docs')) {
+      helmet({
+        contentSecurityPolicy: {
+          directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", 'data:', 'validator.swagger.io'],
+          },
+        },
+      })(req, res, next);
     } else {
-      defaultApiHelmet(req, res, next);
+      helmet()(req, res, next);
     }
   });
 

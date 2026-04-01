@@ -17,4 +17,4 @@
 ## 2026-03-28 - Missing Security Headers in NestJS API
 **Vulnerability:** The NestJS API (`apps/api/src/main.ts`) lacked essential HTTP security headers to protect against common web vulnerabilities (like XSS, clickjacking, MIME-sniffing).
 **Learning:** In a barebones NestJS setup, security headers are not included by default and need to be explicitly added using a middleware like Helmet. This represents a missing defense-in-depth layer.
-**Prevention:** Always include `helmet` during application bootstrap. Use Helmet’s default (strict) CSP for API routes, and apply relaxed CSP directives only for the Swagger UI mount (`/docs` and related paths such as `/docs-json`), since inline scripts and eval are required there.
+**Prevention:** Always include and configure `helmet` as a global middleware during the initial setup of the application bootstrap (`app.use(helmet())`). Configure CSP exceptions for Swagger UI as needed.
