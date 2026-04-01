@@ -14,3 +14,7 @@
 **Vulnerability:** Allowed SVG file uploads for chapter branding/logos without sanitization.
 **Learning:** `image/svg+xml` was included in `ALLOWED_LOGO_CONTENT_TYPES` and `svg` in `ALLOWED_LOGO_EXTENSIONS`. SVGs can contain embedded JavaScript `<script>` tags, which execute in the browser when the image is rendered or viewed directly, leading to Stored XSS.
 **Prevention:** Strictly exclude `image/svg+xml` and `.svg` from image upload allowlists unless explicit, rigorous SVG sanitization (e.g., DOMPurify for SVGs) is implemented on the backend.
+## 2026-04-01 - [NestJS Swagger UI Breakage with Helmet CSP]
+**Vulnerability:** Adding `helmet` for security HTTP headers in a NestJS application using `@nestjs/swagger` completely breaks the Swagger UI interface by violating default strict Content Security Policy (CSP) directives.
+**Learning:** The default `helmet` configuration blocks inline scripts, inline styles, and external images. Since Swagger UI relies on these to render dynamically via the `validator.swagger.io` image and inline execution, the security middleware effectively prevents access to API documentation.
+**Prevention:** When configuring `helmet` globally (`app.use(helmet(...))`) alongside Swagger, the `contentSecurityPolicy` must be explicitly overridden to allow the necessary directives. Specifically, `scriptSrc` must allow `'unsafe-inline'` and `'unsafe-eval'`, and `imgSrc` must allow `validator.swagger.io` alongside `data:` and `'self'`.

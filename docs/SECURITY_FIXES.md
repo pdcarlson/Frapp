@@ -26,3 +26,4 @@ To fix this, strict whitelists were implemented using JavaScript `Set`s for `ALL
 
 ### Prevention
 Always enforce strict content-type and extension allowlists when generating signed storage URLs for user-uploaded content.
+- Added helmet security headers to NestJS API
