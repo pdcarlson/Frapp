@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -115,6 +115,8 @@ function throwIfError(error: QueryError | null): void {
 
 @Injectable()
 export class ReportService {
+  private readonly logger = new Logger(ReportService.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
@@ -221,18 +223,24 @@ export class ReportService {
       .in('id', userIds)) as QueryResult<UserRosterRow>;
     throwIfError(userError);
 
+    const { data: allTxns, error: txnsError } = (await this.supabase
+      .from('point_transactions')
+      .select('user_id, amount')
+      .eq('chapter_id', chapterId)
+      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
+    if (txnsError) {
+      this.logger.error(
+        `Roster report: point_transactions query failed: ${txnsError.message} (chapterId=${chapterId}, userIds=${JSON.stringify(userIds)})`,
+      );
+    }
+    throwIfError(txnsError);
+
     const userMap = new Map(
       (users ?? []).map((u) => [
         u.id,
         { display_name: u.display_name, email: u.email },
       ]),
     );
-
-    const { data: allTxns } = (await this.supabase
-      .from('point_transactions')
-      .select('user_id, amount')
-      .eq('chapter_id', chapterId)
-      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
 
     const balances = new Map<string, number>();
     for (const t of allTxns ?? []) {
