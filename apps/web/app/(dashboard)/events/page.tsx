@@ -172,6 +172,7 @@ export default function EventsPage() {
             <div className="relative max-w-md">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
+                aria-label="Search events by name or location"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search events by name or location"
@@ -180,6 +181,7 @@ export default function EventsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <select
+                aria-label="Filter events by attendance"
                 value={attendanceFilter}
                 onChange={(event) =>
                   setAttendanceFilter(
@@ -193,6 +195,7 @@ export default function EventsPage() {
                 <option value="optional">Attendance: Optional</option>
               </select>
               <select
+                aria-label="Filter events by recurrence"
                 value={recurrenceFilter}
                 onChange={(event) =>
                   setRecurrenceFilter(
