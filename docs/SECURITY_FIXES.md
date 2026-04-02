@@ -28,4 +28,4 @@ To fix this, strict whitelists were implemented using JavaScript `Set`s for `ALL
 Always enforce strict content-type and extension allowlists when generating signed storage URLs for user-uploaded content.
 
 ## Security Headers
-- Added `helmet` in `apps/api/src/main.ts` as global middleware for baseline defense-in-depth headers (e.g., X-Frame-Options, X-Content-Type-Options). Relaxed Content-Security-Policy (inline scripts and `unsafe-eval` for Swagger UI) applies only on Swagger paths: `/docs`, `/docs/*`, `/docs-json`, and `/docs-yaml`. All other routes use Helmet’s default (stricter) CSP.
+- Added `helmet` to the NestJS API as global middleware to provide basic defense-in-depth security headers (e.g., CSP, X-Frame-Options, X-Content-Type-Options). The CSP is configured to explicitly permit inline scripts and eval only for the Swagger UI documentation route at `/docs`, while keeping it strict elsewhere.

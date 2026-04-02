@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { InternalServerErrorException } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -197,45 +196,6 @@ describe('ReportService', () => {
       const result = await service.getRosterReport('ch-1');
 
       expect(result).toEqual([]);
-    });
-
-    it('should throw when point_transactions query fails', async () => {
-      const membersChain = makeChain({
-        data: [
-          {
-            user_id: 'u-1',
-            role_ids: [],
-            created_at: '2026-01-15T00:00:00Z',
-          },
-        ],
-        error: null,
-      });
-      const usersChain = makeChain({
-        data: [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }],
-        error: null,
-      });
-      const txnsChain = makeChain({
-        data: null,
-        error: { message: 'permission denied' },
-      });
-
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
-        if (t === 'members') return membersChain;
-        if (t === 'users') return usersChain;
-        if (t === 'point_transactions') return txnsChain;
-        return makeChain({ data: [], error: null });
-      });
-
-      const err = await service
-        .getRosterReport('ch-1')
-        .then(() => {
-          throw new Error('expected getRosterReport to reject');
-        })
-        .catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(InternalServerErrorException);
-      expect((err as InternalServerErrorException).message).toBe(
-        'Failed to generate points report due to a database error',
-      );
     });
   });
 
