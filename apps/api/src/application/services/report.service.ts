@@ -1,4 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 
@@ -217,10 +222,21 @@ export class ReportService {
     if (!members?.length) return [];
 
     const userIds = members.map((m) => m.user_id);
-    const { data: users, error: userError } = (await this.supabase
-      .from('users')
-      .select('id, display_name, email')
-      .in('id', userIds)) as QueryResult<UserRosterRow>;
+    const [
+      { data: users, error: userError },
+      { data: allTxns, error: txnsError },
+    ] = (await Promise.all([
+      this.supabase
+        .from('users')
+        .select('id, display_name, email')
+        .in('id', userIds),
+      this.supabase
+        .from('point_transactions')
+        .select('user_id, amount')
+        .eq('chapter_id', chapterId)
+        .in('user_id', userIds),
+    ])) as [QueryResult<UserRosterRow>, QueryResult<UserAmountRow>];
+
     throwIfError(userError);
 
     const userMap = new Map(
@@ -230,18 +246,13 @@ export class ReportService {
       ]),
     );
 
-    const { data: allTxns, error: txnsError } = (await this.supabase
-      .from('point_transactions')
-      .select('user_id, amount')
-      .eq('chapter_id', chapterId)
-      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
-
     if (txnsError) {
       this.logger.error(
-        `Failed to fetch point transactions for report: ${txnsError.message}`,
-        { chapterId, userIds },
+        `Roster report: point_transactions query failed: ${txnsError.message} (chapterId=${chapterId}, userIds=${JSON.stringify(userIds)})`,
       );
-      throw new Error('Failed to generate points report due to a database error');
+      throw new InternalServerErrorException(
+        'Failed to generate points report due to a database error',
+      );
     }
 
     const balances = new Map<string, number>();
