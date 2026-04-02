@@ -75,8 +75,6 @@ Interceptors:
 
 The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and (on pull requests) **`scripts/check-docs-impact.mjs`** so non-doc code changes must include related `docs/` or `spec/` updates in the same PR.
 
-**Maintenance:** In `ReportService.getRosterReport`, the `point_transactions` Supabase query must check `error` (log `chapterId` / `userIds`, then throw). Ignoring it makes failed queries look like zero point balances.
-
 ## 6. E2E scaffolding
 
 E2E config file: `apps/api/test/jest-e2e.json`:

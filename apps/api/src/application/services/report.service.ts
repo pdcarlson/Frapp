@@ -223,24 +223,26 @@ export class ReportService {
       .in('id', userIds)) as QueryResult<UserRosterRow>;
     throwIfError(userError);
 
-    const { data: allTxns, error: txnsError } = (await this.supabase
-      .from('point_transactions')
-      .select('user_id, amount')
-      .eq('chapter_id', chapterId)
-      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
-    if (txnsError) {
-      this.logger.error(
-        `Roster report: point_transactions query failed: ${txnsError.message} (chapterId=${chapterId}, userIds=${JSON.stringify(userIds)})`,
-      );
-    }
-    throwIfError(txnsError);
-
     const userMap = new Map(
       (users ?? []).map((u) => [
         u.id,
         { display_name: u.display_name, email: u.email },
       ]),
     );
+
+    const { data: allTxns, error: txnsError } = (await this.supabase
+      .from('point_transactions')
+      .select('user_id, amount')
+      .eq('chapter_id', chapterId)
+      .in('user_id', userIds)) as QueryResult<UserAmountRow>;
+
+    if (txnsError) {
+      this.logger.error(
+        `Failed to fetch point transactions for report: ${txnsError.message}`,
+        { chapterId, userIds },
+      );
+      throw new Error('Failed to generate points report due to a database error');
+    }
 
     const balances = new Map<string, number>();
     for (const t of allTxns ?? []) {

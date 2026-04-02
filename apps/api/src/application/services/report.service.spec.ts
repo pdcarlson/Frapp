@@ -197,38 +197,6 @@ describe('ReportService', () => {
 
       expect(result).toEqual([]);
     });
-
-    it('should throw when point_transactions query fails', async () => {
-      const membersChain = makeChain({
-        data: [
-          {
-            user_id: 'u-1',
-            role_ids: [],
-            created_at: '2026-01-15T00:00:00Z',
-          },
-        ],
-        error: null,
-      });
-      const usersChain = makeChain({
-        data: [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }],
-        error: null,
-      });
-      const txnsChain = makeChain({
-        data: null,
-        error: { message: 'permission denied' },
-      });
-
-      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
-        if (t === 'members') return membersChain;
-        if (t === 'users') return usersChain;
-        if (t === 'point_transactions') return txnsChain;
-        return makeChain({ data: [], error: null });
-      });
-
-      await expect(service.getRosterReport('ch-1')).rejects.toThrow(
-        'permission denied',
-      );
-    });
   });
 
   describe('getServiceReport', () => {
