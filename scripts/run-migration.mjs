@@ -59,6 +59,36 @@ function run(command, args = [], options = {}) {
   }
 }
 
+let cachedSupabaseCommand = null;
+
+function getSupabaseCommand() {
+  if (cachedSupabaseCommand) return cachedSupabaseCommand;
+
+  try {
+    execFileSync("supabase", ["--version"], {
+      stdio: "ignore",
+    });
+    console.log("  Using Supabase CLI from PATH.");
+    cachedSupabaseCommand = {
+      command: "supabase",
+      prefixArgs: [],
+    };
+  } catch {
+    console.log("  Supabase CLI not found on PATH. Falling back to npx supabase.");
+    cachedSupabaseCommand = {
+      command: "npx",
+      prefixArgs: ["supabase"],
+    };
+  }
+
+  return cachedSupabaseCommand;
+}
+
+function runSupabase(args = [], options = {}) {
+  const { command, prefixArgs } = getSupabaseCommand();
+  return run(command, [...prefixArgs, ...args], options);
+}
+
 function validateEnvironment() {
   const env = getArg("--env");
   if (!env || !["staging", "production"].includes(env)) {
@@ -108,11 +138,11 @@ function dryRun(projectRef) {
 
   // Link to the project first — failure here is fatal
   console.log("  Linking to Supabase project...");
-  run("npx", ["supabase", "link", "--project-ref", projectRef]);
+  runSupabase(["link", "--project-ref", projectRef]);
 
   // Show migration status — failure here is fatal
   console.log("  Listing migration status...");
-  const output = run("npx", ["supabase", "migration", "list"], { capture: true });
+  const output = runSupabase(["migration", "list"], { capture: true });
 
   if (output) {
     console.log("\n  Migration status:");
@@ -127,11 +157,11 @@ function applyMigrations(projectRef) {
 
   // Link to the project
   console.log("\n  Linking to Supabase project...");
-  run("npx", ["supabase", "link", "--project-ref", projectRef]);
+  runSupabase(["link", "--project-ref", projectRef]);
 
   // Push migrations
   console.log("\n  Pushing migrations...");
-  run("npx", ["supabase", "db", "push"]);
+  runSupabase(["db", "push"]);
 
   console.log("\n  ✅ Migrations applied successfully.");
 }

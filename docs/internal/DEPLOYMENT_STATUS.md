@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-03-19
+Last updated: 2026-04-16
 
 ## Environment branch model
 
@@ -11,48 +11,48 @@ Last updated: 2026-03-19
 
 | Surface                 | Staging (`main`) | Production (`production`) | Notes                                                                                                      |
 | ----------------------- | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Landing (Vercel)        | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
-| Web dashboard (Vercel)  | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| Landing (Vercel)        | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
+| Web dashboard (Vercel)  | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
 | Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)   |
-| API (Render)            | ✅               | ✅                        | `frapp-api-staging -> main`, `frapp-api-prod -> production` verified via Render API                        |
+| API (Render)            | ⚠️               | ⚠️                        | Custom domains are unhealthy; `Deploy API` automation is currently failing on `main`                        |
 | Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
 
-## Provider branch wiring audit (2026-03-19)
+## Provider branch wiring audit (2026-04-16)
 
 | Provider | Resource                          | Expected      | Current          | Status                              |
 | -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------- |
-| Render   | `frapp-api-staging`               | `main`        | `main`           | ✅                                  |
-| Render   | `frapp-api-prod`                  | `production`  | `production`     | ✅ (corrected on 2026-03-19)        |
-| Vercel   | `frapp-web` production branch     | `production`  | `main`           | ⚠️ manual dashboard update required |
-| Vercel   | `frapp-landing` production branch | `production`  | `main`           | ⚠️ manual dashboard update required |
+| Render   | `frapp-api-staging`               | `main`        | unknown in chat  | ⚠️ Render API unavailable; staging domain currently times out |
+| Render   | `frapp-api-prod`                  | `production`  | unknown in chat  | ⚠️ Render API unavailable; production domain currently returns `502` |
+| Vercel   | `frapp-web` production branch     | `production`  | `production`     | ✅                                  |
+| Vercel   | `frapp-landing` production branch | `production`  | `production`     | ✅                                  |
 | Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
 | Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                  |
 
-### Vercel caveat
+### Current runtime blockers (verified 2026-04-16)
 
-The public Vercel REST API currently exposes `productionBranch` in project responses but does not expose a supported write field for changing it through `PATCH /v9|v10/projects/{idOrName}`.
+- `Deploy API` fails on `main` because `.github/workflows/deploy-api.yml` used `npm install -g supabase@2.77.0`, which Supabase CLI no longer supports.
+- A separate recent `Deploy API` failure was caused by a missing staging `RENDER_DEPLOY_HOOK_URL` GitHub environment secret.
+- `https://api.frapp.live/health` currently returns `502` with Render routing header `x-render-routing: no-deploy`.
+- `https://api-staging.frapp.live/health` currently times out.
+- `https://app.staging.frapp.live` and `https://staging.frapp.live` return `401 Authentication Required`; this is intentional Vercel protection and not a bug.
 
-For this repository, set the production branch manually in the Vercel dashboard for each project:
+### Vercel truth
 
-1. `frapp-web`
-2. `frapp-landing`
-
-Path: **Project → Settings → Git → Production Branch = `production`**
-
-After changes, verify deployment routing:
-
-- `target=production` uses branch `production`
-- `target=preview` uses branch `main`
+- `frapp-web` production branch is already `production`.
+- `frapp-landing` production branch is already `production`.
+- Latest `main` preview deployment for `frapp-web` is `READY`.
+- Latest `main` preview deployment for `frapp-landing` is intentionally `CANCELED` by the ignored-build step because no landing changes were detected.
 
 ## API deployment pending checklist
 
 - [ ] Confirm Render staging service env matrix (Supabase + Stripe + Sentry)
 - [ ] Confirm Render production service env matrix (Supabase + Stripe + Sentry)
 - [ ] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
-- [ ] Validate fail-fast startup checks (missing required env vars fail boot)
+- [x] Validate fail-fast startup checks (missing required env vars fail boot)
 - [ ] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
 - [ ] Verify staging Stripe webhook routing/secret (`/v1/webhooks/stripe`)
 - [ ] Wire deploy hook + healthcheck URL secrets for both environments
+- [x] Replace unsupported global Supabase CLI install in deploy workflow
 
 ## Database promotion discipline checklist
 

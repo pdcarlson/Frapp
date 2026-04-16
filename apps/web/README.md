@@ -14,7 +14,8 @@ App URL: `http://localhost:3000`
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and provide:
+Provide the following variables through Infisical (`npm run dev:web`) or a local
+`.env.local` fallback file:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`

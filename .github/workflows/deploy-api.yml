@@ -70,8 +70,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Supabase CLI
-        run: npm install -g supabase@2.77.0
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
 
       - name: Run migrations (dry-run)
         env:
@@ -105,8 +107,10 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install Supabase CLI
-        run: npm install -g supabase@2.77.0
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v2
+        with:
+          version: 2.77.0
 
       - name: Run migrations (dry-run)
         env:
