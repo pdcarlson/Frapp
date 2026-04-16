@@ -84,8 +84,8 @@ Use that for evolving preferences that do not belong in checked-in `BUGBOT.md` f
 On a fresh PR to `main`:
 
 1. Confirm Bugbot reviews the PR automatically, or responds to `cursor review`
-2. Confirm no CodeRabbit review appears
-3. Confirm the old `Trigger CodeRabbit Review` workflow no longer runs
+2. Confirm only Bugbot review activity appears on the PR
+3. Confirm no legacy third-party review workflow runs
 4. Confirm the new `Trigger Bugbot Review` workflow succeeds
 
 On a fresh PR from `main` to `production`:
