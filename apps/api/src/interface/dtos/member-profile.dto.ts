@@ -25,19 +25,19 @@ export class MemberProfileDto {
   @ApiProperty()
   display_name: string;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: String, nullable: true })
   avatar_url: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: String, nullable: true })
   bio: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: Number, nullable: true })
   graduation_year: number | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: String, nullable: true })
   current_city: string | null;
 
-  @ApiProperty({ nullable: true })
+  @ApiProperty({ type: String, nullable: true })
   current_company: string | null;
 
   @ApiProperty()

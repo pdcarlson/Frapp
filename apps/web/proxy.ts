@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-const AUTH_ROUTES = ["/sign-in", "/sign-up", "/join"];
-const DASHBOARD_ROUTE_PREFIX = "/dashboard";
+const AUTH_ROUTES = ["/sign-in", "/sign-up"];
+const DASHBOARD_ROUTE_PREFIX = "/members";
 const PROTECTED_ROUTE_PREFIXES = [
   "/dashboard",
   "/members",
