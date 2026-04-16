@@ -1,25 +1,28 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useRoles() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["roles"],
+    queryKey: ["roles", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/roles");
       if (error) throw error;
       return data;
     },
     staleTime: 60_000,
+    enabled: !!chapterId,
   });
 }
 
 export function usePermissionsCatalog() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["roles", "permissions-catalog"],
+    queryKey: ["roles", chapterId, "permissions-catalog"],
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/roles/permissions-catalog",
@@ -28,12 +31,14 @@ export function usePermissionsCatalog() {
       return data;
     },
     staleTime: 300_000,
+    enabled: !!chapterId,
   });
 }
 
 export function useCreateRole() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: {
       name: string;
@@ -46,7 +51,7 @@ export function useCreateRole() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
     },
   });
 }
@@ -54,6 +59,7 @@ export function useCreateRole() {
 export function useUpdateRole() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async ({
       id,
@@ -75,7 +81,7 @@ export function useUpdateRole() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
     },
   });
 }
@@ -83,6 +89,7 @@ export function useUpdateRole() {
 export function useDeleteRole() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/roles/{id}", {
@@ -92,7 +99,7 @@ export function useDeleteRole() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
     },
   });
 }
@@ -100,6 +107,7 @@ export function useDeleteRole() {
 export function useTransferPresidency() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: { target_member_id: string }) => {
       const { data, error } = await client.POST(
@@ -110,8 +118,8 @@ export function useTransferPresidency() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["roles"] });
-      queryClient.invalidateQueries({ queryKey: ["members"] });
+      queryClient.invalidateQueries({ queryKey: ["roles", chapterId] });
+      queryClient.invalidateQueries({ queryKey: ["members", chapterId] });
     },
   });
 }

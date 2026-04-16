@@ -22,12 +22,6 @@ type MemberOption = {
   label: string;
 };
 
-const fallbackMembers: MemberOption[] = [
-  { userId: "preview-user-1", label: "Jordan M. (preview)" },
-  { userId: "preview-user-2", label: "Evan R. (preview)" },
-  { userId: "preview-user-3", label: "Dylan P. (preview)" },
-];
-
 type PointsAdjustmentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -59,7 +53,7 @@ export function PointsAdjustmentDialog({
   const memberOptions = useMemo(() => {
     const membersData = membersQuery.data as unknown;
     if (!Array.isArray(membersData) || membersData.length === 0) {
-      return usingPreviewData ? fallbackMembers : [];
+      return [];
     }
     return (membersData as Record<string, unknown>[])
       .map((member) => {
@@ -69,7 +63,7 @@ export function PointsAdjustmentDialog({
         return { userId, label: `${displayName} (${userId})` };
       })
       .filter((option): option is MemberOption => option !== null);
-  }, [membersQuery.data, usingPreviewData]);
+  }, [membersQuery.data]);
 
   useEffect(() => {
     if (!open) return;
@@ -129,10 +123,10 @@ export function PointsAdjustmentDialog({
 
     if (usingPreviewData) {
       toast({
-        title: "Preview adjustment simulated",
-        description: `${parsedAmount > 0 ? "+" : ""}${parsedAmount} points for ${targetUserId}.`,
+        title: "Live points adjustment unavailable",
+        description:
+          "Complete chapter auth/bootstrap and reload live member data before adjusting points.",
       });
-      onOpenChange(false);
       return;
     }
 

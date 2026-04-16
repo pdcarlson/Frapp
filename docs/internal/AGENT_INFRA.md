@@ -19,10 +19,10 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 
 | Env var                                    | Typical use                          |
 | ------------------------------------------ | ------------------------------------ |
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`        | `gh` CLI, branch protection script   |
+| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` / `GITHUB_PERSONAL_ACCESS_TOKEN` | `gh` CLI, branch protection script   |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management            |
 | `INFISICAL_API_KEY`                        | Infisical API (may lack `local` env) |
-| `RENDER_APIKEY`                            | Render API                           |
+| `RENDER_APIKEY` / `RENDER_API_KEY`        | Render API                           |
 | `VERCEL_API_KEY`                           | Vercel API                           |
 | `SUPABASE_API_KEY`                         | Supabase Management API              |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)           |
@@ -33,7 +33,11 @@ The agent **may** use `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` for: creating/closing 
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
+Use whichever GitHub PAT env var is present for `gh` CLI commands (`GITHUB_FULL_PERSONAL_ACCESS_TOKEN` or `GITHUB_PERSONAL_ACCESS_TOKEN`), e.g.:
+
+```bash
+export GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}"
+```
 
 ## CI/CD summary
 

@@ -29,6 +29,8 @@ Change SUPABASE_URL → both references update instantly.
 | `staging` | Deployed to staging infra when code merges to `main` branch | Vercel Preview, Render staging, Supabase staging project |
 | `production` | Deployed to production infra when code merges to `production` branch | Vercel Production, Render production, Supabase production project |
 
+> **Infisical API note:** the Production environment is named “Production” in the UI, but its API/runtime slug is currently `prod`. GitHub Actions and provider automation should use the real slug returned by the Infisical API.
+
 **Local uses local Supabase (Docker) but real staging Stripe/Sentry keys.** This lets you test billing flows, webhook handling, and error tracking during local development without pushing to main. Supabase stays local because the database schema and seed data are managed by your local Docker instance.
 
 ---
@@ -163,16 +165,16 @@ Reads the `EXPO_PUBLIC_*` references:
 | `INFISICAL_CLIENT_SECRET` | Infisical → Machine Identity → Universal Auth → Client Secret |
 | `INFISICAL_PROJECT_ID` | Infisical → Project Settings → Project ID |
 
-**Transitional (until `@infisical/secrets-action` is integrated into deploy workflow):**
+**Current deploy workflow state:**
 
-These are used by `deploy-api.yml` via `${{ secrets.* }}`. Set them as GitHub **environment-scoped** secrets (staging and production):
+`deploy-api.yml` now injects deploy-time secrets directly from Infisical using `Infisical/secrets-action`. That means GitHub **environment-scoped** copies of:
 
-| Secret | Staging value | Production value |
-|---|---|---|
-| `SUPABASE_ACCESS_TOKEN` | Account-level token (same for both) | (same) |
-| `SUPABASE_PROJECT_REF` | Staging project ref | Production project ref |
-| `RENDER_DEPLOY_HOOK_URL` | Staging deploy hook URL | Production deploy hook URL |
-| `API_HEALTHCHECK_URL` | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_PROJECT_REF`
+- `RENDER_DEPLOY_HOOK_URL`
+- `API_HEALTHCHECK_URL`
+
+are **no longer required** for the workflow to run, as long as the three bootstrap repository secrets above remain valid and the referenced Infisical project/environment slugs exist.
 
 ---
 

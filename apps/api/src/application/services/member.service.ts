@@ -36,6 +36,8 @@ export interface MemberProfile {
   email: string;
 }
 
+export type MemberSummary = MemberProfile;
+
 @Injectable()
 export class MemberService {
   constructor(
@@ -44,8 +46,27 @@ export class MemberService {
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
   ) {}
 
-  async findByChapter(chapterId: string): Promise<Member[]> {
-    return this.memberRepo.findByChapter(chapterId);
+  async findByChapter(chapterId: string): Promise<MemberSummary[]> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    if (!members.length) return [];
+
+    const userIds = [...new Set(members.map((member) => member.user_id))];
+    const users = await this.userRepo.findByIds(userIds);
+    const userMap = new Map(users.map((user) => [user.id, user]));
+
+    return members.map((member) => {
+      const user = userMap.get(member.user_id);
+      if (!user) {
+        throw new NotFoundException(
+          `User not found for member ${member.id} in chapter ${chapterId}`,
+        );
+      }
+      return this.mergeMemberWithUser(member, user);
+    });
+  }
+
+  async findProfilesByChapter(chapterId: string): Promise<MemberProfile[]> {
+    return this.findByChapter(chapterId);
   }
 
   async findByUserAndChapter(

@@ -36,6 +36,7 @@ import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type DashboardShellProps = {
@@ -221,6 +222,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const titleByPath: Record<string, string> = {
     "/": "Chapter Operations",
     "/members": "Members",
@@ -291,6 +293,16 @@ export function DashboardShell({ children }: DashboardShellProps) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  async function handleSignOut() {
+    setIsSigningOut(true);
+    try {
+      await signOutCurrentSession();
+      window.location.assign("/sign-in");
+    } finally {
+      setIsSigningOut(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-muted/30">
@@ -378,8 +390,18 @@ export function DashboardShell({ children }: DashboardShellProps) {
                   <Bell className="h-4 w-4" />
                 </Button>
                 <ThemeToggle />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                >
+                  {isSigningOut ? "Signing out..." : "Sign out"}
+                </Button>
                 <Button size="sm" asChild>
-                  <Link href="#">{pageAction}</Link>
+                  <Link href={pathname === "/members" ? "/members" : pathname}>
+                    {pageAction}
+                  </Link>
                 </Button>
               </div>
             </div>

@@ -23,5 +23,9 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
     [activeChapterId],
   );
 
-  return <FrappClientProvider client={client}>{children}</FrappClientProvider>;
+  return (
+    <FrappClientProvider client={client} chapterId={activeChapterId}>
+      {children}
+    </FrappClientProvider>
+  );
 }

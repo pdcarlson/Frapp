@@ -37,29 +37,6 @@ type InviteRow = {
   used_at: string | null;
 };
 
-const fallbackRoles: RoleRow[] = [
-  { id: "member-role", name: "Member" },
-  { id: "new-member-role", name: "New Member" },
-  { id: "exec-role", name: "Executive Board" },
-];
-
-const fallbackInvites: InviteRow[] = [
-  {
-    id: "preview-invite-1",
-    token: "preview-token-alpha",
-    role: "Member",
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString(),
-    used_at: null,
-  },
-  {
-    id: "preview-invite-2",
-    token: "preview-token-bravo",
-    role: "Executive Board",
-    expires_at: new Date(Date.now() + 1000 * 60 * 60 * 4).toISOString(),
-    used_at: null,
-  },
-];
-
 function formatDate(value: string): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) {
@@ -126,15 +103,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const createBatchInvitesMutation = useBatchCreateInvites();
   const revokeInviteMutation = useRevokeInvite();
   const { toast } = useToast();
-  const usingPreviewData = rolesQuery.isError || invitesQuery.isError;
+  const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
   const roleOptions = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackRoles;
-    }
     const rolesData = rolesQuery.data as unknown;
     if (!Array.isArray(rolesData)) {
-      return fallbackRoles;
+      return [];
     }
     const roles = rolesData
       .flatMap((role: unknown) => {
@@ -147,15 +121,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
       })
       .sort((first: RoleRow, second: RoleRow) => first.name.localeCompare(second.name));
 
-    return roles.length > 0 ? roles : fallbackRoles;
-  }, [rolesQuery.data, usingPreviewData]);
+    return roles;
+  }, [rolesQuery.data]);
 
   const inviteRows = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackInvites;
-    }
     return normalizeInvites(invitesQuery.data);
-  }, [invitesQuery.data, usingPreviewData]);
+  }, [invitesQuery.data]);
 
   useEffect(() => {
     if (!roleOptions.some((role: RoleRow) => role.name === roleName)) {
@@ -259,11 +230,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        {usingPreviewData ? (
+        {hasLiveDataError ? (
           <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <div>
-              Showing preview invite data. Sign in with chapter permissions to generate live invites.
+              Live invite data could not load. Resolve the underlying API error before issuing
+              chapter invites.
             </div>
           </div>
         ) : null}
@@ -296,7 +268,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           <div className="flex items-end">
             <Button
               onClick={handleGenerateInvites}
-              disabled={usingPreviewData || isSubmitting}
+              disabled={hasLiveDataError || isSubmitting || roleOptions.length === 0}
               className="w-full"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -360,7 +332,7 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                     size="sm"
                     variant="outline"
                     onClick={() => handleRevokeInvite(invite.id)}
-                    disabled={revokeInviteMutation.isPending || usingPreviewData}
+                    disabled={revokeInviteMutation.isPending || hasLiveDataError}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Revoke

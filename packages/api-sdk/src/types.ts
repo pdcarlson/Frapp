@@ -63,7 +63,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List chapters for current user */
+        get: operations["ChapterController_listForCurrentUser_v1"];
         put?: never;
         /** Create a new chapter */
         post: operations["ChapterController_create_v1"];
@@ -1673,6 +1674,22 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
+        MemberProfileDto: {
+            id: string;
+            user_id: string;
+            chapter_id: string;
+            role_ids: string[];
+            has_completed_onboarding: boolean;
+            created_at: string;
+            updated_at: string;
+            display_name: string;
+            avatar_url: Record<string, never> | null;
+            bio: Record<string, never> | null;
+            graduation_year: Record<string, never> | null;
+            current_city: Record<string, never> | null;
+            current_company: Record<string, never> | null;
+            email: string;
+        };
         UpdateMemberRolesDto: {
             role_ids: string[];
         };
@@ -2133,6 +2150,23 @@ export interface operations {
             };
         };
     };
+    ChapterController_listForCurrentUser_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ChapterController_create_v1: {
         parameters: {
             query?: never;
@@ -2264,7 +2298,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
             };
         };
     };
@@ -2284,7 +2320,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
             };
         };
     };
@@ -2303,7 +2341,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
             };
         };
     };

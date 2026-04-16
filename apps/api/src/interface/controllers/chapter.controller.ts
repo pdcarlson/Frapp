@@ -47,6 +47,14 @@ export class ChapterController {
     return this.chapterService.create(userId, dto);
   }
 
+  @Get()
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(AuthSyncInterceptor)
+  @ApiOperation({ summary: 'List chapters for current user' })
+  async listForCurrentUser(@CurrentUser('id') userId: string) {
+    return this.chapterService.listForUser(userId);
+  }
+
   @Get('current')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)

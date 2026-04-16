@@ -32,37 +32,6 @@ type InvoicePreview = {
   due_date: string;
 };
 
-const fallbackStatus: BillingStatusPreview = {
-  status: "active",
-  chapter_id: "preview-chapter",
-  stripe_customer_id: "cus_preview_123",
-  subscription_id: "sub_preview_123",
-};
-
-const fallbackInvoices: InvoicePreview[] = [
-  {
-    id: "preview-invoice-1",
-    title: "Spring Dues • Jordan M.",
-    amount: 15000,
-    status: "OPEN",
-    due_date: new Date(Date.now() + 1000 * 60 * 60 * 24 * 10).toISOString(),
-  },
-  {
-    id: "preview-invoice-2",
-    title: "Spring Dues • Evan R.",
-    amount: 15000,
-    status: "PAID",
-    due_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 2).toISOString(),
-  },
-  {
-    id: "preview-invoice-3",
-    title: "House Fee Adjustment • Dylan P.",
-    amount: 7500,
-    status: "OVERDUE",
-    due_date: new Date(Date.now() - 1000 * 60 * 60 * 24 * 6).toISOString(),
-  },
-];
-
 function formatCurrency(cents: number): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -87,11 +56,11 @@ export default function BillingPage() {
   const isLoading = statusQuery.isLoading || invoicesQuery.isLoading;
   const usingPreviewData = statusQuery.isError || invoicesQuery.isError;
 
-  const billingStatus = (statusQuery.data as BillingStatusPreview | undefined) ?? fallbackStatus;
+  const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
   const invoices = Array.isArray(invoicesQuery.data)
     ? (invoicesQuery.data as InvoicePreview[])
-    : fallbackInvoices;
-  const visibleInvoices = usingPreviewData ? fallbackInvoices : invoices;
+    : [];
+  const visibleInvoices = invoices;
   const filteredInvoices = useMemo(() => {
     const query = invoiceSearch.trim().toLowerCase();
     return visibleInvoices.filter((invoice) => {
@@ -161,16 +130,16 @@ export default function BillingPage() {
           <div className="rounded-lg border border-border p-4">
             <p className="text-xs text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
-              <Badge className="capitalize">{billingStatus.status}</Badge>
+              <Badge className="capitalize">{billingStatus?.status ?? "unknown"}</Badge>
             </div>
           </div>
           <div className="rounded-lg border border-border p-4">
             <p className="text-xs text-muted-foreground">Customer ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus.stripe_customer_id ?? "—"}</p>
+            <p className="mt-2 text-sm font-medium">{billingStatus?.stripe_customer_id ?? "—"}</p>
           </div>
           <div className="rounded-lg border border-border p-4">
             <p className="text-xs text-muted-foreground">Subscription ID</p>
-            <p className="mt-2 text-sm font-medium">{billingStatus.subscription_id ?? "—"}</p>
+            <p className="mt-2 text-sm font-medium">{billingStatus?.subscription_id ?? "—"}</p>
           </div>
         </CardContent>
       </Card>
@@ -182,10 +151,10 @@ export default function BillingPage() {
               <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
               <div>
                 <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  {stateMicrocopy.billing.previewTitle}
+                  Billing depends on live chapter activation
                 </p>
                 <p className="text-xs text-amber-800 dark:text-amber-200">
-                  {stateMicrocopy.billing.previewDescription}
+                  Complete chapter bootstrap and billing activation before expecting live invoice data.
                 </p>
               </div>
             </div>

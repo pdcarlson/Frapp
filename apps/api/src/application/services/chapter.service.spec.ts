@@ -64,6 +64,7 @@ describe('ChapterService', () => {
 
     mockMemberRepo = {
       findById: jest.fn(),
+      findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
@@ -110,6 +111,82 @@ describe('ChapterService', () => {
 
     expect(mockChapterRepo.findById).toHaveBeenCalledWith('ch-1');
     expect(result).toEqual(chapter);
+  });
+
+  it('should list chapters for the current user', async () => {
+    const chapters: Chapter[] = [
+      {
+        id: 'ch-1',
+        name: 'Alpha',
+        university: 'State U',
+        stripe_customer_id: null,
+        subscription_status: 'active',
+        subscription_id: null,
+        accent_color: '#2563EB',
+        logo_path: null,
+        donation_url: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      },
+      {
+        id: 'ch-2',
+        name: 'Beta',
+        university: 'Tech U',
+        stripe_customer_id: null,
+        subscription_status: 'incomplete',
+        subscription_id: null,
+        accent_color: '#1D4ED8',
+        logo_path: null,
+        donation_url: null,
+        created_at: '2024-01-02',
+        updated_at: '2024-01-02',
+      },
+    ];
+    mockMemberRepo.findByUser.mockResolvedValue([
+      {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-president'],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      },
+      {
+        id: 'member-2',
+        user_id: 'user-1',
+        chapter_id: 'ch-2',
+        role_ids: ['role-member'],
+        has_completed_onboarding: false,
+        created_at: '2024-01-02',
+        updated_at: '2024-01-02',
+      },
+    ]);
+    mockChapterRepo.findById
+      .mockResolvedValueOnce(chapters[0])
+      .mockResolvedValueOnce(chapters[1]);
+
+    const result = await service.listForUser('user-1');
+
+    expect(mockMemberRepo.findByUser).toHaveBeenCalledWith('user-1');
+    expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(1, 'ch-1');
+    expect(mockChapterRepo.findById).toHaveBeenNthCalledWith(2, 'ch-2');
+    expect(result).toEqual([
+      {
+        member_id: 'member-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-president'],
+        has_completed_onboarding: true,
+        chapter: chapters[0],
+      },
+      {
+        member_id: 'member-2',
+        chapter_id: 'ch-2',
+        role_ids: ['role-member'],
+        has_completed_onboarding: false,
+        chapter: chapters[1],
+      },
+    ]);
   });
 
   it('should throw NotFoundException when chapter not found', async () => {

@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-03-19
+Last updated: 2026-04-16
 
 ## Environment branch model
 
@@ -11,48 +11,73 @@ Last updated: 2026-03-19
 
 | Surface                 | Staging (`main`) | Production (`production`) | Notes                                                                                                      |
 | ----------------------- | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Landing (Vercel)        | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
-| Web dashboard (Vercel)  | ⚠️               | ⚠️                        | Project exists; Vercel production branch is still `main` and must be switched to `production` in dashboard |
+| Landing (Vercel)        | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
+| Web dashboard (Vercel)  | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
 | Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)   |
-| API (Render)            | ✅               | ✅                        | `frapp-api-staging -> main`, `frapp-api-prod -> production` verified via Render API                        |
+| API (Render)            | ✅               | ⚠️                        | Staging custom domain is healthy again; production still lacks complete runtime config for a successful deploy |
 | Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
 
-## Provider branch wiring audit (2026-03-19)
+## Provider branch wiring audit (2026-04-16)
 
 | Provider | Resource                          | Expected      | Current          | Status                              |
 | -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------- |
-| Render   | `frapp-api-staging`               | `main`        | `main`           | ✅                                  |
-| Render   | `frapp-api-prod`                  | `production`  | `production`     | ✅ (corrected on 2026-03-19)        |
-| Vercel   | `frapp-web` production branch     | `production`  | `main`           | ⚠️ manual dashboard update required |
-| Vercel   | `frapp-landing` production branch | `production`  | `main`           | ⚠️ manual dashboard update required |
+| Render   | `frapp-api-staging`               | `main`        | `c/staging-application-foundation-2a54` (temporary) | ✅ Deploy reaches `live`; both Render and custom-domain healthchecks return `status: ok` |
+| Render   | `frapp-api-prod`                  | `production`  | `production`     | ⚠️ Production service config corrected, but runtime is still blocked by missing Stripe vars |
+| Vercel   | `frapp-web` production branch     | `production`  | `production`     | ✅                                  |
+| Vercel   | `frapp-landing` production branch | `production`  | `production`     | ✅                                  |
 | Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
 | Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                  |
 
-### Vercel caveat
+### Current runtime blockers (verified 2026-04-16)
 
-The public Vercel REST API currently exposes `productionBranch` in project responses but does not expose a supported write field for changing it through `PATCH /v9|v10/projects/{idOrName}`.
+- `Deploy API` fails on `main` because `.github/workflows/deploy-api.yml` used `npm install -g supabase@2.77.0`, which Supabase CLI no longer supports.
+- A separate recent `Deploy API` failure was caused by a missing staging `RENDER_DEPLOY_HOOK_URL` GitHub environment secret.
+- `https://api.frapp.live/health` currently returns `502`.
+- `https://api-staging.frapp.live/health` is healthy again and returns `{"status":"ok","database":"connected",...}`.
+- `https://app.staging.frapp.live` and `https://staging.frapp.live` return `401 Authentication Required`; this is intentional Vercel protection and not a bug.
 
-For this repository, set the production branch manually in the Vercel dashboard for each project:
+### Render API audit (verified 2026-04-16)
 
-1. `frapp-web`
-2. `frapp-landing`
+- Both Render services were configured with an incorrect Docker monorepo setup:
+  - `rootDir: apps/api`
+  - `dockerfilePath: ./Dockerfile`
+- Corrected provider-side configuration to:
+  - `rootDir: ""`
+  - `dockerfilePath: "apps/api/Dockerfile"`
+- Staging service was temporarily pointed at `c/staging-application-foundation-2a54` and redeployed to validate the feature branch code path.
+- That deploy reached `live`, and both:
+  - `https://frapp-api-staging.onrender.com/health`
+  - `https://api-staging.frapp.live/health`
+  now return `{"status":"ok","database":"connected",...}`.
+- Supabase hostnames used by Render now resolve again in the audit environment:
+  - staging `SUPABASE_URL` host: `hnoyzpidbmizhbqaiity.supabase.co`
+  - production `SUPABASE_URL` host: `unttyvyfezddlyafcydh.supabase.co`
+- Production Render is also missing four Stripe runtime vars that exist in the documented env matrix:
+  - `STRIPE_PRICE_ID`
+  - `STRIPE_PUBLISHABLE_KEY`
+  - `STRIPE_SECRET_KEY`
+  - `STRIPE_WEBHOOK_SECRET`
 
-Path: **Project → Settings → Git → Production Branch = `production`**
+### Vercel truth
 
-After changes, verify deployment routing:
-
-- `target=production` uses branch `production`
-- `target=preview` uses branch `main`
+- `frapp-web` production branch is already `production`.
+- `frapp-landing` production branch is already `production`.
+- Latest `main` preview deployment for `frapp-web` is `READY`.
+- Latest `main` preview deployment for `frapp-landing` is intentionally `CANCELED` by the ignored-build step because no landing changes were detected.
 
 ## API deployment pending checklist
 
-- [ ] Confirm Render staging service env matrix (Supabase + Stripe + Sentry)
-- [ ] Confirm Render production service env matrix (Supabase + Stripe + Sentry)
-- [ ] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
-- [ ] Validate fail-fast startup checks (missing required env vars fail boot)
-- [ ] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
+- [x] Confirm Render staging service env matrix (Supabase + Stripe + Sentry)
+- [x] Confirm Render production service env matrix (Supabase + Stripe + Sentry)
+- [x] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
+- [x] Validate fail-fast startup checks (missing required env vars fail boot)
+- [x] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
 - [ ] Verify staging Stripe webhook routing/secret (`/v1/webhooks/stripe`)
-- [ ] Wire deploy hook + healthcheck URL secrets for both environments
+- [x] Wire deploy hook + healthcheck URL secrets for both environments
+- [x] Replace unsupported global Supabase CLI install in deploy workflow
+- [x] Correct Render Docker service config (`rootDir` + `dockerfilePath`)
+- [x] Re-test Supabase hostnames after projects resumed; staging host resolves and connects again
+- [ ] Add missing production Stripe runtime variables in Infisical / Render
 
 ## Database promotion discipline checklist
 

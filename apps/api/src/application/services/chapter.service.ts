@@ -18,6 +18,7 @@ import {
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
 import { Chapter } from '../../domain/entities/chapter.entity';
+import type { Member } from '../../domain/entities/member.entity';
 import { checkWcagContrast } from '../../domain/utils/wcag';
 import {
   DEFAULT_SYSTEM_ROLES,
@@ -38,6 +39,14 @@ const LIGHT_MODE_BACKGROUND = '#F8FAFC';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
 
+export interface ChapterMembershipSummary {
+  member_id: string;
+  chapter_id: string;
+  role_ids: string[];
+  has_completed_onboarding: boolean;
+  chapter: Chapter;
+}
+
 @Injectable()
 export class ChapterService {
   private readonly logger = new Logger(ChapterService.name);
@@ -56,6 +65,28 @@ export class ChapterService {
     const chapter = await this.chapterRepo.findById(id);
     if (!chapter) throw new NotFoundException('Chapter not found');
     return chapter;
+  }
+
+  async listForUser(userId: string): Promise<ChapterMembershipSummary[]> {
+    const memberships = await this.memberRepo.findByUser(userId);
+    if (!memberships.length) {
+      return [];
+    }
+
+    const chapters = await Promise.all(
+      memberships.map(async (member) => {
+        const chapter = await this.chapterRepo.findById(member.chapter_id);
+        return chapter ? { member, chapter } : null;
+      }),
+    );
+
+    return chapters.flatMap((entry) => {
+      if (!entry) {
+        return [];
+      }
+
+      return [this.mapMembershipSummary(entry.member, entry.chapter)];
+    });
   }
 
   async create(
@@ -182,5 +213,18 @@ export class ChapterService {
       await this.storageProvider.deleteFile(BRANDING_BUCKET, chapter.logo_path);
     }
     return this.chapterRepo.update(chapterId, { logo_path: null });
+  }
+
+  private mapMembershipSummary(
+    member: Member,
+    chapter: Chapter,
+  ): ChapterMembershipSummary {
+    return {
+      member_id: member.id,
+      chapter_id: member.chapter_id,
+      role_ids: member.role_ids,
+      has_completed_onboarding: member.has_completed_onboarding,
+      chapter,
+    };
   }
 }

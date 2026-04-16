@@ -452,16 +452,16 @@ See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
 
-**CD (deploy workflows)** uses environment-scoped secrets injected from Infisical. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. GitHub's `environment:` feature routes the right values per job:
+**CD (deploy workflows)** uses Infisical-injected runtime secrets in `deploy-api.yml`. Variable names are **unified** — no `_STAGING` / `_PRODUCTION` suffixes. The workflow resolves secrets at runtime from Infisical using the environment slug that matches the target branch (`staging` for `main`, `prod` for `production`):
 
-| Secret                   | Purpose                                                  |
+| Variable                 | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
 | `RENDER_DEPLOY_HOOK_URL` | Trigger API deploy (value differs per environment)       |
 | `API_HEALTHCHECK_URL`    | Post-deploy health check (value differs per environment) |
 | `SUPABASE_ACCESS_TOKEN`  | Supabase CLI auth for migrations                         |
 | `SUPABASE_PROJECT_REF`   | Target DB for migrations (value differs per environment) |
 
-3 permanent GitHub Secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. The deploy secrets above (`SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`) are transitional — they'll be replaced by Infisical runtime injection once the `@infisical/secrets-action` is integrated.
+3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. No GitHub environment-scoped deploy secrets are required once the workflow is using `Infisical/secrets-action`.
 
 See `docs/internal/ENV_REFERENCE.md` for the complete variable mapping.
 

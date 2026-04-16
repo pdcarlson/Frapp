@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Shield, Trash2, UserRound } from "lucide-react";
+import { Loader2, Shield, Trash2, UserRound } from "lucide-react";
 import { useMember, useRemoveMember, useRoles, useUpdateMemberRoles } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -17,17 +17,6 @@ import {
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 
 type MemberRecord = Record<string, unknown>;
-type RoleRow = {
-  id: string;
-  name: string;
-};
-
-const fallbackRoles: RoleRow[] = [
-  { id: "member-role", name: "Member" },
-  { id: "new-member-role", name: "New Member" },
-  { id: "exec-role", name: "Executive Board" },
-];
-
 function formatDate(value: unknown): string {
   if (typeof value !== "string") return "—";
   const parsed = new Date(value);
@@ -107,7 +96,7 @@ export function MemberDetailSheet({
       }));
     }
 
-    return fallbackRoles;
+    return [];
   }, [memberRoleIds, rolesQuery.data]);
 
   useEffect(() => {
@@ -195,17 +184,16 @@ export function MemberDetailSheet({
           </SheetDescription>
         </SheetHeader>
 
-        {usingPreviewData ? (
-          <div className="mt-5 flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>Showing preview member details. Sign in to update live member access.</div>
-          </div>
-        ) : null}
-
         {memberQuery.isLoading && !usingPreviewData ? (
           <div className="mt-6 flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading member profile...
+          </div>
+        ) : null}
+
+        {memberQuery.isError && !usingPreviewData ? (
+          <div className="mt-6 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            Could not load the latest member profile. Retry from the directory to re-open this member.
           </div>
         ) : null}
 
@@ -238,7 +226,11 @@ export function MemberDetailSheet({
             <p className="text-sm font-medium">Role access</p>
           </div>
           <div className="space-y-2">
-            {roleOptions.map((role) => {
+            {roleOptions.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+                No roles are available for this chapter yet.
+              </div>
+            ) : roleOptions.map((role) => {
               const checked = selectedRoleIds.includes(role.id);
               return (
                 <label
