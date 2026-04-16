@@ -120,13 +120,13 @@ _(None recorded.)_
 
 When fixing review feedback, resolve related GitHub review threads so merge is not blocked.
 
-## Cursor Cloud specific instructions
+## Cursor Cloud-specific instructions
 
 These notes are for cloud agents running after the update script has already installed dependencies.
 
 ### Docker and Supabase
 
-- Docker must be started before Supabase. Run `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`), then `sudo chmod 666 /var/run/docker.sock`.
+- Docker must be started before Supabase. Run `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`), then add the current user to the docker group (`sudo usermod -aG docker $USER` and open a new shell) so Docker commands work without `sudo`. In ephemeral cloud/CI containers where group changes cannot take effect, prefix Docker and Supabase commands with `sudo` instead. Never print secret values or credentials in docs or logs.
 - Start Supabase with `npx supabase start` and apply migrations with `npx supabase db push --local`.
 - If Supabase containers are stuck: `bash scripts/local-dev-setup.sh --reset-supabase`.
 
