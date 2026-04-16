@@ -57,11 +57,10 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 Vercel is configured to auto-deploy only on `main` and `production` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped.
 
-### Review Blockers (not status checks)
+### AI review coverage
 
-| Check                     | Provider                  |
-| ------------------------- | ------------------------- |
-| `Cursor Bugbot`           | Cursor Bugbot (AI review) |
+- `main`: Cursor Bugbot should review every PR, but its feedback remains advisory.
+- `production`: the `bugbot-review` status check is required in addition to the human approval and conversation-resolution gate.
 
 ### PR review requirement policy
 
