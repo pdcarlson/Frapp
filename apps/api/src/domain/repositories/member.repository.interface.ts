@@ -4,6 +4,7 @@ export const MEMBER_REPOSITORY = 'MEMBER_REPOSITORY';
 
 export interface IMemberRepository {
   findById(id: string): Promise<Member | null>;
+  findByUser(userId: string): Promise<Member[]>;
   findByUserAndChapter(
     userId: string,
     chapterId: string,

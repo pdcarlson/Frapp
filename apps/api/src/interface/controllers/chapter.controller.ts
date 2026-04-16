@@ -29,6 +29,7 @@ import {
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import { Member } from '../../domain/entities/member.entity';
 
 @ApiTags('Chapters')
 @ApiBearerAuth()
@@ -47,9 +48,16 @@ export class ChapterController {
     return this.chapterService.create(userId, dto);
   }
 
+  @Get()
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(AuthSyncInterceptor)
+  @ApiOperation({ summary: 'List chapters for current user' })
+  async listForCurrentUser(@CurrentUser('id') userId: string) {
+    return this.chapterService.listForUser(userId);
+  }
+
   @Get('current')
-  @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
-  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @UseGuards(SupabaseAuthGuard, ChapterGuard)
   @ApiOperation({ summary: 'Get current chapter' })
   async getCurrent(@CurrentChapterId() chapterId: string) {
     return this.chapterService.findById(chapterId);

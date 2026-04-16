@@ -19,6 +19,7 @@ describe('ChapterController', () => {
   beforeEach(async () => {
     chapterService = {
       create: jest.fn(),
+      listForUser: jest.fn(),
       findById: jest.fn(),
       update: jest.fn(),
       requestLogoUploadUrl: jest.fn(),
@@ -72,6 +73,25 @@ describe('ChapterController', () => {
       const result = await controller.getCurrent(chapterId);
 
       expect(chapterService.findById).toHaveBeenCalledWith(chapterId);
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('listForCurrentUser', () => {
+    it('should call chapterService.listForUser with correct parameters', async () => {
+      const userId = 'user-1';
+      const expectedResult = [
+        {
+          chapter: { id: 'chapter-1', name: 'Test Chapter' },
+          membership: { id: 'member-1' },
+        },
+      ] as any;
+
+      chapterService.listForUser.mockResolvedValue(expectedResult);
+
+      const result = await controller.listForCurrentUser(userId);
+
+      expect(chapterService.listForUser).toHaveBeenCalledWith(userId);
       expect(result).toEqual(expectedResult);
     });
   });

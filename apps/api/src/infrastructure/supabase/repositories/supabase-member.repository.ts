@@ -35,6 +35,15 @@ export class SupabaseMemberRepository implements IMemberRepository {
     return data;
   }
 
+  async findByUser(userId: string): Promise<Member[]> {
+    const { data, error } = await this.supabase
+      .from('members')
+      .select('*')
+      .eq('user_id', userId);
+    if (error) throw error;
+    return data || [];
+  }
+
   async findByChapter(chapterId: string): Promise<Member[]> {
     const { data, error } = await this.supabase
       .from('members')

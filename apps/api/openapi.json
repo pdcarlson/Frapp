@@ -122,6 +122,24 @@
         "tags": [
           "Chapters"
         ]
+      },
+      "get": {
+        "operationId": "ChapterController_listForCurrentUser_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapters for current user",
+        "tags": [
+          "Chapters"
+        ]
       }
     },
     "/v1/chapters/current": {

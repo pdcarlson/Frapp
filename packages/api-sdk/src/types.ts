@@ -63,7 +63,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List chapters for current user */
+        get: operations["ChapterController_listForCurrentUser_v1"];
         put?: never;
         /** Create a new chapter */
         post: operations["ChapterController_create_v1"];
@@ -2126,6 +2127,23 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_listForCurrentUser_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
