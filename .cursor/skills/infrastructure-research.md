@@ -12,10 +12,10 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 
 | Env var | CLI/API | What you can check |
 |---------|---------|-------------------|
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
+| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` / `GITHUB_PERSONAL_ACCESS_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
 | `INFISICAL_API_KEY` | Infisical API | Secret presence, sync status |
-| `RENDER_APIKEY` | Render API | Service status, deploy history |
+| `RENDER_APIKEY` / `RENDER_API_KEY` | Render API | Service status, deploy history |
 | `VERCEL_API_KEY` | Vercel API | Build status, deployment state |
 | `SUPABASE_API_KEY` | Supabase Management API | Project-level operations |
 
@@ -26,32 +26,32 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 ### Check CI status on a branch
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run list --branch main --limit 5
+GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh run list --branch main --limit 5
 ```
 
 ### View failed CI job logs
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh run view <run_id> --log-failed
+GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh run view <run_id> --log-failed
 ```
 
 ### Check PR status and reviews
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr view <number>
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr checks <number>
+GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr view <number>
+GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr checks <number>
 ```
 
 ### Branch protection state
 
 ```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
+GITHUB_PAT="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" npm run configure:branch-protection -- --dry-run
 ```
 
 ### Find recent PRs touching a path
 
 ```bash
-GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" gh pr list --search "supabase/migrations" --state merged --limit 5
+GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr list --search "supabase/migrations" --state merged --limit 5
 ```
 
 ---
@@ -87,14 +87,14 @@ npx supabase db diff --linked  # Requires project to be linked
 ### Check service status
 
 ```bash
-curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
+curl -s -H "Authorization: Bearer ${RENDER_APIKEY:-$RENDER_API_KEY}" \
   "https://api.render.com/v1/services?type=web_service&limit=10" | python3 -m json.tool
 ```
 
 ### Recent deploys
 
 ```bash
-curl -s -H "Authorization: Bearer $RENDER_APIKEY" \
+curl -s -H "Authorization: Bearer ${RENDER_APIKEY:-$RENDER_API_KEY}" \
   "https://api.render.com/v1/services/<service_id>/deploys?limit=5" | python3 -m json.tool
 ```
 

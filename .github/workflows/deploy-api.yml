@@ -13,6 +13,9 @@ on:
     types: [completed]
     branches: [main, production]
 
+permissions:
+  contents: read
+
 jobs:
   # ── Check if deploy-relevant files changed ─────────────────────────────
   check-changes:
@@ -70,21 +73,26 @@ jobs:
         with:
           node-version: 20
 
+      - name: Inject staging deploy secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v2
         with:
           version: 2.77.0
 
       - name: Run migrations (dry-run)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env staging --dry-run
 
       - name: Run migrations (apply)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env staging
 
   # ── Run database migrations (production) ───────────────────────────────
@@ -107,21 +115,26 @@ jobs:
         with:
           node-version: 20
 
+      - name: Inject production deploy secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v2
         with:
           version: 2.77.0
 
       - name: Run migrations (dry-run)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env production --dry-run
 
       - name: Run migrations (apply)
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
         run: node scripts/run-migration.mjs --env production
 
   # ── Deploy API to staging ──────────────────────────────────────────────
@@ -136,9 +149,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Inject staging deploy secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
       - name: Trigger Render deploy
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for staging environment."
@@ -151,8 +173,6 @@ jobs:
         run: sleep 15
 
       - name: Health smoke check
-        env:
-          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
         run: |
           if [ -z "$API_HEALTHCHECK_URL" ]; then
             echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
@@ -182,9 +202,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Inject production deploy secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
       - name: Trigger Render deploy
-        env:
-          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
           if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
             echo "::error::RENDER_DEPLOY_HOOK_URL secret is not configured for production environment."
@@ -197,8 +226,6 @@ jobs:
         run: sleep 15
 
       - name: Health smoke check
-        env:
-          API_HEALTHCHECK_URL: ${{ secrets.API_HEALTHCHECK_URL }}
         run: |
           if [ -z "$API_HEALTHCHECK_URL" ]; then
             echo "::warning::API_HEALTHCHECK_URL not configured — skipping"
