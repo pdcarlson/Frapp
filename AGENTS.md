@@ -134,15 +134,16 @@ These notes are for cloud agents running after the update script has already ins
 
 The cloud VM does not have Infisical CLI session access. Use the fallback `.env.local` approach instead of `npm run dev:stack`:
 
-1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`.
+1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
 2. Start apps individually (no Infisical wrapper):
    - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
    - Web: `npm run dev -w apps/web`
    - Landing: `npm run dev -w apps/landing`
 
-### Pre-existing build issue
+### Pre-existing build issue (as of 2026-04-16 — re-verify before relying on this)
 
-`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The `check-types` turbo task passes because the API's `tsconfig.json` does not enable `strict: true` (only individual strict flags). The `nest build`/`nest start --watch` commands use `tsconfig.build.json` which triggers the error. **Workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`.
+`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The error is triggered by `tsconfig.build.json` (used by `nest build` / `nest start --watch`), while the `check-types` turbo task passes because the API's `tsconfig.json` uses individual strict flags rather than `strict: true`. **Temporary workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`. Once the upstream type error in `report.service.ts` is fixed, this workaround and the SWC devDependencies can be removed — check whether `npm run build` passes before relying on this note.
+<!-- TODO: track fix for TS2352 in report.service.ts, then remove --builder swc workaround and @swc/cli/@swc/core devDeps -->
 
 ### Key commands (standard, documented in root `package.json`)
 
