@@ -56,6 +56,16 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
+## SWC builder for API dev server
+
+The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--builder swc` flag for `nest start`. This transpiles without type-checking, which is useful when the default tsc watcher is blocked by transient type errors. Usage:
+
+```bash
+npx -w apps/api nest start --watch --builder swc
+```
+
+For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../AGENTS.md) reference this workaround.
+
 ## Related docs
 
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
