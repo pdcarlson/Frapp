@@ -14,15 +14,15 @@ Last updated: 2026-04-16
 | Landing (Vercel)        | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
 | Web dashboard (Vercel)  | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
 | Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)   |
-| API (Render)            | ⚠️               | ⚠️                        | Build settings corrected via Render API, but runtime remains degraded because current Supabase hostnames do not resolve and production is also missing Stripe runtime vars |
+| API (Render)            | ✅               | ⚠️                        | Staging custom domain is healthy again; production still lacks complete runtime config for a successful deploy |
 | Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
 
 ## Provider branch wiring audit (2026-04-16)
 
 | Provider | Resource                          | Expected      | Current          | Status                              |
 | -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------- |
-| Render   | `frapp-api-staging`               | `main`        | `c/staging-application-foundation-2a54` (temporary) | ⚠️ Staging deploy now reaches `live`, but `/health` is `degraded` because database connectivity is failing |
-| Render   | `frapp-api-prod`                  | `production`  | `production`     | ⚠️ Production service config corrected, but runtime is still blocked by unresolved Supabase host / missing Stripe vars |
+| Render   | `frapp-api-staging`               | `main`        | `c/staging-application-foundation-2a54` (temporary) | ✅ Deploy reaches `live`; both Render and custom-domain healthchecks return `status: ok` |
+| Render   | `frapp-api-prod`                  | `production`  | `production`     | ⚠️ Production service config corrected, but runtime is still blocked by missing Stripe vars |
 | Vercel   | `frapp-web` production branch     | `production`  | `production`     | ✅                                  |
 | Vercel   | `frapp-landing` production branch | `production`  | `production`     | ✅                                  |
 | Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
@@ -32,8 +32,8 @@ Last updated: 2026-04-16
 
 - `Deploy API` fails on `main` because `.github/workflows/deploy-api.yml` used `npm install -g supabase@2.77.0`, which Supabase CLI no longer supports.
 - A separate recent `Deploy API` failure was caused by a missing staging `RENDER_DEPLOY_HOOK_URL` GitHub environment secret.
-- `https://api.frapp.live/health` currently returns `502` with Render routing header `x-render-routing: no-deploy`.
-- `https://api-staging.frapp.live/health` currently times out.
+- `https://api.frapp.live/health` currently returns `502`.
+- `https://api-staging.frapp.live/health` is healthy again and returns `{"status":"ok","database":"connected",...}`.
 - `https://app.staging.frapp.live` and `https://staging.frapp.live` return `401 Authentication Required`; this is intentional Vercel protection and not a bug.
 
 ### Render API audit (verified 2026-04-16)
@@ -45,11 +45,11 @@ Last updated: 2026-04-16
   - `rootDir: ""`
   - `dockerfilePath: "apps/api/Dockerfile"`
 - Staging service was temporarily pointed at `c/staging-application-foundation-2a54` and redeployed to validate the feature branch code path.
-- That deploy reached `live`, but both:
+- That deploy reached `live`, and both:
   - `https://frapp-api-staging.onrender.com/health`
   - `https://api-staging.frapp.live/health`
-  now return `{"status":"degraded","database":"error"}`.
-- The current Render env values point at Supabase hosts that do **not** resolve via DNS from the audit environment:
+  now return `{"status":"ok","database":"connected",...}`.
+- Supabase hostnames used by Render now resolve again in the audit environment:
   - staging `SUPABASE_URL` host: `hnoyzpidbmizhbqaiity.supabase.co`
   - production `SUPABASE_URL` host: `unttyvyfezddlyafcydh.supabase.co`
 - Production Render is also missing four Stripe runtime vars that exist in the documented env matrix:
@@ -69,14 +69,14 @@ Last updated: 2026-04-16
 
 - [x] Confirm Render staging service env matrix (Supabase + Stripe + Sentry)
 - [x] Confirm Render production service env matrix (Supabase + Stripe + Sentry)
-- [ ] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
+- [x] Validate DNS records for `api-staging.frapp.live` and `api.frapp.live`
 - [x] Validate fail-fast startup checks (missing required env vars fail boot)
-- [ ] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
+- [x] Run smoke checks after deploy (`/health`, key auth-protected endpoint)
 - [ ] Verify staging Stripe webhook routing/secret (`/v1/webhooks/stripe`)
 - [x] Wire deploy hook + healthcheck URL secrets for both environments
 - [x] Replace unsupported global Supabase CLI install in deploy workflow
 - [x] Correct Render Docker service config (`rootDir` + `dockerfilePath`)
-- [ ] Replace unresolved Supabase hostnames with live project URLs in Infisical / Render
+- [x] Re-test Supabase hostnames after projects resumed; staging host resolves and connects again
 - [ ] Add missing production Stripe runtime variables in Infisical / Render
 
 ## Database promotion discipline checklist
