@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AlertTriangle, Search, UserPlus } from "lucide-react";
+import { Search, UserPlus } from "lucide-react";
 import { useMemberSearch, useMembers } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
@@ -16,33 +15,25 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { InviteMemberDialog } from "@/components/members/invite-member-dialog";
 import { MemberDetailSheet } from "@/components/members/member-detail-sheet";
-import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { stateMicrocopy } from "@/lib/state-microcopy";
 
-type MemberRow = Record<string, unknown>;
-const fallbackMembers: MemberRow[] = [
-  {
-    id: "preview-1",
-    user_id: "preview-user-1",
-    display_name: "Jordan M.",
-    role_ids: ["president-role-id", "admin-role-id"],
-    has_completed_onboarding: true,
-  },
-  {
-    id: "preview-2",
-    user_id: "preview-user-2",
-    display_name: "Evan R.",
-    role_ids: ["treasurer-role-id"],
-    has_completed_onboarding: true,
-  },
-  {
-    id: "preview-3",
-    user_id: "preview-user-3",
-    display_name: "Dylan P.",
-    role_ids: ["member-role-id"],
-    has_completed_onboarding: false,
-  },
-];
+type MemberRow = {
+  id: string;
+  user_id: string;
+  chapter_id: string;
+  role_ids: string[];
+  has_completed_onboarding: boolean;
+  created_at: string;
+  updated_at: string;
+  display_name: string;
+  avatar_url: string | null;
+  bio: string | null;
+  graduation_year: number | null;
+  current_city: string | null;
+  current_company: string | null;
+  email: string;
+};
 
 const EXEC_ROLE_KEYWORDS = [
   "president",
@@ -82,20 +73,12 @@ export default function MembersPage() {
   const searchQuery = useMemberSearch(trimmedQuery);
   const usingSearch = trimmedQuery.length > 0;
   const activeQuery = usingSearch ? searchQuery : membersQuery;
-  const usingPreviewData = activeQuery.isError;
 
   const members = useMemo(() => {
-    if (usingPreviewData) {
-      if (!usingSearch) return fallbackMembers;
-      return fallbackMembers.filter((member) => {
-        const displayName = String(member.display_name ?? "").toLowerCase();
-        return displayName.includes(trimmedQuery.toLowerCase());
-      });
-    }
     const raw = activeQuery.data;
     if (!Array.isArray(raw)) return [];
     return raw as MemberRow[];
-  }, [activeQuery.data, usingPreviewData, usingSearch, trimmedQuery]);
+  }, [activeQuery.data]);
   const visibleMembers = useMemo(() => {
     return members.filter((member) => {
       const onboardingComplete =
@@ -156,7 +139,19 @@ export default function MembersPage() {
   }
 
   if (activeQuery.isLoading) {
-    return <LoadingState message={stateMicrocopy.members.loading} />;
+    return <LoadingState message="Loading live chapter member records..." />;
+  }
+
+  if (activeQuery.isError) {
+    return (
+      <ErrorState
+        title="Unable to load live member records"
+        description="The members workflow no longer falls back to preview data. Verify your chapter access and API health, then retry."
+        onRetry={() => {
+          void activeQuery.refetch();
+        }}
+      />
+    );
   }
 
   return (
@@ -220,27 +215,6 @@ export default function MembersPage() {
         </CardContent>
       </Card>
 
-      {usingPreviewData ? (
-        <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/30">
-          <CardContent className="flex items-center justify-between gap-4 pt-6">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-700 dark:text-amber-300" />
-              <div>
-                <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                  {stateMicrocopy.members.previewTitle}
-                </p>
-                <p className="text-xs text-amber-800 dark:text-amber-200">
-                  {stateMicrocopy.members.previewDescription}
-                </p>
-              </div>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => activeQuery.refetch()}>
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
       {selectedCount > 0 ? (
         <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
           <CardContent className="flex flex-col gap-3 pt-6 sm:flex-row sm:items-center sm:justify-between">
@@ -291,7 +265,7 @@ export default function MembersPage() {
           <CardHeader>
             <CardTitle className="text-lg">Member Records</CardTitle>
             <CardDescription>
-              {usingSearch ? `Search results for “${trimmedQuery}”` : "All chapter members"}
+              {usingSearch ? `Search results for “${trimmedQuery}”` : "All chapter members in the active staging chapter"}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -357,12 +331,10 @@ export default function MembersPage() {
                         />
                       </TableCell>
                       <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
+                        <div className="space-y-1">
                           <span>{displayName}</span>
-                          {usingPreviewData ? (
-                            <Badge variant="outline" className="text-[10px]">
-                              Preview
-                            </Badge>
+                          {member.email ? (
+                            <p className="text-xs text-muted-foreground">{member.email}</p>
                           ) : null}
                         </div>
                       </TableCell>
@@ -396,7 +368,7 @@ export default function MembersPage() {
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}
         member={activeMember}
-        usingPreviewData={usingPreviewData}
+        usingPreviewData={false}
       />
     </div>
   );

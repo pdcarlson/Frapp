@@ -1674,6 +1674,22 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
+        MemberProfileDto: {
+            id: string;
+            user_id: string;
+            chapter_id: string;
+            role_ids: string[];
+            has_completed_onboarding: boolean;
+            created_at: string;
+            updated_at: string;
+            display_name: string;
+            avatar_url: Record<string, never> | null;
+            bio: Record<string, never> | null;
+            graduation_year: Record<string, never> | null;
+            current_city: Record<string, never> | null;
+            current_company: Record<string, never> | null;
+            email: string;
+        };
         UpdateMemberRolesDto: {
             role_ids: string[];
         };
@@ -2282,7 +2298,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
             };
         };
     };
@@ -2302,7 +2320,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
             };
         };
     };
@@ -2321,7 +2341,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
             };
         };
     };

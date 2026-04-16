@@ -274,7 +274,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberProfileDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -304,7 +314,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberProfileDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -333,7 +353,14 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberProfileDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3952,6 +3979,77 @@
         },
         "required": [
           "storage_path"
+        ]
+      },
+      "MemberProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "has_completed_onboarding": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "object",
+            "nullable": true
+          },
+          "bio": {
+            "type": "object",
+            "nullable": true
+          },
+          "graduation_year": {
+            "type": "object",
+            "nullable": true
+          },
+          "current_city": {
+            "type": "object",
+            "nullable": true
+          },
+          "current_company": {
+            "type": "object",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "chapter_id",
+          "role_ids",
+          "has_completed_onboarding",
+          "created_at",
+          "updated_at",
+          "display_name",
+          "avatar_url",
+          "bio",
+          "graduation_year",
+          "current_city",
+          "current_company",
+          "email"
         ]
       },
       "UpdateMemberRolesDto": {

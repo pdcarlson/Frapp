@@ -55,7 +55,7 @@ describe('MemberService', () => {
     service = module.get(MemberService);
   });
 
-  it('should list members by chapter', async () => {
+  it('should list member profiles by chapter', async () => {
     const members = [
       {
         id: 'member-1',
@@ -67,12 +67,37 @@ describe('MemberService', () => {
         updated_at: '2024-01-01',
       },
     ];
+    const users = [
+      {
+        id: 'user-1',
+        supabase_auth_id: 'auth-1',
+        email: 'john@example.com',
+        display_name: 'John Doe',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      },
+    ];
     mockRepo.findByChapter.mockResolvedValue(members);
+    mockUserRepo.findByIds.mockResolvedValue(users);
 
     const result = await service.findByChapter('chapter-1');
 
     expect(mockRepo.findByChapter).toHaveBeenCalledWith('chapter-1');
-    expect(result).toEqual(members);
+    expect(mockUserRepo.findByIds).toHaveBeenCalledWith(['user-1']);
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'chapter-1',
+        display_name: 'John Doe',
+        email: 'john@example.com',
+      }),
+    ]);
   });
 
   it('should find member by user and chapter', async () => {

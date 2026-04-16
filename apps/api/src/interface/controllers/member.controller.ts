@@ -13,6 +13,7 @@ import {
   ApiTags,
   ApiOperation,
   ApiQuery,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { MemberService } from '../../application/services/member.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -24,6 +25,7 @@ import {
   CurrentMember,
 } from '../decorators/current-user.decorator';
 import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
+import { MemberProfileDto } from '../dtos/member-profile.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Members')
@@ -36,13 +38,15 @@ export class MemberController {
 
   @Get()
   @ApiOperation({ summary: 'List chapter members' })
+  @ApiOkResponse({ type: MemberProfileDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {
-    return this.memberService.findByChapter(chapterId);
+    return this.memberService.findProfilesByChapter(chapterId);
   }
 
   @Get('search')
   @ApiOperation({ summary: 'Search members by name' })
   @ApiQuery({ name: 'q', required: true, description: 'Search query (name)' })
+  @ApiOkResponse({ type: MemberProfileDto, isArray: true })
   async search(
     @CurrentChapterId() chapterId: string,
     @Query('q') query: string,
@@ -52,6 +56,7 @@ export class MemberController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Get member profile by ID' })
+  @ApiOkResponse({ type: MemberProfileDto })
   async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
     return this.memberService.findProfileById(id, chapterId);
   }
