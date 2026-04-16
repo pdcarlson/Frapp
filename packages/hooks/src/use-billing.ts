@@ -2,11 +2,13 @@
 
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId } from "./use-frapp-client";
 
 export function useBillingStatus() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["billing", "status"],
+    queryKey: ["billing", "status", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/billing/status");
       if (error) throw error;

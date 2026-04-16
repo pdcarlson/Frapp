@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useEvents() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["events"],
+    queryKey: ["events", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/events");
       if (error) throw error;
@@ -18,8 +19,9 @@ export function useEvents() {
 
 export function useEvent(id: string) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["events", id],
+    queryKey: ["events", chapterId, id],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/events/{id}", {
         params: { path: { id } },
@@ -34,8 +36,9 @@ export function useEvent(id: string) {
 
 export function useEventIcs(id: string) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["events", id, "ics"],
+    queryKey: ["events", chapterId, id, "ics"],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/events/{id}/ics", {
         params: { path: { id } },
@@ -51,6 +54,7 @@ export function useEventIcs(id: string) {
 export function useCreateEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: {
       name: string;
@@ -69,7 +73,7 @@ export function useCreateEvent() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     },
   });
 }
@@ -77,6 +81,7 @@ export function useCreateEvent() {
 export function useUpdateEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async ({
       id,
@@ -104,7 +109,7 @@ export function useUpdateEvent() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     },
   });
 }
@@ -112,6 +117,7 @@ export function useUpdateEvent() {
 export function useDeleteEvent() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (id: string) => {
       const { data, error } = await client.DELETE("/v1/events/{id}", {
@@ -121,7 +127,7 @@ export function useDeleteEvent() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["events"] });
+      queryClient.invalidateQueries({ queryKey: ["events", chapterId] });
     },
   });
 }

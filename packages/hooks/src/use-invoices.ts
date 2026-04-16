@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useInvoices(userId?: string) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["invoices", userId],
+    queryKey: ["invoices", chapterId, userId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/invoices", {
         params: { query: { user_id: userId } },
@@ -20,8 +21,9 @@ export function useInvoices(userId?: string) {
 
 export function useInvoice(id: string) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["invoices", id],
+    queryKey: ["invoices", chapterId, id],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/invoices/{id}", {
         params: { path: { id } },
@@ -36,8 +38,9 @@ export function useInvoice(id: string) {
 
 export function useOverdueInvoices() {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["invoices", "overdue"],
+    queryKey: ["invoices", chapterId, "overdue"],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/invoices/overdue");
       if (error) throw error;
@@ -49,8 +52,9 @@ export function useOverdueInvoices() {
 
 export function useInvoiceTransactions(invoiceId: string) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["invoices", invoiceId, "transactions"],
+    queryKey: ["invoices", chapterId, invoiceId, "transactions"],
     queryFn: async () => {
       const { data, error } = await client.GET(
         "/v1/invoices/{id}/transactions",
@@ -67,6 +71,7 @@ export function useInvoiceTransactions(invoiceId: string) {
 export function useCreateInvoice() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: {
       user_id: string;
@@ -80,7 +85,7 @@ export function useCreateInvoice() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });
     },
   });
 }
@@ -88,6 +93,7 @@ export function useCreateInvoice() {
 export function useUpdateInvoice() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async ({
       id,
@@ -109,7 +115,7 @@ export function useUpdateInvoice() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });
     },
   });
 }
@@ -117,6 +123,7 @@ export function useUpdateInvoice() {
 export function useTransitionInvoiceStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async ({
       id,
@@ -133,7 +140,7 @@ export function useTransitionInvoiceStatus() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });
     },
   });
 }

@@ -1,19 +1,59 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+
+export interface ChapterMembershipSummary {
+  chapter_id: string;
+  member_id: string;
+  role_ids: string[];
+  has_completed_onboarding: boolean;
+  chapter: {
+    id: string;
+    name: string;
+    university: string;
+    stripe_customer_id: string | null;
+    subscription_status: "incomplete" | "active" | "past_due" | "canceled";
+    subscription_id: string | null;
+    accent_color: string | null;
+    logo_path: string | null;
+    donation_url: string | null;
+    created_at: string;
+    updated_at: string;
+  };
+}
+
+function chapterQueryKey(...parts: Array<string | null | undefined>) {
+  return ["chapters", ...parts];
+}
+
+export function useListChapters() {
+  const client = useFrappClient();
+  return useQuery({
+    queryKey: chapterQueryKey("accessible"),
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/chapters");
+      if (error) throw error;
+      return (data ?? []) as ChapterMembershipSummary[];
+    },
+    staleTime: 60_000,
+  });
+}
+
+export const useAccessibleChapters = useListChapters;
 
 export function useCurrentChapter(options?: {
   chapterId?: string | null;
   enabled?: boolean;
 }) {
   const client = useFrappClient();
-  const chapterId = options?.chapterId ?? null;
+  const activeChapterId = useActiveChapterId();
+  const chapterId = options?.chapterId ?? activeChapterId ?? null;
   const baseEnabled = options?.enabled ?? true;
   const enabled = baseEnabled && !!chapterId;
 
   return useQuery({
-    queryKey: ["chapters", "current", chapterId],
+    queryKey: chapterQueryKey("current", chapterId),
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/chapters/current");
       if (error) throw error;
@@ -34,7 +74,7 @@ export function useCreateChapter() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
     },
   });
 }
@@ -42,6 +82,7 @@ export function useCreateChapter() {
 export function useUpdateChapter() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const activeChapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: {
       name?: string;
@@ -56,7 +97,10 @@ export function useUpdateChapter() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: chapterQueryKey("current", activeChapterId ?? null),
+      });
     },
   });
 }
@@ -78,6 +122,7 @@ export function useRequestLogoUploadUrl() {
 export function useConfirmLogo() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const activeChapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async (body: { storage_path: string }) => {
       const { data, error } = await client.POST("/v1/chapters/current/logo", {
@@ -87,7 +132,10 @@ export function useConfirmLogo() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: chapterQueryKey("current", activeChapterId ?? null),
+      });
     },
   });
 }
@@ -95,6 +143,7 @@ export function useConfirmLogo() {
 export function useDeleteLogo() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
+  const activeChapterId = useActiveChapterId();
   return useMutation({
     mutationFn: async () => {
       const { data, error } = await client.DELETE("/v1/chapters/current/logo");
@@ -102,7 +151,10 @@ export function useDeleteLogo() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+      queryClient.invalidateQueries({
+        queryKey: chapterQueryKey("current", activeChapterId ?? null),
+      });
     },
   });
 }
