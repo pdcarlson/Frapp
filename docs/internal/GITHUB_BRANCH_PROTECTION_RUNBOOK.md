@@ -5,7 +5,7 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- CodeRabbit review is addressed before merge
+- Bugbot reviews every PR to `main` and `production`
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -91,15 +91,18 @@ Vercel deployments are intentionally limited to `main` and `production` branches
 | Check name | What it validates |
 | --- | --- |
 | `branch-policy` | Source branch must be `main` |
+| `bugbot-review` | Cursor Bugbot review workflow succeeded |
 
-### CodeRabbit (Review-Based Blocker)
+### Bugbot review policy
 
-CodeRabbit is configured with `request_changes_workflow: true`. When it finds issues, it posts a "Request Changes" review.
+Bugbot should review every PR to `main` and every promotion PR to `production`.
 
-- On `main`, this feedback is advisory (no required approving review gate).
-- On `production`, branch protection requires one approval and stale reviews are dismissed on push, so CodeRabbit/human review remains a merge-control gate.
+- On `main`, the Bugbot review is advisory and should not block merge.
+- On `production`, the `bugbot-review` status check is required in addition to:
+  - one approving review
+  - conversation resolution
 
-`CodeRabbit` is intentionally **not** a required status check. It is enforced through PR reviews only.
+This keeps feature PRs lightweight while preserving a strict promotion gate.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
@@ -126,8 +129,8 @@ Common causes and fixes:
   **Fix:** required workflows must run on every PR to protected branches.
 - **Job/workflow renames:** required check name no longer matches emitted name.  
   **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
-- **External app outage/stuck status (CodeRabbit):** review gate does not finalize.  
-  **Fix:** rerun provider check or temporarily dismiss stale review per review policy.
+- **Bugbot workflow failed or did not run:** `bugbot-review` never reports success on the PR.  
+  **Fix:** inspect the `Trigger Bugbot Review` workflow run, confirm the PR was not a draft, then re-run Bugbot from a top-level `cursor review` comment if needed.
 
 ## Verification Checklist
 

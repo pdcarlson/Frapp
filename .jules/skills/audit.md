@@ -223,4 +223,4 @@ Reference existing audit docs in `docs/archive/audits/` for format precedent.
 
 - When new security patterns are introduced (e.g., CSRF, CSP headers), add to the security section.
 - When new CI checks are added, update the CI/CD audit table.
-- When CodeRabbit rules change (`.coderabbit.yaml`), document the new path instructions.
+- When Bugbot project rules change (`.cursor/BUGBOT.md`), document the new path guidance.

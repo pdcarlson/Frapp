@@ -1,0 +1,26 @@
+name: Trigger Bugbot Review
+
+on:
+  pull_request_target:
+    branches: [main, production]
+    types: [opened, reopened, ready_for_review, synchronize]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  bugbot-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Request Bugbot review
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const body = "cursor review";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body,
+            });

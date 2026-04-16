@@ -44,7 +44,7 @@ Use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for `gh` CLI commands.
 | Release tags      | `.github/workflows/release.yml` — main → production merge                        |
 | Docs              | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)       |
 | Branch protection | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md` |
-| CodeRabbit        | `.coderabbit.yaml` — review workflow                                             |
+| Bugbot            | `.cursor/BUGBOT.md` + `.github/workflows/trigger-bugbot-review.yml`              |
 | Vercel            | Deploys from `main` / `production` only (PR previews disabled via repo config)     |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
