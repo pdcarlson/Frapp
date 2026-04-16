@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   bugbot-review:
+    # NOTE: this job name is the GitHub status context name. It is required on
+    # the `production` branch (see docs/internal/BUGBOT_RUNBOOK.md and
+    # scripts/configure-branch-protection.mjs). Do not rename.
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
@@ -18,79 +21,124 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            const bugbotTriggerComment = "cursor review";
-            const workflowCheckName = "bugbot-review";
-            const pollIntervalMs = 15000;
-            const pollTimeoutMs = 10 * 60 * 1000;
-            const bugbotNamePattern = /(bugbot|cursor)/i;
-            const bugbotAppPattern = /cursor/i;
+            // Preferred manual trigger. "bugbot run" avoids the "cursor" substring
+            // so it cannot be confused with @cursor / @cursoragent mentions, which
+            // spawn paid Cursor background agents (distinct product from Bugbot).
+            const BUGBOT_TRIGGER_COMMENT = "bugbot run";
+            const WORKFLOW_CHECK_NAME = "bugbot-review";
+            const POLL_INTERVAL_MS = 15_000;
+            const POLL_TIMEOUT_MS = 10 * 60 * 1000;
+            // Branches where Bugbot must complete successfully before this job
+            // turns green. Everything else is advisory: a Bugbot response in any
+            // form (check run OR review comments) passes; absence → warning.
+            const STRICT_BRANCHES = new Set(["production"]);
+            const BUGBOT_NAME_PATTERN = /(bugbot|cursor)/i;
+            const BUGBOT_APP_PATTERN = /cursor/i;
+            const BUGBOT_USER_PATTERN = /(bugbot|cursor)/i;
 
             const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+            const baseRef = context.payload.pull_request.base.ref;
+            const isStrict = STRICT_BRANCHES.has(baseRef);
+            const headSha = context.payload.pull_request.head.sha;
+            const prNumber = context.payload.pull_request.number;
+
             function isBugbotCheckRun(checkRun) {
-              if (checkRun.name === workflowCheckName) {
+              if (checkRun.name === WORKFLOW_CHECK_NAME) {
                 return false;
               }
-
               const appSlug = checkRun.app?.slug ?? "";
               const appName = checkRun.app?.name ?? "";
-
               return (
-                bugbotNamePattern.test(checkRun.name) ||
-                bugbotAppPattern.test(appSlug) ||
-                bugbotAppPattern.test(appName)
+                BUGBOT_NAME_PATTERN.test(checkRun.name) ||
+                BUGBOT_APP_PATTERN.test(appSlug) ||
+                BUGBOT_APP_PATTERN.test(appName)
               );
+            }
+
+            function pickLatest(runs) {
+              return [...runs].sort((left, right) => {
+                const leftTs = new Date(left.completed_at ?? left.started_at ?? 0).getTime();
+                const rightTs = new Date(right.completed_at ?? right.started_at ?? 0).getTime();
+                return rightTs - leftTs;
+              })[0];
             }
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: bugbotTriggerComment,
+              issue_number: prNumber,
+              body: BUGBOT_TRIGGER_COMMENT,
             });
 
             const startedAt = Date.now();
-            const headSha = context.payload.pull_request.head.sha;
 
-            while (Date.now() - startedAt < pollTimeoutMs) {
-              const { data } = await github.rest.checks.listForRef({
+            while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+              // Primary signal: Bugbot emitted a GitHub check run.
+              const { data: checkData } = await github.rest.checks.listForRef({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 ref: headSha,
                 per_page: 100,
               });
+              const bugbotRuns = checkData.check_runs.filter(isBugbotCheckRun);
+              const completed = bugbotRuns.filter((run) => run.status === "completed");
 
-              const bugbotRuns = data.check_runs.filter(isBugbotCheckRun);
-
-              if (bugbotRuns.length === 0) {
-                core.info("Waiting for Bugbot to report a check run...");
-                await sleep(pollIntervalMs);
-                continue;
-              }
-
-              const incompleteRun = bugbotRuns.find((run) => run.status !== "completed");
-              if (incompleteRun) {
-                core.info(`Bugbot check '${incompleteRun.name}' is still ${incompleteRun.status}.`);
-                await sleep(pollIntervalMs);
-                continue;
-              }
-
-              const latestCompletedRun = [...bugbotRuns].sort((left, right) => {
-                const leftTimestamp = new Date(left.completed_at ?? left.started_at ?? 0).getTime();
-                const rightTimestamp = new Date(right.completed_at ?? right.started_at ?? 0).getTime();
-                return rightTimestamp - leftTimestamp;
-              })[0];
-
-              core.info(`Bugbot check '${latestCompletedRun.name}' completed with conclusion '${latestCompletedRun.conclusion}'.`);
-
-              if (["success", "neutral", "skipped"].includes(latestCompletedRun.conclusion ?? "")) {
+              if (completed.length > 0) {
+                const latest = pickLatest(completed);
+                const conclusion = latest.conclusion ?? "unknown";
+                core.info(`Bugbot check '${latest.name}' completed: ${conclusion}.`);
+                if (["success", "neutral", "skipped"].includes(conclusion)) {
+                  return;
+                }
+                if (isStrict) {
+                  core.setFailed(`Bugbot check '${latest.name}' concluded '${conclusion}'.`);
+                  return;
+                }
+                core.warning(
+                  `Bugbot concluded '${conclusion}' on advisory branch '${baseRef}' — not failing.`,
+                );
                 return;
               }
 
-              core.setFailed(
-                `Bugbot check '${latestCompletedRun.name}' completed with conclusion '${latestCompletedRun.conclusion ?? "unknown"}'.`,
-              );
-              return;
+              if (bugbotRuns.length > 0) {
+                core.info(`Bugbot check is still ${bugbotRuns[0].status}.`);
+              }
+
+              // Fallback: Bugbot sometimes posts PR review comments instead of a
+              // GitHub check run. On advisory branches, treat a Bugbot-authored
+              // review submitted since we triggered as sufficient signal.
+              if (!isStrict) {
+                const { data: reviews } = await github.rest.pulls.listReviews({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: prNumber,
+                  per_page: 100,
+                });
+                const bugbotReview = reviews.find((review) => {
+                  const login = review.user?.login ?? "";
+                  const submittedAt = new Date(review.submitted_at ?? 0).getTime();
+                  // 30s grace: the trigger comment and the review can race on Bugbot's side.
+                  return (
+                    BUGBOT_USER_PATTERN.test(login) && submittedAt >= startedAt - 30_000
+                  );
+                });
+                if (bugbotReview) {
+                  core.info(
+                    `Bugbot posted review '${bugbotReview.state}' by @${bugbotReview.user?.login} — advisory pass.`,
+                  );
+                  return;
+                }
+              }
+
+              core.info("Waiting for Bugbot to respond...");
+              await sleep(POLL_INTERVAL_MS);
             }
 
-            core.setFailed("Timed out waiting for Bugbot to report a completed check run.");
+            if (isStrict) {
+              core.setFailed("Timed out waiting for Bugbot to report on a strict branch.");
+              return;
+            }
+            core.warning(
+              "Timed out waiting for Bugbot on advisory branch — not failing. Check the Bugbot dashboard if this persists.",
+            );

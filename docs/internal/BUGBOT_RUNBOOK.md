@@ -61,13 +61,42 @@ This repo also keeps a lightweight GitHub Actions fallback that posts `cursor re
 
 If Bugbot does not run automatically, add a **top-level PR comment** with one of:
 
-- `cursor review`
-- `bugbot run`
+- `bugbot run` — **preferred**. Does not contain the substring "cursor", so it cannot be confused with `@cursor` / `@cursoragent` background-agent mentions (see the footgun callout below).
+- `cursor review` — legacy alias; still works.
 
 For deeper troubleshooting, use:
 
-- `cursor review verbose=true`
 - `bugbot run verbose=true`
+- `cursor review verbose=true`
+
+Trigger phrases work only as **top-level** PR comments, not as replies inside an existing review thread.
+
+### ⚠ Background-agent footgun
+
+The Cursor GitHub app exposes two very different things that react to comments:
+
+1. **Bugbot** — the AI code reviewer. Triggered by `bugbot run` or `cursor review`.
+2. **Cursor background agents** — full cloud agents that spin up and start working on a PR. Triggered by `@cursor` or `@cursoragent` mentions.
+
+The `Trigger Bugbot Review` workflow in this repo uses `bugbot run` specifically to avoid collision with the `@cursor` mention. **Do not type `@cursor` or `@cursoragent` in a PR comment** unless you explicitly want to spawn a paid background agent over the PR diff. An incident in April 2026 burned ~$50 in agent tokens when a conversational `@cursoragent` comment was posted on a stale feature branch.
+
+Safe patterns:
+
+- `bugbot run` → re-trigger Bugbot on the current PR head.
+- `@cursor remember [fact]` → teach Bugbot a learned rule (cheap; does not spawn a background agent).
+
+### Dashboard settings we rely on
+
+These settings live in the [Bugbot dashboard](https://cursor.com/dashboard/bugbot) / personal settings and cannot be checked in. Keep them aligned with the behavior this runbook documents:
+
+| Setting | Required value | Why |
+|---|---|---|
+| Run only when mentioned | **Off** | We want Bugbot to auto-review PRs targeting `main` and `production`. |
+| Run only once per PR | **Off** | We want Bugbot to re-review on every push; the workflow trigger already fires on `synchronize`. |
+| Enable reviews on draft PRs | Off | The workflow gates on `github.event.pull_request.draft == false`. |
+| Autofix | Team preference | Per Cursor docs, "Manual" still spawns a cloud agent to prepare the fix. If that surprises you, set this to **Off**. |
+
+If any of these drift, Bugbot's behavior will visibly diverge from this runbook — file a follow-up to either adjust the dashboard or update this table.
 
 ### Teaching Bugbot
 
