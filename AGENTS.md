@@ -119,3 +119,35 @@ _(None recorded.)_
 ## PR reviews
 
 When fixing review feedback, resolve related GitHub review threads so merge is not blocked.
+
+## Cursor Cloud specific instructions
+
+These notes are for cloud agents running after the update script has already installed dependencies.
+
+### Docker and Supabase
+
+- Docker must be started before Supabase. Run `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`), then `sudo chmod 666 /var/run/docker.sock`.
+- Start Supabase with `npx supabase start` and apply migrations with `npx supabase db push --local`.
+- If Supabase containers are stuck: `bash scripts/local-dev-setup.sh --reset-supabase`.
+
+### Running apps without Infisical
+
+The cloud VM does not have Infisical CLI session access. Use the fallback `.env.local` approach instead of `npm run dev:stack`:
+
+1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`.
+2. Start apps individually (no Infisical wrapper):
+   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
+   - Web: `npm run dev -w apps/web`
+   - Landing: `npm run dev -w apps/landing`
+
+### Pre-existing build issue
+
+`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The `check-types` turbo task passes because the API's `tsconfig.json` does not enable `strict: true` (only individual strict flags). The `nest build`/`nest start --watch` commands use `tsconfig.build.json` which triggers the error. **Workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`.
+
+### Key commands (standard, documented in root `package.json`)
+
+| Task | Command |
+|------|---------|
+| Lint | `npm run lint` |
+| API tests | `npm run test -w apps/api` |
+| Type-check | `npm run check-types` |
