@@ -165,11 +165,11 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**CodeRabbit** is not a required status check — it is integrated as a review signal via `request_changes_workflow` in `.coderabbit.yaml`.
+**Cursor Bugbot** reviews every PR to `main` and every promotion PR from `main` to `production`.
 
-- On `main`, CodeRabbit feedback is advisory (no required approving review).
-- On `main`, conversation resolution is also disabled, so unresolved CodeRabbit threads do not block merge.
-- On `production`, branch protection requires one approving review and conversation resolution, so review outcomes remain a promotion gate.
+- On `main`, Bugbot feedback is advisory. The repo also keeps a lightweight workflow that posts `cursor review` on PR lifecycle events so solo-developer review coverage does not depend entirely on Bugbot auto-trigger behavior.
+- On `main`, conversation resolution remains disabled, so unresolved Bugbot comment threads do not block merge.
+- On `production`, the Bugbot status check is required in branch protection, and the promotion PR still requires one approving review plus conversation resolution.
 
 ### Key Design Decisions
 

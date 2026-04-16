@@ -57,16 +57,15 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 
 Vercel is configured to auto-deploy only on `main` and `production` via `git.deploymentEnabled` in each app's `vercel.json`. The catch-all disable rule uses `"**": false` so feature branch names containing `/` are matched correctly and skipped.
 
-### Review Blockers (not status checks)
+### AI review coverage
 
-| Check                                          | Provider                    |
-| ---------------------------------------------- | --------------------------- |
-| CodeRabbit review (`request_changes_workflow`) | CodeRabbit (AI code review) |
+- `main`: Cursor Bugbot should review every PR, but its feedback remains advisory.
+- `production`: the `bugbot-review` status check is required in addition to the human approval and conversation-resolution gate.
 
 ### PR review requirement policy
 
-- `main`: approving review is **not required** (CodeRabbit feedback is advisory).
-- `main`: conversation resolution is **not required** (you can choose whether to act on CodeRabbit comment threads).
+- `main`: approving review is **not required** and Bugbot feedback remains advisory.
+- `main`: conversation resolution is **not required**.
 - `production`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
 ---
@@ -109,12 +108,12 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- CodeRabbit will post an AI review.
+- Cursor Bugbot should review the PR automatically. If it does not, add a top-level `cursor review` comment.
 
 ### 4. Address feedback
 
 - Fix any CI failures.
-- Respond to CodeRabbit review comments (push new commits to dismiss stale reviews).
+- Address Bugbot findings as needed and push follow-up commits for re-review.
 - All required checks must pass before merging.
 
 ### 5. Merge via squash merge
