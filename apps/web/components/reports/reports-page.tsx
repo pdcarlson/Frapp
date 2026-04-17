@@ -155,6 +155,22 @@ export function ReportsPage() {
   );
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
 
+  /** Union of flattened keys for preview rows, stable column order (matches CSV union logic). */
+  const previewColumnKeys = useMemo(() => {
+    if (!preview || preview.length === 0) return [];
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    for (const row of preview.slice(0, 25)) {
+      for (const key of Object.keys(flattenRecord(row))) {
+        if (!seen.has(key)) {
+          seen.add(key);
+          keys.push(key);
+        }
+      }
+    }
+    return keys;
+  }, [preview]);
+
   const activeMutation = useMemo(() => {
     switch (kind) {
       case "attendance":
@@ -460,15 +476,7 @@ export function ReportsPage() {
                 <table className="min-w-full divide-y divide-border text-xs">
                   <thead className="bg-muted/40">
                     <tr>
-                      {Array.from(
-                        new Set(
-                          preview
-                            .slice(0, 25)
-                            .flatMap((row) =>
-                              Object.keys(flattenRecord(row)),
-                            ),
-                        ),
-                      ).map((key) => (
+                      {previewColumnKeys.map((key) => (
                         <th
                           key={key}
                           className="whitespace-nowrap px-3 py-2 text-left font-medium text-muted-foreground"
@@ -481,15 +489,14 @@ export function ReportsPage() {
                   <tbody>
                     {preview.slice(0, 25).map((row, index) => {
                       const flat = flattenRecord(row);
-                      const keys = Object.keys(flat);
                       return (
                         <tr key={index} className="border-t border-border/70">
-                          {keys.map((key) => (
+                          {previewColumnKeys.map((key) => (
                             <td
                               key={key}
                               className="whitespace-nowrap px-3 py-1.5"
                             >
-                              {flat[key]}
+                              {flat[key] ?? ""}
                             </td>
                           ))}
                         </tr>
