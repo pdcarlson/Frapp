@@ -31,6 +31,28 @@ describe("leaderboardSubjectId", () => {
 });
 
 describe("resolveLeaderboardDisplayName", () => {
+  /**
+   * Regression: roster rows use membership `id` (chapter member row) and auth
+   * `user_id` (user UUID). Leaderboard totals are keyed by `user_id`. A map
+   * keyed only by membership id would never match and would always fall back
+   * to generic feed copy.
+   */
+  it("matches leaderboard user_id to roster user_id when membership id differs", () => {
+    const map = buildMemberDisplayNameMap([
+      {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        user_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+        display_name: "Jordan",
+      },
+    ]);
+    expect(
+      resolveLeaderboardDisplayName(
+        { user_id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8", total: 12 },
+        map,
+      ),
+    ).toBe("Jordan");
+  });
+
   it("matches on user_id when present", () => {
     const map = buildMemberDisplayNameMap([
       { id: "mem-1", user_id: "user-aa", display_name: "Alex" },
