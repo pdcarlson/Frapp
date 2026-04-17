@@ -1505,7 +1505,7 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Max transactions to return (1-200, defaults to 50). Values outside that range are rejected.",
+            "description": "Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
             "schema": {
               "minimum": 1,
               "maximum": 200,
@@ -3735,7 +3735,7 @@
             "name": "limit",
             "required": false,
             "in": "query",
-            "description": "Max polls to return (1-200, defaults to 50). Values outside that range are rejected.",
+            "description": "Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
             "schema": {
               "minimum": 1,
               "maximum": 200,

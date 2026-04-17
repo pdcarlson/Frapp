@@ -15,6 +15,11 @@ import type {
   PointCategory,
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../domain/constants/list-query-limits';
 
 export type PointsWindow = 'all' | 'semester' | 'month';
 
@@ -139,7 +144,10 @@ export class PointsService {
       return bMs - aMs;
     });
 
-    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    const limit = Math.max(
+      LIST_QUERY_LIMIT_MIN,
+      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
+    );
     return filtered.slice(0, limit);
   }
 

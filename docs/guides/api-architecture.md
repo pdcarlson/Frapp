@@ -11,7 +11,7 @@ The API in `apps/api` follows a strict layered structure:
 - **Infrastructure layer**: Supabase repositories, external adapters (Stripe, Expo Push, Storage)
 - **Domain layer**: entities, repository interfaces, shared business rules
 
-For list query parameters named `limit` (or similar caps), validate the allowed range on the query DTO with `class-validator` (for example `@Min(1)` and `@Max(200)`) and set matching `minimum` / `maximum` on `@ApiPropertyOptional` so OpenAPI reflects the same contract as the validation pipe.
+For list query parameters named `limit` (or similar caps), keep `@IsInt()` on the query DTO so non-integers still fail validation, document the effective 1–200 range in `@ApiPropertyOptional` (`minimum` / `maximum`), and **clamp** out-of-range integers in the application service using the shared constants in `apps/api/src/domain/constants/list-query-limits.ts`. That way HTTP clients get predictable pages without a 400 for a slightly high `limit`, while OpenAPI still documents the bounded page size.
 
 ```text
 src/

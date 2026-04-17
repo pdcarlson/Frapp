@@ -6,7 +6,6 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
-  Max,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -77,7 +76,7 @@ export class ListPointTransactionsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Max transactions to return (1-200, defaults to 50). Values outside that range are rejected.',
+      'Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.',
     minimum: 1,
     maximum: 200,
     default: 50,
@@ -86,7 +85,5 @@ export class ListPointTransactionsQueryDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1)
-  @Max(200)
   limit?: number;
 }

@@ -3147,7 +3147,7 @@ export interface operations {
                 flagged?: string;
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
                 before?: string;
-                /** @description Max transactions to return (1-200, defaults to 50). Values outside that range are rejected. */
+                /** @description Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
                 limit?: number;
             };
             header?: never;
@@ -4608,7 +4608,7 @@ export interface operations {
                 channel_id?: string;
                 /** @description Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls. */
                 active?: string;
-                /** @description Max polls to return (1-200, defaults to 50). Values outside that range are rejected. */
+                /** @description Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
                 limit?: number;
             };
             header?: never;
