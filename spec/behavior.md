@@ -195,6 +195,18 @@ When a user checks into an event:
 - Visible to all members.
 - Admins see the full transaction ledger for all members. Members see only their own transactions plus the leaderboard rankings.
 
+### Chapter-wide transaction list (web dashboard Audit)
+
+- `GET /v1/points/transactions` returns a **newest-first**, cursor-paginated slice of `point_transactions` for the active chapter. It backs the Points **Audit** tab in the web dashboard (filters for member, category, flagged state, and deep pagination).
+- Requires `points:view_all` (same permission as viewing another member’s point summary on `GET /v1/points/members/:userId`).
+- Query parameters (all optional unless noted):
+  - `user_id` — restrict to one member’s rows.
+  - `category` — one of `ATTENDANCE`, `ACADEMIC`, `SERVICE`, `FINE`, `MANUAL`, `STUDY`.
+  - `flagged` — `'true'` or `'false'` string; when `true`, only rows the anomaly rules marked for review.
+  - `before` — ISO8601 timestamp cursor; return transactions created **strictly before** this instant (older page).
+  - `limit` — page size; default **50**, clamped to **1–200** inclusive on the server.
+- Ordering and caps are implementation details of the list endpoint; the **append-only** and **immutability** rules in *Anti-Fraud* still apply to underlying rows.
+
 ### Edge Cases
 
 - Negative balances are allowed. The system does not block fines even if the balance would go negative.
