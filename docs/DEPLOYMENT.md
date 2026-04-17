@@ -202,6 +202,14 @@ In each Vercel project → Settings → Domains:
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
+**Troubleshooting — staging URL shows only `*.vercel.app`:** Every deployment still gets a generated `*.vercel.app` URL; that is normal. The custom domain should additionally alias the latest deployment for the branch you chose in domain settings. If `app.staging.frapp.live` (or `staging.frapp.live`) does not update when you merge to `main`, the domain is almost certainly tied to the wrong Git branch (for example a branch literally named `preview` instead of `main`). In the dashboard, edit the domain and set **Git Branch** to `main`, or use the REST API: `PATCH /v9/projects/{projectId}/domains/{domain}` with body `{"gitBranch":"main"}`. Confirm the current assignment:
+
+```bash
+curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
+  "https://api.vercel.com/v9/projects/<project-id>/domains/<hostname>" \
+  | jq '{name, gitBranch, verified}'
+```
+
 ### 4.4 DNS Records (Squarespace Domains)
 
 In Squarespace Domains → `frapp.live` → DNS Settings → Custom Records:

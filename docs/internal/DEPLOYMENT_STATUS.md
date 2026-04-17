@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-04-16 (post PR #208 merge)
+Last updated: 2026-04-17 (Vercel staging custom domains re-linked to `main`)
 
 ## Environment branch model
 
@@ -55,6 +55,7 @@ Last updated: 2026-04-16 (post PR #208 merge)
 
 ### Vercel truth
 
+- **2026-04-17:** Staging hostnames `app.staging.frapp.live` and `staging.frapp.live` were tied to Git branch `preview` in the Vercel API (so they did not follow `main` merges). Updated via `PATCH .../domains/...` to `gitBranch: main` for both projects; see troubleshooting in `docs/DEPLOYMENT.md` §4.3.
 - `frapp-web` production branch is `production`.
 - `frapp-landing` production branch is `production`.
 - Latest `main` deployment for `frapp-web` is `READY` on merge SHA.
