@@ -1487,7 +1487,7 @@
             "name": "flagged",
             "required": false,
             "in": "query",
-            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode).",
+            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.",
             "schema": {
               "type": "string",
               "enum": [

@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsBooleanString,
   IsIn,
   IsInt,
   IsOptional,
@@ -11,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
 
 export class CreatePollDto {
@@ -69,7 +69,7 @@ export class ListPollsQueryDto {
     enum: ['true', 'false', '1', '0'],
   })
   @IsOptional()
-  @IsBooleanString()
+  @IsBooleanQueryString()
   active?: BooleanStringQueryValue;
 
   @ApiPropertyOptional({

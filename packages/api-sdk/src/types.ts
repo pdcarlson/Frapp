@@ -3143,7 +3143,7 @@ export interface operations {
                 /** @description Filter to a single member */
                 user_id?: string;
                 category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
-                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode). */
+                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
                 flagged?: "true" | "false" | "1" | "0";
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
                 before?: string;

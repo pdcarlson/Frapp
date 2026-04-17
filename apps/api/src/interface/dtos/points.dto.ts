@@ -1,5 +1,4 @@
 import {
-  IsBooleanString,
   IsEnum,
   IsInt,
   IsISO8601,
@@ -10,6 +9,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
 
 export class AdjustPointsDto {
@@ -61,11 +61,11 @@ export class ListPointTransactionsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      'Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode).',
+      'Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.',
     enum: ['true', 'false', '1', '0'],
   })
   @IsOptional()
-  @IsBooleanString()
+  @IsBooleanQueryString()
   flagged?: BooleanStringQueryValue;
 
   @ApiPropertyOptional({
