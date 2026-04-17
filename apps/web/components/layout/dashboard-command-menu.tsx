@@ -153,7 +153,7 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
         id: `backwork-${row.id ?? row.title ?? Math.random()}`,
         label: row.title ?? row.assignment_type ?? "Untitled resource",
         hint: row.course_number ?? undefined,
-        href: "/home",
+        href: "/backwork",
       })),
     });
   }
