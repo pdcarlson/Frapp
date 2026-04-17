@@ -25,6 +25,7 @@ const CI_CHECKS = [
   "api-contract-check",
   "migration-safety",
   "mobile-validate",
+  "ci-scripts-tests",
 ];
 
 const DOCS_CHECKS = [
