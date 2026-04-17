@@ -20,6 +20,18 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     return (data as PollVote[]) || [];
   }
 
+  async findByMessages(messageIds: string[]): Promise<PollVote[]> {
+    if (messageIds.length === 0) {
+      return [];
+    }
+    const { data, error } = await this.supabase
+      .from('poll_votes')
+      .select('*')
+      .in('message_id', messageIds);
+    if (error) throw error;
+    return (data as PollVote[]) || [];
+  }
+
   async findByMessageAndUser(
     messageId: string,
     userId: string,

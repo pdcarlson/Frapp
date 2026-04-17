@@ -121,7 +121,9 @@ Example: attendance auto-absent filtering now precomputes `required_role_ids` in
 
 ### Independent reads in loops
 
-When a service loads related rows for many parent records (for example, vote tallies for each poll in `PollService.listPolls`), use `Promise.allSettled` over the per-parent queries so work runs concurrently instead of awaiting inside a sequential `for` loop. On rejection for one parent, handle that entry in isolation (for example, empty tallies) so other polls still return.
+When a service loads the **same shape** of related rows for many parent records (for example, all `poll_votes` rows for each poll on a chapter list), prefer **one batched repository query** (for example `.in('message_id', ids)` on PostgREST) and group results in memory. Issuing one query per parent—even via `Promise.allSettled`—still creates N+1 HTTP calls to PostgREST and can exhaust connection pools under large limits.
+
+Use `Promise.allSettled` when the child reads are genuinely separate resources or failure domains and batching is not available; isolate failures per entry so the rest of the list still returns.
 
 ### List queries: filter before `limit`
 

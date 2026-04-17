@@ -4,6 +4,8 @@ export const POLL_VOTE_REPOSITORY = 'POLL_VOTE_REPOSITORY';
 
 export interface IPollVoteRepository {
   findByMessage(messageId: string): Promise<PollVote[]>;
+  /** All votes for any of the given poll message ids (one round-trip). */
+  findByMessages(messageIds: string[]): Promise<PollVote[]>;
   findByMessageAndUser(messageId: string, userId: string): Promise<PollVote[]>;
   create(data: Partial<PollVote>): Promise<PollVote>;
   createMany(data: Partial<PollVote>[]): Promise<PollVote[]>;

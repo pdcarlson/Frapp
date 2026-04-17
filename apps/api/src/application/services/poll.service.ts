@@ -11,7 +11,10 @@ import type { IChatChannelRepository } from '../../domain/repositories/chat.repo
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
-import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
+import type {
+  PollMetadata,
+  PollVote,
+} from '../../domain/entities/poll-vote.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -280,54 +283,28 @@ export class PollService {
       listRows.push({ message, metadata, expired });
     }
 
-    const outcomes = await Promise.allSettled(
-      listRows.map(({ message, metadata, expired }) => {
-        const votesPromise = this.voteRepo.findByMessage(message.id);
-        const userVotesPromise = options.userId
-          ? this.voteRepo.findByMessageAndUser(message.id, options.userId)
-          : Promise.resolve(null);
-        return Promise.all([votesPromise, userVotesPromise]).then(
-          ([votes, userVoteList]) => ({
-            message,
-            metadata,
-            expired,
-            votes,
-            userVoteList,
-          }),
-        );
-      }),
-    );
+    const messageIds = listRows.map((row) => row.message.id);
+    let allVotes: PollVote[] = [];
+    try {
+      allVotes = await this.voteRepo.findByMessages(messageIds);
+    } catch {
+      // Match prior per-row `allSettled` behavior: failed reads yield empty tallies.
+    }
+
+    const votesByMessageId = new Map<string, PollVote[]>();
+    for (const vote of allVotes) {
+      const bucket = votesByMessageId.get(vote.message_id);
+      if (bucket) {
+        bucket.push(vote);
+      } else {
+        votesByMessageId.set(vote.message_id, [vote]);
+      }
+    }
 
     const results: PollWithResults[] = [];
-    for (let i = 0; i < outcomes.length; i++) {
-      const outcome = outcomes[i];
-      const { message, metadata, expired } = listRows[i];
+    for (const { message, metadata, expired } of listRows) {
+      const votes = votesByMessageId.get(message.id) ?? [];
       const options_ = metadata.options ?? [];
-
-      if (outcome.status === 'rejected') {
-        const entry: PollWithResults = {
-          id: message.id,
-          channel_id: message.channel_id,
-          sender_id: message.sender_id,
-          content: message.content,
-          type: 'POLL',
-          metadata,
-          created_at: message.created_at,
-          isExpired: expired,
-          results: options_.map((optionText, optionIndex) => ({
-            optionIndex,
-            optionText,
-            voteCount: 0,
-          })),
-        };
-        if (options.userId) {
-          entry.userVotes = [];
-        }
-        results.push(entry);
-        continue;
-      }
-
-      const { votes, userVoteList } = outcome.value;
       const entry: PollWithResults = {
         id: message.id,
         channel_id: message.channel_id,
@@ -343,8 +320,10 @@ export class PollService {
           voteCount: votes.filter((v) => v.option_index === optionIndex).length,
         })),
       };
-      if (options.userId && userVoteList) {
-        entry.userVotes = userVoteList.map((v) => v.option_index);
+      if (options.userId) {
+        entry.userVotes = votes
+          .filter((v) => v.user_id === options.userId)
+          .map((v) => v.option_index);
       }
       results.push(entry);
     }

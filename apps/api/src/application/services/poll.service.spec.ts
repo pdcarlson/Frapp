@@ -79,6 +79,7 @@ describe('PollService', () => {
 
     mockVoteRepo = {
       findByMessage: jest.fn(),
+      findByMessages: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
@@ -410,22 +411,18 @@ describe('PollService', () => {
         activePoll,
         expiredPoll,
       ]);
-      mockVoteRepo.findByMessage.mockImplementation((messageId: string) => {
-        if (messageId === 'poll-active') {
-          return Promise.resolve([
-            { option_index: 0 } as never,
-            { option_index: 0 } as never,
-            { option_index: 1 } as never,
-          ]);
-        }
-        if (messageId === 'poll-expired') {
-          return Promise.resolve([]);
-        }
-        return Promise.resolve([]);
-      });
+      mockVoteRepo.findByMessages.mockResolvedValue([
+        { message_id: 'poll-active', option_index: 0 } as never,
+        { message_id: 'poll-active', option_index: 0 } as never,
+        { message_id: 'poll-active', option_index: 1 } as never,
+      ]);
 
       const result = await service.listPolls('ch-1');
 
+      expect(mockVoteRepo.findByMessages).toHaveBeenCalledWith([
+        'poll-active',
+        'poll-expired',
+      ]);
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('poll-active');
       expect(result[0].results).toEqual([
@@ -439,7 +436,7 @@ describe('PollService', () => {
     it('filters to active=true (expired polls excluded)', async () => {
       // Repository applies active/expired before limit; service does not re-filter.
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
-      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.findByMessages.mockResolvedValue([]);
 
       const result = await service.listPolls('ch-1', { active: true });
 
@@ -452,7 +449,7 @@ describe('PollService', () => {
 
     it('filters to active=false (only expired polls)', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([expiredPoll]);
-      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.findByMessages.mockResolvedValue([]);
 
       const result = await service.listPolls('ch-1', { active: false });
 
@@ -465,22 +462,23 @@ describe('PollService', () => {
 
     it('includes userVotes when a userId is supplied', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
-      mockVoteRepo.findByMessage.mockResolvedValue([]);
-      mockVoteRepo.findByMessageAndUser.mockResolvedValue([
-        { option_index: 1 } as never,
+      mockVoteRepo.findByMessages.mockResolvedValue([
+        {
+          message_id: 'poll-active',
+          user_id: 'user-2',
+          option_index: 1,
+        } as never,
       ]);
 
       const result = await service.listPolls('ch-1', { userId: 'user-2' });
 
       expect(result[0].userVotes).toEqual([1]);
-      expect(mockVoteRepo.findByMessageAndUser).toHaveBeenCalledWith(
-        'poll-active',
-        'user-2',
-      );
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
     });
 
     it('clamps the limit to the 1-200 range', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
+      mockVoteRepo.findByMessages.mockResolvedValue([]);
 
       await service.listPolls('ch-1', { limit: 0 });
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
