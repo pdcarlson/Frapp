@@ -16,6 +16,10 @@ show results cached from another chapter after a switch.
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a
 real `QueryClient` wrapped with `FrappClientProvider` and `QueryClientProvider`.
 
+## Event query keys
+
+`useEvent` caches each event under `["events", chapterId, id]` (see `use-events.ts`), not `["events", id]`. Any TanStack Query invalidation that should refresh the event detail after related data changes (for example realtime attendance updates in the web app) must include the same `chapterId` segment from `useActiveChapterId()` so prefix matching hits the mounted query.
+
 - Vitest (`packages/hooks/vitest.config.ts`)
 - `@testing-library/react` `renderHook`
 - `FrappClientProvider` + `QueryClientProvider` wrappers for realistic hook context

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { AlertCircle, Loader2, UsersRound } from "lucide-react";
 import {
+  useActiveChapterId,
   useAttendance,
   useAutoAbsent,
   useMembers,
@@ -84,6 +85,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export function AttendancePanel({ eventId }: { eventId: string }) {
+  const chapterId = useActiveChapterId();
   const { toast } = useToast();
   const attendanceQuery = useAttendance(eventId);
   const membersQuery = useMembers();
@@ -99,10 +101,14 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   useRealtimeTable({
     table: "event_attendance",
     filter: `event_id=eq.${eventId}`,
-    invalidate: [
-      ["attendance", eventId],
-      ["events", eventId],
-    ],
+    invalidate: useMemo(
+      () => [
+        ["attendance", eventId],
+        // Must match useEvent(id) → ["events", chapterId, id]; ["events", id] never matches.
+        ["events", chapterId, eventId],
+      ],
+      [chapterId, eventId],
+    ),
     enabled: Boolean(eventId),
   });
 
