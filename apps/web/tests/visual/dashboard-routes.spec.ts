@@ -25,6 +25,11 @@ test.describe("dashboard route visual baselines", () => {
   for (const route of dashboardRouteSnapshots) {
     test(`matches baseline for ${route.path}`, async ({ page }) => {
       await page.goto(route.path);
+      // Wait for the dev server's initial data fetches + font swap so the
+      // rendered `<main>` height is stable. Without this, Playwright can
+      // screenshot before Geist Sans finishes loading, causing a 1px
+      // rounding drift in CI vs. local baselines.
+      await page.waitForLoadState("networkidle");
       await expect(page.locator("main")).toBeVisible();
       await expect(page.locator("main")).toHaveScreenshot(route.snapshotName, {
         animations: "disabled",
