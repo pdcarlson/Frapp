@@ -86,5 +86,5 @@ Post-apply production checks:
 
 ## 2026-04-17: Add `members:view` to VP / Secretary system roles
 * **Migration**: `20260417150000_backfill_members_view_vp_secretary.sql`
-* **Purpose**: Append `members:view` to Vice President and Secretary so `PermissionsGuard` on poll/member controllers succeeds alongside `polls:view_all`.
+* **Purpose**: Append `members:view` to Vice President and Secretary so they can use routes that rely on the controller-level `members:view` default (handler-level `@RequirePermissions` overrides that default and does not require both).
 * **Checks**: After `db push`, e.g. `select count(*) from public.roles where is_system and name in ('Vice President', 'Secretary') and 'members:view' = any (permissions);` should equal twice the number of chapters with those rows (or verify zero rows missing the permission). Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `backfill_members_view_vp_secretary`.

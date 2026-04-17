@@ -29,6 +29,25 @@ describe('PermissionsGuard', () => {
     } as unknown as ExecutionContext;
   };
 
+  /** Mirrors Nest `getAllAndOverride` for `PERMISSIONS_KEY` using the (possibly mocked) `reflector.get`. */
+  const stubRequiredPermissionsOverride = () =>
+    jest
+      .spyOn(reflector, 'getAllAndOverride')
+      .mockImplementation((key, targets) => {
+        if (key === PERMISSIONS_ANY_KEY) {
+          return undefined;
+        }
+        if (key === PERMISSIONS_KEY && Array.isArray(targets)) {
+          for (const target of targets) {
+            const value = reflector.get(PERMISSIONS_KEY, target);
+            if (value !== undefined) {
+              return value;
+            }
+          }
+        }
+        return undefined;
+      });
+
   beforeEach(async () => {
     mockFrom = jest.fn();
 
@@ -54,22 +73,14 @@ describe('PermissionsGuard', () => {
     expect(await guard.canActivate(ctx)).toBe(true);
   });
 
-  it('merges class- and handler-level @RequirePermissions (AND)', async () => {
-    jest.spyOn(reflector, 'get').mockImplementation((key, target) => {
-      if (key !== PERMISSIONS_KEY) {
-        return undefined;
-      }
-      if (target === mockHandler) {
-        return ['polls:view_all'];
-      }
-      if (target === mockControllerClass) {
-        return ['members:view'];
-      }
-      return undefined;
-    });
+  it('uses handler-level @RequirePermissions over class-level (Nest override)', async () => {
+    jest.spyOn(reflector, 'get').mockReturnValue(undefined);
     jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((key) => {
       if (key === PERMISSIONS_ANY_KEY) {
         return undefined;
+      }
+      if (key === PERMISSIONS_KEY) {
+        return ['polls:view_all'];
       }
       return undefined;
     });
@@ -82,7 +93,7 @@ describe('PermissionsGuard', () => {
     });
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
-    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+    expect(await guard.canActivate(ctx)).toBe(true);
   });
 
   it('should throw ForbiddenException when member has no roles', async () => {
@@ -92,7 +103,7 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    stubRequiredPermissionsOverride();
     const ctx = mockExecutionContext({ role_ids: [] });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
   });
@@ -104,7 +115,7 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    stubRequiredPermissionsOverride();
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({
@@ -124,7 +135,7 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    stubRequiredPermissionsOverride();
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({
@@ -147,7 +158,7 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    stubRequiredPermissionsOverride();
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({
@@ -167,7 +178,7 @@ describe('PermissionsGuard', () => {
       }
       return undefined;
     });
-    jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+    stubRequiredPermissionsOverride();
     mockFrom.mockReturnValue({
       select: jest.fn().mockReturnValue({
         in: jest.fn().mockResolvedValue({

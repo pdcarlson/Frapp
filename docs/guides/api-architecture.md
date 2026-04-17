@@ -52,7 +52,7 @@ Every protected endpoint runs through a consistent guard chain:
 
 1. **SupabaseAuthGuard** — validates the JWT from Supabase Auth.
 2. **ChapterGuard** — verifies the `x-chapter-id` header and membership in that chapter.
-3. **PermissionsGuard** — checks `@RequirePermissions()` metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard **merges** the two lists (deduplicated) and requires **every** listed permission — Nest's default reflector would otherwise keep only the handler metadata and drop the class baseline.
+3. **PermissionsGuard** — checks `@RequirePermissions()` metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard uses Nest's `Reflector.getAllAndOverride` with `[handler, class]`: **handler wins**, so route-specific permissions replace the class baseline for that method (same semantics as other Nest metadata).
 
 Interceptors:
 
@@ -81,7 +81,7 @@ Example: adding a `polls` module.
    - Add a controller in `src/interface/controllers/poll.controller.ts`.
    - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions(...)` as needed (for example `polls:create` to post a poll, `polls:view_all` for `GET /v1/polls` chapter-wide aggregates).
 
-   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; effective checks combine the controller baseline `members:view` with the route-specific `polls:view_all` / `points:view_all` (see `PermissionsGuard` merge above). The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior.md`](../../spec/behavior.md).
+   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes declare `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler, which **overrides** the controller's default `members:view` for that method only. The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior.md`](../../spec/behavior.md).
 
 5. **Module wiring**
    - Create `PollModule` in `src/interface/modules/poll.module.ts`, providing controller, service, and repository implementation.
