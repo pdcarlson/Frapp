@@ -356,6 +356,14 @@ card pointing at their chapter president. Flags are raised automatically when
 
 ### 3.5 Billing (`/billing`)
 
+> **Invoice admin:** `/billing` renders an `InvoiceAdminCard` below the
+> subscription summary that lists every member invoice with inline status
+> transitions (DRAFT → OPEN → PAID / VOID), a dedicated OVERDUE filter backed
+> by `/v1/invoices/overdue`, and a Create-invoice dialog. The admin section
+> is gated behind `billing:manage` via `<Can>`; members see only their own
+> invoices via the existing table above.
+
+
 ```
 ┌──────────────────────────────────────────────────┐
 │ Billing                                           │

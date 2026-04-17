@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { InvoiceAdminCard } from "@/components/billing/invoice-admin-card";
 
 type BillingStatusPreview = {
   status: string;
@@ -306,6 +307,8 @@ export default function BillingPage() {
           )}
         </CardContent>
       </Card>
+
+      <InvoiceAdminCard />
     </div>
   );
 }
