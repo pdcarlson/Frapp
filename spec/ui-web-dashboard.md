@@ -196,6 +196,7 @@ without dumping them back to the sign-in page.
 - List of recent chapter events (last 10)
 - Each item: icon + description + relative timestamp ("2 hours ago")
 - Click navigates to relevant screen
+- Leaderboard lines resolve display names by matching the points subject to chapter members on **both** membership `id` and auth `user_id` (and tolerate camelCase JSON keys) so the feed does not fall back to generic copy when those identifiers differ.
 
 **Quick actions:**
 

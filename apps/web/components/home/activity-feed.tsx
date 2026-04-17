@@ -84,7 +84,9 @@ type EventLike = {
 type MemberLike = {
   id?: string;
   user_id?: string;
+  userId?: string;
   display_name?: string | null;
+  displayName?: string | null;
   created_at?: string;
 };
 
@@ -93,6 +95,7 @@ type LeaderboardLike = {
   total?: number;
   userId?: string;
   member_id?: string;
+  memberId?: string;
 };
 
 type BackworkLike = {
@@ -137,7 +140,9 @@ function buildMemberItems(members: MemberLike[]): FeedItem[] {
       id: `member-${member.id}`,
       icon: Users,
       iconClassName: "text-emerald-600",
-      message: `New member joined: ${member.display_name ?? "Unnamed member"}`,
+      message: `New member joined: ${
+        member.display_name ?? member.displayName ?? "Unnamed member"
+      }`,
       timestamp: new Date(member.created_at as string),
       href: "/members",
     }));

@@ -11,12 +11,16 @@ export type ActivityFeedLeaderboardEntry = {
   /** Alternate shapes from proxies or older payloads */
   userId?: string;
   member_id?: string;
+  memberId?: string;
 };
 
 export type ActivityFeedMember = {
   id?: string;
   user_id?: string;
+  /** camelCase from some JSON clients */
+  userId?: string;
   display_name?: string | null;
+  displayName?: string | null;
 };
 
 function nonEmptyTrimmed(value: string | undefined | null): string | undefined {
@@ -32,7 +36,8 @@ export function leaderboardSubjectId(
   return (
     nonEmptyTrimmed(entry.user_id) ??
     nonEmptyTrimmed(entry.userId) ??
-    nonEmptyTrimmed(entry.member_id)
+    nonEmptyTrimmed(entry.member_id) ??
+    nonEmptyTrimmed(entry.memberId)
   );
 }
 
@@ -42,9 +47,12 @@ export function buildMemberDisplayNameMap(
 ): Map<string, string> {
   const map = new Map<string, string>();
   for (const member of members) {
-    const name = nonEmptyTrimmed(member.display_name);
+    const name =
+      nonEmptyTrimmed(member.display_name) ??
+      nonEmptyTrimmed(member.displayName);
     if (!name) continue;
-    const userId = nonEmptyTrimmed(member.user_id);
+    const userId =
+      nonEmptyTrimmed(member.user_id) ?? nonEmptyTrimmed(member.userId);
     const memberId = nonEmptyTrimmed(member.id);
     if (userId) map.set(userId, name);
     if (memberId && memberId !== userId) map.set(memberId, name);
