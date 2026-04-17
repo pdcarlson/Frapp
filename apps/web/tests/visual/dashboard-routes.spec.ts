@@ -9,6 +9,7 @@ const dashboardRouteSnapshots = [
   { path: "/tasks", snapshotName: "tasks-main-content.png" },
   { path: "/service", snapshotName: "service-main-content.png" },
   { path: "/documents", snapshotName: "documents-main-content.png" },
+  { path: "/backwork", snapshotName: "backwork-main-content.png" },
   { path: "/points", snapshotName: "points-main-content.png" },
   { path: "/billing", snapshotName: "billing-main-content.png" },
   { path: "/reports", snapshotName: "reports-main-content.png" },

@@ -108,6 +108,14 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty filter | — | `Report returned no rows — the filters matched nothing in the active chapter.` |
 | Permission denied | `Reports & Export` | `Exporting chapter data requires the reports:export permission. Ask your chapter president to grant access.` |
 
+## Backwork (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading backwork...` |
+| Empty | `No backwork matches this view` | `Loosen the filters, or upload the first resource to build the library.` |
+| Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

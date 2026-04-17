@@ -205,11 +205,11 @@ export const DASHBOARD_NAV: NavSection[] = [
         id: "backwork",
         label: "Backwork",
         icon: BookOpen,
+        href: "/backwork",
         breadcrumbTitle: "Backwork",
         primaryActionLabel: "Upload Resource",
         description: "Academic library with rich filters.",
-        status: "coming-soon",
-        statusLabel: "Soon",
+        status: "available",
       },
       {
         id: "documents",
