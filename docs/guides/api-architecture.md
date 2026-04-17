@@ -77,7 +77,7 @@ Example: adding a `polls` module.
 4. **Interface layer**
    - Add DTOs in `src/interface/dtos/poll.dto.ts`.
    - Add a controller in `src/interface/controllers/poll.controller.ts`.
-   - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions("polls:manage")` as needed.
+   - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions(...)` as needed (for example `polls:create` to post a poll, `polls:view_all` for `GET /v1/polls` chapter-wide aggregates).
 
 5. **Module wiring**
    - Create `PollModule` in `src/interface/modules/poll.module.ts`, providing controller, service, and repository implementation.

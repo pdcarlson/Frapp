@@ -30,6 +30,7 @@ export const SystemPermissions = {
   GEOFENCES_MANAGE: 'geofences:manage',
 
   POLLS_CREATE: 'polls:create',
+  POLLS_VIEW_ALL: 'polls:view_all',
 
   TASKS_MANAGE: 'tasks:manage',
 
@@ -62,6 +63,7 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BILLING_MANAGE,
       SystemPermissions.POINTS_ADJUST,
       SystemPermissions.POINTS_VIEW_ALL,
+      SystemPermissions.POLLS_VIEW_ALL,
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.REPORTS_EXPORT,
       SystemPermissions.EVENTS_CREATE,
@@ -78,6 +80,7 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BACKWORK_UPLOAD,
       SystemPermissions.SERVICE_LOG,
       SystemPermissions.POLLS_CREATE,
+      SystemPermissions.POLLS_VIEW_ALL,
     ],
     is_system: true,
     display_order: 3,

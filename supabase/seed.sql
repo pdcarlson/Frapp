@@ -17,10 +17,10 @@ Default system roles seeded on chapter creation:
 
 2. Treasurer (is_system: true, display_order: 2)
    permissions: ['billing:view', 'billing:manage', 'points:adjust', 'points:view_all',
-                 'members:view', 'reports:export', 'events:create', 'events:update']
+                 'polls:view_all', 'members:view', 'reports:export', 'events:create', 'events:update']
 
 3. Member (is_system: true, display_order: 3)
-   permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create']
+   permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create', 'polls:view_all']
 
 4. New Member (is_system: true, display_order: 4)
    permissions: ['members:view', 'backwork:upload']

@@ -4,7 +4,9 @@ import { PollService } from '../../application/services/poll.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { CreatePollDto, VoteDto } from '../dtos/poll.dto';
+import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 describe('PollController', () => {
   let controller: PollController;
@@ -16,6 +18,7 @@ describe('PollController', () => {
       vote: jest.fn(),
       removeVote: jest.fn(),
       getPoll: jest.fn(),
+      listPolls: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -128,6 +131,39 @@ describe('PollController', () => {
         chapterId,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('listPolls', () => {
+    it('should list polls with query options', async () => {
+      const chapterId = 'chapter-123';
+      const userId = 'user-123';
+      const query: ListPollsQueryDto = {
+        channel_id: 'ch-a',
+        active: 'true',
+        limit: 25,
+      };
+      const expected = [{ id: 'poll-1' }] as any;
+
+      pollService.listPolls.mockResolvedValue(expected);
+
+      const result = await controller.listPolls(chapterId, userId, query);
+
+      expect(pollService.listPolls).toHaveBeenCalledWith(chapterId, {
+        channelId: 'ch-a',
+        active: true,
+        limit: 25,
+        userId,
+      });
+      expect(result).toEqual(expected);
+    });
+
+    it('should require POLLS_VIEW_ALL permission', () => {
+      const permissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.listPolls,
+      );
+      expect(permissions).toEqual([SystemPermissions.POLLS_VIEW_ALL]);
     });
   });
 

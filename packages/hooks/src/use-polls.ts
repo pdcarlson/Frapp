@@ -2,6 +2,18 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useMyPermissions } from "./use-user";
+
+const POLLS_VIEW_ALL = "polls:view_all" as const;
+const WILDCARD_PERMISSION = "*" as const;
+
+function canListChapterPolls(
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (!permissions || permissions.length === 0) return false;
+  if (permissions.includes(WILDCARD_PERMISSION)) return true;
+  return permissions.includes(POLLS_VIEW_ALL);
+}
 
 export function usePolls(options?: {
   channelId?: string;
@@ -10,6 +22,8 @@ export function usePolls(options?: {
 }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  const permissionsQuery = useMyPermissions();
+  const canList = canListChapterPolls(permissionsQuery.data?.permissions);
   return useQuery({
     queryKey: ["polls", chapterId, options],
     queryFn: async () => {
@@ -31,7 +45,7 @@ export function usePolls(options?: {
       return data;
     },
     staleTime: 30_000,
-    enabled: !!chapterId,
+    enabled: !!chapterId && permissionsQuery.isSuccess && canList,
   });
 }
 

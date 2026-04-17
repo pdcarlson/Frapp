@@ -194,6 +194,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Open chat",
         description: "Chapter poll list with live results.",
         status: "available",
+        requirePermission: "polls:view_all",
       },
     ],
   },

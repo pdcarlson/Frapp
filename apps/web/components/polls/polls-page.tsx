@@ -30,6 +30,7 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
+import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { asArray } from "@/lib/utils";
 
@@ -278,87 +279,113 @@ export function PollsPage() {
   const polls = useMemo(() => asArray<PollRow>(pollsQuery.data), [pollsQuery.data]);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
-          <p className="text-sm text-muted-foreground">
-            Chapter-wide poll list. Vote, change your mind, or review results.
-            Polls are created inside chat channels; this surface is the
-            at-a-glance summary with live vote tallies.
-          </p>
+    <Can
+      permission="polls:view_all"
+      deniedFallback={
+        <div className="space-y-4">
+          <header>
+            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+            <p className="text-sm text-muted-foreground">
+              The chapter-wide poll list and aggregate tallies require the{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">
+                polls:view_all
+              </code>{" "}
+              permission. Ask your chapter president to grant it if you need
+              this view; you can still vote on polls from chat channels you can
+              access.
+            </p>
+          </header>
         </div>
-        <div className="flex items-center gap-2">
-          <Select value={channelFilter} onValueChange={setChannelFilter}>
-            <SelectTrigger className="w-[180px]" aria-label="Filter polls by channel">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ANY_CHANNEL}>All channels</SelectItem>
-              {channels.map((c) => (
-                <SelectItem key={c.id ?? "unknown"} value={String(c.id ?? "")}>
-                  {c.name ?? "Channel"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={statusFilter}
-            onValueChange={(value) =>
-              setStatusFilter(value as "ALL" | "OPEN" | "CLOSED")
-            }
-          >
-            <SelectTrigger className="w-[140px]" aria-label="Filter polls by status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All statuses</SelectItem>
-              <SelectItem value="OPEN">Open polls</SelectItem>
-              <SelectItem value="CLOSED">Closed polls</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => void pollsQuery.refetch()}
-            aria-label="Refresh polls"
-            disabled={pollsQuery.isFetching}
-          >
-            {pollsQuery.isFetching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </header>
-
-      {pollsQuery.isPending ? (
-        <LoadingState message="Loading chapter polls..." />
-      ) : pollsQuery.isError ? (
-        <ErrorState
-          title="Couldn't load polls"
-          description="Confirm your chapter access and retry."
-          onRetry={() => void pollsQuery.refetch()}
-        />
-      ) : polls.length === 0 ? (
-        <EmptyState
-          title="No polls match this view"
-          description="Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results."
-        />
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {polls.map((poll) => (
-            <Poll
-              key={poll.id}
-              poll={poll}
-              channelName={
-                channelNameById.get(poll.channel_id) ?? "Unknown channel"
+      }
+    >
+      <div className="space-y-6">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-tight">Polls</h2>
+            <p className="text-sm text-muted-foreground">
+              Chapter-wide poll list. Vote, change your mind, or review results.
+              Polls are created inside chat channels; this surface is the
+              at-a-glance summary with live vote tallies.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select value={channelFilter} onValueChange={setChannelFilter}>
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label="Filter polls by channel"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ANY_CHANNEL}>All channels</SelectItem>
+                {channels.map((c) => (
+                  <SelectItem key={c.id ?? "unknown"} value={String(c.id ?? "")}>
+                    {c.name ?? "Channel"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={statusFilter}
+              onValueChange={(value) =>
+                setStatusFilter(value as "ALL" | "OPEN" | "CLOSED")
               }
-            />
-          ))}
-        </div>
-      )}
-    </div>
+            >
+              <SelectTrigger
+                className="w-[140px]"
+                aria-label="Filter polls by status"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                <SelectItem value="OPEN">Open polls</SelectItem>
+                <SelectItem value="CLOSED">Closed polls</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => void pollsQuery.refetch()}
+              aria-label="Refresh polls"
+              disabled={pollsQuery.isFetching}
+            >
+              {pollsQuery.isFetching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </header>
+
+        {pollsQuery.isPending ? (
+          <LoadingState message="Loading chapter polls..." />
+        ) : pollsQuery.isError ? (
+          <ErrorState
+            title="Couldn't load polls"
+            description="Confirm your chapter access and retry, or confirm you have polls:view_all access."
+            onRetry={() => void pollsQuery.refetch()}
+          />
+        ) : polls.length === 0 ? (
+          <EmptyState
+            title="No polls match this view"
+            description="Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results."
+          />
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {polls.map((poll) => (
+              <Poll
+                key={poll.id}
+                poll={poll}
+                channelName={
+                  channelNameById.get(poll.channel_id) ?? "Unknown channel"
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </Can>
   );
 }

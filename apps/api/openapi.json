@@ -3710,7 +3710,7 @@
     },
     "/v1/polls": {
       "get": {
-        "description": "Chapter-wide poll list. Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+        "description": "Chapter-wide poll list for dashboards (requires polls:view_all). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
         "operationId": "PollController_listPolls_v1",
         "parameters": [
           {

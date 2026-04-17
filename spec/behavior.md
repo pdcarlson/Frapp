@@ -51,6 +51,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `backwork:admin`      | Manage courses, professors, delete resources           |
 | `geofences:manage`    | Create/edit/delete study geofences                     |
 | `polls:create`        | Create polls in channels                               |
+| `polls:view_all`      | List polls chapter-wide with aggregate vote tallies    |
 | `tasks:manage`        | Create, assign, and confirm tasks                      |
 | `chapter_docs:upload` | Upload documents to Chapter Files                      |
 | `chapter_docs:manage` | Delete/organize documents in Chapter Files             |
@@ -540,6 +541,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 ## 11. Polls and Voting
 
 - Users with `polls:create` permission can create polls in any channel they have access to.
+- `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `polls:view_all`, not only `members:view`.
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
 - When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.
