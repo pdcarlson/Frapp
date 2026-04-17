@@ -4,6 +4,9 @@ import type { FrappSupabaseClient } from '../database.types';
 import type { IPollVoteRepository } from '../../../domain/repositories/poll-vote.repository.interface';
 import type { PollVote } from '../../../domain/entities/poll-vote.entity';
 
+/** PostgREST default `max-rows` is often 1000; page through to avoid silent truncation. */
+const POLL_VOTES_PAGE_SIZE = 1000;
+
 @Injectable()
 export class SupabasePollVoteRepository implements IPollVoteRepository {
   constructor(
@@ -12,24 +15,29 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
   ) {}
 
   async findByMessage(messageId: string): Promise<PollVote[]> {
-    const { data, error } = await this.supabase
-      .from('poll_votes')
-      .select('*')
-      .eq('message_id', messageId);
-    if (error) throw error;
-    return (data as PollVote[]) || [];
+    return this.findByMessages([messageId]);
   }
 
   async findByMessages(messageIds: string[]): Promise<PollVote[]> {
     if (messageIds.length === 0) {
       return [];
     }
-    const { data, error } = await this.supabase
-      .from('poll_votes')
-      .select('*')
-      .in('message_id', messageIds);
-    if (error) throw error;
-    return (data as PollVote[]) || [];
+    const all: PollVote[] = [];
+    for (let from = 0; ; from += POLL_VOTES_PAGE_SIZE) {
+      const to = from + POLL_VOTES_PAGE_SIZE - 1;
+      const { data, error } = await this.supabase
+        .from('poll_votes')
+        .select('*')
+        .in('message_id', messageIds)
+        .range(from, to);
+      if (error) throw error;
+      const page = (data as PollVote[]) || [];
+      all.push(...page);
+      if (page.length < POLL_VOTES_PAGE_SIZE) {
+        break;
+      }
+    }
+    return all;
   }
 
   async findByMessageAndUser(
