@@ -20,6 +20,7 @@ type DashboardCommandMenuProps = {
 const commands = [
   { icon: LayoutDashboard, label: "Go to Overview", shortcut: "G O", href: "/" },
   { icon: Users, label: "Go to Members", shortcut: "G M", href: "/members" },
+  { icon: Users, label: "Go to Home", shortcut: "G H", href: "/home" },
   { icon: CalendarDays, label: "Go to Events", shortcut: "G E", href: "/events" },
   { icon: Star, label: "Go to Points", shortcut: "G P", href: "/points" },
   { icon: CircleDollarSign, label: "Go to Billing", shortcut: "G B", href: "/billing" },

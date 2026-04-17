@@ -90,8 +90,8 @@ to a route. The caller's effective permission set is loaded once via
 
 | Section | Item | Route | Permission |
 | --- | --- | --- | --- |
-| Overview | Home | `/` | — |
-| Overview | Profile | *(planned)* | — |
+| Overview | Home | `/home` | — |
+| Overview | Profile | `/profile` | — |
 | People | Members | `/members` | `members:view` |
 | People | Alumni | *(planned)* | `members:view` |
 | People | Roles | *(planned)* | `roles:manage` |
@@ -107,6 +107,10 @@ to a route. The caller's effective permission set is loaded once via
 | Finance | Billing | `/billing` | `billing:view` |
 | Finance | Reports | *(planned)* | `reports:export` |
 | Settings | Settings | *(planned)* | — |
+
+The unauthenticated landing page lives at `/` and redirects to `/home` once a
+Supabase session is present. `/dashboard` is a legacy alias that also redirects
+to `/home`.
 
 Roadmap entries render disabled with a `Soon` chip so the full footprint of the
 dashboard is discoverable even before every route ships. Users with zero
@@ -143,7 +147,7 @@ without dumping them back to the sign-in page.
 
 ## 3. Screen Specifications
 
-### 3.1 Dashboard Home (`/`)
+### 3.1 Dashboard Home (`/home`)
 
 **Purpose:** Chapter health at a glance. The first thing an admin sees.
 

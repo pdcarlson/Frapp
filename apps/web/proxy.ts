@@ -2,14 +2,17 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 const AUTH_ROUTES = ["/sign-in", "/sign-up"];
-const DASHBOARD_ROUTE_PREFIX = "/members";
+const DASHBOARD_ROUTE_PREFIX = "/home";
 const PROTECTED_ROUTE_PREFIXES = [
+  "/home",
   "/dashboard",
   "/members",
   "/events",
   "/points",
   "/billing",
+  "/profile",
   "/join",
+  "/no-access",
 ];
 
 function needsAuth(pathname: string) {
@@ -145,10 +148,13 @@ export const config = {
     "/sign-in",
     "/sign-up",
     "/join",
+    "/home/:path*",
     "/dashboard/:path*",
     "/members/:path*",
     "/events/:path*",
     "/points/:path*",
     "/billing/:path*",
+    "/profile/:path*",
+    "/no-access",
   ],
 };

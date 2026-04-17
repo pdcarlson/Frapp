@@ -38,6 +38,22 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
 
+## Home / activity feed (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading chapter activity...` |
+| No chapter selected | `Recent activity` | `Select an active chapter to load chapter events, members, and point activity.` |
+| Empty feed | `Recent activity` | `Activity will appear here as events are scheduled, members join, and points change.` |
+| Error | `Activity feed unavailable` | `Couldn't reach the API for events or members. Retry in a moment or confirm your chapter access.` |
+
+## Profile (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading your profile...` |
+| Error | `Couldn't load your profile` | `Sign in succeeded but we couldn't reach the API. Retry in a moment.` |
+
 ## Mobile reliability labels
 
 Use these exact labels for operational state pills:
