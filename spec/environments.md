@@ -328,4 +328,4 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 The Jules agent execution environment uses a pre-configured headless cloud VM.
 Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
-Agent-oriented rules and skills also live under `.jules/` (e.g., `.jules/rules`, `.jules/skills`) alongside the root `.cursor/` copies where applicable.
+Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.
