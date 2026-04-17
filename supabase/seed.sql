@@ -20,10 +20,10 @@ Default system roles seeded on chapter creation:
                  'polls:view_all', 'members:view', 'reports:export', 'events:create', 'events:update']
 
 3. Vice President (is_system: true, display_order: 3)
-   permissions: ['polls:view_all']
+   permissions: ['members:view', 'polls:view_all']
 
 4. Secretary (is_system: true, display_order: 4)
-   permissions: ['polls:view_all']
+   permissions: ['members:view', 'polls:view_all']
 
 5. Member (is_system: true, display_order: 5)
    permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create']
