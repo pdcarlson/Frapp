@@ -13,14 +13,13 @@ import {
 const DEFAULT_MESSAGE_LIMIT = 50;
 
 function effectivePollListLimit(requested?: number): number {
-  if (
-    requested === undefined ||
-    !Number.isFinite(requested) ||
-    requested <= 0
-  ) {
+  if (requested === undefined || !Number.isFinite(requested)) {
     return LIST_QUERY_LIMIT_DEFAULT;
   }
   const n = Math.trunc(requested);
+  if (n <= 0) {
+    return LIST_QUERY_LIMIT_MIN;
+  }
   return Math.max(LIST_QUERY_LIMIT_MIN, Math.min(n, LIST_QUERY_LIMIT_MAX));
 }
 
