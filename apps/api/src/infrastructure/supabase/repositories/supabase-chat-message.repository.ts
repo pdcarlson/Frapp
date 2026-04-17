@@ -66,7 +66,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
   async findPollsByChapter(
     chapterId: string,
-    options?: { channelId?: string; limit?: number },
+    options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]> {
     // chat_messages doesn't carry chapter_id directly — filter via the
     // chat_channels foreign key relationship. Supabase projects the
@@ -81,6 +81,19 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     if (options?.channelId) {
       query = query.eq('channel_id', options.channelId);
+    }
+
+    if (options?.active === true) {
+      const nowIso = new Date().toISOString();
+      // Quote the bound so PostgREST does not treat `.` in fractional seconds as an operator delimiter.
+      query = query.or(
+        `metadata->>expires_at.is.null,metadata->>expires_at.gt."${nowIso}"`,
+      );
+    } else if (options?.active === false) {
+      const nowIso = new Date().toISOString();
+      query = query
+        .not('metadata->>expires_at', 'is', null)
+        .lte('metadata->>expires_at', nowIso);
     }
 
     if (options?.limit !== undefined && options.limit > 0) {

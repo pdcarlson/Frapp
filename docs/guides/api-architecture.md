@@ -119,6 +119,10 @@ Example: attendance auto-absent filtering now precomputes `required_role_ids` in
 
 When a service loads related rows for many parent records (for example, vote tallies for each poll in `PollService.listPolls`), use `Promise.allSettled` over the per-parent queries so work runs concurrently instead of awaiting inside a sequential `for` loop. On rejection for one parent, handle that entry in isolation (for example, empty tallies) so other polls still return.
 
+### List queries: filter before `limit`
+
+When a list applies a domain filter (for example, “active only”) and a `limit`, express the filter in the database query so it runs before the row cap. Filtering in application code after the database has truncated the page can return fewer than `limit` rows even when more matching rows exist beyond the cutoff.
+
 ### Bulk Insert Optimizations
 
 When performing multiple database insertions concurrently (e.g., via `Promise.allSettled` or `Promise.all`), there is a significant performance penalty due to N+1 network requests. Instead, utilize the Supabase JavaScript client's native support for bulk array inserts:

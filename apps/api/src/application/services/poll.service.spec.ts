@@ -446,6 +446,10 @@ describe('PollService', () => {
       const result = await service.listPolls('ch-1', { active: true });
 
       expect(result.map((p) => p.id)).toEqual(['poll-active']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: true }),
+      );
     });
 
     it('filters to active=false (only expired polls)', async () => {
@@ -458,6 +462,10 @@ describe('PollService', () => {
       const result = await service.listPolls('ch-1', { active: false });
 
       expect(result.map((p) => p.id)).toEqual(['poll-expired']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: false }),
+      );
     });
 
     it('includes userVotes when a userId is supplied', async () => {

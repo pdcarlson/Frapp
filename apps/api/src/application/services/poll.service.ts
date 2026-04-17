@@ -255,6 +255,7 @@ export class PollService {
     const messages = await this.messageRepo.findPollsByChapter(chapterId, {
       channelId: options.channelId,
       limit,
+      active: options.active,
     });
 
     const listRows: {

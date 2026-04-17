@@ -48,10 +48,12 @@ export interface IChatMessageRepository {
    * Newest-first list of POLL messages across every channel in the chapter.
    * Optional `channelId` scopes to a single channel. `limit` caps result size
    * (service clamps the value; repo treats an undefined as "no limit").
+   * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
+   * so `limit` applies after that filter, not before.
    */
   findPollsByChapter(
     chapterId: string,
-    options?: { channelId?: string; limit?: number },
+    options?: { channelId?: string; limit?: number; active?: boolean },
   ): Promise<ChatMessage[]>;
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
