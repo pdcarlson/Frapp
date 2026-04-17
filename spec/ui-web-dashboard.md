@@ -103,7 +103,18 @@ to a route. The caller's effective permission set is loaded once via
 | Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
 | Resources | Backwork | `/backwork` | — (upload gated by `backwork:upload`) |
 | Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
-| Resources | Study Zones | *(planned)* | `geofences:manage` |
+| Resources | Study session | `/study` | — |
+| Resources | Study Zones | `/geofences` | `geofences:manage` |
+
+**Web study hours** is a deliberate adaptation of the mobile foreground
+enforcement rule. The `/study` timer uses the `Page Visibility API` — when
+the tab is hidden the client-side elapsed timer pauses and the heartbeat
+stops firing. A `pagehide` listener also best-effort stops the session when
+the tab closes (the server additionally expires sessions after 10 minutes
+of stale heartbeats). Members who need uninterrupted tracking should use
+the mobile app, which keeps the session alive through OS foreground
+controls. This divergence is called out in-copy on `/study` so there are
+no surprises.
 | Finance | Billing | `/billing` | `billing:view` |
 | Finance | Reports | `/reports` | `reports:export` |
 | Settings | Settings | `/settings` | — |

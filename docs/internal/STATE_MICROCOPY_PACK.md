@@ -116,6 +116,25 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | `No backwork matches this view` | `Loosen the filters, or upload the first resource to build the library.` |
 | Error | `Couldn't load backwork` | `Confirm your chapter access and retry.` |
 
+## Study session (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading study zones...` |
+| Empty zones | `No active study zones` | `Ask a chapter admin with geofences:manage to add one.` |
+| Empty history | `No sessions logged yet` | `Start a tracked session inside a study zone to start earning study points.` |
+| Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
+| Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
+
+## Study zones (admin)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading study zones...` |
+| Empty | `No study zones yet` | `Create your first zone to let members start tracked study sessions for points.` |
+| Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
+| Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |
