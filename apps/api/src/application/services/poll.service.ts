@@ -288,7 +288,7 @@ export class PollService {
     try {
       allVotes = await this.voteRepo.findByMessages(messageIds);
     } catch {
-      // Match prior per-row `allSettled` behavior: failed reads yield empty tallies.
+      // Failed batch read: return polls with zero vote tallies rather than failing the list.
     }
 
     const voteCountsByMessageId = new Map<string, Map<number, number>>();

@@ -433,6 +433,24 @@ describe('PollService', () => {
       expect(result[1].isExpired).toBe(true);
     });
 
+    it('loads votes in one batched query for many polls (no per-poll vote queries)', async () => {
+      const manyPolls = Array.from({ length: 50 }, (_, i) => ({
+        ...activePoll,
+        id: `poll-${i}`,
+      }));
+      mockMessageRepo.findPollsByChapter.mockResolvedValue(manyPolls);
+      mockVoteRepo.findByMessages.mockResolvedValue([]);
+
+      await service.listPolls('ch-1');
+
+      expect(mockVoteRepo.findByMessages).toHaveBeenCalledTimes(1);
+      expect(mockVoteRepo.findByMessages).toHaveBeenCalledWith(
+        manyPolls.map((p) => p.id),
+      );
+      expect(mockVoteRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+    });
+
     it('filters to active=true (expired polls excluded)', async () => {
       // Repository applies active/expired before limit; service does not re-filter.
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
