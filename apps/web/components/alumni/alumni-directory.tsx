@@ -19,6 +19,7 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { asArray } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type AlumniRow = {
@@ -32,10 +33,6 @@ type AlumniRow = {
   current_company: string | null;
   email: string | null;
 };
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
 
 function initials(name: string | null | undefined): string {
   if (!name) return "?";

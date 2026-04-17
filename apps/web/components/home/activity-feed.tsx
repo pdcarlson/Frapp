@@ -24,7 +24,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { asArray, cn } from "@/lib/utils";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
@@ -79,6 +79,7 @@ type EventLike = {
 
 type MemberLike = {
   id?: string;
+  user_id?: string;
   display_name?: string | null;
   created_at?: string;
 };
@@ -103,10 +104,6 @@ type InvoiceLike = {
   due_date?: string;
   status?: string;
 };
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
-}
 
 function buildEventItems(events: EventLike[], now: Date): FeedItem[] {
   return events
@@ -148,8 +145,8 @@ function buildLeaderboardItems(
   if (!leaderboard.length) return [];
   const nameByUser = new Map<string, string>();
   for (const member of members) {
-    if (member.id && member.display_name) {
-      nameByUser.set(member.id, member.display_name);
+    if (member.user_id && member.display_name) {
+      nameByUser.set(member.user_id, member.display_name);
     }
   }
   return leaderboard.slice(0, 3).map((entry, index) => ({

@@ -30,6 +30,7 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
+import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { Can } from "@/components/shared/can";
 
@@ -73,10 +74,6 @@ function statusVariant(
     default:
       return "outline";
   }
-}
-
-function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? (value as T[]) : [];
 }
 
 function formatDate(value: string | null | undefined): string {

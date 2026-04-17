@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { attachRealtimeChannel } from "@/lib/realtime/supabase-realtime";
 
@@ -47,6 +47,15 @@ export function useRealtimeTable({
 }: Options) {
   const queryClient = useQueryClient();
 
+  // Keep the latest invalidate value in a ref so the effect callback always
+  // reads the current keys without needing a stable array reference.
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
+
+  // Serialize to a stable string so inline array literals don't cause the
+  // effect to re-run on every render.
+  const invalidateKey = JSON.stringify(invalidate);
+
   useEffect(() => {
     if (!enabled) return undefined;
     const topic = filter ? `${table}:${filter}` : `${table}:all`;
@@ -67,12 +76,12 @@ export function useRealtimeTable({
           filter?: string;
         },
         () => {
-          for (const key of invalidate) {
+          for (const key of invalidateRef.current) {
             queryClient.invalidateQueries({ queryKey: [...key] });
           }
         },
       ),
     );
     return detach;
-  }, [enabled, event, filter, invalidate, queryClient, table]);
+  }, [enabled, event, filter, invalidateKey, queryClient, table]);
 }
