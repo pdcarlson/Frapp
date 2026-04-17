@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import {
   useCurrentUser,
+  useUpdateOnboarding,
   useUpdateUser,
   useUpdateUserSettings,
   useUserSettings,
@@ -64,6 +65,7 @@ export function ProfilePanel() {
   const settingsQuery = useUserSettings();
   const updateUser = useUpdateUser();
   const updateSettings = useUpdateUserSettings();
+  const updateOnboarding = useUpdateOnboarding();
 
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
@@ -354,6 +356,45 @@ export function ProfilePanel() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Tutorial</CardTitle>
+          <CardDescription>
+            Replay the onboarding tour. It&apos;ll reopen on your next
+            dashboard visit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            variant="outline"
+            disabled={updateOnboarding.isPending}
+            onClick={async () => {
+              try {
+                await updateOnboarding.mutateAsync({
+                  has_completed_onboarding: false,
+                });
+                toast({
+                  title: "Tutorial queued",
+                  description:
+                    "The onboarding tour will reappear the next time you open the dashboard.",
+                });
+              } catch (error) {
+                toast({
+                  title: "Couldn't reset onboarding",
+                  description: getErrorMessage(
+                    error,
+                    "Retry in a moment. Your permissions may need refreshing.",
+                  ),
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Replay tutorial
+          </Button>
         </CardContent>
       </Card>
 
