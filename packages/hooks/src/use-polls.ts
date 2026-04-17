@@ -1,7 +1,39 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+
+export function usePolls(options?: {
+  channelId?: string;
+  active?: boolean;
+  limit?: number;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["polls", chapterId, options],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/polls", {
+        params: {
+          query: {
+            channel_id: options?.channelId,
+            active:
+              options?.active === undefined
+                ? undefined
+                : options.active
+                  ? "true"
+                  : "false",
+            limit: options?.limit,
+          },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId,
+  });
+}
 
 export function usePoll(messageId: string) {
   const client = useFrappClient();
@@ -71,9 +103,13 @@ export function useVote() {
       queryClient.invalidateQueries({
         queryKey: ["polls", variables.messageId],
       });
+      queryClient.invalidateQueries({ queryKey: ["polls"] });
     },
   });
 }
+
+// Alias so feature code reads naturally — mirrors the mobile naming.
+export const useVoteOnPoll = useVote;
 
 export function useRemoveVote() {
   const client = useFrappClient();
@@ -89,6 +125,7 @@ export function useRemoveVote() {
     },
     onSuccess: (_data, messageId) => {
       queryClient.invalidateQueries({ queryKey: ["polls", messageId] });
+      queryClient.invalidateQueries({ queryKey: ["polls"] });
     },
   });
 }

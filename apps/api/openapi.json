@@ -3704,6 +3704,55 @@
         ]
       }
     },
+    "/v1/polls": {
+      "get": {
+        "description": "Chapter-wide poll list. Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+        "operationId": "PollController_listPolls_v1",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Scope results to a single channel.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "description": "Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max polls to return (1-200, defaults to 50).",
+            "schema": {
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List polls across the chapter",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
     "/v1/polls/{messageId}": {
       "get": {
         "operationId": "PollController_getPoll_v1",

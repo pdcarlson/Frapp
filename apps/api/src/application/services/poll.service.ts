@@ -235,4 +235,64 @@ export class PollService {
     if (!expiresAt) return false;
     return new Date(expiresAt) <= new Date();
   }
+
+  /**
+   * Chapter-wide poll list for the admin Polls surface. Filters by channel
+   * and/or active/expired state, and includes vote tallies so the list can
+   * show aggregate results inline. `userId` opts the caller into
+   * `userVotes` so members see their own selections highlighted.
+   */
+  async listPolls(
+    chapterId: string,
+    options: {
+      channelId?: string;
+      active?: boolean;
+      limit?: number;
+      userId?: string;
+    } = {},
+  ): Promise<PollWithResults[]> {
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    const messages = await this.messageRepo.findPollsByChapter(chapterId, {
+      channelId: options.channelId,
+      limit,
+    });
+
+    const results: PollWithResults[] = [];
+    for (const message of messages) {
+      const metadata = message.metadata as PollMetadata;
+      const expired = this.isPollExpired(metadata);
+      if (options.active === true && expired) continue;
+      if (options.active === false && !expired) continue;
+
+      const votes = await this.voteRepo.findByMessage(message.id);
+      const options_ = metadata.options ?? [];
+      const entry: PollWithResults = {
+        id: message.id,
+        channel_id: message.channel_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        type: 'POLL',
+        metadata,
+        created_at: message.created_at,
+        isExpired: expired,
+        results: options_.map((optionText, optionIndex) => ({
+          optionIndex,
+          optionText,
+          voteCount: votes.filter((v) => v.option_index === optionIndex).length,
+        })),
+      };
+
+      if (options.userId) {
+        const userVoteList = await this.voteRepo.findByMessageAndUser(
+          message.id,
+          options.userId,
+        );
+        entry.userVotes = userVoteList.map((v) => v.option_index);
+      }
+
+      results.push(entry);
+    }
+
+    return results;
+  }
 }

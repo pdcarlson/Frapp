@@ -64,6 +64,34 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return count ?? 0;
   }
 
+  async findPollsByChapter(
+    chapterId: string,
+    options?: { channelId?: string; limit?: number },
+  ): Promise<ChatMessage[]> {
+    // chat_messages doesn't carry chapter_id directly — filter via the
+    // chat_channels foreign key relationship. Supabase projects the
+    // inner-joined chat_channels row back but we only care about the
+    // message columns.
+    let query = this.supabase
+      .from('chat_messages')
+      .select('*, chat_channels!inner(chapter_id)')
+      .eq('type', 'POLL')
+      .eq('chat_channels.chapter_id', chapterId)
+      .order('created_at', { ascending: false });
+
+    if (options?.channelId) {
+      query = query.eq('channel_id', options.channelId);
+    }
+
+    if (options?.limit !== undefined && options.limit > 0) {
+      query = query.limit(options.limit);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as unknown as ChatMessage[]) || [];
+  }
+
   async create(data: Partial<ChatMessage>): Promise<ChatMessage> {
     const { data: created, error } = await this.supabase
       .from('chat_messages')

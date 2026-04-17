@@ -63,6 +63,7 @@ describe('PollService', () => {
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -363,6 +364,125 @@ describe('PollService', () => {
 
       await expect(service.getPoll('msg-x', 'ch-1', 'user-2')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('listPolls', () => {
+    const futureIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const pastIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const activePoll: ChatMessage = {
+      id: 'poll-active',
+      chapter_id: 'ch-1',
+      channel_id: 'channel-1',
+      sender_id: 'user-1',
+      content: 'Meeting night?',
+      type: 'POLL',
+      reply_to_id: null,
+      metadata: {
+        question: 'Meeting night?',
+        options: ['Monday', 'Tuesday'],
+        choice_mode: 'single',
+        expires_at: futureIso,
+      },
+      is_pinned: false,
+      pinned_at: null,
+      edited_at: null,
+      is_deleted: false,
+      created_at: '2026-01-02T00:00:00.000Z',
+    };
+
+    const expiredPoll: ChatMessage = {
+      ...activePoll,
+      id: 'poll-expired',
+      created_at: '2026-01-01T00:00:00.000Z',
+      metadata: {
+        question: 'T-shirt colour?',
+        options: ['Blue', 'Red'],
+        choice_mode: 'single',
+        expires_at: pastIso,
+      },
+    };
+
+    it('returns every poll for the chapter with aggregate vote counts', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        expiredPoll,
+      ]);
+      mockVoteRepo.findByMessage
+        .mockResolvedValueOnce([
+          { option_index: 0 } as never,
+          { option_index: 0 } as never,
+          { option_index: 1 } as never,
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.listPolls('ch-1');
+
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('poll-active');
+      expect(result[0].results).toEqual([
+        { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
+        { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
+      ]);
+      expect(result[0].isExpired).toBe(false);
+      expect(result[1].isExpired).toBe(true);
+    });
+
+    it('filters to active=true (expired polls excluded)', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        expiredPoll,
+      ]);
+      mockVoteRepo.findByMessage.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: true });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-active']);
+    });
+
+    it('filters to active=false (only expired polls)', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        expiredPoll,
+      ]);
+      mockVoteRepo.findByMessage.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: false });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-expired']);
+    });
+
+    it('includes userVotes when a userId is supplied', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([
+        { option_index: 1 } as never,
+      ]);
+
+      const result = await service.listPolls('ch-1', { userId: 'user-2' });
+
+      expect(result[0].userVotes).toEqual([1]);
+      expect(mockVoteRepo.findByMessageAndUser).toHaveBeenCalledWith(
+        'poll-active',
+        'user-2',
+      );
+    });
+
+    it('clamps the limit to the 1-200 range', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
+
+      await service.listPolls('ch-1', { limit: 0 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 1 }),
+      );
+
+      await service.listPolls('ch-1', { limit: 9999 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 200 }),
       );
     });
   });

@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -18,7 +19,7 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
-import { CreatePollDto, VoteDto } from '../dtos/poll.dto';
+import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
 
 @ApiTags('Polls')
 @ApiBearerAuth()
@@ -72,6 +73,25 @@ export class PollController {
   ) {
     await this.pollService.removeVote(messageId, userId, chapterId);
     return { success: true };
+  }
+
+  @Get('polls')
+  @ApiOperation({
+    summary: 'List polls across the chapter',
+    description:
+      "Chapter-wide poll list. Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+  })
+  async listPolls(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Query() query: ListPollsQueryDto,
+  ) {
+    return this.pollService.listPolls(chapterId, {
+      channelId: query.channel_id,
+      active: query.active === undefined ? undefined : query.active === 'true',
+      limit: query.limit,
+      userId,
+    });
   }
 
   @Get('polls/:messageId')

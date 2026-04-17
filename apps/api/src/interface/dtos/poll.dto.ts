@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBooleanString,
   IsIn,
   IsInt,
   IsOptional,
@@ -8,6 +9,7 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreatePollDto {
@@ -52,4 +54,28 @@ export class VoteDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   option_indexes: number[];
+}
+
+export class ListPollsQueryDto {
+  @ApiPropertyOptional({ description: 'Scope results to a single channel.' })
+  @IsOptional()
+  @IsString()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls.",
+  })
+  @IsOptional()
+  @IsBooleanString()
+  active?: 'true' | 'false';
+
+  @ApiPropertyOptional({
+    description: 'Max polls to return (1-200, defaults to 50).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
 }

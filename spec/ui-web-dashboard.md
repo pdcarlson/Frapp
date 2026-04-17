@@ -100,7 +100,7 @@ to a route. The caller's effective permission set is loaded once via
 | Operations | Tasks | `/tasks` | — (filtered to own tasks unless `tasks:manage`) |
 | Operations | Service Hours | `/service` | — (log/approve gated inline via `service:log` / `service:approve`) |
 | Communications | Chat | *(planned)* | — |
-| Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
+| Communications | Polls | `/polls` | — (vote open to every member; creation happens inside chat channels) |
 | Resources | Backwork | `/backwork` | — (upload gated by `backwork:upload`) |
 | Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
 | Resources | Study session | `/study` | — |

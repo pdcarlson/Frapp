@@ -48,7 +48,7 @@ export class UpdateUserDto {
   @IsString()
   avatar_url?: string;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ type: Number, nullable: true })
   @IsOptional()
   @ValidateIf((_obj, value) => value !== null)
   @IsInt()

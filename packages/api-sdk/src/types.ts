@@ -1540,6 +1540,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/polls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List polls across the chapter
+         * @description Chapter-wide poll list. Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         */
+        get: operations["PollController_listPolls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/polls/{messageId}": {
         parameters: {
             query?: never;
@@ -4569,6 +4589,30 @@ export interface operations {
             path: {
                 messageId: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PollController_listPolls_v1: {
+        parameters: {
+            query?: {
+                /** @description Scope results to a single channel. */
+                channel_id?: string;
+                /** @description Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls. */
+                active?: string;
+                /** @description Max polls to return (1-200, defaults to 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

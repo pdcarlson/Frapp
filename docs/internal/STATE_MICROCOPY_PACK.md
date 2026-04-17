@@ -135,6 +135,14 @@ This pack defines approved copy for high-frequency state messages so members and
 | Error | `Couldn't load study zones` | `Confirm your chapter access and retry.` |
 | Permission denied | `Study zones` | `Managing study zones requires the geofences:manage permission. Ask your chapter president to grant access.` |
 
+## Polls (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading chapter polls...` |
+| Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
+| Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |
