@@ -74,6 +74,20 @@ export const DEFAULT_SYSTEM_ROLES = [
     color: '#10B981',
   },
   {
+    name: 'Vice President',
+    permissions: [SystemPermissions.POLLS_VIEW_ALL],
+    is_system: true,
+    display_order: 3,
+    color: null,
+  },
+  {
+    name: 'Secretary',
+    permissions: [SystemPermissions.POLLS_VIEW_ALL],
+    is_system: true,
+    display_order: 4,
+    color: null,
+  },
+  {
     name: 'Member',
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
@@ -82,7 +96,7 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.POLLS_CREATE,
     ],
     is_system: true,
-    display_order: 3,
+    display_order: 5,
     color: null,
   },
   {
@@ -92,14 +106,14 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BACKWORK_UPLOAD,
     ],
     is_system: true,
-    display_order: 4,
+    display_order: 6,
     color: null,
   },
   {
     name: 'Alumni',
     permissions: [SystemPermissions.MEMBERS_VIEW],
     is_system: true,
-    display_order: 5,
+    display_order: 7,
     color: '#6B7280',
   },
 ] as const;

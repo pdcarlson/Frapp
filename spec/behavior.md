@@ -80,10 +80,12 @@ Permissions are never cached across requests. Each request freshly resolves the 
 
 ### Role Lifecycle
 
-- On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Member, New Member, Alumni. Each has a sensible default permission set.
+- On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Vice President, Secretary, Member, New Member, Alumni. Each has a sensible default permission set.
 - **Seeded permissions (must match `DEFAULT_SYSTEM_ROLES` in `apps/api/src/domain/constants/permissions.ts`):**
   - **President:** `*` (wildcard).
   - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
+  - **Vice President:** `polls:view_all` (dashboard chapter-wide poll list and tallies).
+  - **Secretary:** `polls:view_all` (same as Vice President).
   - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
   - **New Member:** `members:view`, `backwork:upload`.
   - **Alumni:** `members:view`.
@@ -559,7 +561,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 ## 11. Polls and Voting
 
 - Users with `polls:create` permission can create polls in any channel they have access to.
-- `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `polls:view_all`, not only `members:view`. By default this permission is **not** on the Member role; it is on Treasurer (and President via `*`). Chapters may grant it through custom roles if needed.
+- `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `polls:view_all`, not only `members:view`. By default this permission is **not** on the Member role; it is on Treasurer, Vice President, Secretary (and President via `*`). Existing databases are backfilled via migration `20260417140000_backfill_polls_view_all_system_roles.sql`. Chapters may grant it through custom roles if needed.
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
 - When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.

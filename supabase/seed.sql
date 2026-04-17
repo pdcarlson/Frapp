@@ -19,13 +19,19 @@ Default system roles seeded on chapter creation:
    permissions: ['billing:view', 'billing:manage', 'points:adjust', 'points:view_all',
                  'polls:view_all', 'members:view', 'reports:export', 'events:create', 'events:update']
 
-3. Member (is_system: true, display_order: 3)
+3. Vice President (is_system: true, display_order: 3)
+   permissions: ['polls:view_all']
+
+4. Secretary (is_system: true, display_order: 4)
+   permissions: ['polls:view_all']
+
+5. Member (is_system: true, display_order: 5)
    permissions: ['members:view', 'backwork:upload', 'service:log', 'polls:create']
 
-4. New Member (is_system: true, display_order: 4)
+6. New Member (is_system: true, display_order: 6)
    permissions: ['members:view', 'backwork:upload']
 
-5. Alumni (is_system: true, display_order: 5)
+7. Alumni (is_system: true, display_order: 7)
    permissions: ['members:view']
 
 Default channels seeded on chapter creation:

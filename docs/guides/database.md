@@ -26,6 +26,8 @@ This drops and recreates the database, applies all migrations, and reruns `seed.
 
 ## 3. Conventions
 
+- **RBAC seed vs existing data:** Default system roles and their `permissions` arrays are defined in `apps/api/src/domain/constants/permissions.ts` and inserted when a chapter is created. Changing that array does **not** rewrite rows for chapters that already exist; use a SQL migration under `supabase/migrations/` when a permission must be backfilled (for example `20260417140000_backfill_polls_view_all_system_roles.sql` for `polls:view_all` on Treasurer and new VP/Secretary roles).
+
 - Primary keys: `uuid` generated via `gen_random_uuid()`
 - Timestamps: `created_at TIMESTAMPTZ DEFAULT now()`
 - Tenant scoping: nearly every table includes `chapter_id`
