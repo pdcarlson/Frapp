@@ -29,6 +29,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
         .from('poll_votes')
         .select('*')
         .in('message_id', messageIds)
+        .order('id', { ascending: true })
         .range(from, to);
       if (error) throw error;
       const page = (data as PollVote[]) || [];
