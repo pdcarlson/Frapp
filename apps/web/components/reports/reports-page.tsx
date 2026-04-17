@@ -236,25 +236,29 @@ export function ReportsPage() {
     <Can
       permission="reports:export"
       fallback={
-        <Card aria-label="Reports & Export permissions check">
-          <CardHeader>
-            <CardTitle>Reports &amp; Export</CardTitle>
-            <CardDescription>
-              Checking your chapter permissions…
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <div style={{ minHeight: 160 }}>
+          <Card aria-label="Reports & Export permissions check">
+            <CardHeader>
+              <CardTitle>Reports &amp; Export</CardTitle>
+              <CardDescription>
+                Checking your chapter permissions…
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
       }
       deniedFallback={
-        <Card>
-          <CardHeader>
-            <CardTitle>Reports &amp; Export</CardTitle>
-            <CardDescription>
-              Exporting chapter data requires the <code>reports:export</code>{" "}
-              permission. Ask your chapter president to grant access.
-            </CardDescription>
-          </CardHeader>
-        </Card>
+        <div style={{ minHeight: 160 }}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Reports &amp; Export</CardTitle>
+              <CardDescription>
+                Exporting chapter data requires the <code>reports:export</code>{" "}
+                permission. Ask your chapter president to grant access.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
       }
     >
       <div className="space-y-6">
