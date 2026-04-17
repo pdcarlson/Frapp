@@ -21,6 +21,23 @@ import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 
+function mockRoleIdForName(name: string): string {
+  return `role-${name.toLowerCase().replace(/\s+/g, '-')}`;
+}
+
+function mockSystemRolesForChapter(chapterId: string): Role[] {
+  return DEFAULT_SYSTEM_ROLES.map((r) => ({
+    id: mockRoleIdForName(r.name),
+    chapter_id: chapterId,
+    name: r.name,
+    permissions: [...r.permissions],
+    is_system: r.is_system,
+    display_order: r.display_order,
+    color: r.color ?? null,
+    created_at: '2024-01-01',
+  }));
+}
+
 describe('ChapterService', () => {
   let service: ChapterService;
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
@@ -212,16 +229,7 @@ describe('ChapterService', () => {
     };
     mockChapterRepo.create.mockResolvedValue(chapter);
 
-    const roles: Role[] = DEFAULT_SYSTEM_ROLES.map((r, i) => ({
-      id: `role-${i}`,
-      chapter_id: chapter.id,
-      name: r.name,
-      permissions: [...r.permissions],
-      is_system: r.is_system,
-      display_order: r.display_order,
-      color: r.color ?? null,
-      created_at: '2024-01-01',
-    }));
+    const roles = mockSystemRolesForChapter(chapter.id);
 
     mockRoleRepo.createMany.mockResolvedValueOnce(roles);
 
@@ -263,32 +271,10 @@ describe('ChapterService', () => {
     };
     mockChapterRepo.create.mockResolvedValue(chapter);
 
-    const presidentRole: Role = {
-      id: 'role-president',
-      chapter_id: chapter.id,
-      name: 'President',
-      permissions: ['*'],
-      is_system: true,
-      display_order: 1,
-      color: '#FFD700',
-      created_at: '2024-01-01',
-    };
+    const roles = mockSystemRolesForChapter(chapter.id);
+    const presidentRole = roles.find((r) => r.name === 'President')!;
 
-    const otherRoles: Role[] = DEFAULT_SYSTEM_ROLES.slice(1).map((r, i) => ({
-      id: `role-${i}`,
-      chapter_id: chapter.id,
-      name: r.name,
-      permissions: [...r.permissions],
-      is_system: r.is_system,
-      display_order: r.display_order,
-      color: r.color ?? null,
-      created_at: '2024-01-01',
-    }));
-
-    mockRoleRepo.createMany.mockResolvedValueOnce([
-      presidentRole,
-      ...otherRoles,
-    ]);
+    mockRoleRepo.createMany.mockResolvedValueOnce(roles);
 
     const member: Member = {
       id: 'member-1',
@@ -327,20 +313,10 @@ describe('ChapterService', () => {
     };
     mockChapterRepo.create.mockResolvedValue(chapter);
 
-    const roles: Role[] = DEFAULT_SYSTEM_ROLES.map((r, i) => ({
-      id: `role-${i}`,
-      chapter_id: chapter.id,
-      name: r.name,
-      permissions: [...r.permissions],
-      is_system: r.is_system,
-      display_order: r.display_order,
-      color: r.color ?? null,
-      created_at: '2024-01-01',
-    }));
     mockRoleRepo.createMany.mockImplementation((dataArr) =>
       Promise.resolve(
-        dataArr.map((data, i) => ({
-          id: `role-${i}`,
+        dataArr.map((data) => ({
+          id: mockRoleIdForName(data.name ?? ''),
           chapter_id: data.chapter_id!,
           name: data.name!,
           permissions: data.permissions ?? [],
@@ -355,7 +331,7 @@ describe('ChapterService', () => {
       id: 'member-1',
       user_id: 'user-1',
       chapter_id: chapter.id,
-      role_ids: ['role-0'],
+      role_ids: [mockRoleIdForName('President')],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -392,8 +368,8 @@ describe('ChapterService', () => {
     mockChapterRepo.create.mockResolvedValue(chapter);
     mockRoleRepo.createMany.mockImplementation((dataArr) =>
       Promise.resolve(
-        dataArr.map((data, i) => ({
-          id: `role-${data.display_order ?? 0}`,
+        dataArr.map((data) => ({
+          id: mockRoleIdForName(data.name ?? ''),
           chapter_id: data.chapter_id!,
           name: data.name!,
           permissions: data.permissions ?? [],
@@ -408,7 +384,7 @@ describe('ChapterService', () => {
       id: 'member-1',
       user_id: 'user-1',
       chapter_id: chapter.id,
-      role_ids: ['role-0'],
+      role_ids: [mockRoleIdForName('President')],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
