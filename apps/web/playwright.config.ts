@@ -2,6 +2,39 @@ import { defineConfig } from "@playwright/test";
 
 const isCi = Boolean(process.env.CI);
 
+/**
+ * Benign defaults for the Playwright `webServer` invocation.
+ *
+ * The visual regression suite boots `npm run dev` inside CI, which does not
+ * have Supabase credentials available. These placeholders let Next.js finish
+ * its boot handshake (the shape is a valid HTTP URL and a well-formed JWT-ish
+ * string) so public pages render and the screenshots can be captured. The
+ * proxy (`apps/web/proxy.ts`) treats a missing real Supabase env the same way
+ * and skips auth redirects when it can't validate a session. Real deployments
+ * always provide the production values via Vercel + Infisical.
+ */
+const webServerEnvDefaults: Record<string, string> = {
+  NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY:
+    "eyJhbGciOiJIUzI1NiJ9.visual-regression-stand-in.signature",
+  NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001/v1",
+};
+
+function resolvedWebServerEnv(): Record<string, string> {
+  const merged: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === "string") {
+      merged[key] = value;
+    }
+  }
+  for (const [key, fallback] of Object.entries(webServerEnvDefaults)) {
+    if (!merged[key]) {
+      merged[key] = fallback;
+    }
+  }
+  return merged;
+}
+
 export default defineConfig({
   testDir: "./tests/visual",
   timeout: 30_000,
@@ -25,5 +58,6 @@ export default defineConfig({
         url: "http://127.0.0.1:3000",
         reuseExistingServer: !isCi,
         timeout: 120_000,
+        env: resolvedWebServerEnv(),
       },
 });

@@ -66,6 +66,19 @@ npx -w apps/api nest start --watch --builder swc
 
 For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../AGENTS.md) reference this workaround.
 
+## Web visual regression suite
+
+`apps/web/playwright.config.ts` boots `npm run dev` with benign fallbacks for
+`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
+`NEXT_PUBLIC_API_URL` when no real values are in the shell. Real values always
+win — the defaults are only used to let CI capture baselines without
+credentials. See [`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)
+for the rationale and for how to refresh snapshots locally.
+
+`apps/web/proxy.ts` (Next.js 16 middleware) reads Supabase env per request and
+falls back to passthrough when the vars are missing, so the module is safe to
+import in the visual-regression environment.
+
 ## Related docs
 
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login

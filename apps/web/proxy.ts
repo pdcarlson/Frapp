@@ -24,52 +24,92 @@ function isAuthRoute(pathname: string) {
   );
 }
 
-export async function proxy(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
-        setAll(
-          cookiesToSet: {
-            name: string;
-            value: string;
-            options: CookieOptions;
-          }[],
-        ) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value),
-          );
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options),
-          );
-        },
+type CookieTuple = { name: string; value: string; options: CookieOptions };
+
+type ResponseHolder = { current: NextResponse };
+
+type SupabaseEnv = {
+  url: string;
+  anonKey: string;
+};
+
+function readSupabaseEnv(): SupabaseEnv | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    return null;
+  }
+  return { url, anonKey };
+}
+
+/**
+ * Lazy Supabase server-client factory.
+ *
+ * `createServerClient` is invoked per request (never at module load) so this
+ * module can be imported in environments without Supabase env vars — notably
+ * the CI Playwright job, which boots `npm run dev` to capture visual
+ * regression baselines and does not have production secrets.
+ */
+function createSupabaseProxyClient(
+  env: SupabaseEnv,
+  request: NextRequest,
+  responseHolder: ResponseHolder,
+) {
+  return createServerClient(env.url, env.anonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet: CookieTuple[]) {
+        cookiesToSet.forEach(({ name, value }) =>
+          request.cookies.set(name, value),
+        );
+        responseHolder.current = NextResponse.next({
+          request: {
+            headers: request.headers,
+          },
+        });
+        cookiesToSet.forEach(({ name, value, options }) =>
+          responseHolder.current.cookies.set(name, value, options),
+        );
       },
     },
-  );
+  });
+}
+
+export async function proxy(request: NextRequest) {
+  const responseHolder: ResponseHolder = {
+    current: NextResponse.next({
+      request: {
+        headers: request.headers,
+      },
+    }),
+  };
+
+  const { pathname, search } = request.nextUrl;
+  const env = readSupabaseEnv();
+
+  // Environments without Supabase credentials (e.g. the Playwright visual
+  // regression job in CI) cannot make auth decisions. Public routes proceed
+  // as normal; protected routes render whatever the route file ships —
+  // typically a skeleton — without a redirect. Real deployments always have
+  // these env vars set.
+  if (!env) {
+    return responseHolder.current;
+  }
+
+  const supabase = createSupabaseProxyClient(env, request, responseHolder);
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const { pathname, search } = request.nextUrl;
 
   if (needsAuth(pathname) && !session) {
     const signInUrl = request.nextUrl.clone();
     signInUrl.pathname = "/sign-in";
     signInUrl.searchParams.set("redirectTo", `${pathname}${search}`);
-    return NextResponse.redirect(signInUrl, { headers: response.headers });
+    return NextResponse.redirect(signInUrl, {
+      headers: responseHolder.current.headers,
+    });
   }
 
   if (session && isAuthRoute(pathname)) {
@@ -80,10 +120,12 @@ export async function proxy(request: NextRequest) {
         ? redirectTo
         : DASHBOARD_ROUTE_PREFIX;
     destination.search = "";
-    return NextResponse.redirect(destination, { headers: response.headers });
+    return NextResponse.redirect(destination, {
+      headers: responseHolder.current.headers,
+    });
   }
 
-  return response;
+  return responseHolder.current;
 }
 
 export const config = {
