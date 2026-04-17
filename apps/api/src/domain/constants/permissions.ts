@@ -80,7 +80,6 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BACKWORK_UPLOAD,
       SystemPermissions.SERVICE_LOG,
       SystemPermissions.POLLS_CREATE,
-      SystemPermissions.POLLS_VIEW_ALL,
     ],
     is_system: true,
     display_order: 3,

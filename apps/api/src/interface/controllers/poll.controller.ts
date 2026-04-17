@@ -80,7 +80,7 @@ export class PollController {
   @ApiOperation({
     summary: 'List polls across the chapter',
     description:
-      "Chapter-wide poll list for dashboards (requires polls:view_all). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+      "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
   })
   async listPolls(
     @CurrentChapterId() chapterId: string,
