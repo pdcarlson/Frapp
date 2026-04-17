@@ -5,6 +5,7 @@ import {
   Min,
   Max,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -47,12 +48,13 @@ export class UpdateUserDto {
   @IsString()
   avatar_url?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ nullable: true })
   @IsOptional()
+  @ValidateIf((_obj, value) => value !== null)
   @IsInt()
   @Min(1900)
   @Max(2100)
-  graduation_year?: number;
+  graduation_year?: number | null;
 
   @ApiPropertyOptional()
   @IsOptional()

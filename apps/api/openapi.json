@@ -3940,7 +3940,8 @@
             "type": "string"
           },
           "graduation_year": {
-            "type": "number"
+            "type": "number",
+            "nullable": true
           },
           "current_city": {
             "type": "string"

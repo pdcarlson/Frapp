@@ -101,7 +101,10 @@ export function ProfilePanel() {
       await updateUser.mutateAsync({
         display_name: profileDraft.display_name ?? undefined,
         bio: profileDraft.bio ?? undefined,
-        graduation_year: profileDraft.graduation_year ?? undefined,
+        graduation_year:
+          profileDraft.graduation_year === null
+            ? null
+            : profileDraft.graduation_year ?? undefined,
         current_city: profileDraft.current_city ?? undefined,
         current_company: profileDraft.current_company ?? undefined,
       });

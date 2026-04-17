@@ -1,6 +1,6 @@
 # State Microcopy Pack
 
-> Last updated: 2026-03-08  
+> Last updated: 2026-04-17  
 > Scope: dashboard and mobile state messaging
 
 This pack defines approved copy for high-frequency state messages so members and admins see consistent language across surfaces.
@@ -46,6 +46,16 @@ This pack defines approved copy for high-frequency state messages so members and
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
+
+## Alumni (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading alumni directory...` |
+| Empty | `No alumni match this view` | `Ask alumni to fill in their graduation year, city, and company on their profile, or loosen the filters above.` |
+| Error | `Couldn't load alumni` | `Confirm your chapter access and retry. Alumni visibility respects the same permission checks as the member directory.` |
+| Offline | `Alumni directory unavailable offline` | `Reconnect to load alumni records and filters.` |
+| No chapter selected | `Alumni directory` | `Select an active chapter to browse alumni records.` |
 
 ## Home / activity feed (dashboard)
 

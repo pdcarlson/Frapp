@@ -49,15 +49,15 @@ function relativeTime(timestamp: Date, reference: Date): string {
 
   if (absMs < minute) return "just now";
   if (absMs < hour) {
-    const minutes = Math.round(absMs / minute);
+    const minutes = Math.floor(absMs / minute);
     return `${minutes} minute${minutes === 1 ? "" : "s"} ${deltaMs >= 0 ? "ago" : "from now"}`;
   }
   if (absMs < day) {
-    const hours = Math.round(absMs / hour);
+    const hours = Math.floor(absMs / hour);
     return `${hours} hour${hours === 1 ? "" : "s"} ${deltaMs >= 0 ? "ago" : "from now"}`;
   }
   if (absMs < week) {
-    const days = Math.round(absMs / day);
+    const days = Math.floor(absMs / day);
     return `${days} day${days === 1 ? "" : "s"} ${deltaMs >= 0 ? "ago" : "from now"}`;
   }
   return timestamp.toLocaleDateString(undefined, {
@@ -230,9 +230,8 @@ function useActivityFeed() {
   // for roles that can't see some feeds — treat them as empty).
   const criticalError =
     enabled &&
-    (eventsQuery.error || membersQuery.error) &&
-    !eventsQuery.data &&
-    !membersQuery.data;
+    ((eventsQuery.error && !eventsQuery.data) ||
+      (membersQuery.error && !membersQuery.data));
 
   return {
     enabled,
