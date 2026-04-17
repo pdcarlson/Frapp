@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildMemberDisplayNameMap,
   leaderboardSubjectId,
+  resolveLeaderboardDisplayName,
 } from "./activity-feed-leaderboard";
 
 describe("leaderboardSubjectId", () => {
@@ -22,6 +23,45 @@ describe("leaderboardSubjectId", () => {
 
   it("falls back to camelCase memberId", () => {
     expect(leaderboardSubjectId({ memberId: "mem-1" })).toBe("mem-1");
+  });
+
+  it("falls back to generic id when no user or member keys", () => {
+    expect(leaderboardSubjectId({ id: "mem-77" })).toBe("mem-77");
+  });
+});
+
+describe("resolveLeaderboardDisplayName", () => {
+  it("matches on user_id when present", () => {
+    const map = buildMemberDisplayNameMap([
+      { id: "mem-1", user_id: "user-aa", display_name: "Alex" },
+    ]);
+    expect(
+      resolveLeaderboardDisplayName(
+        { user_id: "user-aa", total: 10 },
+        map,
+      ),
+    ).toBe("Alex");
+  });
+
+  it("falls back to member_id when user_id does not match the roster", () => {
+    const map = buildMemberDisplayNameMap([
+      { id: "mem-99", user_id: "user-aa", display_name: "Alex" },
+    ]);
+    expect(
+      resolveLeaderboardDisplayName(
+        { user_id: "wrong-uuid", member_id: "mem-99", total: 5 },
+        map,
+      ),
+    ).toBe("Alex");
+  });
+
+  it("matches generic id to membership id in the map", () => {
+    const map = buildMemberDisplayNameMap([
+      { id: "mem-99", user_id: "user-aa", display_name: "Alex" },
+    ]);
+    expect(resolveLeaderboardDisplayName({ id: "mem-99", total: 1 }, map)).toBe(
+      "Alex",
+    );
   });
 });
 

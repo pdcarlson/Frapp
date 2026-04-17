@@ -28,6 +28,7 @@ import { asArray, cn } from "@/lib/utils";
 import {
   buildMemberDisplayNameMap,
   leaderboardSubjectId,
+  resolveLeaderboardDisplayName,
 } from "@/lib/activity-feed-leaderboard";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -91,6 +92,7 @@ type MemberLike = {
 };
 
 type LeaderboardLike = {
+  id?: string;
   user_id?: string;
   total?: number;
   userId?: string;
@@ -158,7 +160,7 @@ function buildLeaderboardItems(
   return leaderboard.slice(0, 3).map((entry, index) => {
     const subjectId = leaderboardSubjectId(entry);
     const displayName =
-      (subjectId ? nameByKey.get(subjectId) : undefined) ?? "A brother";
+      resolveLeaderboardDisplayName(entry, nameByKey) ?? "A brother";
     return {
       id: `leader-${subjectId ?? `idx-${index}`}`,
       icon: Star,

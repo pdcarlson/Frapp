@@ -12,6 +12,8 @@ export type ActivityFeedLeaderboardEntry = {
   userId?: string;
   member_id?: string;
   memberId?: string;
+  /** Some payloads use a generic `id` for the membership row */
+  id?: string;
 };
 
 export type ActivityFeedMember = {
@@ -37,8 +39,36 @@ export function leaderboardSubjectId(
     nonEmptyTrimmed(entry.user_id) ??
     nonEmptyTrimmed(entry.userId) ??
     nonEmptyTrimmed(entry.member_id) ??
-    nonEmptyTrimmed(entry.memberId)
+    nonEmptyTrimmed(entry.memberId) ??
+    nonEmptyTrimmed(entry.id)
   );
+}
+
+/**
+ * Resolve a display name for a leaderboard row against
+ * {@link buildMemberDisplayNameMap}. Tries every known id shape on the row so
+ * we still match when one field is mis-labeled (e.g. membership id in `id`
+ * only) or when `user_id` is stale but `member_id` matches the roster.
+ */
+export function resolveLeaderboardDisplayName(
+  entry: ActivityFeedLeaderboardEntry,
+  nameByKey: Map<string, string>,
+): string | undefined {
+  const keys = [
+    nonEmptyTrimmed(entry.user_id),
+    nonEmptyTrimmed(entry.userId),
+    nonEmptyTrimmed(entry.member_id),
+    nonEmptyTrimmed(entry.memberId),
+    nonEmptyTrimmed(entry.id),
+  ];
+  const seen = new Set<string>();
+  for (const key of keys) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const name = nameByKey.get(key);
+    if (name) return name;
+  }
+  return undefined;
 }
 
 /** Map both membership id and user id to the same display name when both exist. */
