@@ -123,6 +123,8 @@ Example: attendance auto-absent filtering now precomputes `required_role_ids` in
 
 When a service loads the **same shape** of related rows for many parent records (for example, all `poll_votes` rows for each poll on a chapter list), prefer **one batched repository query** (for example `.in('message_id', ids)` on PostgREST) and group results in memory. Issuing one query per parent—even via `Promise.allSettled`—still creates N+1 HTTP calls to PostgREST and can exhaust connection pools under large limits.
 
+After that batch load, aggregate tallies in **one pass** over the child rows (for example a `Map<messageId, Map<optionIndex, count>>` for poll votes) instead of nested filters per parent per option, which scales with polls × options × votes.
+
 Use `Promise.allSettled` when the child reads are genuinely separate resources or failure domains and batching is not available; isolate failures per entry so the rest of the list still returns.
 
 ### List queries: filter before `limit`

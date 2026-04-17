@@ -291,19 +291,38 @@ export class PollService {
       // Match prior per-row `allSettled` behavior: failed reads yield empty tallies.
     }
 
-    const votesByMessageId = new Map<string, PollVote[]>();
+    const voteCountsByMessageId = new Map<string, Map<number, number>>();
+    const userVotesByMessageId = options.userId
+      ? new Map<string, number[]>()
+      : null;
+
+    const bumpOptionCount = (messageId: string, optionIndex: number) => {
+      let byOption = voteCountsByMessageId.get(messageId);
+      if (!byOption) {
+        byOption = new Map<number, number>();
+        voteCountsByMessageId.set(messageId, byOption);
+      }
+      byOption.set(optionIndex, (byOption.get(optionIndex) ?? 0) + 1);
+    };
+
     for (const vote of allVotes) {
-      const bucket = votesByMessageId.get(vote.message_id);
-      if (bucket) {
-        bucket.push(vote);
-      } else {
-        votesByMessageId.set(vote.message_id, [vote]);
+      bumpOptionCount(vote.message_id, vote.option_index);
+      if (
+        userVotesByMessageId &&
+        vote.user_id === options.userId
+      ) {
+        let userList = userVotesByMessageId.get(vote.message_id);
+        if (!userList) {
+          userList = [];
+          userVotesByMessageId.set(vote.message_id, userList);
+        }
+        userList.push(vote.option_index);
       }
     }
 
     const results: PollWithResults[] = [];
     for (const { message, metadata, expired } of listRows) {
-      const votes = votesByMessageId.get(message.id) ?? [];
+      const countsByOption = voteCountsByMessageId.get(message.id);
       const options_ = metadata.options ?? [];
       const entry: PollWithResults = {
         id: message.id,
@@ -317,13 +336,11 @@ export class PollService {
         results: options_.map((optionText, optionIndex) => ({
           optionIndex,
           optionText,
-          voteCount: votes.filter((v) => v.option_index === optionIndex).length,
+          voteCount: countsByOption?.get(optionIndex) ?? 0,
         })),
       };
-      if (options.userId) {
-        entry.userVotes = votes
-          .filter((v) => v.user_id === options.userId)
-          .map((v) => v.option_index);
+      if (userVotesByMessageId) {
+        entry.userVotes = userVotesByMessageId.get(message.id) ?? [];
       }
       results.push(entry);
     }
