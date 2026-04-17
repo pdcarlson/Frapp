@@ -125,6 +125,8 @@ When a service loads related rows for many parent records (for example, vote tal
 
 When a list applies a domain filter (for example, “active only”) and a `limit`, express the filter in the database query so it runs before the row cap. Filtering in application code after the database has truncated the page can return fewer than `limit` rows even when more matching rows exist beyond the cutoff.
 
+If the repository already applied that filter for pagination, avoid repeating the same time-based predicate in the service with a fresh clock: two instants can disagree at the expiry boundary and still produce a short page. It is fine to compute per-row display fields (for example `isExpired` for the response) from the returned rows without re-applying the list filter.
+
 ### Bulk Insert Optimizations
 
 When performing multiple database insertions concurrently (e.g., via `Promise.allSettled` or `Promise.all`), there is a significant performance penalty due to N+1 network requests. Instead, utilize the Supabase JavaScript client's native support for bulk array inserts:

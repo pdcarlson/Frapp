@@ -266,8 +266,9 @@ export class PollService {
     for (const message of messages) {
       const metadata = message.metadata as PollMetadata;
       const expired = this.isPollExpired(metadata);
-      if (options.active === true && expired) continue;
-      if (options.active === false && !expired) continue;
+      // Active/expired scoping is applied in `findPollsByChapter` before `limit`.
+      // Do not re-filter here: a second `new Date()` can disagree with the query
+      // instant and shrink the page below `limit`.
       listRows.push({ message, metadata, expired });
     }
 

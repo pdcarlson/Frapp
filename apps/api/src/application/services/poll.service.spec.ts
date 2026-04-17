@@ -437,10 +437,8 @@ describe('PollService', () => {
     });
 
     it('filters to active=true (expired polls excluded)', async () => {
-      mockMessageRepo.findPollsByChapter.mockResolvedValue([
-        activePoll,
-        expiredPoll,
-      ]);
+      // Repository applies active/expired before limit; service does not re-filter.
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
       mockVoteRepo.findByMessage.mockResolvedValue([]);
 
       const result = await service.listPolls('ch-1', { active: true });
@@ -453,10 +451,7 @@ describe('PollService', () => {
     });
 
     it('filters to active=false (only expired polls)', async () => {
-      mockMessageRepo.findPollsByChapter.mockResolvedValue([
-        activePoll,
-        expiredPoll,
-      ]);
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([expiredPoll]);
       mockVoteRepo.findByMessage.mockResolvedValue([]);
 
       const result = await service.listPolls('ch-1', { active: false });
