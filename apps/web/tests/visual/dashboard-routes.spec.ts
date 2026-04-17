@@ -13,6 +13,7 @@ const dashboardRouteSnapshots = [
   { path: "/geofences", snapshotName: "geofences-main-content.png" },
   { path: "/study", snapshotName: "study-main-content.png" },
   { path: "/polls", snapshotName: "polls-main-content.png" },
+  { path: "/chat", snapshotName: "chat-main-content.png" },
   { path: "/points", snapshotName: "points-main-content.png" },
   { path: "/billing", snapshotName: "billing-main-content.png" },
   { path: "/reports", snapshotName: "reports-main-content.png" },

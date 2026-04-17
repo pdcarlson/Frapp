@@ -143,6 +143,17 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | `No polls match this view` | `Create a poll inside a chat channel and it will appear here. Loosen the filters if you're expecting results.` |
 | Error | `Couldn't load polls` | `Confirm your chapter access and retry.` |
 
+## Chat (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading channels | — | `Loading chapter channels...` |
+| Loading messages | — | `Loading messages...` |
+| No channels | `No channels yet` | `Chapters seed #general, #announcements, and #alumni automatically when billing activates. Ask an admin if none appear here.` |
+| Empty timeline | `Nothing in this channel yet` | `Be the first to post — messages render live with Supabase Realtime.` |
+| Error | `Couldn't load channels` / `Couldn't load messages` | `Confirm your chapter access and retry.` |
+| Read-only channel | — | `This channel is read-only. Posting requires the announcements:post permission.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |
