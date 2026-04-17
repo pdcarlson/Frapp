@@ -37,6 +37,48 @@ export function useLeaderboard(window?: PointWindow) {
   });
 }
 
+export function usePointsTransactions(options?: {
+  userId?: string;
+  category?:
+    | "ATTENDANCE"
+    | "ACADEMIC"
+    | "SERVICE"
+    | "FINE"
+    | "MANUAL"
+    | "STUDY";
+  flagged?: boolean;
+  before?: string;
+  limit?: number;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  return useQuery({
+    queryKey: ["points", chapterId, "transactions", options],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/points/transactions", {
+        params: {
+          query: {
+            user_id: options?.userId,
+            category: options?.category,
+            flagged:
+              options?.flagged === undefined
+                ? undefined
+                : options.flagged
+                  ? "true"
+                  : "false",
+            before: options?.before,
+            limit: options?.limit,
+          },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId,
+  });
+}
+
 export function useMemberPoints(userId: string, window?: PointWindow) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();

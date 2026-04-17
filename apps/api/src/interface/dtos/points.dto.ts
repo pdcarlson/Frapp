@@ -1,11 +1,14 @@
 import {
+  IsBooleanString,
   IsEnum,
   IsInt,
+  IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class AdjustPointsDto {
@@ -33,4 +36,50 @@ export class PointsWindowQueryDto {
   @IsOptional()
   @IsEnum(['all', 'semester', 'month'])
   window?: 'all' | 'semester' | 'month';
+}
+
+const TRANSACTION_CATEGORIES = [
+  'ATTENDANCE',
+  'ACADEMIC',
+  'SERVICE',
+  'FINE',
+  'MANUAL',
+  'STUDY',
+] as const;
+
+export class ListPointTransactionsQueryDto {
+  @ApiPropertyOptional({ description: 'Filter to a single member' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
+
+  @ApiPropertyOptional({ enum: TRANSACTION_CATEGORIES })
+  @IsOptional()
+  @IsEnum(TRANSACTION_CATEGORIES)
+  category?: (typeof TRANSACTION_CATEGORIES)[number];
+
+  @ApiPropertyOptional({
+    description:
+      "Only return transactions that were flagged by the anomaly threshold (`metadata.flagged === true`). Accepts 'true' or 'false'.",
+  })
+  @IsOptional()
+  @IsBooleanString()
+  flagged?: 'true' | 'false';
+
+  @ApiPropertyOptional({
+    description:
+      'ISO8601 cursor — return transactions created before this timestamp',
+  })
+  @IsOptional()
+  @IsISO8601()
+  before?: string;
+
+  @ApiPropertyOptional({
+    description: 'Max transactions to return (1-200, defaults to 50)',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
 }

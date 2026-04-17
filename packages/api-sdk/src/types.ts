@@ -649,6 +649,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/points/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chapter-wide point transactions
+         * @description Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         */
+        get: operations["PointsController_listTransactions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/points/members/{userId}": {
         parameters: {
             query?: never;
@@ -3082,6 +3102,33 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_listTransactions_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter to a single member */
+                user_id?: string;
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                /** @description Only return transactions that were flagged by the anomaly threshold (`metadata.flagged === true`). Accepts 'true' or 'false'. */
+                flagged?: string;
+                /** @description ISO8601 cursor — return transactions created before this timestamp */
+                before?: string;
+                /** @description Max transactions to return (1-200, defaults to 50) */
+                limit?: number;
             };
             header?: never;
             path?: never;

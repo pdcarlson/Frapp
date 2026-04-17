@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
+import { PointsAuditCard } from "@/components/points/points-audit-card";
 
 const windows = [
   { label: "All Time", value: "all" as const },
@@ -424,6 +425,8 @@ export default function PointsPage() {
           </CardContent>
         </Card>
       </div>
+
+      <PointsAuditCard />
 
       <PointsAdjustmentDialog
         open={adjustDialogOpen}

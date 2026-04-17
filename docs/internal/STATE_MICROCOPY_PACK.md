@@ -39,6 +39,15 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
 | Preview/unauthenticated | `Showing preview points data` | `Sign in to load live leaderboard and transaction records.` |
 
+## Points — Audit tab (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading audit transactions...` |
+| Empty (flagged only) | `No flagged transactions in this window` | `Large single adjustments (|amount| ≥ 100) will appear here automatically.` |
+| Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
+| Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

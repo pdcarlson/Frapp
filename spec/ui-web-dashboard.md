@@ -340,6 +340,12 @@ multiplexes every subscription over one websocket (see
 - Each: amount (+/-), member name, category badge (ATTENDANCE, SERVICE, MANUAL, FINE, STUDY), description, timestamp
 - Flagged transactions: yellow warning icon, filterable
 
+**Audit tab:** chapter-wide transaction log with a "Show flagged only" toggle
+and category + member filters. Backed by `GET /v1/points/transactions` which
+requires `points:view_all`. Members without that permission see an explanatory
+card pointing at their chapter president. Flags are raised automatically when
+`|amount| ≥ 100` on a manual adjustment (see `spec/behavior.md §4`).
+
 **Adjust modal:**
 
 - Member selector (searchable dropdown)

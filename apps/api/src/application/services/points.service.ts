@@ -96,6 +96,53 @@ export class PointsService {
     return { balance, transactions: filtered };
   }
 
+  /**
+   * Chapter-wide transaction list for the points admin Audit tab.
+   *
+   * Loads every `point_transactions` row for the chapter (the only index we
+   * currently need for this surface) and filters in-process by user, category,
+   * flagged state, and an optional `before` cursor. Results are sorted newest
+   * first and capped at `limit`. The flagged filter mirrors the `metadata.flagged`
+   * boolean written by `adjustPoints` when |amount| exceeds the anomaly
+   * threshold, so Audit view parity with the rest of the ledger is exact.
+   */
+  async listTransactions(
+    chapterId: string,
+    options: {
+      userId?: string;
+      category?: PointCategory;
+      flagged?: boolean;
+      before?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PointTransaction[]> {
+    const all = await this.pointTxnRepo.findByChapter(chapterId);
+    const beforeMs = options.before ? new Date(options.before).getTime() : null;
+
+    const filtered = all.filter((txn) => {
+      if (options.userId && txn.user_id !== options.userId) return false;
+      if (options.category && txn.category !== options.category) return false;
+      if (options.flagged !== undefined) {
+        const flagged = txn.metadata?.flagged === true;
+        if (flagged !== options.flagged) return false;
+      }
+      if (beforeMs !== null) {
+        const createdMs = new Date(txn.created_at).getTime();
+        if (!Number.isNaN(createdMs) && createdMs >= beforeMs) return false;
+      }
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      const aMs = new Date(a.created_at).getTime();
+      const bMs = new Date(b.created_at).getTime();
+      return bMs - aMs;
+    });
+
+    const limit = Math.max(1, Math.min(options.limit ?? 50, 200));
+    return filtered.slice(0, limit);
+  }
+
   async getLeaderboard(
     chapterId: string,
     window: PointsWindow = 'all',
