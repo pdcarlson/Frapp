@@ -47,7 +47,7 @@ If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM
 
 | Item                 | Location / notes                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------- |
-| CI                   | `.github/workflows/ci.yml` — parallel jobs                                            |
+| CI                   | `.github/workflows/ci.yml` — parallel jobs (includes `api-docker-build`: same Dockerfile path Render uses) |
 | API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
 | Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
 | Release tags         | `.github/workflows/release.yml` — main → production merge                             |

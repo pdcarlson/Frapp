@@ -2,6 +2,15 @@
 
 import { execSync } from "node:child_process";
 
+function isDockerAvailable() {
+  try {
+    execSync("docker info", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const DEFAULT_BASE_REF = "origin/main";
 const BASE_REF_FLAG = "--base-ref";
 
@@ -69,6 +78,17 @@ function runLocalGate() {
 
   for (const [command, label] of gateChecks) {
     runCommand(command, label);
+  }
+
+  if (isDockerAvailable()) {
+    runCommand(
+      "docker build -f apps/api/Dockerfile .",
+      "Build API Docker image (Render parity)",
+    );
+  } else {
+    console.warn(
+      "\n⚠️  Skipping API Docker build: Docker not reachable (install/start Docker to match CI `api-docker-build`).",
+    );
   }
 
   console.log("\n✅ Local CI gate passed.");

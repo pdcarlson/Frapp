@@ -5,6 +5,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
+    "check-types": "tsc --noEmit -p tsconfig.build.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "nest start --watch",

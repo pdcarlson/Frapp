@@ -75,6 +75,26 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
+  # ── API Docker image build (matches Render: nest build inside Dockerfile) ─
+  api-docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          tags: frapp-api:ci
+
   # ── API unit tests ──────────────────────────────────────────────────────
   api-tests:
     needs: packages-build

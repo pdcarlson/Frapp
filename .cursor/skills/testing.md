@@ -10,7 +10,8 @@
 |------|---------|
 | All lint | `npm run lint` |
 | API-only lint | `npm run lint:api` |
-| Type-check | `npm run check-types` |
+| Type-check | `npm run check-types` (includes `apps/api` via `tsc -p tsconfig.build.json`, matching `nest build`) |
+| API Docker (Render parity) | `docker build -f apps/api/Dockerfile .` — also runs as `api-docker-build` in GitHub Actions CI |
 | API unit tests | `npm run test -w apps/api` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | Contract check | `npm run check:api-contract` |

@@ -301,6 +301,10 @@ Create **two** Render Web Services: one for production, one for staging.
 
 Render auto-detects the health check from the Dockerfile `HEALTHCHECK` directive. The API exposes `GET /health`.
 
+### 5.4.1 CI parity with Render’s Docker build
+
+Render builds the API with `docker build -f apps/api/Dockerfile .` and runs `nest build` in that image. That path can fail even when `npm run check-types` passed for other workspaces (for example, if `apps/api` lacked a `check-types` script). GitHub Actions runs **`api-docker-build`** in `.github/workflows/ci.yml`, which builds the same Dockerfile with **no registry push**, so a broken `nest build` blocks merges before Render starts. Optional hardening: trigger a [Render deploy hook](https://render.com/docs/deploy-hooks) from a workflow after this job succeeds, or promote a single built image instead of rebuilding on Render—see [GitHub’s guide to publishing Docker images](https://docs.github.com/actions/guides/publishing-docker-images) and Render’s docs on Docker deploys for service-specific wiring.
+
 ### 5.5 Deploy Hooks (for GitHub Actions)
 
 In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
