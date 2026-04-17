@@ -235,10 +235,20 @@ export function ReportsPage() {
   return (
     <Can
       permission="reports:export"
+      fallback={
+        <Card aria-label="Reports & Export permissions check">
+          <CardHeader>
+            <CardTitle>Reports &amp; Export</CardTitle>
+            <CardDescription>
+              Checking your chapter permissions…
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      }
       deniedFallback={
         <Card>
           <CardHeader>
-            <CardTitle>Reports & Export</CardTitle>
+            <CardTitle>Reports &amp; Export</CardTitle>
             <CardDescription>
               Exporting chapter data requires the <code>reports:export</code>{" "}
               permission. Ask your chapter president to grant access.
