@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PollService } from './poll.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
@@ -16,6 +16,7 @@ describe('PollService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
+  let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
     id: 'ch-1',
@@ -58,6 +59,10 @@ describe('PollService', () => {
   };
 
   beforeEach(async () => {
+    loggerErrorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
     mockMessageRepo = {
       findById: jest.fn(),
       findByChannel: jest.fn(),
@@ -106,6 +111,10 @@ describe('PollService', () => {
     }).compile();
 
     service = module.get(PollService);
+  });
+
+  afterEach(() => {
+    loggerErrorSpy.mockRestore();
   });
 
   describe('createPoll', () => {
@@ -508,6 +517,21 @@ describe('PollService', () => {
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
         'ch-1',
         expect.objectContaining({ limit: 200 }),
+      );
+    });
+
+    it('logs when the batched vote query fails and returns zero tallies', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      const batchError = new Error('postgrest timeout');
+      mockVoteRepo.findByMessages.mockRejectedValue(batchError);
+
+      const result = await service.listPolls('chapter-xyz');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].results.every((r) => r.voteCount === 0)).toBe(true);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('chapter-xyz'),
+        expect.stringContaining('postgrest timeout'),
       );
     });
   });

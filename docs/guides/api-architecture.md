@@ -121,7 +121,7 @@ Example: attendance auto-absent filtering now precomputes `required_role_ids` in
 
 ### Independent reads in loops
 
-When a service loads the **same shape** of related rows for many parent records (for example, all `poll_votes` rows for each poll on a chapter list), prefer **one batched repository query** (for example `.in('message_id', ids)` on PostgREST) and group results in memory. Issuing one query per parent—even via `Promise.allSettled`—still creates N+1 HTTP calls to PostgREST and can exhaust connection pools under large limits. **`PollService.listPolls`** follows this: it calls `IPollVoteRepository.findByMessages` once per request and aggregates counts (and optional `userVotes`) in memory.
+When a service loads the **same shape** of related rows for many parent records (for example, all `poll_votes` rows for each poll on a chapter list), prefer **one batched repository query** (for example `.in('message_id', ids)` on PostgREST) and group results in memory. Issuing one query per parent—even via `Promise.allSettled`—still creates N+1 HTTP calls to PostgREST and can exhaust connection pools under large limits. **`PollService.listPolls`** follows this: it calls `IPollVoteRepository.findByMessages` once per request and aggregates counts (and optional `userVotes`) in memory. If that batch read throws, the handler still returns the poll list with zero vote tallies (degraded response) but logs the failure with Nest’s `Logger` so operators can diagnose storage or connectivity issues.
 
 After that batch load, aggregate tallies in **one pass** over the child rows (for example a `Map<messageId, Map<optionIndex, count>>` for poll votes) instead of nested filters per parent per option, which scales with polls × options × votes.
 

@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -49,6 +50,8 @@ export interface PollWithResults {
 
 @Injectable()
 export class PollService {
+  private readonly logger = new Logger(PollService.name);
+
   constructor(
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
@@ -287,8 +290,12 @@ export class PollService {
     let allVotes: PollVote[] = [];
     try {
       allVotes = await this.voteRepo.findByMessages(messageIds);
-    } catch {
+    } catch (error) {
       // Failed batch read: return polls with zero vote tallies rather than failing the list.
+      this.logger.error(
+        `Batch poll vote load failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
+        error instanceof Error ? error.stack : String(error),
+      );
     }
 
     const voteCountsByMessageId = new Map<string, Map<number, number>>();
@@ -307,10 +314,7 @@ export class PollService {
 
     for (const vote of allVotes) {
       bumpOptionCount(vote.message_id, vote.option_index);
-      if (
-        userVotesByMessageId &&
-        vote.user_id === options.userId
-      ) {
+      if (userVotesByMessageId && vote.user_id === options.userId) {
         let userList = userVotesByMessageId.get(vote.message_id);
         if (!userList) {
           userList = [];
