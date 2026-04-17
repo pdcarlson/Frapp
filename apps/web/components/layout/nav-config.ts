@@ -215,11 +215,11 @@ export const DASHBOARD_NAV: NavSection[] = [
         id: "documents",
         label: "Documents",
         icon: FolderOpen,
+        href: "/documents",
         breadcrumbTitle: "Chapter Documents",
         primaryActionLabel: "Upload Document",
         description: "Chapter files and organizational documents.",
-        status: "coming-soon",
-        statusLabel: "Soon",
+        status: "available",
       },
       {
         id: "geofences",

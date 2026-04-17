@@ -83,6 +83,14 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
 | Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
 
+## Chapter Documents (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading chapter documents...` |
+| Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
+| Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

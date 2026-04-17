@@ -102,7 +102,7 @@ to a route. The caller's effective permission set is loaded once via
 | Communications | Chat | *(planned)* | — |
 | Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
 | Resources | Backwork | *(planned)* | — |
-| Resources | Documents | *(planned)* | — |
+| Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
 | Resources | Study Zones | *(planned)* | `geofences:manage` |
 | Finance | Billing | `/billing` | `billing:view` |
 | Finance | Reports | *(planned)* | `reports:export` |
