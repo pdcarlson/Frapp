@@ -121,7 +121,9 @@ no surprises.
 
 The unauthenticated landing page lives at `/` and redirects to `/home` once a
 Supabase session is present. `/dashboard` is a legacy alias that also redirects
-to `/home`.
+to `/home`. The dashboard route group includes `app/(dashboard)/page.tsx`, which
+redirects to `/home` as well, so the `(dashboard)` tree always has an index page
+for parity with bookmarks and internal tooling that expect a segment root.
 
 Roadmap entries render disabled with a `Soon` chip so the full footprint of the
 dashboard is discoverable even before every route ships. Users with zero
