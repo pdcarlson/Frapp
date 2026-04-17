@@ -86,7 +86,23 @@ export interface Database {
       semester_archives: TableDefinition<SemesterArchive>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      get_poll_vote_option_totals: {
+        Args: { p_message_ids: string[] };
+        Returns: {
+          message_id: string;
+          option_index: number;
+          vote_count: number;
+        }[];
+      };
+      get_poll_user_votes_for_messages: {
+        Args: { p_message_ids: string[]; p_user_id: string };
+        Returns: {
+          message_id: string;
+          option_index: number;
+        }[];
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

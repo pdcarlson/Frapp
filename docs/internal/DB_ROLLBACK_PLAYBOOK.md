@@ -70,6 +70,10 @@ After any rollback event:
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`
 
+## Rollback poll list vote aggregate RPCs
+* **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`
+
 ## Rollback `idx_point_transactions_chapter_created_at`
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
 * **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`

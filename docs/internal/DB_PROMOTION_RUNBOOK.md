@@ -69,6 +69,11 @@ Post-apply production checks:
 * **Purpose**: Creates an RPC for faster points report aggregation.
 * **Checks**: Verify the RPC exists using `select has_function_privilege('get_points_report(uuid, uuid, text)', 'execute');`.
 
+## 2026-04-17: Poll list vote aggregation RPCs
+* **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
+* **Purpose**: `get_poll_vote_option_totals` and `get_poll_user_votes_for_messages` aggregate `poll_votes` in Postgres for `GET /v1/polls` (chapter poll list) instead of loading every vote row into the API.
+* **Checks**: After `db push`, e.g. `select proname from pg_proc where proname in ('get_poll_vote_option_totals', 'get_poll_user_votes_for_messages');` Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback poll list vote aggregate RPCs.
+
 ## 2026-04-17: Point transactions chapter audit index
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
 * **Purpose**: B-tree on `(chapter_id, created_at desc)` so chapter-scoped point transaction lists (admin Audit tab, `GET /v1/points/transactions`) stay fast as tables grow.

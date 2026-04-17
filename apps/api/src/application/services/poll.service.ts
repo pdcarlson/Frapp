@@ -12,10 +12,7 @@ import type { IChatChannelRepository } from '../../domain/repositories/chat.repo
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
-import type {
-  PollMetadata,
-  PollVote,
-} from '../../domain/entities/poll-vote.entity';
+import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -287,40 +284,49 @@ export class PollService {
     }
 
     const messageIds = listRows.map((row) => row.message.id);
-    let allVotes: PollVote[] = [];
+    const voteCountsByMessageId = new Map<string, Map<number, number>>();
+    let userVotesByMessageId: Map<string, number[]> | null = null;
+
     try {
-      allVotes = await this.voteRepo.findByMessages(messageIds);
+      const totals =
+        await this.voteRepo.aggregateOptionTotalsByMessages(messageIds);
+      for (const row of totals) {
+        let byOption = voteCountsByMessageId.get(row.message_id);
+        if (!byOption) {
+          byOption = new Map<number, number>();
+          voteCountsByMessageId.set(row.message_id, byOption);
+        }
+        byOption.set(row.option_index, row.vote_count);
+      }
     } catch (error) {
-      // Failed batch read: return polls with zero vote tallies rather than failing the list.
+      // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
       this.logger.error(
-        `Batch poll vote load failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
+        `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
         error instanceof Error ? error.stack : String(error),
       );
     }
 
-    const voteCountsByMessageId = new Map<string, Map<number, number>>();
-    const userVotesByMessageId = options.userId
-      ? new Map<string, number[]>()
-      : null;
-
-    const bumpOptionCount = (messageId: string, optionIndex: number) => {
-      let byOption = voteCountsByMessageId.get(messageId);
-      if (!byOption) {
-        byOption = new Map<number, number>();
-        voteCountsByMessageId.set(messageId, byOption);
-      }
-      byOption.set(optionIndex, (byOption.get(optionIndex) ?? 0) + 1);
-    };
-
-    for (const vote of allVotes) {
-      bumpOptionCount(vote.message_id, vote.option_index);
-      if (userVotesByMessageId && vote.user_id === options.userId) {
-        let userList = userVotesByMessageId.get(vote.message_id);
-        if (!userList) {
-          userList = [];
-          userVotesByMessageId.set(vote.message_id, userList);
+    if (options.userId) {
+      userVotesByMessageId = new Map<string, number[]>();
+      try {
+        const userRows = await this.voteRepo.findUserVotesByMessagesForUser(
+          messageIds,
+          options.userId,
+        );
+        for (const row of userRows) {
+          let userList = userVotesByMessageId.get(row.message_id);
+          if (!userList) {
+            userList = [];
+            userVotesByMessageId.set(row.message_id, userList);
+          }
+          userList.push(row.option_index);
         }
-        userList.push(vote.option_index);
+      } catch (error) {
+        this.logger.error(
+          `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${options.userId}); userVotes omitted`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        userVotesByMessageId = new Map();
       }
     }
 
