@@ -74,6 +74,15 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
 | Error | `Couldn't load tasks` | `Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task.` |
 
+## Service Hours (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading service entries...` |
+| Empty queue | `No pending entries` | `Approved or rejected entries appear in the History card below.` |
+| Empty history | `No service activity yet` | `Log your first service entry to build up chapter service hours.` |
+| Error | `Couldn't load service entries` | `Members see only their own entries; admins need service:approve to see every entry.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

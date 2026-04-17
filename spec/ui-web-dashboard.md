@@ -98,7 +98,7 @@ to a route. The caller's effective permission set is loaded once via
 | Operations | Events | `/events` | — |
 | Operations | Points | `/points` | — |
 | Operations | Tasks | `/tasks` | — (filtered to own tasks unless `tasks:manage`) |
-| Operations | Service Hours | *(planned)* | any of `service:log`, `service:approve` |
+| Operations | Service Hours | `/service` | — (log/approve gated inline via `service:log` / `service:approve`) |
 | Communications | Chat | *(planned)* | — |
 | Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
 | Resources | Backwork | *(planned)* | — |
