@@ -47,7 +47,8 @@ export interface IChatMessageRepository {
   /**
    * Newest-first list of POLL messages across every channel in the chapter.
    * Optional `channelId` scopes to a single channel. `limit` caps result size
-   * (service clamps the value; repo treats an undefined as "no limit").
+   * (undefined, non-finite, or non-positive values use the shared list default;
+   * finite positive values are clamped to the shared list min/max in the repo).
    * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
    * so `limit` applies after that filter, not before.
    */

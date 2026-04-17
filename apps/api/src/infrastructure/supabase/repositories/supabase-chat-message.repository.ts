@@ -4,8 +4,25 @@ import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatMessage } from '../../../domain/entities/chat.entity';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../../domain/constants/list-query-limits';
 
 const DEFAULT_MESSAGE_LIMIT = 50;
+
+function effectivePollListLimit(requested?: number): number {
+  if (
+    requested === undefined ||
+    !Number.isFinite(requested) ||
+    requested <= 0
+  ) {
+    return LIST_QUERY_LIMIT_DEFAULT;
+  }
+  const n = Math.trunc(requested);
+  return Math.max(LIST_QUERY_LIMIT_MIN, Math.min(n, LIST_QUERY_LIMIT_MAX));
+}
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -99,9 +116,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       }
     }
 
-    if (options?.limit !== undefined && options.limit > 0) {
-      query = query.limit(options.limit);
-    }
+    query = query.limit(effectivePollListLimit(options?.limit));
 
     const { data, error } = await query;
     if (error) throw error;

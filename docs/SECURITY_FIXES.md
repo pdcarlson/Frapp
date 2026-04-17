@@ -17,6 +17,9 @@ Added `escapeFilterValue` to sanitize search input in `SupabaseBackworkResourceR
 ## PostgREST `.or()` quoting in supabase-chat-message.repository.ts
 `SupabaseChatMessageRepository.findPollsByChapter` builds an `.or()` filter for active polls using a server-generated ISO timestamp. That segment is passed through `escapeFilterValue` so the `.or()` template follows PostgREST string quoting. The inactive-poll branch uses `.filter(..., 'lte', ...)` with the bare ISO string because the Supabase JS client encodes filter operands; passing the same double-quoted PostgREST literal there would compare against a string that includes quote characters and break `lte` semantics.
 
+## Bounded row cap on `findPollsByChapter`
+That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/src/domain/constants/list-query-limits.ts` when `options.limit` is missing, invalid, or out of range, so a future caller cannot accidentally fetch an unbounded POLL row set for a chapter.
+
 ## Security Fix: Unrestricted File Upload in Chapter Logos
 
 ### Overview
