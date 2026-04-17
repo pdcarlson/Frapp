@@ -24,9 +24,11 @@ exported. In CI the job does not have Supabase credentials, so the merged
 - `NEXT_PUBLIC_API_URL`
 
 These values make Next.js finish its boot handshake. They do not point at any
-real service; the proxy (`apps/web/proxy.ts`) detects missing-or-placeholder
-env and skips auth redirects. Real deployments always receive the production
-values via Vercel + Infisical.
+real service. The env also includes `SUPABASE_AUTH_BYPASS=true`, which tells
+the proxy (`apps/web/proxy.ts`) to skip auth redirects so protected routes
+render their actual pages instead of redirecting to `/sign-in`. Real
+deployments always receive the production values via Vercel + Infisical and
+never set the bypass flag.
 
 If you set real values locally (via `.env.local` or an exported shell env),
 those take precedence — the defaults only fill gaps.

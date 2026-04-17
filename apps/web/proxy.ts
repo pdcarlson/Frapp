@@ -34,6 +34,9 @@ type SupabaseEnv = {
 };
 
 function readSupabaseEnv(): SupabaseEnv | null {
+  if (process.env.SUPABASE_AUTH_BYPASS === "true") {
+    return null;
+  }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
@@ -89,11 +92,11 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const env = readSupabaseEnv();
 
-  // Environments without Supabase credentials (e.g. the Playwright visual
-  // regression job in CI) cannot make auth decisions. Public routes proceed
-  // as normal; protected routes render whatever the route file ships —
-  // typically a skeleton — without a redirect. Real deployments always have
-  // these env vars set.
+  // Environments without Supabase credentials, or with SUPABASE_AUTH_BYPASS
+  // set (e.g. the Playwright visual regression job in CI), cannot make auth
+  // decisions. All routes proceed without redirects so pages render their
+  // actual content. Real deployments always have valid env vars and never
+  // set the bypass flag.
   if (!env) {
     return responseHolder.current;
   }

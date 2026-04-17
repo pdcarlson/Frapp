@@ -8,16 +8,18 @@ const isCi = Boolean(process.env.CI);
  * The visual regression suite boots `npm run dev` inside CI, which does not
  * have Supabase credentials available. These placeholders let Next.js finish
  * its boot handshake (the shape is a valid HTTP URL and a well-formed JWT-ish
- * string) so public pages render and the screenshots can be captured. The
- * proxy (`apps/web/proxy.ts`) treats a missing real Supabase env the same way
- * and skips auth redirects when it can't validate a session. Real deployments
- * always provide the production values via Vercel + Infisical.
+ * string) so pages render and the screenshots can be captured.
+ * `SUPABASE_AUTH_BYPASS` tells the proxy (`apps/web/proxy.ts`) to skip auth
+ * redirects entirely, so protected routes render their actual content instead
+ * of redirecting to `/sign-in`. Real deployments always provide the production
+ * values via Vercel + Infisical and never set the bypass flag.
  */
 const webServerEnvDefaults: Record<string, string> = {
   NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
   NEXT_PUBLIC_SUPABASE_ANON_KEY:
     "eyJhbGciOiJIUzI1NiJ9.visual-regression-stand-in.signature",
   NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001/v1",
+  SUPABASE_AUTH_BYPASS: "true",
 };
 
 function resolvedWebServerEnv(): Record<string, string> {
