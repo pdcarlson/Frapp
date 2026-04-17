@@ -75,14 +75,20 @@ export const DEFAULT_SYSTEM_ROLES = [
   },
   {
     name: 'Vice President',
-    permissions: [SystemPermissions.POLLS_VIEW_ALL],
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.POLLS_VIEW_ALL,
+    ],
     is_system: true,
     display_order: 3,
     color: null,
   },
   {
     name: 'Secretary',
-    permissions: [SystemPermissions.POLLS_VIEW_ALL],
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.POLLS_VIEW_ALL,
+    ],
     is_system: true,
     display_order: 4,
     color: null,

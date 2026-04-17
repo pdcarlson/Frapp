@@ -82,3 +82,8 @@ After any rollback event:
   2. `update public.roles set permissions = array_remove(permissions, 'polls:view_all') where is_system = true and name = 'Treasurer' and not ('*' = any (permissions));`
   3. For each chapter that no longer has a Vice President row, decrement `display_order` by 2 on system roles with `display_order >= 5` (Member and below in the default ordering). Prefer restoring from a snapshot if unsure.
 * **Note:** This migration is data-only; rollback is manual because removing `polls:view_all` from Treasurer may have been intentional pre-migration state.
+
+## Rollback `backfill_members_view_vp_secretary`
+* **Migration**: `20260417150000_backfill_members_view_vp_secretary.sql`
+* **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
+* **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
