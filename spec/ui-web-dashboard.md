@@ -106,7 +106,7 @@ to a route. The caller's effective permission set is loaded once via
 | Resources | Study Zones | *(planned)* | `geofences:manage` |
 | Finance | Billing | `/billing` | `billing:view` |
 | Finance | Reports | *(planned)* | `reports:export` |
-| Settings | Settings | *(planned)* | — |
+| Settings | Settings | `/settings` | — |
 
 The unauthenticated landing page lives at `/` and redirects to `/home` once a
 Supabase session is present. `/dashboard` is a legacy alias that also redirects

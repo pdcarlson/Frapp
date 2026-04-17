@@ -57,6 +57,15 @@ This pack defines approved copy for high-frequency state messages so members and
 | Error | `Couldn't load roles` | `Retry in a moment. This view requires the roles:manage permission.` |
 | Permission denied | `Roles & Permissions` | `Managing roles requires the roles:manage permission. Ask your chapter president to grant access.` |
 
+## Settings (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading chapter settings...` |
+| Error | `Couldn't load chapter settings` | `Confirm your chapter access and retry. Changes you make here update every surface in the dashboard.` |
+| No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
+| Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

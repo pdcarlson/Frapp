@@ -13,6 +13,7 @@ const PROTECTED_ROUTE_PREFIXES = [
   "/points",
   "/billing",
   "/profile",
+  "/settings",
   "/join",
   "/no-access",
 ];
@@ -159,6 +160,7 @@ export const config = {
     "/points/:path*",
     "/billing/:path*",
     "/profile/:path*",
+    "/settings/:path*",
     "/no-access",
   ],
 };
