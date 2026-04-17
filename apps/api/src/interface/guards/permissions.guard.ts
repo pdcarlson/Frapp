@@ -26,10 +26,11 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
-      PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    // Nest's getAllAndOverride prefers the handler and drops class-level
+    // @RequirePermissions when a route repeats the decorator (e.g. PollController
+    // baseline members:view + polls:view_all on GET /polls). Merge so every declared
+    // permission must be satisfied (AND across targets).
+    const requiredPermissions = this.mergeRequiredPermissions(context);
     const anyOfPermissions = this.reflector.getAllAndOverride<string[]>(
       PERMISSIONS_ANY_KEY,
       [context.getHandler(), context.getClass()],
@@ -81,5 +82,31 @@ export class PermissionsGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private mergeRequiredPermissions(
+    context: ExecutionContext,
+  ): string[] | undefined {
+    const handler = context.getHandler();
+    const controllerClass = context.getClass();
+    const fromHandler = this.reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      handler,
+    );
+    const fromClass = this.reflector.get<string[] | undefined>(
+      PERMISSIONS_KEY,
+      controllerClass,
+    );
+    const merged: string[] = [];
+    if (fromClass?.length) {
+      merged.push(...fromClass);
+    }
+    if (fromHandler?.length) {
+      merged.push(...fromHandler);
+    }
+    if (merged.length === 0) {
+      return undefined;
+    }
+    return [...new Set(merged)];
   }
 }

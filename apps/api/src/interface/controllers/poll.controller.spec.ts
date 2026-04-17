@@ -175,12 +175,17 @@ describe('PollController', () => {
       });
     });
 
-    it('should require POLLS_VIEW_ALL permission', () => {
-      const permissions = Reflect.getMetadata(
+    it('should require POLLS_VIEW_ALL on the handler and MEMBERS_VIEW at class level (merged by PermissionsGuard)', () => {
+      const handlerPermissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
         controller.listPolls,
       );
-      expect(permissions).toEqual([SystemPermissions.POLLS_VIEW_ALL]);
+      const classPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PollController,
+      );
+      expect(handlerPermissions).toEqual([SystemPermissions.POLLS_VIEW_ALL]);
+      expect(classPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 
