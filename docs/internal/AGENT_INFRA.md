@@ -53,7 +53,7 @@ If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM
 | Release tags         | `.github/workflows/release.yml` — main → production merge                             |
 | Docs                 | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)            |
 | Branch protection    | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md`  |
-| Bugbot               | `.cursor/BUGBOT.md` + `.github/workflows/trigger-bugbot-review.yml`                   |
+| Bugbot               | `.cursor/BUGBOT.md` — Cursor's native auto-review handles PRs; no GitHub Actions gate  |
 | Vercel               | Deploys from `main` / `production` only (PR previews disabled via repo config)        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.

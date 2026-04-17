@@ -165,11 +165,12 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**Cursor Bugbot** reviews every PR to `main` and every promotion PR from `main` to `production`.
+**Cursor Bugbot** auto-reviews every ready-for-review PR to `main` and `production` via its native GitHub app integration.
 
-- On `main`, Bugbot feedback is advisory. The repo also keeps a lightweight workflow that posts `cursor review` on PR lifecycle events so solo-developer review coverage does not depend entirely on Bugbot auto-trigger behavior.
-- On `main`, conversation resolution remains disabled, so unresolved Bugbot comment threads do not block merge.
-- On `production`, the Bugbot status check is required in branch protection, and the promotion PR still requires one approving review plus conversation resolution.
+- Bugbot feedback is advisory on both branches. There is no `bugbot-review` required status check.
+- On `main`, conversation resolution is not required, so unresolved Bugbot comment threads do not block merge.
+- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; Bugbot does not).
+- Manual trigger if auto-review misses a PR: post a top-level `bugbot run` comment. Full runbook: [`docs/internal/BUGBOT_RUNBOOK.md`](../docs/internal/BUGBOT_RUNBOOK.md).
 
 ### Key Design Decisions
 

@@ -59,8 +59,8 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### AI review coverage
 
-- `main`: Cursor Bugbot should review every PR, but its feedback remains advisory.
-- `production`: the `bugbot-review` status check is required in addition to the human approval and conversation-resolution gate.
+- `main`: Cursor Bugbot auto-reviews every ready-for-review PR. Feedback is advisory.
+- `production`: same — Bugbot reviews are advisory. Promotions are gated by CI + approval + conversation resolution, not Bugbot.
 
 ### PR review requirement policy
 

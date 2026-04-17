@@ -92,7 +92,6 @@ Vercel deployments are intentionally limited to `main` and `production` branches
 | Check name | What it validates |
 | --- | --- |
 | `branch-policy` | Source branch must be `main` |
-| `bugbot-review` | Cursor Bugbot review workflow succeeded |
 
 ### Future: require deploy verification on production
 
@@ -121,14 +120,7 @@ Do **not** mark these required on `main` — staging deploys are allowed to fail
 
 ### Bugbot review policy
 
-Bugbot should review every PR to `main` and every promotion PR to `production`.
-
-- On `main`, the Bugbot review is advisory and should not block merge.
-- On `production`, the `bugbot-review` status check is required in addition to:
-  - one approving review
-  - conversation resolution
-
-This keeps feature PRs lightweight while preserving a strict promotion gate.
+Bugbot reviews are advisory on both branches. There is no `bugbot-review` required status check. See [`BUGBOT_RUNBOOK.md`](./BUGBOT_RUNBOOK.md) for how Bugbot is configured and triggered.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
@@ -155,8 +147,8 @@ Common causes and fixes:
   **Fix:** required workflows must run on every PR to protected branches.
 - **Job/workflow renames:** required check name no longer matches emitted name.  
   **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
-- **Bugbot workflow failed or did not run:** `bugbot-review` never reports success on the PR.  
-  **Fix:** inspect the `Trigger Bugbot Review` workflow run, confirm the PR was not a draft, then re-run Bugbot from a top-level `bugbot run` comment if needed.
+- **Stale required check reference:** a required context name no longer exists because the underlying workflow was removed.  
+  **Fix:** remove the orphan context from the production protection payload (`scripts/configure-branch-protection.mjs` plus `gh api -X DELETE repos/<owner>/<repo>/branches/production/protection/required_status_checks/contexts -f 'contexts[]=<orphan>'`) and re-run the branch-protection script.
 
 ## Verification Checklist
 
