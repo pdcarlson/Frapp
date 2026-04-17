@@ -175,7 +175,7 @@ describe('PollController', () => {
       });
     });
 
-    it('should require POLLS_VIEW_ALL on the handler and MEMBERS_VIEW at class level (merged by PermissionsGuard)', () => {
+    it('declares POLLS_VIEW_ALL on the handler and MEMBERS_VIEW at class level (PermissionsGuard merges both)', () => {
       const handlerPermissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
         controller.listPolls,

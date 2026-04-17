@@ -264,12 +264,17 @@ describe('PointsController', () => {
       });
     });
 
-    it('requires POINTS_VIEW_ALL permission', () => {
-      const permissions = Reflect.getMetadata(
+    it('declares POINTS_VIEW_ALL on the handler; class baseline MEMBERS_VIEW is merged by PermissionsGuard', () => {
+      const handlerPermissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
         controller.listTransactions,
       );
-      expect(permissions).toEqual([SystemPermissions.POINTS_VIEW_ALL]);
+      const classPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PointsController,
+      );
+      expect(handlerPermissions).toEqual([SystemPermissions.POINTS_VIEW_ALL]);
+      expect(classPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 });

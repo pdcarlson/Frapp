@@ -26,25 +26,20 @@ export class PermissionsGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    // Nest standard: handler metadata wins over class when both set
-    // @RequirePermissions (same key). Do not AND-merge — that would require
-    // class baselines like members:view on every route that adds a stricter
-    // handler decorator (e.g. polls:create), breaking custom roles.
-    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
-      PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    const anyOfPermissions = this.reflector.getAllAndOverride<string[]>(
-      PERMISSIONS_ANY_KEY,
-      [context.getHandler(), context.getClass()],
+    const handler = context.getHandler();
+    const controllerClass = context.getClass();
+
+    const requiredPermissions = this.mergeUniquePermissionLists(
+      this.reflector.get<string[]>(PERMISSIONS_KEY, handler),
+      this.reflector.get<string[]>(PERMISSIONS_KEY, controllerClass),
     );
 
-    const permissionsToCheck = requiredPermissions?.length
-      ? requiredPermissions
-      : anyOfPermissions;
-    const requireAll = !!requiredPermissions?.length;
+    const anyOfGroups = this.collectAnyOfPermissionGroups(
+      handler,
+      controllerClass,
+    );
 
-    if (!permissionsToCheck || permissionsToCheck.length === 0) {
+    if (!requiredPermissions.length && !anyOfGroups?.length) {
       return true;
     }
 
@@ -72,18 +67,66 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const hasAccess = requireAll
-      ? permissionsToCheck.every((p) => userPermissions.has(p))
-      : permissionsToCheck.some((p) => userPermissions.has(p));
-
-    if (!hasAccess) {
-      throw new ForbiddenException(
-        requireAll
-          ? `Missing required permissions: ${permissionsToCheck.filter((p) => !userPermissions.has(p)).join(', ')}`
-          : `Missing one of required permissions: ${permissionsToCheck.join(', ')}`,
+    if (requiredPermissions.length > 0) {
+      const missing = requiredPermissions.filter(
+        (p) => !userPermissions.has(p),
       );
+      if (missing.length > 0) {
+        throw new ForbiddenException(
+          `Missing required permissions: ${missing.join(', ')}`,
+        );
+      }
+    }
+
+    if (anyOfGroups?.length) {
+      for (const group of anyOfGroups) {
+        const satisfied = group.some((p) => userPermissions.has(p));
+        if (!satisfied) {
+          throw new ForbiddenException(
+            `Missing one of required permissions: ${group.join(', ')}`,
+          );
+        }
+      }
     }
 
     return true;
+  }
+
+  /** Union of class- and handler-level `@RequirePermissions` (order preserved, de-duplicated). */
+  private mergeUniquePermissionLists(a?: string[], b?: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const list of [a, b]) {
+      if (!list?.length) continue;
+      for (const p of list) {
+        if (!seen.has(p)) {
+          seen.add(p);
+          out.push(p);
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * When `@RequireAnyOfPermissions` appears on both handler and class, each level is a separate
+   * OR-group; the caller must satisfy every group (AND of ORs). A single level is one group.
+   */
+  private collectAnyOfPermissionGroups(
+    handler: object,
+    controllerClass: object,
+  ): string[][] | undefined {
+    const handlerAny = this.reflector.get<string[]>(
+      PERMISSIONS_ANY_KEY,
+      handler,
+    );
+    const classAny = this.reflector.get<string[]>(
+      PERMISSIONS_ANY_KEY,
+      controllerClass,
+    );
+    const groups: string[][] = [];
+    if (handlerAny?.length) groups.push(handlerAny);
+    if (classAny?.length) groups.push(classAny);
+    return groups.length ? groups : undefined;
   }
 }
