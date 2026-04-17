@@ -68,3 +68,8 @@ Post-apply production checks:
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Purpose**: Creates an RPC for faster points report aggregation.
 * **Checks**: Verify the RPC exists using `select has_function_privilege('get_points_report(uuid, uuid, text)', 'execute');`.
+
+## 2026-04-17: Point transactions chapter audit index
+* **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
+* **Purpose**: B-tree on `(chapter_id, created_at desc)` so chapter-scoped point transaction lists (admin Audit tab, `GET /v1/points/transactions`) stay fast as tables grow.
+* **Checks**: After `db push`, confirm the index exists, e.g. `select indexname from pg_indexes where tablename = 'point_transactions' and indexname = 'idx_point_transactions_chapter_created_at';`

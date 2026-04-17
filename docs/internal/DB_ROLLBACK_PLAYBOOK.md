@@ -69,3 +69,8 @@ After any rollback event:
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`
+
+## Rollback `idx_point_transactions_chapter_created_at`
+* **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
+* **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`
+* **Note**: Safe additive change only; dropping removes the performance optimization for chapter-scoped transaction lists.
