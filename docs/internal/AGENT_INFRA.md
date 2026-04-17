@@ -19,45 +19,50 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 
 | Env var                                    | Typical use                          |
 | ------------------------------------------ | ------------------------------------ |
-| `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` / `GITHUB_PERSONAL_ACCESS_TOKEN` | `gh` CLI, branch protection script   |
+| `GITHUB_PERSONAL_ACCESS_TOKEN`             | `gh` CLI, branch protection script   |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management            |
 | `INFISICAL_API_KEY`                        | Infisical API (may lack `local` env) |
-| `RENDER_APIKEY` / `RENDER_API_KEY`        | Render API                           |
+| `RENDER_API_KEY`                           | Render API                           |
 | `VERCEL_API_KEY`                           | Vercel API                           |
 | `SUPABASE_API_KEY`                         | Supabase Management API              |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)           |
 
+> **Legacy aliases.** Older cloud VM images may still expose `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` and `RENDER_APIKEY`. Scripts continue to tolerate them but docs reference the canonical names only. If you're writing new snippets, use the canonical names.
+
 ## GitHub PAT usage policy
 
-The agent **may** use `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` for: creating/closing agent-owned PRs, labels, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
+The agent **may** use `GITHUB_PERSONAL_ACCESS_TOKEN` for: creating/closing agent-owned PRs, labels, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Use whichever GitHub PAT env var is present for `gh` CLI commands (`GITHUB_FULL_PERSONAL_ACCESS_TOKEN` or `GITHUB_PERSONAL_ACCESS_TOKEN`), e.g.:
+Use the canonical env var name for `gh` CLI commands:
 
 ```bash
-export GITHUB_TOKEN="${GITHUB_FULL_PERSONAL_ACCESS_TOKEN:-$GITHUB_PERSONAL_ACCESS_TOKEN}"
+export GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN"
 ```
+
+If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM, fall back to it; otherwise prefer the canonical name.
 
 ## CI/CD summary
 
-| Item              | Location / notes                                                                 |
-| ----------------- | -------------------------------------------------------------------------------- |
-| CI                | `.github/workflows/ci.yml` — parallel jobs                                       |
-| API deploy        | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                   |
-| Release tags      | `.github/workflows/release.yml` — main → production merge                        |
-| Docs              | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)       |
-| Branch protection | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md` |
-| Bugbot            | `.cursor/BUGBOT.md` + `.github/workflows/trigger-bugbot-review.yml`              |
-| Vercel            | Deploys from `main` / `production` only (PR previews disabled via repo config)     |
+| Item                 | Location / notes                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------- |
+| CI                   | `.github/workflows/ci.yml` — parallel jobs                                            |
+| API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
+| Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
+| Release tags         | `.github/workflows/release.yml` — main → production merge                             |
+| Docs                 | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)            |
+| Branch protection    | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md`  |
+| Bugbot               | `.cursor/BUGBOT.md` + `.github/workflows/trigger-bugbot-review.yml`                   |
+| Vercel               | Deploys from `main` / `production` only (PR previews disabled via repo config)        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
 
 **Branch protection script (dry run / apply):**
 
 ```bash
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-GITHUB_PAT="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
+GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
+GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
 ```
 
 Deeper deploy architecture: [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
@@ -85,7 +90,9 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) a
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
-Deploy workflow may still reference transitional GitHub secrets (`SUPABASE_ACCESS_TOKEN`, etc.) until fully moved to Infisical OIDC — see [`DEPLOYMENT.md`](../DEPLOYMENT.md) and [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md).
+Additional repo-level secrets used by the deploy-verification workflow: `RENDER_API_KEY`, `VERCEL_API_KEY`. These are read-only API keys used only by `.github/workflows/verify-deployments.yml` to poll deploy state — they never carry runtime values.
+
+Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`) from Infisical at workflow time via `Infisical/secrets-action`. No GitHub environment-scoped runtime secrets are required beyond the Infisical bootstrap listed above.
 
 ## Release labels
 

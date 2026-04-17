@@ -73,6 +73,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `api-contract-check` | openapi.json + api-sdk freshness |
 | `migration-safety` | Migration filename + docs validation |
 | `mobile-validate` | Mobile lint + typecheck |
+| `ci-scripts-tests` | `node --test` unit tests for deploy-gate scripts under `scripts/ci/` |
 
 **Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
 
@@ -92,6 +93,31 @@ Vercel deployments are intentionally limited to `main` and `production` branches
 | --- | --- |
 | `branch-policy` | Source branch must be `main` |
 | `bugbot-review` | Cursor Bugbot review workflow succeeded |
+
+### Future: require deploy verification on production
+
+The `verify-deployments` workflow (`.github/workflows/verify-deployments.yml`) polls Render and Vercel after every push to `main` and `production` and emits three status contexts: `verify-render-api`, `verify-vercel-web`, `verify-vercel-landing`. These are **not** currently required on `production`, but they are designed to become so once the workflow has stabilized.
+
+Recipe to mark them required on `production` (do not run until the workflow has succeeded on at least one production push so GitHub knows the check names):
+
+1. Verify the checks have already reported against a production push:
+
+   ```bash
+   GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh api \
+     repos/pdcarlson/Frapp/commits/$(git rev-parse origin/production)/check-runs \
+     | jq -r '.check_runs[].name'
+   ```
+
+2. Add the three context names to the production required-checks list in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+3. Dry-run and apply:
+
+   ```bash
+   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
+   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
+   ```
+
+Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
 
 ### Bugbot review policy
 
@@ -130,7 +156,7 @@ Common causes and fixes:
 - **Job/workflow renames:** required check name no longer matches emitted name.  
   **Fix:** update `scripts/configure-branch-protection.mjs` and re-run `npm run configure:branch-protection`.
 - **Bugbot workflow failed or did not run:** `bugbot-review` never reports success on the PR.  
-  **Fix:** inspect the `Trigger Bugbot Review` workflow run, confirm the PR was not a draft, then re-run Bugbot from a top-level `cursor review` comment if needed.
+  **Fix:** inspect the `Trigger Bugbot Review` workflow run, confirm the PR was not a draft, then re-run Bugbot from a top-level `bugbot run` comment if needed.
 
 ## Verification Checklist
 

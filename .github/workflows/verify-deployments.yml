@@ -1,0 +1,82 @@
+name: Verify deployments
+
+# Observer workflow. After a push to main or production, confirm that the
+# Render API deploy and the Vercel web/landing deployments for the pushed SHA
+# reached a healthy terminal state. Failure surfaces as a red GitHub check;
+# the workflow does NOT attempt any remediation.
+#
+# Semantics live in:
+#   scripts/ci/verify-render-deploy.mjs
+#   scripts/ci/verify-vercel-deploy.mjs
+# Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
+
+on:
+  push:
+    branches: [main, production]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One observer per SHA. Do not cancel an in-flight poll — we want the
+  # verifier to run to conclusion even if another push arrives.
+  group: verify-deployments-${{ github.ref }}-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  verify-render-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Render API deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ github.ref_name == 'production' && 'srv-d6lqu41aae7s73f62df0' || 'srv-d6lqsq75r7bs73c2fdc0' }}
+          SERVICE_LABEL: ${{ github.ref_name == 'production' && 'frapp-api-prod' || 'frapp-api-staging' }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/verify-render-deploy.mjs
+
+  verify-vercel-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Vercel web deploy
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          SERVICE_LABEL: frapp-web
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/verify-vercel-deploy.mjs
+
+  verify-vercel-landing:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Verify Vercel landing deploy
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+          SERVICE_LABEL: frapp-landing
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/verify-vercel-deploy.mjs
