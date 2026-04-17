@@ -99,6 +99,15 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | — | `No notifications yet. Chapter activity, billing alerts, and point changes will appear here.` |
 | Error | — | `Couldn't load notifications. Retry in a moment.` |
 
+## Reports & Export (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Idle | — | `Generate a report to see a preview here.` |
+| Loading | — | `Generating report...` |
+| Empty filter | — | `Report returned no rows — the filters matched nothing in the active chapter.` |
+| Permission denied | `Reports & Export` | `Exporting chapter data requires the reports:export permission. Ask your chapter president to grant access.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

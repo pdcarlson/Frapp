@@ -105,7 +105,7 @@ to a route. The caller's effective permission set is loaded once via
 | Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
 | Resources | Study Zones | *(planned)* | `geofences:manage` |
 | Finance | Billing | `/billing` | `billing:view` |
-| Finance | Reports | *(planned)* | `reports:export` |
+| Finance | Reports | `/reports` | `reports:export` |
 | Settings | Settings | `/settings` | — |
 
 The unauthenticated landing page lives at `/` and redirects to `/home` once a
