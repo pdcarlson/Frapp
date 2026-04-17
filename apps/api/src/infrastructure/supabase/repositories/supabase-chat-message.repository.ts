@@ -84,17 +84,17 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       query = query.eq('channel_id', options.channelId);
     }
 
-    if (options?.active === true) {
-      const nowIso = new Date().toISOString();
-      const safeNow = escapeFilterValue(nowIso);
-      query = query.or(
-        `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNow}`,
-      );
-    } else if (options?.active === false) {
-      const nowIso = new Date().toISOString();
-      query = query
-        .not('metadata->>expires_at', 'is', null)
-        .lte('metadata->>expires_at', nowIso);
+    if (options?.active === true || options?.active === false) {
+      const safeNow = escapeFilterValue(new Date().toISOString());
+      if (options.active === true) {
+        query = query.or(
+          `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNow}`,
+        );
+      } else {
+        query = query
+          .not('metadata->>expires_at', 'is', null)
+          .filter('metadata->>expires_at', 'lte', safeNow);
+      }
     }
 
     if (options?.limit !== undefined && options.limit > 0) {
