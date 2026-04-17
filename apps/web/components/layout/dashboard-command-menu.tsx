@@ -57,7 +57,7 @@ const navigationCommands = [
     shortcut: "G E",
     href: "/events",
   },
-  { icon: Star, label: "Go to Points", shortcut: "G P P", href: "/points" },
+  { icon: Star, label: "Go to Points", shortcut: "G O", href: "/points" },
   {
     icon: CircleDollarSign,
     label: "Go to Billing",
