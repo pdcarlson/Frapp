@@ -509,20 +509,20 @@ describe('PollService', () => {
       expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
     });
 
-    it('clamps the limit to the 1-200 range', async () => {
+    it('forwards limit to the repository for normalization', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
       mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
 
       await service.listPolls('ch-1', { limit: 0 });
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
         'ch-1',
-        expect.objectContaining({ limit: 1 }),
+        expect.objectContaining({ limit: 0 }),
       );
 
       await service.listPolls('ch-1', { limit: 9999 });
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
         'ch-1',
-        expect.objectContaining({ limit: 200 }),
+        expect.objectContaining({ limit: 9999 }),
       );
     });
 

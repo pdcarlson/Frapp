@@ -13,11 +13,6 @@ import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.reposi
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
-import {
-  LIST_QUERY_LIMIT_DEFAULT,
-  LIST_QUERY_LIMIT_MAX,
-  LIST_QUERY_LIMIT_MIN,
-} from '../../domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 10;
@@ -259,13 +254,11 @@ export class PollService {
       userId?: string;
     } = {},
   ): Promise<PollWithResults[]> {
-    const limit = Math.max(
-      LIST_QUERY_LIMIT_MIN,
-      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
-    );
+    // `limit` normalization (default, clamp 1–200, non-finite) is owned by
+    // `IChatMessageRepository.findPollsByChapter` / `effectivePollListLimit`.
     const messages = await this.messageRepo.findPollsByChapter(chapterId, {
       channelId: options.channelId,
-      limit,
+      limit: options.limit,
       active: options.active,
     });
 
