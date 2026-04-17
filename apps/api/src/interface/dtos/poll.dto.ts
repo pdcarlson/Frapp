@@ -5,6 +5,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
   MinLength,
@@ -71,11 +72,17 @@ export class ListPollsQueryDto {
   active?: 'true' | 'false';
 
   @ApiPropertyOptional({
-    description: 'Max polls to return (1-200, defaults to 50).',
+    description:
+      'Max polls to return (1-200, defaults to 50). Values outside that range are rejected.',
+    minimum: 1,
+    maximum: 200,
+    default: 50,
+    example: 50,
   })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(200)
   limit?: number;
 }

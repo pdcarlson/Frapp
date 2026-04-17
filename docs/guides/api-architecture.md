@@ -11,6 +11,8 @@ The API in `apps/api` follows a strict layered structure:
 - **Infrastructure layer**: Supabase repositories, external adapters (Stripe, Expo Push, Storage)
 - **Domain layer**: entities, repository interfaces, shared business rules
 
+For list query parameters named `limit` (or similar caps), validate the allowed range on the query DTO with `class-validator` (for example `@Min(1)` and `@Max(200)`) and set matching `minimum` / `maximum` on `@ApiPropertyOptional` so OpenAPI reflects the same contract as the validation pipe.
+
 ```text
 src/
   main.ts

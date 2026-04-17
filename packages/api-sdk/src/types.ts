@@ -4608,7 +4608,7 @@ export interface operations {
                 channel_id?: string;
                 /** @description Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls. */
                 active?: string;
-                /** @description Max polls to return (1-200, defaults to 50). */
+                /** @description Max polls to return (1-200, defaults to 50). Values outside that range are rejected. */
                 limit?: number;
             };
             header?: never;
