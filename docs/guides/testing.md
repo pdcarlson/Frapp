@@ -56,6 +56,8 @@ Mocks:
 - **Repositories** — plain objects with Jest mock functions (e.g. `jest.fn().mockResolvedValue(...)`).
 - **External adapters** — mocked Stripe/Expo clients where relevant.
 
+In `apps/api/src/application/services/points.service.spec.ts`, keep shared `PointTransaction` fixtures consistent across leaderboard and list tests (for example, transactions that should aggregate under `user-2` must use that `user_id`). `PointsService.listTransactions` forwards to `findByChapterFiltered` without re-filtering in memory, so mocks for user-scoped lists must only return rows for the requested user when asserting on `user_id`.
+
 > **Tip:** Keep business logic in services small and focused. This makes unit tests much easier to write and maintain.
 
 ## 4. Guards and interceptors
