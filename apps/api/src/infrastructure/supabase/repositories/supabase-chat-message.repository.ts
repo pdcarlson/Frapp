@@ -85,15 +85,17 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     }
 
     if (options?.active === true || options?.active === false) {
-      const safeNow = escapeFilterValue(new Date().toISOString());
+      const nowIso = new Date().toISOString();
+      // PostgREST `.or()` strings need explicit quoting; `.filter()` encodes values.
+      const safeNowForOr = escapeFilterValue(nowIso);
       if (options.active === true) {
         query = query.or(
-          `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNow}`,
+          `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNowForOr}`,
         );
       } else {
         query = query
           .not('metadata->>expires_at', 'is', null)
-          .filter('metadata->>expires_at', 'lte', safeNow);
+          .filter('metadata->>expires_at', 'lte', nowIso);
       }
     }
 
