@@ -66,6 +66,14 @@ This pack defines approved copy for high-frequency state messages so members and
 | No chapter | `Chapter settings` | `Select an active chapter to edit its branding, semester state, or billing configuration.` |
 | Semester empty | `No archived semesters yet` | `After you run your first rollover, the history appears here.` |
 
+## Tasks (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading chapter tasks...` |
+| Empty | `No tasks yet` | `Admins can create the first chapter task to assign ownership and award points.` |
+| Error | `Couldn't load tasks` | `Confirm your chapter access and retry. Assignees see only their own tasks; admins need tasks:manage to see every task.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |
