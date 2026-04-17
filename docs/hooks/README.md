@@ -3,6 +3,14 @@
 This directory documents hook-level conventions and test coverage for
 `packages/hooks`.
 
+## Query keys and chapter scope
+
+Endpoints that return data for the active chapter must include the active
+chapter id in the TanStack Query cache key (see `useActiveChapterId` in
+`use-frapp-client.tsx`). For example, `useSearch` uses
+`["search", chapterId, query]` so the command palette and chat search cannot
+show results cached from another chapter after a switch.
+
 ## Testing strategy
 
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a
@@ -72,3 +80,4 @@ From `packages/hooks` run:
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.
 Update: Added tests for useCheckIn hook
+- **`useSearch`**: `use-search.spec.tsx` covers success wiring, disabled states without a chapter or query, and cache isolation per chapter for the same search string.
