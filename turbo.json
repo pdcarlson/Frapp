@@ -1,7 +1,7 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "stream",
-  "globalEnv": ["CI", "PLAYWRIGHT_BASE_URL"],
+  "globalEnv": ["CI", "NODE_ENV", "PLAYWRIGHT_BASE_URL", "SUPABASE_AUTH_BYPASS"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],

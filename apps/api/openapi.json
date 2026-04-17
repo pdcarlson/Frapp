@@ -64,6 +64,34 @@
         ]
       }
     },
+    "/v1/users/me/permissions": {
+      "get": {
+        "description": "Returns the caller's flattened permission set for the chapter identified by the `x-chapter-id` header. Clients use this to render permission-aware UI without duplicating RBAC rules or issuing one request per role.",
+        "operationId": "UserController_getMyPermissions_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyPermissionsDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get effective permissions for the active chapter",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/v1/users/me/avatar-url": {
       "post": {
         "operationId": "UserController_requestAvatarUploadUrl_v1",
@@ -265,6 +293,170 @@
         "summary": "Remove chapter logo",
         "tags": [
           "Chapters"
+        ]
+      }
+    },
+    "/v1/roles": {
+      "get": {
+        "operationId": "RbacController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter roles",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "post": {
+        "operationId": "RbacController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/permissions-catalog": {
+      "get": {
+        "operationId": "RbacController_catalog_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get system permissions catalog",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/{id}": {
+      "patch": {
+        "operationId": "RbacController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      },
+      "delete": {
+        "operationId": "RbacController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a custom role",
+        "tags": [
+          "Roles & Permissions"
+        ]
+      }
+    },
+    "/v1/roles/transfer-presidency": {
+      "post": {
+        "operationId": "RbacController_transferPresidency_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferPresidencyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Transfer presidency to another member",
+        "tags": [
+          "Roles & Permissions"
         ]
       }
     },
@@ -515,170 +707,6 @@
         "summary": "List alumni members",
         "tags": [
           "Alumni"
-        ]
-      }
-    },
-    "/v1/roles": {
-      "get": {
-        "operationId": "RbacController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter roles",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      },
-      "post": {
-        "operationId": "RbacController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a custom role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/permissions-catalog": {
-      "get": {
-        "operationId": "RbacController_catalog_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get system permissions catalog",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/{id}": {
-      "patch": {
-        "operationId": "RbacController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      },
-      "delete": {
-        "operationId": "RbacController_delete_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a custom role",
-        "tags": [
-          "Roles & Permissions"
-        ]
-      }
-    },
-    "/v1/roles/transfer-presidency": {
-      "post": {
-        "operationId": "RbacController_transferPresidency_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransferPresidencyDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Transfer presidency to another member",
-        "tags": [
-          "Roles & Permissions"
         ]
       }
     },
@@ -3880,6 +3908,25 @@
       }
     },
     "schemas": {
+      "MyPermissionsDto": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "description": "Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.",
+            "example": [
+              "members:view",
+              "events:create"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "permissions"
+        ]
+      },
       "UpdateUserDto": {
         "type": "object",
         "properties": {
@@ -3981,102 +4028,6 @@
           "storage_path"
         ]
       },
-      "MemberProfileDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "user_id": {
-            "type": "string"
-          },
-          "chapter_id": {
-            "type": "string"
-          },
-          "role_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "has_completed_onboarding": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          },
-          "display_name": {
-            "type": "string"
-          },
-          "avatar_url": {
-            "type": "object",
-            "nullable": true
-          },
-          "bio": {
-            "type": "object",
-            "nullable": true
-          },
-          "graduation_year": {
-            "type": "object",
-            "nullable": true
-          },
-          "current_city": {
-            "type": "object",
-            "nullable": true
-          },
-          "current_company": {
-            "type": "object",
-            "nullable": true
-          },
-          "email": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "user_id",
-          "chapter_id",
-          "role_ids",
-          "has_completed_onboarding",
-          "created_at",
-          "updated_at",
-          "display_name",
-          "avatar_url",
-          "bio",
-          "graduation_year",
-          "current_city",
-          "current_company",
-          "email"
-        ]
-      },
-      "UpdateMemberRolesDto": {
-        "type": "object",
-        "properties": {
-          "role_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role_ids"
-        ]
-      },
-      "UpdateOnboardingDto": {
-        "type": "object",
-        "properties": {
-          "has_completed_onboarding": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "has_completed_onboarding"
-        ]
-      },
       "CreateRoleDto": {
         "type": "object",
         "properties": {
@@ -4130,6 +4081,102 @@
         },
         "required": [
           "target_member_id"
+        ]
+      },
+      "MemberProfileDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "has_completed_onboarding": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          },
+          "bio": {
+            "type": "string",
+            "nullable": true
+          },
+          "graduation_year": {
+            "type": "number",
+            "nullable": true
+          },
+          "current_city": {
+            "type": "string",
+            "nullable": true
+          },
+          "current_company": {
+            "type": "string",
+            "nullable": true
+          },
+          "email": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "chapter_id",
+          "role_ids",
+          "has_completed_onboarding",
+          "created_at",
+          "updated_at",
+          "display_name",
+          "avatar_url",
+          "bio",
+          "graduation_year",
+          "current_city",
+          "current_company",
+          "email"
+        ]
+      },
+      "UpdateMemberRolesDto": {
+        "type": "object",
+        "properties": {
+          "role_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_ids"
+        ]
+      },
+      "UpdateOnboardingDto": {
+        "type": "object",
+        "properties": {
+          "has_completed_onboarding": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "has_completed_onboarding"
         ]
       },
       "CreateInviteDto": {

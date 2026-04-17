@@ -39,6 +39,26 @@ export interface paths {
         patch: operations["UserController_updateMe_v1"];
         trace?: never;
     };
+    "/v1/users/me/permissions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get effective permissions for the active chapter
+         * @description Returns the caller's flattened permission set for the chapter identified by the `x-chapter-id` header. Clients use this to render permission-aware UI without duplicating RBAC rules or issuing one request per role.
+         */
+        get: operations["UserController_getMyPermissions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/users/me/avatar-url": {
         parameters: {
             query?: never;
@@ -122,6 +142,76 @@ export interface paths {
         post: operations["ChapterController_confirmLogoUpload_v1"];
         /** Remove chapter logo */
         delete: operations["ChapterController_deleteLogo_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter roles */
+        get: operations["RbacController_list_v1"];
+        put?: never;
+        /** Create a custom role */
+        post: operations["RbacController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/permissions-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get system permissions catalog */
+        get: operations["RbacController_catalog_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom role */
+        delete: operations["RbacController_delete_v1"];
+        options?: never;
+        head?: never;
+        /** Update a role */
+        patch: operations["RbacController_update_v1"];
+        trace?: never;
+    };
+    "/v1/roles/transfer-presidency": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer presidency to another member */
+        post: operations["RbacController_transferPresidency_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -224,76 +314,6 @@ export interface paths {
         get: operations["AlumniController_list_v1"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter roles */
-        get: operations["RbacController_list_v1"];
-        put?: never;
-        /** Create a custom role */
-        post: operations["RbacController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/permissions-catalog": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get system permissions catalog */
-        get: operations["RbacController_catalog_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a custom role */
-        delete: operations["RbacController_delete_v1"];
-        options?: never;
-        head?: never;
-        /** Update a role */
-        patch: operations["RbacController_update_v1"];
-        trace?: never;
-    };
-    "/v1/roles/transfer-presidency": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Transfer presidency to another member */
-        post: operations["RbacController_transferPresidency_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1640,6 +1660,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        MyPermissionsDto: {
+            /**
+             * @description Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.
+             * @example [
+             *       "members:view",
+             *       "events:create"
+             *     ]
+             */
+            permissions: string[];
+        };
         UpdateUserDto: {
             display_name?: string;
             bio?: string;
@@ -1674,28 +1704,6 @@ export interface components {
             /** @description Storage path returned from logo-url */
             storage_path: string;
         };
-        MemberProfileDto: {
-            id: string;
-            user_id: string;
-            chapter_id: string;
-            role_ids: string[];
-            has_completed_onboarding: boolean;
-            created_at: string;
-            updated_at: string;
-            display_name: string;
-            avatar_url: Record<string, never> | null;
-            bio: Record<string, never> | null;
-            graduation_year: Record<string, never> | null;
-            current_city: Record<string, never> | null;
-            current_company: Record<string, never> | null;
-            email: string;
-        };
-        UpdateMemberRolesDto: {
-            role_ids: string[];
-        };
-        UpdateOnboardingDto: {
-            has_completed_onboarding: boolean;
-        };
         CreateRoleDto: {
             name: string;
             permissions: string[];
@@ -1710,6 +1718,28 @@ export interface components {
         };
         TransferPresidencyDto: {
             target_member_id: string;
+        };
+        MemberProfileDto: {
+            id: string;
+            user_id: string;
+            chapter_id: string;
+            role_ids: string[];
+            has_completed_onboarding: boolean;
+            created_at: string;
+            updated_at: string;
+            display_name: string;
+            avatar_url: string | null;
+            bio: string | null;
+            graduation_year: number | null;
+            current_city: string | null;
+            current_company: string | null;
+            email: string;
+        };
+        UpdateMemberRolesDto: {
+            role_ids: string[];
+        };
+        UpdateOnboardingDto: {
+            has_completed_onboarding: boolean;
         };
         CreateInviteDto: {
             /** @description Role name to assign to invited member */
@@ -2129,6 +2159,25 @@ export interface operations {
             };
         };
     };
+    UserController_getMyPermissions_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyPermissionsDto"];
+                };
+            };
+        };
+    };
     UserController_requestAvatarUploadUrl_v1: {
         parameters: {
             query?: never;
@@ -2285,6 +2334,124 @@ export interface operations {
             };
         };
     };
+    RbacController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_catalog_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    RbacController_transferPresidency_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferPresidencyDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     MemberController_list_v1: {
         parameters: {
             query?: never;
@@ -2427,124 +2594,6 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_catalog_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_delete_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    RbacController_transferPresidency_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TransferPresidencyDto"];
-            };
-        };
-        responses: {
-            201: {
                 headers: {
                     [name: string]: unknown;
                 };

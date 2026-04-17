@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
   const client = useFrappClient();
@@ -48,5 +48,30 @@ export function useRequestAvatarUploadUrl() {
       if (error) throw error;
       return data;
     },
+  });
+}
+
+/**
+ * Load the caller's effective permission set for the active chapter.
+ *
+ * `staleTime` is intentionally long: permissions are already flattened
+ * server-side from role memberships, and role changes are rare. The hook
+ * is disabled until a chapter is selected so new sign-ins do not hit the
+ * API before the chapter store is hydrated.
+ */
+export function useMyPermissions(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const enabled = (options?.enabled ?? true) && !!chapterId;
+  return useQuery({
+    queryKey: ["user", "me", "permissions", chapterId],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/users/me/permissions");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    enabled,
   });
 }

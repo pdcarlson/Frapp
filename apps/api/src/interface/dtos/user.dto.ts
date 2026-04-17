@@ -8,6 +8,16 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class MyPermissionsDto {
+  @ApiProperty({
+    type: [String],
+    description:
+      "Caller's effective permission set for the active chapter. Contains the wildcard `*` for Presidents. Empty array means no active roles.",
+    example: ['members:view', 'events:create'],
+  })
+  permissions: string[];
+}
+
 export class RequestAvatarUploadUrlDto {
   @ApiProperty({ description: 'Original filename for the avatar image' })
   @IsString()

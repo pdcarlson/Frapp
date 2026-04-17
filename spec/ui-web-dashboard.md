@@ -79,26 +79,39 @@ Content area max-width: `1200px` with `px-6` padding.
 **Background:** `slate-900` (light mode), `slate-950` (dark mode) — always dark for contrast.
 **Text:** `slate-300`, active: `white` with `primary` left border accent.
 
-**Navigation items (top to bottom):**
+**Navigation sections (source of truth: [`apps/web/components/layout/nav-config.ts`](../apps/web/components/layout/nav-config.ts)):**
 
-| Icon | Label         | Route        | Permission         |
-| ---- | ------------- | ------------ | ------------------ |
-| 🏠   | Dashboard     | `/`          | —                  |
-| 👥   | Members       | `/members`   | `members:view`     |
-| 🔐   | Roles         | `/roles`     | `roles:manage`     |
-| 📅   | Events        | `/events`    | —                  |
-| ⭐   | Points        | `/points`    | —                  |
-| 💬   | Chat          | `/chat`      | —                  |
-| 📚   | Backwork      | `/backwork`  | —                  |
-| 📍   | Study Zones   | `/geofences` | `geofences:manage` |
-| ✅   | Tasks         | `/tasks`     | `tasks:manage`     |
-| 🕐   | Service Hours | `/service`   | `service:approve`  |
-| 📄   | Documents     | `/documents` | —                  |
-| 💰   | Billing       | `/billing`   | `billing:view`     |
-| 📊   | Reports       | `/reports`   | `reports:export`   |
-| ⚙️   | Settings      | `/settings`  | —                  |
+Items are grouped under short uppercase section labels so the sidebar reads as an
+operations console, not a single scrolling list. Each item declares either a
+`requirePermission` string or a `requireAnyOf` list; the shell hides items the
+caller cannot access and disables items that are on the roadmap but not yet wired
+to a route. The caller's effective permission set is loaded once via
+`GET /v1/users/me/permissions` and cached with TanStack Query.
 
-Items are hidden if the user lacks the required permission (resolved from their roles on login).
+| Section | Item | Route | Permission |
+| --- | --- | --- | --- |
+| Overview | Home | `/` | — |
+| Overview | Profile | *(planned)* | — |
+| People | Members | `/members` | `members:view` |
+| People | Alumni | *(planned)* | `members:view` |
+| People | Roles | *(planned)* | `roles:manage` |
+| Operations | Events | `/events` | — |
+| Operations | Points | `/points` | — |
+| Operations | Tasks | *(planned)* | any of `tasks:manage` |
+| Operations | Service Hours | *(planned)* | any of `service:log`, `service:approve` |
+| Communications | Chat | *(planned)* | — |
+| Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
+| Resources | Backwork | *(planned)* | — |
+| Resources | Documents | *(planned)* | — |
+| Resources | Study Zones | *(planned)* | `geofences:manage` |
+| Finance | Billing | `/billing` | `billing:view` |
+| Finance | Reports | *(planned)* | `reports:export` |
+| Settings | Settings | *(planned)* | — |
+
+Roadmap entries render disabled with a `Soon` chip so the full footprint of the
+dashboard is discoverable even before every route ships. Users with zero
+permissions can land on `/no-access`, which explains how to request a role
+without dumping them back to the sign-in page.
 
 **User section (bottom of sidebar):**
 
