@@ -225,8 +225,7 @@ function useActivityFeed() {
   const isLoading =
     enabled &&
     (eventsQuery.isPending ||
-      membersQuery.isPending ||
-      backworkQuery.isPending);
+      membersQuery.isPending);
   // Only treat hard failures as errors (403s from permissions are expected
   // for roles that can't see some feeds — treat them as empty).
   const criticalError =
