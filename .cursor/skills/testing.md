@@ -15,6 +15,7 @@
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
+| Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |
 
 ---
 
@@ -168,6 +169,11 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 3. `npm run test -w apps/api` → `CI / api-tests`
 4. `npm run check:api-contract` → `CI / api-contract-check`
 5. `npm run check:migration-safety` → `CI / migration-safety`
+6. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
+   intentional dashboard layout changes, refresh Linux baselines from
+   `apps/web` with `CI=true npx playwright test --update-snapshots` so they
+   match the job’s single-worker Playwright run; see
+   `apps/web/tests/visual/README.md`)
 
 ---
 
