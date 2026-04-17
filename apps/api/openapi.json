@@ -1489,7 +1489,13 @@
             "in": "query",
             "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode).",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
             }
           },
           {
@@ -3728,7 +3734,13 @@
             "in": "query",
             "description": "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
             }
           },
           {

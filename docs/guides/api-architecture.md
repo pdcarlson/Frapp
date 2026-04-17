@@ -13,7 +13,7 @@ The API in `apps/api` follows a strict layered structure:
 
 For list query parameters named `limit` (or similar caps), keep `@IsInt()` on the query DTO so non-integers still fail validation, document the effective 1–200 range in `@ApiPropertyOptional` (`minimum` / `maximum`), and **clamp** out-of-range integers in the application service using the shared constants in `apps/api/src/domain/constants/list-query-limits.ts`. That way HTTP clients get predictable pages without a 400 for a slightly high `limit`, while OpenAPI still documents the bounded page size.
 
-For optional boolean **query** parameters validated with `@IsBooleanString()`, remember that validator.js strict `isBoolean` accepts `true`, `false`, `1`, and `0` as strings. Controllers must not coerce with `=== 'true'` alone — use `parseBooleanQueryParam` from `apps/api/src/interface/utils/query-boolean.ts` so the service receives the same truth value the client was allowed to send.
+For optional boolean **query** parameters validated with `@IsBooleanString()`, remember that validator.js strict `isBoolean` accepts `true`, `false`, `1`, and `0` as strings. Controllers must not coerce with `=== 'true'` alone — use `parseBooleanQueryParam` from `apps/api/src/interface/utils/query-boolean.ts` so the service receives the same truth value the client was allowed to send. Query DTO fields should be typed as `BooleanStringQueryValue` (exported from the same module) so TypeScript matches what validation accepts.
 
 ```text
 src/

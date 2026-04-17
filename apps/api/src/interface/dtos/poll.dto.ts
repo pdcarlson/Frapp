@@ -11,6 +11,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import type { BooleanStringQueryValue } from '../utils/query-boolean';
 
 export class CreatePollDto {
   @ApiProperty({ description: 'Poll question' })
@@ -65,10 +66,11 @@ export class ListPollsQueryDto {
   @ApiPropertyOptional({
     description:
       "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
+    enum: ['true', 'false', '1', '0'],
   })
   @IsOptional()
   @IsBooleanString()
-  active?: 'true' | 'false';
+  active?: BooleanStringQueryValue;
 
   @ApiPropertyOptional({
     description:
