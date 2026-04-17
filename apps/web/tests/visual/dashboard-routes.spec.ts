@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 const dashboardRouteSnapshots = [
   { path: "/home", snapshotName: "home-main-content.png" },
   { path: "/members", snapshotName: "members-main-content.png" },
+  { path: "/alumni", snapshotName: "alumni-main-content.png" },
   { path: "/events", snapshotName: "events-main-content.png" },
   { path: "/points", snapshotName: "points-main-content.png" },
   { path: "/billing", snapshotName: "billing-main-content.png" },

@@ -105,10 +105,10 @@ export const DASHBOARD_NAV: NavSection[] = [
         id: "alumni",
         label: "Alumni",
         icon: GraduationCap,
+        href: "/alumni",
         breadcrumbTitle: "Alumni",
         description: "Searchable alumni directory with filters.",
-        status: "coming-soon",
-        statusLabel: "Soon",
+        status: "available",
         requirePermission: "members:view",
       },
       {

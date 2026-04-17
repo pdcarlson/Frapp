@@ -93,7 +93,7 @@ to a route. The caller's effective permission set is loaded once via
 | Overview | Home | `/home` | — |
 | Overview | Profile | `/profile` | — |
 | People | Members | `/members` | `members:view` |
-| People | Alumni | *(planned)* | `members:view` |
+| People | Alumni | `/alumni` | `members:view` |
 | People | Roles | *(planned)* | `roles:manage` |
 | Operations | Events | `/events` | — |
 | Operations | Points | `/points` | — |
