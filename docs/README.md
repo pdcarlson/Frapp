@@ -23,6 +23,7 @@ Pull requests that change files **outside** `docs/` or `spec/` must also change 
 
 ## Quick links
 
+- Web dashboard **chapter-wide list APIs** (`GET /v1/points/transactions`, `GET /v1/polls`) and **`polls:view_all` / default role seeds**: behavior in [`spec/behavior.md`](../spec/behavior.md) (RBAC table, Points ledger “Audit”, Polls list), nav and screens in [`spec/ui-web-dashboard.md`](../spec/ui-web-dashboard.md), implementation notes in [`docs/guides/api-architecture.md`](guides/api-architecture.md) (guards example + dashboard list endpoints).
 - Hands-on setup: [`docs/guides/getting-started.md`](guides/getting-started.md)
 - Local dev detail: [`docs/internal/LOCAL_DEV.md`](internal/LOCAL_DEV.md)
 - Environment variables: [`docs/internal/ENV_REFERENCE.md`](internal/ENV_REFERENCE.md)
