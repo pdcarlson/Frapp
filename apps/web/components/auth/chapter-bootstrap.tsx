@@ -38,7 +38,7 @@ type ChapterMembershipSummary = {
   };
 };
 
-const DASHBOARD_HOME_PATH = "/members";
+const DASHBOARD_HOME_PATH = "/home";
 
 function getErrorMessage(error: unknown): string {
   if (error && typeof error === "object" && "message" in error) {

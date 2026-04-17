@@ -1,7 +1,53 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
+import { useMyPermissions } from "./use-user";
+
+const POLLS_VIEW_ALL = "polls:view_all" as const;
+const WILDCARD_PERMISSION = "*" as const;
+
+function canListChapterPolls(
+  permissions: readonly string[] | null | undefined,
+): boolean {
+  if (!permissions || permissions.length === 0) return false;
+  if (permissions.includes(WILDCARD_PERMISSION)) return true;
+  return permissions.includes(POLLS_VIEW_ALL);
+}
+
+export function usePolls(options?: {
+  channelId?: string;
+  active?: boolean;
+  limit?: number;
+}) {
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
+  const permissionsQuery = useMyPermissions();
+  const canList = canListChapterPolls(permissionsQuery.data?.permissions);
+  return useQuery({
+    queryKey: ["polls", chapterId, options],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/polls", {
+        params: {
+          query: {
+            channel_id: options?.channelId,
+            active:
+              options?.active === undefined
+                ? undefined
+                : options.active
+                  ? "true"
+                  : "false",
+            limit: options?.limit,
+          },
+        },
+      });
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 30_000,
+    enabled: !!chapterId && permissionsQuery.isSuccess && canList,
+  });
+}
 
 export function usePoll(messageId: string) {
   const client = useFrappClient();
@@ -71,9 +117,13 @@ export function useVote() {
       queryClient.invalidateQueries({
         queryKey: ["polls", variables.messageId],
       });
+      queryClient.invalidateQueries({ queryKey: ["polls"] });
     },
   });
 }
+
+// Alias so feature code reads naturally — mirrors the mobile naming.
+export const useVoteOnPoll = useVote;
 
 export function useRemoveVote() {
   const client = useFrappClient();
@@ -89,6 +139,7 @@ export function useRemoveVote() {
     },
     onSuccess: (_data, messageId) => {
       queryClient.invalidateQueries({ queryKey: ["polls", messageId] });
+      queryClient.invalidateQueries({ queryKey: ["polls"] });
     },
   });
 }

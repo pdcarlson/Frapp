@@ -8,7 +8,10 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
+import type { BooleanStringQueryValue } from '../utils/query-boolean';
 
 export class CreatePollDto {
   @ApiProperty({ description: 'Poll question' })
@@ -52,4 +55,33 @@ export class VoteDto {
   @IsInt({ each: true })
   @Min(0, { each: true })
   option_indexes: number[];
+}
+
+export class ListPollsQueryDto {
+  @ApiPropertyOptional({ description: 'Scope results to a single channel.' })
+  @IsOptional()
+  @IsString()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
+    enum: ['true', 'false', '1', '0'],
+  })
+  @IsOptional()
+  @IsBooleanQueryString()
+  active?: BooleanStringQueryValue;
+
+  @ApiPropertyOptional({
+    description:
+      'Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.',
+    minimum: 1,
+    maximum: 200,
+    default: 50,
+    example: 50,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  limit?: number;
 }

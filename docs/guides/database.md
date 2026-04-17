@@ -26,6 +26,8 @@ This drops and recreates the database, applies all migrations, and reruns `seed.
 
 ## 3. Conventions
 
+- **RBAC seed vs existing data:** Default system roles and their `permissions` arrays are defined in `apps/api/src/domain/constants/permissions.ts` and inserted when a chapter is created. Changing that array does **not** rewrite rows for chapters that already exist; use a SQL migration under `supabase/migrations/` when a permission must be backfilled (for example `20260417140000_backfill_polls_view_all_system_roles.sql` for `polls:view_all` on Treasurer and for inserting VP/Secretary system roles with `members:view` and `polls:view_all` together so `PollController`’s class-level guard is satisfied). `20260417150000_backfill_members_view_vp_secretary.sql` remains an idempotent repair if a database applied an older revision of that backfill that omitted `members:view` on VP/Secretary. A small unit test in `apps/api/src/domain/constants/permissions.spec.ts` asserts VP/Secretary keep `members:view` alongside `polls:view_all` so they stay aligned with controller guards.
+
 - Primary keys: `uuid` generated via `gen_random_uuid()`
 - Timestamps: `created_at TIMESTAMPTZ DEFAULT now()`
 - Tenant scoping: nearly every table includes `chapter_id`
@@ -95,7 +97,7 @@ When adding tables:
 See `spec/architecture.md` §5 for a full table-by-table reference. At a high level:
 
 - **Core**: users, chapters, members, roles, invites
-- **Engagement**: events, event_attendance, point_transactions, study_sessions, service_entries, tasks
+- **Engagement**: events, event_attendance, point_transactions (including `idx_point_transactions_chapter_created_at` for admin audit pagination), study_sessions, service_entries, tasks
 - **Content**: backwork_departments, backwork_professors, backwork_resources, chapter_documents
 - **Communication**: chat_channel_categories, chat_channels, chat_messages, message_reactions
 - **Meta**: semester_archives, financial_invoices, financial_transactions, notifications, notification_preferences

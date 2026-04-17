@@ -30,6 +30,7 @@ export const SystemPermissions = {
   GEOFENCES_MANAGE: 'geofences:manage',
 
   POLLS_CREATE: 'polls:create',
+  POLLS_VIEW_ALL: 'polls:view_all',
 
   TASKS_MANAGE: 'tasks:manage',
 
@@ -62,6 +63,7 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BILLING_MANAGE,
       SystemPermissions.POINTS_ADJUST,
       SystemPermissions.POINTS_VIEW_ALL,
+      SystemPermissions.POLLS_VIEW_ALL,
       SystemPermissions.MEMBERS_VIEW,
       SystemPermissions.REPORTS_EXPORT,
       SystemPermissions.EVENTS_CREATE,
@@ -72,6 +74,26 @@ export const DEFAULT_SYSTEM_ROLES = [
     color: '#10B981',
   },
   {
+    name: 'Vice President',
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.POLLS_VIEW_ALL,
+    ],
+    is_system: true,
+    display_order: 3,
+    color: null,
+  },
+  {
+    name: 'Secretary',
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.POLLS_VIEW_ALL,
+    ],
+    is_system: true,
+    display_order: 4,
+    color: null,
+  },
+  {
     name: 'Member',
     permissions: [
       SystemPermissions.MEMBERS_VIEW,
@@ -80,7 +102,7 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.POLLS_CREATE,
     ],
     is_system: true,
-    display_order: 3,
+    display_order: 5,
     color: null,
   },
   {
@@ -90,14 +112,14 @@ export const DEFAULT_SYSTEM_ROLES = [
       SystemPermissions.BACKWORK_UPLOAD,
     ],
     is_system: true,
-    display_order: 4,
+    display_order: 6,
     color: null,
   },
   {
     name: 'Alumni',
     permissions: [SystemPermissions.MEMBERS_VIEW],
     is_system: true,
-    display_order: 5,
+    display_order: 7,
     color: '#6B7280',
   },
 ] as const;

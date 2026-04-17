@@ -15,6 +15,11 @@ import type {
   PointCategory,
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../domain/constants/list-query-limits';
 
 export type PointsWindow = 'all' | 'semester' | 'month';
 
@@ -94,6 +99,45 @@ export class PointsService {
     const balance = filtered.reduce((sum, txn) => sum + txn.amount, 0);
 
     return { balance, transactions: filtered };
+  }
+
+  /**
+   * Chapter-wide transaction list for the points admin Audit tab.
+   *
+   * Filters (user, category, flagged, `before` cursor), sort (newest first),
+   * and limit are applied in Postgres via `findByChapterFiltered`, so work and
+   * memory scale with the page size rather than full chapter history.
+   */
+  async listTransactions(
+    chapterId: string,
+    options: {
+      userId?: string;
+      category?: PointCategory;
+      flagged?: boolean;
+      before?: string;
+      limit?: number;
+    } = {},
+  ): Promise<PointTransaction[]> {
+    const limit = Math.max(
+      LIST_QUERY_LIMIT_MIN,
+      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
+    );
+
+    let beforeIso: string | undefined;
+    if (options.before) {
+      const parsed = new Date(options.before);
+      if (!Number.isNaN(parsed.getTime())) {
+        beforeIso = parsed.toISOString();
+      }
+    }
+
+    return this.pointTxnRepo.findByChapterFiltered(chapterId, {
+      userId: options.userId,
+      category: options.category,
+      flagged: options.flagged,
+      before: beforeIso,
+      limit,
+    });
   }
 
   async getLeaderboard(

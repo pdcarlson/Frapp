@@ -10,6 +10,14 @@ npm run test:visual -w apps/web          # uses playwright.config.ts webServer
 npx playwright test --update-snapshots   # refresh baselines (review the diff!)
 ```
 
+In **GitHub Actions**, `playwright.config.ts` sets `workers: 1` only when
+`CI=true`. Match that when updating Linux baselines so widths match CI:
+
+```bash
+cd apps/web
+CI=true npx playwright test --update-snapshots
+```
+
 Snapshots are stored per OS (Linux baselines are checked in for CI); regenerate
 on the same platform CI uses.
 

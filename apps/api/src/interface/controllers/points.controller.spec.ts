@@ -5,7 +5,11 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { SystemPermissions } from '../../domain/constants/permissions';
-import { AdjustPointsDto, PointsWindowQueryDto } from '../dtos/points.dto';
+import {
+  AdjustPointsDto,
+  ListPointTransactionsQueryDto,
+  PointsWindowQueryDto,
+} from '../dtos/points.dto';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
 
 describe('PointsController', () => {
@@ -17,6 +21,7 @@ describe('PointsController', () => {
       getUserSummary: jest.fn(),
       getLeaderboard: jest.fn(),
       adjustPoints: jest.fn(),
+      listTransactions: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -189,6 +194,87 @@ describe('PointsController', () => {
         controller.adjust,
       );
       expect(permissions).toEqual([SystemPermissions.POINTS_ADJUST]);
+    });
+  });
+
+  describe('listTransactions', () => {
+    it('forwards filter args to the service', async () => {
+      const chapterId = 'chapter-1';
+      const query: ListPointTransactionsQueryDto = {
+        user_id: 'user-42',
+        category: 'FINE',
+        flagged: 'true',
+        before: '2026-02-27T10:00:00.000Z',
+        limit: 10,
+      };
+      const expected = [{ id: 'pt-flagged' }] as any;
+      pointsService.listTransactions.mockResolvedValue(expected);
+
+      const result = await controller.listTransactions(chapterId, query);
+
+      expect(pointsService.listTransactions).toHaveBeenCalledWith(chapterId, {
+        userId: 'user-42',
+        category: 'FINE',
+        flagged: true,
+        before: '2026-02-27T10:00:00.000Z',
+        limit: 10,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('coerces flagged=false string to boolean false', async () => {
+      pointsService.listTransactions.mockResolvedValue([] as any);
+
+      await controller.listTransactions('chapter-1', { flagged: 'false' });
+
+      expect(pointsService.listTransactions).toHaveBeenCalledWith('chapter-1', {
+        userId: undefined,
+        category: undefined,
+        flagged: false,
+        before: undefined,
+        limit: undefined,
+      });
+    });
+
+    it('coerces flagged=1 to boolean true (validator boolean string)', async () => {
+      pointsService.listTransactions.mockResolvedValue([] as any);
+
+      await controller.listTransactions('chapter-1', { flagged: '1' });
+
+      expect(pointsService.listTransactions).toHaveBeenCalledWith('chapter-1', {
+        userId: undefined,
+        category: undefined,
+        flagged: true,
+        before: undefined,
+        limit: undefined,
+      });
+    });
+
+    it('leaves flagged undefined when the query omits it', async () => {
+      pointsService.listTransactions.mockResolvedValue([] as any);
+
+      await controller.listTransactions('chapter-1', {});
+
+      expect(pointsService.listTransactions).toHaveBeenCalledWith('chapter-1', {
+        userId: undefined,
+        category: undefined,
+        flagged: undefined,
+        before: undefined,
+        limit: undefined,
+      });
+    });
+
+    it('declares POINTS_VIEW_ALL on the handler; class baseline MEMBERS_VIEW is merged by PermissionsGuard', () => {
+      const handlerPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.listTransactions,
+      );
+      const classPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PointsController,
+      );
+      expect(handlerPermissions).toEqual([SystemPermissions.POINTS_VIEW_ALL]);
+      expect(classPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 });

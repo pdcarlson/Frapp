@@ -44,6 +44,18 @@ export interface IChatMessageRepository {
   ): Promise<ChatMessage[]>;
   findPinnedByChannel(channelId: string): Promise<ChatMessage[]>;
   countPinnedByChannel(channelId: string): Promise<number>;
+  /**
+   * Newest-first list of POLL messages across every channel in the chapter.
+   * Optional `channelId` scopes to a single channel. `limit` caps result size
+   * (undefined, non-finite, or non-positive values use the shared list default;
+   * finite positive values are clamped to the shared list min/max in the repo).
+   * When `active` is set, expiration is enforced in SQL (via `metadata.expires_at`)
+   * so `limit` applies after that filter, not before.
+   */
+  findPollsByChapter(
+    chapterId: string,
+    options?: { channelId?: string; limit?: number; active?: boolean },
+  ): Promise<ChatMessage[]>;
   create(data: Partial<ChatMessage>): Promise<ChatMessage>;
   update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage>;
 }

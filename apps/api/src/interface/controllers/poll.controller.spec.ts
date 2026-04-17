@@ -4,7 +4,9 @@ import { PollService } from '../../application/services/poll.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
-import { CreatePollDto, VoteDto } from '../dtos/poll.dto';
+import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 describe('PollController', () => {
   let controller: PollController;
@@ -16,6 +18,7 @@ describe('PollController', () => {
       vote: jest.fn(),
       removeVote: jest.fn(),
       getPoll: jest.fn(),
+      listPolls: jest.fn(),
     } as any;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -128,6 +131,61 @@ describe('PollController', () => {
         chapterId,
       );
       expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('listPolls', () => {
+    it('should list polls with query options', async () => {
+      const chapterId = 'chapter-123';
+      const userId = 'user-123';
+      const query: ListPollsQueryDto = {
+        channel_id: 'ch-a',
+        active: 'true',
+        limit: 25,
+      };
+      const expected = [{ id: 'poll-1' }] as any;
+
+      pollService.listPolls.mockResolvedValue(expected);
+
+      const result = await controller.listPolls(chapterId, userId, query);
+
+      expect(pollService.listPolls).toHaveBeenCalledWith(chapterId, {
+        channelId: 'ch-a',
+        active: true,
+        limit: 25,
+        userId,
+      });
+      expect(result).toEqual(expected);
+    });
+
+    it('coerces active=1 to boolean true (validator boolean string)', async () => {
+      const chapterId = 'chapter-123';
+      const userId = 'user-123';
+      const query: ListPollsQueryDto = { active: '1', limit: 10 };
+
+      pollService.listPolls.mockResolvedValue([] as any);
+
+      await controller.listPolls(chapterId, userId, query);
+
+      expect(pollService.listPolls).toHaveBeenCalledWith(chapterId, {
+        channelId: undefined,
+        active: true,
+        limit: 10,
+        userId,
+      });
+    });
+
+    it('declares POLLS_VIEW_ALL on the handler and MEMBERS_VIEW at class level (PermissionsGuard merges both)', () => {
+      const handlerPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        controller.listPolls,
+      );
+      const classPermissions = Reflect.getMetadata(
+        PERMISSIONS_KEY,
+        PollController,
+      );
+      expect(handlerPermissions).toEqual([SystemPermissions.POLLS_VIEW_ALL]);
+      expect(classPermissions).toEqual([SystemPermissions.MEMBERS_VIEW]);
     });
   });
 

@@ -90,23 +90,40 @@ to a route. The caller's effective permission set is loaded once via
 
 | Section | Item | Route | Permission |
 | --- | --- | --- | --- |
-| Overview | Home | `/` | — |
-| Overview | Profile | *(planned)* | — |
+| Overview | Home | `/home` | — |
+| Overview | Profile | `/profile` | — |
 | People | Members | `/members` | `members:view` |
-| People | Alumni | *(planned)* | `members:view` |
-| People | Roles | *(planned)* | `roles:manage` |
+| People | Alumni | `/alumni` | `members:view` |
+| People | Roles | `/roles` | `roles:manage` |
 | Operations | Events | `/events` | — |
 | Operations | Points | `/points` | — |
-| Operations | Tasks | *(planned)* | any of `tasks:manage` |
-| Operations | Service Hours | *(planned)* | any of `service:log`, `service:approve` |
-| Communications | Chat | *(planned)* | — |
-| Communications | Polls | *(planned)* | any of `polls:create`, `channels:manage` |
-| Resources | Backwork | *(planned)* | — |
-| Resources | Documents | *(planned)* | — |
-| Resources | Study Zones | *(planned)* | `geofences:manage` |
+| Operations | Tasks | `/tasks` | — (filtered to own tasks unless `tasks:manage`) |
+| Operations | Service Hours | `/service` | — (log/approve gated inline via `service:log` / `service:approve`) |
+| Communications | Chat | `/chat` | — (send gated by channel permissions) |
+| Communications | Polls | `/polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
+| Resources | Backwork | `/backwork` | — (upload gated by `backwork:upload`) |
+| Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
+| Resources | Study session | `/study` | — |
+| Resources | Study Zones | `/geofences` | `geofences:manage` |
 | Finance | Billing | `/billing` | `billing:view` |
-| Finance | Reports | *(planned)* | `reports:export` |
-| Settings | Settings | *(planned)* | — |
+| Finance | Reports | `/reports` | `reports:export` |
+| Settings | Settings | `/settings` | — |
+
+**Web study hours** is a deliberate adaptation of the mobile foreground
+enforcement rule. The `/study` timer uses the `Page Visibility API` — when
+the tab is hidden the client-side elapsed timer pauses and the heartbeat
+stops firing. A `pagehide` listener also best-effort stops the session when
+the tab closes (the server additionally expires sessions after 10 minutes
+of stale heartbeats). Members who need uninterrupted tracking should use
+the mobile app, which keeps the session alive through OS foreground
+controls. This divergence is called out in-copy on `/study` so there are
+no surprises.
+
+The unauthenticated landing page lives at `/` and redirects to `/home` once a
+Supabase session is present. `/dashboard` is a legacy alias that also redirects
+to `/home`. The dashboard route group includes `app/(dashboard)/page.tsx`, which
+redirects to `/home` as well, so the `(dashboard)` tree always has an index page
+for parity with bookmarks and internal tooling that expect a segment root.
 
 Roadmap entries render disabled with a `Soon` chip so the full footprint of the
 dashboard is discoverable even before every route ships. Users with zero
@@ -136,14 +153,14 @@ without dumping them back to the sign-in page.
 
 - Breadcrumb: auto-generated from route segments
 - Search: Opens command palette (⌘K / Ctrl+K). Searches across members, events, backwork.
-- Notifications: Bell icon with unread badge count. Click opens notification drawer (slide from right).
+- Notifications: Bell icon with a live unread badge count. Click opens the notification drawer (slide from right). The drawer polls `/v1/notifications` via TanStack Query and subscribes to Supabase Realtime INSERT events on `public.notifications` filtered by the current user so new notifications appear without a manual refresh. Tapping a notification deep-links to the dashboard surface (events, points, billing, tasks, service, profile) and marks it read via `PATCH /v1/notifications/{id}/read`. Web push is intentionally out of scope for this phase per `spec/behavior.md §7`.
 - Theme: Toggle (sun/moon/system cycle)
 
 ---
 
 ## 3. Screen Specifications
 
-### 3.1 Dashboard Home (`/`)
+### 3.1 Dashboard Home (`/home`)
 
 **Purpose:** Chapter health at a glance. The first thing an admin sees.
 
@@ -181,6 +198,7 @@ without dumping them back to the sign-in page.
 - List of recent chapter events (last 10)
 - Each item: icon + description + relative timestamp ("2 hours ago")
 - Click navigates to relevant screen
+- Leaderboard lines resolve display names by matching the points subject to chapter members on **both** membership `id` and auth `user_id` (and tolerate camelCase JSON keys) so the feed does not fall back to generic copy when those identifiers differ.
 
 **Quick actions:**
 
@@ -277,6 +295,17 @@ without dumping them back to the sign-in page.
 - Meeting minutes: Markdown editor below attendance
 - "Download .ics" button
 
+The attendance roster is **live**: the web client subscribes to Supabase
+Realtime Postgres changes on `event_attendance` filtered by `event_id` and
+invalidates the corresponding TanStack query cache on every INSERT/UPDATE.
+Admins watching one tab see self check-ins from other devices without
+refreshing. The realtime primitive that powers this — `useRealtimeTable` in
+`apps/web/lib/realtime/use-realtime-table.ts` — is also reused by the events
+list itself (new events propagate immediately) and will back chat and
+notifications in later slices. A single shared browser Supabase client
+multiplexes every subscription over one websocket (see
+[`apps/web/lib/realtime/supabase-realtime.ts`](../apps/web/lib/realtime/supabase-realtime.ts)).
+
 **Create/Edit Event form (modal or full page):**
 
 - Name, description, location (text inputs)
@@ -325,6 +354,13 @@ without dumping them back to the sign-in page.
 - Each: amount (+/-), member name, category badge (ATTENDANCE, SERVICE, MANUAL, FINE, STUDY), description, timestamp
 - Flagged transactions: yellow warning icon, filterable
 
+**Audit tab:** chapter-wide transaction log with a "Show flagged only" toggle
+and category + member filters. Backed by `GET /v1/points/transactions` which
+requires `points:view_all`. The optional `limit` query parameter is validated
+to 1–200 at the API boundary (default 50 when omitted). Members without that permission see an explanatory
+card pointing at their chapter president. Flags are raised automatically when
+`|amount| ≥ 100` on a manual adjustment (see `spec/behavior.md §4`).
+
 **Adjust modal:**
 
 - Member selector (searchable dropdown)
@@ -334,6 +370,14 @@ without dumping them back to the sign-in page.
 - Confirmation dialog: "Award +25 points to John Doe? Reason: Perfect attendance"
 
 ### 3.5 Billing (`/billing`)
+
+> **Invoice admin:** `/billing` renders an `InvoiceAdminCard` below the
+> subscription summary that lists every member invoice with inline status
+> transitions (DRAFT → OPEN → PAID / VOID), a dedicated OVERDUE filter backed
+> by `/v1/invoices/overdue`, and a Create-invoice dialog. The admin section
+> is gated behind `billing:manage` via `<Can>`; members see only their own
+> invoices via the existing table above.
+
 
 ```
 ┌──────────────────────────────────────────────────┐

@@ -24,7 +24,7 @@ export function useUpdateUser() {
       display_name?: string;
       bio?: string;
       avatar_url?: string;
-      graduation_year?: number;
+      graduation_year?: number | null;
       current_city?: string;
       current_company?: string;
     }) => {

@@ -20,8 +20,13 @@ import {
   CurrentChapterId,
   CurrentUser,
 } from '../decorators/current-user.decorator';
-import { AdjustPointsDto, PointsWindowQueryDto } from '../dtos/points.dto';
+import {
+  AdjustPointsDto,
+  ListPointTransactionsQueryDto,
+  PointsWindowQueryDto,
+} from '../dtos/points.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Points')
 @ApiBearerAuth()
@@ -50,6 +55,26 @@ export class PointsController {
   ) {
     const window: PointsWindow = query.window ?? 'all';
     return this.pointsService.getLeaderboard(chapterId, window);
+  }
+
+  @Get('transactions')
+  @RequirePermissions(SystemPermissions.POINTS_VIEW_ALL)
+  @ApiOperation({
+    summary: 'List chapter-wide point transactions',
+    description:
+      'Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).',
+  })
+  async listTransactions(
+    @CurrentChapterId() chapterId: string,
+    @Query() query: ListPointTransactionsQueryDto,
+  ) {
+    return this.pointsService.listTransactions(chapterId, {
+      userId: query.user_id,
+      category: query.category,
+      flagged: parseBooleanQueryParam(query.flagged),
+      before: query.before,
+      limit: query.limit,
+    });
   }
 
   @Get('members/:userId')

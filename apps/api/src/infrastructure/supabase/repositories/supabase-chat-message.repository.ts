@@ -1,10 +1,27 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
 import { ChatMessage } from '../../../domain/entities/chat.entity';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../../domain/constants/list-query-limits';
 
 const DEFAULT_MESSAGE_LIMIT = 50;
+
+function effectivePollListLimit(requested?: number): number {
+  if (requested === undefined || !Number.isFinite(requested)) {
+    return LIST_QUERY_LIMIT_DEFAULT;
+  }
+  const n = Math.trunc(requested);
+  if (n <= 0) {
+    return LIST_QUERY_LIMIT_MIN;
+  }
+  return Math.max(LIST_QUERY_LIMIT_MIN, Math.min(n, LIST_QUERY_LIMIT_MAX));
+}
 
 @Injectable()
 export class SupabaseChatMessageRepository implements IChatMessageRepository {
@@ -62,6 +79,47 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('is_pinned', true);
     if (error) throw error;
     return count ?? 0;
+  }
+
+  async findPollsByChapter(
+    chapterId: string,
+    options?: { channelId?: string; limit?: number; active?: boolean },
+  ): Promise<ChatMessage[]> {
+    // chat_messages doesn't carry chapter_id directly — filter via the
+    // chat_channels foreign key relationship. Supabase projects the
+    // inner-joined chat_channels row back but we only care about the
+    // message columns.
+    let query = this.supabase
+      .from('chat_messages')
+      .select('*, chat_channels!inner(chapter_id)')
+      .eq('type', 'POLL')
+      .eq('chat_channels.chapter_id', chapterId)
+      .order('created_at', { ascending: false });
+
+    if (options?.channelId) {
+      query = query.eq('channel_id', options.channelId);
+    }
+
+    if (options?.active === true || options?.active === false) {
+      const nowIso = new Date().toISOString();
+      // PostgREST `.or()` strings need explicit quoting; `.filter()` encodes values.
+      const safeNowForOr = escapeFilterValue(nowIso);
+      if (options.active === true) {
+        query = query.or(
+          `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNowForOr}`,
+        );
+      } else {
+        query = query
+          .not('metadata->>expires_at', 'is', null)
+          .filter('metadata->>expires_at', 'lte', nowIso);
+      }
+    }
+
+    query = query.limit(effectivePollListLimit(options?.limit));
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data as unknown as ChatMessage[]) || [];
   }
 
   async create(data: Partial<ChatMessage>): Promise<ChatMessage> {

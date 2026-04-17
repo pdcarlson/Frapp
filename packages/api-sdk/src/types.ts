@@ -649,6 +649,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/points/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chapter-wide point transactions
+         * @description Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         */
+        get: operations["PointsController_listTransactions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/points/members/{userId}": {
         parameters: {
             query?: never;
@@ -1520,6 +1540,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/polls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List polls across the chapter
+         * @description Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.
+         */
+        get: operations["PollController_listPolls_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/polls/{messageId}": {
         parameters: {
             query?: never;
@@ -1674,7 +1714,7 @@ export interface components {
             display_name?: string;
             bio?: string;
             avatar_url?: string;
-            graduation_year?: number;
+            graduation_year?: number | null;
             current_city?: string;
             current_company?: string;
         };
@@ -3082,6 +3122,33 @@ export interface operations {
         parameters: {
             query?: {
                 window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_listTransactions_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter to a single member */
+                user_id?: string;
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
+                flagged?: "true" | "false" | "1" | "0";
+                /** @description ISO8601 cursor — return transactions created before this timestamp */
+                before?: string;
+                /** @description Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -4522,6 +4589,30 @@ export interface operations {
             path: {
                 messageId: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PollController_listPolls_v1: {
+        parameters: {
+            query?: {
+                /** @description Scope results to a single channel. */
+                channel_id?: string;
+                /** @description Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls. */
+                active?: "true" | "false" | "1" | "0";
+                /** @description Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

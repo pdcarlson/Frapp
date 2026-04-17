@@ -10,7 +10,10 @@ type BaseProps = {
   /**
    * Rendered while the permission request is in flight. Defaults to `null`
    * — callers who want a skeleton should pass one explicitly so we never
-   * show a flash of un-permitted content.
+   * show a flash of un-permitted content. `null` keeps permission-denied
+   * UX crisp: the button/page simply isn't there, rather than showing a
+   * placeholder that implies "loading" even to permitted users whose
+   * fetch is still in flight.
    */
   fallback?: ReactNode;
   /**

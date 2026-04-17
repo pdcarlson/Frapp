@@ -51,6 +51,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `backwork:admin`      | Manage courses, professors, delete resources           |
 | `geofences:manage`    | Create/edit/delete study geofences                     |
 | `polls:create`        | Create polls in channels                               |
+| `polls:view_all`      | List polls chapter-wide with aggregate vote tallies    |
 | `tasks:manage`        | Create, assign, and confirm tasks                      |
 | `chapter_docs:upload` | Upload documents to Chapter Files                      |
 | `chapter_docs:manage` | Delete/organize documents in Chapter Files             |
@@ -79,7 +80,15 @@ Permissions are never cached across requests. Each request freshly resolves the 
 
 ### Role Lifecycle
 
-- On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Member, New Member, Alumni. Each has a sensible default permission set.
+- On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Vice President, Secretary, Member, New Member, Alumni. Each has a sensible default permission set.
+- **Seeded permissions (must match `DEFAULT_SYSTEM_ROLES` in `apps/api/src/domain/constants/permissions.ts`):**
+  - **President:** `*` (wildcard).
+  - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
+  - **Vice President:** `members:view`, `polls:view_all` (baseline chapter API access plus dashboard chapter-wide poll list and tallies).
+  - **Secretary:** `members:view`, `polls:view_all` (same as Vice President).
+  - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
+  - **New Member:** `members:view`, `backwork:upload`.
+  - **Alumni:** `members:view`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
 - Chapter admins with `roles:manage` can create unlimited **custom roles**.
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color** (hex string, for chat name colors like Discord).
@@ -193,6 +202,18 @@ When a user checks into an event:
 - Configurable time window: all-time, this semester, this month.
 - Visible to all members.
 - Admins see the full transaction ledger for all members. Members see only their own transactions plus the leaderboard rankings.
+
+### Chapter-wide transaction list (web dashboard Audit)
+
+- `GET /v1/points/transactions` returns a **newest-first**, cursor-paginated slice of `point_transactions` for the active chapter. It backs the Points **Audit** tab in the web dashboard (filters for member, category, flagged state, and deep pagination).
+- Requires `points:view_all` (same permission as viewing another member’s point summary on `GET /v1/points/members/:userId`).
+- Query parameters (all optional unless noted):
+  - `user_id` — restrict to one member’s rows.
+  - `category` — one of `ATTENDANCE`, `ACADEMIC`, `SERVICE`, `FINE`, `MANUAL`, `STUDY`.
+  - `flagged` — boolean string (`true`, `false`, `1`, `0`, matching validator strict boolean strings); when true (`true` or `1`), only rows the anomaly rules marked for review.
+  - `before` — ISO8601 timestamp cursor; return transactions created **strictly before** this instant (older page).
+  - `limit` — page size; default **50**, clamped to **1–200** inclusive on the server.
+- Ordering and caps are implementation details of the list endpoint; the **append-only** and **immutability** rules in *Anti-Fraud* still apply to underlying rows.
 
 ### Edge Cases
 
@@ -540,6 +561,8 @@ While a study session is active, the app displays a dedicated study mode screen:
 ## 11. Polls and Voting
 
 - Users with `polls:create` permission can create polls in any channel they have access to.
+- `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `members:view` (controller baseline) **and** `polls:view_all` on the list route. `PermissionsGuard` merges class- and handler-level `@RequirePermissions` so both apply together. By default `polls:view_all` is **not** on the Member role; it is on Treasurer, Vice President, Secretary (and President via `*`). Vice President and Secretary also carry `members:view` in the default seed so the guard chain succeeds. Existing databases are backfilled via migration `20260417140000_backfill_polls_view_all_system_roles.sql` (VP/Secretary inserts include both permissions). Migration `20260417150000_backfill_members_view_vp_secretary.sql` is an idempotent repair for environments that ran an older revision of the backfill without `members:view` on those roles. Chapters may grant `polls:view_all` through custom roles if needed.
+- Query parameters for `GET /v1/polls`: optional `channel_id`; optional `active` as a boolean string (`true`, `false`, `1`, or `0`); optional `limit` (default 50, clamped 1–200).
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
 - When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.
@@ -571,6 +594,8 @@ The home screen shows a unified activity feed for the user's active chapter:
 - Announcements: latest announcement.
 
 Feed items are pulled from existing data (events, point_transactions, backwork_resources, members, chat_messages where channel = announcements). This is a **read-only aggregation view**, not a separate data store.
+
+**Web dashboard:** Leaderboard lines in the home activity feed resolve member display names by trying every id shape the API may send (`user_id`, `member_id`, and generic `id`) against the chapter member list, so mismatched field names between points totals and `MemberProfileDto` do not silently fall back to a generic label.
 
 ---
 

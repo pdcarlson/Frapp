@@ -1,6 +1,6 @@
 "use client";
 
-const DEFAULT_DASHBOARD_PATH = "/members";
+const DEFAULT_DASHBOARD_PATH = "/home";
 
 export function resolveRedirectPath(value: string | null | undefined): string {
   if (!value || !value.startsWith("/")) {
@@ -9,6 +9,6 @@ export function resolveRedirectPath(value: string | null | undefined): string {
   return value;
 }
 
-export function createDashboardRedirectPath(pathname = "/members") {
+export function createDashboardRedirectPath(pathname = DEFAULT_DASHBOARD_PATH) {
   return pathname.startsWith("/") ? pathname : DEFAULT_DASHBOARD_PATH;
 }

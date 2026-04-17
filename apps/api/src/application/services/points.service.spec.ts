@@ -38,12 +38,19 @@ describe('PointsService', () => {
   const txn2: PointTransaction = {
     id: 'pt-2',
     chapter_id: 'ch-1',
-    user_id: 'user-1',
+    user_id: 'user-2',
     amount: 5,
     category: 'MANUAL',
     description: 'Bonus',
     metadata: { adjusted_by: 'admin-1' },
     created_at: '2026-02-26T19:00:00.000Z',
+  };
+
+  /** Second transaction for `user-1` (same shape as the old `txn2` when it was mislabeled user-1). */
+  const txn1b: PointTransaction = {
+    ...txn2,
+    id: 'pt-1b',
+    user_id: 'user-1',
   };
 
   const txn3: PointTransaction = {
@@ -62,6 +69,7 @@ describe('PointsService', () => {
       create: jest.fn(),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
+      findByChapterFiltered: jest.fn(),
       countRecentAdjustments: jest.fn().mockResolvedValue(0),
     };
 
@@ -93,7 +101,7 @@ describe('PointsService', () => {
 
   describe('getUserSummary', () => {
     it('should return balance and transactions for user', async () => {
-      mockPointTxnRepo.findByUser.mockResolvedValue([txn1, txn2]);
+      mockPointTxnRepo.findByUser.mockResolvedValue([txn1, txn1b]);
 
       const result = await service.getUserSummary('ch-1', 'user-1', 'all');
 
@@ -143,9 +151,9 @@ describe('PointsService', () => {
       expect(mockPointTxnRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(result).toHaveLength(2);
       expect(result[0].user_id).toBe('user-2');
-      expect(result[0].total).toBe(20);
+      expect(result[0].total).toBe(25);
       expect(result[1].user_id).toBe('user-1');
-      expect(result[1].total).toBe(15);
+      expect(result[1].total).toBe(10);
     });
 
     it('should return empty array when no transactions', async () => {
@@ -450,7 +458,146 @@ describe('PointsService', () => {
 
       expect(result).toHaveLength(2);
       expect(result[0].user_id).toBe('user-2');
-      expect(result[0].total).toBe(20);
+      expect(result[0].total).toBe(25);
+    });
+  });
+
+  describe('listTransactions', () => {
+    const flagged: PointTransaction = {
+      id: 'pt-flagged',
+      chapter_id: 'ch-1',
+      user_id: 'user-2',
+      amount: -200,
+      category: 'FINE',
+      description: 'Anomaly check',
+      metadata: { flagged: true, adjusted_by: 'admin-1' },
+      created_at: '2026-02-27T10:00:00.000Z',
+    };
+
+    it('returns newest-first, capped at the requested limit', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
+        flagged,
+        txn2,
+        txn1,
+      ]);
+
+      const result = await service.listTransactions('ch-1', { limit: 3 });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 3 }),
+      );
+      expect(result).toHaveLength(3);
+      expect(result[0].id).toBe('pt-flagged');
+      expect(result[1].id).toBe('pt-2');
+      expect(result[2].id).toBe('pt-1');
+    });
+
+    it('filters to a single user', async () => {
+      // Repo applies `userId` in SQL; the service returns rows as-is (no re-filter).
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([txn1, txn1b]);
+
+      const result = await service.listTransactions('ch-1', {
+        userId: 'user-1',
+      });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ userId: 'user-1' }),
+      );
+      expect(result.every((txn) => txn.user_id === 'user-1')).toBe(true);
+      expect(result).toHaveLength(2);
+    });
+
+    it('filters to a category', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([flagged]);
+
+      const result = await service.listTransactions('ch-1', {
+        category: 'FINE',
+      });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ category: 'FINE' }),
+      );
+      expect(result).toEqual([flagged]);
+    });
+
+    it('filters to flagged transactions when flagged=true', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([flagged]);
+
+      const result = await service.listTransactions('ch-1', { flagged: true });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ flagged: true }),
+      );
+      expect(result).toEqual([flagged]);
+    });
+
+    it('excludes flagged transactions when flagged=false', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
+        txn1,
+        txn2,
+        txn3,
+      ]);
+
+      const result = await service.listTransactions('ch-1', {
+        flagged: false,
+      });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ flagged: false }),
+      );
+      expect(result.map((txn) => txn.id)).not.toContain('pt-flagged');
+      expect(result).toHaveLength(3);
+    });
+
+    it('applies a `before` cursor strictly', async () => {
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
+        txn2,
+        txn1,
+        txn3,
+      ]);
+
+      const before = '2026-02-27T10:00:00.000Z';
+      const result = await service.listTransactions('ch-1', {
+        before,
+      });
+
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          before: new Date(before).toISOString(),
+        }),
+      );
+      expect(result.map((txn) => txn.id)).not.toContain('pt-flagged');
+    });
+
+    it('clamps limit to the 1-200 range', async () => {
+      const many = Array.from({ length: 5 }, (_, idx) => ({
+        ...txn1,
+        id: `pt-many-${idx}`,
+        created_at: new Date(2026, 0, idx + 1).toISOString(),
+      }));
+      mockPointTxnRepo.findByChapterFiltered.mockImplementation(
+        async (_chapterId, opts) => many.slice(0, opts.limit),
+      );
+
+      const tooLow = await service.listTransactions('ch-1', { limit: 0 });
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 1 }),
+      );
+      expect(tooLow).toHaveLength(1);
+
+      const tooHigh = await service.listTransactions('ch-1', { limit: 9999 });
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 200 }),
+      );
+      expect(tooHigh).toHaveLength(5);
     });
   });
 });

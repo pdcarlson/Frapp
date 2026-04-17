@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
@@ -12,6 +13,11 @@ import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.reposi
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
+import {
+  LIST_QUERY_LIMIT_DEFAULT,
+  LIST_QUERY_LIMIT_MAX,
+  LIST_QUERY_LIMIT_MIN,
+} from '../../domain/constants/list-query-limits';
 
 const MIN_OPTIONS = 2;
 const MAX_OPTIONS = 10;
@@ -41,6 +47,8 @@ export interface PollWithResults {
 
 @Injectable()
 export class PollService {
+  private readonly logger = new Logger(PollService.name);
+
   constructor(
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
@@ -234,5 +242,123 @@ export class PollService {
     const expiresAt = metadata.expires_at;
     if (!expiresAt) return false;
     return new Date(expiresAt) <= new Date();
+  }
+
+  /**
+   * Chapter-wide poll list for the admin Polls surface. Filters by channel
+   * and/or active/expired state, and includes vote tallies so the list can
+   * show aggregate results inline. `userId` opts the caller into
+   * `userVotes` so members see their own selections highlighted.
+   */
+  async listPolls(
+    chapterId: string,
+    options: {
+      channelId?: string;
+      active?: boolean;
+      limit?: number;
+      userId?: string;
+    } = {},
+  ): Promise<PollWithResults[]> {
+    const limit = Math.max(
+      LIST_QUERY_LIMIT_MIN,
+      Math.min(
+        options.limit ?? LIST_QUERY_LIMIT_DEFAULT,
+        LIST_QUERY_LIMIT_MAX,
+      ),
+    );
+
+    const messages = await this.messageRepo.findPollsByChapter(chapterId, {
+      channelId: options.channelId,
+      limit,
+      active: options.active,
+    });
+
+    const listRows: {
+      message: ChatMessage;
+      metadata: PollMetadata;
+      expired: boolean;
+    }[] = [];
+    for (const message of messages) {
+      const metadata = message.metadata as PollMetadata;
+      const expired = this.isPollExpired(metadata);
+      // Active/expired scoping is applied in `findPollsByChapter` before `limit`.
+      // Do not re-filter here: a second `new Date()` can disagree with the query
+      // instant and shrink the page below `limit`.
+      listRows.push({ message, metadata, expired });
+    }
+
+    const messageIds = listRows.map((row) => row.message.id);
+    const voteCountsByMessageId = new Map<string, Map<number, number>>();
+    let userVotesByMessageId: Map<string, number[]> | null = null;
+
+    try {
+      const totals =
+        await this.voteRepo.aggregateOptionTotalsByMessages(messageIds);
+      for (const row of totals) {
+        let byOption = voteCountsByMessageId.get(row.message_id);
+        if (!byOption) {
+          byOption = new Map<number, number>();
+          voteCountsByMessageId.set(row.message_id, byOption);
+        }
+        byOption.set(row.option_index, row.vote_count);
+      }
+    } catch (error) {
+      // Failed aggregate read: return polls with zero vote tallies rather than failing the list.
+      this.logger.error(
+        `Batch poll vote totals RPC failed for chapter ${chapterId} (${messageIds.length} polls); vote tallies omitted`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+
+    if (options.userId) {
+      userVotesByMessageId = new Map<string, number[]>();
+      try {
+        const userRows = await this.voteRepo.findUserVotesByMessagesForUser(
+          messageIds,
+          options.userId,
+        );
+        for (const row of userRows) {
+          let userList = userVotesByMessageId.get(row.message_id);
+          if (!userList) {
+            userList = [];
+            userVotesByMessageId.set(row.message_id, userList);
+          }
+          userList.push(row.option_index);
+        }
+      } catch (error) {
+        this.logger.error(
+          `Batch poll user-vote RPC failed for chapter ${chapterId} (user ${options.userId}); userVotes omitted`,
+          error instanceof Error ? error.stack : String(error),
+        );
+        userVotesByMessageId = new Map();
+      }
+    }
+
+    const results: PollWithResults[] = [];
+    for (const { message, metadata, expired } of listRows) {
+      const countsByOption = voteCountsByMessageId.get(message.id);
+      const options_ = metadata.options ?? [];
+      const entry: PollWithResults = {
+        id: message.id,
+        channel_id: message.channel_id,
+        sender_id: message.sender_id,
+        content: message.content,
+        type: 'POLL',
+        metadata,
+        created_at: message.created_at,
+        isExpired: expired,
+        results: options_.map((optionText, optionIndex) => ({
+          optionIndex,
+          optionText,
+          voteCount: countsByOption?.get(optionIndex) ?? 0,
+        })),
+      };
+      if (userVotesByMessageId) {
+        entry.userVotes = userVotesByMessageId.get(message.id) ?? [];
+      }
+      results.push(entry);
+    }
+
+    return results;
   }
 }

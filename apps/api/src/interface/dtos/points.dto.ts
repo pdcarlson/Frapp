@@ -1,12 +1,16 @@
 import {
   IsEnum,
   IsInt,
+  IsISO8601,
   IsNotEmpty,
   IsOptional,
   IsString,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
+import type { BooleanStringQueryValue } from '../utils/query-boolean';
 
 export class AdjustPointsDto {
   @ApiProperty()
@@ -33,4 +37,55 @@ export class PointsWindowQueryDto {
   @IsOptional()
   @IsEnum(['all', 'semester', 'month'])
   window?: 'all' | 'semester' | 'month';
+}
+
+const TRANSACTION_CATEGORIES = [
+  'ATTENDANCE',
+  'ACADEMIC',
+  'SERVICE',
+  'FINE',
+  'MANUAL',
+  'STUDY',
+] as const;
+
+export class ListPointTransactionsQueryDto {
+  @ApiPropertyOptional({ description: 'Filter to a single member' })
+  @IsOptional()
+  @IsString()
+  user_id?: string;
+
+  @ApiPropertyOptional({ enum: TRANSACTION_CATEGORIES })
+  @IsOptional()
+  @IsEnum(TRANSACTION_CATEGORIES)
+  category?: (typeof TRANSACTION_CATEGORIES)[number];
+
+  @ApiPropertyOptional({
+    description:
+      'Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.',
+    enum: ['true', 'false', '1', '0'],
+  })
+  @IsOptional()
+  @IsBooleanQueryString()
+  flagged?: BooleanStringQueryValue;
+
+  @ApiPropertyOptional({
+    description:
+      'ISO8601 cursor — return transactions created before this timestamp',
+  })
+  @IsOptional()
+  @IsISO8601()
+  before?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.',
+    minimum: 1,
+    maximum: 200,
+    default: 50,
+    example: 50,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  limit?: number;
 }

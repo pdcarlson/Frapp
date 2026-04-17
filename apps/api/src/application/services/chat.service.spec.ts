@@ -91,6 +91,7 @@ describe('ChatService', () => {
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };

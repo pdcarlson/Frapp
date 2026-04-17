@@ -11,6 +11,10 @@ The API in `apps/api` follows a strict layered structure:
 - **Infrastructure layer**: Supabase repositories, external adapters (Stripe, Expo Push, Storage)
 - **Domain layer**: entities, repository interfaces, shared business rules
 
+For list query parameters named `limit` (or similar caps), keep `@IsInt()` on the query DTO so non-integers still fail validation, document the effective 1–200 range in `@ApiPropertyOptional` (`minimum` / `maximum`), and **clamp** out-of-range integers in the application service using the shared constants in `apps/api/src/domain/constants/list-query-limits.ts`. That way HTTP clients get predictable pages without a 400 for a slightly high `limit`, while OpenAPI still documents the bounded page size.
+
+For optional boolean **query** parameters, validate with `@IsBooleanQueryString()` from `apps/api/src/interface/decorators/is-boolean-query-string.decorator.ts` so the allowed literals stay aligned with OpenAPI (`true`, `false`, `1`, `0`) and are not tied to `class-validator`'s `@IsBooleanString()` / `validator.isBoolean` behavior. Controllers must not coerce with `=== 'true'` alone — use `parseBooleanQueryParam` from `apps/api/src/interface/utils/query-boolean.ts` so the service receives the same truth value the client was allowed to send. Query DTO fields should be typed as `BooleanStringQueryValue` (exported from the same module) so TypeScript matches what validation accepts.
+
 ```text
 src/
   main.ts
@@ -48,7 +52,7 @@ Every protected endpoint runs through a consistent guard chain:
 
 1. **SupabaseAuthGuard** — validates the JWT from Supabase Auth.
 2. **ChapterGuard** — verifies the `x-chapter-id` header and membership in that chapter.
-3. **PermissionsGuard** — checks `@RequirePermissions()` metadata against the user's roles.
+3. **PermissionsGuard** — checks permission metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard **merges** them: the union of both lists must be satisfied (AND semantics across every listed permission). `@RequireAnyOfPermissions` on handler and class is evaluated as **two separate OR-groups** when both are present (the caller must match at least one permission in each group).
 
 Interceptors:
 
@@ -75,7 +79,9 @@ Example: adding a `polls` module.
 4. **Interface layer**
    - Add DTOs in `src/interface/dtos/poll.dto.ts`.
    - Add a controller in `src/interface/controllers/poll.controller.ts`.
-   - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions("polls:manage")` as needed.
+   - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions(...)` as needed (for example `polls:create` to post a poll, `polls:view_all` for `GET /v1/polls` chapter-wide aggregates).
+
+   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes add `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler **in addition to** the controller baseline `members:view` (merged by `PermissionsGuard`). The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior.md`](../../spec/behavior.md).
 
 5. **Module wiring**
    - Create `PollModule` in `src/interface/modules/poll.module.ts`, providing controller, service, and repository implementation.
@@ -114,6 +120,22 @@ When you add new modules:
 When a service does repeated membership checks in hot loops, prefer a `Set` lookup over nested `Array.includes` calls.
 
 Example: attendance auto-absent filtering now precomputes `required_role_ids` into a `Set` before iterating members, reducing per-check lookup cost from O(K) to O(1) while keeping behavior unchanged.
+
+### Independent reads in loops
+
+When a service loads the **same shape** of related rows for many parent records (for example, all `poll_votes` rows for each poll on a chapter list), prefer **one batched repository query** (for example `.in('message_id', ids)` on PostgREST) and group results in memory. Issuing one query per parent—even via `Promise.allSettled`—still creates N+1 HTTP calls to PostgREST and can exhaust connection pools under large limits. **`PollService.listPolls`** follows this: it calls `IPollVoteRepository.findByMessages` once per request and aggregates counts (and optional `userVotes`) in memory. If that batch read throws, the handler still returns the poll list with zero vote tallies (degraded response) but logs the failure with Nest’s `Logger` so operators can diagnose storage or connectivity issues.
+
+`SupabasePollVoteRepository.findByMessages` paginates with `.range()` (1000-row pages) so heavy chapters do not hit PostgREST default row caps and return incomplete vote tallies. Pages are ordered by primary key `id` so offset pagination stays deterministic when rows change between requests (avoids skipped or duplicated rows affecting tallies).
+
+After that batch load, aggregate tallies in **one pass** over the child rows (for example a `Map<messageId, Map<optionIndex, count>>` for poll votes) instead of nested filters per parent per option, which scales with polls × options × votes.
+
+Use `Promise.allSettled` when the child reads are genuinely separate resources or failure domains and batching is not available; isolate failures per entry so the rest of the list still returns.
+
+### List queries: filter before `limit`
+
+When a list applies a domain filter (for example, “active only”) and a `limit`, express the filter in the database query so it runs before the row cap. Filtering in application code after the database has truncated the page can return fewer than `limit` rows even when more matching rows exist beyond the cutoff.
+
+If the repository already applied that filter for pagination, avoid repeating the same time-based predicate in the service with a fresh clock: two instants can disagree at the expiry boundary and still produce a short page. It is fine to compute per-row display fields (for example `isExpired` for the response) from the returned rows without re-applying the list filter.
 
 ### Bulk Insert Optimizations
 

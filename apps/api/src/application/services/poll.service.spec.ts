@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PollService } from './poll.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
@@ -16,6 +16,7 @@ describe('PollService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
+  let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
     id: 'ch-1',
@@ -58,11 +59,16 @@ describe('PollService', () => {
   };
 
   beforeEach(async () => {
+    loggerErrorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
     mockMessageRepo = {
       findById: jest.fn(),
       findByChannel: jest.fn(),
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
+      findPollsByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     };
@@ -78,6 +84,9 @@ describe('PollService', () => {
 
     mockVoteRepo = {
       findByMessage: jest.fn(),
+      findByMessages: jest.fn(),
+      aggregateOptionTotalsByMessages: jest.fn(),
+      findUserVotesByMessagesForUser: jest.fn(),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
@@ -104,6 +113,10 @@ describe('PollService', () => {
     }).compile();
 
     service = module.get(PollService);
+  });
+
+  afterEach(() => {
+    loggerErrorSpy.mockRestore();
   });
 
   describe('createPoll', () => {
@@ -363,6 +376,170 @@ describe('PollService', () => {
 
       await expect(service.getPoll('msg-x', 'ch-1', 'user-2')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('listPolls', () => {
+    const futureIso = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const pastIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+    const activePoll: ChatMessage = {
+      id: 'poll-active',
+      chapter_id: 'ch-1',
+      channel_id: 'channel-1',
+      sender_id: 'user-1',
+      content: 'Meeting night?',
+      type: 'POLL',
+      reply_to_id: null,
+      metadata: {
+        question: 'Meeting night?',
+        options: ['Monday', 'Tuesday'],
+        choice_mode: 'single',
+        expires_at: futureIso,
+      },
+      is_pinned: false,
+      pinned_at: null,
+      edited_at: null,
+      is_deleted: false,
+      created_at: '2026-01-02T00:00:00.000Z',
+    };
+
+    const expiredPoll: ChatMessage = {
+      ...activePoll,
+      id: 'poll-expired',
+      created_at: '2026-01-01T00:00:00.000Z',
+      metadata: {
+        question: 'T-shirt colour?',
+        options: ['Blue', 'Red'],
+        choice_mode: 'single',
+        expires_at: pastIso,
+      },
+    };
+
+    it('returns every poll for the chapter with aggregate vote counts', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        expiredPoll,
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([
+        { message_id: 'poll-active', option_index: 0, vote_count: 2 },
+        { message_id: 'poll-active', option_index: 1, vote_count: 1 },
+      ]);
+
+      const result = await service.listPolls('ch-1');
+
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['poll-active', 'poll-expired'],
+      );
+      expect(
+        mockVoteRepo.findUserVotesByMessagesForUser,
+      ).not.toHaveBeenCalled();
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('poll-active');
+      expect(result[0].results).toEqual([
+        { optionIndex: 0, optionText: 'Monday', voteCount: 2 },
+        { optionIndex: 1, optionText: 'Tuesday', voteCount: 1 },
+      ]);
+      expect(result[0].isExpired).toBe(false);
+      expect(result[1].isExpired).toBe(true);
+    });
+
+    it('loads vote aggregates in one RPC for many polls (no per-poll vote queries)', async () => {
+      const manyPolls = Array.from({ length: 50 }, (_, i) => ({
+        ...activePoll,
+        id: `poll-${i}`,
+      }));
+      mockMessageRepo.findPollsByChapter.mockResolvedValue(manyPolls);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      await service.listPolls('ch-1');
+
+      expect(
+        mockVoteRepo.aggregateOptionTotalsByMessages,
+      ).toHaveBeenCalledTimes(1);
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        manyPolls.map((p) => p.id),
+      );
+      expect(mockVoteRepo.findByMessage).not.toHaveBeenCalled();
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('filters to active=true (expired polls excluded)', async () => {
+      // Repository applies active/expired before limit; service does not re-filter.
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: true });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-active']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: true }),
+      );
+    });
+
+    it('filters to active=false (only expired polls)', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([expiredPoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { active: false });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-expired']);
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ active: false }),
+      );
+    });
+
+    it('includes userVotes when a userId is supplied', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+      mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([
+        { message_id: 'poll-active', option_index: 1 },
+      ]);
+
+      const result = await service.listPolls('ch-1', { userId: 'user-2' });
+
+      expect(result[0].userVotes).toEqual([1]);
+      expect(mockVoteRepo.findUserVotesByMessagesForUser).toHaveBeenCalledWith(
+        ['poll-active'],
+        'user-2',
+      );
+      expect(mockVoteRepo.findByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('clamps limit to the 1–200 range before calling the repository', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      await service.listPolls('ch-1', { limit: 0 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 1 }),
+      );
+
+      await service.listPolls('ch-1', { limit: 9999 });
+      expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 200 }),
+      );
+    });
+
+    it('logs when the batched vote aggregation fails and returns zero tallies', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+      const batchError = new Error('postgrest timeout');
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockRejectedValue(
+        batchError,
+      );
+
+      const result = await service.listPolls('chapter-xyz');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].results.every((r) => r.voteCount === 0)).toBe(true);
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('chapter-xyz'),
+        expect.stringContaining('postgrest timeout'),
       );
     });
   });

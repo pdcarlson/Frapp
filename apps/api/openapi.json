@@ -1453,6 +1453,90 @@
         ]
       }
     },
+    "/v1/points/transactions": {
+      "get": {
+        "description": "Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).",
+        "operationId": "PointsController_listTransactions_v1",
+        "parameters": [
+          {
+            "name": "user_id",
+            "required": false,
+            "in": "query",
+            "description": "Filter to a single member",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ATTENDANCE",
+                "ACADEMIC",
+                "SERVICE",
+                "FINE",
+                "MANUAL",
+                "STUDY"
+              ]
+            }
+          },
+          {
+            "name": "flagged",
+            "required": false,
+            "in": "query",
+            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "ISO8601 cursor — return transactions created before this timestamp",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter-wide point transactions",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
     "/v1/points/members/{userId}": {
       "get": {
         "operationId": "PointsController_getMember_v1",
@@ -3630,6 +3714,65 @@
         ]
       }
     },
+    "/v1/polls": {
+      "get": {
+        "description": "Chapter-wide poll list for dashboards (requires polls:view_all; not part of the default Member role). Supports channel filter, active=true|false filter, and limit. Each entry includes aggregate results plus the caller's own selections.",
+        "operationId": "PollController_listPolls_v1",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "required": false,
+            "in": "query",
+            "description": "Scope results to a single channel.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "active",
+            "required": false,
+            "in": "query",
+            "description": "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List polls across the chapter",
+        "tags": [
+          "Polls"
+        ]
+      }
+    },
     "/v1/polls/{messageId}": {
       "get": {
         "operationId": "PollController_getPoll_v1",
@@ -3940,7 +4083,8 @@
             "type": "string"
           },
           "graduation_year": {
-            "type": "number"
+            "type": "number",
+            "nullable": true
           },
           "current_city": {
             "type": "string"
