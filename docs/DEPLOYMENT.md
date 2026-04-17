@@ -258,6 +258,16 @@ curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
   | jq '{name, productionBranch: .link.productionBranch, targets: .targets}'
 ```
 
+**Staging domains and `gitBranch`:** Branch-linked preview domains (e.g. `app.staging.frapp.live`) only alias deployments from the branch you configure in the domain row. If that branch is not `main`, pushes to `main` still get a normal Preview deployment but **only** the generated `*.vercel.app` hostname — the staging hostname will stay on the last deployment for the configured branch. After merges to `main`, confirm each staging domain shows **Git Branch: `main`** (Project → Settings → Domains), or inspect via API:
+
+```bash
+curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
+  "https://api.vercel.com/v9/projects/frapp-web/domains" \
+  | jq '.domains[] | {name, gitBranch}'
+```
+
+To fix a wrong branch without the dashboard: `PATCH /v9/projects/{idOrName}/domains/{domain}` with body `{"gitBranch":"main"}` (see [Update a project domain](https://vercel.com/docs/rest-api/projects/update-a-project-domain)).
+
 ---
 
 ## 5. Render Setup (API)
@@ -529,3 +539,6 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/int
 
 **Preview deploys on Vercel use wrong env vars**
 → Check that you scoped the env vars to the correct environment (Production vs Preview) in Vercel dashboard.
+
+**`main` previews only show `*.vercel.app`, not `app.staging.frapp.live` / `staging.frapp.live`**
+→ In Project → Settings → Domains, the staging hostname’s **Git Branch** must be `main` (not another branch like `preview`). See §4.6 above for the API check and fix.
