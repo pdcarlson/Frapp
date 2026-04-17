@@ -14,6 +14,9 @@ Always use `escapeFilterValue` when injecting dynamic user inputs into PostgREST
 ## PostgREST filter injection in supabase-backwork-resource.repository.ts
 Added `escapeFilterValue` to sanitize search input in `SupabaseBackworkResourceRepository` to prevent PostgREST grammar elements from being injected into `.or()` filters.
 
+## PostgREST `.or()` quoting in supabase-chat-message.repository.ts
+`SupabaseChatMessageRepository.findPollsByChapter` builds an `.or()` filter for active polls using a server-generated ISO timestamp. That value is now passed through `escapeFilterValue` so the filter string matches the repository-wide rule for PostgREST string bounds (consistent quoting and defense-in-depth against filter injection).
+
 ## Security Fix: Unrestricted File Upload in Chapter Logos
 
 ### Overview

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
@@ -85,9 +86,9 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     if (options?.active === true) {
       const nowIso = new Date().toISOString();
-      // Quote the bound so PostgREST does not treat `.` in fractional seconds as an operator delimiter.
+      const safeNow = escapeFilterValue(nowIso);
       query = query.or(
-        `metadata->>expires_at.is.null,metadata->>expires_at.gt."${nowIso}"`,
+        `metadata->>expires_at.is.null,metadata->>expires_at.gt.${safeNow}`,
       );
     } else if (options?.active === false) {
       const nowIso = new Date().toISOString();
