@@ -105,6 +105,9 @@ to a route. The caller's effective permission set is loaded once via
 | Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
 | Resources | Study session | `/study` | — |
 | Resources | Study Zones | `/geofences` | `geofences:manage` |
+| Finance | Billing | `/billing` | `billing:view` |
+| Finance | Reports | `/reports` | `reports:export` |
+| Settings | Settings | `/settings` | — |
 
 **Web study hours** is a deliberate adaptation of the mobile foreground
 enforcement rule. The `/study` timer uses the `Page Visibility API` — when
@@ -115,9 +118,6 @@ of stale heartbeats). Members who need uninterrupted tracking should use
 the mobile app, which keeps the session alive through OS foreground
 controls. This divergence is called out in-copy on `/study` so there are
 no surprises.
-| Finance | Billing | `/billing` | `billing:view` |
-| Finance | Reports | `/reports` | `reports:export` |
-| Settings | Settings | `/settings` | — |
 
 The unauthenticated landing page lives at `/` and redirects to `/home` once a
 Supabase session is present. `/dashboard` is a legacy alias that also redirects

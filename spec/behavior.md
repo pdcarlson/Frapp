@@ -81,6 +81,12 @@ Permissions are never cached across requests. Each request freshly resolves the 
 ### Role Lifecycle
 
 - On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Member, New Member, Alumni. Each has a sensible default permission set.
+- **Seeded permissions (must match `DEFAULT_SYSTEM_ROLES` in `apps/api/src/domain/constants/permissions.ts`):**
+  - **President:** `*` (wildcard).
+  - **Treasurer:** `billing:view`, `billing:manage`, `points:adjust`, `points:view_all`, `polls:view_all`, `members:view`, `reports:export`, `events:create`, `events:update`.
+  - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`, `polls:view_all`.
+  - **New Member:** `members:view`, `backwork:upload`.
+  - **Alumni:** `members:view`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
 - Chapter admins with `roles:manage` can create unlimited **custom roles**.
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color** (hex string, for chat name colors like Discord).
