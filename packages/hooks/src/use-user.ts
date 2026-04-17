@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useCurrentUser() {
   const client = useFrappClient();
@@ -61,9 +61,10 @@ export function useRequestAvatarUploadUrl() {
  */
 export function useMyPermissions(options?: { enabled?: boolean }) {
   const client = useFrappClient();
-  const enabled = options?.enabled ?? true;
+  const chapterId = useActiveChapterId();
+  const enabled = (options?.enabled ?? true) && !!chapterId;
   return useQuery({
-    queryKey: ["user", "me", "permissions"],
+    queryKey: ["user", "me", "permissions", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/users/me/permissions");
       if (error) throw error;

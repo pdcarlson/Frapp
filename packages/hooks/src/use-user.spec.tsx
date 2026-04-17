@@ -5,7 +5,11 @@ import React from "react";
 import { useMyPermissions } from "./use-user";
 import { FrappClientProvider } from "./use-frapp-client";
 
-const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
+const createWrapper = (
+  queryClient: QueryClient,
+  mockClient: unknown,
+  chapterId: string | null = "test-chapter",
+) => {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={
@@ -13,6 +17,7 @@ const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
           typeof import("@repo/api-sdk").createFrappClient
         >
       }
+      chapterId={chapterId}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
