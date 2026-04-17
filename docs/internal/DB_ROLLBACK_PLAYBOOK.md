@@ -73,7 +73,7 @@ After any rollback event:
 ## Rollback `idx_point_transactions_chapter_created_at`
 * **Migration**: `20260417120000_point_transactions_chapter_created_at_idx.sql`
 * **Action**: `DROP INDEX IF EXISTS idx_point_transactions_chapter_created_at;`
-* **Note**: Safe additive change only; dropping removes the performance optimization for chapter-scoped transaction lists.
+* **Note**: Safe additive change only; dropping removes the performance optimization for chapter-scoped transaction lists. Same-day data backfills on `public.roles` are separate migrations — see the next two sections (`20260417140000`, `20260417150000`).
 
 ## Rollback `backfill_polls_view_all_system_roles`
 * **Migration**: `20260417140000_backfill_polls_view_all_system_roles.sql`
