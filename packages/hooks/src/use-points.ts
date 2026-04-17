@@ -34,6 +34,7 @@ export function useLeaderboard(window?: PointWindow) {
       return data;
     },
     staleTime: 30_000,
+    enabled: !!chapterId,
   });
 }
 

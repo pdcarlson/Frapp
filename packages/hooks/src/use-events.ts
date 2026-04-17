@@ -14,6 +14,7 @@ export function useEvents() {
       return data;
     },
     staleTime: 30_000,
+    enabled: !!chapterId,
   });
 }
 
