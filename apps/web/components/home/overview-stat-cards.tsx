@@ -133,7 +133,10 @@ export function OverviewStatCards() {
     {
       id: "billing",
       label: "Subscription status",
-      value: enabled && derive(billingQuery) === "ready" ? billingStatus.replace("_", " ") : "—",
+      value:
+        enabled && derive(billingQuery) === "ready"
+          ? billingStatus.replaceAll("_", " ")
+          : "—",
       detail:
         derive(billingQuery) === "error"
           ? "Billing status unavailable — requires billing:view."
