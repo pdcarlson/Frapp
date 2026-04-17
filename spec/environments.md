@@ -151,6 +151,7 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | -------------------- | ----------------------------------------------- | ---------- |
 | `packages-build`     | Shared packages compile                         | Yes        |
 | `lint-and-typecheck` | ESLint + TypeScript across all workspaces       | Yes        |
+| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path) | Yes        |
 | `api-tests`          | API Jest unit tests (377+ tests)                | Yes (hard) |
 | `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes        |
 | `migration-safety`   | Migration filename validation + promotion docs  | Yes        |

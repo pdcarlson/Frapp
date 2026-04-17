@@ -69,6 +69,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | --- | --- |
 | `packages-build` | Shared packages compile |
 | `lint-and-typecheck` | ESLint + TypeScript (all workspaces) |
+| `api-docker-build` | `docker build -f apps/api/Dockerfile .` (API image compile path) |
 | `api-tests` | API Jest unit tests |
 | `api-contract-check` | openapi.json + api-sdk freshness |
 | `migration-safety` | Migration filename + docs validation |
