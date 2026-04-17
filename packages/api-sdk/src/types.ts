@@ -3147,7 +3147,7 @@ export interface operations {
                 flagged?: string;
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
                 before?: string;
-                /** @description Max transactions to return (1-200, defaults to 50) */
+                /** @description Max transactions to return (1-200, defaults to 50). Values outside that range are rejected. */
                 limit?: number;
             };
             header?: never;

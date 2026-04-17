@@ -353,7 +353,8 @@ multiplexes every subscription over one websocket (see
 
 **Audit tab:** chapter-wide transaction log with a "Show flagged only" toggle
 and category + member filters. Backed by `GET /v1/points/transactions` which
-requires `points:view_all`. Members without that permission see an explanatory
+requires `points:view_all`. The optional `limit` query parameter is validated
+to 1–200 at the API boundary (default 50 when omitted). Members without that permission see an explanatory
 card pointing at their chapter president. Flags are raised automatically when
 `|amount| ≥ 100` on a manual adjustment (see `spec/behavior.md §4`).
 
