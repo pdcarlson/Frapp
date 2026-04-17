@@ -334,7 +334,9 @@ Configurable alerts via the monitoring provider:
 - **Contract freshness check (CI):** `npm run check:api-contract` uses `git diff` to verify that any PR touching `apps/api/src/` also includes updated `openapi.json` and `api-sdk/types.ts`. This avoids bootstrapping the NestJS application in CI, so no Supabase/Stripe credentials are needed.
 - **Developer workflow:** After changing an API endpoint: (1) run `npm run openapi:export -w apps/api`, (2) run `npm run generate -w packages/api-sdk`, (3) commit both generated files alongside the source changes.
 
-**Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), and Points (me, leaderboard, members, adjust) are implemented and included in the OpenAPI spec.
+**Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), Points (me, leaderboard, per-member summary, adjust, **chapter-wide transaction list**), and Polls (create in channel, get, vote / remove vote, **chapter-wide list**) are implemented and included in the OpenAPI spec.
+
+**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` is gated by `polls:view_all` and is **not** part of the default Member role seed; Treasurer includes both permissions alongside billing and points tools (see seeded role matrix in [`behavior.md`](behavior.md)). Full query parameters, pagination, and invariants: Points ledger section and **Polls and Voting** in [`behavior.md`](behavior.md).
 
 ---
 
