@@ -34,7 +34,10 @@ type SupabaseEnv = {
 };
 
 function readSupabaseEnv(): SupabaseEnv | null {
-  if (process.env.SUPABASE_AUTH_BYPASS === "true") {
+  if (
+    process.env.SUPABASE_AUTH_BYPASS === "true" &&
+    process.env.NODE_ENV !== "production"
+  ) {
     return null;
   }
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

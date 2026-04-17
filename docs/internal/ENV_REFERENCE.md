@@ -120,6 +120,7 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
+| `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
 
 ### apps/landing (Next.js — Vercel)
 
