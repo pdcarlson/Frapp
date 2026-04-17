@@ -91,6 +91,14 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty | `No documents here yet` | `Upload chapter files like bylaws, agendas, and meeting minutes so everyone can find them.` |
 | Error | `Couldn't load documents` | `Confirm your chapter access and retry.` |
 
+## Notifications (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading notifications...` |
+| Empty | — | `No notifications yet. Chapter activity, billing alerts, and point changes will appear here.` |
+| Error | — | `Couldn't load notifications. Retry in a moment.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |

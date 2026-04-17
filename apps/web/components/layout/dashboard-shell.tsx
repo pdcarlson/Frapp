@@ -12,7 +12,11 @@ import {
   Menu,
   ShieldCheck,
 } from "lucide-react";
-import { useCurrentChapter, useMyPermissions } from "@repo/hooks";
+import {
+  useCurrentChapter,
+  useMyPermissions,
+  useNotifications,
+} from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import {
   CurrentChapterPayloadSchema,
@@ -208,6 +212,13 @@ export function DashboardShell({ children }: DashboardShellProps) {
     () => permissionsPayload?.permissions,
     [permissionsPayload],
   );
+  const { data: notificationsData } = useNotifications();
+  const unreadNotifications = useMemo(() => {
+    if (!Array.isArray(notificationsData)) return 0;
+    return (notificationsData as Array<{ read_at?: string | null }>).filter(
+      (n) => !n.read_at,
+    ).length;
+  }, [notificationsData]);
 
   const activeItem = findNavItemByPath(pathname);
   const pageTitle = activeItem?.breadcrumbTitle ?? activeItem?.label ?? "Dashboard";
@@ -349,11 +360,24 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 <Button
                   variant="outline"
                   size="icon"
-                  aria-label="Notifications"
+                  aria-label={
+                    unreadNotifications > 0
+                      ? `Notifications (${unreadNotifications} unread)`
+                      : "Notifications"
+                  }
                   title="Notifications"
                   onClick={() => setNotificationDrawerOpen(true)}
+                  className="relative"
                 >
                   <Bell className="h-4 w-4" />
+                  {unreadNotifications > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white"
+                    >
+                      {unreadNotifications > 99 ? "99+" : unreadNotifications}
+                    </span>
+                  ) : null}
                 </Button>
                 <ThemeToggle />
                 <Button
