@@ -60,7 +60,7 @@ export class ListPointTransactionsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      "Only return transactions that were flagged by the anomaly threshold (`metadata.flagged === true`). Accepts 'true' or 'false'.",
+      'Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode).',
   })
   @IsOptional()
   @IsBooleanString()

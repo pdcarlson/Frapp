@@ -26,6 +26,7 @@ import {
   PointsWindowQueryDto,
 } from '../dtos/points.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Points')
 @ApiBearerAuth()
@@ -70,8 +71,7 @@ export class PointsController {
     return this.pointsService.listTransactions(chapterId, {
       userId: query.user_id,
       category: query.category,
-      flagged:
-        query.flagged === undefined ? undefined : query.flagged === 'true',
+      flagged: parseBooleanQueryParam(query.flagged),
       before: query.before,
       limit: query.limit,
     });

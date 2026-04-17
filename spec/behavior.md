@@ -210,7 +210,7 @@ When a user checks into an event:
 - Query parameters (all optional unless noted):
   - `user_id` — restrict to one member’s rows.
   - `category` — one of `ATTENDANCE`, `ACADEMIC`, `SERVICE`, `FINE`, `MANUAL`, `STUDY`.
-  - `flagged` — `'true'` or `'false'` string; when `true`, only rows the anomaly rules marked for review.
+  - `flagged` — boolean string (`true`, `false`, `1`, `0`, matching validator strict boolean strings); when true (`true` or `1`), only rows the anomaly rules marked for review.
   - `before` — ISO8601 timestamp cursor; return transactions created **strictly before** this instant (older page).
   - `limit` — page size; default **50**, clamped to **1–200** inclusive on the server.
 - Ordering and caps are implementation details of the list endpoint; the **append-only** and **immutability** rules in *Anti-Fraud* still apply to underlying rows.
@@ -562,6 +562,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 
 - Users with `polls:create` permission can create polls in any channel they have access to.
 - `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `polls:view_all`, not only `members:view`. By default this permission is **not** on the Member role; it is on Treasurer, Vice President, Secretary (and President via `*`). Existing databases are backfilled via migration `20260417140000_backfill_polls_view_all_system_roles.sql`. Chapters may grant it through custom roles if needed.
+- Query parameters for `GET /v1/polls`: optional `channel_id`; optional `active` as a boolean string (`true`, `false`, `1`, or `0`); optional `limit` (default 50, clamped 1–200).
 - A poll has a question, 2-10 options, and an optional expiration time.
 - Members in the channel can vote. One vote per member per poll (single-choice by default; multi-choice is a poll option).
 - When a member submits a new vote, the system treats it as a full replacement of that member's prior selection set for the poll.

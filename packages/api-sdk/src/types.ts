@@ -3143,7 +3143,7 @@ export interface operations {
                 /** @description Filter to a single member */
                 user_id?: string;
                 category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
-                /** @description Only return transactions that were flagged by the anomaly threshold (`metadata.flagged === true`). Accepts 'true' or 'false'. */
+                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode). */
                 flagged?: string;
                 /** @description ISO8601 cursor — return transactions created before this timestamp */
                 before?: string;
@@ -4606,7 +4606,7 @@ export interface operations {
             query?: {
                 /** @description Scope results to a single channel. */
                 channel_id?: string;
-                /** @description Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls. */
+                /** @description Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls. */
                 active?: string;
                 /** @description Max polls to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
                 limit?: number;

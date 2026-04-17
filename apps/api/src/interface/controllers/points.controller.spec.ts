@@ -236,6 +236,20 @@ describe('PointsController', () => {
       });
     });
 
+    it('coerces flagged=1 to boolean true (validator boolean string)', async () => {
+      pointsService.listTransactions.mockResolvedValue([] as any);
+
+      await controller.listTransactions('chapter-1', { flagged: '1' });
+
+      expect(pointsService.listTransactions).toHaveBeenCalledWith('chapter-1', {
+        userId: undefined,
+        category: undefined,
+        flagged: true,
+        before: undefined,
+        limit: undefined,
+      });
+    });
+
     it('leaves flagged undefined when the query omits it', async () => {
       pointsService.listTransactions.mockResolvedValue([] as any);
 

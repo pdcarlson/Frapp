@@ -64,7 +64,7 @@ export class ListPollsQueryDto {
 
   @ApiPropertyOptional({
     description:
-      "Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls.",
+      "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
   })
   @IsOptional()
   @IsBooleanString()

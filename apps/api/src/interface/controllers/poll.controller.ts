@@ -20,6 +20,7 @@ import {
 } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { CreatePollDto, ListPollsQueryDto, VoteDto } from '../dtos/poll.dto';
+import { parseBooleanQueryParam } from '../utils/query-boolean';
 
 @ApiTags('Polls')
 @ApiBearerAuth()
@@ -89,7 +90,7 @@ export class PollController {
   ) {
     return this.pollService.listPolls(chapterId, {
       channelId: query.channel_id,
-      active: query.active === undefined ? undefined : query.active === 'true',
+      active: parseBooleanQueryParam(query.active),
       limit: query.limit,
       userId,
     });

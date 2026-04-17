@@ -1487,7 +1487,7 @@
             "name": "flagged",
             "required": false,
             "in": "query",
-            "description": "Only return transactions that were flagged by the anomaly threshold (`metadata.flagged === true`). Accepts 'true' or 'false'.",
+            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0` (same set validator accepts in strict mode).",
             "schema": {
               "type": "string"
             }
@@ -3726,7 +3726,7 @@
             "name": "active",
             "required": false,
             "in": "query",
-            "description": "Accepts 'true' or 'false'. `true` returns only polls that haven't expired; `false` returns only expired polls.",
+            "description": "Filter by expiration. Boolean string: `true`, `false`, `1`, or `0`. True values return only polls that haven't expired; false values return only expired polls.",
             "schema": {
               "type": "string"
             }

@@ -158,6 +158,23 @@ describe('PollController', () => {
       expect(result).toEqual(expected);
     });
 
+    it('coerces active=1 to boolean true (validator boolean string)', async () => {
+      const chapterId = 'chapter-123';
+      const userId = 'user-123';
+      const query: ListPollsQueryDto = { active: '1', limit: 10 };
+
+      pollService.listPolls.mockResolvedValue([] as any);
+
+      await controller.listPolls(chapterId, userId, query);
+
+      expect(pollService.listPolls).toHaveBeenCalledWith(chapterId, {
+        channelId: undefined,
+        active: true,
+        limit: 10,
+        userId,
+      });
+    });
+
     it('should require POLLS_VIEW_ALL permission', () => {
       const permissions = Reflect.getMetadata(
         PERMISSIONS_KEY,
