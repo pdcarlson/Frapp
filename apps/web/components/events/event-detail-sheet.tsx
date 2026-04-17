@@ -1,7 +1,14 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertTriangle, BellRing, CalendarDays, Clock3, Loader2, MapPin, Trash2, UsersRound } from "lucide-react";
+import {
+  AlertTriangle,
+  CalendarDays,
+  Clock3,
+  Loader2,
+  MapPin,
+  Trash2,
+} from "lucide-react";
 import { useDeleteEvent, useEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +20,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { AttendancePanel } from "@/components/events/attendance-panel";
 
 type EventRecord = Record<string, unknown>;
 
@@ -75,10 +83,6 @@ export function EventDetailSheet({
   const description =
     typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
   const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
-  const attendanceActionsAvailable = false;
-  const attendanceActionDisabledReason = !canMutate
-    ? "Sign in with chapter permissions to run attendance actions."
-    : "Attendance actions are coming soon.";
 
   async function handleDelete() {
     if (!eventId) return;
@@ -166,40 +170,13 @@ export function EventDetailSheet({
 
         <div className="mt-5 grid gap-3">
           <div className="rounded-md border border-border p-3">
-            <p className="mb-2 text-xs text-muted-foreground">Attendance</p>
+            <p className="mb-2 text-xs text-muted-foreground">Attendance policy</p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={isMandatory ? "default" : "secondary"}>
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
               <Badge variant="outline">{recurrenceRule}</Badge>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
-                title={attendanceActionDisabledReason}
-                aria-label={`Open attendance queue. ${attendanceActionDisabledReason}`}
-              >
-                <UsersRound className="h-4 w-4" />
-                Open attendance queue
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!resolvedEvent || !canMutate || !attendanceActionsAvailable}
-                title={attendanceActionDisabledReason}
-                aria-label={`Send check-in reminder. ${attendanceActionDisabledReason}`}
-              >
-                <BellRing className="h-4 w-4" />
-                Send check-in reminder
-              </Button>
-            </div>
-            {!attendanceActionsAvailable || !canMutate ? (
-              <p className="mt-2 text-xs text-muted-foreground">
-                {attendanceActionDisabledReason}
-              </p>
-            ) : null}
           </div>
 
           <div className="rounded-md border border-border p-3">
@@ -239,6 +216,10 @@ export function EventDetailSheet({
               <p className="mb-1 text-xs text-muted-foreground">Internal notes</p>
               <p className="text-sm">{notes}</p>
             </div>
+          ) : null}
+
+          {eventId && !usingPreviewData ? (
+            <AttendancePanel eventId={eventId} />
           ) : null}
         </div>
       </SheetContent>

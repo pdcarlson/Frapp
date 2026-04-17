@@ -8,7 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  OfflineState,
+} from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
@@ -18,28 +23,10 @@ import { EventDetailSheet } from "@/components/events/event-detail-sheet";
 import { EventEditorDialog } from "@/components/events/event-editor-dialog";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
+import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type EventRow = Record<string, unknown>;
-const fallbackEvents: EventRow[] = [
-  {
-    id: "preview-event-1",
-    name: "Chapter Meeting",
-    start_time: new Date().toISOString(),
-    location: "Chapter House",
-    point_value: 10,
-    is_mandatory: true,
-    recurrence_rule: "WEEKLY",
-  },
-  {
-    id: "preview-event-2",
-    name: "Philanthropy Showcase",
-    start_time: new Date(Date.now() + 1000 * 60 * 60 * 24 * 2).toISOString(),
-    location: "Student Center",
-    point_value: 15,
-    is_mandatory: false,
-    recurrence_rule: null,
-  },
-];
 
 function formatDate(value: unknown): string {
   if (typeof value !== "string") return "—";
@@ -51,7 +38,11 @@ function formatDate(value: unknown): string {
 export default function EventsPage() {
   const { isOffline } = useNetwork();
   const { toast } = useToast();
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const [query, setQuery] = useState("");
+  const [timeFilter, setTimeFilter] = useState<"upcoming" | "past" | "all">(
+    "upcoming",
+  );
   const [attendanceFilter, setAttendanceFilter] = useState<"all" | "mandatory" | "optional">("all");
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
@@ -60,18 +51,26 @@ export default function EventsPage() {
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   const eventsQuery = useEvents();
-  const usingPreviewData = eventsQuery.isError;
+
+  // Live updates: any admin creating or editing an event in another tab
+  // pushes through immediately. Scoped to the active chapter so we never
+  // invalidate another chapter's cache.
+  useRealtimeTable({
+    table: "events",
+    filter: activeChapterId ? `chapter_id=eq.${activeChapterId}` : undefined,
+    invalidate: [["events", activeChapterId]],
+    enabled: Boolean(activeChapterId),
+  });
+
   const events = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackEvents;
-    }
     if (Array.isArray(eventsQuery.data)) {
       return eventsQuery.data as EventRow[];
     }
     return [];
-  }, [usingPreviewData, eventsQuery.data]);
+  }, [eventsQuery.data]);
   const filteredEvents = useMemo(() => {
     const queryLower = query.trim().toLowerCase();
+    const now = Date.now();
     return events.filter((event) => {
       const name = String(event.name ?? "").toLowerCase();
       const location = String(event.location ?? "").toLowerCase();
@@ -96,9 +95,20 @@ export default function EventsPage() {
       if (recurrenceFilter === "one-time" && isRecurring) {
         return false;
       }
+
+      if (timeFilter !== "all") {
+        const startRaw =
+          typeof event.start_time === "string" ? event.start_time : null;
+        if (!startRaw) return timeFilter === "upcoming";
+        const startMs = new Date(startRaw).getTime();
+        if (Number.isNaN(startMs)) return timeFilter === "upcoming";
+        if (timeFilter === "upcoming" && startMs < now) return false;
+        if (timeFilter === "past" && startMs >= now) return false;
+      }
+
       return true;
     });
-  }, [events, query, attendanceFilter, recurrenceFilter]);
+  }, [events, query, attendanceFilter, recurrenceFilter, timeFilter]);
   const visibleEventIds = filteredEvents.map((event) => String(event.id ?? event.name ?? ""));
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
@@ -147,6 +157,16 @@ export default function EventsPage() {
     return <LoadingState message={stateMicrocopy.events.loading} />;
   }
 
+  if (eventsQuery.isError) {
+    return (
+      <ErrorState
+        title="Couldn't load chapter events"
+        description="The events workflow needs a healthy API response. Verify your chapter access and retry."
+        onRetry={() => void eventsQuery.refetch()}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -180,6 +200,20 @@ export default function EventsPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <select
+                value={timeFilter}
+                onChange={(event) =>
+                  setTimeFilter(
+                    event.target.value as "upcoming" | "past" | "all",
+                  )
+                }
+                className={dashboardFilterSelectClassName}
+                aria-label="Filter events by time window"
+              >
+                <option value="upcoming">Time: Upcoming</option>
+                <option value="past">Time: Past</option>
+                <option value="all">Time: All</option>
+              </select>
+              <select
                 value={attendanceFilter}
                 onChange={(event) =>
                   setAttendanceFilter(
@@ -187,6 +221,7 @@ export default function EventsPage() {
                   )
                 }
                 className={dashboardFilterSelectClassName}
+                aria-label="Filter events by attendance policy"
               >
                 <option value="all">Attendance: All</option>
                 <option value="mandatory">Attendance: Mandatory</option>
@@ -200,6 +235,7 @@ export default function EventsPage() {
                   )
                 }
                 className={dashboardFilterSelectClassName}
+                aria-label="Filter events by cadence"
               >
                 <option value="all">Cadence: All</option>
                 <option value="recurring">Cadence: Recurring</option>
@@ -209,24 +245,6 @@ export default function EventsPage() {
           </div>
         </CardContent>
       </Card>
-
-      {usingPreviewData ? (
-        <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/30">
-          <CardContent className="flex items-center justify-between gap-4 pt-6">
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                {stateMicrocopy.events.previewTitle}
-              </p>
-              <p className="text-xs text-amber-800 dark:text-amber-200">
-                {stateMicrocopy.events.previewDescription}
-              </p>
-            </div>
-            <Button size="sm" variant="outline" onClick={() => eventsQuery.refetch()}>
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
 
       {selectedEventIds.length > 0 ? (
         <Card className="border-primary/30 bg-primary-50/70 dark:bg-primary/10">
@@ -364,7 +382,7 @@ export default function EventsPage() {
         open={detailSheetOpen}
         onOpenChange={setDetailSheetOpen}
         event={activeEvent}
-        usingPreviewData={usingPreviewData}
+        usingPreviewData={false}
         onRequestEdit={(event) => {
           setActiveEvent(event);
           setDetailSheetOpen(false);
@@ -381,7 +399,7 @@ export default function EventsPage() {
         onOpenChange={setEditorDialogOpen}
         mode={editorMode}
         event={activeEvent}
-        usingPreviewData={usingPreviewData}
+        usingPreviewData={false}
         onSaved={async () => {
           await eventsQuery.refetch();
         }}

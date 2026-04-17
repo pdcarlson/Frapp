@@ -281,6 +281,17 @@ without dumping them back to the sign-in page.
 - Meeting minutes: Markdown editor below attendance
 - "Download .ics" button
 
+The attendance roster is **live**: the web client subscribes to Supabase
+Realtime Postgres changes on `event_attendance` filtered by `event_id` and
+invalidates the corresponding TanStack query cache on every INSERT/UPDATE.
+Admins watching one tab see self check-ins from other devices without
+refreshing. The realtime primitive that powers this — `useRealtimeTable` in
+`apps/web/lib/realtime/use-realtime-table.ts` — is also reused by the events
+list itself (new events propagate immediately) and will back chat and
+notifications in later slices. A single shared browser Supabase client
+multiplexes every subscription over one websocket (see
+[`apps/web/lib/realtime/supabase-realtime.ts`](../apps/web/lib/realtime/supabase-realtime.ts)).
+
 **Create/Edit Event form (modal or full page):**
 
 - Name, description, location (text inputs)

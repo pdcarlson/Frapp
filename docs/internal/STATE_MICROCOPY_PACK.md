@@ -19,7 +19,16 @@ This pack defines approved copy for high-frequency state messages so members and
 |---|---|---|
 | Loading | — | `Loading chapter events...` |
 | Empty | `No events yet` | `Create your first chapter event to unlock attendance and point automation.` |
-| Preview/unauthenticated | `Showing preview event data` | `Sign in to load live event scheduling and attendance records.` |
+| Error | `Couldn't load chapter events` | `The events workflow needs a healthy API response. Verify your chapter access and retry.` |
+| Offline | `Events workspace unavailable offline` | `Reconnect to load event schedules and attendance updates.` |
+
+## Attendance (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading attendance...` |
+| Empty | `No attendance records yet` | `Once members check in — or you record attendance manually — they'll show up here.` |
+| Error | `Attendance unavailable` | `Couldn't load attendance for this event. Retry or confirm you have events:update or permission to view attendance.` |
 
 ## Points (dashboard)
 
