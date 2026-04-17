@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Plus, Search } from "lucide-react";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,8 @@ import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type EventRow = Record<string, unknown>;
+
+const EVENTS_TIME_FILTER_TICK_MS = 60_000;
 
 function formatDate(value: unknown): string {
   if (typeof value !== "string") return "—";
@@ -68,9 +70,22 @@ export default function EventsPage() {
     }
     return [];
   }, [eventsQuery.data]);
+
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (timeFilter === "all") {
+      return;
+    }
+    setNowTick(Date.now());
+    const intervalId = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, EVENTS_TIME_FILTER_TICK_MS);
+    return () => window.clearInterval(intervalId);
+  }, [timeFilter]);
+
   const filteredEvents = useMemo(() => {
     const queryLower = query.trim().toLowerCase();
-    const now = Date.now();
+    const now = nowTick;
     return events.filter((event) => {
       const name = String(event.name ?? "").toLowerCase();
       const location = String(event.location ?? "").toLowerCase();
@@ -108,7 +123,7 @@ export default function EventsPage() {
 
       return true;
     });
-  }, [events, query, attendanceFilter, recurrenceFilter, timeFilter]);
+  }, [events, query, attendanceFilter, recurrenceFilter, timeFilter, nowTick]);
   const visibleEventIds = filteredEvents.map((event) => String(event.id ?? event.name ?? ""));
   const allVisibleSelected =
     visibleEventIds.length > 0 &&
