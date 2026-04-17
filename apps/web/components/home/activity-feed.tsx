@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { asArray, cn } from "@/lib/utils";
+import {
+  buildMemberDisplayNameMap,
+  leaderboardSubjectId,
+} from "@/lib/activity-feed-leaderboard";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
@@ -87,6 +91,8 @@ type MemberLike = {
 type LeaderboardLike = {
   user_id?: string;
   total?: number;
+  userId?: string;
+  member_id?: string;
 };
 
 type BackworkLike = {
@@ -143,20 +149,20 @@ function buildLeaderboardItems(
   now: Date,
 ): FeedItem[] {
   if (!leaderboard.length) return [];
-  const nameByUser = new Map<string, string>();
-  for (const member of members) {
-    if (member.user_id && member.display_name) {
-      nameByUser.set(member.user_id, member.display_name);
-    }
-  }
-  return leaderboard.slice(0, 3).map((entry, index) => ({
-    id: `leader-${entry.user_id ?? index}`,
-    icon: Star,
-    iconClassName: "text-amber-500",
-    message: `${nameByUser.get(entry.user_id ?? "") ?? "A brother"} holds ${entry.total ?? 0} points`,
-    timestamp: now,
-    href: "/points",
-  }));
+  const nameByKey = buildMemberDisplayNameMap(members);
+  return leaderboard.slice(0, 3).map((entry, index) => {
+    const subjectId = leaderboardSubjectId(entry);
+    const displayName =
+      (subjectId ? nameByKey.get(subjectId) : undefined) ?? "A brother";
+    return {
+      id: `leader-${subjectId ?? `idx-${index}`}`,
+      icon: Star,
+      iconClassName: "text-amber-500",
+      message: `${displayName} holds ${entry.total ?? 0} points`,
+      timestamp: now,
+      href: "/points",
+    };
+  });
 }
 
 function buildBackworkItems(items: BackworkLike[]): FeedItem[] {
