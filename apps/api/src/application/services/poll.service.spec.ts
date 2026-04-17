@@ -410,13 +410,19 @@ describe('PollService', () => {
         activePoll,
         expiredPoll,
       ]);
-      mockVoteRepo.findByMessage
-        .mockResolvedValueOnce([
-          { option_index: 0 } as never,
-          { option_index: 0 } as never,
-          { option_index: 1 } as never,
-        ])
-        .mockResolvedValueOnce([]);
+      mockVoteRepo.findByMessage.mockImplementation((messageId: string) => {
+        if (messageId === 'poll-active') {
+          return Promise.resolve([
+            { option_index: 0 } as never,
+            { option_index: 0 } as never,
+            { option_index: 1 } as never,
+          ]);
+        }
+        if (messageId === 'poll-expired') {
+          return Promise.resolve([]);
+        }
+        return Promise.resolve([]);
+      });
 
       const result = await service.listPolls('ch-1');
 

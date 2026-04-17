@@ -257,15 +257,67 @@ export class PollService {
       limit,
     });
 
-    const results: PollWithResults[] = [];
+    const listRows: {
+      message: ChatMessage;
+      metadata: PollMetadata;
+      expired: boolean;
+    }[] = [];
     for (const message of messages) {
       const metadata = message.metadata as PollMetadata;
       const expired = this.isPollExpired(metadata);
       if (options.active === true && expired) continue;
       if (options.active === false && !expired) continue;
+      listRows.push({ message, metadata, expired });
+    }
 
-      const votes = await this.voteRepo.findByMessage(message.id);
+    const outcomes = await Promise.allSettled(
+      listRows.map(({ message, metadata, expired }) => {
+        const votesPromise = this.voteRepo.findByMessage(message.id);
+        const userVotesPromise = options.userId
+          ? this.voteRepo.findByMessageAndUser(message.id, options.userId)
+          : Promise.resolve(null);
+        return Promise.all([votesPromise, userVotesPromise]).then(
+          ([votes, userVoteList]) => ({
+            message,
+            metadata,
+            expired,
+            votes,
+            userVoteList,
+          }),
+        );
+      }),
+    );
+
+    const results: PollWithResults[] = [];
+    for (let i = 0; i < outcomes.length; i++) {
+      const outcome = outcomes[i];
+      const { message, metadata, expired } = listRows[i];
       const options_ = metadata.options ?? [];
+
+      if (outcome.status === 'rejected') {
+        const entry: PollWithResults = {
+          id: message.id,
+          channel_id: message.channel_id,
+          sender_id: message.sender_id,
+          content: message.content,
+          type: 'POLL',
+          metadata,
+          created_at: message.created_at,
+          isExpired: expired,
+          results: options_.map((optionText, optionIndex) => ({
+            optionIndex,
+            optionText,
+            voteCount: 0,
+          })),
+        };
+        if (options.userId) {
+          entry.userVotes = [];
+        }
+        results.push(entry);
+        continue;
+      }
+
+      const { votes, userVoteList } = outcome.value;
       const entry: PollWithResults = {
         id: message.id,
         channel_id: message.channel_id,
@@ -281,15 +333,9 @@ export class PollService {
           voteCount: votes.filter((v) => v.option_index === optionIndex).length,
         })),
       };
-
-      if (options.userId) {
-        const userVoteList = await this.voteRepo.findByMessageAndUser(
-          message.id,
-          options.userId,
-        );
+      if (options.userId && userVoteList) {
         entry.userVotes = userVoteList.map((v) => v.option_index);
       }
-
       results.push(entry);
     }
 
