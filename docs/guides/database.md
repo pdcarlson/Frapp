@@ -95,7 +95,7 @@ When adding tables:
 See `spec/architecture.md` §5 for a full table-by-table reference. At a high level:
 
 - **Core**: users, chapters, members, roles, invites
-- **Engagement**: events, event_attendance, point_transactions, study_sessions, service_entries, tasks
+- **Engagement**: events, event_attendance, point_transactions (including `idx_point_transactions_chapter_created_at` for admin audit pagination), study_sessions, service_entries, tasks
 - **Content**: backwork_departments, backwork_professors, backwork_resources, chapter_documents
 - **Communication**: chat_channel_categories, chat_channels, chat_messages, message_reactions
 - **Meta**: semester_archives, financial_invoices, financial_transactions, notifications, notification_preferences

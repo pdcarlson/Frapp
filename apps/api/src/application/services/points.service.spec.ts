@@ -62,6 +62,7 @@ describe('PointsService', () => {
       create: jest.fn(),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
+      findByChapterFiltered: jest.fn(),
       countRecentAdjustments: jest.fn().mockResolvedValue(0),
     };
 
@@ -467,15 +468,18 @@ describe('PointsService', () => {
     };
 
     it('returns newest-first, capped at the requested limit', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        txn1,
-        txn2,
-        txn3,
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
         flagged,
+        txn2,
+        txn1,
       ]);
 
       const result = await service.listTransactions('ch-1', { limit: 3 });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 3 }),
+      );
       expect(result).toHaveLength(3);
       expect(result[0].id).toBe('pt-flagged');
       expect(result[1].id).toBe('pt-2');
@@ -483,77 +487,83 @@ describe('PointsService', () => {
     });
 
     it('filters to a single user', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        txn1,
-        txn2,
-        txn3,
-        flagged,
-      ]);
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([txn1, txn2]);
 
       const result = await service.listTransactions('ch-1', {
         userId: 'user-1',
       });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ userId: 'user-1' }),
+      );
       expect(result.every((txn) => txn.user_id === 'user-1')).toBe(true);
       expect(result).toHaveLength(2);
     });
 
     it('filters to a category', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        txn1,
-        txn2,
-        txn3,
-        flagged,
-      ]);
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([flagged]);
 
       const result = await service.listTransactions('ch-1', {
         category: 'FINE',
       });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ category: 'FINE' }),
+      );
       expect(result).toEqual([flagged]);
     });
 
     it('filters to flagged transactions when flagged=true', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        txn1,
-        txn2,
-        txn3,
-        flagged,
-      ]);
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([flagged]);
 
       const result = await service.listTransactions('ch-1', { flagged: true });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ flagged: true }),
+      );
       expect(result).toEqual([flagged]);
     });
 
     it('excludes flagged transactions when flagged=false', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
         txn1,
         txn2,
         txn3,
-        flagged,
       ]);
 
       const result = await service.listTransactions('ch-1', {
         flagged: false,
       });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({ flagged: false }),
+      );
       expect(result.map((txn) => txn.id)).not.toContain('pt-flagged');
       expect(result).toHaveLength(3);
     });
 
     it('applies a `before` cursor strictly', async () => {
-      mockPointTxnRepo.findByChapter.mockResolvedValue([
-        txn1,
+      mockPointTxnRepo.findByChapterFiltered.mockResolvedValue([
         txn2,
+        txn1,
         txn3,
-        flagged,
       ]);
 
+      const before = '2026-02-27T10:00:00.000Z';
       const result = await service.listTransactions('ch-1', {
-        before: '2026-02-27T10:00:00.000Z',
+        before,
       });
 
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        expect.objectContaining({
+          before: new Date(before).toISOString(),
+        }),
+      );
       expect(result.map((txn) => txn.id)).not.toContain('pt-flagged');
     });
 
@@ -563,13 +573,23 @@ describe('PointsService', () => {
         id: `pt-many-${idx}`,
         created_at: new Date(2026, 0, idx + 1).toISOString(),
       }));
-      mockPointTxnRepo.findByChapter.mockResolvedValue(many);
+      mockPointTxnRepo.findByChapterFiltered.mockImplementation(
+        async (_chapterId, opts) => many.slice(0, opts.limit),
+      );
 
       const tooLow = await service.listTransactions('ch-1', { limit: 0 });
-      expect(tooLow).toHaveLength(1); // floor at 1
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 1 }),
+      );
+      expect(tooLow).toHaveLength(1);
 
       const tooHigh = await service.listTransactions('ch-1', { limit: 9999 });
-      expect(tooHigh).toHaveLength(5); // still all we have, not more
+      expect(mockPointTxnRepo.findByChapterFiltered).toHaveBeenLastCalledWith(
+        'ch-1',
+        expect.objectContaining({ limit: 200 }),
+      );
+      expect(tooHigh).toHaveLength(5);
     });
   });
 });

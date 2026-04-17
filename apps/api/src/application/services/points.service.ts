@@ -104,12 +104,9 @@ export class PointsService {
   /**
    * Chapter-wide transaction list for the points admin Audit tab.
    *
-   * Loads every `point_transactions` row for the chapter (the only index we
-   * currently need for this surface) and filters in-process by user, category,
-   * flagged state, and an optional `before` cursor. Results are sorted newest
-   * first and capped at `limit`. The flagged filter mirrors the `metadata.flagged`
-   * boolean written by `adjustPoints` when |amount| exceeds the anomaly
-   * threshold, so Audit view parity with the rest of the ledger is exact.
+   * Filters (user, category, flagged, `before` cursor), sort (newest first),
+   * and limit are applied in Postgres via `findByChapterFiltered`, so work and
+   * memory scale with the page size rather than full chapter history.
    */
   async listTransactions(
     chapterId: string,
@@ -121,34 +118,26 @@ export class PointsService {
       limit?: number;
     } = {},
   ): Promise<PointTransaction[]> {
-    const all = await this.pointTxnRepo.findByChapter(chapterId);
-    const beforeMs = options.before ? new Date(options.before).getTime() : null;
-
-    const filtered = all.filter((txn) => {
-      if (options.userId && txn.user_id !== options.userId) return false;
-      if (options.category && txn.category !== options.category) return false;
-      if (options.flagged !== undefined) {
-        const flagged = txn.metadata?.flagged === true;
-        if (flagged !== options.flagged) return false;
-      }
-      if (beforeMs !== null) {
-        const createdMs = new Date(txn.created_at).getTime();
-        if (!Number.isNaN(createdMs) && createdMs >= beforeMs) return false;
-      }
-      return true;
-    });
-
-    filtered.sort((a, b) => {
-      const aMs = new Date(a.created_at).getTime();
-      const bMs = new Date(b.created_at).getTime();
-      return bMs - aMs;
-    });
-
     const limit = Math.max(
       LIST_QUERY_LIMIT_MIN,
       Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
     );
-    return filtered.slice(0, limit);
+
+    let beforeIso: string | undefined;
+    if (options.before) {
+      const parsed = new Date(options.before);
+      if (!Number.isNaN(parsed.getTime())) {
+        beforeIso = parsed.toISOString();
+      }
+    }
+
+    return this.pointTxnRepo.findByChapterFiltered(chapterId, {
+      userId: options.userId,
+      category: options.category,
+      flagged: options.flagged,
+      before: beforeIso,
+      limit,
+    });
   }
 
   async getLeaderboard(

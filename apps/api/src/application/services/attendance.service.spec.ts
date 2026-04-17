@@ -88,6 +88,8 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       findByUser: jest.fn(),
       findByChapter: jest.fn(),
+      findByChapterFiltered: jest.fn(),
+      countRecentAdjustments: jest.fn(),
     };
 
     mockMemberRepo = {
