@@ -529,3 +529,6 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/int
 
 **Preview deploys on Vercel use wrong env vars**
 → Check that you scoped the env vars to the correct environment (Production vs Preview) in Vercel dashboard.
+
+**Merge to `main` builds on a random `*.vercel.app` URL instead of the staging custom domain**
+→ The deployment URL in the Vercel UI is always unique per build; `app.staging.frapp.live` / `staging.frapp.live` are **aliases** that should track the latest successful Preview deployment for `main`. If the alias lags or never updates, confirm **Settings → Domains** has the hostname on **Preview** with branch filter `main`, DNS still CNAMEs to `cname.vercel-dns.com`, and the domain is verified. After pushes to `main`, `.github/workflows/verify-deployments.yml` calls the Vercel aliases API (`POST /v2/deployments/{id}/aliases`) so the staging hostnames re-point to the READY deployment for that commit (idempotent when already correct). Optional override: set `VERCEL_TEAM_ID` if the API token must target a scope other than the project's default `accountId`.

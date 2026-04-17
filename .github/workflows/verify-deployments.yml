@@ -60,6 +60,8 @@ jobs:
           VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
           SERVICE_LABEL: frapp-web
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          VERCEL_STAGING_ALIAS: ${{ github.ref_name == 'main' && 'app.staging.frapp.live' || '' }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
   verify-vercel-landing:
@@ -79,4 +81,6 @@ jobs:
           VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
           SERVICE_LABEL: frapp-landing
           GITHUB_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+          VERCEL_STAGING_ALIAS: ${{ github.ref_name == 'main' && 'staging.frapp.live' || '' }}
         run: node scripts/ci/verify-vercel-deploy.mjs

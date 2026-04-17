@@ -10,11 +10,20 @@
 //   VERCEL_PROJECT_ID — required
 //   GITHUB_SHA        — required
 //   SERVICE_LABEL     — optional, used only for logs
+//   GITHUB_REF        — optional; when `refs/heads/main` and `VERCEL_STAGING_ALIAS`
+//                       are set, assigns that hostname to the READY deployment via
+//                       the Vercel aliases API (idempotent `not_modified` = success).
+//   VERCEL_STAGING_ALIAS — optional custom hostname (e.g. app.staging.frapp.live)
+//   VERCEL_TEAM_ID    — optional; defaults to the project's `accountId` from the API
 //
 // Exits 0 on success/neutral, 1 on terminal failure or overall timeout.
 
 import { createClock } from "./lib/polling.mjs";
-import { fetchVercelDeployments } from "./lib/providers.mjs";
+import {
+  assignVercelDeploymentAlias,
+  fetchVercelDeployments,
+  resolveVercelTeamId,
+} from "./lib/providers.mjs";
 
 // ── State semantics ─────────────────────────────────────────────────────────
 export const VERCEL_TERMINAL_SUCCESS_STATES = new Set(["READY"]);
@@ -95,6 +104,7 @@ export async function verifyVercelDeploy({
       return {
         status: "success",
         message: `Vercel deployment ${latest.uid ?? latest.url} for ${label} is ${state}.`,
+        deploymentUid: latest.uid ?? null,
       };
     }
 
@@ -142,11 +152,41 @@ async function main() {
   const projectId = requireEnv("VERCEL_PROJECT_ID");
   const sha = requireEnv("GITHUB_SHA");
   const label = process.env.SERVICE_LABEL ?? projectId;
+  const githubRef = process.env.GITHUB_REF ?? "";
+  const stagingAlias = process.env.VERCEL_STAGING_ALIAS?.trim();
 
   const result = await verifyVercelDeploy({ apiKey, projectId, sha, label });
 
   if (result.status === "success") {
     console.log(`✅ ${result.message}`);
+    if (githubRef === "refs/heads/main" && stagingAlias) {
+      const deploymentUid = result.deploymentUid;
+      if (!deploymentUid) {
+        console.error(
+          "Error: VERCEL_STAGING_ALIAS is set but the READY deployment has no uid; cannot assign alias.",
+        );
+        process.exit(1);
+      }
+      try {
+        const teamId = await resolveVercelTeamId({ apiKey, projectId });
+        const aliasOutcome = await assignVercelDeploymentAlias({
+          apiKey,
+          teamId,
+          deploymentUid,
+          alias: stagingAlias,
+        });
+        if (!aliasOutcome.ok) {
+          console.error(
+            `❌ Failed to assign ${stagingAlias} to ${deploymentUid}: ${aliasOutcome.message}`,
+          );
+          process.exit(1);
+        }
+        console.log(`🔗 Staging hostname https://${stagingAlias} now targets deployment ${deploymentUid}.`);
+      } catch (error) {
+        console.error(`❌ Staging alias step failed: ${error.message}`);
+        process.exit(1);
+      }
+    }
     process.exit(0);
   }
   if (result.status === "neutral") {
