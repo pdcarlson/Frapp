@@ -48,6 +48,15 @@ This pack defines approved copy for high-frequency state messages so members and
 | Empty (filtered) | `No transactions match this filter` | `Try relaxing the category or member filter.` |
 | Error | `Audit unavailable` | `Couldn't load chapter transactions. Retry or confirm your points:view_all access.` |
 
+## Roles & Permissions (dashboard)
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | `Loading roles and permissions...` |
+| Empty | `No roles yet` | `Chapters always start with default system roles. Refresh to reload or create a new custom role.` |
+| Error | `Couldn't load roles` | `Retry in a moment. This view requires the roles:manage permission.` |
+| Permission denied | `Roles & Permissions` | `Managing roles requires the roles:manage permission. Ask your chapter president to grant access.` |
+
 ## Billing (dashboard)
 
 | State | Title | Description |
