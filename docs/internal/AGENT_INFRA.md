@@ -47,7 +47,7 @@ If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM
 
 | Item                 | Location / notes                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------- |
-| CI                   | `.github/workflows/ci.yml` — parallel jobs                                            |
+| CI                   | `.github/workflows/ci.yml` — parallel jobs (includes `api-docker-build`: same `apps/api/Dockerfile` as Render) |
 | API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
 | Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
 | Release tags         | `.github/workflows/release.yml` — main → production merge                             |
@@ -113,3 +113,9 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:migration-safety` — migrations + promotion docs
 
 Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../.cursor/skills/testing.md).
+
+## Render build parity (API)
+
+Render builds the API with `docker build -f apps/api/Dockerfile` and runs `nest build` inside the image. That path uses `tsconfig.build.json` and can surface TypeScript errors that **`npm run check-types` previously skipped** for `apps/api` because the API workspace had no `check-types` script. The API package now runs `tsc -p tsconfig.build.json --noEmit` under Turbo, and CI runs **`api-docker-build`** so a broken production image fails the PR before merge.
+
+Optional hardening: turn off Render auto-deploy and trigger deploys from GitHub Actions only after CI passes via a [Render deploy hook](https://render.com/docs/deploy-hooks) (see Render docs “Using with GitHub Actions”). That prevents a direct push from deploying when branch protection is bypassed or checks are not required.

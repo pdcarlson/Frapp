@@ -169,7 +169,8 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 3. `npm run test -w apps/api` → `CI / api-tests`
 4. `npm run check:api-contract` → `CI / api-contract-check`
 5. `npm run check:migration-safety` → `CI / migration-safety`
-6. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
+6. `docker build -f apps/api/Dockerfile .` → `CI / api-docker-build` (matches Render’s API image build, including `nest build`)
+7. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
    match the job’s single-worker Playwright run; see

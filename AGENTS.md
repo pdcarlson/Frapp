@@ -81,6 +81,7 @@ See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md). Deploy archi
 | Lint         | `npm run lint` / `npm run lint:api` |
 | Tests        | `npm run test -w apps/api`          |
 | Build        | `npm run build`                     |
+| API image    | `docker build -f apps/api/Dockerfile .` (same as Render) |
 | Types        | `npm run check-types`               |
 | API contract | `npm run check:api-contract`        |
 | Migrations   | `npm run check:migration-safety`    |
@@ -136,14 +137,13 @@ The cloud VM does not have Infisical CLI session access. Use the fallback `.env.
 
 1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
 2. Start apps individually (no Infisical wrapper):
-   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
+   - API: `npx -w apps/api nest start --watch` (optional: `--builder swc` for faster reloads without running `tsc` on each change)
    - Web: `npm run dev -w apps/web`
    - Landing: `npm run dev -w apps/landing`
 
-### Pre-existing build issue (as of 2026-04-16 — re-verify before relying on this)
+### API build parity (CI + Render)
 
-`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The error is triggered by `tsconfig.build.json` (used by `nest build` / `nest start --watch`), while the `check-types` turbo task passes because the API's `tsconfig.json` uses individual strict flags rather than `strict: true`. **Temporary workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`. Once the upstream type error in `report.service.ts` is fixed, this workaround and the SWC devDependencies can be removed — check whether `npm run build` passes before relying on this note.
-<!-- TODO: track fix for TS2352 in report.service.ts, then remove --builder swc workaround and @swc/cli/@swc/core devDeps -->
+`npm run check-types` includes the API workspace (`tsc -p apps/api/tsconfig.build.json --noEmit`). CI also runs `docker build -f apps/api/Dockerfile .`, matching Render’s production image build (`nest build` inside the image). See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md).
 
 ### Key commands (standard, documented in root `package.json`)
 

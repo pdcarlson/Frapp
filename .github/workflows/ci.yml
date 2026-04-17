@@ -100,6 +100,19 @@ jobs:
       - name: Run API tests
         run: npm run test -w apps/api
 
+  # ── API production image build (matches Render Docker build / nest build) ─
+  api-docker-build:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build API Docker image
+        run: docker build -f apps/api/Dockerfile .
+
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
     needs: packages-build
