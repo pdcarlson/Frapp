@@ -65,6 +65,9 @@ jobs:
       - name: Type check
         run: npm run check-types
 
+      - name: API production build (nest build / Render parity)
+        run: npm run build -w apps/api
+
       - name: Lint
         run: npm run lint
 
@@ -99,6 +102,21 @@ jobs:
 
       - name: Run API tests
         run: npm run test -w apps/api
+
+  # ── API Docker image (same path as Render native Dockerfile builds) ─────
+  api-docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (Dockerfile)
+        run: docker build -f apps/api/Dockerfile .
 
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:

@@ -448,6 +448,14 @@ Production deploys additionally require manual approval before the migration ste
 
 See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 
+### API build parity (Render / Docker)
+
+Render builds the API with `nest build` inside `apps/api/Dockerfile` (see the builder stage). That uses `tsconfig.build.json`, which can surface TypeScript errors that never ran in CI if the API workspace had no `check-types` task aligned with that config.
+
+CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `CONTRIBUTING.md` and applied by [`scripts/configure-branch-protection.mjs`](../scripts/configure-branch-protection.mjs); re-run `npm run configure:branch-protection` after changing CI job names).
+
+**Optional hardening (not implemented here):** poll the Render [Deploys API](https://render.com/docs/deploys) after CI for the commit SHA and fail if the deploy never leaves `build_in_progress` / reaches `build_failed` — closest to “exactly what Render does,” but slower and flakier than building the same Dockerfile in Actions.
+
 ### Deploy verification (observer workflow)
 
 After a push to `main` or `production`, `.github/workflows/verify-deployments.yml` polls Render and Vercel to confirm the deploy for that SHA reached a healthy terminal state:

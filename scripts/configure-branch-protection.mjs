@@ -21,6 +21,7 @@ import { execSync } from "node:child_process";
 const CI_CHECKS = [
   "packages-build",
   "lint-and-typecheck",
+  "api-docker-build",
   "api-tests",
   "api-contract-check",
   "migration-safety",

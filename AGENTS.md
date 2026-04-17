@@ -81,7 +81,9 @@ See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md). Deploy archi
 | Lint         | `npm run lint` / `npm run lint:api` |
 | Tests        | `npm run test -w apps/api`          |
 | Build        | `npm run build`                     |
-| Types        | `npm run check-types`               |
+| Types        | `npm run check-types` (includes API via `tsconfig.build.json`, same program as `nest build`) |
+| API compile  | `npm run build -w apps/api` (matches Render `Dockerfile` builder) |
+| API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
 | Migrations   | `npm run check:migration-safety`    |
 
@@ -140,10 +142,9 @@ The cloud VM does not have Infisical CLI session access. Use the fallback `.env.
    - Web: `npm run dev -w apps/web`
    - Landing: `npm run dev -w apps/landing`
 
-### Pre-existing build issue (as of 2026-04-16 — re-verify before relying on this)
+### API dev server (optional SWC)
 
-`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The error is triggered by `tsconfig.build.json` (used by `nest build` / `nest start --watch`), while the `check-types` turbo task passes because the API's `tsconfig.json` uses individual strict flags rather than `strict: true`. **Temporary workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`. Once the upstream type error in `report.service.ts` is fixed, this workaround and the SWC devDependencies can be removed — check whether `npm run build` passes before relying on this note.
-<!-- TODO: track fix for TS2352 in report.service.ts, then remove --builder swc workaround and @swc/cli/@swc/core devDeps -->
+`nest start --watch` uses the same TypeScript program as `nest build` by default. For faster rebuilds in large trees you can use `nest start --watch --builder swc` (requires `@swc/cli` / `@swc/core` in `apps/api`). CI and Render use **`nest build`**; keep `npm run build -w apps/api` green before merging API changes.
 
 ### Key commands (standard, documented in root `package.json`)
 
