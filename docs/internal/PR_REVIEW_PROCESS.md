@@ -33,7 +33,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Include a rollback note for infra changes.
 2. **Automation pass**
    - Required checks pass.
-   - Bugbot review runs on the PR. On `main` it is advisory; on `production` its status check is merge-blocking.
+   - Bugbot auto-reviews the PR once it is marked ready. Findings are advisory on both `main` and `production` — Bugbot does not gate merges.
 3. **Human review pass**
    - At least one approval from a write-access reviewer.
    - All review threads resolved.
@@ -71,4 +71,4 @@ If a required check is stuck on `Expected — Waiting for status to be reported`
    - `gh pr checks <PR_NUMBER>`
 2. If a required workflow did not run, remove workflow-level `paths` filters.
 3. If check names changed, update branch protection config and re-apply it.
-4. If external providers (Vercel/Bugbot) are stuck, use emergency override, merge, then immediately restore protections.
+4. If external providers (e.g. Vercel) are stuck, use emergency override, merge, then immediately restore protections.

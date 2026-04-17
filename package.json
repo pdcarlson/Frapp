@@ -18,7 +18,8 @@
     "check:migration-safety": "node scripts/check-migration-safety.mjs",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
-    "configure:branch-protection": "node scripts/configure-branch-protection.mjs"
+    "configure:branch-protection": "node scripts/configure-branch-protection.mjs",
+    "test:ci-scripts": "node --test scripts/ci/__tests__/*.test.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",

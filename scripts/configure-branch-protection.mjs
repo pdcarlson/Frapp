@@ -25,14 +25,11 @@ const CI_CHECKS = [
   "api-contract-check",
   "migration-safety",
   "mobile-validate",
+  "ci-scripts-tests",
 ];
 
 const DOCS_CHECKS = [
   "docs-spec-sync",
-];
-
-const BUGBOT_PRODUCTION_CHECKS = [
-  "bugbot-review",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
@@ -141,7 +138,6 @@ function buildProtectionPayload(branch) {
     payload.required_status_checks.contexts = [
       ...ALL_REQUIRED_CHECKS,
       "branch-policy",
-      ...BUGBOT_PRODUCTION_CHECKS,
     ];
   }
 

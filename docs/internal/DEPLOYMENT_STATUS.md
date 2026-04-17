@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-04-16
+Last updated: 2026-04-16 (post PR #208 merge)
 
 ## Environment branch model
 
@@ -9,61 +9,57 @@ Last updated: 2026-04-16
 
 ## Surface rollout status
 
-| Surface                 | Staging (`main`) | Production (`production`) | Notes                                                                                                      |
-| ----------------------- | ---------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Landing (Vercel)        | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
-| Web dashboard (Vercel)  | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                    |
-| Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)   |
-| API (Render)            | ✅               | ⚠️                        | Staging custom domain is healthy again; production still lacks complete runtime config for a successful deploy |
-| Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                     |
+| Surface                 | Staging (`main`) | Production (`production`) | Notes                                                                                                           |
+| ----------------------- | ---------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Landing (Vercel)        | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                         |
+| Web dashboard (Vercel)  | ✅               | ✅                        | Project exists; Vercel production branch is `production`, preview deploys target `main`                         |
+| Docs (Vercel)           | —                | —                         | **Retired:** `apps/docs` removed from repo; pause/delete `frapp-docs` in Vercel (see `docs/DEPLOYMENT.md`)        |
+| API (Render)            | ✅               | ⚠️                        | Staging is live on `main`; production still lacks Stripe runtime config for a successful deploy                 |
+| Mobile (EAS/App Stores) | 🚧               | 🚧                        | Build and store pipeline not finalized                                                                          |
 
-## Provider branch wiring audit (2026-04-16)
+## Provider branch wiring audit (2026-04-16, verified after PR #208 merge)
 
-| Provider | Resource                          | Expected      | Current          | Status                              |
-| -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------- |
-| Render   | `frapp-api-staging`               | `main`        | `c/staging-application-foundation-2a54` (temporary) | ✅ Deploy reaches `live`; both Render and custom-domain healthchecks return `status: ok` |
-| Render   | `frapp-api-prod`                  | `production`  | `production`     | ⚠️ Production service config corrected, but runtime is still blocked by missing Stripe vars |
-| Vercel   | `frapp-web` production branch     | `production`  | `production`     | ✅                                  |
-| Vercel   | `frapp-landing` production branch | `production`  | `production`     | ✅                                  |
-| Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                  |
-| Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                  |
+| Provider | Resource                          | Expected      | Current          | Status                                                                                                      |
+| -------- | --------------------------------- | ------------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
+| Render   | `frapp-api-staging`               | `main`        | `main`           | ✅ Latest deploy on merge SHA is `live`; `/health` returns `status: ok`, `database: connected`              |
+| Render   | `frapp-api-prod`                  | `production`  | `production`     | ⚠️ Service config correct, but runtime is still blocked by missing Stripe vars                              |
+| Vercel   | `frapp-web` production branch     | `production`  | `production`     | ✅                                                                                                          |
+| Vercel   | `frapp-landing` production branch | `production`  | `production`     | ✅                                                                                                          |
+| Supabase | `frapp-staging` project branches  | none required | 0 branch objects | ✅                                                                                                          |
+| Supabase | `frapp-prod` project branches     | none required | 0 branch objects | ✅                                                                                                          |
 
 ### Current runtime blockers (verified 2026-04-16)
 
-- `Deploy API` fails on `main` because `.github/workflows/deploy-api.yml` used `npm install -g supabase@2.77.0`, which Supabase CLI no longer supports.
-- A separate recent `Deploy API` failure was caused by a missing staging `RENDER_DEPLOY_HOOK_URL` GitHub environment secret.
-- `https://api.frapp.live/health` currently returns `502`.
-- `https://api-staging.frapp.live/health` is healthy again and returns `{"status":"ok","database":"connected",...}`.
-- `https://app.staging.frapp.live` and `https://staging.frapp.live` return `401 Authentication Required`; this is intentional Vercel protection and not a bug.
-
-### Render API audit (verified 2026-04-16)
-
-- Both Render services were configured with an incorrect Docker monorepo setup:
-  - `rootDir: apps/api`
-  - `dockerfilePath: ./Dockerfile`
-- Corrected provider-side configuration to:
-  - `rootDir: ""`
-  - `dockerfilePath: "apps/api/Dockerfile"`
-- Staging service was temporarily pointed at `c/staging-application-foundation-2a54` and redeployed to validate the feature branch code path.
-- That deploy reached `live`, and both:
-  - `https://frapp-api-staging.onrender.com/health`
-  - `https://api-staging.frapp.live/health`
-  now return `{"status":"ok","database":"connected",...}`.
-- Supabase hostnames used by Render now resolve again in the audit environment:
-  - staging `SUPABASE_URL` host: `hnoyzpidbmizhbqaiity.supabase.co`
-  - production `SUPABASE_URL` host: `unttyvyfezddlyafcydh.supabase.co`
-- Production Render is also missing four Stripe runtime vars that exist in the documented env matrix:
+- Production Render is missing four Stripe runtime vars that exist in the documented env matrix:
   - `STRIPE_PRICE_ID`
   - `STRIPE_PUBLISHABLE_KEY`
   - `STRIPE_SECRET_KEY`
   - `STRIPE_WEBHOOK_SECRET`
+  Until these land in Infisical (env `prod`), `https://api.frapp.live/health` will continue to return `502`.
+- `https://app.staging.frapp.live` and `https://staging.frapp.live` return `401 Authentication Required`; this is intentional Vercel deployment protection and not a bug.
+
+### Known CI drift (not a runtime blocker)
+
+- `CI` workflow on `main` is currently red because `web-visual-regression` crashes at Playwright `webServer` startup — `apps/web/proxy.ts` calls `createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, …)` at module load and CI has no Supabase env vars. Render still deploys via its own GitHub auto-deploy integration, so user traffic is unaffected, but the `Deploy API` workflow's real steps are gated off until CI is green. Fix options tracked separately: lazy-initialize the Supabase client in `proxy.ts`, or inject dummy `NEXT_PUBLIC_SUPABASE_*` values in the `web-visual-regression` job.
+
+### Render API audit (resolved via PR #208)
+
+- Docker monorepo config on both services is now:
+  - `rootDir: ""`
+  - `dockerfilePath: "apps/api/Dockerfile"`
+- Staging service is back on `main` (was temporarily pointed at `c/staging-application-foundation-2a54` while validating the feature branch).
+- Supabase hostnames used by Render resolve from the audit environment:
+  - staging `SUPABASE_URL` host: `hnoyzpidbmizhbqaiity.supabase.co`
+  - production `SUPABASE_URL` host: `unttyvyfezddlyafcydh.supabase.co`
+- `.github/workflows/deploy-api.yml` no longer uses the unsupported global `npm install -g supabase@2.77.0`; it uses `supabase/setup-cli@v2` with Infisical-injected secrets.
 
 ### Vercel truth
 
-- `frapp-web` production branch is already `production`.
-- `frapp-landing` production branch is already `production`.
-- Latest `main` preview deployment for `frapp-web` is `READY`.
-- Latest `main` preview deployment for `frapp-landing` is intentionally `CANCELED` by the ignored-build step because no landing changes were detected.
+- `frapp-web` production branch is `production`.
+- `frapp-landing` production branch is `production`.
+- Latest `main` deployment for `frapp-web` is `READY` on merge SHA.
+- Latest `main` deployment for `frapp-landing` was `READY` on merge SHA; earlier commits in the same PR landed as `CANCELED` via turbo-ignore — expected when no landing-app changes were present.
+- `.github/workflows/verify-deployments.yml` now surfaces any post-push Render / Vercel failure as a GitHub check.
 
 ## API deployment pending checklist
 
@@ -77,7 +73,9 @@ Last updated: 2026-04-16
 - [x] Replace unsupported global Supabase CLI install in deploy workflow
 - [x] Correct Render Docker service config (`rootDir` + `dockerfilePath`)
 - [x] Re-test Supabase hostnames after projects resumed; staging host resolves and connects again
+- [x] Point Render staging back to `main` after feature-branch validation
 - [ ] Add missing production Stripe runtime variables in Infisical / Render
+- [ ] Resolve `web-visual-regression` CI failure so `Deploy API` workflow steps resume running
 
 ## Database promotion discipline checklist
 

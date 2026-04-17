@@ -165,11 +165,12 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**Cursor Bugbot** reviews every PR to `main` and every promotion PR from `main` to `production`.
+**Cursor Bugbot** auto-reviews every ready-for-review PR to `main` and `production` via its native GitHub app integration.
 
-- On `main`, Bugbot feedback is advisory. The repo also keeps a lightweight workflow that posts `cursor review` on PR lifecycle events so solo-developer review coverage does not depend entirely on Bugbot auto-trigger behavior.
-- On `main`, conversation resolution remains disabled, so unresolved Bugbot comment threads do not block merge.
-- On `production`, the Bugbot status check is required in branch protection, and the promotion PR still requires one approving review plus conversation resolution.
+- Bugbot feedback is advisory on both branches. There is no `bugbot-review` required status check.
+- On `main`, conversation resolution is not required, so unresolved Bugbot comment threads do not block merge.
+- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; Bugbot does not).
+- Manual trigger if auto-review misses a PR: post a top-level `bugbot run` comment. Full runbook: [`docs/internal/BUGBOT_RUNBOOK.md`](../docs/internal/BUGBOT_RUNBOOK.md).
 
 ### Key Design Decisions
 
@@ -328,4 +329,4 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 The Jules agent execution environment uses a pre-configured headless cloud VM.
 Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
-Agent-oriented rules and skills also live under `.jules/` (e.g., `.jules/rules`, `.jules/skills`) alongside the root `.cursor/` copies where applicable.
+Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.

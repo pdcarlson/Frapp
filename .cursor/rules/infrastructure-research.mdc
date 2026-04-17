@@ -16,7 +16,8 @@ Read `.cursor/skills/infrastructure-research.md` before investigating infrastruc
 
 Key points:
 - Always gather runtime truth BEFORE proposing changes — use provider APIs/CLIs
-- Available credentials: `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_APIKEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`
-- Use `GITHUB_TOKEN="$GITHUB_FULL_PERSONAL_ACCESS_TOKEN"` for all `gh` CLI commands
+- Available credentials: `GITHUB_PERSONAL_ACCESS_TOKEN`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_API_KEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`
+- Legacy aliases `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` and `RENDER_APIKEY` are still honored by scripts but deprecated — use the canonical names in new code and docs
+- Use `GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN"` for all `gh` CLI commands
 - Never print secret values — only reference variable names and presence/absence
 - Check `docs/internal/ENV_REFERENCE.md` as the canonical variable reference

@@ -448,6 +448,17 @@ Production deploys additionally require manual approval before the migration ste
 
 See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 
+### Deploy verification (observer workflow)
+
+After a push to `main` or `production`, `.github/workflows/verify-deployments.yml` polls Render and Vercel to confirm the deploy for that SHA reached a healthy terminal state:
+
+- **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
+- **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral (turbo-ignore skip). Treat "no deployment for this SHA within 3 minutes" as neutral, because turbo-ignore legitimately skips builds when nothing in the app tree changed.
+
+The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
+
+Script implementations and unit tests live under [`scripts/ci/`](../scripts/ci/).
+
 ### Secrets in CI vs CD
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
