@@ -1,6 +1,7 @@
--- Vice President / Secretary system roles need members:view alongside polls:view_all:
--- PollController (and PointsController) require members:view at class level; without it,
--- PermissionsGuard rejects every request even when route-level polls:view_all is present.
+-- Idempotent repair: VP / Secretary rows created by an older revision of
+-- 20260417140000_backfill_polls_view_all_system_roles.sql had only polls:view_all.
+-- New installs get members:view on insert there; this migration is a no-op then.
+-- PollController / PointsController require members:view at class level.
 
 update public.roles
 set permissions = permissions || array['members:view']::text[]

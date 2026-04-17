@@ -77,7 +77,7 @@ After any rollback event:
 
 ## Rollback `backfill_polls_view_all_system_roles`
 * **Migration**: `20260417140000_backfill_polls_view_all_system_roles.sql`
-* **Action (best-effort):** Remove appended permission and inserted roles, then restore `display_order` for system roles that were shifted by +2:
+* **Action (best-effort):** Remove appended permission and inserted roles (VP/Secretary may include `members:view` and `polls:view_all`), then restore `display_order` for system roles that were shifted by +2:
   1. `delete from public.roles where name in ('Vice President', 'Secretary') and is_system = true;`
   2. `update public.roles set permissions = array_remove(permissions, 'polls:view_all') where is_system = true and name = 'Treasurer' and not ('*' = any (permissions));`
   3. For each chapter that no longer has a Vice President row, decrement `display_order` by 2 on system roles with `display_order >= 5` (Member and below in the default ordering). Prefer restoring from a snapshot if unsure.

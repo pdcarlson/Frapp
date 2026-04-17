@@ -26,7 +26,7 @@ This drops and recreates the database, applies all migrations, and reruns `seed.
 
 ## 3. Conventions
 
-- **RBAC seed vs existing data:** Default system roles and their `permissions` arrays are defined in `apps/api/src/domain/constants/permissions.ts` and inserted when a chapter is created. Changing that array does **not** rewrite rows for chapters that already exist; use a SQL migration under `supabase/migrations/` when a permission must be backfilled (for example `20260417140000_backfill_polls_view_all_system_roles.sql` for `polls:view_all` on Treasurer and new VP/Secretary roles, and `20260417150000_backfill_members_view_vp_secretary.sql` to add `members:view` on VP/Secretary so it matches `PollController`’s class-level guard).
+- **RBAC seed vs existing data:** Default system roles and their `permissions` arrays are defined in `apps/api/src/domain/constants/permissions.ts` and inserted when a chapter is created. Changing that array does **not** rewrite rows for chapters that already exist; use a SQL migration under `supabase/migrations/` when a permission must be backfilled (for example `20260417140000_backfill_polls_view_all_system_roles.sql` for `polls:view_all` on Treasurer and for inserting VP/Secretary system roles with `members:view` and `polls:view_all` together so `PollController`’s class-level guard is satisfied). `20260417150000_backfill_members_view_vp_secretary.sql` remains an idempotent repair if a database applied an older revision of that backfill that omitted `members:view` on VP/Secretary.
 
 - Primary keys: `uuid` generated via `gen_random_uuid()`
 - Timestamps: `created_at TIMESTAMPTZ DEFAULT now()`
