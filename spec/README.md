@@ -17,7 +17,7 @@
 | ---------------------------------------------- | --------------------------- |
 | [`ui-brand-identity.md`](ui-brand-identity.md) | Brand and identity          |
 | [`ui-landing.md`](ui-landing.md)               | Marketing site              |
-| [`ui-web-dashboard.md`](ui-web-dashboard.md)   | Admin web app               |
+| [`ui-web-dashboard.md`](ui-web-dashboard.md)   | Admin web app (nav, screens; maps to RBAC including chapter-wide `GET /v1/polls` / Points audit list) |
 | [`ui-assets.md`](ui-assets.md)                 | Assets and sync             |
 | [`ui-resilience.md`](ui-resilience.md)         | Resilience and empty states |
 

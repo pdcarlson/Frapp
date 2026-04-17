@@ -45,10 +45,10 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 - **Financial Invoices** — Create/send invoices to members (dues); track payment status; overdue alerts.
 - **Events** — Create/edit events with configurable point values, mandatory flags, location, and recurrence rules. View attendance per event. Calendar view.
 - **Backwork Admin** — Browse uploaded resources with rich filters (department, course, professor, semester, year, assignment type, document variant). Manage departments and professors. View redacted vs. original indicators.
-- **Points Ledger** — Leaderboard (all-time, semester, month). Full transaction log with audit trail (who adjusted, reason). Manual point adjustments. Anomaly flagging and audit tab.
+- **Points Ledger** — Leaderboard (all-time, semester, month). Full transaction log with audit trail (who adjusted, reason). Manual point adjustments. Anomaly flagging and audit tab (chapter-wide list via `GET /v1/points/transactions`, gated by `points:view_all`; see [`behavior.md`](behavior.md)).
 - **Study Geofences** — Draw/manage geofence polygons for study locations. Configure reward rates and minimum session lengths.
 - **Chat (admin view)** — Channel management: create/edit/delete channels, organize into categories, set permission requirements. Manage pinned messages. View #announcements posting.
-- **Polls** — Create and manage polls. View results.
+- **Polls** — Chapter-wide poll list with aggregate tallies on the web app (`GET /v1/polls`, gated by `polls:view_all`; see [`behavior.md`](behavior.md) and [`ui-web-dashboard.md`](ui-web-dashboard.md)). Create polls and vote in channels per chat permissions.
 - **Tasks** — Create/assign tasks to members. Track status (TODO, IN_PROGRESS, COMPLETED, OVERDUE). Confirm completion and award points. Filter by assignee, status, due date.
 - **Service Hours** — Admin review queue for submitted service entries. Approve/reject with optional comments. Chapter-wide service report. Configure points-per-hour rate.
 - **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. All members can view/download.
@@ -132,7 +132,7 @@ Developer documentation: canonical markdown in [`docs/guides/`](../docs/guides/R
 
 #### Internal Ledger (House Points)
 
-- Every point change is recorded as a transaction in `point_transactions`.
+- Every point change is recorded as a transaction in `point_transactions`. The web dashboard **Audit** tab loads a chapter-wide, cursor-paginated slice of those rows for officers with `points:view_all` (API: `GET /v1/points/transactions`; full rules in [`behavior.md`](behavior.md)).
 - Positive amount = reward; negative amount = fine/correction.
 - Categories: ATTENDANCE, ACADEMIC, SERVICE, FINE, MANUAL.
 - A member's balance is the sum of their transactions.
@@ -210,6 +210,7 @@ Developer documentation: canonical markdown in [`docs/guides/`](../docs/guides/R
 - Polls have a question, 2-10 options, optional expiration time, and single-choice or multi-choice mode.
 - Members in the channel vote; results visible in real-time.
 - Polls are a special message type within chat.
+- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. Default seeds place that permission on Treasurer, Vice President, and Secretary (President has `*`); it is not on the default Member role. See [`behavior.md`](behavior.md) and [`ui-web-dashboard.md`](ui-web-dashboard.md).
 
 ### 3.8 Member Directory
 
