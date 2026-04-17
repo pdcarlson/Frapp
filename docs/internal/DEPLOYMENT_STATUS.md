@@ -1,6 +1,6 @@
 # Deployment Status Tracker
 
-Last updated: 2026-04-16 (post PR #208 merge)
+Last updated: 2026-04-17 (Vercel staging alias follow-up on main pushes)
 
 ## Environment branch model
 
@@ -60,6 +60,7 @@ Last updated: 2026-04-16 (post PR #208 merge)
 - Latest `main` deployment for `frapp-web` is `READY` on merge SHA.
 - Latest `main` deployment for `frapp-landing` was `READY` on merge SHA; earlier commits in the same PR landed as `CANCELED` via turbo-ignore — expected when no landing-app changes were present.
 - `.github/workflows/verify-deployments.yml` now surfaces any post-push Render / Vercel failure as a GitHub check.
+- **Staging DNS vs deployment URL (2026-04-17):** API checks showed `app.staging.frapp.live` correctly configured on the project with `gitBranch: main`, yet several consecutive `READY` `main` deployments had **no** alias to that hostname (only the default `*.vercel.app` URL). CI now runs `scripts/ci/ensure-vercel-staging-alias.mjs` on `main` pushes so `app.staging.frapp.live` / `staging.frapp.live` track the latest deployment for the pushed SHA after it reaches `READY`.
 
 ## API deployment pending checklist
 
