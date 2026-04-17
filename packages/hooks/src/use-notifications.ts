@@ -1,12 +1,13 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useNotifications(limit?: number) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["notifications", limit],
+    queryKey: ["notifications", chapterId, limit],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/notifications", {
         params: { query: { limit: String(limit ?? 50) } },
@@ -15,6 +16,7 @@ export function useNotifications(limit?: number) {
       return data;
     },
     staleTime: 10_000,
+    enabled: !!chapterId,
   });
 }
 
