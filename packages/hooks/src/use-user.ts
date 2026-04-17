@@ -50,3 +50,27 @@ export function useRequestAvatarUploadUrl() {
     },
   });
 }
+
+/**
+ * Load the caller's effective permission set for the active chapter.
+ *
+ * `staleTime` is intentionally long: permissions are already flattened
+ * server-side from role memberships, and role changes are rare. The hook
+ * is disabled until a chapter is selected so new sign-ins do not hit the
+ * API before the chapter store is hydrated.
+ */
+export function useMyPermissions(options?: { enabled?: boolean }) {
+  const client = useFrappClient();
+  const enabled = options?.enabled ?? true;
+  return useQuery({
+    queryKey: ["user", "me", "permissions"],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/users/me/permissions");
+      if (error) throw error;
+      return data;
+    },
+    staleTime: 60_000,
+    gcTime: 10 * 60_000,
+    enabled,
+  });
+}

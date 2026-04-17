@@ -133,4 +133,28 @@ export class RbacService {
     if (userPermissions.has('*')) return true;
     return permissions.some((p) => userPermissions.has(p));
   }
+
+  /**
+   * Resolve a caller's effective permission set for a chapter.
+   *
+   * Mirrors the flattening logic in `PermissionsGuard` so web and mobile
+   * clients can render permission-aware UI (hide nav items, disable actions,
+   * route users to `/no-access`) without making one request per role or
+   * duplicating RBAC rules in client code. Wildcard `*` passes through so the
+   * caller can short-circuit rendering for Presidents.
+   */
+  async getEffectivePermissions(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member?.role_ids?.length) return [];
+    const roles = await this.roleRepo.findByIds(member.role_ids);
+    if (!roles.length) return [];
+    const set = new Set(roles.flatMap((r) => r.permissions ?? []));
+    return Array.from(set).sort();
+  }
 }

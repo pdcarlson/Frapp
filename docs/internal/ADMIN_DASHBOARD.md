@@ -15,3 +15,19 @@ As new administrative workflows are completed, the initial placeholder page will
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.
+
+### Permission-aware navigation
+The sidebar and mobile sheet render from a single nav config
+(`apps/web/components/layout/nav-config.ts`) grouped into Overview / People /
+Operations / Communications / Resources / Finance / Settings sections. Each
+entry declares an optional `requirePermission` or `requireAnyOf` rule; the
+shell hides items the caller cannot access and disables roadmap items with a
+`Soon` chip. The caller's effective permission set is loaded once per chapter
+via `GET /v1/users/me/permissions` (backed by
+`RbacService.getEffectivePermissions`), cached with TanStack Query, and reused
+by any component that wraps controls in `<Can>` or calls `can()` /
+`canAny()` / `canAll()` from `apps/web/lib/auth/can.ts`.
+
+A dedicated `/no-access` route explains the next steps for signed-in users who
+have no chapter role assigned; individual screens can direct users there
+rather than dumping them at the sign-in page.

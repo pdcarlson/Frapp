@@ -336,4 +336,101 @@ describe('RbacService', () => {
       result.some((r) => r.key === 'WILDCARD' && r.permission === '*'),
     ).toBe(true);
   });
+
+  describe('getEffectivePermissions', () => {
+    const buildMember = (role_ids: string[]): Member => ({
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids,
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    const buildRole = (id: string, permissions: string[]): Role => ({
+      id,
+      chapter_id: 'ch-1',
+      name: `role-${id}`,
+      permissions,
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    });
+
+    it('returns empty array when user is not a member of the chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual([]);
+      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('returns empty array when member has no role ids', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(buildMember([]));
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual([]);
+      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('flattens and de-duplicates permissions across multiple roles', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember(['role-a', 'role-b']),
+      );
+      mockRoleRepo.findByIds.mockResolvedValue([
+        buildRole('role-a', [
+          SystemPermissions.MEMBERS_VIEW,
+          SystemPermissions.EVENTS_CREATE,
+        ]),
+        buildRole('role-b', [
+          SystemPermissions.MEMBERS_VIEW,
+          SystemPermissions.BILLING_VIEW,
+        ]),
+      ]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual(
+        [
+          SystemPermissions.BILLING_VIEW,
+          SystemPermissions.EVENTS_CREATE,
+          SystemPermissions.MEMBERS_VIEW,
+        ].sort(),
+      );
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(['role-a', 'role-b']);
+    });
+
+    it('includes wildcard for President-style roles', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember(['role-president']),
+      );
+      mockRoleRepo.findByIds.mockResolvedValue([
+        buildRole('role-president', [SystemPermissions.WILDCARD]),
+      ]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual([SystemPermissions.WILDCARD]);
+    });
+
+    it('tolerates roles with null permissions arrays', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember(['role-broken']),
+      );
+      const broken = buildRole('role-broken', []);
+      // Simulate a database row where permissions came back as null rather
+      // than an empty array — the service must not crash.
+      (broken as unknown as { permissions: string[] | null }).permissions =
+        null;
+      mockRoleRepo.findByIds.mockResolvedValue([broken]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual([]);
+    });
+  });
 });

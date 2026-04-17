@@ -2,23 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Ban,
   Bell,
-  BookOpen,
-  CalendarDays,
-  CircleDollarSign,
+  ChevronRight,
   Clock,
-  LayoutDashboard,
   Menu,
-  Settings,
   ShieldCheck,
-  Star,
-  Users,
 } from "lucide-react";
-import { useCurrentChapter } from "@repo/hooks";
+import { useCurrentChapter, useMyPermissions } from "@repo/hooks";
 import { resolveChapterAccentColor } from "@repo/theme/accent";
 import {
   CurrentChapterPayloadSchema,
@@ -36,45 +30,18 @@ import { cn } from "@/lib/utils";
 import { DashboardCommandMenu } from "@/components/layout/dashboard-command-menu";
 import { DashboardNotificationDrawer } from "@/components/layout/dashboard-notification-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import {
+  DASHBOARD_NAV,
+  DASHBOARD_NAV_BY_HREF,
+  type NavItem,
+} from "@/components/layout/nav-config";
+import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type DashboardShellProps = {
   children: React.ReactNode;
 };
-
-type NavItem = {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  href?: string;
-  status?: "available" | "coming-soon" | "restricted";
-  statusLabel?: string;
-};
-
-const navItems = [
-  { icon: LayoutDashboard, label: "Overview", href: "/", status: "available" },
-  { icon: Users, label: "Members", href: "/members", status: "available" },
-  { icon: CalendarDays, label: "Events", href: "/events", status: "available" },
-  { icon: Star, label: "Points", href: "/points", status: "available" },
-  {
-    icon: CircleDollarSign,
-    label: "Billing",
-    href: "/billing",
-    status: "available",
-  },
-  {
-    icon: BookOpen,
-    label: "Backwork",
-    status: "restricted",
-    statusLabel: "Requires docs:view",
-  },
-  {
-    icon: Settings,
-    label: "Settings",
-    status: "coming-soon",
-    statusLabel: "Soon",
-  },
-] satisfies NavItem[];
 
 const sidebarFocusRingClassName =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950";
@@ -217,69 +184,55 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   );
 }
 
+function findNavItemByPath(pathname: string): NavItem | undefined {
+  if (DASHBOARD_NAV_BY_HREF[pathname]) {
+    return DASHBOARD_NAV_BY_HREF[pathname];
+  }
+  // Nested routes ("/members/123") resolve to the deepest matching nav href.
+  return Object.entries(DASHBOARD_NAV_BY_HREF)
+    .filter(([href]) => href !== "/" && pathname.startsWith(`${href}/`))
+    .sort(([a], [b]) => b.length - a.length)[0]?.[1];
+}
+
 export function DashboardShell({ children }: DashboardShellProps) {
   const pathname = usePathname();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [notificationDrawerOpen, setNotificationDrawerOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const titleByPath: Record<string, string> = {
-    "/": "Chapter Operations",
-    "/members": "Members",
-    "/events": "Events",
-    "/points": "Points Ledger",
-    "/billing": "Billing",
-  };
-  const actionByPath: Record<string, string> = {
-    "/": "Invite Member",
-    "/members": "Invite Member",
-    "/events": "New Event",
-    "/points": "Adjust Points",
-    "/billing": "Create Invoice",
-  };
-  const pageTitle = titleByPath[pathname] ?? "Dashboard";
-  const pageAction = actionByPath[pathname] ?? "Open Action";
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const { data: permissionsPayload } = useMyPermissions({
+    enabled: Boolean(activeChapterId),
+  });
+  const permissions = useMemo(
+    () => permissionsPayload?.permissions,
+    [permissionsPayload],
+  );
 
-  function renderNavItems(onNavigate?: () => void) {
-    return navItems.map((item) =>
-      item.href ? (
-        <Link
-          key={item.label}
-          href={item.href}
-          onClick={onNavigate}
-          aria-current={pathname === item.href ? "page" : undefined}
-          className={cn(
-            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
-            sidebarFocusRingClassName,
-            pathname === item.href
-              ? "border-l-2 border-primary bg-primary/15 text-white"
-              : "border-l-2 border-transparent text-slate-300 hover:bg-navy-900 hover:text-white",
-          )}
-        >
-          <item.icon className={navIconClassName} />
-          <span>{item.label}</span>
-        </Link>
-      ) : (
-        <button
-          key={item.label}
-          type="button"
-          className={cn(
-            "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500",
-            sidebarFocusRingClassName,
-          )}
-          disabled
-          title={item.statusLabel}
-        >
-          <item.icon className={navIconClassName} />
-          <span>{item.label}</span>
-          {item.statusLabel ? (
-            <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-              {item.statusLabel}
-            </span>
-          ) : null}
-        </button>
-      ),
-    );
+  const activeItem = findNavItemByPath(pathname);
+  const pageTitle = activeItem?.breadcrumbTitle ?? activeItem?.label ?? "Dashboard";
+  const primaryActionLabel = activeItem?.primaryActionLabel ?? null;
+  const primaryActionHref = activeItem?.href ?? pathname;
+
+  function renderSections(onNavigate?: () => void) {
+    return DASHBOARD_NAV.map((section) => (
+      <div key={section.id} className="space-y-1">
+        <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+          {section.label}
+        </p>
+        {section.items.map((item) => (
+          <ProtectedNavItem
+            key={item.id}
+            item={item}
+            isActive={item.href === pathname}
+            permissions={permissions}
+            iconClassName={navIconClassName}
+            onNavigate={onNavigate}
+            focusClassName={sidebarFocusRingClassName}
+          />
+        ))}
+      </div>
+    ));
   }
 
   useEffect(() => {
@@ -325,8 +278,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
-          <nav className="mt-6 space-y-1">
-            {renderNavItems(() => setMobileNavOpen(false))}
+          <nav className="mt-6 space-y-4">
+            {renderSections(() => setMobileNavOpen(false))}
           </nav>
           <DashboardChapterPanel variant="sheet" />
         </SheetContent>
@@ -347,7 +300,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
               Operations Console
             </p>
           </div>
-          <nav className="space-y-1">{renderNavItems()}</nav>
+          <nav aria-label="Primary" className="space-y-4">
+            {renderSections()}
+          </nav>
 
           <DashboardChapterPanel variant="sidebar" />
         </aside>
@@ -355,10 +310,21 @@ export function DashboardShell({ children }: DashboardShellProps) {
         <div className="min-h-screen flex-1">
           <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
             <div className="flex h-16 items-center justify-between px-4 sm:px-6">
-              <div>
-                <p className="text-sm text-muted-foreground">Dashboard</p>
+              <nav aria-label="Breadcrumb">
+                <p className="flex items-center gap-1 text-xs text-muted-foreground">
+                  <span>Dashboard</span>
+                  {activeItem && activeItem.href !== "/" ? (
+                    <>
+                      <ChevronRight
+                        className="h-3 w-3 text-muted-foreground/70"
+                        aria-hidden="true"
+                      />
+                      <span>{activeItem.breadcrumbTitle ?? activeItem.label}</span>
+                    </>
+                  ) : null}
+                </p>
                 <h1 className="text-lg font-semibold">{pageTitle}</h1>
-              </div>
+              </nav>
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
@@ -398,11 +364,11 @@ export function DashboardShell({ children }: DashboardShellProps) {
                 >
                   {isSigningOut ? "Signing out..." : "Sign out"}
                 </Button>
-                <Button size="sm" asChild>
-                  <Link href={pathname === "/members" ? "/members" : pathname}>
-                    {pageAction}
-                  </Link>
-                </Button>
+                {primaryActionLabel ? (
+                  <Button size="sm" asChild>
+                    <Link href={primaryActionHref}>{primaryActionLabel}</Link>
+                  </Button>
+                ) : null}
               </div>
             </div>
           </header>
