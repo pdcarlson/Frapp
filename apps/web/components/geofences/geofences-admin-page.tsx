@@ -37,7 +37,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Geofence = {
   id: string;
@@ -50,14 +50,6 @@ type Geofence = {
   min_session_minutes: number;
   created_at: string;
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
 
 /**
  * Parses a textarea of "lat,lng" lines into a polygon ring. Polygons need at

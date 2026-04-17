@@ -44,7 +44,7 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -82,14 +82,6 @@ type Message = {
 };
 
 const QUICK_REACTIONS = ["👍", "🎉", "❤️", "😂", "🔥"];
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
 
 function formatClock(value: string | null | undefined): string {
   if (!value) return "";

@@ -30,6 +30,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ErrorState, LoadingState } from "@/components/shared/async-states";
 import { signOutCurrentSession } from "@/lib/auth/session";
+import { getErrorMessage } from "@/lib/utils";
 
 type CurrentUser = {
   id?: string;
@@ -48,16 +49,6 @@ type UserSettings = {
   quiet_hours_tz?: string | null;
   theme?: "light" | "dark" | "system";
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) {
-      return message;
-    }
-  }
-  return fallback;
-}
 
 export function ProfilePanel() {
   const { toast } = useToast();

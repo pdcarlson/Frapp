@@ -40,7 +40,7 @@ import {
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Invoice = {
   id: string;
@@ -90,14 +90,6 @@ function isOverdue(invoice: Invoice): boolean {
   const due = new Date(invoice.due_date);
   if (Number.isNaN(due.getTime())) return false;
   return due.getTime() < Date.now();
-}
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
 }
 
 export function InvoiceAdminCard() {

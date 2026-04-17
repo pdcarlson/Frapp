@@ -44,7 +44,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type Department = { id: string; code: string; name: string | null };
 type Professor = { id: string; name: string };
@@ -112,14 +112,6 @@ const DOCUMENT_VARIANTS = [
 // Sentinel used by Radix Select, which rejects empty-string values. Maps to
 // "no filter" / "no selection" in local state before we hit the API.
 const ANY = "__any__";
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");

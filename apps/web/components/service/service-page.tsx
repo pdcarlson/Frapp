@@ -38,7 +38,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
 
@@ -61,14 +61,6 @@ type MemberSummary = {
   user_id?: string;
   display_name?: string | null;
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
 
 function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes}m`;

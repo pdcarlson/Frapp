@@ -39,15 +39,7 @@ import {
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { asArray } from "@/lib/utils";
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type SemesterArchive = {
   id: string;

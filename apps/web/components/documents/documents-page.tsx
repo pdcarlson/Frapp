@@ -36,7 +36,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
-import { asArray } from "@/lib/utils";
+import { asArray, getErrorMessage } from "@/lib/utils";
 
 type ChapterDocument = {
   id: string;
@@ -79,14 +79,6 @@ const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   webp: "image/webp",
   gif: "image/gif",
 };
-
-function getErrorMessage(error: unknown, fallback: string): string {
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: string }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return fallback;
-}
 
 function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");
