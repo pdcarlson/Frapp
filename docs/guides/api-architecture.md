@@ -52,7 +52,7 @@ Every protected endpoint runs through a consistent guard chain:
 
 1. **SupabaseAuthGuard** — validates the JWT from Supabase Auth.
 2. **ChapterGuard** — verifies the `x-chapter-id` header and membership in that chapter.
-3. **PermissionsGuard** — checks `@RequirePermissions()` metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard uses Nest's `Reflector.getAllAndOverride` with `[handler, class]`: **handler wins**, so route-specific permissions replace the class baseline for that method (same semantics as other Nest metadata).
+3. **PermissionsGuard** — checks `@RequirePermissions()` metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard uses Nest's `Reflector.getAllAndOverride` with `[handler, class]`: **handler wins**, so route-specific permissions replace the class baseline for that method (same semantics as other Nest metadata). If a route still needs the class baseline **and** extra permissions, list both on the handler (for example `PollController` repeats `members:view` on vote/remove/get so those routes stay member-scoped while `createPoll` stays `polls:create`-only).
 
 Interceptors:
 

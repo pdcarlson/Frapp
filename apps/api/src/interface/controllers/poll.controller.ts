@@ -51,6 +51,7 @@ export class PollController {
   }
 
   @Post('polls/:messageId/vote')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Cast vote on a poll' })
   async vote(
     @Param('messageId') messageId: string,
@@ -66,6 +67,7 @@ export class PollController {
   }
 
   @Delete('polls/:messageId/vote')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Remove vote from a poll' })
   async removeVote(
     @Param('messageId') messageId: string,
@@ -97,6 +99,7 @@ export class PollController {
   }
 
   @Get('polls/:messageId')
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'Get poll with results' })
   async getPoll(
     @Param('messageId') messageId: string,
