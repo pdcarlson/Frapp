@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SupabaseClient } from '@supabase/supabase-js';
@@ -35,7 +36,7 @@ export class PermissionsGuard implements CanActivate {
     );
 
     const anyOfGroups = this.collectAnyOfPermissionGroups(
-      handler,
+      handler as (...args: unknown[]) => unknown,
       controllerClass,
     );
 
@@ -113,8 +114,8 @@ export class PermissionsGuard implements CanActivate {
    * OR-group; the caller must satisfy every group (AND of ORs). A single level is one group.
    */
   private collectAnyOfPermissionGroups(
-    handler: object,
-    controllerClass: object,
+    handler: (...args: unknown[]) => unknown,
+    controllerClass: Type<unknown>,
   ): string[][] | undefined {
     const handlerAny = this.reflector.get<string[]>(
       PERMISSIONS_ANY_KEY,
