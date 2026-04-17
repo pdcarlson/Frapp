@@ -47,7 +47,7 @@ If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM
 
 | Item                 | Location / notes                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------- |
-| CI                   | `.github/workflows/ci.yml` — parallel jobs                                            |
+| CI                   | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `apps/api` `check-types` = `tsconfig.build.json`, matching Render `nest build`) |
 | API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
 | Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
 | Release tags         | `.github/workflows/release.yml` — main → production merge                             |

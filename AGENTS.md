@@ -136,14 +136,13 @@ The cloud VM does not have Infisical CLI session access. Use the fallback `.env.
 
 1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
 2. Start apps individually (no Infisical wrapper):
-   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
+   - API: `npm run start:dev -w apps/api` (or `npx -w apps/api nest start --watch --builder swc` if you want SWC-only transpile without `tsc` in the watch loop)
    - Web: `npm run dev -w apps/web`
    - Landing: `npm run dev -w apps/landing`
 
-### Pre-existing build issue (as of 2026-04-16 — re-verify before relying on this)
+### API type-check vs Render `nest build`
 
-`npm run build` and `nest start --watch` (default tsc builder) fail due to a TS2352 error in `apps/api/src/application/services/report.service.ts`. The error is triggered by `tsconfig.build.json` (used by `nest build` / `nest start --watch`), while the `check-types` turbo task passes because the API's `tsconfig.json` uses individual strict flags rather than `strict: true`. **Temporary workaround:** use `--builder swc` flag when running the API dev server (e.g., `npx -w apps/api nest start --watch --builder swc`). This requires `@swc/cli` and `@swc/core` as devDependencies in `apps/api`. Once the upstream type error in `report.service.ts` is fixed, this workaround and the SWC devDependencies can be removed — check whether `npm run build` passes before relying on this note.
-<!-- TODO: track fix for TS2352 in report.service.ts, then remove --builder swc workaround and @swc/cli/@swc/core devDeps -->
+`apps/api` defines `check-types` as `tsc -p tsconfig.build.json --noEmit`, the same project file `nest build` uses. That keeps `npm run check-types` aligned with the API Docker image on Render (which runs `nest build`). Previously the API had no `check-types` script, so CI could pass while a production Docker build failed.
 
 ### Key commands (standard, documented in root `package.json`)
 

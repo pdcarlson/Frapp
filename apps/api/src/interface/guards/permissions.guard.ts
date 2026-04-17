@@ -113,8 +113,8 @@ export class PermissionsGuard implements CanActivate {
    * OR-group; the caller must satisfy every group (AND of ORs). A single level is one group.
    */
   private collectAnyOfPermissionGroups(
-    handler: object,
-    controllerClass: object,
+    handler: Function,
+    controllerClass: Function,
   ): string[][] | undefined {
     const handlerAny = this.reflector.get<string[]>(
       PERMISSIONS_ANY_KEY,

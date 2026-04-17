@@ -459,6 +459,14 @@ The workflow is currently advisory (not a required check). When a failure shows 
 
 Script implementations and unit tests live under [`scripts/ci/`](../scripts/ci/).
 
+### API Docker build parity (Render)
+
+The staging/production API image runs `nest build` inside Docker (`apps/api/Dockerfile`), which type-checks using `tsconfig.build.json`. Monorepo `npm run check-types` includes `apps/api` with the same project file (`tsc -p tsconfig.build.json --noEmit`), so a merge that would fail the Render image build should fail CI before deploy.
+
+**Optional hardening (if you want the exact OCI build in CI):** add a GitHub Actions job that runs `docker build -f apps/api/Dockerfile .` on PRs to `main`/`production`. That catches Dockerfile-only issues (wrong paths, missing `COPY` layers) at the cost of slower CI.
+
+**Render + GitHub integration (operational, not a substitute for compile gates):** In the Render dashboard you can require deploys to wait until GitHub checks pass (“after CI checks pass” / similar wording in Render’s deploy settings—see [Render: Deploying](https://render.com/docs/deploys)). [Service previews](https://render.com/docs/service-previews) give isolated instances for PRs when enabled. Deploy hooks only trigger redeploys; they do not compile your branch ahead of merge, so the compile gate belongs in Actions.
+
 ### Secrets in CI vs CD
 
 **CI (lint, typecheck, tests)** does **not** use any runtime secrets. No Supabase, Stripe, or Vercel credentials are needed.
@@ -511,7 +519,7 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/int
 → Ensure `transpilePackages` in `next.config.js` includes all `@repo/*` packages used by that app. The `vercel.json` `buildCommand` uses Turbo to build dependencies first.
 
 **Render deploy fails**
-→ Check that the Dockerfile path is `apps/api/Dockerfile` and the build context is the repo root (Render default).
+→ Check that the Dockerfile path is `apps/api/Dockerfile` and the build context is the repo root (Render default). If the log shows TypeScript errors from `nest build`, run `npm run check-types` locally (it includes the API build project) or `npm run build -w apps/api`.
 
 **Supabase connection refused in deployed API**
 → Ensure `SUPABASE_URL` uses `https://` (not `http://`) and points to the cloud project, not `localhost`.
