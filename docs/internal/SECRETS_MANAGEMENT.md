@@ -74,7 +74,7 @@ For each environment, add the canonical values from the table in [`ENV_REFERENCE
 | `STRIPE_SECRET_KEY`         | `sk_test_...` from Stripe test mode                |
 | `STRIPE_WEBHOOK_SECRET`     | `whsec_...` from Stripe                            |
 | `STRIPE_PRICE_ID`           | `price_...` from Stripe                            |
-| `API_URL`                   | `https://api-staging.frapp.live/v1`                |
+| `API_URL`                   | `https://api-staging.frapp.live` (API origin; no `/v1` suffix — see `ENV_REFERENCE.md`) |
 | `APP_URL`                   | `https://app.staging.frapp.live`                   |
 | `RENDER_DEPLOY_HOOK_URL`    | From Render staging service dashboard              |
 | `API_HEALTHCHECK_URL`       | `https://api-staging.frapp.live/health`            |

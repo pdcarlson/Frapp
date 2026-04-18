@@ -303,7 +303,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
       >
         Skip to main content
       </a>
-      <div className="mx-auto flex w-full max-w-[1400px]">
+      <div className="mx-auto flex w-full max-w-[1600px]">
         <aside className="hidden min-h-screen w-72 border-r border-border bg-navy-950 px-4 py-6 text-slate-100 lg:block">
           <div className="mb-8 border-b border-border pb-6">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
@@ -321,8 +321,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
         </aside>
 
         <div className="min-h-screen flex-1">
-          <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-            <div className="flex h-16 items-center justify-between px-4 sm:px-6">
+          <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
               <nav aria-label="Breadcrumb">
                 <p className="flex items-center gap-1 text-xs text-muted-foreground">
                   <span>Dashboard</span>
@@ -399,8 +399,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
             </div>
           </header>
 
-          <main id="main-content" className="px-4 py-6 sm:px-6">
-            {children}
+          <main id="main-content" className="px-5 py-8 sm:px-8 lg:px-10">
+            <div className="mx-auto w-full max-w-7xl">{children}</div>
           </main>
         </div>
       </div>
