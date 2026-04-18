@@ -9,13 +9,15 @@
   "scripts": {
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit",
+    "test": "vitest run",
     "generate": "openapi-typescript ../../apps/api/openapi.json -o ./src/types.ts"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "openapi-typescript": "^7.6.1",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"

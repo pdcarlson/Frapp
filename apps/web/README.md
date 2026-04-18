@@ -19,7 +19,7 @@ Provide the following variables through Infisical (`npm run dev:web`) or a local
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_API_URL` — API origin (for example `http://localhost:3001`). A trailing `/v1` is tolerated for backwards compatibility; the bundled client strips it so paths stay `/v1/...` instead of `/v1/v1/...`.
 
 ## Common commands
 

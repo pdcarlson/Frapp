@@ -1,7 +1,7 @@
 import { ServiceHoursPage } from "@/components/service/service-page";
 
 export const metadata = {
-  title: "Service Hours — Frapp",
+  title: "Service Hours · Frapp",
 };
 
 export default function Service() {

@@ -13,7 +13,7 @@ const geistSans = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Frapp — Admin Dashboard",
+  title: "Frapp · Admin Dashboard",
   description: "The Operating System for Greek Life",
 };
 

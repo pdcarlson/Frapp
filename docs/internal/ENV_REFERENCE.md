@@ -49,7 +49,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `STRIPE_SECRET_KEY` | **Same as staging** — use your real Stripe test-mode key (`sk_test_...`) so you can test billing flows locally. Copy from Stripe dashboard → Developers → API keys → Secret key (test mode). | ← same `sk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Secret key (live mode: `sk_live_...`) |
 | `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/billing/webhook` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
 | `STRIPE_PRICE_ID` | **Same as staging** — use the same test-mode Price ID. Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`). | ← same `price_...` as local | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (production `price_...`) |
-| `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
+| `API_URL` | `http://localhost:3001` | `https://api-staging.frapp.live` | `https://api.frapp.live` |
 | `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
 
 ### API-Only Settings
@@ -87,6 +87,8 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
 | `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
+
+`API_URL` / `NEXT_PUBLIC_API_URL` / `EXPO_PUBLIC_API_URL` should be the **API origin without `/v1`** (the OpenAPI client appends `/v1/...` paths). Values that still end with `/v1` from older Infisical entries are accepted: `@repo/api-sdk` strips a trailing `/v1` when creating the HTTP client so requests do not become `/v1/v1/...`.
 
 **You type the literal string `${SUPABASE_URL}` as the value.** Infisical recognizes this as a reference and resolves it at sync/inject time.
 
