@@ -2,12 +2,14 @@ name: Verify deployments
 
 # Observer workflow. After a push to main or production, confirm that the
 # Render API deploy and the Vercel web/landing deployments for the pushed SHA
-# reached a healthy terminal state. Failure surfaces as a red GitHub check;
-# the workflow does NOT attempt any remediation.
+# reached a healthy terminal state. Failure surfaces as a red GitHub check.
+# On pushes to main only, a follow-up step re-points staging custom domains to
+# the new deployment when Vercel omits that alias (see ensure-vercel-staging-alias.mjs).
 #
 # Semantics live in:
 #   scripts/ci/verify-render-deploy.mjs
 #   scripts/ci/verify-vercel-deploy.mjs
+#   scripts/ci/ensure-vercel-staging-alias.mjs (main only — fixes staging DNS)
 # Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
 
 on:
@@ -62,6 +64,17 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
+      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
+      - name: Point staging domain at latest main deployment (web)
+        if: github.ref_name == 'main'
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_PROJECT_ID: prj_xkn32taKrJCgYRZoN6pZRfGfPT9T
+          VERCEL_STAGING_ALIAS: app.staging.frapp.live
+          SERVICE_LABEL: frapp-web
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/ensure-vercel-staging-alias.mjs
+
   verify-vercel-landing:
     runs-on: ubuntu-latest
     steps:
@@ -80,3 +93,14 @@ jobs:
           SERVICE_LABEL: frapp-landing
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
+
+      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
+      - name: Point staging domain at latest main deployment (landing)
+        if: github.ref_name == 'main'
+        env:
+          VERCEL_API_KEY: ${{ secrets.VERCEL_API_KEY }}
+          VERCEL_PROJECT_ID: prj_aAkER9EZJcxR51vUY0mwNDnCf8vy
+          VERCEL_STAGING_ALIAS: staging.frapp.live
+          SERVICE_LABEL: frapp-landing
+          GITHUB_SHA: ${{ github.sha }}
+        run: node scripts/ci/ensure-vercel-staging-alias.mjs
