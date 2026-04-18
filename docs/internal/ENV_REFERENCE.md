@@ -47,10 +47,12 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `SUPABASE_SERVICE_ROLE_KEY` | Output of `npx supabase status -o env` for your local stack (`SUPABASE_SERVICE_ROLE_KEY`) | Copy from Supabase staging dashboard → Settings → API → `service_role` key (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → `service_role` key (⚠️ secret!) |
 | `SUPABASE_ANON_KEY` | Output of `npx supabase status -o env` for your local stack (`SUPABASE_ANON_KEY`) | Copy from Supabase staging dashboard → Settings → API → `anon` `public` key | Copy from Supabase production dashboard → Settings → API → `anon` `public` key |
 | `STRIPE_SECRET_KEY` | **Same as staging** — use your real Stripe test-mode key (`sk_test_...`) so you can test billing flows locally. Copy from Stripe dashboard → Developers → API keys → Secret key (test mode). | ← same `sk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Secret key (live mode: `sk_live_...`) |
-| `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/billing/webhook` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
+| `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/webhooks/stripe` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
 | `STRIPE_PRICE_ID` | **Same as staging** — use the same test-mode Price ID. Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`). | ← same `price_...` as local | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (production `price_...`) |
-| `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
+| `API_URL` | `http://localhost:3001` | `https://api-staging.frapp.live` | `https://api.frapp.live` |
 | `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
+
+`API_URL` is the **API origin** (scheme + host + optional non-version path). The generated OpenAPI client calls paths that already start with `/v1/...`, so `API_URL` must not end with `/v1`. Values like `https://api.example/v1` still work at runtime because `@repo/api-sdk` normalizes the base URL, but Infisical should use the origin form to avoid confusion and accidental `/v1/v1` URLs when someone concatenates paths by hand.
 
 ### API-Only Settings
 

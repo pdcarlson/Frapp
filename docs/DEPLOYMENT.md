@@ -174,7 +174,7 @@ Vercel scopes env vars to **Production** and **Preview**. The `main` branch trig
 | ------------------------------- | -------------------------------- | ----------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>`                | `<staging anon key>`                |
-| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live/v1`      | `https://api-staging.frapp.live/v1` |
+| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live`         | `https://api-staging.frapp.live`    |
 
 #### `frapp-landing` (Marketing Site)
 
@@ -527,7 +527,7 @@ See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/int
 → Ensure `SUPABASE_URL` uses `https://` (not `http://`) and points to the cloud project, not `localhost`.
 
 **Mobile can't reach API**
-→ Expo Go requires the API to be network-accessible. Use the deployed staging URL, not `localhost`. For local dev, use your machine's LAN IP (e.g., `http://192.168.1.x:3001/v1`).
+→ Expo Go requires the API to be network-accessible. Use the deployed staging URL, not `localhost`. For local dev, use your machine's LAN IP as the API origin (e.g., `http://192.168.1.x:3001`); the OpenAPI client appends `/v1/...` paths from the contract.
 
 **Preview deploys on Vercel use wrong env vars**
 → Check that you scoped the env vars to the correct environment (Production vs Preview) in Vercel dashboard.

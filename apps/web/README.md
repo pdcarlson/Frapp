@@ -19,7 +19,7 @@ Provide the following variables through Infisical (`npm run dev:web`) or a local
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_API_URL`
+- `NEXT_PUBLIC_API_URL` (API origin, e.g. `http://localhost:3001` — the OpenAPI client adds `/v1/...` from the contract)
 
 ## Common commands
 
