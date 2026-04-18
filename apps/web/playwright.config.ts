@@ -18,7 +18,7 @@ const webServerEnvDefaults: Record<string, string> = {
   NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
   NEXT_PUBLIC_SUPABASE_ANON_KEY:
     "eyJhbGciOiJIUzI1NiJ9.visual-regression-stand-in.signature",
-  NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001/v1",
+  NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001",
   SUPABASE_AUTH_BYPASS: "true",
 };
 
