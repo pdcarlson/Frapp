@@ -46,12 +46,11 @@ The dashboard targets **desktop-first** with a **tablet breakpoint** at 768px. B
 
 | Breakpoint  | Sidebar                                          | Content Area    |
 | ----------- | ------------------------------------------------ | --------------- |
-| ≥1280px     | 256px fixed                                      | Remaining width |
-| 1024–1279px | 240px fixed                                      | Remaining width |
-| 768–1023px  | 64px collapsed (icons only), expandable on hover | Remaining width |
+| ≥1024px     | 288px fixed (`w-72`)                             | Remaining width |
+| 768–1023px  | Hidden, hamburger → slide-out overlay            | Full width      |
 | <768px      | Hidden, hamburger → slide-out overlay            | Full width      |
 
-Content area max-width: `1200px` with `px-6` padding.
+Outer shell max-width: `1600px` (`max-w-[1600px]`, centered). Content area max-width: `max-w-6xl` (1152px) with `px-5` padding, expanding to `sm:px-8` at ≥640px.
 
 ---
 
