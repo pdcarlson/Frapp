@@ -303,8 +303,8 @@ export function DashboardShell({ children }: DashboardShellProps) {
       >
         Skip to main content
       </a>
-      <div className="mx-auto flex w-full max-w-[1400px]">
-        <aside className="hidden min-h-screen w-72 border-r border-border bg-navy-950 px-4 py-6 text-slate-100 lg:block">
+      <div className="mx-auto flex w-full max-w-[1480px] px-4 sm:px-6 lg:px-8">
+        <aside className="hidden min-h-screen w-72 shrink-0 border-r border-border bg-navy-950 px-5 py-6 text-slate-100 lg:block">
           <div className="mb-8 border-b border-border pb-6">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
               Frapp
@@ -399,7 +399,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
             </div>
           </header>
 
-          <main id="main-content" className="px-4 py-6 sm:px-6">
+          <main
+            id="main-content"
+            className="mx-auto w-full max-w-[1100px] px-4 py-8 sm:px-6 lg:px-8 lg:py-10"
+          >
             {children}
           </main>
         </div>
