@@ -45,6 +45,8 @@ npx supabase status -o env
 
 Create `.env.local` per app from that output, then add remaining variables (for the API, include `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and `STRIPE_PRICE_ID` — placeholders are fine unless you are testing billing). Treat `.env.local` as a **fallback**; prefer Infisical when possible.
 
+`NEXT_PUBLIC_API_URL` is usually the same string as `API_URL` (including a `/v1` suffix in Infisical). The web app strips a trailing `/v1` before passing the value to openapi-fetch so request paths stay `/v1/...` instead of `/v1/v1/...`.
+
 ## 4. Config module in the API
 
 The NestJS API uses `@nestjs/config` to load environment variables:

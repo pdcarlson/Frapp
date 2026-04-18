@@ -1,7 +1,7 @@
 import { AlumniDirectory } from "@/components/alumni/alumni-directory";
 
 export const metadata = {
-  title: "Alumni — Frapp",
+  title: "Alumni",
   description: "Searchable alumni directory for the active chapter.",
 };
 

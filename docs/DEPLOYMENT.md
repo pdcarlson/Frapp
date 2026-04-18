@@ -174,7 +174,9 @@ Vercel scopes env vars to **Production** and **Preview**. The `main` branch trig
 | ------------------------------- | -------------------------------- | ----------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>`                | `<staging anon key>`                |
-| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live/v1`      | `https://api-staging.frapp.live/v1` |
+| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live/v1` (or origin without `/v1`) | `https://api-staging.frapp.live/v1` (or origin) |
+
+The web client normalizes a trailing `/v1` on this URL before building requests, so either the canonical `API_URL` form or the API origin alone works.
 
 #### `frapp-landing` (Marketing Site)
 

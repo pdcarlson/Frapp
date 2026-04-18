@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = {
-  title: "No access — Frapp",
+  title: "No access",
   description: "You do not have access to the chapter dashboard right now.",
 };
 
