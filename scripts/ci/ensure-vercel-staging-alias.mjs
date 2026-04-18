@@ -11,9 +11,11 @@
 //   GITHUB_SHA           — required
 //   VERCEL_STAGING_ALIAS — required (hostname only, e.g. app.staging.frapp.live)
 //
-// Exits 0 on success or skip (no deployment for SHA). Exits 1 on failure.
+// Exits 0 on success or skip (no deployment for SHA, CANCELED / turbo-ignore, or
+// other verifier-neutral terminal states). Exits 1 on failure.
 
 import { fetchVercelDeployments } from "./lib/providers.mjs";
+import { VERCEL_NEUTRAL_TERMINAL_STATES } from "./verify-vercel-deploy.mjs";
 
 const LIST_ALIASES_URL = (deploymentId) =>
   `https://api.vercel.com/v2/deployments/${deploymentId}/aliases`;
@@ -66,6 +68,13 @@ export async function ensureVercelStagingAlias({
   const deploymentId = latest.uid;
   if (!deploymentId) {
     return { status: "failure", message: "Matched deployment has no uid." };
+  }
+
+  if (VERCEL_NEUTRAL_TERMINAL_STATES.has(state)) {
+    return {
+      status: "skipped",
+      message: `Deployment ${deploymentId} is ${state}; skipping staging alias (same semantics as verify-vercel-deploy neutral).`,
+    };
   }
 
   if (state !== "READY") {

@@ -143,4 +143,33 @@ describe("ensureVercelStagingAlias", () => {
     assert.equal(result.status, "failure");
     assert.match(result.message, /BUILDING/);
   });
+
+  it("skips when latest deployment for SHA is CANCELED (turbo-ignore)", async () => {
+    const fetchImpl = async (url) => {
+      if (url.includes("/v6/deployments")) {
+        return okJson({
+          deployments: [
+            {
+              uid: "dpl_canceled",
+              state: "CANCELED",
+              createdAt: "2026-04-16T01:00:00Z",
+              meta: { githubCommitSha: SHA },
+            },
+          ],
+        });
+      }
+      assert.fail("should not list aliases");
+    };
+
+    const result = await ensureVercelStagingAlias({
+      apiKey: API_KEY,
+      projectId: PROJECT_ID,
+      sha: SHA,
+      stagingAlias: STAGING,
+      fetchImpl,
+    });
+
+    assert.equal(result.status, "skipped");
+    assert.match(result.message, /CANCELED/);
+  });
 });

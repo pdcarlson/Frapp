@@ -64,6 +64,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
+      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (web)
         if: github.ref_name == 'main'
         env:
@@ -93,6 +94,7 @@ jobs:
           GITHUB_SHA: ${{ github.sha }}
         run: node scripts/ci/verify-vercel-deploy.mjs
 
+      # Skips gracefully when verify step was neutral (CANCELED / no deploy for SHA); see ensure-vercel-staging-alias.mjs.
       - name: Point staging domain at latest main deployment (landing)
         if: github.ref_name == 'main'
         env:
