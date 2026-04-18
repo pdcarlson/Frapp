@@ -1,5 +1,6 @@
 import createClient, { Middleware } from 'openapi-fetch';
 import type { paths } from './types';
+import { normalizeApiBaseUrl } from './normalize-api-base-url';
 
 export interface FrappClientConfig {
   baseUrl: string;
@@ -8,7 +9,9 @@ export interface FrappClientConfig {
 }
 
 export const createFrappClient = (config: FrappClientConfig) => {
-  const client = createClient<paths>({ baseUrl: config.baseUrl });
+  const client = createClient<paths>({
+    baseUrl: normalizeApiBaseUrl(config.baseUrl),
+  });
 
   const authMiddleware: Middleware = {
     async onRequest({ request }) {

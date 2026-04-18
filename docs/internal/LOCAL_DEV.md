@@ -76,10 +76,10 @@ credentials. See [`apps/web/tests/visual/README.md`](../../apps/web/tests/visual
 for the rationale and for how to refresh snapshots locally.
 
 When GitHub’s **`web-visual-regression`** job fails with small `<main>` width
-drifts (often a few pixels vs. committed Linux baselines), refresh from
-`apps/web` with the same **`CI=true`** Playwright uses in CI:
-`CI=true npx playwright test --update-snapshots`, then commit the updated
-`*-snapshots/*-linux.png` files.
+drifts (for example after changing dashboard padding or `max-w-*` on
+`#main-content`), refresh from `apps/web` with the same **`CI=true`** Playwright
+uses in CI: `CI=true npx playwright test --update-snapshots`, then commit the
+updated `*-snapshots/*-linux.png` files.
 
 `apps/web/proxy.ts` (Next.js 16 middleware) reads Supabase env per request and
 falls back to passthrough when the vars are missing, so the module is safe to

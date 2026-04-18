@@ -8,19 +8,19 @@
       "developmentClient": true,
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "http://localhost:3001/v1"
+        "EXPO_PUBLIC_API_URL": "http://localhost:3001"
       }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api-staging.frapp.live/v1"
+        "EXPO_PUBLIC_API_URL": "https://api-staging.frapp.live"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://api.frapp.live/v1"
+        "EXPO_PUBLIC_API_URL": "https://api.frapp.live"
       }
     }
   },

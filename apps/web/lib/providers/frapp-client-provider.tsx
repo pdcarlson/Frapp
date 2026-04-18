@@ -12,7 +12,8 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   const client = useMemo(
     () =>
       createFrappClient({
-        baseUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/v1",
+        baseUrl:
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
         getAuthToken: async () => {
           const supabase = createSupabaseBrowserClient();
           const { data } = await supabase.auth.getSession();
