@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { normalizeOpenapiBaseUrl } from "@repo/api-sdk";
 
 export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
 
@@ -23,11 +24,8 @@ function getHealthCheckUrl() {
   if (!apiUrl) {
     return null;
   }
-  const normalizedApiUrl = apiUrl.replace(/\/$/, "");
-  if (normalizedApiUrl.endsWith("/v1")) {
-    return `${normalizedApiUrl.slice(0, -3)}/health`;
-  }
-  return `${normalizedApiUrl}/health`;
+  const origin = normalizeOpenapiBaseUrl(apiUrl);
+  return `${origin}/health`;
 }
 
 const DEGRADED_THRESHOLD = 3;

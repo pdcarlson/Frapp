@@ -3,7 +3,7 @@ import { OverviewStatCards } from "@/components/home/overview-stat-cards";
 import { QuickActionsCard } from "@/components/home/quick-actions-card";
 
 export const metadata = {
-  title: "Home — Frapp",
+  title: "Home",
   description: "Chapter overview, activity, and quick actions for the active chapter.",
 };
 
