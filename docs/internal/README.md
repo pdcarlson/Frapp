@@ -15,7 +15,7 @@ Use this area for:
 - `DEPLOYMENT_STATUS.md`
 - `DB_PROMOTION_RUNBOOK.md`
 - `DB_ROLLBACK_PLAYBOOK.md`
-- `BUGBOT_RUNBOOK.md`
+- `CLAUDE_REVIEW_RUNBOOK.md`
 - `LOCAL_DEV.md` — **Default `npm run dev:stack`; ports, per-app commands, fallbacks**
 - `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
 - `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`

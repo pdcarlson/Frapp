@@ -1,21 +1,35 @@
-# AGENTS.md
+# Frapp — Claude Code operating guide
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`).
+Concise operating guide for Claude Code (terminal, web, IDE) and human developers. **Deep detail:** [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.claude/skills/`](.claude/skills/) (see Skills table below).
+
+## Repo-wide review rules
+
+- Treat `docs/` and `spec/` as part of the source of truth. Flag any non-doc code, CI, tooling, or config change that does not update related documentation or spec files in the same PR.
+- Protect the branch model: feature work targets `main`, and promotion PRs target `production` from `main` only.
+- Be strict about deploy safety: if workflow names, required checks, or promotion gates change, the matching runbooks and branch-protection automation must change in the same PR.
+- Flag any suggestion that would weaken secret handling, authentication, authorization, or migration safety.
+
+Per-area review focus is in nested `CLAUDE.md` files (`apps/api/`, `apps/web/`, `apps/mobile/`, `packages/`, `.github/workflows/`, `supabase/migrations/`).
+
+Full review runbook (how the GitHub Action is configured, how to trigger or disable it, how to fall back to a different reviewer): [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
 
 ## Optional agent credentials (automation / cloud sessions)
 
 These environment variables sometimes exist in hosted agent VMs. Omit on a normal laptop; use `npx infisical login` for local app secrets.
 
-| Env var                                    | Purpose                                     |
-| ------------------------------------------ | ------------------------------------------- |
-| `INFISICAL_API_KEY`                        | Infisical API (may not include `local` env) |
-| `RENDER_API_KEY` / `VERCEL_API_KEY`        | Provider APIs                               |
-| `SUPABASE_API_KEY`                         | Supabase Management API                     |
-| `GITHUB_PERSONAL_ACCESS_TOKEN`             | `gh` CLI, branch protection script          |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                |
-| `JULES_USER_API_KEY`                       | Jules automation (if used)                  |
+| Canonical env var       | Legacy alias (still tolerated)                                       | Purpose                                     |
+| ----------------------- | -------------------------------------------------------------------- | ------------------------------------------- |
+| `INFISICAL_API_KEY`     | —                                                                    | Infisical API (may not include `local` env) |
+| `RENDER_API_KEY`        | `RENDER_APIKEY`                                                      | Render API                                  |
+| `VERCEL_TOKEN`          | `VERCEL_API_KEY`                                                     | Vercel API                                  |
+| `SUPABASE_API_KEY`      | —                                                                    | Supabase Management API                     |
+| `GITHUB_PAT`            | `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`  | `gh` CLI, branch protection script          |
+| `SUPABASE_ACCESS_TOKEN` | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`                           | Supabase CLI                                |
+| `JULES_USER_API_KEY`    | —                                                                    | Jules automation (if used)                  |
 
-**Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values. Full policy and CI tables: [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md).
+When sourcing one of these in a script, prefer the canonical name with a fallback, e.g. `${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}`. Full PAT policy and CI tables: [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md).
+
+**Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values.
 
 ## Operating mindset
 
@@ -59,6 +73,8 @@ Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md
 
 **Headless cloud VM (e.g. Jules):** `scripts/jules-setup.sh` may start Docker differently; do not copy that pattern to a normal laptop.
 
+**Claude Code on the web (cloud sandbox):** the SessionStart hook at `.claude/hooks/session-start.sh` runs automatically when `CLAUDE_CODE_REMOTE=true` — it installs deps and builds shared packages. Docker and Supabase stay on-demand; the testing skill ([`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md)) has the exact recipe for starting them.
+
 **Secrets:** `npx infisical login` once, then **`npm run dev:stack`** from repo root. See [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) and [`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md).
 
 ## Secrets and environment variables
@@ -87,19 +103,20 @@ See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md). Deploy archi
 | API contract | `npm run check:api-contract`        |
 | Migrations   | `npm run check:migration-safety`    |
 
-CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testing.md).
+CI parity and testing detail: [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md).
 
-## Task skills (read the matching file before deep work)
+## Skills
 
-| Area                    | File                                        |
-| ----------------------- | ------------------------------------------- |
-| NestJS API / contract   | `.cursor/skills/api-development.md`         |
-| Web / landing / UI      | `.cursor/skills/ui-development.md`          |
-| Tests / verification    | `.cursor/skills/testing.md`                 |
-| Audits / quality        | `.cursor/skills/audit.md`                   |
-| Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
+| Area                    | File                                                          |
+| ----------------------- | ------------------------------------------------------------- |
+| NestJS API / contract   | [`.claude/skills/api-development/SKILL.md`](.claude/skills/api-development/SKILL.md) |
+| Web / landing / UI      | [`.claude/skills/ui-development/SKILL.md`](.claude/skills/ui-development/SKILL.md) |
+| Tests / verification    | [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md) |
+| Audits / quality        | [`.claude/skills/audit/SKILL.md`](.claude/skills/audit/SKILL.md) |
+| Deploy / CI / providers | [`.claude/skills/infrastructure-research/SKILL.md`](.claude/skills/infrastructure-research/SKILL.md) |
+| Local multi-pass review | [`.claude/skills/ultrareview-local/SKILL.md`](.claude/skills/ultrareview-local/SKILL.md) |
 
-Cursor rules under `.cursor/rules/` point at these same skill files.
+A read-only reviewer subagent lives at [`.claude/agents/reviewer.md`](.claude/agents/reviewer.md) and is used both directly (for one-shot reviews) and by `/ultrareview-local`.
 
 ## Gotchas
 
@@ -116,40 +133,10 @@ Cursor rules under `.cursor/rules/` point at these same skill files.
 
 When the user supplies durable environment hints or tool workarounds not documented elsewhere, add a short bullet here.
 
-- Cloud VMs may expose the Render key as `RENDER_API_KEY` and the GitHub PAT as `GITHUB_PERSONAL_ACCESS_TOKEN`; prefer those names when present.
+- Cloud VMs may expose the Render key as `RENDER_API_KEY` and the GitHub PAT as `GITHUB_PERSONAL_ACCESS_TOKEN` (legacy) or `GITHUB_PAT` (canonical); prefer those names when present.
 
 ## PR reviews
 
-When fixing review feedback, resolve related GitHub review threads so merge is not blocked.
+Pull requests targeting `main` and `production` are reviewed by [`anthropics/claude-code-action@v1`](.github/workflows/claude-review.yml) on every `opened`, `synchronize`, and `ready_for_review` event. Findings are advisory; promotion is gated by CI + branch protection, not the review.
 
-## Cursor Cloud-specific instructions
-
-These notes are for cloud agents running after the update script has already installed dependencies.
-
-### Docker and Supabase
-
-- Docker must be started before Supabase. Run `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`), then add the current user to the docker group (`sudo usermod -aG docker $USER` and open a new shell) so Docker commands work without `sudo`. In ephemeral cloud/CI containers where group changes cannot take effect, prefix Docker and Supabase commands with `sudo` instead. Never print secret values or credentials in docs or logs.
-- Start Supabase with `npx supabase start` and apply migrations with `npx supabase db push --local`.
-- If Supabase containers are stuck: `bash scripts/local-dev-setup.sh --reset-supabase`.
-
-### Running apps without Infisical
-
-The cloud VM does not have Infisical CLI session access. Use the fallback `.env.local` approach instead of `npm run dev:stack`:
-
-1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
-2. Start apps individually (no Infisical wrapper):
-   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
-   - Web: `npm run dev -w apps/web`
-   - Landing: `npm run dev -w apps/landing`
-
-### API dev server (optional SWC)
-
-`nest start --watch` uses the same TypeScript program as `nest build` by default. For faster rebuilds in large trees you can use `nest start --watch --builder swc` (requires `@swc/cli` / `@swc/core` in `apps/api`). CI and Render use **`nest build`**; keep `npm run build -w apps/api` green before merging API changes.
-
-### Key commands (standard, documented in root `package.json`)
-
-| Task | Command |
-|------|---------|
-| Lint | `npm run lint` |
-| API tests | `npm run test -w apps/api` |
-| Type-check | `npm run check-types` |
+When fixing review feedback, resolve related GitHub review threads so merge is not blocked. Full runbook: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).

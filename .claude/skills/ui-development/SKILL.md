@@ -1,6 +1,26 @@
+---
+description: Use when building or modifying UI in the web dashboard, landing site, or shared component packages. Covers the @repo/ui and ShadCN component layers, theming and brand tokens, the data-fetching stack (TanStack Query via @repo/hooks), shared validation, state management, and visual/responsive testing.
+paths:
+  - apps/web/**
+  - apps/landing/**
+  - packages/ui/**
+  - packages/theme/**
+  - packages/hooks/**
+  - packages/validation/**
+allowed-tools: Bash(npm run *), Bash(npx *), Read, Edit, Write, Grep, Glob
+---
+
 # Skill: UI Development
 
 > Use when building or modifying UI in the web dashboard, landing site, or shared component packages.
+
+Quick rules:
+
+- Two component layers: `@repo/ui` primitives and ShadCN/Radix composites in `apps/web/components/ui/`.
+- Theme uses HSL CSS variables from `@repo/theme` — brand colors are navy, royal-blue, emerald.
+- All data fetching uses TanStack Query via `@repo/hooks` — never raw fetch.
+- ShadCN components are copy-pasted, not CLI-installed — use `cn()` for class merging.
+- Shared Zod schemas in `@repo/validation` for form validation that matches API expectations.
 
 ---
 

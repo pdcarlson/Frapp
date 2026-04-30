@@ -40,11 +40,3 @@ supabase/.branches/
 # Misc
 .DS_Store
 *.pem
-
-# Cursor (keep skills and rules tracked)
-.cursor/*
-!.cursor/BUGBOT.md
-!.cursor/skills/
-!.cursor/skills/**
-!.cursor/rules/
-!.cursor/rules/**

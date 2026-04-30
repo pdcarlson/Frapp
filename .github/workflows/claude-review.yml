@@ -1,0 +1,42 @@
+name: Claude Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    branches: [main, production]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review this pull request for real bugs only — logic errors,
+            security issues, race conditions, off-by-one, leaks, missing
+            auth guards, RLS gaps, contract drift, migration safety,
+            broken async/error states. Skip style, naming, and anything
+            CI already enforces (lint, typecheck, formatting). For each
+            finding: post an inline review comment at the exact file:line,
+            tagged [Important] or [Nit], with one short sentence on why
+            it matters. Read CLAUDE.md files in every directory you touch
+            for project-specific rules.
+          claude_args: |
+            --max-turns 12
+            --model claude-opus-4-7

@@ -1,6 +1,24 @@
+---
+description: Use when running tests, verifying code changes, CI parity checks, or setting up the test environment. Covers lint, type-check, API unit tests, contract/migration safety checks, web visual regression, and the Docker/Supabase setup needed for integration smoke tests.
+paths:
+  - apps/api/src/**/*.spec.ts
+  - apps/api/src/**/*.{service,guard,interceptor}.ts
+  - apps/api/src/interface/**
+  - .github/workflows/ci.yml
+allowed-tools: Bash(npm run *), Bash(npx *), Bash(docker *), Bash(sudo *), Read, Edit, Write, Grep, Glob
+---
+
 # Skill: Testing
 
 > Use when running tests, verifying changes, or setting up the test environment.
+
+Quick rules:
+
+- Unit tests require only `npm install` — no Docker, Supabase, or env files needed.
+- Manual/integration tests require Docker + Supabase. Prefer Infisical-injected envs (`npm run dev:api`) as the primary method; fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`, so `.env.local` is a fallback, not the primary method).
+- Always run the CI parity checklist before pushing: lint, check-types, api tests, contract check, migration check.
+- Each spec defines its own mocks inline — no shared fixtures.
+- Use `@nestjs/testing` `TestingModule` with `{ provide: TOKEN, useValue: mockObj }` pattern.
 
 ---
 
@@ -36,7 +54,7 @@ npm run check-types
 
 ### Full (integration / manual testing)
 
-Requires Docker + Supabase. See `AGENTS.md` "Starting the dev environment" section.
+Requires Docker + Supabase. See root `CLAUDE.md` "Starting the dev environment" section.
 
 Prefer Infisical-injected envs as the primary method:
 ```bash
@@ -53,6 +71,22 @@ Fall back to `.env.local` files only when Infisical is unavailable (NestJS Confi
 npm run start:dev -w apps/api   # reads .env.local, port 3001
 npm run dev -w apps/web         # reads .env.local, port 3000
 ```
+
+### Cloud sandbox (Claude Code on the web)
+
+The cloud sandbox does not have Infisical CLI session access. Use the fallback `.env.local` approach:
+
+1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
+2. Start Docker before Supabase: `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`). In ephemeral cloud containers where group changes cannot take effect, prefix Docker and Supabase commands with `sudo`.
+3. Start Supabase: `npx supabase start && npx supabase db push --local`. If containers are stuck: `bash scripts/local-dev-setup.sh --reset-supabase`.
+4. Start apps individually (no Infisical wrapper):
+   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
+   - Web: `npm run dev -w apps/web`
+   - Landing: `npm run dev -w apps/landing`
+
+### API dev server (optional SWC)
+
+`nest start --watch` uses the same TypeScript program as `nest build` by default. For faster rebuilds in large trees you can use `nest start --watch --builder swc` (requires `@swc/cli` / `@swc/core` in `apps/api`). CI and Render use **`nest build`**; keep `npm run build -w apps/api` green before merging API changes.
 
 ### Health verification
 
@@ -176,7 +210,7 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 8. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
-   match the job’s single-worker Playwright run; see
+   match the job's single-worker Playwright run; see
    `apps/web/tests/visual/README.md`)
 
 ---

@@ -166,12 +166,12 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**Cursor Bugbot** auto-reviews every ready-for-review PR to `main` and `production` via its native GitHub app integration.
+The **Claude Code Action** (`anthropics/claude-code-action@v1`) auto-reviews every ready-for-review PR to `main` and `production` via [`.github/workflows/claude-review.yml`](../.github/workflows/claude-review.yml).
 
-- Bugbot feedback is advisory on both branches. There is no `bugbot-review` required status check.
-- On `main`, conversation resolution is not required, so unresolved Bugbot comment threads do not block merge.
-- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; Bugbot does not).
-- Manual trigger if auto-review misses a PR: post a top-level `bugbot run` comment. Full runbook: [`docs/internal/BUGBOT_RUNBOOK.md`](../docs/internal/BUGBOT_RUNBOOK.md).
+- The review is advisory on both branches. There is no `claude-review` required status check.
+- On `main`, conversation resolution is not required, so unresolved review comment threads do not block merge.
+- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; the AI review does not).
+- Re-trigger by pushing a new commit or commenting `@claude review this PR`. Disable per-PR with the `skip-claude-review` label or by leaving the PR as a draft. Full runbook: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](../docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions
 
@@ -330,4 +330,4 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 The Jules agent execution environment uses a pre-configured headless cloud VM.
 Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
-Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.
+Agent-oriented rules and skills live under `.claude/` (canonical) — `.claude/skills/<name>/SKILL.md` for task playbooks, `.claude/agents/` for subagents, and a hierarchy of `CLAUDE.md` files for per-directory review rules. The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from the canonical location.

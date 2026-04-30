@@ -1,6 +1,27 @@
+---
+description: Use when investigating deployment state, CI failures, environment configuration, secret sync, or service health across GitHub, Supabase, Render, Vercel, and Infisical. Always gather runtime truth via provider APIs/CLIs before proposing changes. Never print secret values.
+paths:
+  - .github/workflows/**
+  - docs/internal/ENV_REFERENCE.md
+  - docs/internal/SECRETS_MANAGEMENT.md
+  - docs/internal/DEPLOYMENT_STATUS.md
+  - scripts/configure-branch-protection.mjs
+  - scripts/run-migration.mjs
+allowed-tools: Bash(gh *), Bash(npx supabase *), Bash(curl *), Bash(npm run *), Read, Grep, Glob
+---
+
 # Skill: Infrastructure Research
 
 > Use when investigating deployment state, CI failures, environment configuration, or service health before proposing changes. Also applies when reviewing PRs, debugging production issues, or syncing secrets.
+
+Quick rules:
+
+- Always gather runtime truth BEFORE proposing changes — use provider APIs/CLIs.
+- Available credentials (canonical names): `GITHUB_PAT`, `SUPABASE_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_API_KEY`, `VERCEL_TOKEN`, `SUPABASE_API_KEY`.
+- Legacy aliases that older laptops/VMs may still expose are accepted as fallbacks: `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `RENDER_APIKEY`, `VERCEL_API_KEY`. New snippets should use the canonical names.
+- Use `GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}"` for all `gh` CLI commands.
+- Never print secret values — only reference variable names and presence/absence.
+- Check `docs/internal/ENV_REFERENCE.md` as the canonical variable reference.
 
 ---
 
@@ -8,18 +29,20 @@
 
 Before making infrastructure-related changes, gather runtime truth from the available APIs. This prevents stale assumptions and wasted effort.
 
-**Available credentials** (env vars in Cloud sessions):
+**Available credentials** (env vars in cloud sessions):
 
-| Env var | CLI/API | What you can check |
-|---------|---------|-------------------|
-| `GITHUB_PERSONAL_ACCESS_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
-| `INFISICAL_API_KEY` | Infisical API | Secret presence, sync status |
-| `RENDER_API_KEY` | Render API | Service status, deploy history |
-| `VERCEL_API_KEY` | Vercel API | Build status, deployment state |
-| `SUPABASE_API_KEY` | Supabase Management API | Project-level operations |
+| Canonical env var | Legacy alias (still tolerated) | CLI/API | What you can check |
+|-------------------|--------------------------------|---------|--------------------|
+| `GITHUB_PAT` | `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
+| `SUPABASE_ACCESS_TOKEN` | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
+| `INFISICAL_API_KEY` | — | Infisical API | Secret presence, sync status |
+| `RENDER_API_KEY` | `RENDER_APIKEY` | Render API | Service status, deploy history |
+| `VERCEL_TOKEN` | `VERCEL_API_KEY` | Vercel API | Build status, deployment state |
+| `SUPABASE_API_KEY` | — | Supabase Management API | Project-level operations |
 
-> **Legacy aliases.** Older cloud VM images may expose `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` or `RENDER_APIKEY`. Scripts tolerate them but new snippets should use the canonical names above.
+> Where examples below reference a single env var, the recommended pattern is to fall back through aliases, e.g.
+> `${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}`, `${VERCEL_TOKEN:-$VERCEL_API_KEY}`,
+> `${SUPABASE_ACCESS_TOKEN:-$PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN}`.
 
 ---
 
@@ -28,32 +51,32 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 ### Check CI status on a branch
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh run list --branch main --limit 5
+GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh run list --branch main --limit 5
 ```
 
 ### View failed CI job logs
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh run view <run_id> --log-failed
+GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh run view <run_id> --log-failed
 ```
 
 ### Check PR status and reviews
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh pr view <number>
-GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh pr checks <number>
+GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr view <number>
+GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr checks <number>
 ```
 
 ### Branch protection state
 
 ```bash
-GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
+GITHUB_PAT="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" npm run configure:branch-protection -- --dry-run
 ```
 
 ### Find recent PRs touching a path
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh pr list --search "supabase/migrations" --state merged --limit 5
+GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh pr list --search "supabase/migrations" --state merged --limit 5
 ```
 
 ---
@@ -71,7 +94,7 @@ npx supabase migration list --local  # Applied migrations
 ### Remote project (staging/production)
 
 ```bash
-export SUPABASE_ACCESS_TOKEN="$PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN"
+export SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-$PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN}"
 npx supabase projects list
 npx supabase migration list --project-ref <ref>
 ```
@@ -114,14 +137,14 @@ curl -s https://api.frapp.live/health           # Production
 ### List deployments
 
 ```bash
-curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
+curl -s -H "Authorization: Bearer ${VERCEL_TOKEN:-$VERCEL_API_KEY}" \
   "https://api.vercel.com/v6/deployments?projectId=<project_id>&limit=5" | python3 -m json.tool
 ```
 
 ### Check build logs
 
 ```bash
-curl -s -H "Authorization: Bearer $VERCEL_API_KEY" \
+curl -s -H "Authorization: Bearer ${VERCEL_TOKEN:-$VERCEL_API_KEY}" \
   "https://api.vercel.com/v2/deployments/<deployment_id>/events" | python3 -m json.tool
 ```
 
@@ -205,4 +228,3 @@ done
 - Update the quick reference table if the Infisical sync map changes.
 - Add new API keys to the credentials table as they become available.
 - For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in `docs/internal/ENV_REFERENCE.md`), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.
-
