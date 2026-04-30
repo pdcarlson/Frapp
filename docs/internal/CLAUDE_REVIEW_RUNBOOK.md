@@ -20,7 +20,7 @@ Pull requests targeting `main` and `production` get an AI review from `anthropic
 - Trigger: `pull_request` events `opened`, `synchronize`, `reopened`, `ready_for_review` against branches `main` and `production`
 - **Drafts are NOT skipped** — every push runs a review regardless of draft status
 - Concurrency group is keyed by PR number with `cancel-in-progress: true`, so pushing a new commit cancels an in-flight review on the same PR (a partial run may leave a partial set of inline comments behind; the next push's review will overwrite them)
-- Permissions: `contents: read`, `pull-requests: write` (minimum needed for inline comments with OAuth-token auth — `id-token: write` is only required for OIDC providers like Bedrock/Vertex)
+- Permissions: `contents: read`, `pull-requests: write`, `id-token: write`. The action uses GitHub's OIDC to authenticate to Anthropic's backend even when you're using a `CLAUDE_CODE_OAUTH_TOKEN` — without `id-token: write` the very first step fails with `Could not fetch an OIDC token. Did you remember to add id-token: write to your workflow permissions?`
 - Model: `claude-opus-4-7`, capped at `--max-turns 12`
 
 ### Repo-tracked rules

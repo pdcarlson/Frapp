@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write   # required: action exchanges an OIDC token with Anthropic's backend even for OAuth auth
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
