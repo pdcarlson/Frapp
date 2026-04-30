@@ -166,12 +166,12 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-The **Claude Code Action** (`anthropics/claude-code-action@v1`) auto-reviews every ready-for-review PR to `main` and `production` via [`.github/workflows/claude-review.yml`](../.github/workflows/claude-review.yml).
+The **Claude Code Action** (`anthropics/claude-code-action@v1`) auto-reviews every push to every PR targeting `main` and `production` via [`.github/workflows/claude-review.yml`](../.github/workflows/claude-review.yml), including drafts.
 
 - The review is advisory on both branches. There is no `claude-review` required status check.
 - On `main`, conversation resolution is not required, so unresolved review comment threads do not block merge.
 - On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; the AI review does not).
-- Re-trigger by pushing a new commit or commenting `@claude review this PR`. Disable per-PR with the `skip-claude-review` label or by leaving the PR as a draft. Full runbook: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](../docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
+- Re-trigger without a code change: re-run the workflow from the Actions tab or close-and-reopen the PR. Disable per-PR with the `skip-claude-review` label before the next push. The action does not listen for `@claude` mentions in comments. Full runbook: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](../docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions
 

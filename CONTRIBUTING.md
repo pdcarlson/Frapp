@@ -60,9 +60,9 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### AI review coverage
 
-- `main`: `anthropics/claude-code-action@v1` auto-reviews every ready-for-review PR (`.github/workflows/claude-review.yml`). Feedback is advisory.
+- `main`: `anthropics/claude-code-action@v1` auto-reviews **every push** to every PR (`.github/workflows/claude-review.yml`), including drafts. Feedback is advisory.
 - `production`: same — the AI review remains advisory. Promotions are gated by CI + approval + conversation resolution, not the review action.
-- Trigger or re-trigger a review by pushing a commit or commenting `@claude review this PR`. Disable per-PR by adding the `skip-claude-review` label or converting the PR to a draft. Full details: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
+- Re-trigger without a code change: re-run the workflow from the Actions tab, or close-and-reopen the PR. Disable per-PR by adding the `skip-claude-review` label before the next push. The action does **not** listen for `@claude` mentions in PR comments. Full details: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
 
 ### PR review requirement policy
 
@@ -110,7 +110,7 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- The Claude Code Action will review the PR automatically once it is marked ready for review. To re-trigger the review, push a new commit or comment `@claude review this PR` on the PR. To skip the review on a given PR, add the `skip-claude-review` label or convert the PR to a draft. Full details: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
+- The Claude Code Action will review the PR automatically on every push, including while the PR is still a draft. To re-trigger without a code change, re-run the workflow from the Actions tab or close-and-reopen the PR. To skip the review on a given PR, add the `skip-claude-review` label before the next push. Full details: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
 
 ### 4. Address feedback
 

@@ -2,14 +2,16 @@ name: Claude Review
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review]
     branches: [main, production]
+
+# Drafts are intentionally NOT skipped — every push to a PR (draft or ready)
+# should get a review. To opt out a single PR, add the `skip-claude-review`
+# label before the next push.
 
 permissions:
   contents: read
   pull-requests: write
-  issues: write
-  id-token: write
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
@@ -17,7 +19,7 @@ concurrency:
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'skip-claude-review') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -137,6 +137,6 @@ When the user supplies durable environment hints or tool workarounds not documen
 
 ## PR reviews
 
-Pull requests targeting `main` and `production` are reviewed by [`anthropics/claude-code-action@v1`](.github/workflows/claude-review.yml) on every `opened`, `synchronize`, and `ready_for_review` event. Findings are advisory; promotion is gated by CI + branch protection, not the review.
+Pull requests targeting `main` and `production` are reviewed by [`anthropics/claude-code-action@v1`](.github/workflows/claude-review.yml) on every push (events `opened`, `synchronize`, `reopened`, `ready_for_review`). Drafts are reviewed too. Add the `skip-claude-review` label to opt a PR out. Findings are advisory; promotion is gated by CI + branch protection, not the review.
 
 When fixing review feedback, resolve related GitHub review threads so merge is not blocked. Full runbook: [`docs/internal/CLAUDE_REVIEW_RUNBOOK.md`](docs/internal/CLAUDE_REVIEW_RUNBOOK.md).
