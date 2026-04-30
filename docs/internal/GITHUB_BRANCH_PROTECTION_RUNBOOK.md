@@ -5,7 +5,7 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- Bugbot reviews every PR to `main` and `production`
+- The Claude Code Action reviews every PR to `main` and `production` (advisory)
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -103,7 +103,7 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 1. Verify the checks have already reported against a production push:
 
    ```bash
-   GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh api \
+   GITHUB_TOKEN="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" gh api \
      repos/pdcarlson/Frapp/commits/$(git rev-parse origin/production)/check-runs \
      | jq -r '.check_runs[].name'
    ```
@@ -113,15 +113,15 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 3. Dry-run and apply:
 
    ```bash
-   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
+   GITHUB_PAT="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" npm run configure:branch-protection -- --dry-run
+   GITHUB_PAT="${GITHUB_PAT:-$GITHUB_PERSONAL_ACCESS_TOKEN}" npm run configure:branch-protection
    ```
 
 Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
 
-### Bugbot review policy
+### AI review policy
 
-Bugbot reviews are advisory on both branches. There is no `bugbot-review` required status check. See [`BUGBOT_RUNBOOK.md`](./BUGBOT_RUNBOOK.md) for how Bugbot is configured and triggered.
+The AI PR review (`anthropics/claude-code-action@v1`) is advisory on both branches. There is no `claude-review` required status check. See [`CLAUDE_REVIEW_RUNBOOK.md`](./CLAUDE_REVIEW_RUNBOOK.md) for how the action is configured and triggered.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

@@ -1,6 +1,26 @@
+---
+description: Use when performing code quality reviews, security audits, dependency checks, migration reviews, or CI/spec audits. Covers architecture/layer compliance, RLS coverage, auth and permissions enforcement, contract drift, dependency hygiene, and CI/secret-exposure checks.
+paths:
+  - supabase/migrations/**
+  - .github/workflows/**
+  - "**/CLAUDE.md"
+  - docs/internal/**
+  - spec/**
+  - apps/api/src/interface/**
+allowed-tools: Bash(npm run *), Bash(npx supabase *), Bash(python3 *), Bash(npm audit *), Read, Grep, Glob
+---
+
 # Skill: Audit & Quality Review
 
 > Use when performing code audits, security reviews, dependency checks, migration reviews, or quality assessments.
+
+Quick rules:
+
+- All tables must have RLS enabled — current design uses default-deny with service_role bypass.
+- Every endpoint (read or write) that accesses or returns protected user/chapter data must have `@UseGuards(PermissionsGuard)` with explicit `@RequirePermissions()` — this includes GET/list endpoints (e.g., `member.controller.ts` uses `MEMBERS_VIEW` on reads; `financial-invoice.controller.ts` lists own invoices for members and requires `billing:view` to list all or read others' invoices).
+- Migrations must follow `{14-digit-timestamp}_{snake_case}.sql` naming and update rollback docs.
+- DTOs must use class-validator decorators — global ValidationPipe strips unknown fields.
+- The spec (`spec/`) is the source of truth — implementation follows spec.
 
 ---
 
@@ -50,7 +70,7 @@ Check for `any` types, `@ts-ignore`, and untyped function parameters.
 npm run lint   # ESLint across all lint-enabled workspaces
 ```
 
-The API has strict lint rules. Warnings are tracked but currently tolerated — see AGENTS.md gotchas.
+The API has strict lint rules. Warnings are tracked but currently tolerated — see root `CLAUDE.md` gotchas.
 
 ---
 
@@ -229,6 +249,7 @@ For each migration:
 | Deploy | `.github/workflows/deploy-api.yml` | Secret handling, migration gating, health checks |
 | Release | `.github/workflows/release.yml` | Version bump logic, tag creation |
 | Docs | `.github/workflows/docs.yml` (`docs-spec-sync` job) | Spec sync enforcement |
+| Claude Review | `.github/workflows/claude-review.yml` | AI PR review on `main` and `production` |
 
 ### Secret exposure in workflows
 
@@ -242,7 +263,7 @@ For each migration:
 npm run configure:branch-protection -- --dry-run
 ```
 
-(`configure-branch-protection` reads `GITHUB_PAT` — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
+(`configure-branch-protection` reads `GITHUB_PAT` — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 
@@ -287,4 +308,4 @@ Reference existing audit docs in `docs/archive/audits/` for format precedent.
 
 - Document new security patterns (e.g., CSRF, CSP headers) in the security section as they land.
 - Update the CI/CD audit table whenever new CI checks are added.
-- When Bugbot project rules change (`.cursor/BUGBOT.md`), update this skill and any related audit rule globs to keep review guidance aligned.
+- When project review rules change (`**/CLAUDE.md`), update this skill and any related audit rule globs to keep review guidance aligned.
