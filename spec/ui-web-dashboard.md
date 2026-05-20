@@ -12,7 +12,7 @@
 
 Inherits `@repo/theme` (Tailwind config + CSS variables). Uses ShadCN UI as the component library (installed into `apps/web` via CLI, customized to match the Frapp palette).
 
-Semantic tokens match [packages/theme/src/globals.css](packages/theme/src/globals.css) (source of truth). ShadCN `Button` default variant uses `bg-primary` → **royal blue**, not emerald.
+Semantic tokens match [packages/theme/src/globals.css](packages/theme/src/globals.css) (source of truth). The chat-first redesign repaints the palette to **bone / bronze / ink** — `--primary` is deep bronze (not royal blue), `--success` is moss, and the sidebar lives on a parallel set of `--side-*` tokens that stay dark in both light and dark mode. See [`spec/ui-brand-identity.md`](ui-brand-identity.md) §3 for the full token table.
 
 | Token       | Light (CSS vars)                 | Dark (CSS vars)             | Usage                            |
 | ----------- | -------------------------------- | --------------------------- | -------------------------------- |
@@ -76,8 +76,12 @@ Content area max-width: `1200px` with `px-6` padding.
 
 ### Sidebar
 
-**Background:** `slate-900` (light mode), `slate-950` (dark mode) — always dark for contrast.
-**Text:** `slate-300`, active: `white` with `primary` left border accent.
+**Background:** `--side-bg` (always dark ink, regardless of light/dark mode) per the chat-first redesign. The sidebar palette never inverts; light/dark mode only swaps the content surfaces. Companion tokens (`--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent`) live in [`packages/theme/src/globals.css`](../packages/theme/src/globals.css).
+**Text:** `--side-fg`, active: `--side-fg-hi` with a `--side-accent` left border.
+
+**Lockup (top of sidebar):** [`apps/web/components/layout/chapter-lockup.tsx`](../apps/web/components/layout/chapter-lockup.tsx) renders a small Greek-letters crest, the chapter name, and (once Chunk 2 lands `chapters.branding`) designation + school short. Replaces the legacy "Frapp / Operations Console" header.
+
+**BETA badge:** [`apps/web/components/layout/beta-badge.tsx`](../apps/web/components/layout/beta-badge.tsx) supports four styles — `sidebar_pill` (default, shown at the foot of the sidebar), `breadcrumb_pill`, `top_banner`, `corner_badge`. Currently hardcoded to `{enabled: true, style: "sidebar_pill"}` in the shell; Chunk 8 sources from `chapters.beta_config`.
 
 **Navigation sections (source of truth: [`apps/web/components/layout/nav-config.ts`](../apps/web/components/layout/nav-config.ts)):**
 
@@ -90,7 +94,7 @@ to a route. The caller's effective permission set is loaded once via
 
 | Section | Item | Route | Permission |
 | --- | --- | --- | --- |
-| Overview | Home | `/home` | — |
+| Overview | Chat | `/chat` | — (send gated by channel permissions) |
 | Overview | Profile | `/profile` | — |
 | People | Members | `/members` | `members:view` |
 | People | Alumni | `/alumni` | `members:view` |
@@ -99,7 +103,6 @@ to a route. The caller's effective permission set is loaded once via
 | Operations | Points | `/points` | — |
 | Operations | Tasks | `/tasks` | — (filtered to own tasks unless `tasks:manage`) |
 | Operations | Service Hours | `/service` | — (log/approve gated inline via `service:log` / `service:approve`) |
-| Communications | Chat | `/chat` | — (send gated by channel permissions) |
 | Communications | Polls | `/polls` | `polls:view_all` (chapter list + tallies; vote/create remain channel-scoped) |
 | Resources | Backwork | `/backwork` | — (upload gated by `backwork:upload`) |
 | Resources | Documents | `/documents` | — (upload gated by `chapter_docs:upload`, delete by `chapter_docs:manage`) |
