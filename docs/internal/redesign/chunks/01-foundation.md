@@ -10,6 +10,14 @@
 3. Current shell to replace: `apps/web/components/layout/dashboard-shell.tsx`.
 4. Current theme to rewrite: `packages/theme/src/{globals.css,tokens.ts,tailwind.config.ts}`.
 5. Existing brand spec to update: `spec/ui-brand-identity.md`, `spec/ui-web-dashboard.md`.
+6. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **Shell nav rows are semantic interactives, not `<div>`s.** Use `<button type="button">` for items that change client state (`setRoute`, modal opens) and the framework's `Link` (or `<a href>`) for items that navigate. The prototype's `design-handoff/project/shell.jsx` uses `<div>` with click handlers — do not port that pattern. Active styling stays the same; just move it to the semantic element.
+- **Soft-disabled / "soon" nav items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled items use the native `disabled` attribute on `<button>`.
+- **Root layout sets `<html lang="en">`.** Verify `apps/web/app/layout.tsx` (or equivalent) has the attribute; add it if missing.
+- **If the theme references a monospace family (e.g. Geist Mono),** make sure the font is actually loaded via the framework's font loader (or a `<link>` in the root layout). The prototype's `logos.html` references Geist Mono without loading it — don't replicate that gap.
 
 ## Branch
 

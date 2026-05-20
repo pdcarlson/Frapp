@@ -10,6 +10,15 @@
 3. Edge Functions from Chunk 02: `supabase/functions/chat-send/`, `supabase/functions/chat-react/`.
 4. Theme hook from Chunk 02: `apps/web/lib/hooks/use-chapter-theme.ts`.
 5. Supabase Realtime docs: use the MCP `query-docs` for `@supabase/supabase-js` Realtime channel patterns (Postgres Changes vs Broadcast).
+6. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **Actor identity comes from the authenticated session, never a literal.** Every chat write — `send`, `react`, `action`, `read-cursor` — sources the actor from the Supabase session (client) or `req.user.id` (server). The prototype's `chat.jsx toggleReact` hardcodes `"u_05"` as the reaction owner in two places — do not port that pattern. The Edge Functions (`chat-send`, `chat-react`) read `auth.uid()` from the RLS context, not from the client payload.
+- **Empty channel list renders an explicit empty state.** When the user has no visible channels (new chapter, all DMs muted, etc.), render an "All caught up — start a channel" empty component, not a blank center pane. Check `channels.length === 0` (or `!active`) before attempting to render `<ChannelHeader>` / `<MessageList>` / `<Composer>`. Same rule for: no messages in a channel ("Be the first to post"), no DM threads ("Start a conversation"), no search results.
+- **`messages.find(...)` and similar lookups treat `undefined` as a real state.** Components that look up the active message (jump-to-reply, mention preview, pinned-message popover) render a graceful fallback when the message has been deleted or isn't yet loaded, rather than dereferencing properties on `undefined`.
+- **Composer numeric inputs (poll-option count, etc.) guard-parse** per the master-plan rule. Same for any future slash-command argument that takes a number.
+- **Interactive chat affordances are semantic** — message-action buttons are `<button>`, channel rows in the list are `<button>` (they open a channel client-side) or `Link` (if they push to a route), thread-reply triggers are `<button>`. Reaction chips are `<button>` with `aria-pressed` reflecting the viewer's vote state.
 
 ## Branch
 

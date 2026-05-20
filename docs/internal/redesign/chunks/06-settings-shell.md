@@ -9,6 +9,14 @@
 2. `design-handoff/project/settings.jsx` and `design-handoff/project/settings*.jsx` (landed in Chunk 01) — visual reference for the rail layout.
 3. Existing settings to replace: `apps/web/components/settings/settings-page.tsx`.
 4. `apps/web/lib/hooks/use-org-config.ts` (Chunk 02) — settings tabs write through this.
+5. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **Org tab archetype rendering uses the `getArchetype()` helper from Chunk 02,** never `ARCHETYPES[org.archetype]` directly. The helper returns the `ifc` fallback when the key is missing/unknown so the settings pane never crashes on a stale or in-flight `org.archetype` value. The prototype's `settings-org.jsx` reads `window.ORG_ARCHETYPES[org.archetype]` with no guard — do not port that pattern.
+- **Settings rail tabs are semantic interactives** — `<button>` if the active tab is tracked in client state, `Link` if it's URL-routed. No `<div onClick>`. Active styling stays the same.
+- **The Modules tab "trial — X days left" copy reads `enabled_modules[key].trialEndsAt`** and computes the remaining days at render time. Negative remaining days display "Trial ended" rather than "-2 days left."
+- **`enabled_modules` writes go through the `useOrgConfig()` mutation** which optimistically updates the cache, calls the cold-path PATCH, and rolls back on error. No direct `supabase.from(...).update(...)` from the tab component.
 
 ## Branch
 

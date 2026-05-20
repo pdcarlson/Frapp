@@ -11,6 +11,14 @@
 4. `supabase/migrations/` — see how existing migrations are organized + named.
 5. `packages/theme/src/accent.ts` — WCAG helper you'll reuse in `packages/chapter-theme/`.
 6. `spec/architecture.md` (you will update it).
+7. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **`packages/org-archetypes/` exports are immutable; deep-clone on materialization.** The seed exports (`ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, `CUSTOM_FIELDS_SEED`, `WORKFLOWS_SEED`, `VOCABULARY_DEFAULTS`) are read-only references — freeze them with `Object.freeze` at the leaf level (or export `as const`). Any function that builds a chapter's initial config from a seed (`buildChapterConfigFromArchetype`, `seedCustomFields`, etc.) **must `structuredClone` the seed objects** so per-chapter edits never mutate the shared reference. The prototype's `org-config.jsx` uses `[...CUSTOM_FIELDS_SEED]` (shallow) — do not port that pattern.
+- **`getArchetype(key)` / `getRolePack(key)` / `getModuleCatalogEntry(key)` helpers guard for missing keys** and return a defined fallback (default to the `ifc` archetype / always-on module set / archetype-default role pack). Document the fallback in the helper's JSDoc. Direct subscript like `ARCHETYPES[org.archetype]` without a fallback is forbidden — every consumer goes through the helper.
+- **`packages/validation/` Zod schemas reject `NaN` and negative amounts** for any cents column (`active_amount_cents`, `late_fee_cents`, …). Use `z.number().int().nonnegative()` rather than `z.number()`. The cold-path API + Edge Functions both import these — input that would have produced NaN in the prototype is rejected at the boundary.
+- **No `window.*` globals in the shared packages.** ES module exports only; the API and Edge Function imports must work without a DOM. The prototype assigns `window.ORG_ARCHETYPES`, `window.EVENTS_SEED`, etc. for static HTML hosting — the real packages do not.
 
 ## Branch
 

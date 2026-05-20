@@ -8,6 +8,15 @@
 1. `docs/internal/redesign/master-plan.md` — *Theming model*, *Data model* (custom fields, roles, workflows, dues_config tables).
 2. `packages/chapter-theme/` (from Chunk 02) — `derivePalette()` for the live preview.
 3. `design-handoff/project/settings*.jsx` — visual reference for Roles, Fields, Workflows, Dues tabs.
+4. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **Roles → Matrix sub-tab columns derive from the active role pack at render time.** The matrix's column key list comes from `pack.roleKeys` (or the equivalent shape on the archetype's `ROLE_PACK`), with a guarded fallback to the archetype-default keys via the Chunk 02 helpers. The prototype's `settings-roles.jsx` hardcodes the column array — do not port that. Adding a custom role on the Custom sub-tab must extend the matrix's columns without a code change.
+- **Dues tab numeric inputs guard-parse.** Replace `+e.target.value` / `set("baseAmount", +e.target.value)` patterns with a guarded parse: `const n = Number(e.target.value); if (Number.isFinite(n) && n >= 0) set("baseAmount", n);` (or preserve the previous value on invalid intermediate state). Applies to: cadence amounts (active / new-member / alumni), installment count, grace days, late fee cents, scholarship pool cents. Storing `NaN` is forbidden.
+- **Custom field "options" lists deep-clone when added to a chapter** (covered by Chunk 02's helpers — verify your editor uses them rather than spreading the seed). Editing one chapter's options must never mutate another chapter's options.
+- **All sub-tab form inputs are wrapped in semantic `<label>` / `<button>` / `<input>`** — no `<div role="button">`. The Theme tab's color pickers, the Roles tab's capability multi-select, and the Workflows tab's threshold input all use native form controls (or a wrapper that exposes the same a11y contract).
+- **Theme tab live preview computes from the current form state, not a window global.** The `derivePalette({dark, accent})` call runs from the controlled component's state — no `window.PALETTE_DRAFT` or similar shortcut.
 
 ## Branch
 
