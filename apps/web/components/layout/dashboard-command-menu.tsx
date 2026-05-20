@@ -9,7 +9,6 @@ import {
   FileText,
   FolderOpen,
   GraduationCap,
-  LayoutDashboard,
   Loader2,
   MessagesSquare,
   Settings as SettingsIcon,
@@ -36,7 +35,7 @@ type DashboardCommandMenuProps = {
 };
 
 const navigationCommands = [
-  { icon: LayoutDashboard, label: "Go to Home", shortcut: "G H", href: "/home" },
+  { icon: MessagesSquare, label: "Go to Chat", shortcut: "G C", href: "/chat" },
   { icon: Sparkles, label: "Go to Profile", shortcut: "G P", href: "/profile" },
   { icon: Users, label: "Go to Members", shortcut: "G M", href: "/members" },
   {
@@ -171,7 +170,7 @@ function buildSearchGroups(payload: unknown): SearchGroup[] {
         id: `messages-${row.id ?? row.content ?? Math.random()}`,
         label: row.content?.slice(0, 80) ?? "Untitled message",
         hint: row.channel_id ? `Channel ${row.channel_id}` : undefined,
-        href: "/home",
+        href: "/chat",
       })),
     });
   }
