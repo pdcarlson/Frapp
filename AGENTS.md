@@ -41,6 +41,10 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 - Run or reason against `scripts/check-docs-impact.mjs` before finishing.
 - If user-visible behavior is unchanged, add brief maintenance notes on what changed technically.
 
+## Active multi-session work: chat-first redesign
+
+A multi-chunk redesign of `apps/web` (with downstream `apps/mobile`, `apps/landing`) is in flight. **Before starting any redesign work, read [`docs/internal/redesign/README.md`](docs/internal/redesign/README.md)** and the specific chunk brief under `docs/internal/redesign/chunks/`. The master plan (product positioning, hot-path architecture, theming, chunk dependency graph) is at [`docs/internal/redesign/master-plan.md`](docs/internal/redesign/master-plan.md). Status of each chunk is in [`docs/internal/redesign/STATUS.md`](docs/internal/redesign/STATUS.md). If you're a fresh cloud-agent session asked to "continue the redesign," start by checking STATUS.md for the next unblocked chunk.
+
 ## Services and ports
 
 | What            | Port  | Notes                                     |
