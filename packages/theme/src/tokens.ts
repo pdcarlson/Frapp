@@ -1,9 +1,24 @@
+/*
+ * Frapp typed design tokens — bone / bronze / ink.
+ *
+ * Mirrors the CSS variables in `globals.css` so the mobile app, JS-side
+ * theming, and any non-Tailwind consumer reach the same palette. CSS
+ * variables remain the source of truth for the web app; this file is the
+ * source of truth for mobile (which reads through `getFrappTokens()`).
+ *
+ * Per-chapter overlays (Chunk 2) will replace `brand.bronze` and
+ * `sidebar.accent` at runtime via `derivePalette()`. The structure here
+ * is the chrome those overlays paint into.
+ */
+
 const SHARED_TOKENS = {
+  /* tight ledger-style radii: xs 3 / sm 5 / md 7 / lg 9 / xl 12 */
   radius: {
-    sm: 8,
-    md: 10,
-    lg: 14,
-    xl: 18,
+    xs: 3,
+    sm: 5,
+    md: 7,
+    lg: 9,
+    xl: 12,
   },
   spacing: {
     xs: 4,
@@ -12,11 +27,14 @@ const SHARED_TOKENS = {
     lg: 16,
     xl: 24,
   },
+  /* dashboard type scale: display 24 / title 18 / section 14 /
+     eyebrow 11 / body 14 / meta 13 / mono 13 */
   type: {
-    display: 34,
-    title: 30,
-    section: 18,
-    body: 15,
+    display: 24,
+    title: 18,
+    section: 14,
+    eyebrow: 11,
+    body: 14,
     meta: 13,
     label: 12,
     mono: 13,
@@ -37,6 +55,9 @@ const SHARED_TOKENS = {
 
 type FrappColorPalette = {
   brand: {
+    /* Renamed conceptually from "navy" to "ink" — keys kept stable so
+       mobile consumers do not have to re-import. Values now map to the
+       bone/bronze/ink palette. */
     navy: string;
     royalBlue: string;
     emerald: string;
@@ -52,6 +73,15 @@ type FrappColorPalette = {
     secondary: string;
     muted: string;
     inverse: string;
+  };
+  sidebar: {
+    background: string;
+    backgroundHi: string;
+    foreground: string;
+    foregroundHi: string;
+    muted: string;
+    divider: string;
+    accent: string;
   };
   feedback: {
     successBackground: string;
@@ -79,77 +109,95 @@ export type FrappTokens = {
 
 const LIGHT_COLORS: FrappColorPalette = {
   brand: {
-    navy: "#0F172A",
-    royalBlue: "#2563EB",
-    emerald: "#10B981",
+    navy: "#1F1A15", /* ink — deep warm near-black */
+    royalBlue: "#7A5A2F", /* deep bronze — replaces royal blue */
+    emerald: "#3D6B4A", /* moss — replaces emerald */
   },
   surface: {
-    canvas: "#F8FAFC",
+    canvas: "#FAF7F2", /* bone */
     card: "#FFFFFF",
-    muted: "#F1F5F9",
-    border: "#E2E8F0",
+    muted: "#F2EEE7", /* warm stone */
+    border: "#E4DED4",
   },
   text: {
-    primary: "#0F172A",
-    secondary: "#475569",
-    muted: "#64748B",
-    inverse: "#FFFFFF",
+    primary: "#1F1A15", /* ink */
+    secondary: "#5C544A",
+    muted: "#7C7468",
+    inverse: "#FAF7F2",
+  },
+  sidebar: {
+    background: "#1C1813",
+    backgroundHi: "#2A241D",
+    foreground: "#B8B1A4",
+    foregroundHi: "#F4F0E8",
+    muted: "#8B8276",
+    divider: "#2F2922",
+    accent: "#CBA876", /* bone-bronze sidebar highlight */
   },
   feedback: {
-    successBackground: "#DCFCE7",
-    successBorder: "#86EFAC",
-    successText: "#166534",
-    infoBackground: "#EFF6FF",
-    infoBorder: "#BFDBFE",
-    infoText: "#1E3A8A",
-    infoTextStrong: "#1E40AF",
-    infoBackgroundStrong: "#DBEAFE",
-    infoBorderStrong: "#93C5FD",
-    infoTextInteractive: "#1D4ED8",
-    warningBackground: "#FFFBEB",
-    warningBorder: "#FDE68A",
-    warningText: "#92400E",
-    errorBackground: "#FEF2F2",
-    errorBorder: "#FECACA",
-    errorText: "#B91C1C",
+    successBackground: "#E6F0E4",
+    successBorder: "#BBD3B8",
+    successText: "#264D33",
+    infoBackground: "#F0EBE0",
+    infoBorder: "#D6CBB3",
+    infoText: "#5C4A2B",
+    infoTextStrong: "#3D2F18",
+    infoBackgroundStrong: "#E5DCC6",
+    infoBorderStrong: "#B89A6B",
+    infoTextInteractive: "#7A5A2F",
+    warningBackground: "#FBEFD8",
+    warningBorder: "#F0DAA5",
+    warningText: "#7A4C13",
+    errorBackground: "#FBE7DF",
+    errorBorder: "#F2C5B3",
+    errorText: "#9A3315",
   },
 };
 
 const DARK_COLORS: FrappColorPalette = {
   brand: {
-    navy: "#0F172A",
-    royalBlue: "#60A5FA",
-    emerald: "#34D399",
+    navy: "#1A1611",
+    royalBlue: "#D6B988", /* bone-bronze, legible on dark */
+    emerald: "#7DB58E",
   },
   surface: {
-    canvas: "#0F172A",
-    card: "#1E293B",
-    muted: "#0B1220",
-    border: "#334155",
+    canvas: "#181410",
+    card: "#221E18",
+    muted: "#1E1A15",
+    border: "#363028",
   },
   text: {
-    primary: "#F8FAFC",
-    secondary: "#CBD5E1",
-    muted: "#94A3B8",
-    inverse: "#0F172A",
+    primary: "#F4F0E8",
+    secondary: "#C7BFB1",
+    muted: "#9B9388",
+    inverse: "#1F1A15",
+  },
+  sidebar: {
+    background: "#0F0C09",
+    backgroundHi: "#181410",
+    foreground: "#B8B1A4",
+    foregroundHi: "#F4F0E8",
+    muted: "#85796B",
+    divider: "#181410",
+    accent: "#D6B988",
   },
   feedback: {
-    successBackground: "#052E16",
-    successBorder: "#166534",
-    successText: "#86EFAC",
-    infoBackground: "#172554",
-    infoBorder: "#1E40AF",
-    infoText: "#BFDBFE",
-    infoTextStrong: "#DBEAFE",
-    infoBackgroundStrong: "#1E3A8A",
-    infoBorderStrong: "#2563EB",
-    infoTextInteractive: "#93C5FD",
-    warningBackground: "#451A03",
-    warningBorder: "#92400E",
-    warningText: "#FDE68A",
-    errorBackground: "#450A0A",
-    errorBorder: "#991B1B",
-    errorText: "#FCA5A5",
+    successBackground: "#1A2A1E",
+    successBorder: "#2D4D38",
+    successText: "#9BCBA7",
+    infoBackground: "#2A241B",
+    infoBorder: "#4A3E2D",
+    infoText: "#D6BD93",
+    infoTextStrong: "#E8D4AF",
+    infoBackgroundStrong: "#3A2F1F",
+    infoBorderStrong: "#7A5F38",
+    infoTextInteractive: "#D6B988",
+    warningBackground: "#2A1F11",
+    warningBorder: "#4A3818",
+    warningText: "#E8C68E",
+    errorBackground: "#2A1812",
+    errorBorder: "#5A2A1E",
+    errorText: "#E8A88E",
   },
 };
 

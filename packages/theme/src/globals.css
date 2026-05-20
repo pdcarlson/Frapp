@@ -2,96 +2,160 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Frapp design tokens — bone / bronze / ink palette.
+ *
+ * The shadcn-style variable names (`--background`, `--primary`, etc.) are
+ * preserved so the Tailwind preset and every existing surface keeps
+ * resolving. The values now map to the warm-stone / ink / bronze system
+ * defined in `design-handoff/project/styles.css`. Sidebar-specific tokens
+ * (`--side-*`) live alongside the shadcn names because the chat-first
+ * shell needs an "always dark ink" sidebar regardless of the active
+ * light/dark mode of the rest of the app.
+ *
+ * Chapter theming overlays on top of these defaults: `derivePalette()`
+ * (Chunk 2) will rewrite `--primary*`, `--side-accent`, and a handful of
+ * companion tokens per chapter at the `:root` level.
+ */
+
 @layer base {
   :root {
-    /* ── Surface ─────────────────────────────────────────── */
-    --background: 210 40% 98%; /* #F8FAFC Slate-50 */
-    --foreground: 222 47% 11%; /* #0F172A Navy */
-    --card: 0 0% 100%; /* #FFFFFF */
-    --card-foreground: 222 47% 11%; /* #0F172A */
+    /* ── Surface (bone / warm stone) ─────────────────────── */
+    --background: 40 20% 97%;          /* bone */
+    --foreground: 30 10% 12%;          /* ink */
+    --card: 0 0% 100%;
+    --card-foreground: 30 10% 12%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 30 10% 12%;
 
-    /* ── Primary (Royal Blue — CTAs, links, active states) ─ */
-    --primary: 217 91% 60%; /* #2563EB */
-    --primary-foreground: 210 40% 98%;
+    /* ── Primary (bronze — replaces royal blue) ──────────── */
+    --primary: 30 45% 32%;             /* deep bronze */
+    --primary-foreground: 40 30% 97%;
 
-    /* ── Primary scale ────────────────────────────────────── */
-    --primary-50: 214 100% 97%; /* #EFF6FF */
-    --primary-100: 214 95% 93%; /* #DBEAFE */
-    --primary-200: 213 97% 87%; /* #BFDBFE */
-    --primary-300: 212 96% 78%; /* #93C5FD */
-    --primary-400: 213 94% 68%; /* #60A5FA */
-    --primary-500: 217 91% 60%; /* #2563EB */
-    --primary-600: 221 83% 53%; /* #2563EB */
-    --primary-700: 224 76% 48%; /* #1D4ED8 */
-    --primary-800: 226 71% 40%; /* #1E40AF */
-    --primary-900: 224 64% 33%; /* #1E3A8A */
-    --primary-950: 226 57% 21%; /* #172554 */
+    /* ── Primary scale (bronze gradient) ─────────────────── */
+    --primary-50: 36 40% 96%;
+    --primary-100: 36 40% 92%;
+    --primary-200: 34 38% 84%;
+    --primary-300: 32 38% 72%;
+    --primary-400: 30 42% 56%;
+    --primary-500: 30 45% 42%;
+    --primary-600: 30 45% 32%;
+    --primary-700: 30 50% 26%;
+    --primary-800: 28 50% 20%;
+    --primary-900: 26 48% 16%;
+    --primary-950: 24 46% 10%;
 
-    /* ── Success (Emerald — positive actions, growth) ───── */
-    --success: 160 84% 39%; /* #10B981 */
-    --success-foreground: 210 40% 98%;
+    /* ── Success (moss — replaces emerald) ───────────────── */
+    --success: 145 35% 32%;
+    --success-foreground: 40 20% 97%;
 
-    /* ── Muted ────────────────────────────────────────────── */
-    --muted: 210 40% 96%; /* #F1F5F9 Slate-100 */
-    --muted-foreground: 215 16% 47%; /* #64748B Slate-500 */
+    /* ── Muted ───────────────────────────────────────────── */
+    --muted: 36 14% 94%;
+    --muted-foreground: 30 6% 42%;
 
-    /* ── Accent ───────────────────────────────────────────── */
-    --accent: 210 40% 96%;
-    --accent-foreground: 222 47% 11%;
+    /* ── Accent (soft bronze tint) ───────────────────────── */
+    --accent: 36 40% 94%;
+    --accent-foreground: 30 10% 12%;
 
-    /* ── Destructive ──────────────────────────────────────── */
-    --destructive: 0 84% 60%; /* #EF4444 Red-500 */
-    --destructive-foreground: 0 0% 98%;
+    /* ── Destructive (brick) ─────────────────────────────── */
+    --destructive: 8 72% 48%;
+    --destructive-foreground: 40 20% 97%;
 
-    /* ── Borders & inputs ─────────────────────────────────── */
-    --border: 214 32% 91%; /* #E2E8F0 Slate-200 */
-    --input: 214 32% 91%;
-    --ring: 217 91% 60%; /* Royal Blue focus ring */
+    /* ── Borders & inputs ────────────────────────────────── */
+    --border: 30 10% 89%;
+    --input: 30 10% 89%;
+    --ring: 30 45% 32%;
 
-    /* ── Radius ───────────────────────────────────────────── */
-    --radius: 0.625rem; /* 10px — slightly tighter for dashboard density */
+    /* ── Sidebar (always dark ink) ───────────────────────── */
+    --side-bg: 30 8% 10%;
+    --side-bg-hi: 30 8% 16%;
+    --side-fg: 36 10% 72%;
+    --side-fg-hi: 40 25% 96%;
+    --side-muted: 30 6% 52%;
+    --side-divider: 30 8% 18%;
+    --side-accent: 38 60% 70%;         /* warm bone-bronze on dark */
 
-    /* Frapp app mark (inline SVG lockups) — navy tile stays #0F172A in both modes */
-    --brand-lockup-bg: 222 47% 11%;
+    /* ── Category hues (saturated but earthy) ────────────── */
+    --hue-rose: 350 55% 50%;
+    --hue-violet: 280 35% 48%;
+    --hue-amber: 34 75% 48%;
+    --hue-teal: 185 40% 38%;
+    --hue-lime: 90 35% 38%;
+
+    /* ── Radius scale (tight, ledger-like) ───────────────── */
+    /* xs 3 / sm 5 / md 7 / lg 9 / xl 12 per redesign brief.    */
+    --radius-xs: 3px;
+    --radius-sm: 5px;
+    --radius: 7px;
+    --radius-md: 7px;
+    --radius-lg: 9px;
+    --radius-xl: 12px;
+
+    /* ── Shadows ─────────────────────────────────────────── */
+    --shadow-xs: 0 1px 2px hsl(30 10% 12% / 0.04);
+    --shadow-sm: 0 1px 3px hsl(30 10% 12% / 0.06),
+      0 1px 2px hsl(30 10% 12% / 0.04);
+    --shadow: 0 4px 12px -2px hsl(30 10% 12% / 0.08),
+      0 2px 4px -2px hsl(30 10% 12% / 0.04);
+    --shadow-lg: 0 20px 40px -12px hsl(30 10% 12% / 0.18);
+
+    /* ── Frapp app mark backdrop (light) ─────────────────── */
+    --brand-lockup-bg: 30 8% 10%;
+
+    /* ── Font family stacks ──────────────────────────────── */
+    --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+      "Liberation Mono", "Courier New", monospace;
   }
 
   .dark {
     /* ── Surface ─────────────────────────────────────────── */
-    --background: 222 47% 11%; /* #0F172A Navy */
-    --foreground: 210 40% 98%; /* #F8FAFC */
-    --card: 217 33% 17%; /* #1E293B Slate-800 */
-    --card-foreground: 210 40% 98%;
-    --popover: 217 33% 17%;
-    --popover-foreground: 210 40% 98%;
+    --background: 30 8% 9%;
+    --foreground: 40 20% 94%;
+    --card: 30 7% 13%;
+    --card-foreground: 40 20% 94%;
+    --popover: 30 7% 13%;
+    --popover-foreground: 40 20% 94%;
 
-    /* ── Primary (Royal Blue — brighter for dark bg) ─────── */
-    --primary: 213 94% 68%; /* #60A5FA Blue-400 */
-    --primary-foreground: 222 47% 11%;
+    /* ── Primary (bone-bronze, legible on dark) ──────────── */
+    --primary: 34 55% 68%;
+    --primary-foreground: 30 20% 10%;
 
-    /* ── Success (Emerald — brighter for dark bg) ─────────── */
-    --success: 160 67% 52%; /* #34D399 Emerald-400 */
-    --success-foreground: 222 47% 11%;
+    /* ── Success (warm green) ────────────────────────────── */
+    --success: 140 40% 58%;
+    --success-foreground: 30 20% 10%;
 
-    /* ── Muted ────────────────────────────────────────────── */
-    --muted: 217 33% 17%; /* Slate-800 */
-    --muted-foreground: 215 20% 65%; /* Slate-400 */
+    /* ── Muted ───────────────────────────────────────────── */
+    --muted: 30 7% 11%;
+    --muted-foreground: 36 8% 68%;
 
-    /* ── Accent ───────────────────────────────────────────── */
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
+    /* ── Accent ──────────────────────────────────────────── */
+    --accent: 30 7% 11%;
+    --accent-foreground: 40 20% 94%;
 
-    /* ── Destructive ──────────────────────────────────────── */
-    --destructive: 0 63% 31%;
-    --destructive-foreground: 0 0% 98%;
+    /* ── Destructive ─────────────────────────────────────── */
+    --destructive: 8 70% 60%;
+    --destructive-foreground: 40 20% 97%;
 
-    /* ── Borders & inputs ─────────────────────────────────── */
-    --border: 217 33% 17%;
-    --input: 217 33% 17%;
-    --ring: 213 94% 68%;
+    /* ── Borders & inputs ────────────────────────────────── */
+    --border: 30 6% 20%;
+    --input: 30 6% 20%;
+    --ring: 34 55% 68%;
 
-    --brand-lockup-bg: 222 47% 11%;
+    /* ── Sidebar (deeper ink) ────────────────────────────── */
+    --side-bg: 30 8% 5%;
+    --side-bg-hi: 30 8% 10%;
+    --side-fg: 36 10% 70%;
+    --side-fg-hi: 40 20% 96%;
+    --side-muted: 30 6% 48%;
+    --side-divider: 30 8% 10%;
+    --side-accent: 34 55% 68%;
+
+    /* ── Shadows (heavier on dark) ───────────────────────── */
+    --shadow-sm: 0 1px 3px hsl(0 0% 0% / 0.35);
+    --shadow: 0 4px 12px -2px hsl(0 0% 0% / 0.45);
+    --shadow-lg: 0 20px 40px -12px hsl(0 0% 0% / 0.6);
+
+    --brand-lockup-bg: 30 8% 5%;
   }
 
   * {
@@ -102,5 +166,42 @@
     color: hsl(var(--foreground));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer components {
+  /*
+   * Eyebrow micro-label — small uppercase tag that sits above titles in
+   * the chat-first shell. Pairs with `.h-display` headlines for the
+   * "micro-label + display headline" motif from
+   * `spec/ui-brand-identity.md` §2.3.
+   */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: hsl(var(--muted-foreground));
+  }
+
+  /*
+   * Ledger line — full-width hairline divider with a primary dot.
+   * Anchors section titles to ledger-style rules; matches the
+   * `design-handoff/project/styles.css` `.ledger-line` motif.
+   */
+  .ledger-line {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid hsl(var(--border));
+  }
+  .ledger-line__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: hsl(var(--primary));
   }
 }
