@@ -242,7 +242,7 @@ For each migration:
 npm run configure:branch-protection -- --dry-run
 ```
 
-(`configure-branch-protection` reads `GITHUB_PAT` — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
+(`configure-branch-protection` reads `GITHUB_TOKEN` first, with legacy aliases tolerated — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 

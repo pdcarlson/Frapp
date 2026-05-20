@@ -14,10 +14,10 @@ Configure merge-blocking branch protections for `main` and `production`. This en
 1. A GitHub Personal Access Token (PAT) with repository administration permissions:
    - **Fine-grained PAT:** Repository administration: Read & write
    - **Classic PAT:** `repo` scope
-2. Export the token in your shell:
+2. Export the token in your shell using the canonical hosted-agent name. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
-export GITHUB_PAT=ghp_your_token_here
+export GITHUB_TOKEN=<token>
 ```
 
 ## Step 1: Dry Run (Review Before Applying)
@@ -103,7 +103,7 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 1. Verify the checks have already reported against a production push:
 
    ```bash
-   GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN" gh api \
+   gh api \
      repos/pdcarlson/Frapp/commits/$(git rev-parse origin/production)/check-runs \
      | jq -r '.check_runs[].name'
    ```
@@ -113,8 +113,8 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 3. Dry-run and apply:
 
    ```bash
-   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-   GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
+   npm run configure:branch-protection -- --dry-run
+   npm run configure:branch-protection
    ```
 
 Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
@@ -130,13 +130,13 @@ Use this sequence:
 1. Inspect what branch protection currently requires:
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PAT" gh api repos/pdcarlson/Frapp/branches/main/protection
+gh api repos/pdcarlson/Frapp/branches/main/protection
 ```
 
 2. Inspect what the PR actually reported:
 
 ```bash
-GITHUB_TOKEN="$GITHUB_PAT" gh pr checks <PR_NUMBER>
+gh pr checks <PR_NUMBER>
 ```
 
 3. Compare names exactly (including capitalization and punctuation):

@@ -16,6 +16,7 @@ Use this area for:
 - `DB_PROMOTION_RUNBOOK.md`
 - `DB_ROLLBACK_PLAYBOOK.md`
 - `BUGBOT_RUNBOOK.md`
+- `CODERABBIT_MIGRATION_PLAN.md`
 - `LOCAL_DEV.md` — **Default `npm run dev:stack`; ports, per-app commands, fallbacks**
 - `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
 - `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
