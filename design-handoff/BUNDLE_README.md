@@ -1,5 +1,7 @@
 # CODING AGENTS: READ THIS FIRST
 
+> **Path mapping note (added during in-repo staging):** this README was authored by claude.ai/design and references paths under `frapp-remix-template/`. In this repo the bundle is staged at `design-handoff/`. Wherever the text below says `frapp-remix-template/<path>`, read it as `design-handoff/<path>`. The rest of this document is the bundle's original content, unmodified.
+
 This is a **handoff bundle** from Claude Design (claude.ai/design).
 
 A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.

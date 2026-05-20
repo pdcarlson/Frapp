@@ -83,7 +83,7 @@ function SettingsAudit({ ctx }) {
     { at: "2026-04-23T11:02:00", who: "Priya Shah",  action: "Updated dues",   target: "grace period 5→7 days", scope: "settings.dues" },
     { at: "2026-04-22T20:45:00", who: "Marcus Chen", action: "Added field",    target: "T-shirt size", scope: "settings.fields" },
     { at: "2026-04-22T16:33:00", who: "Marcus Chen", action: "Disabled workflow", target: "wf_event_photo", scope: "settings.workflows" },
-    { at: "2026-04-20T09:18:00", who: "Jordan Webb", action: "Invited member", target: "rio.nakamura@stanford.edu", scope: "members" },
+    { at: "2026-04-20T09:18:00", who: "Jordan Webb", action: "Invited member", target: "placeholder.user@local.test", scope: "members" },
     { at: "2026-04-18T17:00:00", who: "Marcus Chen", action: "Changed archetype", target: "IFC → IFC (no-op confirm)", scope: "settings.org" },
     { at: "2026-04-15T12:00:00", who: "System",      action: "Beta build deployed", target: "v0.4.2", scope: "platform" },
     { at: "2026-04-12T08:00:00", who: "System",      action: "Beta build deployed", target: "v0.4.1", scope: "platform" },
