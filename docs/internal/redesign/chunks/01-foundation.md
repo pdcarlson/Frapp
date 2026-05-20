@@ -21,11 +21,9 @@ Land the in-repo design reference, rewrite the theme tokens to the bone/bronze/i
 
 ## Tasks
 
-1. **Land the design bundle in-repo.**
-   - The design source is at `/tmp/design_extract/frapp-remix-template/` in the session that originally fetched it. In a fresh container the bundle won't exist — re-fetch from the design ID `uUVhoSAtPSXszJas884LAw` (claude.ai/design) or ask the user to provide it before starting.
-   - Copy the bundle to `design-handoff/` at the repo root.
-   - Add `design-handoff/screenshots/` to `.gitignore` if the bundle ships screenshots.
-   - Add a `design-handoff/README.md` noting "Visual reference only — not canonical; see `docs/internal/redesign/master-plan.md`."
+1. **Confirm the design bundle is present.**
+   - The bundle already lives at `design-handoff/` in the repo (palette, shell, org-config, settings prototypes, chat transcript). Skim `design-handoff/README.md` and the chat transcript at `design-handoff/chats/chat1.md` before you start — intent often lives in the chat, not the prototype.
+   - If for some reason `design-handoff/` is missing, stop and ask the user how to source it (re-fetch from claude.ai/design ID `uUVhoSAtPSXszJas884LAw`, or upload). Don't guess at design choices.
 
 2. **Rewrite theme tokens.**
    - `packages/theme/src/globals.css` — replace the palette with the bone/bronze/ink + role hues from `design-handoff/project/styles.css` (lines 1–200). Keep existing variable names; swap values only.
