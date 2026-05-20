@@ -13,11 +13,11 @@ Frapp repository, while preserving the current lightweight merge policy:
 - Repo docs, specs, and agent guidance must not keep stale Bugbot instructions
   after the migration lands.
 
-## Current confirmed state
+## Pre-migration context
 
 - `pdcarlson/Frapp` is public and uses `main` as the default branch.
-- The repo currently has no `.coderabbit.yaml` and no CodeRabbit workflow.
-- The repo is configured around Cursor Bugbot:
+- The repo previously had no `.coderabbit.yaml` and no CodeRabbit workflow.
+- The repo was configured around Cursor Bugbot:
   - `.cursor/BUGBOT.md`
   - `apps/api/.cursor/BUGBOT.md`
   - `apps/web/.cursor/BUGBOT.md`
@@ -26,7 +26,7 @@ Frapp repository, while preserving the current lightweight merge policy:
   - `.github/workflows/.cursor/BUGBOT.md`
   - `supabase/migrations/.cursor/BUGBOT.md`
   - `docs/internal/BUGBOT_RUNBOOK.md`
-- Bugbot is advisory. There is no required `bugbot-review` status check.
+- Bugbot was advisory. There was no required `bugbot-review` status check.
 - Historical CodeRabbit setup existed before PR #207:
   - `.coderabbit.yaml`
   - `.github/workflows/trigger-coderabbit-review.yml`
@@ -165,11 +165,12 @@ Exit criteria:
 - The team understands Autofix controls and residual risk.
 - The team accepts advisory review mode and rate-limit tradeoffs.
 
-### Phase 1 - Add CodeRabbit config without removing Bugbot
+### Phase 1 - Add CodeRabbit config and remove repo-side Bugbot config
 
 1. Add `.coderabbit.yaml`.
 2. Keep `request_changes_workflow: false` and `review_status: false`.
-3. Keep Bugbot docs/config temporarily so there is a fallback during validation.
+3. Delete Bugbot rule files and replace the Bugbot runbook with a CodeRabbit
+   runbook.
 4. Open a test PR and confirm:
    - CodeRabbit reviews automatically.
    - CodeRabbit re-reviews after a push.
@@ -198,9 +199,9 @@ Exit criteria:
 
 - CodeRabbit is the only active AI reviewer on a validation PR.
 
-### Phase 3 - Remove stale Bugbot repo references
+### Phase 3 - Verify stale Bugbot repo references are gone
 
-1. Delete Bugbot-specific rule files:
+1. Confirm these Bugbot-specific rule files are deleted:
    - `.cursor/BUGBOT.md`
    - `apps/api/.cursor/BUGBOT.md`
    - `apps/web/.cursor/BUGBOT.md`
@@ -208,10 +209,10 @@ Exit criteria:
    - `packages/.cursor/BUGBOT.md`
    - `.github/workflows/.cursor/BUGBOT.md`
    - `supabase/migrations/.cursor/BUGBOT.md`
-2. Remove the `.gitignore` exception for root `.cursor/BUGBOT.md`.
-3. Replace `docs/internal/BUGBOT_RUNBOOK.md` with
+2. Confirm the `.gitignore` exception for root `.cursor/BUGBOT.md` is gone.
+3. Confirm `docs/internal/BUGBOT_RUNBOOK.md` is replaced by
    `docs/internal/CODERABBIT_RUNBOOK.md`.
-4. Update:
+4. Confirm these files reference CodeRabbit as the active reviewer:
    - `CONTRIBUTING.md`
    - `spec/environments.md`
    - `docs/internal/AGENT_INFRA.md`
@@ -254,7 +255,7 @@ Exit criteria:
 
 Do not make CodeRabbit a required status check in the first migration. Reasons:
 
-- The current Bugbot policy is advisory.
+- The previous Bugbot policy was advisory.
 - OSS rate limits can pause new reviews.
 - Historical bot-gate workflows caused CI friction.
 - Production already requires CI, `branch-policy`, one human approval, and
@@ -267,12 +268,12 @@ capture CodeRabbit's exact emitted check name from a real PR before changing
 ## Verification checklist for the implementation PR
 
 - [ ] `.coderabbit.yaml` validates against CodeRabbit's schema.
-- [ ] CodeRabbit auto-reviews a PR to `main`.
+- [ ] CodeRabbit auto-reviews a PR to `main` after the GitHub App is enabled.
 - [ ] CodeRabbit auto-reviews or intentionally skips a draft PR according to
       the chosen config.
 - [ ] CodeRabbit re-reviews after a push.
 - [ ] CodeRabbit does not run Autofix.
-- [ ] Bugbot is disabled externally.
+- [ ] Bugbot is disabled externally in the Cursor dashboard.
 - [ ] No stale Bugbot docs remain in active runbooks.
 - [ ] `npm run configure:branch-protection -- --dry-run` shows no CodeRabbit or
       Bugbot required check.

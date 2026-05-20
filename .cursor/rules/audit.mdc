@@ -3,7 +3,7 @@ description: Performing code quality reviews, security audits, dependency checks
 globs:
   - "supabase/migrations/**"
   - ".github/workflows/**"
-  - "**/.cursor/BUGBOT.md"
+  - ".coderabbit.yaml"
   - "docs/internal/**"
   - "spec/**"
   - "apps/api/src/interface/controllers/**/*.ts"

@@ -45,16 +45,16 @@ If only a legacy GitHub token alias is exposed in an older VM, copy it into `GIT
 
 ## CI/CD summary
 
-| Item                 | Location / notes                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| CI                   | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api`; `api-docker-build` runs `apps/api/Dockerfile`) |
-| API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
-| Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
-| Release tags         | `.github/workflows/release.yml` — main → production merge                             |
-| Docs                 | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)            |
-| Branch protection    | `npm run configure:branch-protection` (prefers `GITHUB_TOKEN`); see `CONTRIBUTING.md` |
-| Bugbot               | `.cursor/BUGBOT.md` — Cursor's native auto-review handles PRs; no GitHub Actions gate  |
-| Vercel               | Deploys from `main` / `production` only (PR previews disabled via repo config)        |
+| Item                | Location / notes                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api`; `api-docker-build` runs `apps/api/Dockerfile`) |
+| API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
+| Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
+| Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
+| Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_TOKEN`); see `CONTRIBUTING.md`                                                                 |
+| CodeRabbit          | `.coderabbit.yaml` — native advisory PR review; no GitHub Actions gate                                                                                |
+| Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
 
@@ -69,24 +69,24 @@ Deeper deploy architecture: [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ## Infisical sync map
 
-| # | Infisical env | Destination                         |
-| - | ------------- | ----------------------------------- |
-| 1 | staging       | Render → frapp-api-staging          |
-| 2 | production    | Render → frapp-api-prod             |
-| 3 | staging       | Vercel → frapp-web (Preview)        |
-| 4 | production    | Vercel → frapp-web (Production)     |
-| 5 | staging       | Vercel → frapp-landing (Preview)    |
-| 6 | production    | Vercel → frapp-landing (Production) |
-| 7 | per-env       | GitHub Actions (OIDC)               |
+| #   | Infisical env | Destination                         |
+| --- | ------------- | ----------------------------------- |
+| 1   | staging       | Render → frapp-api-staging          |
+| 2   | production    | Render → frapp-api-prod             |
+| 3   | staging       | Vercel → frapp-web (Preview)        |
+| 4   | production    | Vercel → frapp-web (Production)     |
+| 5   | staging       | Vercel → frapp-landing (Preview)    |
+| 6   | production    | Vercel → frapp-landing (Production) |
+| 7   | per-env       | GitHub Actions (OIDC)               |
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 
 ## GitHub environments and bootstrap secrets
 
-| Environment  | Protection              | Purpose                                |
-| ------------ | ----------------------- | -------------------------------------- |
-| `staging`    | None                    | Staging deploys (`main`)               |
-| `production` | Required reviewer       | Production deploys + migration gate    |
+| Environment  | Protection        | Purpose                             |
+| ------------ | ----------------- | ----------------------------------- |
+| `staging`    | None              | Staging deploys (`main`)            |
+| `production` | Required reviewer | Production deploys + migration gate |
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
@@ -96,11 +96,11 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 
 ## Release labels
 
-| Label           | Effect on version bump     |
-| --------------- | -------------------------- |
-| `release:major` | Major                      |
-| `release:minor` | Minor                      |
-| `release:patch` | Patch (default)            |
+| Label           | Effect on version bump |
+| --------------- | ---------------------- |
+| `release:major` | Major                  |
+| `release:minor` | Minor                  |
+| `release:patch` | Patch (default)        |
 
 ## Lint, test, build (repo root)
 

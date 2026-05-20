@@ -4,17 +4,17 @@
 
 ## 1. Environment Matrix
 
-|              | Local                             | Staging                                  | Production                            |
-| ------------ | --------------------------------- | ---------------------------------------- | ------------------------------------- |
-| **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live      | frapp.live                            |
-| **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live  | app.frapp.live                        |
-| **API**      | localhost:3001                    | Render (`main` branch service)           | Render (`production` branch service)  |
-| **Mobile**   | Expo Go (local network)           | EAS internal distribution                | App Store / Google Play               |
-| **Database** | Supabase local (`supabase start`) | Supabase staging project                 | Supabase production project           |
-| **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)          | Supabase Auth (production project)    |
-| **Storage**  | Supabase Storage (local)          | Supabase Storage (staging project)       | Supabase Storage (production project) |
-| **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                   | Live mode (`sk_live_`)                |
-| **Push**     | Expo Go (dev)                     | EAS internal builds                      | Production builds                     |
+|              | Local                             | Staging                                 | Production                            |
+| ------------ | --------------------------------- | --------------------------------------- | ------------------------------------- |
+| **Landing**  | localhost:3002                    | Vercel preview / staging.frapp.live     | frapp.live                            |
+| **Web App**  | localhost:3000                    | Vercel preview / app.staging.frapp.live | app.frapp.live                        |
+| **API**      | localhost:3001                    | Render (`main` branch service)          | Render (`production` branch service)  |
+| **Mobile**   | Expo Go (local network)           | EAS internal distribution               | App Store / Google Play               |
+| **Database** | Supabase local (`supabase start`) | Supabase staging project                | Supabase production project           |
+| **Auth**     | Supabase Auth (local)             | Supabase Auth (staging project)         | Supabase Auth (production project)    |
+| **Storage**  | Supabase Storage (local)          | Supabase Storage (staging project)      | Supabase Storage (production project) |
+| **Stripe**   | Test mode (`sk_test_`)            | Test mode (`sk_test_`)                  | Live mode (`sk_live_`)                |
+| **Push**     | Expo Go (dev)                     | EAS internal builds                     | Production builds                     |
 
 Each Supabase project (local, staging, production) is fully isolated: separate database, auth users, storage buckets, and API keys.
 
@@ -147,31 +147,31 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 
 ### CI Job Matrix
 
-| Job                  | What it validates                               | Blocker?   |
-| -------------------- | ----------------------------------------------- | ---------- |
-| `packages-build`     | Shared packages compile                         | Yes        |
+| Job                  | What it validates                                                                                    | Blocker?   |
+| -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
+| `packages-build`     | Shared packages compile                                                                              | Yes        |
 | `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity) | Yes        |
-| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path) | Yes        |
-| `api-tests`          | API Jest unit tests (377+ tests)                | Yes (hard) |
-| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness | Yes        |
-| `migration-safety`   | Migration filename validation + promotion docs  | Yes        |
-| `mobile-validate`    | Mobile app lint + typecheck                     | Yes        |
-| `branch-policy`      | PRs to `production` must come from `main`       | Yes        |
+| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
+| `api-tests`          | API Jest unit tests (377+ tests)                                                                     | Yes (hard) |
+| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness                                                      | Yes        |
+| `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
+| `mobile-validate`    | Mobile app lint + typecheck                                                                          | Yes        |
+| `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
 ### Additional Required Checks
 
 These checks are also required for merge:
 
-| Check            | Provider       | What it validates                         |
-| ---------------- | -------------- | ----------------------------------------- |
+| Check            | Provider       | What it validates                               |
+| ---------------- | -------------- | ----------------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**Cursor Bugbot** auto-reviews every ready-for-review PR to `main` and `production` via its native GitHub app integration.
+**CodeRabbit** auto-reviews PRs to `main` and `production` via its native GitHub app integration.
 
-- Bugbot feedback is advisory on both branches. There is no `bugbot-review` required status check.
-- On `main`, conversation resolution is not required, so unresolved Bugbot comment threads do not block merge.
-- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; Bugbot does not).
-- Manual trigger if auto-review misses a PR: post a top-level `bugbot run` comment. Full runbook: [`docs/internal/BUGBOT_RUNBOOK.md`](../docs/internal/BUGBOT_RUNBOOK.md).
+- CodeRabbit feedback is advisory on both branches. There is no required CodeRabbit status check.
+- On `main`, conversation resolution is not required, so unresolved CodeRabbit comment threads do not block merge.
+- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; CodeRabbit does not).
+- Manual trigger if auto-review misses a PR: post a top-level `@coderabbitai review` comment. Full runbook: [`docs/internal/CODERABBIT_RUNBOOK.md`](../docs/internal/CODERABBIT_RUNBOOK.md).
 
 ### Key Design Decisions
 

@@ -5,7 +5,7 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- Bugbot reviews every PR to `main` and `production`
+- CodeRabbit reviews PRs to `main` and `production` as an advisory signal
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -44,44 +44,44 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 
 ### Both branches (main and production)
 
-| Setting | Value |
-| --- | --- |
-| Required status checks | See table below |
-| Require branches up to date | Yes |
-| Enforce admins | Yes |
-| Linear history | Yes |
-| Force pushes | Blocked |
-| Deletions | Blocked |
-| Conversation resolution | Branch-specific (disabled on `main`, required on `production`) |
+| Setting                     | Value                                                          |
+| --------------------------- | -------------------------------------------------------------- |
+| Required status checks      | See table below                                                |
+| Require branches up to date | Yes                                                            |
+| Enforce admins              | Yes                                                            |
+| Linear history              | Yes                                                            |
+| Force pushes                | Blocked                                                        |
+| Deletions                   | Blocked                                                        |
+| Conversation resolution     | Branch-specific (disabled on `main`, required on `production`) |
 
 ### Branch-specific PR review rules
 
-| Branch | Required approving reviews | Dismiss stale reviews | Require conversation resolution |
-| --- | --- | --- | --- |
-| `main` | Disabled | N/A | Disabled |
-| `production` | 1 | Enabled | Enabled |
+| Branch       | Required approving reviews | Dismiss stale reviews | Require conversation resolution |
+| ------------ | -------------------------- | --------------------- | ------------------------------- |
+| `main`       | Disabled                   | N/A                   | Disabled                        |
+| `production` | 1                          | Enabled               | Enabled                         |
 
 ### Required Status Checks
 
 **CI checks (from `.github/workflows/ci.yml`):**
 
-| Check name | What it validates |
-| --- | --- |
-| `packages-build` | Shared packages compile |
+| Check name           | What it validates                                                                               |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| `packages-build`     | Shared packages compile                                                                         |
 | `lint-and-typecheck` | ESLint + TypeScript (all workspaces); `npm run build -w apps/api` (`nest build`, Render parity) |
-| `api-docker-build` | `docker build -f apps/api/Dockerfile .` (API image compile path) |
-| `api-tests` | API Jest unit tests |
-| `api-contract-check` | openapi.json + api-sdk freshness |
-| `migration-safety` | Migration filename + docs validation |
-| `mobile-validate` | Mobile lint + typecheck |
-| `ci-scripts-tests` | `node --test` unit tests for deploy-gate scripts under `scripts/ci/` |
+| `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                |
+| `api-tests`          | API Jest unit tests                                                                             |
+| `api-contract-check` | openapi.json + api-sdk freshness                                                                |
+| `migration-safety`   | Migration filename + docs validation                                                            |
+| `mobile-validate`    | Mobile lint + typecheck                                                                         |
+| `ci-scripts-tests`   | `node --test` unit tests for deploy-gate scripts under `scripts/ci/`                            |
 
 **Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
-| Check name | What it validates |
-| --- | --- |
+| Check name       | What it validates                                                     |
+| ---------------- | --------------------------------------------------------------------- |
 | `docs-spec-sync` | Docs/spec sync on PRs (`check-docs-impact.mjs`; no `apps/docs` build) |
 
 ### Vercel policy (not a required check)
@@ -90,8 +90,8 @@ Vercel deployments are intentionally limited to `main` and `production` branches
 
 **production branch only:**
 
-| Check name | What it validates |
-| --- | --- |
+| Check name      | What it validates            |
+| --------------- | ---------------------------- |
 | `branch-policy` | Source branch must be `main` |
 
 ### Future: require deploy verification on production
@@ -119,9 +119,9 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 
 Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
 
-### Bugbot review policy
+### CodeRabbit review policy
 
-Bugbot reviews are advisory on both branches. There is no `bugbot-review` required status check. See [`BUGBOT_RUNBOOK.md`](./BUGBOT_RUNBOOK.md) for how Bugbot is configured and triggered.
+CodeRabbit reviews are advisory on both branches. There is no required CodeRabbit status check. See [`CODERABBIT_RUNBOOK.md`](./CODERABBIT_RUNBOOK.md) for how CodeRabbit is configured and triggered.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 
