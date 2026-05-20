@@ -10,6 +10,14 @@
 3. Current shell to replace: `apps/web/components/layout/dashboard-shell.tsx`.
 4. Current theme to rewrite: `packages/theme/src/{globals.css,tokens.ts,tailwind.config.ts}`.
 5. Existing brand spec to update: `spec/ui-brand-identity.md`, `spec/ui-web-dashboard.md`.
+6. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every chunk; the bullets below are this chunk's specific applications.
+
+## Engineering principles applied here
+
+- **Shell nav rows are semantic interactives, not `<div>`s.** Use `<button type="button">` for items that change client state (`setRoute`, modal opens) and the framework's `Link` (or `<a href>`) for items that navigate. The prototype's `design-handoff/project/shell.jsx` uses `<div>` with click handlers — do not port that pattern. Active styling stays the same; just move it to the semantic element.
+- **Soft-disabled / "soon" nav items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled items use the native `disabled` attribute on `<button>`.
+- **Root layout sets `<html lang="en">`.** Verify `apps/web/app/layout.tsx` (or equivalent) has the attribute; add it if missing.
+- **If the theme references a monospace family (e.g. Geist Mono),** make sure the font is actually loaded via the framework's font loader (or a `<link>` in the root layout). The prototype's `logos.html` references Geist Mono without loading it — don't replicate that gap.
 
 ## Branch
 
@@ -21,11 +29,9 @@ Land the in-repo design reference, rewrite the theme tokens to the bone/bronze/i
 
 ## Tasks
 
-1. **Land the design bundle in-repo.**
-   - The design source is at `/tmp/design_extract/frapp-remix-template/` in the session that originally fetched it. In a fresh container the bundle won't exist — re-fetch from the design ID `uUVhoSAtPSXszJas884LAw` (claude.ai/design) or ask the user to provide it before starting.
-   - Copy the bundle to `design-handoff/` at the repo root.
-   - Add `design-handoff/screenshots/` to `.gitignore` if the bundle ships screenshots.
-   - Add a `design-handoff/README.md` noting "Visual reference only — not canonical; see `docs/internal/redesign/master-plan.md`."
+1. **Confirm the design bundle is present.**
+   - The bundle already lives at `design-handoff/` in the repo (palette, shell, org-config, settings prototypes, chat transcript). Skim `design-handoff/README.md` and the chat transcript at `design-handoff/chats/chat1.md` before you start — intent often lives in the chat, not the prototype.
+   - If for some reason `design-handoff/` is missing, stop and ask the user how to source it (re-fetch from claude.ai/design ID `uUVhoSAtPSXszJas884LAw`, or upload). Don't guess at design choices.
 
 2. **Rewrite theme tokens.**
    - `packages/theme/src/globals.css` — replace the palette with the bone/bronze/ink + role hues from `design-handoff/project/styles.css` (lines 1–200). Keep existing variable names; swap values only.

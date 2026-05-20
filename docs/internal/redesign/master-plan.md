@@ -191,6 +191,55 @@ Theme is rebuilt server-side on color change and cached in `chapters.theme_palet
 
 ---
 
+## Engineering principles (apply to every chunk)
+
+The claude.ai/design prototype under `design-handoff/` is a **visual** reference — its internal code has hardcoded ids, missing fallbacks, non-semantic interactives, NaN-prone inputs, and other defects that exist because it was a static mock-up. **Do not reproduce them in the real implementation.** The principles below codify the corrections every chunk must honor.
+
+### Identity and ownership
+
+- **Actor identity always comes from the authenticated session.** Reactions, message actions, RSVPs, votes, audit rows — every write attributes the actor via `viewer.id` (or the server-side `req.user.id`), never a hardcoded literal. The prototype's `"u_05"` reaction owner is the canonical anti-pattern here.
+- **Filters keyed on "me" / "mine" / "assigned-to-me" actually filter** by `viewer.id` against the right field (`hostId`, `assigneeId`, `participants`, etc.). They never short-circuit to `return true`.
+
+### Catalog lookups and defaults
+
+- **Every lookup against `ARCHETYPES`, `MODULE_CATALOG`, `ROLE_PACKS`, etc. guards for a missing key with a defined fallback** (typically the `ifc` archetype / the always-on module set / the archetype-default role pack). Direct subscript like `ARCHETYPES[org.archetype]` without a fallback is forbidden.
+- **Components that render derived columns or rows from a configurable source pull from that source at render time.** Permission matrices, kanban columns, dashboard tabs, etc. derive their column/row key list from the active `pack.roleKeys` (or equivalent) — never a hardcoded local array.
+
+### Seeds and shared state
+
+- **Materializing a chapter's config from seed data deep-clones.** `[...CUSTOM_FIELDS_SEED]` and similar shallow spreads share object references with the seed, so per-chapter edits leak globally. Use a deep clone (e.g. `structuredClone` or `JSON.parse(JSON.stringify(...))` for plain data) when copying `CUSTOM_FIELDS_SEED`, `ROLE_PACKS`, `WORKFLOWS_SEED`, or `VOCABULARY_DEFAULTS` into a chapter record.
+- **No `window.*` globals for application state.** Use ES module imports/exports. (The prototype assigns components and seed data to `window` because it runs as static HTML; the real app must not.)
+
+### Input handling
+
+- **Numeric input change handlers guard-parse.** Replace `+e.target.value` with a check that the parsed value is a finite number (`Number.isFinite(parsed)`) before calling the setter. On invalid intermediate state, preserve the previous value rather than storing `NaN`.
+- **Renderers that divide guard the denominator.** Progress bars, completion percentages, and similar widgets compute `denominator > 0 ? numerator / denominator : 0` before producing CSS / display values. The prototype's check-in progress bar (`checkedIds.size / attendees.length` with no zero guard) is the canonical anti-pattern.
+- **`find` / `first` lookups treat `undefined` as a real state.** Components reading `EVENTS_SEED.find(...)`, `messages.find(...)`, etc. render an explicit fallback UI (empty state, "no upcoming events", "no matching item") when the result is `undefined` rather than dereferencing properties on it.
+
+### Empty states
+
+- **Every list surface has an explicit empty state.** Channels list with no channels → "No channels yet" panel with the next-action CTA, not a blank pane. Same for members directory, events list, tasks board, audit log, etc. The implementation explicitly checks `length === 0` (or `!active`) and renders the empty component.
+
+### Accessibility on interactive elements
+
+- **Interactive controls use semantic elements.** `<button>` for actions, `<a>` (or the framework's `Link`) for navigation. Never `<div onClick>` for a clickable nav row, message-action, settings tab, or list item.
+- **Soft-disabled items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled use the native `disabled` attribute on `<button>`. "Soon" / "coming-in-trial" items in the Modules tab are soft-disabled.
+- **Root document layout sets `<html lang="en">`** (or the appropriate locale once internationalization is in scope).
+
+### Aggregations in dashboards
+
+- **Stacked/segmented bars use the outstanding portion of each segment, never the raw amount,** to avoid double-counting against an already-collected total. For dues: `outstanding = invoice.amount - (invoice.collected ?? 0)`, with a `Math.max(0, ...)` guard to clamp negative values. Same rule for points ledgers, task burn-downs, hours rollups, etc.
+
+### Privacy in fixtures and seeds
+
+- **No real identifiers in fixtures or seed data.** Test emails use `@example.com` / `@local.test`. Test names are generic / synthetic. The Greek-life chapter directory seed is the only exception — those are publicly listed chapter identities, not personal data.
+
+### How to use this list
+
+When you start a chunk, read this section. When you write a verification checklist for your PR, check this section. When you find yourself porting prototype code 1:1, stop and re-read this section. Every chunk brief under `chunks/` lists the chunk-specific applications of these rules; this section is the canonical statement of the rule itself.
+
+---
+
 ## Chunked roadmap
 
 Each chunk's full brief lives in `chunks/NN-<slug>.md`. The brief is self-contained for a fresh session. Summaries:

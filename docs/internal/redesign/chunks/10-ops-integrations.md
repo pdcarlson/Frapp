@@ -12,6 +12,18 @@ This brief is the **template** for the ops integration pattern. Each sub-chunk (
 3. `apps/web/lib/chat/chat-client.ts` (Chunk 04) — action buttons fire through here.
 4. The relevant `design-handoff/project/*.jsx` for your sub-chunk's dashboard view.
 5. Existing module code, if any (grep for the module name in `apps/api/src/modules/` and `apps/web/app/(dashboard)/`).
+6. **`docs/internal/redesign/master-plan.md` → *Engineering principles*.** Non-negotiable for every sub-chunk; the bullets below are this chunk's specific applications. The prototype's `home.jsx`, `screens.jsx`, and `screens3.jsx` carry several anti-patterns called out below — read them so you can recognize and *not* port them.
+
+## Engineering principles applied here (every sub-chunk)
+
+- **Filters keyed on "me" / "mine" actually filter by viewer.** A "My events" / "My tasks" / "Assigned to me" filter compares `viewer.id` against the right field (`hostId`, `assigneeId`, `participants`, etc.). The prototype's `screens.jsx` `if (filter === "mine") return true;` is the anti-pattern — return only items where the viewer is in the relevant role.
+- **`find` / first-match lookups render an explicit fallback when the result is `undefined`.** Upcoming-event cards, next-task widgets, leaderboard top-row, etc. handle the empty case with a "no upcoming events" / "nothing assigned" card instead of dereferencing properties on `undefined`. The prototype's `home.jsx` `EVENTS_SEED.find(...)` then `next.hostIds` without a guard is the anti-pattern.
+- **Percentage / progress renderers guard the denominator.** Check-in progress (`checkedIds.size / attendees.length`), task completion (`done / total`), points-to-quota (`points / target`), dues-collected — all wrap the division with `denominator > 0 ? n / d : 0` before producing a width / displayed fraction. The prototype's check-in bar (`screens.jsx`) is the anti-pattern.
+- **Stacked / segmented bars compute outstanding per segment, never raw amount.** For dues specifically: `outstanding = invoice.amount - (invoice.collected ?? invoice.paid ?? 0)`, clamped to `Math.max(0, ...)`. Segment width = `outstandingPlan / totalAmount`. The prototype's `screens3.jsx` plan-segment math double-counts collected funds — do not port that. Same rule for tasks burndown (use outstanding count, not raw count) and any other accumulating chart.
+- **No `window.*` globals for ops module state.** Renderers, dashboards, and RPC payloads import from ES modules (`packages/chat-integrations/`, `packages/org-archetypes/`). The prototype's `screens2.jsx` assigning `window.BackworkScreen` and overlapping with `backwork.jsx` is the canonical collision — the real implementation has one canonical exported component per surface.
+- **Dashboard column / row sources are dynamic.** Kanban columns (Tasks), funnel stages (Rush/Recruitment/Intake), aging buckets (Dues), pathway milestones (Onboarding) all derive their column key list from chapter config or workflow definition, not a local hardcoded array.
+- **Action buttons attribute the actor via the authenticated session.** RSVP, Done, Vote, Pay, Confirm, Grant points, Submit hours — every action's actor field comes from `viewer.id` / `req.user.id`. No client-supplied actor ids.
+
 
 ## Branch convention
 
