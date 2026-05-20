@@ -156,6 +156,7 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness                                                      | Yes        |
 | `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
 | `mobile-validate`    | Mobile app lint + typecheck                                                                          | Yes        |
+| `ci-scripts-tests`   | CI scripts unit/integration tests                                                                    | Yes        |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
 ### Additional Required Checks

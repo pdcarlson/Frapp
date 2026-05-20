@@ -133,13 +133,13 @@ Use this sequence:
 gh api repos/pdcarlson/Frapp/branches/main/protection
 ```
 
-2. Inspect what the PR actually reported:
+1. Inspect what the PR actually reported:
 
 ```bash
 gh pr checks <PR_NUMBER>
 ```
 
-3. Compare names exactly (including capitalization and punctuation):
+1. Compare names exactly (including capitalization and punctuation):
    - Required checks use emitted check-run names (`api-tests`, `docs-spec-sync`)
 
 Common causes and fixes:
