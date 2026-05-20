@@ -1,6 +1,6 @@
 # Redesign chunk status
 
-Update this file when you start or merge a chunk. One row per chunk; keep the table compact.
+Update this file at each state transition: when you start a chunk (`not started` → `in progress`), when you open the PR (`in progress` → `in review`), and when it merges (`in review` → `shipped`). One row per chunk; keep the table compact.
 
 | #   | Title                                          | Branch                                          | State        | PR    | Notes |
 | --- | ---------------------------------------------- | ----------------------------------------------- | ------------ | ----- | ----- |

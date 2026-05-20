@@ -15,7 +15,7 @@ Do **not** start coding from a vague "redesign Frapp" prompt. Always work a spec
 
 ## Chunk dependency graph
 
-```
+```text
 01 Foundation (theme + shell)
    ↓
 02 Data model + Edge Function scaffold

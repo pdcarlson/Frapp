@@ -35,42 +35,50 @@ Ship one ops integration end-to-end following the integration pattern: slash com
 ## Sub-chunk specifics
 
 ### 10a — Events
+
 - Slash commands: `/event <title> at <when>` and `/rsvp <event-id> <going|maybe|no>`.
 - Renderer: title, time, location, RSVP buttons + counts.
 - Optional check-in mode: officer enables QR check-in for an event; renderer shows "Check in" button when active.
 - Optional dashboard: list / month / week views.
 
 ### 10b — Tasks
+
 - Slash commands: `/task @member <title> due <when>`, `/done <task-id>`.
 - Renderer: title, assignee, due date, "Done" / "Confirm done" buttons depending on viewer role.
 - Optional dashboard: kanban (todo / awaiting confirm / done).
 
 ### 10c — Points
+
 - Slash commands: `/points grant @member <amount> for <reason>`, `/points deduct @member <amount> for <reason>`.
 - Renderer: actor → recipient + amount + reason. Append-only enforced (no edit, no delete; corrections are new entries).
 - Optional dashboard: leaderboard + ledger.
 
 ### 10d — Dues / Billing
+
 - Slash commands: `/dues remind overdue` (heavy — NestJS RPC), `/dues status @member` (renderer shows AR + Pay button), `/dues invoice @member <amount>`.
 - Renderer: invoice card with Pay button → Stripe checkout (use existing Stripe integration).
 - Reads `chapter_dues_config` (Chunk 07).
 - Optional dashboard: per-member AR view, aging buckets.
 
 ### 10e — Rush / Recruitment / Intake (vocab varies)
+
 - Slash commands: `/<vocab> add @candidate`, `/<vocab> vote <candidate-id>`, `/<vocab> bid @candidate`.
 - Renderer: candidate card with voting + bid status.
 - Optional dashboard: candidate funnel by stage.
 
 ### 10f — Backwork
+
 - Slash command: `/backwork share <link>` posts a card; full upload happens in dashboard.
 - Renderer: course / type / professor / term.
 - Dashboard: the 5-step upload flow (dept → course → type → term → prof → AI redaction → attribution → review).
 
 ### 10g — Reports
+
 - No slash commands (it's a read-only module).
 - Dashboard only: chapter health, exports (CSV/PDF), retention.
 
 ### 10h — Onboarding pathway
+
 - Slash command: `/pathway assign @member <pathway>`.
 - Renderer: milestone progress card.
 - Optional dashboard: 8-week milestones + big/little pairing.

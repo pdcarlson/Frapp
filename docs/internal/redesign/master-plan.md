@@ -145,7 +145,7 @@ Chat is the spine, so the architecture is biased for chat latency, reliability, 
 **Schema for high-volume chat.**
 - `chat_messages` indexed on `(chapter_id, channel_id, created_at desc)`. Partition by `chapter_id` if/when we exceed ~100M rows globally.
 - `chat_message_actions` indexed on `(message_id, user_id)` and `(user_id, action_type, created_at desc)`.
-- `chat_messages.client_message_id` unique per `(chapter_id, sender_id, created_date)` for idempotent retries.
+- `chat_messages.client_message_id` unique per `(chapter_id, sender_id, client_message_id)` (partial: where `client_message_id is not null`) for idempotent retries.
 - Soft-delete only (`deleted_at`). Hard-delete is admin-only cold-path.
 
 **File attachments.** Supabase Storage with signed URLs. Pre-signed upload from client → direct PUT to Storage → callback to Edge Function to attach storage path to message.
