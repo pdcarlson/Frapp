@@ -33,7 +33,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Include a rollback note for infra changes.
 2. **Automation pass**
    - Required checks pass.
-   - Bugbot auto-reviews the PR once it is marked ready. Findings are advisory on both `main` and `production` — Bugbot does not gate merges.
+   - CodeRabbit auto-reviews the PR. Findings are advisory on both `main` and `production` — CodeRabbit does not gate merges.
 3. **Human review pass**
    - At least one approval from a write-access reviewer.
    - All review threads resolved.

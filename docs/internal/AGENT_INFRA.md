@@ -19,7 +19,7 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 
 | Env var                                    | Typical use                          |
 | ------------------------------------------ | ------------------------------------ |
-| `GITHUB_PERSONAL_ACCESS_TOKEN`             | `gh` CLI, branch protection script   |
+| `GITHUB_TOKEN`                             | `gh` CLI, branch protection script   |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management            |
 | `INFISICAL_API_KEY`                        | Infisical API (may lack `local` env) |
 | `RENDER_API_KEY`                           | Render API                           |
@@ -27,66 +27,66 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 | `SUPABASE_API_KEY`                         | Supabase Management API              |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)           |
 
-> **Legacy aliases.** Older cloud VM images may still expose `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` and `RENDER_APIKEY`. Scripts continue to tolerate them but docs reference the canonical names only. If you're writing new snippets, use the canonical names.
+> **Legacy aliases.** Older cloud VM images may still expose `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, and `RENDER_APIKEY`. Scripts continue to tolerate the GitHub aliases where explicitly noted, but docs reference the canonical names only. If you're writing new snippets, use the canonical names.
 
 ## GitHub PAT usage policy
 
-The agent **may** use `GITHUB_PERSONAL_ACCESS_TOKEN` for: creating/closing agent-owned PRs, labels, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
+The agent **may** use `GITHUB_TOKEN` for: creating/closing agent-owned PRs, labels, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Use the canonical env var name for `gh` CLI commands:
+Use the canonical env var name directly for `gh` CLI commands. The value must be a PAT-compatible token with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
 
 ```bash
-export GITHUB_TOKEN="$GITHUB_PERSONAL_ACCESS_TOKEN"
+export GITHUB_TOKEN=<token>
 ```
 
-If only the legacy `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` is exposed in an older VM, fall back to it; otherwise prefer the canonical name.
+If only a legacy GitHub token alias is exposed in an older VM, copy it into `GITHUB_TOKEN` for the session; otherwise prefer the canonical name.
 
 ## CI/CD summary
 
-| Item                 | Location / notes                                                                      |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| CI                   | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api`; `api-docker-build` runs `apps/api/Dockerfile`) |
-| API deploy           | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                        |
-| Deploy verification  | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling  |
-| Release tags         | `.github/workflows/release.yml` — main → production merge                             |
-| Docs                 | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)            |
-| Branch protection    | `npm run configure:branch-protection` (requires `GITHUB_PAT`); see `CONTRIBUTING.md`  |
-| Bugbot               | `.cursor/BUGBOT.md` — Cursor's native auto-review handles PRs; no GitHub Actions gate  |
-| Vercel               | Deploys from `main` / `production` only (PR previews disabled via repo config)        |
+| Item                | Location / notes                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api`; `api-docker-build` runs `apps/api/Dockerfile`) |
+| API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
+| Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
+| Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
+| Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
+| Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_TOKEN`); see `CONTRIBUTING.md`                                                                 |
+| CodeRabbit          | `.coderabbit.yaml` — native advisory PR review; no GitHub Actions gate                                                                                |
+| Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
 
 **Branch protection script (dry run / apply):**
 
 ```bash
-GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection -- --dry-run
-GITHUB_PAT="$GITHUB_PERSONAL_ACCESS_TOKEN" npm run configure:branch-protection
+npm run configure:branch-protection -- --dry-run
+npm run configure:branch-protection
 ```
 
 Deeper deploy architecture: [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ## Infisical sync map
 
-| # | Infisical env | Destination                         |
-| - | ------------- | ----------------------------------- |
-| 1 | staging       | Render → frapp-api-staging          |
-| 2 | production    | Render → frapp-api-prod             |
-| 3 | staging       | Vercel → frapp-web (Preview)        |
-| 4 | production    | Vercel → frapp-web (Production)     |
-| 5 | staging       | Vercel → frapp-landing (Preview)    |
-| 6 | production    | Vercel → frapp-landing (Production) |
-| 7 | per-env       | GitHub Actions (OIDC)               |
+| #   | Infisical env | Destination                         |
+| --- | ------------- | ----------------------------------- |
+| 1   | staging       | Render → frapp-api-staging          |
+| 2   | production    | Render → frapp-api-prod             |
+| 3   | staging       | Vercel → frapp-web (Preview)        |
+| 4   | production    | Vercel → frapp-web (Production)     |
+| 5   | staging       | Vercel → frapp-landing (Preview)    |
+| 6   | production    | Vercel → frapp-landing (Production) |
+| 7   | per-env       | GitHub Actions (OIDC)               |
 
 Project ID is documented in [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 
 ## GitHub environments and bootstrap secrets
 
-| Environment  | Protection              | Purpose                                |
-| ------------ | ----------------------- | -------------------------------------- |
-| `staging`    | None                    | Staging deploys (`main`)               |
-| `production` | Required reviewer       | Production deploys + migration gate    |
+| Environment  | Protection        | Purpose                             |
+| ------------ | ----------------- | ----------------------------------- |
+| `staging`    | None              | Staging deploys (`main`)            |
+| `production` | Required reviewer | Production deploys + migration gate |
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 
@@ -96,11 +96,11 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 
 ## Release labels
 
-| Label           | Effect on version bump     |
-| --------------- | -------------------------- |
-| `release:major` | Major                      |
-| `release:minor` | Minor                      |
-| `release:patch` | Patch (default)            |
+| Label           | Effect on version bump |
+| --------------- | ---------------------- |
+| `release:major` | Major                  |
+| `release:minor` | Minor                  |
+| `release:patch` | Patch (default)        |
 
 ## Lint, test, build (repo root)
 

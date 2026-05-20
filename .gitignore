@@ -43,7 +43,6 @@ supabase/.branches/
 
 # Cursor (keep skills and rules tracked)
 .cursor/*
-!.cursor/BUGBOT.md
 !.cursor/skills/
 !.cursor/skills/**
 !.cursor/rules/

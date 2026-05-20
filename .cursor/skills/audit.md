@@ -242,7 +242,7 @@ For each migration:
 npm run configure:branch-protection -- --dry-run
 ```
 
-(`configure-branch-protection` reads `GITHUB_PAT` — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
+(`configure-branch-protection` reads `GITHUB_TOKEN` first, with legacy aliases tolerated — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 
@@ -287,4 +287,4 @@ Reference existing audit docs in `docs/archive/audits/` for format precedent.
 
 - Document new security patterns (e.g., CSRF, CSP headers) in the security section as they land.
 - Update the CI/CD audit table whenever new CI checks are added.
-- When Bugbot project rules change (`.cursor/BUGBOT.md`), update this skill and any related audit rule globs to keep review guidance aligned.
+- When CodeRabbit review rules change (`.coderabbit.yaml`), update this skill and any related audit rule globs to keep review guidance aligned.
