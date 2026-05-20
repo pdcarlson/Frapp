@@ -1,255 +1,108 @@
-# CodeRabbit Migration Plan
+# CodeRabbit Migration Validation Plan
 
 ## Goal
 
-Migrate PR AI review coverage from Cursor Bugbot back to CodeRabbit for the public
-Frapp repository, while preserving the current lightweight merge policy:
+Move PR AI review coverage from Cursor Bugbot back to CodeRabbit for the public
+Frapp repository while preserving the current lightweight merge policy:
 
-- Every PR should receive an AI review automatically.
+- Every PR should receive an automatic AI review.
 - Reviews should be careful and high-signal, with repo-specific guidance.
-- Auto-fix must not be part of the default workflow.
-- Review feedback stays advisory unless a later, explicit decision makes it a
-  branch-protection gate.
-- Repo docs, specs, and agent guidance must not keep stale Bugbot instructions
-  after the migration lands.
+- Autofix must not run by default.
+- AI review feedback remains advisory unless a later decision makes it a branch
+  protection gate.
+- Active docs, specs, and agent guidance should describe CodeRabbit as the
+  current reviewer.
 
-## Pre-migration context
+## Repo-side status
 
-- `pdcarlson/Frapp` is public and uses `main` as the default branch.
-- The repo previously had no `.coderabbit.yaml` and no CodeRabbit workflow.
-- The repo was configured around Cursor Bugbot:
-  - `.cursor/BUGBOT.md`
-  - `apps/api/.cursor/BUGBOT.md`
-  - `apps/web/.cursor/BUGBOT.md`
-  - `apps/mobile/.cursor/BUGBOT.md`
-  - `packages/.cursor/BUGBOT.md`
-  - `.github/workflows/.cursor/BUGBOT.md`
-  - `supabase/migrations/.cursor/BUGBOT.md`
-  - `docs/internal/BUGBOT_RUNBOOK.md`
-- Bugbot was advisory. There was no required `bugbot-review` status check.
-- Historical CodeRabbit setup existed before PR #207:
-  - `.coderabbit.yaml`
-  - `.github/workflows/trigger-coderabbit-review.yml`
-  - `docs/internal/CODERABBIT_RUNBOOK.md`
+Repo-side migration work is complete on this branch:
 
-## External research to verify before implementation
+- `.coderabbit.yaml` is the checked-in CodeRabbit configuration.
+- `docs/internal/CODERABBIT_RUNBOOK.md` is the active review runbook.
+- Active contributor, branch-protection, PR-review, infrastructure, and
+  environment docs now reference CodeRabbit.
+- Bugbot rule files and `docs/internal/BUGBOT_RUNBOOK.md` were removed.
+- `.gitignore` no longer keeps root `.cursor/BUGBOT.md` tracked.
+- `.cursor/rules/audit.mdc` watches `.coderabbit.yaml` for audit/review-rule
+  changes.
 
-These items should be checked again immediately before the migration PR is
-opened, because CodeRabbit plan behavior can change outside the repo.
+Historical context:
 
-1. OSS eligibility
-   - Confirm the installed CodeRabbit account classifies `pdcarlson/Frapp` as
-     open source.
-   - Current docs say OSS public repositories get Pro+ features with no credit
-     card, subject to a separate OSS rate-limit tier.
-   - Current docs list OSS PR review limits as 1-8 reviews per developer per
-     hour; that makes CodeRabbit a poor hard merge gate unless observed limits
-     are comfortably above repo traffic.
-2. Autofix controls
-   - Current docs describe Autofix as manually triggered by commands or GitHub
-     checkboxes.
-   - No documented `.coderabbit.yaml` setting was found to hard-disable Autofix.
-   - Before migration, inspect the CodeRabbit UI for an organization or
-     repository-level Autofix disable. If none exists, document the operational
-     rule: do not invoke Autofix commands or any Autofix checkbox.
-3. Learning behavior
-   - Confirm learnings are enabled for the CodeRabbit organization.
-   - Use repository-local learnings unless there is a deliberate decision to
-     share preferences across other repositories.
-   - Confirm who has permission to view, edit, export, or delete learnings.
-4. Review strictness
-   - Confirm `reviews.profile: "assertive"` is still the right setting for
-     careful reviews.
-   - Validate the final YAML against CodeRabbit's current schema before merge.
-5. Native auto-review reliability
-   - Verify native auto-review covers opened, reopened, ready-for-review, and
-     synchronize events without a repo workflow.
-   - Only reintroduce a workflow fallback if native review misses real PRs.
+- Before this migration, the repo used Cursor Bugbot and no CodeRabbit config.
+- Bugbot was advisory and was not a required status check.
+- The old CodeRabbit setup before PR #207 used `.coderabbit.yaml`, a fallback
+  `trigger-coderabbit-review.yml`, and `docs/internal/CODERABBIT_RUNBOOK.md`.
+- This migration does **not** restore the fallback workflow because native
+  CodeRabbit auto-review should be tested first and previous bot-gate workflows
+  created CI noise.
 
-## Proposed repository configuration
+## Current configuration source of truth
 
-Add `.coderabbit.yaml` in the migration PR. Start from this shape, then validate
-against the live CodeRabbit schema:
+The source of truth is `.coderabbit.yaml`, not this plan. The current policy is:
 
-```yaml
-# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-language: "en-US"
+- `reviews.profile: "assertive"` for careful review.
+- `reviews.request_changes_workflow: false` and `reviews.review_status: false`
+  so CodeRabbit remains advisory.
+- `reviews.auto_review.enabled: true`.
+- `reviews.auto_review.drafts: true`.
+- `reviews.auto_review.base_branches: [".*"]`.
+- `reviews.auto_review.auto_incremental_review: true`.
+- `reviews.auto_review.auto_pause_after_reviewed_commits: 0`.
+- No skip label or skip-title keyword is configured; every eligible PR should be
+  reviewed.
+- `knowledge_base.learnings.scope: "local"`.
+- Path instructions cover API, web, mobile, shared packages, workflows, and
+  Supabase migrations.
 
-reviews:
-  profile: "assertive"
-  review_status: false
-  request_changes_workflow: false
-  review_details: true
+## External setup before testing
 
-  auto_review:
-    enabled: true
-    drafts: true
-    base_branches:
-      - ".*"
-    auto_incremental_review: true
-    auto_pause_after_reviewed_commits: 0
-    labels:
-      - "!do-not-review"
-    ignore_title_keywords:
-      - "[skip review]"
+These steps happen outside the repo:
 
-  path_filters:
-    - "!dist/**"
-    - "!coverage/**"
-    - "!**/*.generated.*"
-    - "!packages/api-sdk/src/types.ts"
+1. Confirm the CodeRabbit GitHub App is installed for `pdcarlson/Frapp`.
+2. Confirm CodeRabbit recognizes the repo as open source and exposes the OSS
+   plan/rate-limit tier.
+3. Confirm native auto-review is enabled in CodeRabbit settings.
+4. Confirm learnings are enabled and repository-scoped.
+5. Check whether CodeRabbit exposes an organization or repository Autofix
+   disable. If it does not, keep the operational rule from
+   `CODERABBIT_RUNBOOK.md`: do not invoke Autofix commands or checkboxes.
+6. Disable Cursor Bugbot for the repository in the Cursor dashboard.
 
-  path_instructions:
-    - path: "apps/api/**"
-      instructions: |
-        Prioritize security, input validation, SQL injection risks, auth guard
-        coverage, permission checks, DTO validation, Swagger metadata, and
-        OpenAPI/API SDK drift.
+## Validation PR checklist
 
-    - path: "apps/web/**"
-      instructions: |
-        Review App Router server/client boundaries, browser exposure of
-        sensitive data, accessibility, loading states, empty states, error
-        states, and offline/degraded behavior.
+Use this branch or a small follow-up test PR to verify behavior after external
+setup:
 
-    - path: "apps/mobile/**"
-      instructions: |
-        Watch for iOS/Android differences, Expo integration issues,
-        AsyncStorage and notification permission handling, effect cleanup,
-        subscriptions, and degraded/offline UX.
+- [ ] CodeRabbit reviews a PR to `main` automatically.
+- [ ] CodeRabbit reviews a draft PR automatically, or the dashboard clearly
+      explains why drafts are excluded.
+- [ ] CodeRabbit re-reviews after a new push.
+- [ ] CodeRabbit applies path-specific guidance from `.coderabbit.yaml`.
+- [ ] CodeRabbit picks up repository guidance from `AGENTS.md` and
+      `.cursor/rules/*` through code-guideline detection.
+- [ ] No Autofix action runs automatically.
+- [ ] No Bugbot review appears after Bugbot is disabled.
+- [ ] No CodeRabbit status check is required by branch protection.
+- [ ] `@coderabbitai review` manually triggers a review if auto-review misses.
+- [ ] `@coderabbitai configuration` returns settings consistent with
+      `.coderabbit.yaml`.
 
-    - path: "packages/**"
-      instructions: |
-        Shared packages affect API, web, and mobile consumers. Flag breaking
-        exports, hidden coupling, or uncoordinated downstream changes.
+## Cleanup verification
 
-    - path: ".github/workflows/**"
-      instructions: |
-        Treat workflow changes as release infrastructure. Check secret
-        exposure, minimal permissions, production branch conditions,
-        workflow_run conclusions, required-check names, and branch-protection
-        documentation drift.
+Before merging the migration PR, run:
 
-    - path: "supabase/migrations/**"
-      instructions: |
-        Treat every migration as production-impacting. Flag destructive SQL,
-        missing RLS on new tables, lock-heavy operations, downtime risk,
-        missing rollback notes, and API contract incompatibility.
+- `git ls-files '*BUGBOT.md' 'docs/internal/BUGBOT_RUNBOOK.md'`
+- `rg -i "bugbot|cursor review|bugbot run|BUGBOT.md" AGENTS.md CONTRIBUTING.md spec docs/internal .cursor/rules .cursor/skills .github/workflows .gitignore .coderabbit.yaml --glob '!docs/internal/CODERABBIT_MIGRATION_PLAN.md'`
+- `npm run configure:branch-protection -- --dry-run`
+- `node scripts/check-docs-impact.mjs --base origin/main --head HEAD`
 
-knowledge_base:
-  learnings:
-    scope: "local"
-  code_guidelines:
-    enabled: true
-```
+Expected result:
 
-Open question: whether to exclude generated artifacts like
-`packages/api-sdk/src/types.ts` entirely or ask CodeRabbit to check that they
-were regenerated when controllers/DTOs change. The old Bugbot guidance preferred
-flagging missing regeneration; the migration PR should test which behavior
-produces better comments.
-
-## Migration phases
-
-### Phase 0 - Preflight research
-
-1. Confirm CodeRabbit GitHub App installation availability for `pdcarlson/Frapp`.
-2. Confirm OSS plan status and actual review quota in the CodeRabbit UI.
-3. Confirm whether Autofix can be disabled in UI/support settings.
-4. Export or screenshot relevant CodeRabbit settings for the PR description.
-5. Confirm Bugbot dashboard setting can be disabled after the repo change lands.
-
-Exit criteria:
-
-- CodeRabbit can access the repository.
-- The team understands Autofix controls and residual risk.
-- The team accepts advisory review mode and rate-limit tradeoffs.
-
-### Phase 1 - Add CodeRabbit config and remove repo-side Bugbot config
-
-1. Add `.coderabbit.yaml`.
-2. Keep `request_changes_workflow: false` and `review_status: false`.
-3. Delete Bugbot rule files and replace the Bugbot runbook with a CodeRabbit
-   runbook.
-4. Open a test PR and confirm:
-   - CodeRabbit reviews automatically.
-   - CodeRabbit re-reviews after a push.
-   - Draft PR behavior matches the chosen `drafts` setting.
-   - CodeRabbit applies path instructions.
-   - CodeRabbit references repository guidance from `AGENTS.md` and
-     `.cursor/rules/*`.
-5. Ask CodeRabbit for its current YAML via `@coderabbitai configuration` and
-   compare it with the committed file.
-
-Exit criteria:
-
-- At least one real PR receives a useful CodeRabbit review.
-- No Autofix action runs.
-- No new required check blocks merge.
-
-### Phase 2 - Disable Bugbot externally
-
-1. Disable Bugbot for `https://github.com/pdcarlson/Frapp` in the Cursor
-   dashboard.
-2. Confirm a new PR receives CodeRabbit review activity and no Bugbot review.
-3. Keep a manual rollback note: re-enable Bugbot in Cursor if CodeRabbit fails
-   to run on multiple PRs.
-
-Exit criteria:
-
-- CodeRabbit is the only active AI reviewer on a validation PR.
-
-### Phase 3 - Verify stale Bugbot repo references are gone
-
-1. Confirm these Bugbot-specific rule files are deleted:
-   - `.cursor/BUGBOT.md`
-   - `apps/api/.cursor/BUGBOT.md`
-   - `apps/web/.cursor/BUGBOT.md`
-   - `apps/mobile/.cursor/BUGBOT.md`
-   - `packages/.cursor/BUGBOT.md`
-   - `.github/workflows/.cursor/BUGBOT.md`
-   - `supabase/migrations/.cursor/BUGBOT.md`
-2. Confirm the `.gitignore` exception for root `.cursor/BUGBOT.md` is gone.
-3. Confirm `docs/internal/BUGBOT_RUNBOOK.md` is replaced by
-   `docs/internal/CODERABBIT_RUNBOOK.md`.
-4. Confirm these files reference CodeRabbit as the active reviewer:
-   - `CONTRIBUTING.md`
-   - `spec/environments.md`
-   - `docs/internal/AGENT_INFRA.md`
-   - `docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
-   - `docs/internal/PR_REVIEW_PROCESS.md`
-   - `docs/internal/README.md`
-   - `.cursor/skills/audit.md`
-   - `.cursor/rules/audit.mdc`
-5. Keep Cursor background-agent warnings somewhere durable if still useful; that
-   warning is not Bugbot-specific and prevents accidental paid `@cursor` agent
-   runs.
-
-Exit criteria:
-
-- `rg -i "bugbot|cursor review|bugbot run|BUGBOT.md"` returns only historical
-  archive references or an intentional transition note.
-- Docs describe CodeRabbit as the current review tool.
-
-### Phase 4 - Observe and tune
-
-1. Watch the next several PRs for:
-   - missed reviews
-   - duplicate reviews
-   - noisy comments
-   - rate-limit pauses
-   - stale or contradictory learnings
-2. Add learnings only for recurring review preferences.
-3. Prefer checked-in `path_instructions` for durable rules and learnings for
-   preferences that emerge from review discussion.
-4. If native auto-review misses PRs, consider a minimal fallback workflow that
-   comments `@coderabbitai review`, but do not add polling or required status
-   checks.
-
-Exit criteria:
-
-- CodeRabbit reliably reviews PRs without merge-blocking noise.
-- The review feedback is useful enough to keep `profile: "assertive"`.
+- No tracked Bugbot rule/runbook files remain.
+- No active docs reference Bugbot outside this historical plan.
+- Branch protection lists only CI/docs/branch-policy checks, not CodeRabbit or
+  Bugbot.
+- Docs/spec sync passes.
 
 ## Branch protection policy
 
@@ -265,39 +118,23 @@ Revisit only after observing stable CodeRabbit behavior. If later required,
 capture CodeRabbit's exact emitted check name from a real PR before changing
 `scripts/configure-branch-protection.mjs`.
 
-## Verification checklist for the implementation PR
-
-- [ ] `.coderabbit.yaml` validates against CodeRabbit's schema.
-- [ ] CodeRabbit auto-reviews a PR to `main` after the GitHub App is enabled.
-- [ ] CodeRabbit auto-reviews or intentionally skips a draft PR according to
-      the chosen config.
-- [ ] CodeRabbit re-reviews after a push.
-- [ ] CodeRabbit does not run Autofix.
-- [ ] Bugbot is disabled externally in the Cursor dashboard.
-- [ ] No stale Bugbot docs remain in active runbooks.
-- [ ] `npm run configure:branch-protection -- --dry-run` shows no CodeRabbit or
-      Bugbot required check.
-- [ ] `node scripts/check-docs-impact.mjs --base origin/main --head HEAD`
-      passes.
-
 ## Rollback plan
 
 If CodeRabbit fails to review PRs reliably:
 
 1. Re-enable Cursor Bugbot in the Cursor dashboard.
-2. Revert the PR that removed `.cursor/BUGBOT.md` files and Bugbot runbook docs,
-   or restore them from git history.
-3. Leave `.coderabbit.yaml` disabled by setting
+2. Revert the commit that removed `.cursor/BUGBOT.md` files and the Bugbot
+   runbook, or restore those files from git history.
+3. Disable CodeRabbit automatic review by setting
    `reviews.auto_review.enabled: false` until the failure is understood.
 4. Do not add a required CodeRabbit check as a rollback shortcut.
 
-## Decisions to make before implementation
+## Follow-up decisions after validation
 
-- Should draft PRs be reviewed automatically, or only ready-for-review PRs?
-- Should generated SDK artifacts be ignored or reviewed only for freshness?
-- Should a `do-not-review` label be allowed, or does "every PR" mean no escape
-  hatch?
-- Should CodeRabbit's assertive profile stay on if early reviews are noisy?
-- Can Autofix be disabled in the CodeRabbit UI or by support?
-- Where should the non-Bugbot-specific Cursor background-agent warning live
-  after `BUGBOT_RUNBOOK.md` is removed?
+- Keep `reviews.profile: "assertive"` if reviews are useful; switch to `chill`
+  only if the signal-to-noise ratio is poor.
+- Decide whether any generated artifacts need a path-specific review rule rather
+  than a path filter.
+- Periodically prune stale or contradictory CodeRabbit learnings.
+- Add a fallback workflow only if native auto-review demonstrably misses PRs;
+  do not add polling or required status checks.

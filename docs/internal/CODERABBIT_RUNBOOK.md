@@ -61,8 +61,8 @@ review, or updated with new commits. The committed config uses:
 - `reviews.auto_review.auto_incremental_review: true`
 - `reviews.auto_review.auto_pause_after_reviewed_commits: 0`
 
-The `do-not-review` label and `[skip review]` title marker are reserved escape
-hatches for exceptional cases.
+The repo does not define skip labels or skip-title keywords. CodeRabbit should
+review every PR branch target covered by the app installation.
 
 ### Manual trigger
 
@@ -121,10 +121,8 @@ review and can start an agent run against the PR branch.
 
 1. Confirm the CodeRabbit GitHub App is installed for this repository.
 2. Confirm `.coderabbit.yaml` exists on the PR branch.
-3. Confirm the PR is not labeled `do-not-review` and the title does not contain
-   `[skip review]`.
-4. Post `@coderabbitai review` as a top-level PR comment.
-5. Check the CodeRabbit dashboard for quota, repository enablement, or app
+3. Post `@coderabbitai review` as a top-level PR comment.
+4. Check the CodeRabbit dashboard for quota, repository enablement, or app
    installation errors.
 
 ### "CodeRabbit is noisy"
