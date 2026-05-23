@@ -57,15 +57,15 @@ function formatTime(value: string | null | undefined): string {
  *
  * The mobile app uses the same payload shape (see spec/behavior §7) but
  * sends users to native screens. The web versions of those screens are
- * only subset; we fall back to `/home` when a screen isn't yet built so
+ * only subset; we fall back to `/chat` when a screen isn't yet built so
  * links never dead-end.
  */
 function deepLinkFor(notification: Notification): string {
   const target = notification.data?.target;
-  if (!target) return "/home";
+  if (!target) return "/chat";
   switch (target.screen) {
     case "chat":
-      return "/home"; // Chat ships in a later slice.
+      return "/chat";
     case "events":
       return "/events";
     case "points":
@@ -79,7 +79,7 @@ function deepLinkFor(notification: Notification): string {
     case "profile":
       return "/profile";
     default:
-      return "/home";
+      return "/chat";
   }
 }
 

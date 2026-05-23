@@ -43,13 +43,25 @@ import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
+import { ChapterLockup } from "@/components/layout/chapter-lockup";
+import { BetaBadge, type BetaBadgeStyle } from "@/components/layout/beta-badge";
 
 type DashboardShellProps = {
   children: React.ReactNode;
 };
 
+/*
+ * BETA badge config. Chunk 8 will replace this hardcoded literal with
+ * a read from `chapters.beta_config`; until then every signed-in user
+ * sees the sidebar pill regardless of chapter.
+ */
+const BETA_CONFIG: { enabled: boolean; style: BetaBadgeStyle } = {
+  enabled: true,
+  style: "sidebar_pill",
+};
+
 const sidebarFocusRingClassName =
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/70 focus-visible:ring-offset-2 focus-visible:ring-offset-navy-950";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-side-accent/70 focus-visible:ring-offset-2 focus-visible:ring-offset-side-bg";
 const navIconClassName = "h-4 w-4";
 const statusIconClassName = "h-3.5 w-3.5";
 
@@ -79,7 +91,7 @@ function subscriptionStatusPresentation(
       return {
         label: "Subscription canceled",
         className:
-          "border-muted-foreground/40 bg-muted/25 text-muted-foreground",
+          "border-side-muted/40 bg-side-bg-hi/60 text-side-muted",
         Icon: Ban,
       };
     case "incomplete":
@@ -100,32 +112,23 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   });
 
   const labelMuted =
-    variant === "sidebar" ? "text-slate-400" : "text-muted-foreground";
-  const nameClass = "mt-1 text-sm font-semibold text-white";
-  const uniClass = "mt-1 text-xs text-slate-400";
+    variant === "sidebar" ? "text-side-muted" : "text-muted-foreground";
   const shellClass =
     variant === "sidebar"
-      ? "mt-10 rounded-lg border border-border bg-navy-900/80 p-4"
-      : "mt-8 rounded-lg border border-border bg-navy-900/80 p-4";
+      ? "rounded-md border border-side-divider bg-side-bg-hi/60 p-3"
+      : "mt-8 rounded-md border border-side-divider bg-side-bg-hi/60 p-3";
 
   if (!activeChapterId) {
-    return (
-      <div className={shellClass}>
-        <p className={cn("text-xs", labelMuted)}>Chapter</p>
-        <p className="mt-2 text-sm text-slate-500">
-          Select an active chapter to load branding from the API.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   if (isPending || (isFetching && data === undefined)) {
     return (
       <div className={shellClass}>
-        <p className={cn("text-xs", labelMuted)}>Chapter</p>
-        <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-navy-800" />
-        <div className="mt-2 h-3 w-1/2 animate-pulse rounded bg-navy-800" />
-        <div className="mt-4 h-8 w-full animate-pulse rounded-full bg-navy-800" />
+        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
+          Subscription
+        </p>
+        <div className="mt-2 h-3 w-3/4 animate-pulse rounded-xs bg-side-bg" />
       </div>
     );
   }
@@ -133,12 +136,11 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   if (isError || !data) {
     return (
       <div className={shellClass}>
-        <p className={cn("text-xs", labelMuted)}>Chapter</p>
-        <p className="mt-2 text-sm text-amber-200/90">
-          Could not load chapter details.
+        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
+          Subscription
         </p>
-        <p className="mt-1 text-[11px] text-slate-500">
-          Check your session, permissions, and chapter selection.
+        <p className="mt-1.5 text-[11px] text-side-muted">
+          Could not load chapter details.
         </p>
       </div>
     );
@@ -148,12 +150,11 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
   if (!parsed.success) {
     return (
       <div className={shellClass}>
-        <p className={cn("text-xs", labelMuted)}>Chapter</p>
-        <p className="mt-2 text-sm text-amber-200/90">
-          Could not load chapter details.
+        <p className={cn("text-[10px] uppercase tracking-[0.16em]", labelMuted)}>
+          Subscription
         </p>
-        <p className="mt-1 text-[11px] text-slate-500">
-          Check your session, permissions, and chapter selection.
+        <p className="mt-1.5 text-[11px] text-side-muted">
+          Could not load chapter details.
         </p>
       </div>
     );
@@ -168,12 +169,9 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
 
   return (
     <div className={shellClass}>
-      <p className={cn("text-xs", labelMuted)}>Chapter</p>
-      <p className={nameClass}>{payload.name}</p>
-      <p className={uniClass}>{payload.university}</p>
       <div
         className={cn(
-          "mt-3 inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs",
+          "inline-flex items-center gap-1.5 rounded-xs border px-2 py-0.5 text-[11px]",
           sub.className,
         )}
       >
@@ -181,7 +179,7 @@ function DashboardChapterPanel({ variant }: { variant: "sidebar" | "sheet" }) {
         <span>{sub.label}</span>
       </div>
       {chapterAccent.fallbackApplied ? (
-        <p className="mt-2 text-[11px] text-slate-500">
+        <p className="mt-1.5 text-[10px] text-side-muted">
           Accent adjusted for contrast safety.
         </p>
       ) : null}
@@ -229,7 +227,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
   function renderSections(onNavigate?: () => void) {
     return DASHBOARD_NAV.map((section) => (
       <div key={section.id} className="space-y-1">
-        <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-side-muted">
           {section.label}
         </p>
         {section.items.map((item) => (
@@ -270,7 +268,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-background">
       <OnboardingTutorial />
       <DashboardCommandMenu
         open={commandMenuOpen}
@@ -283,14 +281,17 @@ export function DashboardShell({ children }: DashboardShellProps) {
       <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
         <SheetContent
           side="left"
-          className="border-border bg-navy-950 px-4 py-6 text-slate-100"
+          className="border-side-divider bg-side-bg px-4 py-6 text-side-fg"
         >
           <SheetHeader>
-            <SheetTitle className="text-white">Navigation</SheetTitle>
-            <SheetDescription className="text-muted-foreground">
+            <SheetTitle className="text-side-fg-hi">Navigation</SheetTitle>
+            <SheetDescription className="text-side-muted">
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
+          <div className="mt-6 space-y-4">
+            <ChapterLockup />
+          </div>
           <nav className="mt-6 space-y-4">
             {renderSections(() => setMobileNavOpen(false))}
           </nav>
@@ -304,20 +305,27 @@ export function DashboardShell({ children }: DashboardShellProps) {
         Skip to main content
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">
-        <aside className="hidden min-h-screen w-72 border-r border-border bg-navy-950 px-4 py-6 text-slate-100 lg:block">
-          <div className="mb-8 border-b border-border pb-6">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
-              Frapp
-            </p>
-            <p className="mt-2 text-lg font-semibold text-white">
-              Operations Console
-            </p>
+        <aside className="hidden min-h-screen w-72 flex-col border-r border-side-divider bg-side-bg px-3 py-5 text-side-fg lg:flex">
+          <div className="px-1">
+            <ChapterLockup />
           </div>
-          <nav aria-label="Primary" className="space-y-4">
+          <nav
+            aria-label="Primary"
+            className="mt-6 flex-1 space-y-4 overflow-y-auto"
+          >
             {renderSections()}
           </nav>
-
-          <DashboardChapterPanel variant="sidebar" />
+          <div className="mt-6 space-y-3 border-t border-side-divider pt-4">
+            <DashboardChapterPanel variant="sidebar" />
+            {BETA_CONFIG.enabled && BETA_CONFIG.style === "sidebar_pill" ? (
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-side-muted">
+                  Status
+                </span>
+                <BetaBadge style="sidebar_pill" />
+              </div>
+            ) : null}
+          </div>
         </aside>
 
         <div className="min-h-screen flex-1">

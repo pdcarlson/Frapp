@@ -62,8 +62,8 @@ export function ProtectedNavItem({
           "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition",
           focusClassName,
           isActive
-            ? "border-l-2 border-primary bg-primary/15 text-white"
-            : "border-l-2 border-transparent text-slate-300 hover:bg-navy-900 hover:text-white",
+            ? "border-l-2 border-side-accent bg-side-bg-hi text-side-fg-hi"
+            : "border-l-2 border-transparent text-side-fg hover:bg-side-bg-hi/70 hover:text-side-fg-hi",
         )}
       >
         <item.icon className={iconClassName} />
@@ -75,17 +75,19 @@ export function ProtectedNavItem({
   return (
     <button
       type="button"
-      disabled
+      aria-disabled="true"
+      tabIndex={-1}
       title={item.description ?? item.statusLabel ?? "Coming soon"}
+      onClick={(e) => e.preventDefault()}
       className={cn(
-        "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-slate-500",
+        "flex w-full cursor-not-allowed items-center gap-3 rounded-md px-3 py-2 text-left text-sm text-side-muted opacity-60",
         focusClassName,
       )}
     >
       <item.icon className={iconClassName} />
       <span>{item.label}</span>
       {item.statusLabel ? (
-        <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+        <span className="ml-auto rounded-xs border border-side-divider px-2 py-0.5 text-[10px] uppercase tracking-wide text-side-muted">
           {item.statusLabel}
         </span>
       ) : null}

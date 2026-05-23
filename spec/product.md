@@ -4,6 +4,12 @@
 
 Frapp is a multi-tenant SaaS platform that replaces the disjointed tools fraternity chapters rely on (Discord, OmegaFi, Life360) with a single, unified mobile and web experience.
 
+## 0. Positioning — chat is the spine
+
+The chat-first redesign (see [docs/internal/redesign/master-plan.md](../docs/internal/redesign/master-plan.md)) inverts the historical "12 modules side-by-side" model. **Chat is the magnum opus**; every other capability (events, tasks, dues, points, polls) is a *chat integration* — surfaced inline in conversation, not behind a separate nav tab. Chat is non-optional, free, and the default landing route on web (`/chat`) and mobile (chat tab).
+
+The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. The master plan in `docs/internal/redesign/` is the canonical context for that direction; this spec captures the current ship state.
+
 ---
 
 ## 1. Users and Personas

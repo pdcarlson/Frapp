@@ -8,31 +8,48 @@ const config: Partial<Config> = {
   theme: {
     extend: {
       colors: {
-        /* ── Named brand colors (for direct use: text-navy, bg-royal-blue, etc.) ── */
+        /*
+         * Named brand colors (for direct use: text-navy, bg-royal-blue,
+         * etc.). The KEYS are preserved so existing utility classes
+         * (`text-navy-900`, `bg-royal-blue`) keep compiling, but the
+         * VALUES now map to the bone / bronze / ink palette. Mark the
+         * "navy" key as ink and "royal-blue" as bronze in your mental
+         * model — the chat-first redesign no longer ships with blue.
+         */
         navy: {
-          DEFAULT: "#0F172A",
-          50: "#F8FAFC",
-          100: "#F1F5F9",
-          800: "#1E293B",
-          900: "#0F172A",
-          950: "#020617",
+          DEFAULT: "#1F1A15", /* ink */
+          50: "#FAF7F2",
+          100: "#F2EEE7",
+          800: "#2A241D",
+          900: "#1F1A15",
+          950: "#0F0C09",
         },
         "royal-blue": {
-          DEFAULT: "#2563EB",
-          50: "#EFF6FF",
-          100: "#DBEAFE",
-          400: "#60A5FA",
-          500: "#3B82F6",
-          600: "#2563EB",
-          700: "#1D4ED8",
+          DEFAULT: "#7A5A2F", /* bronze */
+          50: "#F5EFE3",
+          100: "#E5DCC6",
+          400: "#B89A6B",
+          500: "#9A7A45",
+          600: "#7A5A2F",
+          700: "#5C4423",
         },
         emerald: {
-          DEFAULT: "#10B981",
-          50: "#ECFDF5",
-          100: "#D1FAE5",
-          400: "#34D399",
-          500: "#10B981",
-          600: "#059669",
+          DEFAULT: "#3D6B4A", /* moss */
+          50: "#E6F0E4",
+          100: "#CFE0CC",
+          400: "#6E9C7B",
+          500: "#52805F",
+          600: "#3D6B4A",
+        },
+        /* Sidebar tokens (always dark ink) — driven by CSS variables. */
+        side: {
+          bg: "hsl(var(--side-bg))",
+          "bg-hi": "hsl(var(--side-bg-hi))",
+          fg: "hsl(var(--side-fg))",
+          "fg-hi": "hsl(var(--side-fg-hi))",
+          muted: "hsl(var(--side-muted))",
+          divider: "hsl(var(--side-divider))",
+          accent: "hsl(var(--side-accent))",
         },
 
         /* ── Semantic tokens (mapped to CSS variables for ShadCN compatibility) ── */
@@ -82,12 +99,22 @@ const config: Partial<Config> = {
         ring: "hsl(var(--ring))",
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        xs: "var(--radius-xs)",
+        sm: "var(--radius-sm)",
+        DEFAULT: "var(--radius)",
+        md: "var(--radius-md)",
+        lg: "var(--radius-lg)",
+        xl: "var(--radius-xl)",
+      },
+      boxShadow: {
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        DEFAULT: "var(--shadow)",
+        lg: "var(--shadow-lg)",
       },
       fontFamily: {
         sans: ["var(--font-geist-sans)", "system-ui", "-apple-system", "sans-serif"],
+        mono: ["var(--font-mono)"],
       },
       keyframes: {
         "fade-up": {

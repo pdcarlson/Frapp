@@ -83,7 +83,7 @@ function JoinPageContent() {
         title: "Chapter joined",
         description: "Your membership has been activated in staging.",
       });
-      router.replace("/home");
+      router.replace("/chat");
       router.refresh();
     } catch (error) {
       toast({

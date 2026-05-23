@@ -6,7 +6,6 @@ import {
   FileText,
   FolderOpen,
   GraduationCap,
-  LayoutDashboard,
   MapPin,
   MessagesSquare,
   Settings,
@@ -68,12 +67,13 @@ export const DASHBOARD_NAV: NavSection[] = [
     label: "Overview",
     items: [
       {
-        id: "home",
-        label: "Home",
-        icon: LayoutDashboard,
-        href: "/home",
-        breadcrumbTitle: "Chapter Operations",
-        description: "Activity feed, stat cards, and quick actions.",
+        id: "chat",
+        label: "Chat",
+        icon: MessagesSquare,
+        href: "/chat",
+        breadcrumbTitle: "Chat",
+        primaryActionLabel: "New Message",
+        description: "Channels, DMs, announcements, realtime.",
         status: "available",
       },
       {
@@ -175,16 +175,6 @@ export const DASHBOARD_NAV: NavSection[] = [
     id: "communications",
     label: "Communications",
     items: [
-      {
-        id: "chat",
-        label: "Chat",
-        icon: MessagesSquare,
-        href: "/chat",
-        breadcrumbTitle: "Chat",
-        primaryActionLabel: "New Message",
-        description: "Channels, DMs, announcements, realtime.",
-        status: "available",
-      },
       {
         id: "polls",
         label: "Polls",

@@ -9,6 +9,7 @@
 - **Line:** “The operating system for Greek life.” (see [product.md](product.md).)
 - **Voice:** Direct, operational, chapter-native. Prefer concrete nouns (attendance, dues, roster) over abstract “synergy.” Avoid startup clichés (“supercharge,” “10×,” “all-in-one” without proof).
 - **Trust:** Differentiation comes from **clarity and honesty**, not invented metrics. Stats, logos, and testimonials on the marketing site must be **true** or **clearly marked as illustrative** until verified.
+- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see `master-plan.md` *Theming model*).
 
 ---
 
@@ -28,15 +29,20 @@ A **full-width hairline** (`border-t border-border` or 1px rule) separates major
 
 **Micro-label:** uppercase, `text-xs`, `font-semibold`, wide letter-spacing (`tracking-[0.2em]`–`0.24em]`), `text-muted-foreground` or emerald for a single accent line. **Headline:** `text-navy` / inverse in dark mode, tight tracking on the headline itself (`tracking-tight`), weight 700–800.
 
+Dashboard surfaces should reach for the `.eyebrow` and `.ledger-line` utility classes from [`packages/theme/src/globals.css`](../packages/theme/src/globals.css) instead of re-implementing these per page.
+
 ---
 
 ## 3. Color roles
 
+The chat-first redesign moves the chrome palette from royal-blue + navy to **bone / bronze / ink**. The semantic token names (`primary`, `success`, `foreground`, `border`, etc.) are stable; the *values* changed in [`packages/theme/src/globals.css`](../packages/theme/src/globals.css) and [`packages/theme/src/tokens.ts`](../packages/theme/src/tokens.ts). Existing Tailwind utility classes that reference `navy.*` or `royal-blue.*` keep compiling — they now resolve to ink and bronze, respectively. New work should prefer the semantic tokens.
+
 | Role                         | Token / usage                                                              | Where                                                                                                         |
 | ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Frapp primary (actions)**  | `primary` (royal blue in `@repo/theme`)                                    | Primary buttons, links, focus rings, key CTAs                                                                 |
-| **Frapp success / positive** | `success` / emerald utilities                                              | Badges, check states, “active” positive chips—not primary buttons                                             |
-| **Frapp neutral text**       | `foreground`, `muted-foreground`, `navy` utilities                         | Body, headings, chrome                                                                                        |
+| **Frapp primary (actions)**  | `primary` (deep bronze in `@repo/theme`)                                   | Primary buttons, links, focus rings, key CTAs                                                                 |
+| **Frapp success / positive** | `success` / emerald utilities (moss values under the hood)                 | Badges, check states, “active” positive chips—not primary buttons                                             |
+| **Frapp neutral text**       | `foreground`, `muted-foreground`, `navy` utilities (ink values)            | Body, headings, chrome                                                                                        |
+| **Frapp sidebar (chrome)**   | `--side-bg`, `--side-fg`, `--side-accent` CSS variables                    | Always-dark sidebar — never overridden by light/dark mode                                                     |
 | **Chapter accent**           | Validated hex per chapter ([`accent.ts`](../packages/theme/src/accent.ts)) | In-product chapter branding only (avatars, role chips, chapter settings)—**not** the global marketing palette |
 
 Marketing (`frapp.live`) uses **Frapp** tokens only unless showing an **in-app screenshot** where chapter accent appears in context.
@@ -47,7 +53,9 @@ Marketing (`frapp.live`) uses **Frapp** tokens only unless showing an **in-app s
 
 - **Family:** Geist Sans as the single UI family (loaded once from [`packages/theme/fonts/GeistVF.woff2`](../packages/theme/fonts/GeistVF.woff2) via `next/font/local` in each Next app; variable `--font-geist-sans`).
 - **Roles:** Apply motif **micro-label + display headline** on marketing; dashboard uses **compact** sizes per [ui-web-dashboard.md](ui-web-dashboard.md) §1.
-- **Monospace:** Use only for code, IDs, or data-dense tables when needed—`font-mono` with existing Tailwind scale.
+- **Monospace:** `--font-mono` resolves to a system-monospace stack (`ui-monospace, SF Mono, …, monospace`). Bundled fonts are not shipped for monospace; if you reference a custom monospace family in CSS, load it explicitly via `next/font` first.
+- **Scale:** Display 24 / title 18 / section 14 / eyebrow 11 / body 14 (px). See [`packages/theme/src/tokens.ts`](../packages/theme/src/tokens.ts) `type.*`.
+- **Radii:** xs 3 / sm 5 / md 7 / lg 9 / xl 12 (px). Matches `--radius-*` CSS variables and `frappTokens.radius.*`.
 
 ---
 
@@ -72,7 +80,7 @@ Avoid as **default** patterns:
 - **Six-up icon cards** as the sole product story (icons are supporting, not the hero narrative).
 - **Unverified** large numbers and fake-sounding quotes presented as established truth.
 - **Excessive** hover lift / shadow on every card.
-- **Emerald** (success) as the global primary button color—reserved for success semantics; **primary** CTAs stay royal blue per theme.
+- **Emerald** (success) as the global primary button color—reserved for success semantics; primary CTAs use the `primary` token (deep bronze in `@repo/theme`), never the legacy `royal-blue.*` utilities.
 
 ---
 
