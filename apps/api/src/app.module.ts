@@ -28,6 +28,8 @@ import { PollModule } from './modules/poll/poll.module';
 import { SemesterRolloverModule } from './modules/semester-rollover/semester-rollover.module';
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
+import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
+import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -66,6 +68,8 @@ import { validateEnv } from './config/env.validation';
     SemesterRolloverModule,
     ReportModule,
     SearchModule,
+    ChapterConfigModule,
+    ChapterDirectoryModule,
   ],
   providers: [
     {

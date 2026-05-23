@@ -261,10 +261,7 @@ export class PollService {
   ): Promise<PollWithResults[]> {
     const limit = Math.max(
       LIST_QUERY_LIMIT_MIN,
-      Math.min(
-        options.limit ?? LIST_QUERY_LIMIT_DEFAULT,
-        LIST_QUERY_LIMIT_MAX,
-      ),
+      Math.min(options.limit ?? LIST_QUERY_LIMIT_DEFAULT, LIST_QUERY_LIMIT_MAX),
     );
 
     const messages = await this.messageRepo.findPollsByChapter(chapterId, {

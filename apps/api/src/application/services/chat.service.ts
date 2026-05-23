@@ -241,7 +241,7 @@ export class ChatService {
 
   async getMessages(
     channelId: string,
-    options?: { limit?: number; before?: string },
+    options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]> {
     return this.messageRepo.findByChannel(channelId, options);
   }

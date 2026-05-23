@@ -1,7 +1,4 @@
-import {
-  DEFAULT_SYSTEM_ROLES,
-  SystemPermissions,
-} from './permissions';
+import { DEFAULT_SYSTEM_ROLES, SystemPermissions } from './permissions';
 
 describe('DEFAULT_SYSTEM_ROLES', () => {
   it('includes members:view on Vice President and Secretary for PollController / PointsController class guards', () => {

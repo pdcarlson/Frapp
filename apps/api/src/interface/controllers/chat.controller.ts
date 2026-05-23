@@ -171,19 +171,28 @@ export class ChatController {
   // ── Messages ─────────────────────────────────────────────────────────
 
   @Get(':id/messages')
-  @ApiOperation({ summary: 'Get channel message history' })
+  @ApiOperation({
+    summary: 'Get channel message history (supports since= reconnect replay)',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({
     name: 'before',
     required: false,
     description: 'Cursor for pagination (ISO timestamp)',
   })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description:
+      'Message UUID — returns messages created after this message (reconnect replay)',
+  })
   async getMessages(
     @Param('id') channelId: string,
     @Query('limit') limit?: number,
     @Query('before') before?: string,
+    @Query('since') since?: string,
   ) {
-    return this.chatService.getMessages(channelId, { limit, before });
+    return this.chatService.getMessages(channelId, { limit, before, since });
   }
 
   @Post(':id/messages')
