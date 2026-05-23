@@ -46,15 +46,17 @@ Chunks 10a–10h can be parallelized across sessions once Chunk 5 is shipped. Ev
 ## Operating conventions for chunk sessions
 
 - **Branch per chunk.** Create `claude/redesign-chunk-NN-<slug>` from `main`. Never push directly to `main` or `production`.
+- **Step 0: reconcile STATUS.md.** Before you start, mark any chunk that merged since the last update as `shipped` (cloud-agent sessions end at PR-open, so the author or the *next* session owns the `in review → shipped` flip — don't assume the previous agent did it). Then mark your chunk `in progress`.
 - **Read the spec docs the chunk lists before writing code.** Each chunk lists specific `spec/*.md` and `docs/*` files that constrain its work.
 - **Update spec docs in the same PR.** Frapp's doc-sync mandate requires every non-doc PR to update at least one file under `docs/` or `spec/`. The chunk briefs list which specs each chunk should touch.
 - **Verification is non-negotiable.** Each chunk has a verification checklist. Don't open a PR with the checklist incomplete; surface what didn't work in the PR body instead of pretending it did.
+- **Visual-baseline discipline.** If a chunk changes shared CSS/tokens and shifts Playwright visual baselines, regenerate only the baselines that actually changed and list each one (with the reason) in the PR body. Don't blanket-regenerate all baselines — it hides real regressions in the noise. If a global change legitimately touches many baselines (e.g. a palette swap), say so explicitly and call out which surfaces a reviewer should eyeball. Note the Chromium revision you regenerated against vs. the one CI pins.
 - **Reference this plan in your PR body.** `Implements docs/internal/redesign/chunks/NN-<slug>.md.` That keeps the trail back to the master plan.
 - **If you make a scope decision that diverges from this plan, edit the plan in the same PR.** The plan is the source of truth, not your in-flight assumptions.
 
 ## Status tracking
 
-`STATUS.md` (peer to this README) tracks which chunks are: not started / in progress / shipped. Update it when you start a chunk and when you merge it. Treat it as the at-a-glance dashboard for the redesign.
+`STATUS.md` (peer to this README) tracks which chunks are: not started / in progress / in review / shipped. Update it at every transition. **The `in review → shipped` flip is owned by the author at merge time or by the next session as its Step 0** — a merged PR whose STATUS row still says "in review" is the normal failure mode, so reconcile it proactively.
 
 ## When the plan is wrong
 

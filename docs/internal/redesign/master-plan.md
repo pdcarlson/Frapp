@@ -189,6 +189,8 @@ WCAG validation against both bone (light) and ink (dark) backgrounds. If either 
 
 Theme is rebuilt server-side on color change and cached in `chapters.theme_palette`. Client reads from `useChapterTheme()` and writes CSS variables on `:root` per chapter switch.
 
+**Monospace decision (PR #229):** `--font-mono` is a deliberate system-monospace stack (`ui-monospace, SFMono-Regular, …, monospace`), **not** a bundled webfont. Ledger-line motifs, eyebrow labels, and `#chapter-audit` cards render against the system stack. Do **not** bundle Geist Mono (or any mono webfont) in a later chunk unless brand explicitly revisits this — the engineering principle "monospace family must be loaded" is satisfied by using a stack that needs no loading.
+
 ---
 
 ## Engineering principles (apply to every chunk)
