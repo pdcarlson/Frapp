@@ -14,15 +14,16 @@ Inherits `@repo/theme` (Tailwind config + CSS variables). Uses ShadCN UI as the 
 
 Semantic tokens match [packages/theme/src/globals.css](packages/theme/src/globals.css) (source of truth). The chat-first redesign repaints the palette to **bone / bronze / ink** — `--primary` is deep bronze (not royal blue), `--success` is moss, and the sidebar lives on a parallel set of `--side-*` tokens that stay dark in both light and dark mode. See [`spec/ui-brand-identity.md`](ui-brand-identity.md) §3 for the full token table.
 
-| Token       | Light (CSS vars)                 | Dark (CSS vars)             | Usage                            |
-| ----------- | -------------------------------- | --------------------------- | -------------------------------- |
-| Background  | `--background` (slate-50 family) | `--background` (navy)       | Page bg                          |
-| Card        | `--card`                         | `--card`                    | Cards, panels                    |
-| Primary     | `--primary` (royal blue)         | `--primary` (brighter blue) | Buttons, links, focus ring       |
-| Success     | `--success` (emerald)            | `--success`                 | Positive badges, success states  |
-| Muted       | `--muted`                        | `--muted`                   | Secondary surfaces, subdued text |
-| Destructive | `--destructive`                  | `--destructive`             | Delete, danger actions           |
-| Border      | `--border`                       | `--border`                  | Dividers, inputs                 |
+| Token       | Light (CSS vars)            | Dark (CSS vars)              | Usage                                  |
+| ----------- | --------------------------- | --------------------------- | -------------------------------------- |
+| Background  | `--background` (bone)       | `--background` (ink)        | Page bg                                |
+| Card        | `--card`                    | `--card`                    | Cards, panels                          |
+| Primary     | `--primary` (deep bronze)   | `--primary` (bone-bronze)   | Buttons, links, focus ring             |
+| Success     | `--success` (moss)          | `--success`                 | Positive badges, success states        |
+| Muted       | `--muted`                   | `--muted`                   | Secondary surfaces, subdued text       |
+| Destructive | `--destructive`             | `--destructive`             | Delete, danger actions                 |
+| Border      | `--border`                  | `--border`                  | Dividers, inputs                       |
+| Sidebar     | `--side-*`                  | `--side-*` (same dark ink)  | Sidebar chrome — dark in both modes    |
 
 See [spec/ui-brand-identity.md](ui-brand-identity.md) for Frapp-wide color roles and chapter accent vs product chrome.
 
@@ -122,10 +123,11 @@ the mobile app, which keeps the session alive through OS foreground
 controls. This divergence is called out in-copy on `/study` so there are
 no surprises.
 
-The unauthenticated landing page lives at `/` and redirects to `/home` once a
-Supabase session is present. `/dashboard` is a legacy alias that also redirects
-to `/home`. The dashboard route group includes `app/(dashboard)/page.tsx`, which
-redirects to `/home` as well, so the `(dashboard)` tree always has an index page
+The unauthenticated landing page lives at `/` and redirects to `/chat` once a
+Supabase session is present (chat is the default landing surface for the
+chat-first redesign). `/dashboard` is a legacy alias that also redirects to
+`/chat`. The dashboard route group includes `app/(dashboard)/page.tsx`, which
+redirects to `/chat` as well, so the `(dashboard)` tree always has an index page
 for parity with bookmarks and internal tooling that expect a segment root.
 
 Roadmap entries render disabled with a `Soon` chip so the full footprint of the

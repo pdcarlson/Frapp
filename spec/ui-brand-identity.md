@@ -80,7 +80,7 @@ Avoid as **default** patterns:
 - **Six-up icon cards** as the sole product story (icons are supporting, not the hero narrative).
 - **Unverified** large numbers and fake-sounding quotes presented as established truth.
 - **Excessive** hover lift / shadow on every card.
-- **Emerald** (success) as the global primary button color—reserved for success semantics; **primary** CTAs stay royal blue per theme.
+- **Emerald** (success) as the global primary button color—reserved for success semantics; primary CTAs use the `primary` token (deep bronze in `@repo/theme`), never the legacy `royal-blue.*` utilities.
 
 ---
 

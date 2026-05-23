@@ -56,16 +56,23 @@ export function ChapterLockup({ className }: ChapterLockupProps) {
   });
 
   let view: LockupView | null = null;
-  if (activeChapterId && data && !isError) {
-    const parsed = CurrentChapterPayloadSchema.safeParse(data);
-    if (parsed.success) {
-      const payload = parsed.data;
-      view = {
-        crest: initialsFor(payload.name),
-        name: payload.name,
-        designation: null,
-        schoolShort: shortenSchool(payload.university),
-      };
+  let loadFailed = false;
+  if (activeChapterId) {
+    if (isError) {
+      loadFailed = true;
+    } else if (data) {
+      const parsed = CurrentChapterPayloadSchema.safeParse(data);
+      if (parsed.success) {
+        const payload = parsed.data;
+        view = {
+          crest: initialsFor(payload.name),
+          name: payload.name,
+          designation: null,
+          schoolShort: shortenSchool(payload.university),
+        };
+      } else {
+        loadFailed = true;
+      }
     }
   }
 
@@ -80,7 +87,7 @@ export function ChapterLockup({ className }: ChapterLockupProps) {
         aria-hidden
         className="grid h-9 w-9 shrink-0 place-items-center rounded-xs border border-side-divider bg-side-bg text-[11px] font-bold uppercase tracking-wider text-side-accent"
       >
-        {view?.crest ?? (isPending ? "··" : "—")}
+        {view?.crest ?? (isPending ? "··" : loadFailed ? "!" : "—")}
       </div>
       <div className="min-w-0 flex-1">
         {view ? (
@@ -104,6 +111,15 @@ export function ChapterLockup({ className }: ChapterLockupProps) {
           <>
             <span className="block h-3 w-2/3 animate-pulse rounded-xs bg-side-bg" />
             <span className="mt-1.5 block h-2 w-1/2 animate-pulse rounded-xs bg-side-bg" />
+          </>
+        ) : loadFailed ? (
+          <>
+            <p className="text-[13px] font-semibold text-side-fg-hi">
+              Chapter unavailable
+            </p>
+            <p className="mt-0.5 text-[11px] text-side-muted">
+              Couldn’t load chapter details
+            </p>
           </>
         ) : (
           <>
