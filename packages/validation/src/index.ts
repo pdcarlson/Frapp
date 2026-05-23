@@ -21,9 +21,24 @@ const subscriptionStatusEnum = z.enum([
   "canceled",
 ]);
 
+// ── Chapter branding schema (Chunk 02: chapters.branding jsonb) ──────────────
+
+export const ChapterBrandingSchema = z.object({
+  greek_letters:  z.string().optional(),
+  designation:    z.string().optional(),
+  school_short:   z.string().optional(),
+  founded_at:     z.number().int().min(1776).optional(),
+  colors: z.object({
+    dark:   z.string().regex(/^#[0-9A-Fa-f]{3,6}$/).optional(),
+    accent: z.string().regex(/^#[0-9A-Fa-f]{3,6}$/).optional(),
+  }).optional(),
+}).optional();
+
 /**
  * Subset of the chapter payload consumed by dashboard UI (`GET /v1/chapters/current`).
  * Extra API fields are allowed via `.passthrough()` so this stays a projection, not a strict full-entity schema.
+ * Chunk 02 adds optional branding fields (greek_letters, designation, school_short)
+ * so ChapterLockup can render real chapter identity.
  */
 export const CurrentChapterPayloadSchema = z
   .object({
@@ -31,6 +46,7 @@ export const CurrentChapterPayloadSchema = z
     university: z.string(),
     accent_color: z.string().nullable().optional(),
     subscription_status: subscriptionStatusEnum,
+    branding: ChapterBrandingSchema,
   })
   .passthrough();
 
@@ -153,6 +169,70 @@ export const ConfirmUploadSchema = z.object({
   is_redacted: z.boolean().optional(),
 });
 
+// ── Chapter config schemas (Chunk 02) ─────────────────────────────────────────
+
+/** Reusable nonnegative-cents validator. Rejects NaN and negative values. */
+const centsAmount = z.number().int().nonnegative();
+
+export const ChapterDuesConfigSchema = z.object({
+  cadence:                  z.enum(["semester", "monthly", "annual"]),
+  active_amount_cents:      centsAmount,
+  new_member_amount_cents:  centsAmount,
+  alumni_amount_cents:      centsAmount,
+  installments_allowed:     z.boolean(),
+  late_fee_cents:           centsAmount,
+  grace_days:               z.number().int().nonnegative(),
+  scholarship_pool_cents:   centsAmount,
+});
+
+export const PatchChapterConfigSchema = z.object({
+  org_archetype:    z.string().optional(),
+  enabled_modules:  z.record(z.boolean()).optional(),
+  vocabulary:       z.record(z.string()).optional(),
+  branding:         ChapterBrandingSchema,
+  beta_config: z.object({
+    enabled: z.boolean(),
+    style:   z.enum(["sidebar_pill", "top_banner", "corner_badge", "breadcrumb_pill"]),
+  }).optional(),
+  dues:             ChapterDuesConfigSchema.optional(),
+});
+
+// ── Chat message schemas (Chunk 02 — shared by NestJS and Deno Edge Functions)
+// NOTE: Keep this section dependency-light (zod only) so the Deno Edge
+// Functions can import packages/validation/src/index.ts directly via an
+// import map without Node.js-specific resolution. ────────────────────────────
+
+export const CHAT_MESSAGE_KINDS = [
+  "text", "event", "task", "poll", "dues", "points", "hours",
+  "system_audit", "loading", "announcement",
+] as const;
+
+export const SendChatMessageSchema = z.object({
+  /**
+   * Client-generated idempotency key (UUID or UUID-like string).
+   * The Edge Function dedupes on (channel_id, sender_id, client_message_id).
+   * Actor identity is resolved from the authenticated session — never from
+   * this payload.
+   */
+  client_message_id: z.string().uuid(),
+  channel_id:        z.string().uuid(),
+  content:           z.string().min(1).max(10_000),
+  kind:              z.enum(CHAT_MESSAGE_KINDS).default("text"),
+  payload:           z.record(z.unknown()).optional(),
+  reply_to_id:       z.string().uuid().optional(),
+});
+
+export const ChatMessageActionSchema = z.object({
+  message_id:        z.string().uuid(),
+  action_type:       z.string().min(1).max(50),
+  payload:           z.record(z.unknown()).optional(),
+});
+
+export const BackfillMessagesQuerySchema = z.object({
+  since:  z.string().uuid().optional(),
+  limit:  z.coerce.number().int().min(1).max(200).default(50),
+});
+
 // ── Type Exports ─────────────────────────────────────────────────────────────
 
 export type Chapter = z.infer<typeof ChapterSchema>;
@@ -173,3 +253,10 @@ export type UpdateFinancialInvoice = z.infer<typeof UpdateFinancialInvoiceSchema
 export type TransitionInvoiceStatus = z.infer<typeof TransitionInvoiceStatusSchema>;
 export type RequestUploadUrl = z.infer<typeof RequestUploadUrlSchema>;
 export type ConfirmUpload = z.infer<typeof ConfirmUploadSchema>;
+
+export type ChapterBranding = z.infer<typeof ChapterBrandingSchema>;
+export type ChapterDuesConfig = z.infer<typeof ChapterDuesConfigSchema>;
+export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
+export type SendChatMessage = z.infer<typeof SendChatMessageSchema>;
+export type ChatMessageAction = z.infer<typeof ChatMessageActionSchema>;
+export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;
