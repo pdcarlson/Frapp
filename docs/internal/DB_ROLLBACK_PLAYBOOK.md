@@ -91,3 +91,42 @@ After any rollback event:
 * **Migration**: `20260417150000_backfill_members_view_vp_secretary.sql`
 * **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
 * **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
+
+## Rollback Chunk 02 migrations (20260523*)
+
+All four migrations are additive. Rollback drops the new structures in reverse order.
+
+```sql
+-- 1. chat hot-path (20260523150000)
+DROP TABLE IF EXISTS chat_message_actions;
+DROP INDEX IF EXISTS idx_chat_messages_dedupe;
+DROP INDEX IF EXISTS idx_chat_messages_channel_created;
+ALTER TABLE chat_messages
+  DROP COLUMN IF EXISTS kind,
+  DROP COLUMN IF EXISTS payload,
+  DROP COLUMN IF EXISTS client_message_id,
+  DROP COLUMN IF EXISTS deleted_at;
+
+-- 2. chapter directory (20260523140000)
+ALTER TABLE chapters DROP CONSTRAINT IF EXISTS fk_chapters_directory;
+DROP TABLE IF EXISTS chapter_directory;
+
+-- 3. audit log (20260523130000)
+DROP TABLE IF EXISTS chapter_audit_log;
+
+-- 4. chapter customization (20260523120000)
+DROP TABLE IF EXISTS chapter_dues_config;
+DROP TABLE IF EXISTS chapter_workflows;
+DROP TABLE IF EXISTS chapter_custom_roles;
+DROP TABLE IF EXISTS chapter_custom_fields;
+ALTER TABLE chapters
+  DROP COLUMN IF EXISTS org_archetype,
+  DROP COLUMN IF EXISTS enabled_modules,
+  DROP COLUMN IF EXISTS vocabulary,
+  DROP COLUMN IF EXISTS branding,
+  DROP COLUMN IF EXISTS theme_palette,
+  DROP COLUMN IF EXISTS directory_id,
+  DROP COLUMN IF EXISTS beta_config;
+```
+
+**Note:** No data is lost beyond what was inserted into these new structures since the migration ran.

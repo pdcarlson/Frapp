@@ -88,3 +88,25 @@ Post-apply production checks:
 * **Migration**: `20260417150000_backfill_members_view_vp_secretary.sql`
 * **Purpose**: Append `members:view` to Vice President and Secretary so they can use chapter-scoped routes that merge controller- and handler-level `@RequirePermissions` (e.g. dashboard poll list requires both `members:view` and `polls:view_all`).
 * **Checks**: After `db push`, e.g. `select count(*) from public.roles where is_system and name in ('Vice President', 'Secretary') and 'members:view' = any (permissions);` should equal twice the number of chapters with those rows (or verify zero rows missing the permission). Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `backfill_members_view_vp_secretary`.
+
+## 2026-05-23: Chunk 02 — Chapter customization + audit log + directory + chat hot-path
+
+Four additive migrations in this PR. All use `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE` — fully backward-compatible, no lock-heavy operations, no data backfills.
+
+### 20260523120000_chapter_customization.sql
+* **Purpose**: Adds 7 new columns to `chapters` (org_archetype, enabled_modules, vocabulary, branding, theme_palette, directory_id, beta_config) and creates `chapter_custom_fields`, `chapter_custom_roles`, `chapter_workflows`, `chapter_dues_config`. All new tables have RLS enabled (no policies — access controlled at API layer per repo convention).
+* **Checks**: `select column_name from information_schema.columns where table_name = 'chapters' and column_name in ('org_archetype','enabled_modules','vocabulary','branding','theme_palette','directory_id','beta_config');` — should return 7 rows.
+
+### 20260523130000_audit_log.sql
+* **Purpose**: Creates `chapter_audit_log` append-only table. Two explicit RLS policies deny UPDATE and DELETE to enforce append-only at the DB level.
+* **Checks**: `select tablename from pg_tables where tablename = 'chapter_audit_log';` + `select policyname from pg_policies where tablename = 'chapter_audit_log';` — should return 2 policies (audit_log_no_update, audit_log_no_delete).
+
+### 20260523140000_chapter_directory.sql
+* **Purpose**: Creates `chapter_directory` global reference table with generated `search_vector` tsvector column. Adds FK constraint from `chapters.directory_id` → `chapter_directory.id`.
+* **Checks**: `select column_name from information_schema.columns where table_name = 'chapter_directory' and column_name = 'search_vector';` — should return 1 row. `select indexname from pg_indexes where tablename = 'chapter_directory' and indexname = 'idx_chapter_directory_search';` — should return 1 row.
+
+### 20260523150000_chat_hotpath.sql
+* **Purpose**: Adds `kind`, `payload`, `client_message_id`, `deleted_at` to `chat_messages`. Creates partial unique index for client_message_id dedup. Creates `chat_message_actions` table with two indexes.
+* **Checks**: `select column_name from information_schema.columns where table_name = 'chat_messages' and column_name in ('kind','payload','client_message_id','deleted_at');` — should return 4 rows. `select indexname from pg_indexes where tablename = 'chat_messages' and indexname = 'idx_chat_messages_dedupe';` — should return 1 row.
+
+**Rollback**: All migrations are additive (new columns/tables). Rollback is: drop new tables (chapter_directory, chapter_audit_log, chapter_custom_fields, chapter_custom_roles, chapter_workflows, chapter_dues_config, chat_message_actions), drop new columns from chapters and chat_messages. See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Chunk 02 migrations.
