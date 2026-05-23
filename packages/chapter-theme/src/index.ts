@@ -231,13 +231,13 @@ export function derivePalette(input: ChapterPaletteInput): DerivePaletteResult {
 
   const palette: ChapterPalette = {
     "--side-bg":           sideBg.toUpperCase(),
-    "--side-accent":       sideAccentCheck.fallback ? BRONZE.toUpperCase() : sideAccentCheck.value,
+    "--side-accent":       sideAccentCheck.value,
     "--brand-band":        brandBand.toUpperCase(),
     "--mention-bg":        mentionBg.toUpperCase(),
-    "--mention-fg":        mentionFgCheck.fallback ? BRONZE.toUpperCase() : mentionFgCheck.value,
+    "--mention-fg":        mentionFgCheck.value,
     "--chat-self-bubble":  selfBubble.toUpperCase(),
-    "--reaction-active":   reactionCheck.fallback ? BRONZE.toUpperCase() : reactionCheck.value,
-    "--ring":              ringCheck.fallback ? BRONZE.toUpperCase() : ringCheck.value,
+    "--reaction-active":   reactionCheck.value,
+    "--ring":              ringCheck.value,
   };
 
   return {

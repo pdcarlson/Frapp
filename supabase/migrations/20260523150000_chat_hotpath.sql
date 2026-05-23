@@ -53,3 +53,23 @@ create index idx_chat_message_actions_user_type_created
   on chat_message_actions (user_id, action_type, created_at desc);
 
 alter table chat_message_actions enable row level security;
+
+-- Any authenticated user may read reactions (app layer filters by channel membership).
+create policy "chat_message_actions_select"
+  on chat_message_actions for select
+  using (auth.role() = 'authenticated');
+
+-- Users may only insert reactions attributed to their own app user record.
+-- auth.uid() is the Supabase auth UUID; users.id is the app-level UUID.
+create policy "chat_message_actions_insert"
+  on chat_message_actions for insert
+  with check (
+    user_id in (select id from users where supabase_auth_id = auth.uid())
+  );
+
+-- Users may only delete their own reactions.
+create policy "chat_message_actions_delete"
+  on chat_message_actions for delete
+  using (
+    user_id in (select id from users where supabase_auth_id = auth.uid())
+  );

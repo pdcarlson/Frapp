@@ -44,7 +44,7 @@ export class ChapterConfigService {
         'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config',
       )
       .eq('id', chapterId)
-      .single();
+      .maybeSingle();
 
     if (error || !chapter) {
       throw new NotFoundException('Chapter not found');
@@ -192,7 +192,7 @@ export class ChapterConfigService {
       .from('chapters')
       .select('branding')
       .eq('id', chapterId)
-      .single();
+      .maybeSingle();
 
     if (error || !chapter) {
       throw new NotFoundException('Chapter not found');
