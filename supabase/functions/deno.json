@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@repo/validation": "../../../packages/validation/src/index.ts",
+    "zod": "npm:zod@^3.24.2",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@^2"
+  }
+}
