@@ -1092,7 +1092,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get channel message history */
+        /** Get channel message history (supports since= reconnect replay) */
         get: operations["ChatController_getMessages_v1"];
         put?: never;
         /** Send a message */
@@ -1696,6 +1696,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chapters/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get merged chapter config (archetype defaults + overrides) */
+        get: operations["ChapterConfigController_getConfig_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update chapter config (writes audit log + posts to #chapter-audit) */
+        patch: operations["ChapterConfigController_patchConfig_v1"];
+        trace?: never;
+    };
+    "/v1/chapters/{id}/theme-palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recompute and persist derived theme palette from branding.colors */
+        post: operations["ChapterConfigController_recomputePalette_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/chapter-directory/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search the chapter directory (autocomplete for onboarding) */
+        get: operations["ChapterDirectoryController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2134,6 +2186,46 @@ export interface components {
             start_date?: string;
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
+        };
+        BrandingColorsDto: {
+            dark?: string;
+            accent?: string;
+        };
+        BrandingDto: {
+            greek_letters?: string;
+            designation?: string;
+            school_short?: string;
+            founded_at?: number;
+            colors?: components["schemas"]["BrandingColorsDto"];
+        };
+        BetaConfigDto: {
+            enabled: boolean;
+            /** @enum {string} */
+            style: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
+        };
+        DuesConfigDto: {
+            /** @enum {string} */
+            cadence: "semester" | "monthly" | "annual";
+            /** @description Active member dues in cents */
+            active_amount_cents: number;
+            /** @description New member dues in cents */
+            new_member_amount_cents: number;
+            /** @description Alumni dues in cents */
+            alumni_amount_cents: number;
+            installments_allowed: boolean;
+            /** @description Late fee in cents */
+            late_fee_cents: number;
+            grace_days: number;
+            /** @description Scholarship pool in cents */
+            scholarship_pool_cents: number;
+        };
+        PatchChapterConfigDto: {
+            org_archetype?: string;
+            enabled_modules?: Record<string, never>;
+            vocabulary?: Record<string, never>;
+            branding?: components["schemas"]["BrandingDto"];
+            beta_config?: components["schemas"]["BetaConfigDto"];
+            dues?: components["schemas"]["DuesConfigDto"];
         };
     };
     responses: never;
@@ -3815,6 +3907,8 @@ export interface operations {
                 limit?: number;
                 /** @description Cursor for pagination (ISO timestamp) */
                 before?: string;
+                /** @description Message UUID — returns messages created after this message (reconnect replay) */
+                since?: string;
             };
             header?: never;
             path: {
@@ -4775,6 +4869,89 @@ export interface operations {
             query: {
                 /** @description Search query */
                 q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_getConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_patchConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchChapterConfigDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_recomputePalette_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDirectoryController_search_v1: {
+        parameters: {
+            query?: {
+                /** @description Search query (org name, letters, designation) */
+                q?: string;
+                /** @description Filter by university short name */
+                university?: string;
             };
             header?: never;
             path?: never;

@@ -6,8 +6,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/validation/package.json ./packages/validation/
+COPY packages/org-archetypes/package.json ./packages/org-archetypes/
+COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root
 
 # Stage 2: Compile TypeScript
 FROM node:20-alpine AS builder
@@ -16,9 +18,15 @@ COPY --from=deps /app/ ./
 COPY packages/typescript-config/ ./packages/typescript-config/
 COPY packages/validation/src/ ./packages/validation/src/
 COPY packages/validation/tsconfig.json ./packages/validation/
+COPY packages/org-archetypes/src/ ./packages/org-archetypes/src/
+COPY packages/org-archetypes/tsconfig.json ./packages/org-archetypes/
+COPY packages/chapter-theme/src/ ./packages/chapter-theme/src/
+COPY packages/chapter-theme/tsconfig.json ./packages/chapter-theme/
 COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
 RUN npm run build --workspace=packages/validation
+RUN npm run build --workspace=packages/org-archetypes
+RUN npm run build --workspace=packages/chapter-theme
 RUN npm run build --workspace=apps/api
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
@@ -27,8 +35,10 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/validation/package.json ./packages/validation/
+COPY packages/org-archetypes/package.json ./packages/org-archetypes/
+COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
@@ -42,6 +52,10 @@ COPY --from=builder --chown=frapp:frapp /app/apps/api/dist/ ./apps/api/dist/
 COPY --from=builder --chown=frapp:frapp /app/apps/api/package.json ./apps/api/
 COPY --from=builder --chown=frapp:frapp /app/packages/validation/dist/ ./packages/validation/dist/
 COPY --from=builder --chown=frapp:frapp /app/packages/validation/package.json ./packages/validation/
+COPY --from=builder --chown=frapp:frapp /app/packages/org-archetypes/dist/ ./packages/org-archetypes/dist/
+COPY --from=builder --chown=frapp:frapp /app/packages/org-archetypes/package.json ./packages/org-archetypes/
+COPY --from=builder --chown=frapp:frapp /app/packages/chapter-theme/dist/ ./packages/chapter-theme/dist/
+COPY --from=builder --chown=frapp:frapp /app/packages/chapter-theme/package.json ./packages/chapter-theme/
 
 USER frapp
 WORKDIR /app/apps/api
