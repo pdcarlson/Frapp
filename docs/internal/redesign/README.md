@@ -8,7 +8,8 @@ This directory is the single source of truth for the in-progress redesign of `ap
 
 1. **`master-plan.md`** — product positioning, system architecture (hot vs cold path, Edge Functions, optimistic+offline chat client), theming model, full chunk list. Treat this as canonical context.
 2. **The specific chunk brief you've been assigned** (`chunks/NN-*.md`). Each chunk brief is a self-contained prompt: read these files, build this, verify like this, commit & push to this branch.
-3. **`AGENTS.md`** at the repo root and the linked playbooks (`.cursor/skills/`). Standard operating context — branch model, doc-sync mandate, secrets policy.
+3. **`AGENTS.md`** at the repo root and the linked playbooks (`.cursor/skills/`). Standard operating context — branch model, doc-sync mandate, secrets policy, and the GitHub-issues workflow.
+   - Before opening your chunk PR, self-review against **`REVIEW_CHECKLIST.md`** (peer to this file). The same checklist is used by whoever reviews the PR.
 4. Files explicitly listed under the chunk's "Read first" section.
 
 Do **not** start coding from a vague "redesign Frapp" prompt. Always work a specific chunk. If you don't know which chunk to start, work the lowest-numbered chunk whose dependencies are complete.

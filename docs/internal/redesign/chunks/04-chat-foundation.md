@@ -3,6 +3,18 @@
 **Depends on:** Chunk 02 (chat schema + Edge Functions + theme hooks).
 **Unblocks:** 05 (chat integrations), 11 (mobile parity).
 
+## ⛔ Blocking prerequisites — resolve before wiring or deploying the Edge Functions
+
+The Chunk 02 Edge Functions (`chat-send`, `chat-react`) shipped as scaffolds with **two known cross-chapter auth-bypass holes**. They use the service-role client (RLS bypassed) on client-supplied `channel_id` / `message_id` without verifying the caller belongs to the target chapter. This chunk wires those functions into the web composer — **do not** do that (and do not deploy them) until both are fixed:
+
+- **[#233](https://github.com/pdcarlson/Frapp/issues/233)** — `chat-send` must authorize channel/chapter before the service-role write.
+- **[#234](https://github.com/pdcarlson/Frapp/issues/234)** — `chat-react` must authorize message/chapter before the service-role write (+ dedup-on-conflict instead of 500).
+
+If those issues aren't closed when you start, fix them as the first commits of this chunk (or pause and flag it). Then, as part of this chunk:
+
+- Add **authorization integration tests** for the hot path: a member can send/react in their own channel; a non-member targeting another chapter's channel/message gets 403.
+- Runtime-verify the functions against a running stack per **[#235](https://github.com/pdcarlson/Frapp/issues/235)** (the CI runtime-verification job). If your sandbox can't run Supabase, say so and lean on that CI job — do not check the runtime boxes blind.
+
 ## Read first
 
 1. `docs/internal/redesign/master-plan.md` — *Architecture: Chat as the spine*, *System architecture for the chat hot path* (whole section), *Theming model*.
