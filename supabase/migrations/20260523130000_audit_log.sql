@@ -8,7 +8,7 @@
 create table chapter_audit_log (
   id              uuid         primary key default gen_random_uuid(),
   chapter_id      uuid         not null references chapters(id) on delete cascade,
-  actor_user_id   uuid         not null references users(id) on delete cascade,
+  actor_user_id   uuid         references users(id) on delete set null,
   action          text         not null,
   target_type     text         not null,
   target_id       text,

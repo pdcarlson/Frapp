@@ -26,6 +26,13 @@ const BRONZE = "#7A5A2F";
 const MIN_CONTRAST = 4.5; // WCAG AA normal text
 const HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 
+/**
+ * Ordered fallback accents. Bronze is the brand default, but it fails AA on a
+ * dark sidebar — so a lighter bronze and finally bone are tried in turn. The
+ * first candidate that clears MIN_CONTRAST against the background wins.
+ */
+const FALLBACK_ACCENTS = [BRONZE, "#C8A062", BONE] as const;
+
 // ── WCAG math (inline — avoids importing @repo/theme private helpers) ────────
 
 type Rgb = { r: number; g: number; b: number };
@@ -82,8 +89,25 @@ function applyAlpha(hex: string, alpha: number, bg: string): string {
 }
 
 /**
+ * Picks the first FALLBACK_ACCENTS entry that clears MIN_CONTRAST against
+ * `bg`. Bronze fails AA on a dark sidebar, so the lighter candidates exist to
+ * guarantee the returned fallback is itself accessible. Bronze is the last
+ * resort if (somehow) nothing passes.
+ */
+function pickAccessibleFallback(bg: Rgb): string {
+  for (const candidate of FALLBACK_ACCENTS) {
+    const rgb = parseHex(candidate);
+    if (rgb && contrastRatio(rgb, bg) >= MIN_CONTRAST) {
+      return candidate.toUpperCase();
+    }
+  }
+  return BRONZE.toUpperCase();
+}
+
+/**
  * Validates `color` against `bg` for AA 4.5:1 contrast.
- * If it fails (or the color is invalid), returns bronze + flags the fallback.
+ * If it fails (or the color is invalid), returns the first accessible fallback
+ * accent for that background + flags the fallback.
  */
 function validateToken(
   color: string,
@@ -91,9 +115,12 @@ function validateToken(
 ): { value: string; fallback: boolean } {
   const fg = parseHex(color);
   const background = parseHex(bg);
-  if (!fg || !background) return { value: BRONZE.toUpperCase(), fallback: true };
+  if (!background) return { value: BRONZE.toUpperCase(), fallback: true };
+  if (!fg) return { value: pickAccessibleFallback(background), fallback: true };
   const ratio = contrastRatio(fg, background);
-  if (ratio < MIN_CONTRAST) return { value: BRONZE.toUpperCase(), fallback: true };
+  if (ratio < MIN_CONTRAST) {
+    return { value: pickAccessibleFallback(background), fallback: true };
+  }
   return { value: color.toUpperCase(), fallback: false };
 }
 
@@ -176,7 +203,13 @@ export function derivePalette(input: ChapterPaletteInput): DerivePaletteResult {
   const brandBandRgb = parseHex(brandBandCandidate)!;
   const bandContrast = contrastRatio(inkRgb, brandBandRgb);
   // Band is a subtle decorative strip; accept if ink-on-band ≥ 3:1 (large text AA).
-  const brandBand = bandContrast >= 3 ? brandBandCandidate : applyAlpha(BRONZE, 0.15, BONE);
+  let brandBand: string;
+  if (bandContrast >= 3) {
+    brandBand = brandBandCandidate;
+  } else {
+    brandBand = applyAlpha(BRONZE, 0.15, BONE);
+    fallbacks["--brand-band"] = true;
+  }
 
   // --mention-bg: accent at 12% on bone (a chip background).
   const mentionBg = applyAlpha(rawAccent, 0.12, BONE);

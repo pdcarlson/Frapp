@@ -40,6 +40,10 @@ create table chat_message_actions (
   created_at   timestamptz  not null default now()
 );
 
+-- Unique dedupe key matching the Edge Function's idempotency guarantee
+create unique index idx_chat_message_actions_dedupe
+  on chat_message_actions (message_id, user_id, action_type);
+
 -- Message-level aggregation (reactions, RSVP counts per message)
 create index idx_chat_message_actions_message_user
   on chat_message_actions (message_id, user_id);

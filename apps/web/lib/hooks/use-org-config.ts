@@ -1,80 +1,58 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCurrentChapter } from "@repo/hooks";
-import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useFrappClient, useActiveChapterId } from "@repo/hooks";
+import type { components } from "@repo/api-sdk";
 import type { PatchChapterConfig } from "@repo/validation";
 
-const BASE_URL =
-  process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001";
-
-async function fetchChapterConfig(chapterId: string, token: string) {
-  const res = await fetch(`${BASE_URL}/chapters/${chapterId}/config`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) throw new Error(`Failed to fetch chapter config: ${res.status}`);
-  return res.json() as Promise<Record<string, unknown>>;
-}
-
-async function patchChapterConfig(
-  chapterId: string,
-  token: string,
-  diff: PatchChapterConfig,
-) {
-  const res = await fetch(`${BASE_URL}/chapters/${chapterId}/config`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(diff),
-  });
-  if (!res.ok) throw new Error(`Failed to patch chapter config: ${res.status}`);
-  return res.json() as Promise<Record<string, unknown>>;
-}
-
-function useAuthToken(): string | null {
-  // The app stores the active Supabase session in the auth store;
-  // use the same pattern as other hooks in the web app.
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem("frapp-auth-token");
-    return raw ?? null;
-  } catch {
-    return null;
-  }
-}
+type OrgConfig = Record<string, unknown>;
 
 export function useOrgConfig() {
-  const activeChapterId = useChapterStore((s) => s.activeChapterId);
-  useCurrentChapter({ chapterId: activeChapterId });
-  const token = useAuthToken();
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
 
   return useQuery({
-    queryKey: ["chapter-config", activeChapterId],
-    queryFn: () =>
-      fetchChapterConfig(activeChapterId!, token!),
-    enabled: !!activeChapterId && !!token,
+    queryKey: ["chapter-config", chapterId],
+    queryFn: async () => {
+      const { data, error } = await client.GET("/v1/chapters/{id}/config", {
+        params: { path: { id: chapterId as string } },
+      });
+      if (error) throw error;
+      return (data ?? {}) as unknown as OrgConfig;
+    },
+    enabled: !!chapterId,
     staleTime: 5 * 60 * 1000,
     select: (data) => ({
       ...data,
-      // Helpers derived from the config
       isModuleEnabled: (key: string) =>
-        (data["enabled_modules"] as Record<string, boolean>)?.[key] !== false,
+        (data["enabled_modules"] as Record<string, boolean> | undefined)?.[
+          key
+        ] !== false,
     }),
   });
 }
 
 export function usePatchOrgConfig() {
-  const activeChapterId = useChapterStore((s) => s.activeChapterId);
-  const token = useAuthToken();
+  const client = useFrappClient();
+  const chapterId = useActiveChapterId();
   const qc = useQueryClient();
 
   return useMutation({
-    mutationFn: (diff: PatchChapterConfig) =>
-      patchChapterConfig(activeChapterId!, token!, diff),
+    mutationFn: async (diff: PatchChapterConfig) => {
+      if (!chapterId) throw new Error("No active chapter selected");
+      const { data, error } = await client.PATCH("/v1/chapters/{id}/config", {
+        params: { path: { id: chapterId } },
+        // PatchChapterConfig (zod-inferred) is the wire shape; the generated
+        // DTO types record values as `never`, so cast at this boundary.
+        body: diff as components["schemas"]["PatchChapterConfigDto"],
+      });
+      if (error) throw error;
+      return (data ?? {}) as unknown as OrgConfig;
+    },
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["chapter-config", activeChapterId] });
+      void qc.invalidateQueries({
+        queryKey: ["chapter-config", chapterId],
+      });
     },
   });
 }

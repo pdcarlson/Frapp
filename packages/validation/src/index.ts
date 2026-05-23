@@ -29,8 +29,8 @@ export const ChapterBrandingSchema = z.object({
   school_short:   z.string().optional(),
   founded_at:     z.number().int().min(1776).optional(),
   colors: z.object({
-    dark:   z.string().regex(/^#[0-9A-Fa-f]{3,6}$/).optional(),
-    accent: z.string().regex(/^#[0-9A-Fa-f]{3,6}$/).optional(),
+    dark:   z.string().regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).optional(),
+    accent: z.string().regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).optional(),
   }).optional(),
 }).optional();
 

@@ -69,7 +69,7 @@ Deno.serve(async (req: Request) => {
   // Use ON CONFLICT DO NOTHING — re-adding the same reaction is a no-op.
   const { data: existing } = await serviceSupabase
     .from("chat_message_actions")
-    .select("id")
+    .select("*")
     .eq("message_id", message_id)
     .eq("user_id", userId)
     .eq("action_type", action_type)

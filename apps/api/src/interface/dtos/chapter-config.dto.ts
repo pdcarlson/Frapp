@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -46,6 +47,7 @@ export class BrandingDto {
 
   @ApiPropertyOptional({ type: () => BrandingColorsDto })
   @IsOptional()
+  @ValidateNested()
   @Type(() => BrandingColorsDto)
   colors?: BrandingColorsDto;
 }
@@ -120,16 +122,19 @@ export class PatchChapterConfigDto {
 
   @ApiPropertyOptional({ type: () => BrandingDto })
   @IsOptional()
+  @ValidateNested()
   @Type(() => BrandingDto)
   branding?: BrandingDto;
 
   @ApiPropertyOptional({ type: () => BetaConfigDto })
   @IsOptional()
+  @ValidateNested()
   @Type(() => BetaConfigDto)
   beta_config?: BetaConfigDto;
 
   @ApiPropertyOptional({ type: () => DuesConfigDto })
   @IsOptional()
+  @ValidateNested()
   @Type(() => DuesConfigDto)
   dues?: DuesConfigDto;
 }
