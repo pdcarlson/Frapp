@@ -64,11 +64,15 @@ export function ChapterLockup({ className }: ChapterLockupProps) {
       const parsed = CurrentChapterPayloadSchema.safeParse(data);
       if (parsed.success) {
         const payload = parsed.data;
+        // Use real branding fields if populated (Chunk 02+); fall back to
+        // name-initials / university derivation for chapters without branding.
+        const branding = payload.branding;
         view = {
-          crest: initialsFor(payload.name),
+          crest: branding?.greek_letters?.trim() || initialsFor(payload.name),
           name: payload.name,
-          designation: null,
-          schoolShort: shortenSchool(payload.university),
+          designation: branding?.designation?.trim() || null,
+          schoolShort:
+            branding?.school_short?.trim() || shortenSchool(payload.university),
         };
       } else {
         loadFailed = true;
