@@ -17,7 +17,7 @@
 - **Shell nav rows are semantic interactives, not `<div>`s.** Use `<button type="button">` for items that change client state (`setRoute`, modal opens) and the framework's `Link` (or `<a href>`) for items that navigate. The prototype's `design-handoff/project/shell.jsx` uses `<div>` with click handlers — do not port that pattern. Active styling stays the same; just move it to the semantic element.
 - **Soft-disabled / "soon" nav items use `aria-disabled="true"` and `tabIndex={-1}`.** Hard-disabled items use the native `disabled` attribute on `<button>`.
 - **Root layout sets `<html lang="en">`.** Verify `apps/web/app/layout.tsx` (or equivalent) has the attribute; add it if missing.
-- **If the theme references a monospace family (e.g. Geist Mono),** make sure the font is actually loaded via the framework's font loader (or a `<link>` in the root layout). The prototype's `logos.html` references Geist Mono without loading it — don't replicate that gap.
+- **Monospace: use a system stack, not a bundled webfont.** `--font-mono` resolves to `ui-monospace, SFMono-Regular, …, monospace` — no font to load, so the "monospace must be loaded" principle is satisfied for free. This was the decision on PR #229; don't reintroduce Geist Mono (the prototype's `logos.html` references it without loading it — that's a prototype gap, not a target). See master plan → *Theming model* → "Monospace decision."
 
 ## Branch
 

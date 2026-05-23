@@ -34,7 +34,8 @@ A 5-step wizard that turns "I just signed up" into "I'm in `#general` with my ch
    - Seed default channels: `#general`, `#announcements`, `#chapter-audit`.
    - Send invites (if any). Use existing invite endpoint or extend if missing.
    - Navigate to `/chat?channel=general`. Post a one-time welcome `system_audit` message: "Welcome to <Greek letters> <designation>. Invite your chapter to get the conversation started."
-5. **Spec updates** — `spec/ui-web-dashboard.md` (wizard screen + flow), `spec/behavior.md` (default channel seeding rule, manual-entry path captures a request row).
+5. **Delete the dead `/home` route.** Chunk 01 dropped `/home` from the nav and repointed the default landing to `/chat`, but left `apps/web/app/(dashboard)/home/page.tsx` reachable by deep link. This chunk replaces the post-signup flow, so remove the route file, drop its visual-regression baseline, and confirm nothing still links to `/home` (grep `"/home"` across `apps/web` — including `lib/auth/redirect.ts`, the command menu, and notification deep links — before deleting).
+6. **Spec updates** — `spec/ui-web-dashboard.md` (wizard screen + flow, removal of `/home`), `spec/behavior.md` (default channel seeding rule, manual-entry path captures a request row).
 
 ## Verification
 
@@ -43,6 +44,7 @@ A 5-step wizard that turns "I just signed up" into "I'm in `#general` with my ch
 - [ ] Wizard does NOT appear on subsequent sign-ins for the same officer.
 - [ ] Inviting 3 emails sends 3 invites (check dev mailbox or stub log).
 - [ ] Mobile width (375px) renders without horizontal scroll.
+- [ ] `/home` route deleted; `grep -rn '"/home"' apps/web` returns no live references; its visual baseline is removed and the visual suite stays green.
 - [ ] Screenshots: wizard step 2 (combobox open), step 4 (filled), final chat state.
 
 ## Handoff

@@ -4,7 +4,7 @@ Update this file at each state transition: when you start a chunk (`not started`
 
 | #   | Title                                          | Branch                                          | State        | PR    | Notes |
 | --- | ---------------------------------------------- | ----------------------------------------------- | ------------ | ----- | ----- |
-| 01  | Foundation                                     | `claude/redesign-chunk-01-foundation-kWOsy`     | in review    | [#229](https://github.com/pdcarlson/Frapp/pull/229) |       |
+| 01  | Foundation                                     | `claude/redesign-chunk-01-foundation-kWOsy`     | shipped      | [#229](https://github.com/pdcarlson/Frapp/pull/229) | Tailwind `content` glob fix (added `./components/**`) landed here; `--font-mono` is a deliberate system stack (no Geist Mono); `/home` route left reachable, deletion deferred to Chunk 03. |
 | 02  | Data model + Edge Function scaffold            | `claude/redesign-chunk-02-data-edge`            | not started  | —     |       |
 | 03  | Onboarding wizard                              | `claude/redesign-chunk-03-onboarding`           | not started  | —     |       |
 | 04  | Chat foundation + hot-path client              | `claude/redesign-chunk-04-chat-foundation`      | not started  | —     |       |

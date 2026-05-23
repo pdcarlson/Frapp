@@ -46,7 +46,7 @@ Ship the database schema, the cold-path API endpoints, shared TS packages (`org-
 
 5. **`packages/org-archetypes/`** — TS port of `design-handoff/project/org-config.jsx`. Export `ARCHETYPES`, `MODULE_CATALOG` (revised — see master plan *Module catalog*), `ROLE_PACKS`, `CUSTOM_FIELDS_SEED`, `WORKFLOWS_SEED`, `VOCABULARY_DEFAULTS`. Set up so it's consumable by web, mobile, and API (check `packages/theme/package.json` for the existing convention).
 6. **`packages/chapter-theme/`** — `derivePalette({dark, accent})` returning the token map listed in master plan *Theming model*. Uses `packages/theme/src/accent.ts` for WCAG. Falls back to bronze for failing tokens only.
-7. **`packages/validation/`** (create or extend) — `chapter-config.ts` + `chat-messages.ts` Zod schemas. **These schemas are imported by NestJS *and* by Edge Functions** — keep them dependency-light so the Deno import works.
+7. **`packages/validation/`** — **already exists** at `packages/validation/src/index.ts` (Chunk 01 added `CurrentChapterPayloadSchema` there). Extend it; do not recreate the package. Add `chapter-config` + `chat-messages` Zod schemas. **These schemas are imported by NestJS *and* by Edge Functions** — keep them dependency-light so the Deno import works. (`@repo/hooks` similarly already exists — `useCurrentChapter` lives in `packages/hooks/src/use-chapters.ts`; extend rather than recreate any hook you need.)
 
 ### NestJS modules (cold path only)
 
@@ -65,6 +65,7 @@ Ship the database schema, the cold-path API endpoints, shared TS packages (`org-
 14. `apps/web/lib/hooks/use-org-config.ts` — TanStack Query wrapper around `GET /chapters/:id/config`. Returns merged config + per-chapter overrides + helpers.
 15. `apps/web/lib/hooks/use-chapter-theme.ts` — fetches `chapters.theme_palette`, writes CSS vars on `:root` per active chapter.
 16. `apps/web/lib/vocabulary.ts` — `vocab(key, chapterConfig)` helper.
+17. **Wire `ChapterLockup` to real branding.** Chunk 01 shipped `apps/web/components/layout/chapter-lockup.tsx` with `designation` hardcoded `null` and the crest derived from name-initials, because `chapters.branding` didn't exist yet. Now that this chunk adds the `branding` jsonb (`greek_letters`, `designation`, `school_short`), extend the current-chapter payload (`CurrentChapterPayloadSchema` + the endpoint that feeds it) to include those fields, and update `ChapterLockup` to render `greek_letters` as the crest, plus the real `designation` and `school_short`. Keep the existing four states (loaded / pending / load-failed / empty) and the initials fallback for chapters whose branding is still empty.
 
 ### Spec updates
 
