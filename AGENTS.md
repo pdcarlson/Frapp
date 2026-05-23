@@ -43,7 +43,33 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 ## Active multi-session work: chat-first redesign
 
-A multi-chunk redesign of `apps/web` (with downstream `apps/mobile`, `apps/landing`) is in flight. **Before starting any redesign work, read [`docs/internal/redesign/README.md`](docs/internal/redesign/README.md)** and the specific chunk brief under `docs/internal/redesign/chunks/`. The master plan (product positioning, hot-path architecture, theming, chunk dependency graph) is at [`docs/internal/redesign/master-plan.md`](docs/internal/redesign/master-plan.md). Status of each chunk is in [`docs/internal/redesign/STATUS.md`](docs/internal/redesign/STATUS.md). If you're a fresh cloud-agent session asked to "continue the redesign," start by checking STATUS.md for the next unblocked chunk.
+A multi-chunk redesign of `apps/web` (with downstream `apps/mobile`, `apps/landing`) is in flight. **Before starting any redesign work, read [`docs/internal/redesign/README.md`](docs/internal/redesign/README.md)** and the specific chunk brief under `docs/internal/redesign/chunks/`. The master plan (product positioning, hot-path architecture, theming, chunk dependency graph) is at [`docs/internal/redesign/master-plan.md`](docs/internal/redesign/master-plan.md). Status of each chunk is in [`docs/internal/redesign/STATUS.md`](docs/internal/redesign/STATUS.md). If you're a fresh cloud-agent session asked to "continue the redesign," start by checking STATUS.md for the next unblocked chunk. Before opening a chunk PR, run the reviewer checklist at [`docs/internal/redesign/REVIEW_CHECKLIST.md`](docs/internal/redesign/REVIEW_CHECKLIST.md) against your own work.
+
+## GitHub issues (the durable backlog between sessions)
+
+Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file an issue** rather than dropping it or stuffing it in. Issues are completed by AI agents, so write each one to be executed cold by a fresh agent — same philosophy as the chunk briefs.
+
+**When to file:**
+
+- Deferred / out-of-scope work discovered mid-task (data backfills, follow-up refactors).
+- **Blocked verification** — when the sandbox can't run something (Docker/Supabase won't start, missing external creds), file an issue so the gap is tracked. **Never check a verification box you couldn't actually run** — say it's blocked and link the issue.
+- Review findings you're not fixing in the current PR (with a reason).
+- A bug or security hole found outside the current scope.
+- Cross-chunk prerequisites or blockers.
+
+**Don't file** for trivial nits you can fix in the current PR (just fix them), or duplicates — search open issues first (`list_issues` / search) before creating.
+
+**How to write one (so an agent can execute it):**
+
+- **Meta block:** priority (P0–P2), what it blocks, originating PR/chunk, suggested labels.
+- **Problem/context:** what's wrong and why it matters, with exact file paths + line refs.
+- **Acceptance criteria:** an objectively verifiable checkbox list.
+- **Implementation notes:** constraints, helpers to reuse, gotchas.
+- **Definition of done:** "PR linked with `Closes #N`, criteria met, CI green."
+
+**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `chunk-NN` (ties an issue to a redesign chunk), `agent-ready` (fully specified, safe to hand to an agent). A security issue that gates a chunk gets `security` + `blocked` + `chunk-NN`.
+
+**Lifecycle.** File → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. **List any chunk's blocking issues at the top of its brief** so the chunk can't be started until they're resolved.
 
 ## Services and ports
 
