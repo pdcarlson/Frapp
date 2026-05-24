@@ -17,6 +17,7 @@ export * from "./use-semesters";
 export * from "./use-reports";
 export * from "./use-search";
 export * from "./use-chapters";
+export * from "./use-chapter-directory";
 export * from "./use-roles";
 export * from "./use-invites";
 export * from "./use-user";

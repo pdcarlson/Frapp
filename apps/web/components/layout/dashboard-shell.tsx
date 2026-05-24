@@ -40,6 +40,7 @@ import {
   type NavItem,
 } from "@/components/layout/nav-config";
 import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
+import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -269,6 +270,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
 
   return (
     <div className="min-h-screen bg-background">
+      <ChapterWizardGate />
       <OnboardingTutorial />
       <DashboardCommandMenu
         open={commandMenuOpen}

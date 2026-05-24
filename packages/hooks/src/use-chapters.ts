@@ -79,6 +79,42 @@ export function useCreateChapter() {
   });
 }
 
+export interface OnboardChapterInput {
+  name: string;
+  university: string;
+  org_archetype?: string;
+  directory_id?: string;
+  branding?: {
+    greek_letters?: string;
+    designation?: string;
+    school_short?: string;
+    founded_at?: number;
+    colors?: { dark?: string; accent?: string };
+  };
+}
+
+/**
+ * Onboarding wizard submit (Chunk 03). Creates the chapter, materializes its
+ * config from the archetype seed, seeds default channels, and posts the welcome
+ * message — all server-side (cold path), never via the chat Edge Functions.
+ */
+export function useOnboardChapter() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: OnboardChapterInput) => {
+      const { data, error } = await client.POST("/v1/chapters/onboard", {
+        body,
+      });
+      if (error) throw error;
+      return data as unknown as { id: string } & Record<string, unknown>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+    },
+  });
+}
+
 export function useUpdateChapter() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
