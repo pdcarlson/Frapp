@@ -5506,10 +5506,6 @@
             ]
           }
         },
-        "required": [
-          "enabled",
-          "style"
-        ]
       },
       "DuesConfigDto": {
         "type": "object",
@@ -5549,16 +5545,6 @@
             "description": "Scholarship pool in cents"
           }
         },
-        "required": [
-          "cadence",
-          "active_amount_cents",
-          "new_member_amount_cents",
-          "alumni_amount_cents",
-          "installments_allowed",
-          "late_fee_cents",
-          "grace_days",
-          "scholarship_pool_cents"
-        ]
       },
       "PatchChapterConfigDto": {
         "type": "object",
@@ -5567,10 +5553,16 @@
             "type": "string"
           },
           "enabled_modules": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
           },
           "vocabulary": {
-            "type": "object"
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
           },
           "branding": {
             "$ref": "#/components/schemas/BrandingDto"

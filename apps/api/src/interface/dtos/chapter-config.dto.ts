@@ -8,7 +8,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class BrandingColorsDto {
@@ -53,55 +53,65 @@ export class BrandingDto {
 }
 
 export class BetaConfigDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsBoolean()
-  enabled!: boolean;
+  enabled?: boolean;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     enum: ['sidebar_pill', 'top_banner', 'corner_badge', 'breadcrumb_pill'],
   })
+  @IsOptional()
   @IsEnum(['sidebar_pill', 'top_banner', 'corner_badge', 'breadcrumb_pill'])
-  style!: string;
+  style?: string;
 }
 
 export class DuesConfigDto {
-  @ApiProperty({ enum: ['semester', 'monthly', 'annual'] })
+  @ApiPropertyOptional({ enum: ['semester', 'monthly', 'annual'] })
+  @IsOptional()
   @IsEnum(['semester', 'monthly', 'annual'])
-  cadence!: string;
+  cadence?: string;
 
-  @ApiProperty({ description: 'Active member dues in cents' })
+  @ApiPropertyOptional({ description: 'Active member dues in cents' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  active_amount_cents!: number;
+  active_amount_cents?: number;
 
-  @ApiProperty({ description: 'New member dues in cents' })
+  @ApiPropertyOptional({ description: 'New member dues in cents' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  new_member_amount_cents!: number;
+  new_member_amount_cents?: number;
 
-  @ApiProperty({ description: 'Alumni dues in cents' })
+  @ApiPropertyOptional({ description: 'Alumni dues in cents' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  alumni_amount_cents!: number;
+  alumni_amount_cents?: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsBoolean()
-  installments_allowed!: boolean;
+  installments_allowed?: boolean;
 
-  @ApiProperty({ description: 'Late fee in cents' })
+  @ApiPropertyOptional({ description: 'Late fee in cents' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  late_fee_cents!: number;
+  late_fee_cents?: number;
 
-  @ApiProperty()
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsInt()
   @Min(0)
-  grace_days!: number;
+  grace_days?: number;
 
-  @ApiProperty({ description: 'Scholarship pool in cents' })
+  @ApiPropertyOptional({ description: 'Scholarship pool in cents' })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  scholarship_pool_cents!: number;
+  scholarship_pool_cents?: number;
 }
 
 export class PatchChapterConfigDto {
@@ -110,12 +120,12 @@ export class PatchChapterConfigDto {
   @IsString()
   org_archetype?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'boolean' } })
   @IsOptional()
   @IsObject()
   enabled_modules?: Record<string, boolean>;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
   @IsOptional()
   @IsObject()
   vocabulary?: Record<string, string>;

@@ -2199,30 +2199,34 @@ export interface components {
             colors?: components["schemas"]["BrandingColorsDto"];
         };
         BetaConfigDto: {
-            enabled: boolean;
+            enabled?: boolean;
             /** @enum {string} */
-            style: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
+            style?: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
         };
         DuesConfigDto: {
             /** @enum {string} */
-            cadence: "semester" | "monthly" | "annual";
+            cadence?: "semester" | "monthly" | "annual";
             /** @description Active member dues in cents */
-            active_amount_cents: number;
+            active_amount_cents?: number;
             /** @description New member dues in cents */
-            new_member_amount_cents: number;
+            new_member_amount_cents?: number;
             /** @description Alumni dues in cents */
-            alumni_amount_cents: number;
-            installments_allowed: boolean;
+            alumni_amount_cents?: number;
+            installments_allowed?: boolean;
             /** @description Late fee in cents */
-            late_fee_cents: number;
-            grace_days: number;
+            late_fee_cents?: number;
+            grace_days?: number;
             /** @description Scholarship pool in cents */
-            scholarship_pool_cents: number;
+            scholarship_pool_cents?: number;
         };
         PatchChapterConfigDto: {
             org_archetype?: string;
-            enabled_modules?: Record<string, never>;
-            vocabulary?: Record<string, never>;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: string;
+            };
             branding?: components["schemas"]["BrandingDto"];
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];

@@ -129,4 +129,4 @@ ALTER TABLE chapters
   DROP COLUMN IF EXISTS beta_config;
 ```
 
-**Note:** No data is lost beyond what was inserted into these new structures since the migration ran.
+**Note:** Rolling back drops both new tables *and* the new columns added to `chapters` and `chat_messages`. Any data stored in those columns (`org_archetype`, `enabled_modules`, `vocabulary`, `branding`, `theme_palette`, `directory_id`, `beta_config`, `kind`, `payload`, `client_message_id`, `deleted_at`) will be permanently lost, in addition to all rows inserted into the new tables.

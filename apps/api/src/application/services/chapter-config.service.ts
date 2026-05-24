@@ -8,6 +8,10 @@ import {
 import { derivePalette } from '@repo/chapter-theme';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
 
+// Well-known system user UUID — must exist in the users table (seeded via
+// supabase/seed.sql). Used as sender_id for system-generated chat messages.
+const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -243,12 +247,15 @@ export class ChapterConfigService {
     if (!channel) return;
 
     const keys = Object.keys(diff).join(', ');
-    await this.supabase.from('chat_messages').insert({
+    const { error: msgError } = await this.supabase.from('chat_messages').insert({
       channel_id: channel.id,
-      sender_id: '00000000-0000-0000-0000-000000000000', // system sentinel
+      sender_id: SYSTEM_SENDER_ID,
       content: `Chapter configuration updated: ${keys}`,
       kind: 'system_audit',
       payload: diff,
     });
+    if (msgError) {
+      this.logger.warn('system_audit chat message insert failed', msgError);
+    }
   }
 }

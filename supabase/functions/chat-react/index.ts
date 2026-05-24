@@ -86,6 +86,18 @@ Deno.serve(async (req: Request) => {
     .single();
 
   if (insertError) {
+    // 23505 = unique_violation: pre-check SELECT raced with a concurrent INSERT.
+    // Fall back to fetching the existing row so the response shape is consistent.
+    if ((insertError as { code?: string }).code === "23505") {
+      const { data: deduped } = await serviceSupabase
+        .from("chat_message_actions")
+        .select("*")
+        .eq("message_id", message_id)
+        .eq("user_id", userId)
+        .eq("action_type", action_type)
+        .single();
+      return jsonResponse({ action: deduped, deduplicated: true });
+    }
     return errorResponse("Failed to record action", 500);
   }
 

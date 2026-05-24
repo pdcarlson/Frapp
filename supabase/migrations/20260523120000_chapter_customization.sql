@@ -16,6 +16,11 @@ alter table chapters
   add column if not exists directory_id uuid,
   add column if not exists beta_config jsonb not null default '{"enabled":true,"style":"sidebar_pill"}';
 
+-- FK lookup index for chapters.directory_id (Postgres doesn't auto-index FKs)
+create index if not exists idx_chapters_directory_id
+  on chapters (directory_id)
+  where directory_id is not null;
+
 -- ── chapter_custom_fields ─────────────────────────────────────────────────
 
 create table chapter_custom_fields (

@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -192,6 +194,13 @@ export class ChatController {
     @Query('before') before?: string,
     @Query('since') since?: string,
   ) {
+    if (since !== undefined) {
+      try {
+        await new ParseUUIDPipe().transform(since, { type: 'query', data: 'since' });
+      } catch {
+        throw new BadRequestException('since must be a valid UUID');
+      }
+    }
     return this.chatService.getMessages(channelId, { limit, before, since });
   }
 

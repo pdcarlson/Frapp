@@ -6,8 +6,10 @@
  *
  * WCAG validation: each token is tested against the relevant background
  * (bone for light-mode UI, ink for dark/sidebar UI). If a token fails AA
- * 4.5:1, that *specific token* falls back to bronze — the rest of the palette
- * is kept as-is. Bronze is the platform's brand guarantee.
+ * 4.5:1, that *specific token* falls back to an accessible fallback accent
+ * (see pickAccessibleFallback) — the rest of the palette is kept as-is.
+ * Bronze is the platform's preferred fallback but lighter alternatives are
+ * tried first when bronze itself fails on a dark background.
  *
  * No window.* or DOM dependencies. Safe for NestJS and Deno Edge Functions.
  */
