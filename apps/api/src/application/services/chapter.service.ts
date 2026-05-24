@@ -91,9 +91,16 @@ export class ChapterService {
 
   async create(
     userId: string,
-    data: { name: string; university: string },
+    data: { name: string; university: string; config?: Partial<Chapter> },
   ): Promise<Chapter> {
-    const chapter = await this.chapterRepo.create(data);
+    const { name, university, config } = data;
+    // `config` carries the Chunk 02 customization columns (archetype, branding,
+    // enabled_modules, …) set by the onboarding flow. Legacy callers omit it.
+    const chapter = await this.chapterRepo.create({
+      name,
+      university,
+      ...(config ?? {}),
+    });
 
     const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
       chapter_id: chapter.id,

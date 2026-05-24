@@ -1,6 +1,25 @@
+// The chapter controller imports ChapterOnboardingService, which imports the
+// ESM-only @repo packages. Mock them so the module graph loads under jest.
+jest.mock('@repo/org-archetypes', () => ({
+  buildChapterConfigFromArchetype: jest.fn(() => ({
+    archetype: 'ifc',
+    modules: {},
+    rolePack: 'ifc_standard',
+    vocabulary: {},
+    customFields: [],
+    workflows: [],
+    dues: {},
+  })),
+  getArchetype: jest.fn((key: string) => ({ key })),
+}));
+jest.mock('@repo/chapter-theme', () => ({
+  derivePalette: jest.fn(() => ({ palette: {} })),
+}));
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterController } from './chapter.controller';
 import { ChapterService } from '../../application/services/chapter.service';
+import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -15,6 +34,7 @@ import {
 describe('ChapterController', () => {
   let controller: ChapterController;
   let chapterService: jest.Mocked<ChapterService>;
+  let chapterOnboardingService: { onboard: jest.Mock };
 
   beforeEach(async () => {
     chapterService = {
@@ -26,10 +46,17 @@ describe('ChapterController', () => {
       confirmLogoUpload: jest.fn(),
       deleteLogo: jest.fn(),
     } as any;
+    chapterOnboardingService = { onboard: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ChapterController],
-      providers: [{ provide: ChapterService, useValue: chapterService }],
+      providers: [
+        { provide: ChapterService, useValue: chapterService },
+        {
+          provide: ChapterOnboardingService,
+          useValue: chapterOnboardingService,
+        },
+      ],
     })
       .overrideGuard(SupabaseAuthGuard)
       .useValue({ canActivate: () => true })
@@ -59,6 +86,27 @@ describe('ChapterController', () => {
       const result = await controller.create(userId, dto);
 
       expect(chapterService.create).toHaveBeenCalledWith(userId, dto);
+      expect(result).toEqual(expectedResult);
+    });
+  });
+
+  describe('onboard', () => {
+    it('should call chapterOnboardingService.onboard with the session user and dto', async () => {
+      const userId = 'user-1';
+      const dto = {
+        name: 'Sigma Phi Epsilon',
+        university: 'UCLA',
+        org_archetype: 'ifc',
+      } as any;
+      const expectedResult = { id: 'chapter-1' } as any;
+      chapterOnboardingService.onboard.mockResolvedValue(expectedResult);
+
+      const result = await controller.onboard(userId, dto);
+
+      expect(chapterOnboardingService.onboard).toHaveBeenCalledWith(
+        userId,
+        dto,
+      );
       expect(result).toEqual(expectedResult);
     });
   });

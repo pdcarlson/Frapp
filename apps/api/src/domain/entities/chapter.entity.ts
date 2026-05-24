@@ -16,4 +16,14 @@ export interface Chapter {
   donation_url: string | null;
   created_at: string;
   updated_at: string;
+  // Chunk 02 customization columns (jsonb / nullable). Optional here because
+  // the base list/detail projections don't always select them; the onboarding
+  // flow (Chunk 03) writes them at creation time.
+  org_archetype?: string;
+  enabled_modules?: Record<string, boolean>;
+  vocabulary?: Record<string, unknown>;
+  branding?: Record<string, unknown>;
+  theme_palette?: Record<string, unknown>;
+  directory_id?: string | null;
+  beta_config?: Record<string, unknown>;
 }

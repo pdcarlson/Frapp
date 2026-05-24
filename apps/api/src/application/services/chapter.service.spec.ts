@@ -255,6 +255,53 @@ describe('ChapterService', () => {
     expect(result).toEqual(chapter);
   });
 
+  it('should merge onboarding config columns into the chapter insert', async () => {
+    const chapter: Chapter = {
+      id: 'ch-1',
+      name: 'Sigma Phi Epsilon',
+      university: 'UCLA',
+      stripe_customer_id: null,
+      subscription_status: 'incomplete',
+      subscription_id: null,
+      accent_color: null,
+      logo_path: null,
+      donation_url: null,
+      created_at: '2026-05-24',
+      updated_at: '2026-05-24',
+    };
+    mockChapterRepo.create.mockResolvedValue(chapter);
+    mockRoleRepo.createMany.mockResolvedValueOnce(
+      mockSystemRolesForChapter(chapter.id),
+    );
+    mockMemberRepo.create.mockResolvedValue({
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: chapter.id,
+      role_ids: [mockRoleIdForName('President')],
+      has_completed_onboarding: true,
+      created_at: '2026-05-24',
+      updated_at: '2026-05-24',
+    });
+
+    await service.create('user-1', {
+      name: 'Sigma Phi Epsilon',
+      university: 'UCLA',
+      config: {
+        org_archetype: 'nphc',
+        enabled_modules: { chat: true },
+        directory_id: 'dir-1',
+      },
+    });
+
+    expect(mockChapterRepo.create).toHaveBeenCalledWith({
+      name: 'Sigma Phi Epsilon',
+      university: 'UCLA',
+      org_archetype: 'nphc',
+      enabled_modules: { chat: true },
+      directory_id: 'dir-1',
+    });
+  });
+
   it('should assign creator as President on chapter creation', async () => {
     const chapter: Chapter = {
       id: 'ch-1',

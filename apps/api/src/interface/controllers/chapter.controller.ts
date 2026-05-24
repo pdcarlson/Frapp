@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { ChapterService } from '../../application/services/chapter.service';
+import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -28,13 +29,17 @@ import {
   LogoUploadUrlDto,
   ConfirmLogoDto,
 } from '../dtos/chapter.dto';
+import { ChapterOnboardingDto } from '../dtos/chapter-onboarding.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
 @ApiBearerAuth()
 @Controller('chapters')
 export class ChapterController {
-  constructor(private readonly chapterService: ChapterService) {}
+  constructor(
+    private readonly chapterService: ChapterService,
+    private readonly chapterOnboardingService: ChapterOnboardingService,
+  ) {}
 
   @Post()
   @UseGuards(SupabaseAuthGuard)
@@ -45,6 +50,20 @@ export class ChapterController {
     @Body() dto: CreateChapterDto,
   ) {
     return this.chapterService.create(userId, dto);
+  }
+
+  @Post('onboard')
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(AuthSyncInterceptor)
+  @ApiOperation({
+    summary:
+      'Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)',
+  })
+  async onboard(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChapterOnboardingDto,
+  ) {
+    return this.chapterOnboardingService.onboard(userId, dto);
   }
 
   @Get()
