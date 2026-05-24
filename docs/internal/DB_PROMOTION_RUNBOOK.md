@@ -89,6 +89,20 @@ Post-apply production checks:
 * **Purpose**: Append `members:view` to Vice President and Secretary so they can use chapter-scoped routes that merge controller- and handler-level `@RequirePermissions` (e.g. dashboard poll list requires both `members:view` and `polls:view_all`).
 * **Checks**: After `db push`, e.g. `select count(*) from public.roles where is_system and name in ('Vice President', 'Secretary') and 'members:view' = any (permissions);` should equal twice the number of chapters with those rows (or verify zero rows missing the permission). Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `backfill_members_view_vp_secretary`.
 
+## 2026-05-24: Chunk 03 — Onboarding wizard: system user seed + chapter_directory_requests
+
+One additive migration. Creates a new table and seeds one well-known row. No existing columns modified, no lock-heavy operations.
+
+### 20260524120000_chapter_directory_requests.sql
+* **Purpose**: (1) Idempotent `INSERT … ON CONFLICT DO NOTHING` seeds the all-zeros system user (`00000000-0000-0000-0000-000000000000`) required as `sender_id` for system-authored `chat_messages` rows (chapter-audit welcome message). Without this seed the Chunk 02 audit bridge silently no-ops due to the `NOT NULL FK` on `chat_messages.sender_id`. (2) Creates `chapter_directory_requests` table — captures manual-entry chapter submissions from the onboarding wizard so the curated directory seed can be backfilled later (#232). RLS enabled; no client policies (API/service-role only).
+* **Checks**:
+  - System user: `select id from public.users where id = '00000000-0000-0000-0000-000000000000';` — should return 1 row.
+  - Table: `select tablename from pg_tables where tablename = 'chapter_directory_requests';` — should return 1 row.
+  - Indexes: `select indexname from pg_indexes where tablename = 'chapter_directory_requests';` — should return `idx_chapter_directory_requests_status` and `idx_chapter_directory_requests_chapter`.
+  - RLS: `select relrowsecurity from pg_class where relname = 'chapter_directory_requests';` — should return `true`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Chunk 03 migration.
+
 ## 2026-05-23: Chunk 02 — Chapter customization + audit log + directory + chat hot-path
 
 Four additive migrations in this PR. All use `ADD COLUMN IF NOT EXISTS` / `CREATE TABLE` — fully backward-compatible, no lock-heavy operations, no data backfills.

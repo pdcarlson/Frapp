@@ -92,6 +92,22 @@ After any rollback event:
 * **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
 * **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
 
+## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
+
+Migration is additive (new table + one seeded row). Rollback is safe to run at any time without data-loss risk beyond losing directory-request submissions.
+
+```sql
+-- 1. Drop chapter_directory_requests (indexes drop automatically with table)
+DROP TABLE IF EXISTS chapter_directory_requests;
+
+-- 2. Remove the system user seed (only if it was inserted by this migration
+--    and no chat_messages rows reference it; if they do, delete those first
+--    or leave this row in place to keep historical system messages intact).
+-- DELETE FROM public.users WHERE id = '00000000-0000-0000-0000-000000000000';
+```
+
+**Note:** The `DELETE` for the system user is commented out intentionally — if any `chat_messages` rows have `sender_id = '00000000-…'`, removing the user violates the FK. Prefer leaving the system user in place and only dropping the `chapter_directory_requests` table unless you are certain no system messages were written.
+
 ## Rollback Chunk 02 migrations (20260523*)
 
 All four migrations are additive. Rollback drops the new structures in reverse order.
