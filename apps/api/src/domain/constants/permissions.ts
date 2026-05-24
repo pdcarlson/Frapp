@@ -43,6 +43,11 @@ export const SystemPermissions = {
   SEMESTER_ROLLOVER: 'semester:rollover',
 
   REPORTS_EXPORT: 'reports:export',
+
+  CHAPTER_CONFIG_VIEW: 'chapter-config:view',
+  CHAPTER_CONFIG_MANAGE: 'chapter-config:manage',
+
+  CHAPTER_DIRECTORY_SEARCH: 'chapter-directory:search',
 } as const;
 
 export type SystemPermission =

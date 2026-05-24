@@ -350,3 +350,44 @@ Dark mode variants defined in `@repo/theme`. Dark mode respects system preferenc
 - System-adaptive design via NativeWind. No platform-specific UI forks.
 - Haptic feedback on key actions (check-in, point award, reactions).
 - Swipe gestures for chat (swipe to reply, swipe to archive DM).
+
+---
+
+## Module Catalog (Chunk 02 — revised)
+
+The module catalog governs which features chapters can enable. Two tiers:
+
+### Always-on (free tier — cannot be disabled)
+
+| Module | Key | Description |
+|--------|-----|-------------|
+| Chat | `chat` | Channels, DMs, reactions, pins, threads |
+| Members | `members` | Roster, profiles, custom fields, alumni status |
+| Announcements | `announcements` | Exec-write, member-read broadcast channel |
+| Audit Log | `audit-log` | Member-visible officer action history |
+| Chapter Settings | `chapter-settings` | Archetype, branding, modules, roles, workflows, dues |
+
+### Paid integrations (gated by subscription)
+
+| Module | Key | Description |
+|--------|-----|-------------|
+| Events | `events` | Calendar, RSVP, QR check-in, post-event points |
+| Tasks | `tasks` | Assignments, confirmations, points-on-completion |
+| Points | `points` | Earn/spend ledger, leaderboard |
+| Service Hours | `hours` | Time tracking with approval queue |
+| Dues | `dues` | Invoices, payment plans, scholarships, Stripe |
+| Polls | `polls` | Chapter votes, anonymous or named |
+| Recruitment | `rush` | Candidate funnel, voting, bid management |
+| Backwork | `backwork` | Document library + academic archive |
+| Documents | `documents` | Chapter-level docs (bylaws, minutes, policies) |
+| Reports | `reports` | Health dashboard, nationals export, advisor digest |
+| Onboarding | `onboarding` | Structured new-member pathway |
+| Geofences | `geofences` | Geo-fenced check-in zones |
+
+### Archetype-specific extras (prototype extras carried forward)
+
+`billing`, `academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`, `serviceFirst` — these are in the catalog for archetype presets and future feature scoping. They are paid-tier and opt-in.
+
+### Module disabling behavior
+
+Disabling a paid module: hides its slash commands from the composer, mutes its system channel (no new messages, unread badge suppressed), and hides its dashboard page from navigation. Data is preserved — re-enabling restores access.

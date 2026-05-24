@@ -28,6 +28,8 @@
     "@nestjs/swagger": "^11.2.6",
     "@nestjs/throttler": "^6.5.0",
     "@repo/validation": "*",
+    "@repo/org-archetypes": "*",
+    "@repo/chapter-theme": "*",
     "@sentry/nestjs": "^9.5.0",
     "@supabase/supabase-js": "^2.49.1",
     "class-transformer": "^0.5.1",

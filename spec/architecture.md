@@ -361,3 +361,39 @@ This ensures greater type safety and consistency across `apps/api` DTOs, service
 
 ## Security Note (2024-03-26)
 Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
+
+---
+
+## 12. Chat Hot-Path Architecture (ADRs — Chunk 02)
+
+### ADR-01: Why we split chat to Supabase Edge Functions
+
+**Decision:** Chat hot-path writes (send message, add reaction, action/RSVP) go to Supabase Edge Functions (Deno), not NestJS.
+
+**Rationale:** NestJS runs on a single Render instance (US-East). Edge Functions run at the CDN edge closest to the user, reducing p50 latency from ~150ms (single-region) to <50ms. The hot path is also the highest volume path — routing it past NestJS removes that single point of contention. Cold reads (history backfill, config, reports) stay in NestJS where guards, DTOs, and test infrastructure already live.
+
+**Consequences:** Two write paths to maintain. Zod schemas in `packages/validation` must be importable from both Node.js and Deno (enforced by keeping validation dependency-light: `zod` only).
+
+### ADR-02: Why Supabase Realtime Broadcast for presence/typing
+
+**Decision:** Typing indicators and presence (online/offline) use Supabase Realtime Broadcast, not Postgres Changes.
+
+**Rationale:** Broadcast is ephemeral (not persisted to DB), avoiding write amplification on every keystroke. A 200-member chapter where everyone is typing would generate ~200 rows/second to `presence` if DB-backed. Broadcast routes through the Realtime server without touching Postgres. On disconnect, the presence state naturally evaporates — no cleanup job needed.
+
+**Consequences:** Presence/typing state is lost on server restart. This is acceptable; reconnecting clients re-emit their state within 1s. Persistent state (last-seen cursor, notification preferences) stays in DB.
+
+### ADR-03: Why optimistic + idempotent client UUIDs
+
+**Decision:** Every outbound message carries a client-generated UUID (`client_message_id`). The UI renders the message optimistically before the server confirms. The Edge Function dedupes on `(channel_id, sender_id, client_message_id)`.
+
+**Rationale:** Mobile connections drop; retries are the norm, not the exception. Without idempotency, a retry after a network drop creates a duplicate message. With client UUIDs, retries are safe. Optimistic rendering removes the perceived latency of the server round-trip entirely — the user sees their message immediately.
+
+**Consequences:** The UI must handle the "sent → confirmed" state transition (swap optimistic message for server-confirmed one). TanStack Query `onMutate`/`onError` handles this. Dedup index on `chat_messages` is non-negotiable: `UNIQUE (channel_id, sender_id, client_message_id) WHERE client_message_id IS NOT NULL`.
+
+### ADR-04: Why presence-aware push notifications
+
+**Decision:** Push notifications are suppressed for users who are currently online in the affected channel.
+
+**Rationale:** Sending a push to a user who is already reading the channel is noise. It trains users to mute notifications. "Presence-aware" means: if the user's Realtime subscription to the channel is active, skip the push. If they're offline or in a different channel, send it.
+
+**Consequences:** Requires tracking per-channel presence, not just global online status. Supabase Broadcast presence tracks this. Edge Function (or NestJS notification trigger) must query presence before enqueuing push. False negatives (push skipped for briefly-offline user) are acceptable; false positives (push sent to active reader) are worse.

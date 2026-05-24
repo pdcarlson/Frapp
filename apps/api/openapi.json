@@ -2548,6 +2548,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "since",
+            "required": false,
+            "in": "query",
+            "description": "Message UUID — returns messages created after this message (reconnect replay)",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -2560,7 +2569,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get channel message history",
+        "summary": "Get channel message history (supports since= reconnect replay)",
         "tags": [
           "Chat"
         ]
@@ -4027,6 +4036,140 @@
           "Search"
         ]
       }
+    },
+    "/v1/chapters/{id}/config": {
+      "get": {
+        "operationId": "ChapterConfigController_getConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get merged chapter config (archetype defaults + overrides)",
+        "tags": [
+          "Chapter Config"
+        ]
+      },
+      "patch": {
+        "operationId": "ChapterConfigController_patchConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchChapterConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update chapter config (writes audit log + posts to #chapter-audit)",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/chapters/{id}/theme-palette": {
+      "post": {
+        "operationId": "ChapterConfigController_recomputePalette_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recompute and persist derived theme palette from branding.colors",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/chapter-directory/search": {
+      "get": {
+        "operationId": "ChapterDirectoryController_search_v1",
+        "parameters": [
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query (org name, letters, designation)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "university",
+            "required": false,
+            "in": "query",
+            "description": "Filter by university short name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Search the chapter directory (autocomplete for onboarding)",
+        "tags": [
+          "Chapter Directory"
+        ]
+      }
     }
   },
   "info": {
@@ -5313,6 +5456,122 @@
           "end_date": {
             "type": "string",
             "description": "End date (YYYY-MM-DD)"
+          }
+        }
+      },
+      "BrandingColorsDto": {
+        "type": "object",
+        "properties": {
+          "dark": {
+            "type": "string"
+          },
+          "accent": {
+            "type": "string"
+          }
+        }
+      },
+      "BrandingDto": {
+        "type": "object",
+        "properties": {
+          "greek_letters": {
+            "type": "string"
+          },
+          "designation": {
+            "type": "string"
+          },
+          "school_short": {
+            "type": "string"
+          },
+          "founded_at": {
+            "type": "number"
+          },
+          "colors": {
+            "$ref": "#/components/schemas/BrandingColorsDto"
+          }
+        }
+      },
+      "BetaConfigDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "sidebar_pill",
+              "top_banner",
+              "corner_badge",
+              "breadcrumb_pill"
+            ]
+          }
+        },
+      },
+      "DuesConfigDto": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "type": "string",
+            "enum": [
+              "semester",
+              "monthly",
+              "annual"
+            ]
+          },
+          "active_amount_cents": {
+            "type": "number",
+            "description": "Active member dues in cents"
+          },
+          "new_member_amount_cents": {
+            "type": "number",
+            "description": "New member dues in cents"
+          },
+          "alumni_amount_cents": {
+            "type": "number",
+            "description": "Alumni dues in cents"
+          },
+          "installments_allowed": {
+            "type": "boolean"
+          },
+          "late_fee_cents": {
+            "type": "number",
+            "description": "Late fee in cents"
+          },
+          "grace_days": {
+            "type": "number"
+          },
+          "scholarship_pool_cents": {
+            "type": "number",
+            "description": "Scholarship pool in cents"
+          }
+        },
+      },
+      "PatchChapterConfigDto": {
+        "type": "object",
+        "properties": {
+          "org_archetype": {
+            "type": "string"
+          },
+          "enabled_modules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "vocabulary": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingDto"
+          },
+          "beta_config": {
+            "$ref": "#/components/schemas/BetaConfigDto"
+          },
+          "dues": {
+            "$ref": "#/components/schemas/DuesConfigDto"
           }
         }
       }

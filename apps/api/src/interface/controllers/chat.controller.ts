@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -171,19 +173,35 @@ export class ChatController {
   // ── Messages ─────────────────────────────────────────────────────────
 
   @Get(':id/messages')
-  @ApiOperation({ summary: 'Get channel message history' })
+  @ApiOperation({
+    summary: 'Get channel message history (supports since= reconnect replay)',
+  })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({
     name: 'before',
     required: false,
     description: 'Cursor for pagination (ISO timestamp)',
   })
+  @ApiQuery({
+    name: 'since',
+    required: false,
+    description:
+      'Message UUID — returns messages created after this message (reconnect replay)',
+  })
   async getMessages(
     @Param('id') channelId: string,
     @Query('limit') limit?: number,
     @Query('before') before?: string,
+    @Query('since') since?: string,
   ) {
-    return this.chatService.getMessages(channelId, { limit, before });
+    if (since !== undefined) {
+      try {
+        await new ParseUUIDPipe().transform(since, { type: 'query', data: 'since' });
+      } catch {
+        throw new BadRequestException('since must be a valid UUID');
+      }
+    }
+    return this.chatService.getMessages(channelId, { limit, before, since });
   }
 
   @Post(':id/messages')

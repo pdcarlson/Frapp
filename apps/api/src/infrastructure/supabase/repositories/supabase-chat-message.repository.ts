@@ -42,7 +42,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
   async findByChannel(
     channelId: string,
-    options?: { limit?: number; before?: string },
+    options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]> {
     let query = this.supabase
       .from('chat_messages')
@@ -53,6 +53,26 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     if (options?.before) {
       query = query.lt('created_at', options.before);
+    }
+
+    // `since` is a message UUID: return messages created AFTER that message
+    // (reconnect replay path — client already has the `since` message).
+    // Scope the pivot lookup to this channel so a UUID from another channel
+    // can't shift the window.
+    if (options?.since) {
+      const { data: pivot, error: pivotError } = await this.supabase
+        .from('chat_messages')
+        .select('created_at')
+        .eq('id', options.since)
+        .eq('channel_id', channelId)
+        .maybeSingle();
+      if (pivotError) throw pivotError;
+      if (pivot) {
+        query = query.gt(
+          'created_at',
+          (pivot as { created_at: string }).created_at,
+        );
+      }
     }
 
     const { data, error } = await query;

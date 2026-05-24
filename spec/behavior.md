@@ -977,3 +977,78 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 
 ### React Query Hooks Testing
 - All React Query hooks related to roles (like `useRoles`, `useCreateRole`) are tested in `packages/hooks/src/use-roles.spec.tsx`. They verify successful requests and cache invalidation rules (e.g. `queryClient.invalidateQueries({ queryKey: ["roles"] })`).
+
+---
+
+## Chapter Config Endpoints (Chunk 02)
+
+### GET /chapters/:id/config
+
+Returns the merged chapter configuration: archetype defaults overlaid with per-chapter overrides.
+
+**Auth:** Bearer JWT + `x-chapter-id` header (chapter membership required). Permission: `chapter-config:view`.
+
+**Response shape:**
+```json
+{
+  "id": "<chapter_id>",
+  "org_archetype": "ifc",
+  "archetype_meta": { "label": "IFC Fraternity", "short": "IFC", "description": "...", "council": "..." },
+  "enabled_modules": { "chat": true, "events": true, "dues": false, ... },
+  "vocabulary": { "recruitment": "Rush", "pledge": "New member", "class": "Pledge class" },
+  "branding": { "greek_letters": "ΣΦΕ", "designation": "California Eta", "school_short": "UCLA", "colors": { "dark": "#4B0082", "accent": "#C9A56F" } },
+  "theme_palette": { "--side-bg": "#...", "--side-accent": "#...", ... },
+  "beta_config": { "enabled": true, "style": "sidebar_pill" },
+  "role_pack": "ifc_standard"
+}
+```
+
+### PATCH /chapters/:id/config
+
+Updates chapter config fields. Writes a diff entry to `chapter_audit_log` and posts a `system_audit` chat message to `#chapter-audit`. Permission: `chapter-config:manage`.
+
+### POST /chapters/:id/theme-palette
+
+Recomputes the derived palette from `branding.colors` via `derivePalette()`, persists to `chapters.theme_palette`, and returns the full token map. Triggered automatically by PATCH when `branding.colors` changes.
+
+---
+
+## Chapter Directory Search (Chunk 02)
+
+### GET /chapter-directory/search?q=...&university=...
+
+Returns up to 20 matching chapter directory entries. Used by the onboarding autocomplete wizard.
+
+- `q`: free-text query against org name, letters, designation, and university (full-text via tsvector)
+- `university`: filters by university_short (case-insensitive prefix/contains)
+
+**Response:** Array of `{ id, org_letters, org_name, archetype, chapter_designation, university, university_short, founded_year, default_colors, website }`.
+
+---
+
+## Chat Message Kinds and Actions (Chunk 02)
+
+### Message kinds
+
+`chat_messages.kind` extends the simple TEXT/POLL distinction:
+
+| Kind | Description |
+|------|-------------|
+| `text` | Plain text message (default) |
+| `event` | Event RSVP card (created by `/event` slash command) |
+| `task` | Task assignment card |
+| `poll` | Poll (inline vote) |
+| `dues` | Dues reminder card |
+| `points` | Points award notification |
+| `hours` | Service hours log confirmation |
+| `system_audit` | System-generated audit message (posted to #chapter-audit) |
+| `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
+| `announcement` | Broadcast announcement |
+
+### Chat message actions
+
+`chat_message_actions` records per-user actions on messages (reactions, RSVPs, votes, payment confirmations). Indexed on `(message_id, user_id)` for per-message aggregation and `(user_id, action_type, created_at desc)` for user history.
+
+### Reconnect replay
+
+`GET /channels/:id/messages?since=<message_uuid>&limit=50` returns messages created AFTER the given message UUID. Clients use this on reconnect to backfill missed messages before resubscribing to Realtime.
