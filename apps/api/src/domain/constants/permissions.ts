@@ -132,5 +132,8 @@ export const DEFAULT_SYSTEM_ROLES = [
 export const DEFAULT_CHANNELS = [
   { name: 'general', type: 'PUBLIC', is_read_only: false },
   { name: 'announcements', type: 'PUBLIC', is_read_only: true },
+  // System-write, member-read audit feed. The Chunk 02 audit bridge and the
+  // onboarding welcome message post system_audit messages here / to #general.
+  { name: 'chapter-audit', type: 'PUBLIC', is_read_only: true },
   { name: 'alumni', type: 'ROLE_GATED', is_read_only: false },
 ] as const;
