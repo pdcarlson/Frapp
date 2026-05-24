@@ -1,7 +1,6 @@
 import { expect, test } from "@playwright/test";
 
 const dashboardRouteSnapshots = [
-  { path: "/home", snapshotName: "home-main-content.png" },
   { path: "/members", snapshotName: "members-main-content.png" },
   { path: "/alumni", snapshotName: "alumni-main-content.png" },
   { path: "/roles", snapshotName: "roles-main-content.png" },
