@@ -5,21 +5,16 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
-  HttpException,
-  HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
 import { InviteService } from './invite.service';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import type { Invite } from '../../domain/entities/invite.entity';
-import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import { NotificationService } from './notification.service';
@@ -27,7 +22,6 @@ import { NotificationService } from './notification.service';
 describe('InviteService', () => {
   let service: InviteService;
   let mockInviteRepo: jest.Mocked<IInviteRepository>;
-  let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockNotificationService: jest.Mocked<
@@ -43,13 +37,6 @@ describe('InviteService', () => {
       createMany: jest.fn(),
       markUsed: jest.fn(),
       markUsedAtomically: jest.fn(),
-    };
-
-    mockChapterRepo = {
-      findById: jest.fn(),
-      findByStripeCustomerId: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -80,7 +67,6 @@ describe('InviteService', () => {
       providers: [
         InviteService,
         { provide: INVITE_REPOSITORY, useValue: mockInviteRepo },
-        { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: NotificationService, useValue: mockNotificationService },
@@ -90,31 +76,7 @@ describe('InviteService', () => {
     service = module.get(InviteService);
   });
 
-  it('should create invite with 24h expiry', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
-      subscription_status: 'active',
-      subscription_id: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    const invite: Invite = {
-      id: 'inv-1',
-      token: 'test-uuid',
-      chapter_id: 'ch-1',
-      role: 'Member',
-      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-      created_by: 'user-1',
-      used_at: null,
-      created_at: '2024-01-01',
-    };
-    mockChapterRepo.findById.mockResolvedValue(chapter);
+  it('should create invite with 24h expiry (no billing gate, free tier)', async () => {
     mockInviteRepo.create.mockImplementation((data) =>
       Promise.resolve({
         id: 'inv-1',
@@ -130,7 +92,6 @@ describe('InviteService', () => {
 
     const result = await service.create('ch-1', 'user-1', 'Member');
 
-    expect(mockChapterRepo.findById).toHaveBeenCalledWith('ch-1');
     expect(mockInviteRepo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         token: 'test-uuid',
@@ -149,46 +110,7 @@ describe('InviteService', () => {
     expect(result.token).toBe('test-uuid');
   });
 
-  it('should reject create when subscription not active', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
-      subscription_status: 'incomplete',
-      subscription_id: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    mockChapterRepo.findById.mockResolvedValue(chapter);
-
-    const promise = service.create('ch-1', 'user-1', 'Member');
-    await expect(promise).rejects.toThrow(HttpException);
-    await expect(promise).rejects.toMatchObject({
-      status: HttpStatus.PAYMENT_REQUIRED,
-      message: 'Chapter subscription is not active',
-    });
-    expect(mockInviteRepo.create).not.toHaveBeenCalled();
-  });
-
   it('should create batch invites using createMany', async () => {
-    const chapter: Chapter = {
-      id: 'ch-1',
-      name: 'Alpha',
-      university: 'State U',
-      stripe_customer_id: null,
-      subscription_status: 'active',
-      subscription_id: null,
-      accent_color: null,
-      logo_path: null,
-      donation_url: null,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    mockChapterRepo.findById.mockResolvedValue(chapter);
     mockInviteRepo.createMany.mockImplementation((data) =>
       Promise.resolve(
         data.map((d, i) => ({
@@ -206,7 +128,6 @@ describe('InviteService', () => {
 
     const result = await service.createBatch('ch-1', 'user-1', 'Member', 3);
 
-    expect(mockChapterRepo.findById).toHaveBeenCalledTimes(1);
     expect(mockInviteRepo.createMany).toHaveBeenCalledWith(
       expect.arrayContaining([
         expect.objectContaining({
