@@ -41,9 +41,10 @@ supabase/.branches/
 .DS_Store
 *.pem
 
-# Cursor (keep skills and rules tracked)
+# Cursor (keep skills, rules, and the cloud-agent environment tracked)
 .cursor/*
 !.cursor/skills/
 !.cursor/skills/**
 !.cursor/rules/
 !.cursor/rules/**
+!.cursor/environment.json

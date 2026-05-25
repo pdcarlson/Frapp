@@ -26,6 +26,7 @@ Use this area for:
 - `INCIDENT_RESPONSE_DB_LATENCY.md`
 - `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
 - `AGENT_INFRA.md` — CI/GitHub/PAT reference for agents
+- `CURSOR_AUTOMATIONS.md` — Cursor Automations spec (suggestion-triage agent: prompt, settings, labels, dedup)
 - `ALERT_ROUTING.md`
 - `ACCESSIBILITY_TESTING_PROTOCOL.md`
 - `STATE_MICROCOPY_PACK.md`
