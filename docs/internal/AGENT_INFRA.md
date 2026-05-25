@@ -19,7 +19,7 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 
 | Env var                                    | Typical use                          |
 | ------------------------------------------ | ------------------------------------ |
-| `GITHUB_TOKEN`                             | `gh` CLI, branch protection script   |
+| `GITHUB_PAT`                               | GitHub PAT — branch-protection script; export as `GH_TOKEN` for `gh` |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management            |
 | `INFISICAL_API_KEY`                        | Infisical API (may lack `local` env) |
 | `RENDER_API_KEY`                           | Render API                           |
@@ -27,21 +27,22 @@ These may appear in **cloud agent** or automation sessions. Local Cursor develop
 | `SUPABASE_API_KEY`                         | Supabase Management API              |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)           |
 
-> **Legacy aliases.** Older cloud VM images may still expose `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, and `RENDER_APIKEY`. Scripts continue to tolerate the GitHub aliases where explicitly noted, but docs reference the canonical names only. If you're writing new snippets, use the canonical names.
+> **Canonical name & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT`. Do **not** confuse it with `GITHUB_TOKEN`, which is the GitHub Actions runtime token (a different credential that lacks branch-administration scope). Scripts still tolerate the aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`, and older images may expose `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` / `RENDER_APIKEY` — but new code and docs use the canonical names only.
 
 ## GitHub PAT usage policy
 
-The agent **may** use `GITHUB_TOKEN` for: creating/closing agent-owned PRs, labels, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
+The agent **may** use `GITHUB_PAT` for: creating/closing agent-owned PRs, labels, issues, branch protection script, GitHub environments/protection rules, reading PR/CI/branch state.
 
 The agent **must not** use it to: merge without explicit approval, delete branches without approval, broaden repo settings beyond branch protection/environments, create/modify GitHub Secrets, force-push, or create releases/tags outside the automated release workflow.
 
-Use the canonical env var name directly for `gh` CLI commands. The value must be a PAT-compatible token with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
+Node scripts (e.g. `configure-branch-protection.mjs`) read `GITHUB_PAT` directly. For `gh`/git, export it as `GH_TOKEN` first — `gh` only auto-reads `GH_TOKEN`/`GITHUB_TOKEN`, not `GITHUB_PAT`. The value must be a PAT with the required repository permissions; do not assume the GitHub Actions runtime token has branch-administration scope.
 
 ```bash
-export GITHUB_TOKEN=<token>
+export GITHUB_PAT=<token>
+export GH_TOKEN="$GITHUB_PAT"   # required for gh / git
 ```
 
-If only a legacy GitHub token alias is exposed in an older VM, copy it into `GITHUB_TOKEN` for the session; otherwise prefer the canonical name.
+If only a legacy GitHub token alias is exposed in an older VM, copy it into `GITHUB_PAT` for the session; otherwise prefer the canonical name.
 
 ## CI/CD summary
 
@@ -52,7 +53,7 @@ If only a legacy GitHub token alias is exposed in an older VM, copy it into `GIT
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
-| Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_TOKEN`); see `CONTRIBUTING.md`                                                                 |
+| Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | CodeRabbit          | `.coderabbit.yaml` — native advisory PR review; no GitHub Actions gate                                                                                |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 

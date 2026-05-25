@@ -17,7 +17,8 @@ Configure merge-blocking branch protections for `main` and `production`. This en
 2. Export the token in your shell using the canonical hosted-agent name. The token must have the permissions above; do not rely on the GitHub Actions runtime token unless it has equivalent administration scope.
 
 ```bash
-export GITHUB_TOKEN=<token>
+export GITHUB_PAT=<token>
+export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
 
 ## Step 1: Dry Run (Review Before Applying)

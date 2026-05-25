@@ -11,7 +11,7 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 | `INFISICAL_API_KEY`                        | Infisical API (may not include `local` env) |
 | `RENDER_API_KEY` / `VERCEL_API_KEY`        | Provider APIs                               |
 | `SUPABASE_API_KEY`                         | Supabase Management API                     |
-| `GITHUB_TOKEN`                             | `gh` CLI, branch protection script          |
+| `GITHUB_PAT`                               | GitHub PAT (export as `GH_TOKEN` for `gh`); branch-protection script |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)                  |
 
@@ -147,7 +147,7 @@ Cursor rules under `.cursor/rules/` point at these same skill files.
 
 When the user supplies durable environment hints or tool workarounds not documented elsewhere, add a short bullet here.
 
-- Cloud VMs expose the Render key as `RENDER_API_KEY` and the GitHub PAT-compatible credential as `GITHUB_TOKEN`; prefer those names when present.
+- Cloud VMs expose the Render key as `RENDER_API_KEY` and the GitHub PAT as `GITHUB_PAT` (distinct from `GITHUB_TOKEN`, the Actions runtime token); prefer those names when present. For `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`.
 
 ## PR reviews
 

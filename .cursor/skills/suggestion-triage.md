@@ -125,11 +125,11 @@ fp = <area>/<slug(title)>            anchored to     file=<primary-file-or-spec-
 The Cursor sandbox pre-authenticates `gh` as **Cursor's GitHub App**, which can't manage labels or write issues — it fails with `HTTP 403: Resource not accessible by integration`. Force `gh` to use the repo PAT at the start of the run:
 
 ```bash
-export GH_TOKEN="${GITHUB_TOKEN:?missing GITHUB_TOKEN secret}"   # GH_TOKEN overrides Cursor's App auth
+export GH_TOKEN="${GITHUB_PAT:?missing GITHUB_PAT secret}"   # gh reads GH_TOKEN, not GITHUB_PAT; this overrides Cursor's App auth
 gh api user -q .login   # must print YOUR username, not a bot/app
 ```
 
-If `gh api user` shows an app/bot, Cursor is shadowing `GITHUB_TOKEN` — store the PAT under a different name (e.g. `GH_PAT`) and `export GH_TOKEN="$GH_PAT"` instead. The PAT must be fine-grained with **Issues: Read and write** on `pdcarlson/Frapp` (this also covers `gh label create`). No MCP server needed.
+`GITHUB_PAT` is the repo's canonical GitHub PAT (fine-grained, **Issues: Read and write** on `pdcarlson/Frapp`, which also covers `gh label create`) and is distinct from Cursor's injected `GITHUB_TOKEN`/App token — so exporting it as `GH_TOKEN` cleanly overrides the App. If `gh api user` still shows a bot/app, the secret isn't reaching the shell; fix it before continuing. No MCP server needed.
 
 Before creating an issue:
 

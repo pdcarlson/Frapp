@@ -4,9 +4,9 @@
  * Configure branch protection rules for main and production.
  *
  * Usage:
- *   GITHUB_TOKEN=ghp_xxx node scripts/configure-branch-protection.mjs
- *   GITHUB_TOKEN=ghp_xxx node scripts/configure-branch-protection.mjs --dry-run
- *   GITHUB_TOKEN=ghp_xxx node scripts/configure-branch-protection.mjs --repo owner/repo
+ *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs
+ *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --dry-run
+ *   GITHUB_PAT=github_pat_xxx node scripts/configure-branch-protection.mjs --repo owner/repo
  *
  * The PAT needs "repo" scope for public repos or "admin:repo" for private repos.
  *
@@ -76,8 +76,8 @@ function resolveToken() {
   }
 
   return (
-    process.env.GITHUB_TOKEN ||
     process.env.GITHUB_PAT ||
+    process.env.GITHUB_TOKEN ||
     process.env.GH_PAT ||
     process.env.GH_TOKEN
   );
@@ -180,7 +180,7 @@ async function main() {
       const token = resolveToken();
       if (!token) {
         throw new Error(
-          "Missing GitHub token. Set GITHUB_TOKEN, or one of the legacy aliases: GITHUB_PAT, GH_PAT, GH_TOKEN.",
+          "Missing GitHub token. Set GITHUB_PAT, or one of the aliases: GITHUB_TOKEN, GH_PAT, GH_TOKEN.",
         );
       }
 
