@@ -77,11 +77,14 @@ Deno.serve(async (req: Request) => {
   // A reply may only target a message in the SAME channel (no cross-channel
   // / cross-chapter reply linking).
   if (reply_to_id) {
-    const { data: replyTo } = await serviceSupabase
+    const { data: replyTo, error: replyError } = await serviceSupabase
       .from("chat_messages")
       .select("channel_id")
       .eq("id", reply_to_id)
       .maybeSingle();
+    if (replyError) {
+      return errorResponse("Failed to validate reply target", 500);
+    }
     if (
       !replyTo ||
       (replyTo as { channel_id: string }).channel_id !== channel_id

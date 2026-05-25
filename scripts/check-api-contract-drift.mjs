@@ -83,15 +83,17 @@ function run(command) {
       // never calls these services. Real values are never needed. They must be
       // present in the process env up front because some modules read them at
       // import time (export-openapi.ts sets its own placeholders too late).
+      // Neutral strings (no `sk_`/`whsec_` prefixes) so secret scanners don't
+      // flag them.
       SUPABASE_URL: process.env.SUPABASE_URL ?? "https://placeholder.supabase.co",
       SUPABASE_SERVICE_ROLE_KEY:
-        process.env.SUPABASE_SERVICE_ROLE_KEY ?? "placeholder-service-key",
+        process.env.SUPABASE_SERVICE_ROLE_KEY ?? "placeholder_value",
       SUPABASE_ANON_KEY:
-        process.env.SUPABASE_ANON_KEY ?? "placeholder-anon-key",
-      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder",
+        process.env.SUPABASE_ANON_KEY ?? "placeholder_value",
+      STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "placeholder_value",
       STRIPE_WEBHOOK_SECRET:
-        process.env.STRIPE_WEBHOOK_SECRET ?? "whsec_placeholder",
-      STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID ?? "price_placeholder",
+        process.env.STRIPE_WEBHOOK_SECRET ?? "placeholder_value",
+      STRIPE_PRICE_ID: process.env.STRIPE_PRICE_ID ?? "placeholder_value",
     },
   });
 }
