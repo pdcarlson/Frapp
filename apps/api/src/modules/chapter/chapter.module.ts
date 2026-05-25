@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ChapterService } from '../../application/services/chapter.service';
+import { ChapterOnboardingService } from '../../application/services/chapter-onboarding.service';
 import { ChapterController } from '../../interface/controllers/chapter.controller';
 import { AuthSyncInterceptor } from '../../interface/interceptors/auth-sync.interceptor';
 import { SupabaseChapterRepository } from '../../infrastructure/supabase/repositories/supabase-chapter.repository';
@@ -18,6 +19,7 @@ import { AuthModule } from '../auth/auth.module';
   providers: [
     AuthSyncInterceptor,
     ChapterService,
+    ChapterOnboardingService,
     { provide: CHAPTER_REPOSITORY, useClass: SupabaseChapterRepository },
     { provide: ROLE_REPOSITORY, useClass: SupabaseRoleRepository },
     { provide: MEMBER_REPOSITORY, useClass: SupabaseMemberRepository },

@@ -165,50 +165,19 @@ without dumping them back to the sign-in page.
 
 ## 3. Screen Specifications
 
-### 3.1 Dashboard Home (`/home`)
+### 3.1 Dashboard Home (`/home`) — **removed (Chunk 03)**
 
-**Purpose:** Chapter health at a glance. The first thing an admin sees.
+The standalone `/home` overview dashboard was removed in the chat-first redesign.
+Chunk 01 dropped it from the nav and repointed the default landing to `/chat`;
+Chunk 03 deleted the route file (`app/(dashboard)/home/page.tsx`), its three
+exclusive components (`activity-feed`, `overview-stat-cards`,
+`quick-actions-card`), the middleware entries in `proxy.ts`, and its
+visual-regression baseline. The post-sign-in landing is **`/chat`** (a chat
+catch-up); chapter health and quick actions are being re-homed as inline chat
+artifacts in later chunks.
 
-**Layout:**
-
-```
-┌──────────────────────────────────────────────────┐
-│ Welcome back, {firstName}                         │
-│ {chapterName} • {university}                      │
-├──────────┬──────────┬──────────┬─────────────────┤
-│ Active   │ Upcoming │ Sub      │ Points          │
-│ Members  │ Events   │ Status   │ This Month      │
-│   47     │    3     │ Active ✓ │  1,240          │
-├──────────┴──────────┴──────────┴─────────────────┤
-│                                                    │
-│ Recent Activity                    Quick Actions   │
-│ ┌────────────────────────┐  ┌──────────────────┐ │
-│ │ New member: John D.    │  │ [+ Create Event] │ │
-│ │ Event: Chapter Meeting │  │ [+ Invite Member]│ │
-│ │ Backwork: CS 101 Exam  │  │ [View Points]    │ │
-│ │ Points: +10 to Sarah   │  │ [Manage Roles]   │ │
-│ └────────────────────────┘  └──────────────────┘ │
-└──────────────────────────────────────────────────┘
-```
-
-**Stat cards (top row):**
-
-- 4 cards in a row (2x2 on tablet, stacked on mobile)
-- Each: icon + number + label
-- Number animates with count-up on load
-- Subscription status card: green badge for active, yellow for past_due, red for canceled
-
-**Activity feed:**
-
-- List of recent chapter events (last 10)
-- Each item: icon + description + relative timestamp ("2 hours ago")
-- Click navigates to relevant screen
-- Leaderboard lines resolve display names by matching the points subject to chapter members on **both** membership `id` and auth `user_id` (and tolerate camelCase JSON keys) so the feed does not fall back to generic copy when those identifiers differ.
-
-**Quick actions:**
-
-- Vertical stack of buttons
-- Most-used admin actions
+> The framework-agnostic `lib/activity-feed-leaderboard.ts` helper (with its unit
+> test) is retained for reuse by the future chat catch-up surface.
 
 ### 3.2 Members (`/members`)
 
@@ -697,18 +666,61 @@ frapp.live → [Get Started] → app.frapp.live/signup
 
 ### Post-Auth Flow
 
-1. Auth → check if user has any chapters
-2. If no chapters → Chapter Creation wizard
-3. If one chapter → load dashboard
-4. If multiple chapters → chapter selector
+1. Sign-in / sign-up redirects to `/chat` (the default dashboard landing).
+2. The dashboard shell mounts `<ChapterWizardGate>`. It reads `GET /v1/chapters`;
+   if the signed-in user has **zero** chapter memberships, the onboarding wizard
+   opens as a full-screen overlay. Once opened it owns its lifecycle (the
+   membership count flips to 1 mid-flow), so it never auto-closes from the gate.
+3. If the user already has chapters, the wizard does not fire and the chat
+   landing renders normally.
 
-### Chapter Creation Wizard
+> Free tier: chapter creation no longer requires Stripe. The old terms/payment
+> wizard is replaced by the directory-autofill wizard below; billing is a
+> separate, later activation for paid ops modules.
 
-```
-Step 1: Chapter Info     → Step 2: Accept Terms     → Step 3: Payment
-[Chapter Name]             [✓ Terms of Service]        [Stripe Checkout]
-[University]               [✓ Privacy Policy]
-```
+### Chapter Onboarding Wizard (Chunk 03)
+
+A skippable-where-safe, full-screen wizard at
+`apps/web/components/onboarding/chapter-wizard.tsx`. Goal: "I just signed up" →
+"I'm in `#general` with my chapter set up" in under 90 seconds for a chapter in
+the directory. Five conceptual steps (sign-up is step 1, already complete):
+
+1. **Sign up** — done before the wizard mounts.
+2. **Find chapter** — directory combobox → `GET /v1/chapter-directory/search`
+   (debounced 250ms; loading / empty / error / match states). "Not in our
+   directory?" is always available → manual entry.
+3. **Pick archetype** — 4-up card grid (all 8 archetypes); pre-selected from a
+   match.
+4. **Confirm identity** — Greek letters, designation, school short, founded year
+   (guard-parsed, >= 1776), two color pickers — all editable, pre-filled from the
+   directory match or blank for manual entry.
+5. **Invite members** — generates a copyable `/join?token=…` link (share-link
+   primary; skippable). Bulk-email invites are deferred (no mail service).
+
+**Submit** calls `POST /v1/chapters/onboard` (cold path):
+
+- Creates the `chapters` row with branding + archetype + `directory_id` (when
+  matched). `enabled_modules` / `vocabulary` / `theme_palette` are materialized
+  **server-side** from the archetype seed (`buildChapterConfigFromArchetype`,
+  which `structuredClone`s) — the client never supplies the module map.
+- Seeds default channels (`#general`, `#announcements`, `#chapter-audit`) and the
+  creator's President membership (via `ChapterService.create`).
+- Posts a one-time welcome `system_audit` message into `#general`.
+- For manual entry (no `directory_id`), writes a `chapter_directory_requests`
+  row (actor from session) so the seed can be backfilled (#232).
+- Navigates to `/chat?channel=general`.
+
+**Trigger:** user has no chapter memberships. A wizard-created chapter gets
+non-default `enabled_modules`, so it never re-triggers. (The brief's secondary
+"enabled_modules still at default seed" heuristic was dropped: the membership is
+created with `has_completed_onboarding=true` and the chapters list endpoint does
+not expose `enabled_modules`, so "no chapters" is the robust signal.)
+
+**States (no blank panes):** directory search renders explicit idle / loading /
+no-results / error states; the no-results and the always-present "Not in our
+directory?" action both route to manual entry; the invite step shows an explicit
+"generate link" empty state and a copy-confirmation state. All interactives are
+semantic (`<button>`, native form controls, the cmdk combobox) with labels.
 
 ---
 

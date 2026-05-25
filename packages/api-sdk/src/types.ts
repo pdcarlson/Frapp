@@ -94,6 +94,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chapters/onboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message) */
+        post: operations["ChapterController_onboard_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapters/current": {
         parameters: {
             query?: never;
@@ -1780,6 +1797,28 @@ export interface components {
             name: string;
             university: string;
         };
+        BrandingColorsDto: {
+            dark?: string;
+            accent?: string;
+        };
+        BrandingDto: {
+            greek_letters?: string;
+            designation?: string;
+            school_short?: string;
+            founded_at?: number;
+            colors?: components["schemas"]["BrandingColorsDto"];
+        };
+        ChapterOnboardingDto: {
+            /** @description Chapter display name (org name) */
+            name: string;
+            /** @description University / institution name */
+            university: string;
+            /** @description Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc. */
+            org_archetype?: string;
+            /** @description chapter_directory row id when the chapter was matched */
+            directory_id?: string;
+            branding?: components["schemas"]["BrandingDto"];
+        };
         UpdateChapterDto: {
             name?: string;
             university?: string;
@@ -2187,17 +2226,6 @@ export interface components {
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
         };
-        BrandingColorsDto: {
-            dark?: string;
-            accent?: string;
-        };
-        BrandingDto: {
-            greek_letters?: string;
-            designation?: string;
-            school_short?: string;
-            founded_at?: number;
-            colors?: components["schemas"]["BrandingColorsDto"];
-        };
         BetaConfigDto: {
             enabled?: boolean;
             /** @enum {string} */
@@ -2362,6 +2390,27 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["CreateChapterDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_onboard_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChapterOnboardingDto"];
             };
         };
         responses: {

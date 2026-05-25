@@ -272,7 +272,8 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 
 - Channels can require **any permission string** (including custom chapter-defined permissions) for visibility and posting. This is how ROLE_GATED channels work — the `required_permissions` field holds one or more permission strings.
 - **Channel categories** (like Discord): chapters can organize channels into named groups (e.g. "General", "Executive", "Committees"). Categories are display-only grouping with a sort order. Channels not assigned to a category appear in a default "Channels" group.
-- **Default channels** created on chapter setup: `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
+- **Default channels** created on chapter setup (`DEFAULT_CHANNELS` in `apps/api/src/domain/constants/permissions.ts`): `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#chapter-audit` (PUBLIC, read-only — system-write audit feed, all members read), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
+- **Seeding happens at chapter creation, on the free tier** — both `POST /v1/chapters` and the onboarding submit `POST /v1/chapters/onboard` seed channels. It is **not** gated on billing/subscription. `#chapter-audit` is required so the Chunk 02 audit bridge (and the onboarding welcome message) have a destination.
 - **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
 - **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
 
@@ -541,6 +542,17 @@ While a study session is active, the app displays a dedicated study mode screen:
 
 ## 10. Onboarding and Invites
 
+### First-Officer Onboarding Wizard (Chunk 03)
+
+- Fires on first sign-in when the authenticated user has **no chapter memberships** (`GET /v1/chapters` returns empty). Mounted in the dashboard shell as a full-screen overlay; it replaces the old `chapter-bootstrap` component.
+- Submit calls `POST /v1/chapters/onboard` (cold path, NestJS + service-role Supabase — never the chat Edge Functions). `ChapterOnboardingService.onboard`:
+  1. Materializes the chapter config from the chosen archetype via `buildChapterConfigFromArchetype` (deep-clones the seed with `structuredClone`), setting `org_archetype`, `enabled_modules`, `vocabulary`, and a derived `theme_palette`. The client never supplies the module map — it is resolved server-side from the archetype.
+  2. Creates the chapter (`ChapterService.create`) with branding + `directory_id` (when the chapter was matched in the directory), plus default roles, the creator's President membership, and the default channels.
+  3. Posts a one-time welcome `system_audit` message into `#general`: "Welcome to {greek_letters} {designation}. Invite your chapter to get the conversation started." Sent by the system user; best-effort (a failure does not roll back chapter creation).
+  4. Navigates the client to `/chat?channel=general`.
+- **Manual-entry path:** when the officer's chapter is not in the directory, the wizard submits with no `directory_id`. The service writes a `chapter_directory_requests` row (chapter_id, `requested_by` from the **session** — never the client, the typed identity fields, status `pending`) so the curated directory seed can be backfilled later (#232). RLS-enabled, API-only (no client policies), like `chapter_directory`.
+- **Actor identity** for the chapter, membership, welcome message, and directory request is always resolved from the authenticated session, never from the request payload.
+
 ### Invite Token Rules
 
 - Tokens expire after 24 hours.
@@ -553,7 +565,7 @@ While a study session is active, the app displays a dedicated study mode screen:
 ### Edge Cases
 
 - If a user already has an account and is a member of the chapter, attempting to use an invite token for the same chapter returns 409 Conflict.
-- If the chapter's subscription is not active, generating invite tokens returns 402 Payment Required.
+- **Inviting members is free-tier and not billing-gated (Chunk 03).** `InviteService.create` / `createBatch` no longer check `subscription_status`; any chapter (including a brand-new `incomplete` one created by the onboarding wizard) can generate invite tokens. This realizes the redesign's free-tier wedge ("sign up, create a chapter, invite members, and chat — no Stripe gate"). Billing gates the paid ops modules, not chat/members/invites.
 - If the token's role has been deleted between token creation and redemption, the user is assigned the default "Member" role instead.
 
 ---

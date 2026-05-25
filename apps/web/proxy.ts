@@ -4,7 +4,6 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 const AUTH_ROUTES = ["/sign-in", "/sign-up"];
 const DASHBOARD_ROUTE_PREFIX = "/chat";
 const PROTECTED_ROUTE_PREFIXES = [
-  "/home",
   "/dashboard",
   "/members",
   "/alumni",
@@ -160,7 +159,6 @@ export const config = {
     "/sign-in",
     "/sign-up",
     "/join",
-    "/home/:path*",
     "/dashboard/:path*",
     "/members/:path*",
     "/alumni/:path*",

@@ -170,6 +170,36 @@
         ]
       }
     },
+    "/v1/chapters/onboard": {
+      "post": {
+        "operationId": "ChapterController_onboard_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChapterOnboardingDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create and configure a chapter from the onboarding wizard (archetype, branding, default channels, welcome message)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
     "/v1/chapters/current": {
       "get": {
         "operationId": "ChapterController_getCurrent_v1",
@@ -4174,7 +4204,7 @@
   },
   "info": {
     "title": "Frapp API",
-    "description": "The Operating System for Greek Life",
+    "description": "",
     "version": "1.0",
     "contact": {}
   },
@@ -4186,11 +4216,6 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http"
-      },
-      "chapter-id": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "x-chapter-id"
       }
     },
     "schemas": {
@@ -4262,6 +4287,65 @@
           },
           "university": {
             "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "university"
+        ]
+      },
+      "BrandingColorsDto": {
+        "type": "object",
+        "properties": {
+          "dark": {
+            "type": "string"
+          },
+          "accent": {
+            "type": "string"
+          }
+        }
+      },
+      "BrandingDto": {
+        "type": "object",
+        "properties": {
+          "greek_letters": {
+            "type": "string"
+          },
+          "designation": {
+            "type": "string"
+          },
+          "school_short": {
+            "type": "string"
+          },
+          "founded_at": {
+            "type": "number"
+          },
+          "colors": {
+            "$ref": "#/components/schemas/BrandingColorsDto"
+          }
+        }
+      },
+      "ChapterOnboardingDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Chapter display name (org name)"
+          },
+          "university": {
+            "type": "string",
+            "description": "University / institution name"
+          },
+          "org_archetype": {
+            "type": "string",
+            "description": "Org archetype key (ifc, npc, nphc, mgc, …). Defaults to ifc."
+          },
+          "directory_id": {
+            "type": "string",
+            "description": "chapter_directory row id when the chapter was matched"
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingDto"
           }
         },
         "required": [
@@ -5459,37 +5543,6 @@
           }
         }
       },
-      "BrandingColorsDto": {
-        "type": "object",
-        "properties": {
-          "dark": {
-            "type": "string"
-          },
-          "accent": {
-            "type": "string"
-          }
-        }
-      },
-      "BrandingDto": {
-        "type": "object",
-        "properties": {
-          "greek_letters": {
-            "type": "string"
-          },
-          "designation": {
-            "type": "string"
-          },
-          "school_short": {
-            "type": "string"
-          },
-          "founded_at": {
-            "type": "number"
-          },
-          "colors": {
-            "$ref": "#/components/schemas/BrandingColorsDto"
-          }
-        }
-      },
       "BetaConfigDto": {
         "type": "object",
         "properties": {
@@ -5505,7 +5558,7 @@
               "breadcrumb_pill"
             ]
           }
-        },
+        }
       },
       "DuesConfigDto": {
         "type": "object",
@@ -5544,7 +5597,7 @@
             "type": "number",
             "description": "Scholarship pool in cents"
           }
-        },
+        }
       },
       "PatchChapterConfigDto": {
         "type": "object",

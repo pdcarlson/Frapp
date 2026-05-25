@@ -2,8 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
-  HttpException,
-  HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
@@ -11,8 +9,6 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.interface';
 import type { IInviteRepository } from '../../domain/repositories/invite.repository.interface';
-import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
-import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -24,22 +20,10 @@ import { NotificationService } from './notification.service';
 export class InviteService {
   constructor(
     @Inject(INVITE_REPOSITORY) private readonly inviteRepo: IInviteRepository,
-    @Inject(CHAPTER_REPOSITORY)
-    private readonly chapterRepo: IChapterRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly notificationService: NotificationService,
   ) {}
-
-  private async validateChapterSubscription(chapterId: string): Promise<void> {
-    const chapter = await this.chapterRepo.findById(chapterId);
-    if (chapter?.subscription_status !== 'active') {
-      throw new HttpException(
-        'Chapter subscription is not active',
-        HttpStatus.PAYMENT_REQUIRED,
-      );
-    }
-  }
 
   private prepareInviteData(
     chapterId: string,
@@ -63,7 +47,8 @@ export class InviteService {
     createdBy: string,
     role: string,
   ): Promise<Invite> {
-    await this.validateChapterSubscription(chapterId);
+    // Free tier: inviting members is not billing-gated (Chunk 03). The chat +
+    // members wedge is available to every chapter regardless of subscription.
     const data = this.prepareInviteData(chapterId, createdBy, role);
     return this.inviteRepo.create(data);
   }
@@ -74,8 +59,6 @@ export class InviteService {
     role: string,
     count: number,
   ): Promise<Invite[]> {
-    await this.validateChapterSubscription(chapterId);
-
     const inviteData: Partial<Invite>[] = Array.from({ length: count }, () =>
       this.prepareInviteData(chapterId, createdBy, role),
     );

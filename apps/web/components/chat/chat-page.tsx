@@ -467,7 +467,7 @@ export function ChatPage() {
     return (
       <EmptyState
         title="No channels yet"
-        description="Chapters seed #general, #announcements, and #alumni automatically when billing activates. Ask an admin if none appear here."
+        description="New chapters seed #general, #announcements, and #chapter-audit automatically during onboarding. Ask an admin if none appear here."
       />
     );
   }
