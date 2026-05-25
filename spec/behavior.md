@@ -271,6 +271,11 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 | GROUP_DM   | Selected members (up to 10)      | Those members                    |
 
 - Channels can require **any permission string** (including custom chapter-defined permissions) for visibility and posting. This is how ROLE_GATED channels work — the `required_permissions` field holds one or more permission strings.
+- **Channel-access enforcement (multi-tenancy + RBAC invariant).** Every chat read, send, reaction, and search result is authorized from a **trusted DB lookup** — channel → chapter → membership (and, for `ROLE_GATED`, the caller's effective permissions) — never from a client-supplied chapter/channel field. The decision is a single shared predicate (`canAccessChannel` in `@repo/validation`) reused by the NestJS chat + search services **and** the hot-path Edge Functions (`chat-send`, `chat-react`), so the two layers cannot drift:
+  - `PUBLIC` → any chapter member; `PRIVATE`/`DM`/`GROUP_DM` → the user must be in the channel's `member_ids`; `ROLE_GATED` → the user must hold `*` or one of `required_permissions`; an unknown type denies (never falls open).
+  - Reading or reacting in a channel the caller cannot see (including one in another chapter) returns **403** (or **404** if the channel/message id does not resolve within the caller's chapter). A `reply_to_id` must reference a message in the **same** channel.
+  - **Service-role (RLS-bypassing) writes in the Edge Functions perform this membership/channel-access pre-check before the insert.** Resolving the actor from the JWT is necessary but not sufficient — authorization (may this actor touch this channel/message?) is independent and mandatory.
+  - **Search is not a side-channel:** `GET /v1/search` filters chat-message hits to channels the caller can read, using the same predicate. Snippets never include messages from inaccessible (private/DM/role-gated/other-chapter) channels.
 - **Channel categories** (like Discord): chapters can organize channels into named groups (e.g. "General", "Executive", "Committees"). Categories are display-only grouping with a sort order. Channels not assigned to a category appear in a default "Channels" group.
 - **Default channels** created on chapter setup (`DEFAULT_CHANNELS` in `apps/api/src/domain/constants/permissions.ts`): `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#chapter-audit` (PUBLIC, read-only — system-write audit feed, all members read), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
 - **Seeding happens at chapter creation, on the free tier** — both `POST /v1/chapters` and the onboarding submit `POST /v1/chapters/onboard` seed channels. It is **not** gated on billing/subscription. `#chapter-audit` is required so the Chunk 02 audit bridge (and the onboarding welcome message) have a destination.
@@ -295,6 +300,7 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Multiple distinct reactions per message. Each reaction tracks the count and the list of users who reacted.
 - A user can add the same emoji only once per message. Adding it again removes the reaction (toggle).
 - Reactions are stored in a `message_reactions` table (message_id, user_id, emoji, created_at). Unique on (message_id, user_id, emoji).
+- **Hot-path idempotency (Edge Function `chat-react`).** Per-user actions on the hot path are written to `chat_message_actions`, deduped by the DB unique index `(message_id, user_id, action_type)`. The write is **atomic** — a single insert, with a unique-violation (`23505`) treated as a successful dedup (`deduplicated: true`), never a read-then-insert TOCTOU and never a 5xx. Concurrent identical reactions therefore yield exactly one row.
 
 **File and image uploads:**
 

@@ -4204,7 +4204,7 @@
   },
   "info": {
     "title": "Frapp API",
-    "description": "",
+    "description": "The Operating System for Greek Life",
     "version": "1.0",
     "contact": {}
   },
@@ -4216,6 +4216,11 @@
         "scheme": "bearer",
         "bearerFormat": "JWT",
         "type": "http"
+      },
+      "chapter-id": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-chapter-id"
       }
     },
     "schemas": {

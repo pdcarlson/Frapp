@@ -7,8 +7,10 @@
 
 The Chunk 02 Edge Functions (`chat-send`, `chat-react`) shipped as scaffolds with **two known cross-chapter auth-bypass holes**. They use the service-role client (RLS bypassed) on client-supplied `channel_id` / `message_id` without verifying the caller belongs to the target chapter. This chunk wires those functions into the web composer — **do not** do that (and do not deploy them) until both are fixed:
 
-- **[#233](https://github.com/pdcarlson/Frapp/issues/233)** — `chat-send` must authorize channel/chapter before the service-role write.
-- **[#234](https://github.com/pdcarlson/Frapp/issues/234)** — `chat-react` must authorize message/chapter before the service-role write (+ dedup-on-conflict instead of 500).
+- [x] **[#233](https://github.com/pdcarlson/Frapp/issues/233)** — `chat-send` must authorize channel/chapter before the service-role write. *(Phase 0, branch `claude/chat-authz-hardening`.)*
+- [x] **[#234](https://github.com/pdcarlson/Frapp/issues/234)** — `chat-react` must authorize message/chapter before the service-role write (+ dedup-on-conflict instead of 500). *(Phase 0.)*
+
+> **Phase 0 status:** resolved on a dedicated security branch `claude/chat-authz-hardening` (also closes [#242](https://github.com/pdcarlson/Frapp/issues/242), [#243](https://github.com/pdcarlson/Frapp/issues/243), [#261](https://github.com/pdcarlson/Frapp/issues/261)). A single pure predicate `canAccessChannel` in `@repo/validation` is reused by the NestJS chat + search services and both Edge Functions. The chat-foundation UI build (Phase 1) starts once that PR merges.
 
 If those issues aren't closed when you start, fix them as the first commits of this chunk (or pause and flag it). Then, as part of this chunk:
 

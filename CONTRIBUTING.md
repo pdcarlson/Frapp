@@ -128,9 +128,14 @@ When you change an API endpoint:
 1. Make your source code changes in `apps/api/src/`.
 2. Regenerate the OpenAPI spec: `npm run openapi:export -w apps/api`
 3. Regenerate the SDK types: `npm run generate -w packages/api-sdk`
-4. Commit all three together (source + `openapi.json` + `types.ts`).
+4. Commit the regenerated artifacts (`openapi.json` and, if it changed, `types.ts`) alongside your source.
 
-CI will reject PRs that change API source without updating the contract artifacts.
+CI (`api-contract-check`) regenerates both artifacts and fails if the committed
+copies are stale relative to the API source. A change that touches API source
+but doesn't alter the contract (e.g. adding a request-scoped param decorator)
+passes as long as the committed artifacts already match a fresh regeneration —
+note that not every contract change affects `types.ts` (security schemes and
+descriptions live only in `openapi.json`).
 
 ---
 

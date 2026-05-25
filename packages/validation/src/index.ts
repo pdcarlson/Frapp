@@ -233,6 +233,82 @@ export const BackfillMessagesQuerySchema = z.object({
   limit:  z.coerce.number().int().min(1).max(200).default(50),
 });
 
+// ── Chat channel-access predicate ────────────────────────────────────────────
+// Shared by the NestJS API (chat + search services) and the Deno Edge Functions
+// (chat-send, chat-react). Pure: no zod, no I/O, no framework imports. Each
+// runtime performs its own TRUSTED database lookups (channel record, the
+// caller's chapter membership, and — only for ROLE_GATED channels — the caller's
+// effective permissions) and feeds them in here. Centralizing the rule prevents
+// the API and the Edge Functions from drifting apart, which is how cross-tenant
+// authorization holes appear.
+//
+// NOTE: kept inline in this index file (not a separate module) so the Deno Edge
+// Functions, which import this package directly via an import map, never have to
+// resolve an extensionless relative import.
+
+export type ChatChannelType =
+  | "PUBLIC"
+  | "PRIVATE"
+  | "ROLE_GATED"
+  | "DM"
+  | "GROUP_DM";
+
+/** The trusted channel fields the access decision depends on. */
+export interface ChannelAccessRecord {
+  type: ChatChannelType | string;
+  member_ids: string[] | null;
+  required_permissions: string[] | null;
+}
+
+export interface ChannelAccessInput {
+  channel: ChannelAccessRecord;
+  /** App-level user id, resolved from the session — never the client payload. */
+  userId: string;
+  /** Whether the caller is an active member of the chapter that owns the channel. */
+  isChapterMember: boolean;
+  /**
+   * The caller's effective permission strings in that chapter. Only consulted
+   * for ROLE_GATED channels. `"*"` (wildcard) grants access.
+   */
+  permissions: string[];
+}
+
+/**
+ * Decide whether `userId` may access (read / participate in) `channel`.
+ *
+ * - Non-members of the owning chapter are always denied.
+ * - PUBLIC: any chapter member.
+ * - PRIVATE / DM / GROUP_DM: the user must be in the explicit `member_ids` list.
+ * - ROLE_GATED: the user must hold `"*"` or one of `required_permissions`. An
+ *   empty/absent requirement list means any chapter member may access it.
+ * - Unknown channel type: denied (guarded default — never falls open).
+ */
+export function canAccessChannel(input: ChannelAccessInput): boolean {
+  const { channel, userId, isChapterMember, permissions } = input;
+
+  if (!isChapterMember) return false;
+
+  switch (channel.type) {
+    case "PUBLIC":
+      return true;
+
+    case "PRIVATE":
+    case "DM":
+    case "GROUP_DM":
+      return (channel.member_ids ?? []).includes(userId);
+
+    case "ROLE_GATED": {
+      const required = channel.required_permissions ?? [];
+      if (required.length === 0) return true;
+      if (permissions.includes("*")) return true;
+      return required.some((permission) => permissions.includes(permission));
+    }
+
+    default:
+      return false;
+  }
+}
+
 // ── Type Exports ─────────────────────────────────────────────────────────────
 
 export type Chapter = z.infer<typeof ChapterSchema>;

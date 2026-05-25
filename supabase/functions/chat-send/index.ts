@@ -14,6 +14,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { SendChatMessageSchema } from "@repo/validation";
 import { corsResponse, errorResponse, jsonResponse } from "../_shared/cors.ts";
+import { assertChannelAccess, resolveAppUserId } from "../_shared/chat-authz.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
@@ -43,17 +44,11 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
 
-  const { data: appUser } = await serviceSupabase
-    .from("users")
-    .select("id")
-    .eq("supabase_auth_id", user.id)
-    .single();
-
-  if (!appUser) {
-    return errorResponse("User not found", 404);
+  const userResolution = await resolveAppUserId(serviceSupabase, user.id);
+  if (!userResolution.ok) {
+    return errorResponse(userResolution.message, userResolution.status);
   }
-
-  const senderId: string = (appUser as { id: string }).id;
+  const senderId = userResolution.userId;
 
   // ── Validate request body ────────────────────────────────────────────────
   let body: unknown;
@@ -70,6 +65,36 @@ Deno.serve(async (req: Request) => {
 
   const { client_message_id, channel_id, content, kind, payload, reply_to_id } =
     parsed.data;
+
+  // ── Authorize: caller must belong to the channel's chapter ───────────────
+  // Resolved from a trusted DB lookup (channel → chapter → membership) before
+  // any service-role write. Never trust the client-supplied channel_id alone.
+  const authz = await assertChannelAccess(serviceSupabase, senderId, channel_id);
+  if (!authz.ok) {
+    return errorResponse(authz.message, authz.status);
+  }
+
+  // A reply may only target a message in the SAME channel (no cross-channel
+  // / cross-chapter reply linking).
+  if (reply_to_id) {
+    const { data: replyTo, error: replyError } = await serviceSupabase
+      .from("chat_messages")
+      .select("channel_id")
+      .eq("id", reply_to_id)
+      .maybeSingle();
+    if (replyError) {
+      return errorResponse("Failed to validate reply target", 500);
+    }
+    if (
+      !replyTo ||
+      (replyTo as { channel_id: string }).channel_id !== channel_id
+    ) {
+      return errorResponse(
+        "reply_to_id must reference a message in the same channel",
+        400,
+      );
+    }
+  }
 
   // ── Idempotent insert ────────────────────────────────────────────────────
   // ON CONFLICT DO NOTHING on the partial unique index:

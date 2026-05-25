@@ -10,6 +10,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { ChatMessageActionSchema } from "@repo/validation";
 import { corsResponse, errorResponse, jsonResponse } from "../_shared/cors.ts";
+import { assertMessageAccess, resolveAppUserId } from "../_shared/chat-authz.ts";
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return corsResponse();
@@ -38,17 +39,11 @@ Deno.serve(async (req: Request) => {
     return errorResponse("Unauthorized", 401);
   }
 
-  const { data: appUser } = await serviceSupabase
-    .from("users")
-    .select("id")
-    .eq("supabase_auth_id", user.id)
-    .single();
-
-  if (!appUser) {
-    return errorResponse("User not found", 404);
+  const userResolution = await resolveAppUserId(serviceSupabase, user.id);
+  if (!userResolution.ok) {
+    return errorResponse(userResolution.message, userResolution.status);
   }
-
-  const userId: string = (appUser as { id: string }).id;
+  const userId = userResolution.userId;
 
   // ── Validate ──────────────────────────────────────────────────────────────
   let body: unknown;
@@ -65,20 +60,18 @@ Deno.serve(async (req: Request) => {
 
   const { message_id, action_type, payload } = parsed.data;
 
-  // ── Idempotent upsert (unique on message_id + user_id + action_type) ─────
-  // Use ON CONFLICT DO NOTHING — re-adding the same reaction is a no-op.
-  const { data: existing } = await serviceSupabase
-    .from("chat_message_actions")
-    .select("*")
-    .eq("message_id", message_id)
-    .eq("user_id", userId)
-    .eq("action_type", action_type)
-    .maybeSingle();
-
-  if (existing) {
-    return jsonResponse({ action: existing, deduplicated: true });
+  // ── Authorize: caller must be able to read the message's channel ─────────
+  // Resolved from a trusted lookup (message → channel → chapter → membership)
+  // before the service-role write.
+  const authz = await assertMessageAccess(serviceSupabase, userId, message_id);
+  if (!authz.ok) {
+    return errorResponse(authz.message, authz.status);
   }
 
+  // ── Atomic idempotent insert (unique on message_id + user_id + action_type)
+  // No read-then-insert pre-check: the unique index is the source of truth. A
+  // concurrent identical reaction loses the race with a 23505, which we treat
+  // as a successful dedup — never a 500.
   const { data: action, error: insertError } = await serviceSupabase
     .from("chat_message_actions")
     .insert({ message_id, user_id: userId, action_type, payload: payload ?? {} })
@@ -86,16 +79,17 @@ Deno.serve(async (req: Request) => {
     .single();
 
   if (insertError) {
-    // 23505 = unique_violation: pre-check SELECT raced with a concurrent INSERT.
-    // Fall back to fetching the existing row so the response shape is consistent.
     if ((insertError as { code?: string }).code === "23505") {
-      const { data: deduped } = await serviceSupabase
+      const { data: deduped, error: dedupError } = await serviceSupabase
         .from("chat_message_actions")
         .select("*")
         .eq("message_id", message_id)
         .eq("user_id", userId)
         .eq("action_type", action_type)
         .single();
+      if (dedupError || !deduped) {
+        return errorResponse("Failed to record action", 500);
+      }
       return jsonResponse({ action: deduped, deduplicated: true });
     }
     return errorResponse("Failed to record action", 500);

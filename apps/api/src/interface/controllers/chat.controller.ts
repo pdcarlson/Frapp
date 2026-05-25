@@ -190,18 +190,27 @@ export class ChatController {
   })
   async getMessages(
     @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query('limit') limit?: number,
     @Query('before') before?: string,
     @Query('since') since?: string,
   ) {
     if (since !== undefined) {
       try {
-        await new ParseUUIDPipe().transform(since, { type: 'query', data: 'since' });
+        await new ParseUUIDPipe().transform(since, {
+          type: 'query',
+          data: 'since',
+        });
       } catch {
         throw new BadRequestException('since must be a valid UUID');
       }
     }
-    return this.chatService.getMessages(channelId, { limit, before, since });
+    return this.chatService.getMessages(channelId, chapterId, userId, {
+      limit,
+      before,
+      since,
+    });
   }
 
   @Post(':id/messages')
@@ -245,8 +254,12 @@ export class ChatController {
 
   @Get(':id/pins')
   @ApiOperation({ summary: 'Get pinned messages in a channel' })
-  async getPinnedMessages(@Param('id') channelId: string) {
-    return this.chatService.getPinnedMessages(channelId);
+  async getPinnedMessages(
+    @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.getPinnedMessages(channelId, chapterId, userId);
   }
 
   @Post('messages/:messageId/pin')
@@ -269,16 +282,26 @@ export class ChatController {
   @ApiOperation({ summary: 'Toggle reaction (add/remove)' })
   async toggleReaction(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: ReactionDto,
   ) {
-    return this.chatService.toggleReaction(messageId, userId, dto.emoji);
+    return this.chatService.toggleReaction(
+      messageId,
+      chapterId,
+      userId,
+      dto.emoji,
+    );
   }
 
   @Get('messages/:messageId/reactions')
   @ApiOperation({ summary: 'Get reactions for a message' })
-  async getReactions(@Param('messageId') messageId: string) {
-    return this.chatService.getReactions(messageId);
+  async getReactions(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.getReactions(messageId, chapterId, userId);
   }
 
   // ── File Upload ────────────────────────────────────────────────────
@@ -290,11 +313,13 @@ export class ChatController {
   async requestUploadUrl(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: RequestChatUploadUrlDto,
   ) {
     return this.chatService.requestChatUploadUrl(
       channelId,
       chapterId,
+      userId,
       dto.filename,
       dto.content_type,
     );
@@ -306,8 +331,9 @@ export class ChatController {
   @ApiOperation({ summary: 'Mark channel as read' })
   async markRead(
     @Param('id') channelId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.markChannelRead(channelId, userId);
+    return this.chatService.markChannelRead(channelId, chapterId, userId);
   }
 }

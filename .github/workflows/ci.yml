@@ -137,6 +137,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
       - name: Check API contract freshness (PR)
         if: github.event_name == 'pull_request'
         run: npm run check:api-contract -- --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
