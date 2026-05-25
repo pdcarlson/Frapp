@@ -15,4 +15,4 @@ Key points:
 - Findings come from the existing `.cursor/skills/audit.md` checks; prioritize recently changed and high-risk areas. Cap at ~8 high-impact findings per run.
 - Every issue gets `suggestion` + one `area:<x>` + one `severity:<x>` label, the standard body template, and a hidden fingerprint marker.
 - Dedup before creating: search open and closed `label:suggestion` issues for the fingerprint (`fp=<area>/<slug>`, no line number) and skip if it already exists.
-- The dashboard automation config (trigger, model, MCP/token, settings) lives in `docs/internal/CURSOR_AUTOMATIONS.md`.
+- The dashboard automation config (triggers, model, `GITHUB_TOKEN` secret, settings) lives in `docs/internal/CURSOR_AUTOMATIONS.md`. Issues are created/searched via `gh` CLI — no MCP server needed.

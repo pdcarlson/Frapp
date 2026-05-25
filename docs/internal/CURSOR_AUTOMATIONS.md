@@ -26,16 +26,16 @@ a cloud agent runs on a schedule/event, audits the repo in a fresh sandbox, and 
 
 ## Automation: "Suggestion Triage"
 
-Create **two automations that share the same prompt** (each automation has a single trigger):
+Create **one automation with both triggers** (Cursor supports multiple triggers per automation):
 
-| # | Name | Trigger | Why |
-|---|------|---------|-----|
-| 1 | `Frapp — Suggestion Triage (on merge)` | GitHub → **Pull request merged**, base `main` | Audits the freshly-landed state once per merge. No wasted runs on idle days; bursts covered per-merge. |
-| 2 | `Frapp — Suggestion Triage (weekly)` | **Schedule** → weekly (e.g. Mon 09:00) | Safety net for time-based drift (dependency CVEs, staleness) not tied to any PR. |
+| Trigger | Why |
+|---------|-----|
+| GitHub → **Pull request merged**, repo `Frapp` | Audits the freshly-landed state once per merge. No wasted runs on idle days; bursts covered per-merge. |
+| **Schedule** → weekly (e.g. Wed 09:00 EDT) | Safety net for time-based drift (dependency CVEs, staleness) not tied to any PR. |
 
-Dedup (below) makes the two safe to overlap — the weekly run won't re-file what the merge runs already filed.
+Dedup (below) makes the two triggers safe to overlap — the weekly run won't re-file what a merge run already filed.
 
-### The prompt (paste verbatim into both automations)
+### The prompt (paste into the automation's Agent Instructions)
 
 ```text
 You are the Suggestion Triage agent for the Frapp repository. Audit the codebase for
@@ -72,10 +72,9 @@ found, take no action.
 | Branch | `main` | Source the audit runs against. |
 | Trigger | see table above | One per automation. |
 | Model | a high-reasoning model | Audit quality scales with reasoning; pick the strongest available. |
-| Tools / integrations | **Create Issue** (GitHub); optionally **Comment on Pull Request** | Disable code edits / branch pushes. |
+| Tools / integrations | none required beyond shell | The agent creates/searches issues with `gh` CLI (repo convention — see below). Disable code edits / branch pushes. |
 | Auto-create PR | **off** (`autoCreatePR: false`) | This flow files issues, never code changes. |
-| MCP servers | **GitHub MCP** (for reliable issue create + search of open/closed issues) | See token below. Cursor's native GitHub integration handles PRs/comments; issue search+create is most reliable via GitHub MCP. |
-| Secrets / env | `GITHUB_TOKEN` scoped to **Issues: read/write** on `pdcarlson/Frapp` | Stored in the automation's dashboard secrets, **not** in the repo. Fine-grained PAT preferred. |
+| Secrets / env | `GITHUB_TOKEN` set as a Cursor env secret, scoped to **Issues: read/write** on `pdcarlson/Frapp` | The repo's standard credential (`AGENTS.md`, `AGENT_INFRA.md`); `gh`/`git` read it automatically. **Not** in the repo. Fine-grained PAT preferred. |
 | Memory | **on** | Lets the agent learn what it already filed. |
 | Network access | default | Audit is local to the sandbox; `npm audit` needs registry access. |
 | Sandbox setup | from [`.cursor/environment.json`](../../.cursor/environment.json) (`npm install`) | Makes lint/typecheck/`npm audit` available. |
@@ -126,29 +125,19 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 {
   "automations": [
     {
-      "name": "Frapp — Suggestion Triage (on merge)",
+      "name": "Suggestion Triage",
       "repo": "pdcarlson/Frapp",
       "branch": "main",
-      "trigger": { "type": "github.pull_request.merged", "baseBranch": "main" },
-      "model": { "reasoning": "high" },
-      "tools": ["github.createIssue", "github.searchIssues"],
+      "triggers": [
+        { "type": "github.pull_request.merged", "repo": "Frapp", "by": "anyone" },
+        { "type": "schedule", "cron": "0 9 * * 3", "tz": "America/New_York" }
+      ],
+      "model": "gpt-5.5-high",
       "autoCreatePR": false,
       "memory": true,
-      "mcpServers": { "github": { "scope": "issues:read,issues:write" } },
-      "promptRef": "docs/internal/CURSOR_AUTOMATIONS.md#the-prompt-paste-verbatim-into-both-automations",
-      "behaviorRef": ".cursor/skills/suggestion-triage.md"
-    },
-    {
-      "name": "Frapp — Suggestion Triage (weekly)",
-      "repo": "pdcarlson/Frapp",
-      "branch": "main",
-      "trigger": { "type": "schedule", "cron": "0 9 * * 1" },
-      "model": { "reasoning": "high" },
-      "tools": ["github.createIssue", "github.searchIssues"],
-      "autoCreatePR": false,
-      "memory": true,
-      "mcpServers": { "github": { "scope": "issues:read,issues:write" } },
-      "promptRef": "docs/internal/CURSOR_AUTOMATIONS.md#the-prompt-paste-verbatim-into-both-automations",
+      "secrets": { "GITHUB_TOKEN": "fine-grained PAT, Issues:read+write on pdcarlson/Frapp" },
+      "issueCreation": "gh CLI (reads GITHUB_TOKEN) — repo convention, no MCP",
+      "promptRef": "docs/internal/CURSOR_AUTOMATIONS.md#the-prompt-paste-into-the-automations-agent-instructions",
       "behaviorRef": ".cursor/skills/suggestion-triage.md"
     }
   ]
@@ -159,19 +148,20 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 
 ## How to create it (dashboard)
 
-1. Go to `cursor.com/automations` → **New automation** (or start from the "Code review" / "Bug monitor" template and replace the prompt).
-2. Pick the trigger (automation #1: GitHub Pull request merged on `main`; automation #2: Schedule weekly).
-3. Select repo `pdcarlson/Frapp`, branch `main`, and a high-reasoning model.
-4. Paste the prompt above.
-5. Under tools/integrations, enable **Create Issue**; connect the **GitHub MCP** server and add the `GITHUB_TOKEN` secret (Issues read/write). Leave PR creation / code edits off.
-6. Turn on **Memory**. Create the automation.
-7. Repeat for the second automation (same prompt, schedule trigger).
+1. Go to `cursor.com/automations` → **New automation**.
+2. Add **both triggers** via **Add Trigger**: GitHub *Pull request merged* (repo `Frapp`, by Anyone) and *Schedule* weekly (e.g. Wed 09:00 EDT).
+3. Select repo `pdcarlson/Frapp`, branch `main`, and a high-reasoning model (e.g. GPT-5.5 High).
+4. Paste the prompt above into **Agent Instructions**.
+5. Add the `GITHUB_TOKEN` env secret (fine-grained PAT, Issues read/write on `pdcarlson/Frapp`). The agent creates/searches issues via `gh` CLI, which reads `GITHUB_TOKEN` automatically — no MCP server or extra tools needed. Leave PR creation / code edits off.
+6. Turn on **Memory**, toggle **Active**, and **Create**.
+
+> Note: the agent reads `.cursor/skills/suggestion-triage.md` from `main` at run time. Until this branch is merged to `main`, point the automation's branch at `claude/cursor-suggestion-triage` or the skill won't be present.
 
 ## Verify
 
-- Click **Run** on automation #1. Confirm it opens issues titled `[suggestion] …` with `suggestion` + `area:*` + `severity:*` labels and the body template incl. the hidden `fp=` marker.
+- Click **Run**. Confirm it opens issues titled `[suggestion] …` with `suggestion` + `area:*` + `severity:*` labels and the body template incl. the hidden `fp=` marker.
 - **Run it again.** Confirm it creates **no duplicates** (dedup works).
-- Confirm automation #2 shows a scheduled next-run time.
+- Confirm the schedule trigger shows a next-run time.
 
 ## Maintenance
 

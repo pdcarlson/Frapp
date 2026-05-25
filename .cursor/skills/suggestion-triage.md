@@ -81,11 +81,14 @@ fp = <area>/<slug(title)>            anchored to     file=<primary-file-path>
 - `slug(title)` = lowercase, non-alphanumerics → `-`, collapsed.
 - **Do not** include the line number — lines drift across commits.
 
+Use the `gh` CLI for all GitHub work (repo convention — see `.cursor/rules/infrastructure-research.mdc`). `gh` reads the `GITHUB_TOKEN` env secret automatically; no MCP server needed.
+
 Before creating an issue:
 
-1. Search existing issues **open and closed** with `label:suggestion` for the fingerprint string (it lives in the body marker). Example query: `repo:<owner>/<repo> is:issue label:suggestion "fp=<area>/<slug>"`.
-2. If a match exists → **skip** (do not comment, do not reopen). 
-3. Only if no match exists → create the issue.
+1. Search existing issues **open and closed** with `label:suggestion` for the fingerprint string (it lives in the body marker), e.g.
+   `gh issue list --repo pdcarlson/Frapp --state all --label suggestion --search "fp=<area>/<slug>" --json number,title`.
+2. If a match exists → **skip** (do not comment, do not reopen).
+3. Only if no match exists → create it: `gh issue create --repo pdcarlson/Frapp --title "[suggestion] …" --body-file <file> --label suggestion --label area:<x> --label severity:<x>`.
 
 The fingerprint is embedded as a hidden HTML comment so it's searchable but invisible:
 
