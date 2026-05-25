@@ -23,13 +23,17 @@ import type {
 } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatChannelCategory,
   ChatMessage,
   ChannelType,
 } from '../../domain/entities/chat.entity';
+import { canAccessChannel } from '@repo/validation';
 import { NotificationService } from './notification.service';
+import { RbacService } from './rbac.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -115,7 +119,10 @@ export class ChatService {
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
+    private readonly rbac: RbacService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -241,8 +248,11 @@ export class ChatService {
 
   async getMessages(
     channelId: string,
+    chapterId: string,
+    userId: string,
     options?: { limit?: number; before?: string; since?: string },
   ): Promise<ChatMessage[]> {
+    await this.assertChannelAccess(channelId, chapterId, userId);
     return this.messageRepo.findByChannel(channelId, options);
   }
 
@@ -251,10 +261,20 @@ export class ChatService {
       throw new BadRequestException('Message content cannot be empty');
     }
 
-    const channel = await this.validateChannelForChapter(
+    const channel = await this.assertChannelAccess(
       input.channel_id,
       input.chapter_id,
+      input.sender_id,
     );
+
+    if (input.reply_to_id) {
+      const replyTo = await this.messageRepo.findById(input.reply_to_id);
+      if (!replyTo || replyTo.channel_id !== input.channel_id) {
+        throw new BadRequestException(
+          'reply_to_id must reference a message in the same channel',
+        );
+      }
+    }
 
     const message = await this.messageRepo.create({
       channel_id: input.channel_id,
@@ -311,15 +331,68 @@ export class ChatService {
     }
   }
 
-  private async validateChannelForChapter(
+  /**
+   * Authorize a caller for a channel from a TRUSTED DB lookup
+   * (channel → chapter → membership), never client-supplied chapter fields.
+   *
+   * `channelRepo.findById(channelId, chapterId)` scopes the channel to the
+   * caller's active chapter, so a channel in another chapter resolves to 404.
+   * Channel-level visibility (PUBLIC / PRIVATE / ROLE_GATED / DM) is decided by
+   * the shared `canAccessChannel` predicate, which the Edge Functions reuse.
+   */
+  private async assertChannelAccess(
     channelId: string,
     chapterId: string,
+    userId: string,
   ): Promise<ChatChannel> {
     const channel = await this.channelRepo.findById(channelId, chapterId);
     if (!channel) {
       throw new NotFoundException('Channel not found');
     }
+
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    const isChapterMember = Boolean(member);
+
+    const permissions =
+      isChapterMember && channel.type === 'ROLE_GATED'
+        ? await this.rbac.getEffectivePermissions(chapterId, userId)
+        : [];
+
+    const allowed = canAccessChannel({
+      channel: {
+        type: channel.type,
+        member_ids: channel.member_ids,
+        required_permissions: channel.required_permissions,
+      },
+      userId,
+      isChapterMember,
+      permissions,
+    });
+
+    if (!allowed) {
+      throw new ForbiddenException('You do not have access to this channel');
+    }
+
     return channel;
+  }
+
+  /**
+   * Authorize a caller for a message by resolving message → channel → chapter,
+   * then delegating to {@link assertChannelAccess}. A message in a channel the
+   * caller cannot see (or in another chapter) is rejected.
+   */
+  private async assertMessageAccess(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatMessage> {
+    const message = await this.messageRepo.findById(messageId);
+    if (!message) throw new NotFoundException('Message not found');
+    await this.assertChannelAccess(message.channel_id, chapterId, userId);
+    return message;
   }
 
   async editMessage(
@@ -404,13 +477,25 @@ export class ChatService {
     });
   }
 
-  async getPinnedMessages(channelId: string): Promise<ChatMessage[]> {
+  async getPinnedMessages(
+    channelId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatMessage[]> {
+    await this.assertChannelAccess(channelId, chapterId, userId);
     return this.messageRepo.findPinnedByChannel(channelId);
   }
 
   // ── Reactions ────────────────────────────────────────────────────────
 
-  async toggleReaction(messageId: string, userId: string, emoji: string) {
+  async toggleReaction(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    emoji: string,
+  ) {
+    await this.assertMessageAccess(messageId, chapterId, userId);
+
     const existing = await this.reactionRepo.findOne(messageId, userId, emoji);
 
     if (existing) {
@@ -426,13 +511,15 @@ export class ChatService {
     return { action: 'added' as const, reaction };
   }
 
-  async getReactions(messageId: string) {
+  async getReactions(messageId: string, chapterId: string, userId: string) {
+    await this.assertMessageAccess(messageId, chapterId, userId);
     return this.reactionRepo.findByMessage(messageId);
   }
 
   // ── Read Receipts ────────────────────────────────────────────────────
 
-  async markChannelRead(channelId: string, userId: string) {
+  async markChannelRead(channelId: string, chapterId: string, userId: string) {
+    await this.assertChannelAccess(channelId, chapterId, userId);
     return this.readReceiptRepo.upsert(
       channelId,
       userId,
@@ -445,9 +532,12 @@ export class ChatService {
   async requestChatUploadUrl(
     channelId: string,
     chapterId: string,
+    userId: string,
     filename: string,
     contentType: string,
   ) {
+    await this.assertChannelAccess(channelId, chapterId, userId);
+
     const ext = filename.includes('.')
       ? filename.slice(filename.lastIndexOf('.')).toLowerCase()
       : '';

@@ -4,11 +4,15 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
+import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
 import type { Event } from '../../domain/entities/event.entity';
-import type { ChatMessage } from '../../domain/entities/chat.entity';
+import type {
+  ChatMessage,
+  ChannelType,
+} from '../../domain/entities/chat.entity';
 
 export interface SearchMemberResult {
   id: string;
@@ -49,7 +53,11 @@ export class SearchService {
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
   ) {}
 
-  async search(chapterId: string, query: string): Promise<SearchResult> {
+  async search(
+    chapterId: string,
+    userId: string,
+    query: string,
+  ): Promise<SearchResult> {
     const q = query.trim();
     if (!q) {
       return { backwork: [], events: [], members: [], messages: [] };
@@ -62,7 +70,7 @@ export class SearchService {
         this.searchBackwork(chapterId, pattern),
         this.searchEvents(chapterId, pattern),
         this.searchMembers(chapterId, pattern),
-        this.searchMessages(chapterId, pattern),
+        this.searchMessages(chapterId, userId, pattern),
       ],
     );
 
@@ -154,16 +162,12 @@ export class SearchService {
 
   private async searchMessages(
     chapterId: string,
+    userId: string,
     pattern: string,
   ): Promise<ChatMessage[]> {
-    const { data: channels, error: chError } = (await this.supabase
-      .from('chat_channels')
-      .select('id')
-      .eq('chapter_id', chapterId)) as QueryResult<{ id: string }>;
-    throwIfError(chError);
-    if (!channels?.length) return [];
+    const channelIds = await this.accessibleChannelIds(chapterId, userId);
+    if (!channelIds.length) return [];
 
-    const channelIds = channels.map((c) => c.id);
     const { data, error } = (await this.supabase
       .from('chat_messages')
       .select('*')
@@ -174,5 +178,69 @@ export class SearchService {
       .order('created_at', { ascending: false })) as QueryResult<ChatMessage>;
     throwIfError(error);
     return data ?? [];
+  }
+
+  /**
+   * Channel ids in the chapter the caller may read, decided by the shared
+   * `canAccessChannel` predicate (same rule the chat history / send paths use).
+   * Search must not become a side-channel that leaks private, DM, or
+   * role-gated messages the caller cannot otherwise see.
+   */
+  private async accessibleChannelIds(
+    chapterId: string,
+    userId: string,
+  ): Promise<string[]> {
+    const { data: channels, error: chError } = (await this.supabase
+      .from('chat_channels')
+      .select('id, type, member_ids, required_permissions')
+      .eq('chapter_id', chapterId)) as QueryResult<{
+      id: string;
+      type: ChannelType;
+      member_ids: string[] | null;
+      required_permissions: string[] | null;
+    }>;
+    throwIfError(chError);
+    if (!channels?.length) return [];
+
+    const { data: members, error: memError } = (await this.supabase
+      .from('members')
+      .select('role_ids')
+      .eq('user_id', userId)
+      .eq('chapter_id', chapterId)
+      .limit(1)) as QueryResult<{ role_ids: string[] | null }>;
+    throwIfError(memError);
+    const member = members?.[0];
+    if (!member) return [];
+
+    const permissions = await this.effectivePermissions(member.role_ids ?? []);
+
+    return channels
+      .filter((channel) =>
+        canAccessChannel({
+          channel: {
+            type: channel.type,
+            member_ids: channel.member_ids,
+            required_permissions: channel.required_permissions,
+          },
+          userId,
+          isChapterMember: true,
+          permissions,
+        }),
+      )
+      .map((channel) => channel.id);
+  }
+
+  private async effectivePermissions(roleIds: string[]): Promise<string[]> {
+    if (!roleIds.length) return [];
+    const { data: roles, error } = (await this.supabase
+      .from('roles')
+      .select('permissions')
+      .in('id', roleIds)) as QueryResult<{ permissions: string[] | null }>;
+    throwIfError(error);
+    const set = new Set<string>();
+    for (const role of roles ?? []) {
+      for (const permission of role.permissions ?? []) set.add(permission);
+    }
+    return Array.from(set);
   }
 }

@@ -10,7 +10,10 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Search')
@@ -28,8 +31,9 @@ export class SearchController {
   @ApiQuery({ name: 'q', required: true, description: 'Search query' })
   async search(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
     @Query('q') query: string,
   ) {
-    return this.searchService.search(chapterId, query ?? '');
+    return this.searchService.search(chapterId, userId, query ?? '');
   }
 }

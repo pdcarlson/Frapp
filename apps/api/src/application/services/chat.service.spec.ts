@@ -21,6 +21,7 @@ import type {
 } from '../../domain/repositories/chat.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatMessage,
@@ -28,6 +29,7 @@ import type {
   MessageReaction,
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
+import { RbacService } from './rbac.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -40,6 +42,18 @@ describe('ChatService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockMemberRepo: { findByUserAndChapter: jest.Mock };
+  let mockRbac: { getEffectivePermissions: jest.Mock };
+
+  const baseMember = {
+    id: 'mem-1',
+    user_id: 'user-1',
+    chapter_id: 'ch-1',
+    role_ids: ['role-1'],
+    has_completed_onboarding: true,
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  };
 
   const baseChannel: ChatChannel = {
     id: 'ch-chan-1',
@@ -119,6 +133,21 @@ describe('ChatService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockMemberRepo = {
+      findByUserAndChapter: jest.fn(),
+    };
+
+    mockRbac = {
+      getEffectivePermissions: jest.fn(),
+    };
+
+    // Defaults: caller is a member of the chapter, channel resolves, no special
+    // permissions. Individual tests override to exercise denial paths.
+    mockChannelRepo.findById.mockResolvedValue(baseChannel);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+    mockMessageRepo.findById.mockResolvedValue(baseMessage);
+    mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatService,
@@ -131,7 +160,9 @@ describe('ChatService', () => {
           useValue: mockReadReceiptRepo,
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
+        { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
@@ -277,7 +308,7 @@ describe('ChatService', () => {
       const messages = [baseMessage];
       mockMessageRepo.findByChannel.mockResolvedValue(messages);
 
-      const result = await service.getMessages('ch-chan-1');
+      const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
 
       expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
         'ch-chan-1',
@@ -291,13 +322,74 @@ describe('ChatService', () => {
       mockMessageRepo.findByChannel.mockResolvedValue(messages);
 
       const options = { limit: 20, before: 'msg-5' };
-      const result = await service.getMessages('ch-chan-1', options);
+      const result = await service.getMessages(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+        options,
+      );
 
       expect(mockMessageRepo.findByChannel).toHaveBeenCalledWith(
         'ch-chan-1',
         options,
       );
       expect(result).toEqual(messages);
+    });
+
+    it('should reject reads when the channel is in another chapter', async () => {
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.getMessages('ch-chan-x', 'ch-1', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('should reject reads from a non-member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'outsider'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.findByChannel).not.toHaveBeenCalled();
+    });
+
+    it('should reject reads from a non-participant of a private channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['user-2'],
+      });
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow reads of a role-gated channel when the caller holds the permission', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'ROLE_GATED',
+        required_permissions: ['alumni:view'],
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue(['alumni:view']);
+      mockMessageRepo.findByChannel.mockResolvedValue([baseMessage]);
+
+      const result = await service.getMessages('ch-chan-1', 'ch-1', 'user-1');
+      expect(result).toEqual([baseMessage]);
+    });
+
+    it('should reject reads of a role-gated channel without the permission', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'ROLE_GATED',
+        required_permissions: ['alumni:view'],
+      });
+      mockRbac.getEffectivePermissions.mockResolvedValue(['events:create']);
+
+      await expect(
+        service.getMessages('ch-chan-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -340,6 +432,76 @@ describe('ChatService', () => {
       ).rejects.toThrow(NotFoundException);
 
       expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a non-member sender', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'outsider',
+          content: 'Hello world',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a sender not in a private channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue({
+        ...baseChannel,
+        type: 'PRIVATE',
+        member_ids: ['user-2'],
+      });
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello world',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a reply targeting a message in another channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        id: 'msg-other',
+        channel_id: 'ch-chan-OTHER',
+      });
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello world',
+          reply_to_id: 'msg-other',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should accept a reply targeting a message in the same channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        id: 'msg-same',
+        channel_id: 'ch-chan-1',
+      });
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello world',
+        reply_to_id: 'msg-same',
+      });
+      expect(result).toEqual(baseMessage);
+      expect(mockMessageRepo.create).toHaveBeenCalled();
     });
   });
 
@@ -485,7 +647,12 @@ describe('ChatService', () => {
       };
       mockReactionRepo.create.mockResolvedValue(newReaction);
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      const result = await service.toggleReaction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        '👍',
+      );
       expect(result.action).toBe('added');
     });
 
@@ -500,8 +667,22 @@ describe('ChatService', () => {
       mockReactionRepo.findOne.mockResolvedValue(existing);
       mockReactionRepo.delete.mockResolvedValue();
 
-      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
+      const result = await service.toggleReaction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        '👍',
+      );
       expect(result.action).toBe('removed');
+    });
+
+    it('should reject reacting to a message the caller cannot access', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.toggleReaction('msg-1', 'ch-1', 'outsider', '👍'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockReactionRepo.create).not.toHaveBeenCalled();
     });
   });
 
@@ -517,7 +698,11 @@ describe('ChatService', () => {
         updated_at: '2026-01-01T12:00:00.000Z',
       });
 
-      const result = await service.markChannelRead('ch-chan-1', 'user-1');
+      const result = await service.markChannelRead(
+        'ch-chan-1',
+        'ch-1',
+        'user-1',
+      );
       expect(result.channel_id).toBe('ch-chan-1');
     });
   });
@@ -533,6 +718,7 @@ describe('ChatService', () => {
       const result = await service.requestChatUploadUrl(
         'ch-chan-1',
         'ch-1',
+        'user-1',
         'photo.png',
         'image/png',
       );
@@ -553,6 +739,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'virus.exe',
           'application/x-msdownload',
         ),
@@ -564,6 +751,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'script.sh',
           'application/x-sh',
         ),
@@ -575,6 +763,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'run.bat',
           'application/x-bat',
         ),
@@ -586,6 +775,7 @@ describe('ChatService', () => {
         service.requestChatUploadUrl(
           'ch-chan-1',
           'ch-1',
+          'user-1',
           'file.zip',
           'application/zip',
         ),
@@ -600,6 +790,7 @@ describe('ChatService', () => {
       const result = await service.requestChatUploadUrl(
         'ch-chan-1',
         'ch-1',
+        'user-1',
         'document.pdf',
         'application/pdf',
       );
