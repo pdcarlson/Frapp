@@ -37,30 +37,30 @@ Dedup (below) makes the two triggers safe to overlap — the weekly run won't re
 
 ### The prompt (paste into the automation's Agent Instructions)
 
+The prompt is deliberately thin and defers to the skill, so future tuning happens in the
+version-controlled `.cursor/skills/suggestion-triage.md` without re-pasting the dashboard.
+
 ```text
-You are the Suggestion Triage agent for the Frapp repository. Audit the codebase for
-high-value improvements and file them as deduplicated GitHub issues. Do not modify code or
-open pull requests. Follow .cursor/skills/suggestion-triage.md exactly.
+You are the Suggestion Triage agent for the Frapp repository. On each run, perform a BROAD,
+repo-wide product and engineering review and file the findings as deduplicated GitHub issues.
+Do not modify code or open pull requests.
 
-When invoked:
-1. Focus on recently changed and high-risk areas. Run the useful project checks:
-   npm run check-types, npm run lint, npm audit, npm run check:api-contract,
-   npm run check:migration-safety.
-2. Find concrete, actionable suggestions across: testing gaps, code health, performance,
-   security, dependencies, API-contract drift, DB/migration safety, CI/CD. At most ~8
-   high-impact findings — prefer signal over noise.
-3. For each finding capture: title, area, severity, location (path:line), description,
-   rationale/impact, a code-context snippet, and a suggested fix.
-4. Deduplicate: compute the fingerprint (area + slug(title) + primary file, no line number)
-   and search existing issues (open AND closed) labeled `suggestion` for that fingerprint.
-   Skip the finding if a match already exists.
-5. Create one GitHub issue per new finding using the body template and labels defined in the
-   skill (`suggestion`, `area:<x>`, `severity:<x>`; add `agent-ready` when fully specified).
-   Include the hidden fingerprint marker in the body.
+This is NOT a review of the most recent PR. If a merged PR triggered you, treat it as just one
+small signal — look across the whole codebase, the product spec (spec/), and the user
+experience. Cover three lenses: (1) engineering gaps, (2) product & behavior gaps grounded in
+spec/product.md and spec/behavior.md, and (3) creative next steps & research. Be generalized
+and inventive, not narrow.
 
-Report findings grouped by severity (Critical / High / Medium / Low). If nothing new is
-found, take no action.
+Follow .cursor/skills/suggestion-triage.md EXACTLY — it defines the lenses, the balance rules
+(span multiple areas; at most ~2 findings from recently-changed files; include product/UX/
+research items; ~6–10 total), the labels, the issue template, the dedup rule, and how to
+create/search issues with the gh CLI (it reads GITHUB_TOKEN automatically).
+
+Before filing, skim existing open `suggestion` issues to avoid duplicates and to find
+under-covered domains. Report findings grouped by severity. If nothing new is found, take no
+action.
 ```
+
 
 ---
 
@@ -89,8 +89,9 @@ Create these once (the agent will create any missing label on first run; colors 
 | Label | Color | Meaning |
 |-------|-------|---------|
 | `suggestion` | `#8250df` | Filed by suggestion triage — the dedup/lifecycle anchor. |
-| `area:web` / `area:api` / `area:db` / `area:deps` / `area:security` / `area:ci` / `area:docs` | `#0969da` | Which part of the system. |
-| `severity:critical` / `severity:high` / `severity:medium` / `severity:low` | `#d1242f → #d4a72c` | Priority. |
+| `area:web` / `area:api` / `area:db` / `area:deps` / `area:security` / `area:ci` / `area:docs` | `#0969da` | Engineering areas. |
+| `area:product` / `area:ux` / `area:research` | `#a371f7` | Product gaps, behavior/UX gaps, and forward-looking research/next-steps. |
+| `severity:critical` / `severity:high` / `severity:medium` / `severity:low` | `#d1242f → #d4a72c` | Priority / impact (also used to rank `type:idea` items). |
 | `agent-ready` | `#1a7f37` | Fully specified, safe to hand to an agent (existing label, see `AGENTS.md`). |
 
 ---

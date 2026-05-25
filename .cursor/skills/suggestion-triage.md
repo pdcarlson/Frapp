@@ -1,20 +1,34 @@
 # Skill: Suggestion Triage
 
-> Use when running the Cursor "Suggestion Triage" automation (or doing it by hand): audit the codebase for high-value improvements and file them as deduplicated, labeled GitHub issues. **Read-only on code — never edit files or open PRs from this flow.**
+> Use when running the Cursor "Suggestion Triage" automation (or doing it by hand): perform a **broad, repo-wide product and engineering review** and file the findings as deduplicated, labeled GitHub issues. **Read-only on code — never edit files or open PRs from this flow.**
 
 ---
 
 ## What this skill does
 
-Reproduces the kind of findings you'd see in a "suggestions" panel (missing tests, code-health, performance, security, dependency, contract/DB/CI risks) and turns each into a well-formed GitHub issue that a fresh agent can execute cold. Re-runs are **idempotent**: an existing finding is never filed twice.
+Surfaces high-value work across the whole project — not just bugs and not just the last diff — and turns each item into a well-formed GitHub issue a fresh agent can execute cold. Findings span three lenses: **engineering gaps**, **product & behavior gaps**, and **creative next steps / research**. Re-runs are **idempotent**: an existing finding is never filed twice.
 
-This skill is the behavior contract for the Cursor automation documented in [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/CURSOR_AUTOMATIONS.md). The automation prompt is intentionally thin — the real rules live here.
+This skill is the behavior contract for the automation in [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/CURSOR_AUTOMATIONS.md). The dashboard prompt is intentionally thin — the real rules live here.
 
 ---
 
-## Where findings come from
+## Scope: review the whole product, not the last PR
 
-Reuse the existing audit playbook — do not reinvent it. Read [`audit.md`](audit.md) and run the checks it lists, prioritizing **recently changed and high-risk areas**:
+This is **not** a diff review. If a merged PR triggered this run, treat that PR as **one small signal** — most findings should come from broad analysis across the entire codebase, the product spec (`spec/`), and the user experience.
+
+To keep the backlog broadening over time rather than re-mining the same files:
+
+- **Before starting, skim existing open `suggestion` issues** (`gh issue list --repo pdcarlson/Frapp --state open --label suggestion --json title,labels`) to see what's already covered, and deliberately explore **under-covered domains and surfaces**.
+- **Vary your lens each run.** Rotate across the product domains and the three lenses below.
+- **Balance guardrail per run:** at most ~2 findings from the most recently changed files; span **at least 3 different areas**; include **at least 2** product/behavior/UX or research items. Aim for **~6–10 findings** total — quality and breadth over volume.
+
+---
+
+## The three lenses
+
+### Lens 1 — Engineering gaps (concrete)
+
+Reuse the audit playbook — read [`audit.md`](audit.md) and run its checks:
 
 ```bash
 npm run check-types          # type holes, any, @ts-ignore
@@ -24,7 +38,40 @@ npm run check:api-contract   # openapi.json / SDK drift
 npm run check:migration-safety
 ```
 
-Then review for things tools don't catch: missing/weak tests on complex logic, N+1 / in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret exposure.
+Plus what tools miss: weak/missing tests on complex logic, N+1 / in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret exposure, CI coverage holes.
+
+### Lens 2 — Product & behavior gaps (grounded in `spec/`)
+
+The spec is the source of truth — compare it against what's actually implemented:
+
+- **`spec/product.md`** (16 core domains: IAM, Backwork, Financials, Comms, Events, Polls, Service Hours, Tasks, Semester Rollover, Reports, Alumni, …) — which domains are **unbuilt or only partial**? Which **phased features** (marked v2 / v3+) are now ready to start? Which **user flows are missing across surfaces** (landing / web / mobile)?
+- **`spec/behavior.md`** — which **invariants, edge cases, role-lifecycle / presidency-transfer rules, anti-fraud, atomicity** aren't implemented or tested?
+- **`spec/architecture.md`** + the **`spec/ui-*.md`** files — drift between intended and actual architecture; cross-surface inconsistency; missing resilience, empty, error, and loading states; accessibility gaps.
+
+A spec'd capability with no or partial code is a **product gap**, not just a tech nit — file it.
+
+### Lens 3 — Creative next steps & research (forward-looking)
+
+Beyond fixing what's broken, propose where to go next — be inventive but concrete:
+
+- **Product next steps:** natural extensions of existing features, gaps a real user would hit, opportunities to increase value or stickiness.
+- **Research & experiments:** metrics/instrumentation worth adding, questions to validate, A/B or prototype ideas, competitive/UX investigations.
+- Frame each as an **actionable first step** (a spike, a short design doc, a prototype, a metric to add) — never a vague "consider improving X."
+
+These are exploratory: set priority by impact, and mark `type:idea` so they're easy to filter from must-fix work.
+
+---
+
+## Finding metadata
+
+Capture for every finding:
+
+- **title** — short imperative, e.g. "Build member-directory export (spec 3.15)".
+- **area** — one of the `area:` values below.
+- **type** — `gap` (missing/broken) · `improvement` (make existing better) · `idea` (exploratory/research).
+- **priority** — `critical` | `high` | `medium` | `low` (impact-based; for ideas, how promising).
+- **location** — `path/to/file.ext:line` for code, or the relevant `spec/…` section for product/behavior items.
+- **description**, **rationale & impact**, **context** (snippet or spec quote), **suggested fix / proposed first step**.
 
 **Areas → `area:` label:**
 
@@ -37,23 +84,9 @@ Then review for things tools don't catch: missing/weak tests on complex logic, N
 | Security (cross-cutting) | `security` | auth bypass, secret exposure, injection |
 | CI / CD | `ci` | workflow gaps, secret exposure in logs |
 | Docs / spec | `docs` | spec drift, missing runbook |
-
----
-
-## Finding metadata (mirror the panel fields)
-
-Capture for every finding:
-
-- **title** — short imperative, e.g. "Add unit tests for EventDetailSheet".
-- **area** — one of the `area:` values above.
-- **severity** — `critical` | `high` | `medium` | `low`.
-- **location** — `path/to/file.ext:line` (best-effort line).
-- **description** — what's wrong / missing.
-- **rationale & impact** — why it matters (the panel's "Rationale").
-- **code context** — a short snippet at the location.
-- **suggested fix** — concrete next step.
-
-**Volume guard:** at most ~8 findings per run. Prefer a few high-impact items over noise; bias toward `critical`/`high` and the code that changed in the triggering PR.
+| **Product / feature** | `product` | unbuilt or partial spec'd features, missing flows |
+| **Behavior / UX** | `ux` | unhandled edge cases, empty/error states, confusing flows |
+| **Research / next steps** | `research` | experiments, metrics, product investigations |
 
 ---
 
@@ -61,12 +94,12 @@ Capture for every finding:
 
 Every issue this flow creates gets:
 
-- `suggestion` — always (this is the dedup/lifecycle anchor).
+- `suggestion` — always (the dedup/lifecycle anchor).
 - `area:<x>` — exactly one (table above).
-- `severity:<critical|high|medium|low>` — exactly one.
-- `agent-ready` — add when the issue is fully specified and safe to hand to an agent (see `AGENTS.md`).
+- `severity:<critical|high|medium|low>` — exactly one (priority/impact).
+- `agent-ready` — add when fully specified and safe to hand to an agent (see `AGENTS.md`).
 
-If a label doesn't exist yet, create it (one-time). Color guidance is in [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/CURSOR_AUTOMATIONS.md).
+If a label doesn't exist yet, create it (one-time). Colors: [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/CURSOR_AUTOMATIONS.md).
 
 ---
 
@@ -75,7 +108,7 @@ If a label doesn't exist yet, create it (one-time). Color guidance is in [`docs/
 Each finding has a stable **fingerprint** built from values that survive edits:
 
 ```
-fp = <area>/<slug(title)>            anchored to     file=<primary-file-path>
+fp = <area>/<slug(title)>            anchored to     file=<primary-file-or-spec-path>
 ```
 
 - `slug(title)` = lowercase, non-alphanumerics → `-`, collapsed.
@@ -93,7 +126,7 @@ Before creating an issue:
 The fingerprint is embedded as a hidden HTML comment so it's searchable but invisible:
 
 ```html
-<!-- cursor-suggestion: v1 fp=<area>/<slug> file=<primary-file-path> -->
+<!-- cursor-suggestion: v1 fp=<area>/<slug> file=<primary-file-or-spec-path> -->
 ```
 
 ---
@@ -107,30 +140,30 @@ Keep every issue in this exact shape so the backlog reads consistently:
 <one-sentence description>
 
 ### Category
-`area:<x>` · `severity:<x>`
+`area:<x>` · `type:<gap|improvement|idea>` · `severity:<x>`
 
 ### Location
-`path/to/file.ext:line`
+`path/to/file.ext:line`  (or `spec/product.md §3.x` for product/behavior items)
 
 ### Description
-<what's wrong or missing>
+<what's wrong, missing, or worth pursuing>
 
 ### Rationale & impact
-<why it matters>
+<why it matters — tie product/behavior items back to the spec or the user>
 
-### Code context
+### Context
 ```<lang>
-<short snippet at the location>
+<short code snippet, or a quoted spec excerpt>
 ```
 
-### Suggested fix
-<concrete next step; helpers to reuse; gotchas>
+### Suggested fix / proposed first step
+<concrete next step; for ideas, the smallest experiment/spike to start>
 
 ### Acceptance criteria
 - [ ] <objectively verifiable outcome>
 
 ---
-<!-- cursor-suggestion: v1 fp=<area>/<slug> file=<primary-file-path> -->
+<!-- cursor-suggestion: v1 fp=<area>/<slug> file=<primary-file-or-spec-path> -->
 _Filed automatically by the Cursor "Suggestion Triage" automation. Edit freely; keep the marker above for dedup._
 ```
 
@@ -142,6 +175,7 @@ Title format: `[suggestion] <title>`.
 
 - **Never** modify code, push branches, or open PRs from this flow — issues only.
 - **Never** print secret values (follow `AGENTS.md`).
+- Ground product/behavior claims in the spec or code — don't invent features the project hasn't scoped. Ideas can be inventive, but say so (`type:idea`) and keep them relevant to Frapp's domain.
 - If a check can't run in the sandbox (e.g. Supabase down), note it in the relevant issue rather than guessing — and don't claim a verification you didn't run.
 - If nothing new is found, take no action and report "no new suggestions".
 
