@@ -39,10 +39,11 @@ Deno.serve(async (req: Request) => {
     return errorResponse("Unauthorized", 401);
   }
 
-  const userId = await resolveAppUserId(serviceSupabase, user.id);
-  if (!userId) {
-    return errorResponse("User not found", 404);
+  const userResolution = await resolveAppUserId(serviceSupabase, user.id);
+  if (!userResolution.ok) {
+    return errorResponse(userResolution.message, userResolution.status);
   }
+  const userId = userResolution.userId;
 
   // ── Validate ──────────────────────────────────────────────────────────────
   let body: unknown;
@@ -79,13 +80,16 @@ Deno.serve(async (req: Request) => {
 
   if (insertError) {
     if ((insertError as { code?: string }).code === "23505") {
-      const { data: deduped } = await serviceSupabase
+      const { data: deduped, error: dedupError } = await serviceSupabase
         .from("chat_message_actions")
         .select("*")
         .eq("message_id", message_id)
         .eq("user_id", userId)
         .eq("action_type", action_type)
         .single();
+      if (dedupError || !deduped) {
+        return errorResponse("Failed to record action", 500);
+      }
       return jsonResponse({ action: deduped, deduplicated: true });
     }
     return errorResponse("Failed to record action", 500);

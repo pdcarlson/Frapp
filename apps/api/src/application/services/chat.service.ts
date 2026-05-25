@@ -391,7 +391,17 @@ export class ChatService {
   ): Promise<ChatMessage> {
     const message = await this.messageRepo.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
-    await this.assertChannelAccess(message.channel_id, chapterId, userId);
+    try {
+      await this.assertChannelAccess(message.channel_id, chapterId, userId);
+    } catch (error) {
+      // A message whose channel is in another chapter surfaces as a
+      // channel-level 404 — normalize it so callers cannot distinguish
+      // "message missing" from "message in a chapter you can't see".
+      if (error instanceof NotFoundException) {
+        throw new NotFoundException('Message not found');
+      }
+      throw error;
+    }
     return message;
   }
 

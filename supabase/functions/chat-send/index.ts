@@ -44,10 +44,11 @@ Deno.serve(async (req: Request) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
 
-  const senderId = await resolveAppUserId(serviceSupabase, user.id);
-  if (!senderId) {
-    return errorResponse("User not found", 404);
+  const userResolution = await resolveAppUserId(serviceSupabase, user.id);
+  if (!userResolution.ok) {
+    return errorResponse(userResolution.message, userResolution.status);
   }
+  const senderId = userResolution.userId;
 
   // ── Validate request body ────────────────────────────────────────────────
   let body: unknown;

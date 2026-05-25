@@ -129,6 +129,19 @@ describe('canAccessChannel', () => {
         }),
       ).toBe(true);
     });
+
+    it('allows any member when required_permissions is null', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: null,
+          },
+        }),
+      ).toBe(true);
+    });
   });
 
   it('denies an unknown channel type (guarded default, never falls open)', () => {

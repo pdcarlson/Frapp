@@ -7,6 +7,10 @@
  * chapter) and delegate the allow/deny decision to the shared
  * `canAccessChannel` predicate in `@repo/validation` — the SAME predicate the
  * NestJS chat + search services use, so the two layers cannot drift apart.
+ *
+ * Every DB lookup checks its error: a failed query must surface as a 500-style
+ * authz failure, never be silently coerced into a 403/404 (which would mask
+ * outages and return misleading responses).
  */
 
 import { canAccessChannel } from "@repo/validation";
@@ -24,66 +28,97 @@ export type ChannelAuthz =
   | { ok: true; channel: ChannelRow }
   | { ok: false; status: number; message: string };
 
+export type UserResolution =
+  | { ok: true; userId: string }
+  | { ok: false; status: number; message: string };
+
+const AUTHZ_FAILURE: { ok: false; status: number; message: string } = {
+  ok: false,
+  status: 500,
+  message: "Authorization check failed",
+};
+
 /** Resolve the app-level user id from the Supabase auth uid (never the payload). */
 export async function resolveAppUserId(
   client: SupabaseClient,
   authUid: string,
-): Promise<string | null> {
-  const { data } = await client
+): Promise<UserResolution> {
+  const { data, error } = await client
     .from("users")
     .select("id")
     .eq("supabase_auth_id", authUid)
     .maybeSingle();
-  return (data as { id: string } | null)?.id ?? null;
+
+  if (error) {
+    console.error("chat-authz: users lookup failed", {
+      authUid,
+      error: error.message,
+    });
+    return AUTHZ_FAILURE;
+  }
+
+  const userId = (data as { id: string } | null)?.id;
+  if (!userId) return { ok: false, status: 404, message: "User not found" };
+  return { ok: true, userId };
 }
 
-/** Authorize a user for a channel; 404 if the channel is unknown, 403 if denied. */
+/** Authorize a user for a channel; 404 if unknown, 403 if denied, 500 on DB error. */
 export async function assertChannelAccess(
   client: SupabaseClient,
   userId: string,
   channelId: string,
 ): Promise<ChannelAuthz> {
-  const { data: channel } = await client
-    .from("chat_channels")
-    .select("id, chapter_id, type, member_ids, required_permissions")
-    .eq("id", channelId)
-    .maybeSingle();
+  try {
+    const { data: channel, error: channelError } = await client
+      .from("chat_channels")
+      .select("id, chapter_id, type, member_ids, required_permissions")
+      .eq("id", channelId)
+      .maybeSingle();
+    if (channelError) throw channelError;
+    if (!channel) {
+      return { ok: false, status: 404, message: "Channel not found" };
+    }
+    const ch = channel as ChannelRow;
 
-  if (!channel) {
-    return { ok: false, status: 404, message: "Channel not found" };
+    const { data: member, error: memberError } = await client
+      .from("members")
+      .select("role_ids")
+      .eq("user_id", userId)
+      .eq("chapter_id", ch.chapter_id)
+      .maybeSingle();
+    if (memberError) throw memberError;
+
+    const isChapterMember = Boolean(member);
+
+    let permissions: string[] = [];
+    if (isChapterMember && ch.type === "ROLE_GATED") {
+      const roleIds = (member as { role_ids: string[] | null }).role_ids ?? [];
+      permissions = await effectivePermissions(client, roleIds, ch.chapter_id);
+    }
+
+    const allowed = canAccessChannel({
+      channel: {
+        type: ch.type,
+        member_ids: ch.member_ids,
+        required_permissions: ch.required_permissions,
+      },
+      userId,
+      isChapterMember,
+      permissions,
+    });
+
+    if (!allowed) {
+      return { ok: false, status: 403, message: "Forbidden" };
+    }
+    return { ok: true, channel: ch };
+  } catch (error) {
+    console.error("chat-authz: channel access lookup failed", {
+      channelId,
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return AUTHZ_FAILURE;
   }
-  const ch = channel as ChannelRow;
-
-  const { data: member } = await client
-    .from("members")
-    .select("role_ids")
-    .eq("user_id", userId)
-    .eq("chapter_id", ch.chapter_id)
-    .maybeSingle();
-
-  const isChapterMember = Boolean(member);
-
-  let permissions: string[] = [];
-  if (isChapterMember && ch.type === "ROLE_GATED") {
-    const roleIds = (member as { role_ids: string[] | null }).role_ids ?? [];
-    permissions = await effectivePermissions(client, roleIds);
-  }
-
-  const allowed = canAccessChannel({
-    channel: {
-      type: ch.type,
-      member_ids: ch.member_ids,
-      required_permissions: ch.required_permissions,
-    },
-    userId,
-    isChapterMember,
-    permissions,
-  });
-
-  if (!allowed) {
-    return { ok: false, status: 403, message: "Forbidden" };
-  }
-  return { ok: true, channel: ch };
 }
 
 /** Authorize a user for a message by resolving message → channel → chapter. */
@@ -92,12 +127,19 @@ export async function assertMessageAccess(
   userId: string,
   messageId: string,
 ): Promise<ChannelAuthz> {
-  const { data: message } = await client
+  const { data: message, error } = await client
     .from("chat_messages")
     .select("channel_id")
     .eq("id", messageId)
     .maybeSingle();
 
+  if (error) {
+    console.error("chat-authz: message lookup failed", {
+      messageId,
+      error: error.message,
+    });
+    return AUTHZ_FAILURE;
+  }
   if (!message) {
     return { ok: false, status: 404, message: "Message not found" };
   }
@@ -108,15 +150,23 @@ export async function assertMessageAccess(
   );
 }
 
+/**
+ * Effective permission strings for the caller's roles in a chapter. Constrained
+ * to the chapter so a stray cross-chapter role id cannot leak permissions.
+ * Throws on a DB error so the caller surfaces it as a 500 (never silently []).
+ */
 async function effectivePermissions(
   client: SupabaseClient,
   roleIds: string[],
+  chapterId: string,
 ): Promise<string[]> {
   if (!roleIds.length) return [];
-  const { data: roles } = await client
+  const { data: roles, error } = await client
     .from("roles")
     .select("permissions")
+    .eq("chapter_id", chapterId)
     .in("id", roleIds);
+  if (error) throw error;
   const set = new Set<string>();
   for (const role of (roles ?? []) as { permissions: string[] | null }[]) {
     for (const permission of role.permissions ?? []) set.add(permission);

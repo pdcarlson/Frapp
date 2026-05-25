@@ -212,7 +212,10 @@ export class SearchService {
     const member = members?.[0];
     if (!member) return [];
 
-    const permissions = await this.effectivePermissions(member.role_ids ?? []);
+    const permissions = await this.effectivePermissions(
+      member.role_ids ?? [],
+      chapterId,
+    );
 
     return channels
       .filter((channel) =>
@@ -230,11 +233,17 @@ export class SearchService {
       .map((channel) => channel.id);
   }
 
-  private async effectivePermissions(roleIds: string[]): Promise<string[]> {
+  private async effectivePermissions(
+    roleIds: string[],
+    chapterId: string,
+  ): Promise<string[]> {
     if (!roleIds.length) return [];
+    // Constrain to roles in the caller's chapter so a stray cross-chapter
+    // role id on the membership cannot leak permissions from another chapter.
     const { data: roles, error } = (await this.supabase
       .from('roles')
       .select('permissions')
+      .eq('chapter_id', chapterId)
       .in('id', roleIds)) as QueryResult<{ permissions: string[] | null }>;
     throwIfError(error);
     const set = new Set<string>();
