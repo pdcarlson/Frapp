@@ -216,5 +216,5 @@ When running infrastructure automation (agents/scripts), validate provider API c
 Important:
 
 - Keep provider API keys distinct (`VERCEL_API_KEY`, `RENDER_API_KEY`, `SUPABASE_API_KEY`, `INFISICAL_API_KEY`).
-- In hosted agent VMs, legacy aliases may still appear in older docs or sessions (`RENDER_APIKEY`, `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`), but prefer the current names `RENDER_API_KEY` and `GITHUB_TOKEN` when present.
+- In hosted agent VMs, legacy aliases may still appear in older docs or sessions (`RENDER_APIKEY`, `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `GITHUB_TOKEN`), but prefer the current names `RENDER_API_KEY` and `GITHUB_PAT` when present. (`GITHUB_TOKEN` is also the GitHub Actions runtime token — distinct from the PAT.) For `gh`/git, `export GH_TOKEN="$GITHUB_PAT"`.
 - Do not reuse one provider's token in another provider variable.

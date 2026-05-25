@@ -12,7 +12,7 @@ Before making infrastructure-related changes, gather runtime truth from the avai
 
 | Env var | CLI/API | What you can check |
 |---------|---------|-------------------|
-| `GITHUB_TOKEN` | `gh` CLI | PR status, CI logs, branch protection, labels |
+| `GITHUB_PAT` | `gh` CLI (`export GH_TOKEN="$GITHUB_PAT"`) | PR status, CI logs, branch protection, labels, issues |
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
 | `INFISICAL_API_KEY` | Infisical API | Secret presence, sync status |
 | `RENDER_API_KEY` | Render API | Service status, deploy history |
