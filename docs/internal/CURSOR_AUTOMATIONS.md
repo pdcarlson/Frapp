@@ -74,7 +74,7 @@ action.
 | Model | a high-reasoning model | Audit quality scales with reasoning; pick the strongest available. |
 | Tools / integrations | none required beyond shell | The agent creates/searches issues with `gh` CLI (repo convention — see below). Disable code edits / branch pushes. |
 | Auto-create PR | **off** (`autoCreatePR: false`) | This flow files issues, never code changes. |
-| Secrets / env | `GITHUB_TOKEN` set as a Cursor env secret, scoped to **Issues: read/write** on `pdcarlson/Frapp` | The repo's standard credential (`AGENTS.md`, `AGENT_INFRA.md`); `gh`/`git` read it automatically. **Not** in the repo. Fine-grained PAT preferred. |
+| Secrets / env | `GITHUB_TOKEN` Cursor env secret = fine-grained PAT, **Issues: read/write** on `pdcarlson/Frapp` | ⚠️ Cursor pre-auths `gh` as its own GitHub App, which 403s on label/issue writes (`Resource not accessible by integration`). The skill runs `export GH_TOKEN="$GITHUB_TOKEN"` + `gh api user` to force/verify the PAT. If the App still shadows it, store the PAT under a different name (e.g. `GH_PAT`). **Not** in the repo. |
 | Memory | **on** | Lets the agent learn what it already filed. |
 | Network access | default | Audit is local to the sandbox; `npm audit` needs registry access. |
 | Sandbox setup | from [`.cursor/environment.json`](../../.cursor/environment.json) (`npm install`) | Makes lint/typecheck/`npm audit` available. |
@@ -153,7 +153,7 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 2. Add **both triggers** via **Add Trigger**: GitHub *Pull request merged* (repo `Frapp`, by Anyone) and *Schedule* weekly (e.g. Wed 09:00 EDT).
 3. Select repo `pdcarlson/Frapp`, branch `main`, and a high-reasoning model (e.g. GPT-5.5 High).
 4. Paste the prompt above into **Agent Instructions**.
-5. Add the `GITHUB_TOKEN` env secret (fine-grained PAT, Issues read/write on `pdcarlson/Frapp`). The agent creates/searches issues via `gh` CLI, which reads `GITHUB_TOKEN` automatically — no MCP server or extra tools needed. Leave PR creation / code edits off.
+5. Add the `GITHUB_TOKEN` env secret (fine-grained PAT, Issues read/write on `pdcarlson/Frapp`). The agent creates/searches issues + labels via `gh` CLI. **Note:** Cursor auto-authenticates `gh` as its own GitHub App, which 403s on writes — the skill forces the PAT with `export GH_TOKEN="$GITHUB_TOKEN"` and verifies via `gh api user`. No MCP server needed. Leave PR creation / code edits off.
 6. Turn on **Memory**, toggle **Active**, and **Create**.
 
 > Note: the agent reads `.cursor/skills/suggestion-triage.md` from `main` at run time. Until this branch is merged to `main`, point the automation's branch at `claude/cursor-suggestion-triage` or the skill won't be present.

@@ -38,6 +38,12 @@ npm run check:api-contract   # openapi.json / SDK drift
 npm run check:migration-safety
 ```
 
+On a **fresh sandbox**, build shared packages before type-checking or `check-types` fails on unresolved workspace types:
+
+```bash
+npx turbo run build --filter=./packages/*   # then npm run check-types resolves
+```
+
 Plus what tools miss: weak/missing tests on complex logic, N+1 / in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret exposure, CI coverage holes.
 
 ### Lens 2 — Product & behavior gaps (grounded in `spec/`)
@@ -114,7 +120,16 @@ fp = <area>/<slug(title)>            anchored to     file=<primary-file-or-spec-
 - `slug(title)` = lowercase, non-alphanumerics → `-`, collapsed.
 - **Do not** include the line number — lines drift across commits.
 
-Use the `gh` CLI for all GitHub work (repo convention — see `.cursor/rules/infrastructure-research.mdc`). `gh` reads the `GITHUB_TOKEN` env secret automatically; no MCP server needed.
+### Authenticate `gh` first (do not skip)
+
+The Cursor sandbox pre-authenticates `gh` as **Cursor's GitHub App**, which can't manage labels or write issues — it fails with `HTTP 403: Resource not accessible by integration`. Force `gh` to use the repo PAT at the start of the run:
+
+```bash
+export GH_TOKEN="${GITHUB_TOKEN:?missing GITHUB_TOKEN secret}"   # GH_TOKEN overrides Cursor's App auth
+gh api user -q .login   # must print YOUR username, not a bot/app
+```
+
+If `gh api user` shows an app/bot, Cursor is shadowing `GITHUB_TOKEN` — store the PAT under a different name (e.g. `GH_PAT`) and `export GH_TOKEN="$GH_PAT"` instead. The PAT must be fine-grained with **Issues: Read and write** on `pdcarlson/Frapp` (this also covers `gh label create`). No MCP server needed.
 
 Before creating an issue:
 
@@ -174,6 +189,7 @@ Title format: `[suggestion] <title>`.
 ## Guardrails
 
 - **Never** modify code, push branches, or open PRs from this flow — issues only.
+- Treat every check as **read-only**. `npm run lint` runs `eslint --fix` and will modify source — discard any edits it makes (`git checkout -- .`) before finishing, or run eslint without `--fix`. Never commit or push.
 - **Never** print secret values (follow `AGENTS.md`).
 - Ground product/behavior claims in the spec or code — don't invent features the project hasn't scoped. Ideas can be inventive, but say so (`type:idea`) and keep them relevant to Frapp's domain.
 - If a check can't run in the sandbox (e.g. Supabase down), note it in the relevant issue rather than guessing — and don't claim a verification you didn't run.
