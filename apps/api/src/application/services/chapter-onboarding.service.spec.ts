@@ -167,6 +167,19 @@ describe('ChapterOnboardingService', () => {
     );
   });
 
+  it('records the effective archetype (not null) when the DTO omits one', async () => {
+    const manualDto: ChapterOnboardingDto = {
+      name: 'No Archetype Chapter',
+      university: 'Somewhere',
+    };
+
+    await service.onboard('user-1', manualDto);
+
+    expect(requestInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ archetype: 'ifc' }),
+    );
+  });
+
   it('does not record a directory request when a directory match is provided', async () => {
     await service.onboard('user-1', directoryDto);
     expect(requestInsert).not.toHaveBeenCalled();

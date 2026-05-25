@@ -76,6 +76,7 @@ export class ChapterOnboardingService {
         userId,
         dto,
         branding,
+        seed.archetype,
       ).catch((err) =>
         this.logger.warn('Failed to record chapter directory request', err),
       );
@@ -151,6 +152,10 @@ export class ChapterOnboardingService {
     userId: string,
     dto: ChapterOnboardingDto,
     branding: Branding,
+    // The archetype actually applied to the created chapter (resolved from the
+    // seed, defaulted to `ifc` when the DTO omits one) — not the raw DTO value,
+    // so the backfill candidate reflects what the officer's chapter really uses.
+    effectiveArchetype: string,
   ) {
     const foundedAt = branding.founded_at;
     const { error } = await this.supabase
@@ -165,7 +170,7 @@ export class ChapterOnboardingService {
         university: dto.university,
         university_short: (branding.school_short as string | undefined) ?? null,
         founded_year: typeof foundedAt === 'number' ? foundedAt : null,
-        archetype: dto.org_archetype ?? null,
+        archetype: effectiveArchetype,
       });
     if (error) {
       this.logger.warn('chapter_directory_requests insert failed', error);

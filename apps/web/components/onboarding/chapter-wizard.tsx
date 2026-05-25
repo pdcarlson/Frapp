@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -266,102 +267,112 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="chapter-wizard-title"
-      className="fixed inset-0 z-50 overflow-y-auto bg-background"
-    >
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 py-8 sm:px-6 sm:py-12">
-        <header className="mb-6">
-          <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 text-primary" />
-            Set up your chapter
-          </p>
-          <h1
-            id="chapter-wizard-title"
-            className="mt-1 text-2xl font-semibold tracking-tight"
-          >
-            {STEP_LABELS[step]}
-          </h1>
-          <StepProgress current={stepIndex} />
-        </header>
+    // Radix Dialog gives us focus trap, initial-focus, focus restore on close,
+    // and an inert (aria-hidden) background for free. The flow is intentionally
+    // non-dismissable — a user with no chapter must finish setup — so Escape and
+    // outside interaction are suppressed and no close button is rendered.
+    <DialogPrimitive.Root open>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          onEscapeKeyDown={(event) => event.preventDefault()}
+          onInteractOutside={(event) => event.preventDefault()}
+          className="fixed inset-0 z-50 overflow-y-auto bg-background focus:outline-none"
+        >
+          <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-4 py-8 sm:px-6 sm:py-12">
+            <header className="mb-6">
+              <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                Set up your chapter
+              </p>
+              <DialogPrimitive.Title asChild>
+                <h1
+                  id="chapter-wizard-title"
+                  className="mt-1 text-2xl font-semibold tracking-tight"
+                >
+                  {STEP_LABELS[step]}
+                </h1>
+              </DialogPrimitive.Title>
+              <StepProgress current={stepIndex} />
+            </header>
 
-        <main className="flex-1">
-          {step === "find" ? (
-            <FindStep
-              rawQuery={rawQuery}
-              onQueryChange={setRawQuery}
-              isFetching={searchQuery.isFetching}
-              isError={searchQuery.isError}
-              onRetry={() => searchQuery.refetch()}
-              results={results}
-              debouncedQuery={debouncedQuery}
-              onSelect={applyDirectoryMatch}
-              onManual={startManualEntry}
-            />
-          ) : null}
+            <main className="flex-1">
+              {step === "find" ? (
+                <FindStep
+                  rawQuery={rawQuery}
+                  onQueryChange={setRawQuery}
+                  isFetching={searchQuery.isFetching}
+                  isError={searchQuery.isError}
+                  onRetry={() => searchQuery.refetch()}
+                  results={results}
+                  debouncedQuery={debouncedQuery}
+                  onSelect={applyDirectoryMatch}
+                  onManual={startManualEntry}
+                />
+              ) : null}
 
-          {step === "archetype" ? (
-            <ArchetypeStep selected={archetype} onSelect={setArchetype} />
-          ) : null}
+              {step === "archetype" ? (
+                <ArchetypeStep selected={archetype} onSelect={setArchetype} />
+              ) : null}
 
-          {step === "identity" ? (
-            <IdentityStep
-              identity={identity}
-              onChange={setIdentity}
-              isManual={directoryId === null}
-            />
-          ) : null}
+              {step === "identity" ? (
+                <IdentityStep
+                  identity={identity}
+                  onChange={setIdentity}
+                  isManual={directoryId === null}
+                />
+              ) : null}
 
-          {step === "invite" ? (
-            <InviteStep
-              inviteLink={inviteLink}
-              copied={copied}
-              isGenerating={createInvite.isPending}
-              onGenerate={generateInviteLink}
-              onCopy={copyInviteLink}
-            />
-          ) : null}
-        </main>
+              {step === "invite" ? (
+                <InviteStep
+                  inviteLink={inviteLink}
+                  copied={copied}
+                  isGenerating={createInvite.isPending}
+                  onGenerate={generateInviteLink}
+                  onCopy={copyInviteLink}
+                />
+              ) : null}
+            </main>
 
-        <footer className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-4">
-          {step !== "find" && step !== "invite" ? (
-            <Button variant="ghost" onClick={goBack}>
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-          ) : (
-            <span />
-          )}
-
-          {step === "archetype" ? (
-            <Button onClick={() => setStep("identity")}>
-              Continue
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          ) : null}
-
-          {step === "identity" ? (
-            <Button onClick={submitChapter} disabled={!identityValid || onboardChapter.isPending}>
-              {onboardChapter.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+            <footer className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-4">
+              {step !== "find" && step !== "invite" ? (
+                <Button variant="ghost" onClick={goBack}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
               ) : (
-                <Check className="h-4 w-4" />
+                <span />
               )}
-              Create chapter
-            </Button>
-          ) : null}
 
-          {step === "invite" ? (
-            <Button onClick={finish}>
-              {inviteLink ? "Finish" : "Skip for now"}
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          ) : null}
-        </footer>
-      </div>
-    </div>
+              {step === "archetype" ? (
+                <Button onClick={() => setStep("identity")}>
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : null}
+
+              {step === "identity" ? (
+                <Button onClick={submitChapter} disabled={!identityValid || onboardChapter.isPending}>
+                  {onboardChapter.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  Create chapter
+                </Button>
+              ) : null}
+
+              {step === "invite" ? (
+                <Button onClick={finish}>
+                  {inviteLink ? "Finish" : "Skip for now"}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </footer>
+          </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 

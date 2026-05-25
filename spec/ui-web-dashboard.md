@@ -685,18 +685,17 @@ A skippable-where-safe, full-screen wizard at
 "I'm in `#general` with my chapter set up" in under 90 seconds for a chapter in
 the directory. Five conceptual steps (sign-up is step 1, already complete):
 
-```
-1. Sign up        (done before the wizard mounts)
-2. Find chapter   directory combobox → GET /v1/chapter-directory/search
-                  (debounced 250ms; loading / empty / error / match states)
-                  "Not in our directory?" is always available → manual entry
-3. Pick archetype 4-up card grid (all 8 archetypes); pre-selected from a match
-4. Confirm identity  Greek letters, designation, school short, founded year
-                  (guard-parsed, >= 1776), two color pickers — all editable,
-                  pre-filled from the directory match or blank for manual entry
-5. Invite members  generates a copyable /join?token=… link (share-link primary;
-                  skippable). Bulk-email invites are deferred (no mail service).
-```
+1. **Sign up** — done before the wizard mounts.
+2. **Find chapter** — directory combobox → `GET /v1/chapter-directory/search`
+   (debounced 250ms; loading / empty / error / match states). "Not in our
+   directory?" is always available → manual entry.
+3. **Pick archetype** — 4-up card grid (all 8 archetypes); pre-selected from a
+   match.
+4. **Confirm identity** — Greek letters, designation, school short, founded year
+   (guard-parsed, >= 1776), two color pickers — all editable, pre-filled from the
+   directory match or blank for manual entry.
+5. **Invite members** — generates a copyable `/join?token=…` link (share-link
+   primary; skippable). Bulk-email invites are deferred (no mail service).
 
 **Submit** calls `POST /v1/chapters/onboard` (cold path):
 
