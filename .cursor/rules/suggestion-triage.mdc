@@ -1,0 +1,18 @@
+---
+description: Triaging codebase suggestions into deduplicated GitHub issues (the Cursor "Suggestion Triage" automation, or doing it by hand)
+globs:
+  - ".cursor/skills/suggestion-triage.md"
+  - "docs/internal/CURSOR_AUTOMATIONS.md"
+alwaysApply: false
+---
+
+# Suggestion Triage
+
+Read `.cursor/skills/suggestion-triage.md` before triaging suggestions or running the automation.
+
+Key points:
+- Read-only on code — this flow files GitHub issues only. Never edit files, push branches, or open PRs.
+- Findings come from the existing `.cursor/skills/audit.md` checks; prioritize recently changed and high-risk areas. Cap at ~8 high-impact findings per run.
+- Every issue gets `suggestion` + one `area:<x>` + one `severity:<x>` label, the standard body template, and a hidden fingerprint marker.
+- Dedup before creating: search open and closed `label:suggestion` issues for the fingerprint (`fp=<area>/<slug>`, no line number) and skip if it already exists.
+- The dashboard automation config (triggers, model, `GITHUB_TOKEN` secret, settings) lives in `docs/internal/CURSOR_AUTOMATIONS.md`. Issues are created/searched via `gh` CLI — no MCP server needed.

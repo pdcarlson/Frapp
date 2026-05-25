@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `suggestion-triage.md`).
 
 ## Optional agent credentials (automation / cloud sessions)
 
@@ -67,7 +67,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Closes #N`, criteria met, CI green."
 
-**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `chunk-NN` (ties an issue to a redesign chunk), `agent-ready` (fully specified, safe to hand to an agent). A security issue that gates a chunk gets `security` + `blocked` + `chunk-NN`.
+**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `chunk-NN` (ties an issue to a redesign chunk), `agent-ready` (fully specified, safe to hand to an agent). A security issue that gates a chunk gets `security` + `blocked` + `chunk-NN`. The Cursor "Suggestion Triage" automation files issues with `suggestion` + one `area:<x>` + one `severity:<x>` (deduped by a hidden fingerprint) — see [`docs/internal/CURSOR_AUTOMATIONS.md`](docs/internal/CURSOR_AUTOMATIONS.md).
 
 **Lifecycle.** File → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. **List any chunk's blocking issues at the top of its brief** so the chunk can't be started until they're resolved.
 
@@ -127,6 +127,7 @@ CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testi
 | Web / landing / UI      | `.cursor/skills/ui-development.md`          |
 | Tests / verification    | `.cursor/skills/testing.md`                 |
 | Audits / quality        | `.cursor/skills/audit.md`                   |
+| Suggestion triage       | `.cursor/skills/suggestion-triage.md`       |
 | Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
 
 Cursor rules under `.cursor/rules/` point at these same skill files.

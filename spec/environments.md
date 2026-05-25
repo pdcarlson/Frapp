@@ -332,3 +332,7 @@ The Jules agent execution environment uses a pre-configured headless cloud VM.
 Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
 Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.
+
+## Cursor Automations Environment
+
+Cursor Automations run a cloud agent in a fresh sandbox cloned from `main` on a schedule and/or GitHub event. The sandbox bootstraps from [`.cursor/environment.json`](../.cursor/environment.json) (currently `npm install`) — read-only audits don't need Docker/Supabase, unlike the Jules VM above. The automations are configured in the Cursor dashboard (config-as-code isn't supported yet), so the canonical prompt and every setting are version-controlled in [`docs/internal/CURSOR_AUTOMATIONS.md`](../docs/internal/CURSOR_AUTOMATIONS.md); the agent's behavior contract is [`.cursor/skills/suggestion-triage.md`](../.cursor/skills/suggestion-triage.md). The current automation ("Suggestion Triage") audits the codebase on PR-merge and weekly, then files deduplicated, labeled GitHub issues — it never edits code or opens PRs.
