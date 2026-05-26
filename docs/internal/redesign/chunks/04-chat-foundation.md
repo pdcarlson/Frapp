@@ -99,3 +99,14 @@ Rebuild the chat surface as a Slack-grade 3-pane client with the full hot-path p
 
 - Branch `claude/redesign-chunk-04-chat-foundation`. Push, open PR `Chunk 04 — Chat foundation + hot-path client`. Body: link this brief, attach screenshots, paste the reconnect + offline test results.
 - Update `STATUS.md`.
+
+## Phase 1 — scoping notes (recorded with the implementation)
+
+Edits made during the build that diverge from the brief above:
+
+- **Toast plumbing:** the chat surface uses `@/hooks/use-toast` (the existing dashboard convention used by every other screen) rather than `sonner`. Functionally equivalent for our needs; sonner remains available repo-wide.
+- **WYSIWYG composer scope:** Tiptap StarterKit + Placeholder is wired, with `Cmd+/` opening the slash palette and `Enter`/`Shift+Enter` submit/newline. *Live* `@`-mention and `#`-channel suggestion popovers (Tiptap Mention extension with a data-backed suggestion renderer) are deferred — the API surface for member search lands with Chunk 09, and the channel-ref suggestion is naturally Chunk 05's concern alongside the rich-message renderers. The Mention extension package is installed so Chunk 05 can drop in the suggestion popovers without re-architecting the editor.
+- **Slash palette:** built on the already-installed `cmdk` library (the same dependency that powers the existing dashboard command menus) rather than hand-rolled. Filters via `useOrgConfig().isModuleEnabled` exactly as specified.
+- **Reactions / un-react:** confirmed per the locked decision — adds go through `chat-react`, removes go through a direct RLS-protected delete on `chat_message_actions` (the existing `chat_message_actions_delete` policy scopes deletes to the viewer's own rows). The merged hardened Edge Function is untouched.
+- **Realtime filter compromise:** documented in `spec/architecture.md` ADR-05. `chat_message_actions` has no `channel_id` column, so reactions stream through one **global** Postgres Changes subscription owned by the realtime manager and are dispatched into whichever channel cache holds the message. Reactions on not-yet-loaded messages are intentionally dropped (backfill recovers them).
+- **Channel unread / mute:** the channel-list renders unread badges and mute pills when the data is present, but no unread-tracking endpoint exists yet; flagged for a follow-up issue. `useMarkChannelRead` exists but the read-cursor → unread-count machinery is out of scope for the foundation chunk.
