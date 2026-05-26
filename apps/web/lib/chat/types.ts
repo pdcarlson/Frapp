@@ -22,6 +22,9 @@ export function reactionActionType(emoji: string): string {
   return `${REACTION_ACTION_PREFIX}${emoji}`;
 }
 
+/** Alias of `reactionActionType` for callers that want the inverse-symmetric name. */
+export const actionTypeFromEmoji = reactionActionType;
+
 export function emojiFromActionType(actionType: string): string | null {
   return actionType.startsWith(REACTION_ACTION_PREFIX)
     ? actionType.slice(REACTION_ACTION_PREFIX.length)

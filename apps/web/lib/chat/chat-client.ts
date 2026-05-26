@@ -21,6 +21,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  CHAT_MESSAGE_KINDS,
   chatMessagesKey,
   optimisticMessage,
   reactionActionType,
@@ -151,6 +152,12 @@ export async function sendMessage(
   );
   await clearDraft(args.channelId);
 
+  const intent = {
+    kind: args.kind ?? "text",
+    payload: args.payload ?? null,
+    replyToId: args.replyToId ?? null,
+  } as const;
+
   const offline =
     typeof navigator !== "undefined" && navigator.onLine === false;
   if (offline) {
@@ -158,6 +165,7 @@ export async function sendMessage(
       clientId,
       channelId: args.channelId,
       body: args.content,
+      ...intent,
     });
     return;
   }
@@ -166,6 +174,7 @@ export async function sendMessage(
     clientId,
     channelId: args.channelId,
     body: args.content,
+    ...intent,
   });
 
   try {
@@ -208,17 +217,29 @@ export async function sendMessage(
   }
 }
 
+function coerceKind(kind: string | undefined): ChatMessageKind {
+  return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ?? "text") as ChatMessageKind;
+}
+
+/** Reconstructs a full `SendMessageArgs` from a persisted outbox row. */
+function sendArgsFromOutbox(row: OutboxRow): SendMessageArgs {
+  return {
+    channelId: row.channelId,
+    content: row.body,
+    kind: coerceKind(row.kind),
+    payload: row.payload ?? null,
+    replyToId: row.replyToId ?? null,
+    clientMessageId: row.clientId,
+  };
+}
+
 /** Retry a failed/queued outbox row. Reuses the original clientId for idempotency. */
 export async function retryOutboxRow(
   ctx: ChatActionContext,
   row: OutboxRow,
 ): Promise<void> {
   await requeueOutbox(row.clientId);
-  await sendMessage(ctx, {
-    channelId: row.channelId,
-    content: row.body,
-    clientMessageId: row.clientId,
-  });
+  await sendMessage(ctx, sendArgsFromOutbox(row));
 }
 
 /** Drops a failed message from the cache and the outbox. */
@@ -242,11 +263,7 @@ export async function flushOutbox(ctx: ChatActionContext): Promise<void> {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return;
   const rows = await listQueuedOutbox();
   for (const row of rows) {
-    await sendMessage(ctx, {
-      channelId: row.channelId,
-      content: row.body,
-      clientMessageId: row.clientId,
-    });
+    await sendMessage(ctx, sendArgsFromOutbox(row));
   }
 }
 
@@ -269,6 +286,9 @@ export async function hydrateOutboxIntoCache(
         channelId: row.channelId,
         senderId: ctx.userId!,
         content: row.body,
+        kind: coerceKind(row.kind),
+        payload: row.payload ?? null,
+        replyToId: row.replyToId ?? null,
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {

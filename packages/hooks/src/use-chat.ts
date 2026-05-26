@@ -371,6 +371,34 @@ export function useRequestChatUploadUrl() {
   });
 }
 
+/**
+ * Performs the PUT to a Supabase Storage signed URL returned by
+ * `useRequestChatUploadUrl`. Wraps the raw `fetch` so every chat network
+ * call stays inside `@repo/hooks` and benefits from TanStack Query's retry,
+ * pending state, and error handling primitives.
+ */
+export function useUploadSignedUrl() {
+  return useMutation({
+    mutationFn: async ({
+      signedUrl,
+      file,
+    }: {
+      signedUrl: string;
+      file: File;
+    }) => {
+      const res = await fetch(signedUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!res.ok) {
+        throw new Error(`Upload failed (${res.status})`);
+      }
+      return { status: res.status, contentType: file.type, size: file.size };
+    },
+  });
+}
+
 export function useCreateCategory() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

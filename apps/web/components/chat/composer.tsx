@@ -8,6 +8,7 @@ import {
   type ChangeEvent,
 } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import type { JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Extension } from "@tiptap/core";
@@ -18,7 +19,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { useRequestChatUploadUrl } from "@repo/hooks";
+import { useRequestChatUploadUrl, useUploadSignedUrl } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { EmojiPicker } from "./emoji-picker";
 import { SlashPalette } from "./slash-palette";
@@ -42,7 +43,9 @@ interface ComposerProps {
 /**
  * Submit on Enter; let Shift+Enter fall through to StarterKit's default
  * hard-break. Bound as a Tiptap extension so we get full ProseMirror context
- * (composition state, etc.) instead of a flaky DOM keydown.
+ * (composition state, etc.) instead of a flaky DOM keydown. The closure
+ * delegates to a ref that holds the latest submit handler, so the keymap
+ * always honors the current `disabled` state without re-binding the extension.
  */
 function createSubmitKeymap(onSubmit: () => void) {
   return Extension.create({
@@ -56,6 +59,28 @@ function createSubmitKeymap(onSubmit: () => void) {
       };
     },
   });
+}
+
+/**
+ * Build a Tiptap doc JSON from plain text so chars like `<`, `&`, and
+ * newlines round-trip safely (Tiptap's `setContent(string)` would parse the
+ * value as HTML and lose escapes / mangle reserved chars). Each line becomes
+ * a paragraph; consecutive newlines yield empty paragraphs.
+ */
+function buildDocFromPlainText(text: string): JSONContent {
+  if (text.length === 0) return { type: "doc", content: [] };
+  const lines = text.split("\n");
+  return {
+    type: "doc",
+    content: lines.map((line) =>
+      line.length === 0
+        ? { type: "paragraph" }
+        : {
+            type: "paragraph",
+            content: [{ type: "text", text: line }],
+          },
+    ),
+  };
 }
 
 /**
@@ -75,7 +100,8 @@ export function Composer({
   disabled,
 }: ComposerProps) {
   const { toast } = useToast();
-  const uploadHook = useRequestChatUploadUrl();
+  const requestUploadUrl = useRequestChatUploadUrl();
+  const uploadSignedUrl = useUploadSignedUrl();
   const fileInput = useRef<HTMLInputElement | null>(null);
   const [palette, setPalette] = useState<{ open: boolean; query: string }>({
     open: false,
@@ -92,7 +118,7 @@ export function Composer({
       }),
       createSubmitKeymap(() => sendRef.current()),
     ],
-    content: draft.length > 0 ? draft : "",
+    content: buildDocFromPlainText(draft),
     editorProps: {
       attributes: {
         class:
@@ -105,14 +131,20 @@ export function Composer({
       onChangeDraft(text);
       onTyping();
       const parsed = parseSlashInput(text);
-      // Open the palette on a leading "/" (even with no command yet) so users
-      // see the list as they type. Close it the moment the text stops being a
-      // slash invocation (so plain `/path` doesn't trap the user).
-      if (parsed.isSlash && (parsed.command == null || parsed.command.length <= 24)) {
+      const opensPalette =
+        parsed.isSlash && (parsed.command == null || parsed.command.length <= 24);
+      if (opensPalette) {
         setPalette((prev) =>
           prev.open && prev.query === (parsed.command ?? "")
             ? prev
             : { open: true, query: parsed.command ?? "" },
+        );
+      } else {
+        // Composer text is no longer a slash invocation (user backspaced the
+        // leading `/`, or typed a too-long token). Close the palette so it
+        // doesn't trap the user behind a stale list.
+        setPalette((prev) =>
+          prev.open ? { open: false, query: "" } : prev,
         );
       }
     },
@@ -124,16 +156,20 @@ export function Composer({
     if (!editor) return;
     const current = editor.getText();
     if (current === draft) return;
-    editor.commands.setContent(draft.length > 0 ? draft : "", { emitUpdate: false });
+    editor.commands.setContent(buildDocFromPlainText(draft), {
+      emitUpdate: false,
+    });
   }, [draft, editor]);
 
   const submit = useCallback(() => {
+    if (disabled) return;
     if (!editor) return;
     const text = editor.getText().trim();
     if (text.length === 0) return;
     void onSend(text);
+    // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
-  }, [editor, onSend]);
+  }, [disabled, editor, onSend]);
   sendRef.current = submit;
 
   const insertEmoji = useCallback(
@@ -150,7 +186,7 @@ export function Composer({
       event.target.value = "";
       if (!file || !editor) return;
       try {
-        const response = (await uploadHook.mutateAsync({
+        const response = (await requestUploadUrl.mutateAsync({
           id: channelId,
           body: { filename: file.name, content_type: file.type },
         })) as unknown as {
@@ -158,12 +194,10 @@ export function Composer({
           storagePath: string;
           messageId: string;
         };
-        const put = await fetch(response.signedUrl, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": file.type },
+        await uploadSignedUrl.mutateAsync({
+          signedUrl: response.signedUrl,
+          file,
         });
-        if (!put.ok) throw new Error(`Upload failed (${put.status})`);
         // Append the storage path as a simple text reference until Chunk 05
         // wires rich inline-attachment renderers. The hot path stays text +
         // metadata; the storage path is the durable handle.
@@ -181,19 +215,16 @@ export function Composer({
         });
       }
     },
-    [channelId, editor, toast, uploadHook],
+    [channelId, editor, requestUploadUrl, toast, uploadSignedUrl],
   );
 
   // Cmd+/ globally inside the composer opens the palette.
-  const handleHostKey = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        setPalette({ open: true, query: "" });
-      }
-    },
-    [],
-  );
+  const handleHostKey = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === "/" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      setPalette({ open: true, query: "" });
+    }
+  }, []);
 
   const onPaletteSelect = useCallback(
     (command: SlashCommand) => {
@@ -218,6 +249,9 @@ export function Composer({
       </div>
     );
   }
+
+  const attachPending =
+    requestUploadUrl.isPending || uploadSignedUrl.isPending;
 
   return (
     <div className="border-t p-2" onKeyDown={handleHostKey}>
@@ -246,7 +280,7 @@ export function Composer({
               size="sm"
               aria-label="Attach file"
               onClick={() => fileInput.current?.click()}
-              disabled={uploadHook.isPending}
+              disabled={attachPending}
             >
               <Paperclip className="h-4 w-4" />
             </Button>
@@ -291,4 +325,3 @@ export function Composer({
     </div>
   );
 }
-

@@ -34,8 +34,9 @@ import type {
 import {
   applyReactionDelete,
   applyReactionInsert,
-  mergeServerRow,
   emptyCache,
+  mergeServerRow,
+  removeMessage,
 } from "./cache";
 import {
   chatMessagesKey,
@@ -246,12 +247,25 @@ class ChatRealtimeManager {
         filter: `channel_id=eq.${state.channelId}`,
       },
       (payload: RealtimePostgresChangesPayload<RawChatMessage>) => {
-        const row =
-          (payload.new as RawChatMessage | undefined) ??
-          (payload.old as RawChatMessage | undefined);
-        if (!row || !row.id) return;
-        this.patchCache(state.channelId, (cache) => mergeServerRow(cache, row));
-        if (row.id) writeLastSeen(state.channelId, row.id);
+        const next = payload.new as RawChatMessage | undefined;
+        if (next && next.id) {
+          // INSERT / UPDATE — full row is present and authoritative.
+          this.patchCache(state.channelId, (cache) =>
+            mergeServerRow(cache, next),
+          );
+          writeLastSeen(state.channelId, next.id);
+          return;
+        }
+        // DELETE — default replica identity gives us only `old.id`, so we
+        // remove the message from the cache (matches either the server id or
+        // the client_message_id key) and intentionally do *not* advance
+        // last-seen (a delete is not a new tail).
+        const old = payload.old as { id?: string } | undefined;
+        if (old?.id) {
+          this.patchCache(state.channelId, (cache) =>
+            removeMessage(cache, old.id!),
+          );
+        }
       },
     );
 

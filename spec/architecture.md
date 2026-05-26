@@ -404,9 +404,9 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 
 **Schema (`frapp-chat` IndexedDB):**
 
-```
+```text
 drafts(channelId PK, body, updatedAt)
-outbox(clientId PK, channelId, body, attempts, queuedAt, status: "queued"|"failed", lastError?)
+outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queuedAt, status: "queued"|"failed", lastError?)
 ```
 
 - **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, *not* the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.

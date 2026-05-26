@@ -32,7 +32,16 @@ export type OutboxStatus = "queued" | "failed";
 export interface OutboxRow {
   clientId: string;
   channelId: string;
+  /** Plain-text message content sent on the wire. */
   body: string;
+  /**
+   * Persisted message intent so a flushed retry reconstructs the *full*
+   * payload — not just the body. Optional for forward-compat with rows
+   * written by older clients.
+   */
+  kind?: string;
+  payload?: Record<string, unknown> | null;
+  replyToId?: string | null;
   attempts: number;
   queuedAt: number;
   status: OutboxStatus;

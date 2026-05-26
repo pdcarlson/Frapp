@@ -59,6 +59,10 @@ export function MessageItem({
   const isMine = !!viewerId && message.sender_id === viewerId;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
+  // Reactions and threads operate on the *server* id (chat-react requires a
+  // real chat_messages.id, threads need a stable parent id) — gate the hover
+  // affordances on a confirmed status so we never act on a placeholder id.
+  const isConfirmed = message._status === "confirmed";
   const isSelfBubble = isMine;
 
   return (
@@ -114,7 +118,7 @@ export function MessageItem({
           onReact={(emoji) => onReact(message.id, emoji)}
           onUnreact={(emoji) => onUnreact(message.id, emoji)}
         />
-        {hovered && !message.is_deleted ? (
+        {hovered && !message.is_deleted && isConfirmed ? (
           <div className="mt-1 flex items-center gap-1">
             <ReactionQuickPick
               reactions={message.reactions}
@@ -135,39 +139,41 @@ export function MessageItem({
             ) : null}
           </div>
         ) : null}
-        {isPending ? (
-          <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> Sending…
-          </p>
-        ) : null}
-        {isFailed ? (
-          <div className="mt-0.5 flex items-center gap-2 text-[11px] text-destructive">
-            <AlertCircle className="h-3 w-3" />
-            <span>{message._error ?? "Send failed"}</span>
-            {onRetry ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => onRetry(message.client_message_id)}
-              >
-                <RefreshCw className="h-3 w-3" /> Retry
-              </Button>
-            ) : null}
-            {onDiscard ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => onDiscard(message.client_message_id)}
-              >
-                <Trash2 className="h-3 w-3" /> Discard
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
+        <div role="status" aria-live="polite" aria-atomic="true">
+          {isPending ? (
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Sending…
+            </p>
+          ) : null}
+          {isFailed ? (
+            <div className="mt-0.5 flex items-center gap-2 text-[11px] text-destructive">
+              <AlertCircle className="h-3 w-3" aria-hidden="true" />
+              <span>{message._error ?? "Send failed"}</span>
+              {onRetry ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => onRetry(message.client_message_id)}
+                >
+                  <RefreshCw className="h-3 w-3" /> Retry
+                </Button>
+              ) : null}
+              {onDiscard ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => onDiscard(message.client_message_id)}
+                >
+                  <Trash2 className="h-3 w-3" /> Discard
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       </div>
     </li>
   );

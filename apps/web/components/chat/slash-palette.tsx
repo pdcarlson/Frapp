@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Command,
   CommandEmpty,
@@ -30,6 +30,10 @@ export interface SlashPaletteProps {
  * enabled modules and lists the typed query results. Foundation chunk: choosing
  * a command surfaces an "Available in Chunk 05" toast via the caller — the
  * palette itself is module-aware and accessible.
+ *
+ * The input is controlled and re-syncs with `initialQuery` whenever the palette
+ * is opened (e.g. the composer pushed a fresh partial command into it) so the
+ * displayed filter never drifts from the composer's slash text.
  */
 export function SlashPalette({
   open,
@@ -38,9 +42,17 @@ export function SlashPalette({
   onSelect,
   onOpenChange,
 }: SlashPaletteProps) {
-  const commands = useMemo(() => {
-    return filterSlashCommands("", isModuleEnabled);
-  }, [isModuleEnabled]);
+  const [query, setQuery] = useState(initialQuery);
+
+  useEffect(() => {
+    // Re-seed on open and whenever the composer-driven prefix changes.
+    if (open) setQuery(initialQuery);
+  }, [open, initialQuery]);
+
+  const commands = useMemo(
+    () => filterSlashCommands(query, isModuleEnabled),
+    [query, isModuleEnabled],
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -50,10 +62,11 @@ export function SlashPalette({
           Pick a slash command. Available commands depend on which modules your
           chapter has enabled.
         </DialogDescription>
-        <Command>
+        <Command shouldFilter={false}>
           <CommandInput
             placeholder="Type a command…"
-            defaultValue={initialQuery}
+            value={query}
+            onValueChange={setQuery}
           />
           <CommandList>
             <CommandEmpty>No matching command.</CommandEmpty>

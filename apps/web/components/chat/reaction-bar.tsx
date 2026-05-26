@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/popover";
 import { EmojiPicker } from "./emoji-picker";
 import {
+  actionTypeFromEmoji,
   emojiFromActionType,
   type ReactionState,
 } from "@/lib/chat/types";
@@ -92,7 +93,7 @@ export function ReactionQuickPick({
     <div className="flex items-center gap-1">
       {QUICK_REACTIONS.map((emoji) => {
         const mine = viewerId
-          ? (reactions[`reaction:${emoji}`] ?? []).includes(viewerId)
+          ? (reactions[actionTypeFromEmoji(emoji)] ?? []).includes(viewerId)
           : false;
         return (
           <Button

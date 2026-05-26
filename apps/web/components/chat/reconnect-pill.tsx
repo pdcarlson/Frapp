@@ -1,6 +1,6 @@
 "use client";
 
-import { CloudOff, Loader2, Wifi } from "lucide-react";
+import { CloudOff, Loader2 } from "lucide-react";
 import type { ConnectionStatus } from "@/lib/chat/realtime-manager";
 
 /**
@@ -23,16 +23,13 @@ export function ReconnectPill({ status }: { status: ConnectionStatus }) {
     >
       {isOffline ? (
         <>
-          <CloudOff className="h-3 w-3" /> Offline — messages will send when you reconnect
+          <CloudOff className="h-3 w-3" aria-hidden="true" /> Offline — messages will send when you reconnect
         </>
       ) : (
         <>
-          <Loader2 className="h-3 w-3 animate-spin" /> Reconnecting…
+          <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Reconnecting…
         </>
       )}
-      <span className="sr-only">
-        <Wifi />
-      </span>
     </div>
   );
 }

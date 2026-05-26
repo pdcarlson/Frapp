@@ -152,24 +152,36 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       return;
     }
     let cancelled = false;
-    void loadDraft(channelId).then((body) => {
-      if (!cancelled) setDraftState(body);
-    });
+    loadDraft(channelId)
+      .then((body) => {
+        if (!cancelled) setDraftState(body);
+      })
+      .catch((err) => {
+        // IndexedDB read can throw in private mode / quota issues — degrade
+        // to an empty draft rather than crash the channel.
+        console.warn("loadDraft failed", err);
+      });
     return () => {
       cancelled = true;
     };
   }, [channelId]);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelDraftTimer = useCallback(() => {
+    if (draftTimer.current) {
+      clearTimeout(draftTimer.current);
+      draftTimer.current = null;
+    }
+  }, []);
   const setDraft = useCallback(
     (body: string) => {
       setDraftState(body);
       if (!channelId) return;
-      if (draftTimer.current) clearTimeout(draftTimer.current);
+      cancelDraftTimer();
       draftTimer.current = setTimeout(() => {
         void saveDraft(channelId, body);
       }, 400);
     },
-    [channelId],
+    [channelId, cancelDraftTimer],
   );
 
   const send = useCallback(
@@ -178,6 +190,9 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       opts?: { replyToId?: string | null },
     ): Promise<void> => {
       if (!channelId || content.trim().length === 0) return;
+      // Cancel any in-flight debounced save before clearing so a stale draft
+      // can't be re-persisted after the send.
+      cancelDraftTimer();
       await sendMessage(ctx, {
         channelId,
         content: content.trim(),
@@ -186,7 +201,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       setDraftState("");
       await clearDraft(channelId);
     },
-    [channelId, ctx],
+    [cancelDraftTimer, channelId, ctx],
   );
 
   const reactCb = useCallback(
