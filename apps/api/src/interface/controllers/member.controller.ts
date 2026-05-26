@@ -65,10 +65,11 @@ export class MemberController {
   @ApiOperation({ summary: 'Update member roles' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
-    return this.memberService.updateRoles(id, dto.role_ids);
+    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
   }
 
   @Patch('me/onboarding')

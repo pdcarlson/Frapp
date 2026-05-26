@@ -132,24 +132,142 @@ describe('MemberService', () => {
     ).rejects.toThrow('Member not found');
   });
 
-  it('should update member roles', async () => {
-    const updatedMember = {
+  describe('updateRoles', () => {
+    const existingMember = {
       id: 'member-1',
       user_id: 'user-1',
       chapter_id: 'chapter-1',
-      role_ids: ['role-1', 'role-2'],
+      role_ids: ['role-1'],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
-      updated_at: '2024-01-02',
+      updated_at: '2024-01-01',
     };
-    mockRepo.update.mockResolvedValue(updatedMember);
+    const presidentRole = {
+      id: 'role-president',
+      chapter_id: 'chapter-1',
+      name: 'President',
+      permissions: ['*'],
+      is_system: true,
+      display_order: 1,
+      color: '#FFD700',
+      created_at: '2024-01-01',
+    };
+    const memberRole = {
+      id: 'role-1',
+      chapter_id: 'chapter-1',
+      name: 'Member',
+      permissions: ['members:view'],
+      is_system: true,
+      display_order: 5,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    const customRole = {
+      id: 'role-2',
+      chapter_id: 'chapter-1',
+      name: 'Social Chair',
+      permissions: ['events:create'],
+      is_system: false,
+      display_order: 8,
+      color: null,
+      created_at: '2024-01-01',
+    };
 
-    const result = await service.updateRoles('member-1', ['role-1', 'role-2']);
+    it('updates non-President roles for an ordinary member', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        customRole,
+      ]);
+      const updated = { ...existingMember, role_ids: ['role-1', 'role-2'] };
+      mockRepo.update.mockResolvedValue(updated);
 
-    expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
-      role_ids: ['role-1', 'role-2'],
+      const result = await service.updateRoles(
+        'member-1',
+        ['role-1', 'role-2'],
+        'chapter-1',
+      );
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        role_ids: ['role-1', 'role-2'],
+      });
+      expect(result).toEqual(updated);
     });
-    expect(result).toEqual(updatedMember);
+
+    it('throws when member is not found', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.updateRoles('member-x', ['role-1'], 'chapter-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('throws when member belongs to a different chapter', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        chapter_id: 'chapter-other',
+      });
+
+      await expect(
+        service.updateRoles('member-1', ['role-1'], 'chapter-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('blocks adding the President role through the generic endpoint', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-1', 'role-president'],
+          'chapter-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('blocks removing the President role through the generic endpoint', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        role_ids: ['role-president', 'role-1'],
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+
+      await expect(
+        service.updateRoles('member-1', ['role-1'], 'chapter-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('allows keeping the President role unchanged while editing other roles', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        role_ids: ['role-president', 'role-1'],
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        customRole,
+      ]);
+      const updated = {
+        ...existingMember,
+        role_ids: ['role-president', 'role-2'],
+      };
+      mockRepo.update.mockResolvedValue(updated);
+
+      const result = await service.updateRoles(
+        'member-1',
+        ['role-president', 'role-2'],
+        'chapter-1',
+      );
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        role_ids: ['role-president', 'role-2'],
+      });
+      expect(result).toEqual(updated);
+    });
   });
 
   it('should update onboarding status', async () => {

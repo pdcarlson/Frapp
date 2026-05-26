@@ -12,6 +12,7 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Member } from '../../domain/entities/member.entity';
 import { User } from '../../domain/entities/user.entity';
+import { SystemPermissions } from '../../domain/constants/permissions';
 
 export interface AlumniFilter {
   graduation_year?: number;
@@ -81,7 +82,35 @@ export class MemberService {
     return member;
   }
 
-  async updateRoles(memberId: string, roleIds: string[]): Promise<Member> {
+  async updateRoles(
+    memberId: string,
+    roleIds: string[],
+    chapterId: string,
+  ): Promise<Member> {
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
+    if (member.chapter_id !== chapterId) {
+      throw new ForbiddenException('Member not in current chapter');
+    }
+
+    const roles = await this.roleRepo.findByChapter(chapterId);
+    const presidentRole = roles.find(
+      (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
+    );
+
+    if (presidentRole) {
+      const currentlyHasPresident = member.role_ids.includes(presidentRole.id);
+      const willHavePresident = roleIds.includes(presidentRole.id);
+      if (currentlyHasPresident !== willHavePresident) {
+        // Presidency moves must go through RbacService.transferPresidency so
+        // the wildcard role is atomically reassigned and only the current
+        // President can initiate it.
+        throw new ForbiddenException(
+          'Use the presidency-transfer endpoint to change the President role',
+        );
+      }
+    }
+
     return this.memberRepo.update(memberId, { role_ids: roleIds });
   }
 
