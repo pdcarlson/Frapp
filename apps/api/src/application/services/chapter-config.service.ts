@@ -247,13 +247,15 @@ export class ChapterConfigService {
     if (!channel) return;
 
     const keys = Object.keys(diff).join(', ');
-    const { error: msgError } = await this.supabase.from('chat_messages').insert({
-      channel_id: channel.id,
-      sender_id: SYSTEM_SENDER_ID,
-      content: `Chapter configuration updated: ${keys}`,
-      kind: 'system_audit',
-      payload: diff,
-    });
+    const { error: msgError } = await this.supabase
+      .from('chat_messages')
+      .insert({
+        channel_id: channel.id,
+        sender_id: SYSTEM_SENDER_ID,
+        content: `Chapter configuration updated: ${keys}`,
+        kind: 'system_audit',
+        payload: diff,
+      });
     if (msgError) {
       this.logger.warn('system_audit chat message insert failed', msgError);
     }

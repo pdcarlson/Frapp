@@ -397,3 +397,23 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 **Rationale:** Sending a push to a user who is already reading the channel is noise. It trains users to mute notifications. "Presence-aware" means: if the user's Realtime subscription to the channel is active, skip the push. If they're offline or in a different channel, send it.
 
 **Consequences:** Requires tracking per-channel presence, not just global online status. Supabase Broadcast presence tracks this. Edge Function (or NestJS notification trigger) must query presence before enqueuing push. False negatives (push skipped for briefly-offline user) are acceptable; false positives (push sent to active reader) are worse.
+
+### ADR-05: Dexie-backed offline queue + reconnect-with-backfill (Chunk 04)
+
+**Decision:** The web client persists chat composer state in IndexedDB via [Dexie](https://dexie.org/) and routes every reconnect through a REST `?since=<id>` backfill before resubscribing.
+
+**Schema (`frapp-chat` IndexedDB):**
+
+```
+drafts(channelId PK, body, updatedAt)
+outbox(clientId PK, channelId, body, attempts, queuedAt, status: "queued"|"failed", lastError?)
+```
+
+- **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, *not* the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.
+- **Outbox** rows are enqueued *before* the `chat-send` invoke; the row's `clientId` doubles as `chat_messages.client_message_id`, which the Edge Function dedupes on (ADR-03). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.
+
+**Reconnect ordering (subscribe-then-backfill):** on every `CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` followed by `SUBSCRIBED`, the realtime manager (a) re-attaches the Postgres Changes subscription first, then (b) calls `GET /v1/channels/{id}/messages?since=<lastSeenMessageId>` via the api-sdk. The last-seen id is persisted per channel in `localStorage` (`chat:lastSeen:{channelId}`) and advanced only from confirmed tail rows. Subscribe-then-backfill tolerates a harmless overlap (deduped by `mergeServerRow` keyed on both `client_message_id` and server `id`) instead of risking a gap. Backoff between failed resubscribes is 1→2→4→8→16→30s capped.
+
+**Rationale:** Mobile/laptop networks drop; without persistence, a 30-second offline window costs the user their draft and any messages they typed but didn't send. With Dexie + the idempotency index from ADR-03, the user can compose offline, reload the tab, come back online minutes later, and see their messages flush in order with zero duplicates.
+
+**Consequences:** Dexie is web-only; the Expo mobile client uses AsyncStorage/SQLite for the analogue (Chunk 11). The reaction subscription is one **global** `chat_message_actions` channel (the table has no `channel_id` column to filter on); reactions on not-yet-loaded messages are intentionally dropped and recovered on next backfill. Reaction *removals* go to the row directly under RLS (`chat_message_actions_delete` scopes to own rows) rather than extending `chat-react` with a remove path — keeps the merged security-hardened Edge Function untouched.

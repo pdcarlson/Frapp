@@ -401,7 +401,32 @@ card pointing at their chapter president. Flags are raised automatically when
 - "Transfer Presidency" — member selector + confirmation
 - "Cancel Subscription" — confirmation with consequences explained
 
-### 3.7 – 3.15 (Remaining Screens Summary)
+### 3.7 Chat (`/chat`) — chat-first redesign, Chunk 04
+
+The post-sign-in landing surface and the spine of the redesigned product.
+
+**Layout (Slack-grade 3-pane, `md:grid-cols-[260px_1fr_300px]`):**
+
+- **Left pane — channel list.** Grouped **Channels / Direct messages / System** (system = chapter-audit and similar system feeds), sorted alphabetically inside each group. Search box filters across all groups. Every row is a semantic `<button>` (client-side open), with `aria-current="page"` for the active channel. Unread badge + mute pill render when the data is available; the empty channel set renders an explicit "All caught up — start a channel" placeholder rather than a blank card.
+- **Center pane — timeline + composer.** Header carries the channel name + description, the **"Reconnecting…" pill** (hidden when the realtime stream is live, amber while reconnecting, red when fully offline), and the **pinned-messages popover**. Body is a `react-virtuoso` virtualized list with consecutive-author grouping (5-minute window): same-author within 5 min collapses the header. Each row renders `_status: pending|confirmed|failed` (spinner + clock for pending; red banner + Retry/Discard for failed). Hover reveals reaction quick-pick (👍 🙏 ✅ 🔥), emoji-picker popover (`frimousse`), and Reply. Reaction chips are `<button aria-pressed>` reflecting whether the viewer is in the reaction set. Empty → "Be the first to post"; loading → spinner; load error → ErrorState with retry.
+- **Right pane — thread / details.** Collapsible. When a Reply is opened, renders the parent + replies (filtered by `reply_to_id`). When no thread is open, shows a Details placeholder ("Open a message thread to see replies."). Pinned messages live in the popover above the timeline, not the right pane.
+
+**Composer:**
+
+- Full WYSIWYG built on **Tiptap** (StarterKit) with a placeholder; `Shift+Enter` inserts a hard break, `Enter` submits, `Cmd+/` opens the slash palette.
+- Buttons: emoji insert (frimousse popover), file attach (pre-signed Supabase Storage upload via `useRequestChatUploadUrl`), open slash palette, send.
+- Slash palette is a `cmdk`-backed dialog reading the catalog from `@repo/chat-integrations`, filtered by `useOrgConfig().isModuleEnabled(requiredModule)`. Foundation chunk surfaces every command but invocation shows an "Available in Chunk 05" toast — renderers + dispatch land in Chunk 05.
+- Drafts persist to **Dexie** (`drafts(channelId, body, updatedAt)`) and are restored on reload.
+
+**Hot-path / state:**
+
+- One normalized cache per channel under `["chat", channelId, "messages"]`: `{ byId, order, actionIndex }`. Every inbound row (Edge response, Postgres Changes, REST backfill) flows through one idempotent `mergeServerRow`, reconciled by `client_message_id`.
+- Sends go to the hardened **`chat-send` Edge Function**; reactions add via **`chat-react`**; reaction removes via a direct RLS-protected delete on `chat_message_actions` (the existing policy scopes deletes to the viewer's own rows). The viewer identity is sourced from `useFrappUser().userId` — never a literal.
+- Offline composer: a Dexie `outbox(clientId, channelId, body, attempts, queuedAt, status)` is flushed in order on reconnect. 4xx → failed with inline Retry/Discard; network/5xx → stays queued.
+- Reconnect: per-channel Postgres Changes subscription status drives the pill with exponential backoff 1→2→4→8→16→30s cap. On reconnect: **resubscribe first** (so live rows route through the same merge), **then** REST-backfill via `?since=<lastSeen>` so any gap closes idempotently.
+- Theme applied via `useChapterTheme()` — sidebar, mention pills, self-bubble, reaction-active read the chapter's derived palette.
+
+### 3.8 – 3.16 (Remaining Screens Summary)
 
 | Screen              | Key Components                                                                     | Layout Pattern  |
 | ------------------- | ---------------------------------------------------------------------------------- | --------------- |

@@ -120,12 +120,18 @@ export class PatchChapterConfigDto {
   @IsString()
   org_archetype?: string;
 
-  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'boolean' } })
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'boolean' },
+  })
   @IsOptional()
   @IsObject()
   enabled_modules?: Record<string, boolean>;
 
-  @ApiPropertyOptional({ type: 'object', additionalProperties: { type: 'string' } })
+  @ApiPropertyOptional({
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
   @IsOptional()
   @IsObject()
   vocabulary?: Record<string, string>;
