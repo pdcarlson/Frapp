@@ -47,3 +47,65 @@ those take precedence — the defaults only fill gaps.
 2. Run `npm run test:visual -w apps/web` locally to confirm what changed.
 3. If the diff is expected, refresh with `npx playwright test --update-snapshots`.
 4. Commit the updated `*-snapshots/*.png` files alongside the code change.
+
+## Per-route attestations (regenerate-or-confirm history)
+
+`docs/internal/redesign/REVIEW_CHECKLIST.md` §6 requires each regenerated
+baseline to be listed with a reason + Chromium revision. Use the table below
+to record what changed (or, when nothing changed, why the existing baseline
+still applies) so reviewers don't re-investigate the same surface.
+
+### `/chat` — Chunk 04 (#278) rewrite, attested via #311
+
+**Status:** baseline unchanged; rationale below; CI runtime confirmation is the
+authoritative signal (see `web-visual-regression` job in `.github/workflows/ci.yml`).
+
+**Why the Chunk 04 rewrite did not move `chat-main-content-linux.png`:** the
+test exercises an unauthenticated, no-active-chapter session (Playwright opens
+a fresh browser context with empty localStorage, so the persisted
+`frapp-active-chapter` key is missing and `useChapterStore.activeChapterId`
+is `null` — see `apps/web/lib/stores/chapter-store.ts`). Both the pre-rewrite
+component (`apps/web/components/chat/chat-page.tsx` at commit `91581e0^`,
+lines 439–446) and the post-rewrite shell
+(`apps/web/components/chat/chat-shell.tsx:98-109`) early-return the same
+`<Card>` with header "Chat" and description "Select an active chapter to load
+channels and messages." The Slack-grade 3-pane surface introduced by #278
+(`channel-list.tsx`, `message-timeline.tsx`, `composer.tsx`, `thread-panel.tsx`,
+etc.) lives *past* that early return and is never reached under this test
+harness. The on-disk PNG is ~6.5 kB, matching the size band of other empty-card
+baselines (e.g. `billing` 6,455 B, `points` 6,287 B, `profile` 6,392 B), which
+is consistent with the empty-state rendering. Chunk 05 will need to
+re-evaluate this if it changes the no-active-chapter branch or if a future
+test seeds an `activeChapterId` so the actual chat shell renders.
+
+**Chromium revision used by CI:** the `web-visual-regression` job installs
+the browser bundled with the project's pinned `@playwright/test` (currently
+`^1.58.2` in `apps/web/package.json`) via
+`npx playwright install --with-deps chromium`
+(`.github/workflows/ci.yml:246`). Local regen runs must use the same
+`@playwright/test` version — `npx playwright --version` should match
+`apps/web/package.json` before running `--update-snapshots`.
+
+**Sandbox limitation when #311 was attested:** the cloud-agent sandbox
+that produced this note could not fetch the Chromium binary
+(`playwright.azureedge.net`, `cdn.playwright.dev`, and
+`playwright.download.prss.microsoft.com` all return HTTP 403
+`x-deny-reason: host_not_allowed` for outbound requests). The static
+equivalence above is the in-PR evidence; the `web-visual-regression` CI job
+is the runtime verification. This is the same class of sandbox gap that
+issue #235 (`ci: runtime-verify migrations + Edge Functions`) tracks for the
+database layer — if the visual job stays sandbox-blocked across sessions,
+file a sibling issue rather than ticking the verification box blind.
+
+**Next session, if CI flagged a diff on `chat-main-content-linux.png`:**
+regenerate **only** that file (Linux baseline, on the same Chromium revision
+CI uses):
+
+```bash
+cd apps/web
+CI=true npx playwright test tests/visual/dashboard-routes.spec.ts \
+  --grep "/chat" --update-snapshots
+```
+
+Record the resulting `npx playwright --version` and the trigger
+("Chunk NN <surface> rewrite") in this section.
