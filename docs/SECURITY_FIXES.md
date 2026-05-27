@@ -20,6 +20,34 @@ Added `escapeFilterValue` to sanitize search input in `SupabaseBackworkResourceR
 ## Bounded row cap on `findPollsByChapter`
 That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/src/domain/constants/list-query-limits.ts` when `options.limit` is missing, invalid, or out of range, so a future caller cannot accidentally fetch an unbounded POLL row set for a chapter. `PollService.listPolls` clamps `limit` the same way as `PointsService.listTransactions` (default 50, inclusive 1–200) before calling the repository; the repository helper still normalizes for defense in depth.
 
+## npm audit triage (issue #245)
+
+### Overview
+
+`npm audit` reported **58 vulnerabilities (1 critical, 19 high, 38 moderate)** at the repo root. The critical was `handlebars` (multiple advisories) pulled in transitively by `ts-jest` in `apps/api`. Most high-severity items were transitive (`minimatch`, `picomatch`, `node-forge`, `tar`, `undici`, `path-to-regexp`, `lodash`, `serialize-javascript`, `fast-uri`, `flatted`, `@xmldom/xmldom`, `vite`) reachable through NestJS, Expo CLI tooling, Jest, and ESLint trees.
+
+### Changes
+
+- **Root `overrides`** (in [`/package.json`](/package.json)) force patched versions of the transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces.
+- **`@nestjs/*` patch bumps** in [`apps/api/package.json`](/apps/api/package.json) (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) to versions that close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer).
+- **`@infisical/cli`** bumped at the root (high `tar` advisory).
+
+### Result
+
+`npm audit`: **0 critical, 0 high, 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
+
+### Remaining moderate advisories (deferred, tracked as issues)
+
+- **Expo SDK 54 → 56 upgrade** (closes ~16 of the 26 remaining moderates): #289
+- **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
+- **Outstanding `next` moderate advisories (web + landing)**: #291
+- **`geist` (apps/web)**: #292
+- **`brace-expansion` 5.x in minimatch 10.x tree**: not separately tracked — moderate only, and the override that would close it (`^2.0.3`) breaks minimatch 10.x at runtime (different exported API). Re-evaluate when an audit-clean cross-major version exists.
+
+### Prevention
+
+When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** over per-workspace upgrades. Pin to the patched range cited in the advisory (e.g., `<=1.3.3` ⇒ override to `^1.4.0`) and re-run `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+
 ## Security Fix: Unrestricted File Upload in Chapter Logos
 
 ### Overview
