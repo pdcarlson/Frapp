@@ -59,6 +59,12 @@ Chunks 10a–10h can be parallelized across sessions once Chunk 5 is shipped. Ev
 
 `STATUS.md` (peer to this README) tracks which chunks are: not started / in progress / in review / shipped. Update it at every transition. **The `in review → shipped` flip is owned by the author at merge time or by the next session as its Step 0** — a merged PR whose STATUS row still says "in review" is the normal failure mode, so reconcile it proactively.
 
+## The orchestrator role
+
+A long-running chat watches PRs, reviews chunks, files issues, folds improvements back into briefs, and writes kickoff prompts for the next chunk. That role has its own playbook at **[`ORCHESTRATOR.md`](ORCHESTRATOR.md)** — including the scope-discipline rule (one orchestrator chat owns a span of related chunks, not the whole redesign), the cadence at each event (PR opens / merges / blocker found / automation batch lands), and the handoff protocol.
+
+Automation-filed issues (the Cursor "Suggestion Triage" batches) are mapped to owning chunks in **[`TRIAGE.md`](TRIAGE.md)** so they don't accumulate or re-surface across reviews.
+
 ## When the plan is wrong
 
 The plan is a forecast, not a contract. If a chunk's assumptions don't survive contact with the code, push back: edit the chunk brief, edit the master plan, leave a note in `STATUS.md`, and pick up from the corrected plan. Future sessions will read what you left, not what was originally written.

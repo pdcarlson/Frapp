@@ -3,17 +3,26 @@
 **Depends on:** Chunk 02 (chat schema + Edge Functions + theme hooks).
 **Unblocks:** 05 (chat integrations), 11 (mobile parity).
 
-## ⛔ Blocking prerequisites — resolve before wiring or deploying the Edge Functions
+## ⛔ Blocking prerequisites — resolve before wiring chat onto the data layer
 
-The Chunk 02 Edge Functions (`chat-send`, `chat-react`) shipped as scaffolds with **two known cross-chapter auth-bypass holes**. They use the service-role client (RLS bypassed) on client-supplied `channel_id` / `message_id` without verifying the caller belongs to the target chapter. This chunk wires those functions into the web composer — **do not** do that (and do not deploy them) until both are fixed:
+The chat-authorization gap spans **both** layers, not just the Edge Functions: every chat write and read currently trusts client-supplied `channel_id` / `message_id` without verifying the caller belongs to the target chapter. Building the chat UI on this base is building on sand.
 
-- **[#233](https://github.com/pdcarlson/Frapp/issues/233)** — `chat-send` must authorize channel/chapter before the service-role write.
-- **[#234](https://github.com/pdcarlson/Frapp/issues/234)** — `chat-react` must authorize message/chapter before the service-role write (+ dedup-on-conflict instead of 500).
+**Chat-authorization cluster (all open; must close before / as the opening of this chunk):**
 
-If those issues aren't closed when you start, fix them as the first commits of this chunk (or pause and flag it). Then, as part of this chunk:
+- **[#233](https://github.com/pdcarlson/Frapp/issues/233)** — Edge `chat-send`: authorize channel/chapter before the service-role write.
+- **[#234](https://github.com/pdcarlson/Frapp/issues/234)** — Edge `chat-react`: authorize message/chapter before the service-role write **and** dedup-on-conflict (no 500 on the race).
+- **[#242](https://github.com/pdcarlson/Frapp/issues/242)** — NestJS `chat.service.sendMessage` (cold-path sibling of #233): no sender-membership check today.
+- **[#243](https://github.com/pdcarlson/Frapp/issues/243)** — NestJS `chat.service.getMessages` (cold-path read backfill used by reconnect): no channel/chapter membership check.
+- **[#261](https://github.com/pdcarlson/Frapp/issues/261)** — global chat search results not filtered by channel access (fold in only if this chunk ships search; otherwise carry to Chunk 05).
 
-- Add **authorization integration tests** for the hot path: a member can send/react in their own channel; a non-member targeting another chapter's channel/message gets 403.
-- Runtime-verify the functions against a running stack per **[#235](https://github.com/pdcarlson/Frapp/issues/235)** (the CI runtime-verification job). If your sandbox can't run Supabase, say so and lean on that CI job — do not check the runtime boxes blind.
+**Recommended split: two PRs.**
+
+- **Phase 0 — chat authorization hardening (separate PR, lands first):** branch `claude/chat-authz-hardening`. Closes the four-issue core cluster (and #261 if in scope). Reuse the existing chapter-membership predicate/helper rather than inventing one. Tests are the contract (unit-level at minimum; runtime integration is gated on the sandbox-can't-run-Supabase situation tracked by **[#235](https://github.com/pdcarlson/Frapp/issues/235)**).
+- **Phase 1 — Chunk 04 chat foundation (this brief):** wire the now-authorized data paths into the 3-pane UI + optimistic/offline/reconnect hot-path client.
+
+If those issues aren't closed when you start, land Phase 0 first. Do not build Phase 1 on an unauthorized base.
+
+Then, as part of Phase 1, add **authorization integration tests** that exercise the wired path (a member can send/read/react in their own channel; a non-member targeting another chapter's channel/message gets 403) and runtime-verify per #235 — never tick the runtime boxes blind.
 
 ## Read first
 
