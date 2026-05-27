@@ -37,6 +37,13 @@ interface ComposerProps {
   onSend: (body: string) => void | Promise<void>;
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
+  /**
+   * Status of the underlying chapter-config query. `"loading"` and `"error"`
+   * surface explicit states inside the slash palette instead of an empty
+   * filter; defaults to `"ready"` for callers that don't gate the catalog.
+   */
+  slashCommandsStatus?: "loading" | "error" | "ready";
+  onRetrySlashCommands?: () => void;
   disabled?: boolean;
 }
 
@@ -97,6 +104,8 @@ export function Composer({
   onSend,
   onTyping,
   isModuleEnabled,
+  slashCommandsStatus = "ready",
+  onRetrySlashCommands,
   disabled,
 }: ComposerProps) {
   const { toast } = useToast();
@@ -317,6 +326,8 @@ export function Composer({
         open={palette.open}
         initialQuery={palette.query}
         isModuleEnabled={isModuleEnabled}
+        status={slashCommandsStatus}
+        onRetry={onRetrySlashCommands}
         onSelect={onPaletteSelect}
         onOpenChange={(open) =>
           setPalette((prev) => ({ ...prev, open, query: open ? prev.query : "" }))

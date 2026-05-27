@@ -415,7 +415,7 @@ The post-sign-in landing surface and the spine of the redesigned product.
 
 - Full WYSIWYG built on **Tiptap** (StarterKit) with a placeholder; `Shift+Enter` inserts a hard break, `Enter` submits, `Cmd+/` opens the slash palette.
 - Buttons: emoji insert (frimousse popover), file attach (pre-signed Supabase Storage upload via `useRequestChatUploadUrl`), open slash palette, send.
-- Slash palette is a `cmdk`-backed dialog reading the catalog from `@repo/chat-integrations`, filtered by `useOrgConfig().isModuleEnabled(requiredModule)`. Foundation chunk surfaces every command but invocation shows an "Available in Chunk 05" toast — renderers + dispatch land in Chunk 05.
+- Slash palette is a `cmdk`-backed dialog reading the catalog from `@repo/chat-integrations`, filtered by `useOrgConfig().isModuleEnabled(requiredModule)`. The palette **fails closed** while the chapter-config query is pending or errored — opening it during the initial load renders an explicit "Loading commands…" panel; on error it renders a "Modules unavailable" panel with a Retry action. Only once the query resolves does it show the filtered command list (empty match → "No matching command."). Foundation chunk surfaces every available command but invocation shows an "Available in Chunk 05" toast — renderers + dispatch land in Chunk 05.
 - Drafts persist to **Dexie** (`drafts(channelId, body, updatedAt)`) and are restored on reload.
 
 **Hot-path / state:**
