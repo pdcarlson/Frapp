@@ -15,17 +15,13 @@ import {
 import {
   buildMockClient,
   buildRequest,
-  getCapturedHandler,
-  installDenoServeInterceptor,
   setEnv,
   withBearer,
 } from "./test-helpers.ts";
 import { setNextClient } from "./supabase-stub.ts";
+import { handler } from "../chat-send/index.ts";
 
 setEnv();
-installDenoServeInterceptor();
-await import("../chat-send/index.ts");
-const handler = getCapturedHandler();
 
 const VALID_BODY = {
   client_message_id: "11111111-1111-1111-1111-111111111111",

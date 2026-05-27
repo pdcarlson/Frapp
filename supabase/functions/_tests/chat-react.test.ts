@@ -10,17 +10,13 @@ import { deepStrictEqual as assertEquals } from "node:assert/strict";
 import {
   buildMockClient,
   buildRequest,
-  getCapturedHandler,
-  installDenoServeInterceptor,
   setEnv,
   withBearer,
 } from "./test-helpers.ts";
 import { setNextClient } from "./supabase-stub.ts";
+import { handler } from "../chat-react/index.ts";
 
 setEnv();
-installDenoServeInterceptor();
-await import("../chat-react/index.ts");
-const handler = getCapturedHandler();
 
 const VALID_BODY = {
   message_id: "44444444-4444-4444-4444-444444444444",
