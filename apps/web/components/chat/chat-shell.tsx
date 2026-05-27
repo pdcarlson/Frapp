@@ -74,14 +74,29 @@ export function ChatShell() {
 
   const channel = useChatChannel(activeChannelId);
 
+  // Fail closed while the chapter config is loading or errored. Chunk 05 wires
+  // real /poll and /announce dispatch through chat-send, which trusts the
+  // client-side enabled_modules gate — returning true here would let a user
+  // fire a disabled command before the query resolves (issue #310).
   const isModuleEnabled = useMemo(() => {
     return (key: string) => {
       const data = orgConfig.data as
         | { isModuleEnabled?: (k: string) => boolean }
         | undefined;
-      return data?.isModuleEnabled ? data.isModuleEnabled(key) : true;
+      if (!data?.isModuleEnabled) return false;
+      return data.isModuleEnabled(key);
     };
   }, [orgConfig.data]);
+
+  const slashCommandsStatus: "loading" | "error" | "ready" = orgConfig.isError
+    ? "error"
+    : orgConfig.data
+      ? "ready"
+      : "loading";
+  const onRetrySlashCommands = useMemo(
+    () => () => void orgConfig.refetch(),
+    [orgConfig],
+  );
 
   const [threadParent, setThreadParent] = useState<ChatMessage | null>(null);
   // Keep the open thread in sync with the cache (e.g. message edits/deletes).
@@ -208,6 +223,8 @@ export function ChatShell() {
             onSend={(body) => channel.send(body)}
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
+            slashCommandsStatus={slashCommandsStatus}
+            onRetrySlashCommands={onRetrySlashCommands}
             disabled={channel.connection === "offline"}
           />
         ) : null}
