@@ -5,6 +5,7 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -39,32 +40,43 @@ export class UpdateNotificationPreferenceDto {
 
 export class UpdateUserSettingsDto {
   @ApiPropertyOptional({
-    description: 'Quiet hours start (HH:mm format, e.g. 22:00)',
+    description:
+      'Quiet hours start (HH:mm format, e.g. 22:00). Pass null to clear.',
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(/^\d{2}:\d{2}(:\d{2})?$/, {
     message: 'quiet_hours_start must be in HH:mm or HH:mm:ss format',
   })
-  quiet_hours_start?: string;
+  quiet_hours_start?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Quiet hours end (HH:mm format, e.g. 08:00)',
+    description:
+      'Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear.',
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(/^\d{2}:\d{2}(:\d{2})?$/, {
     message: 'quiet_hours_end must be in HH:mm or HH:mm:ss format',
   })
-  quiet_hours_end?: string;
+  quiet_hours_end?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Timezone for quiet hours (e.g. America/New_York)',
+    description: 'Timezone for quiet hours (e.g. America/New_York).',
+    nullable: true,
+    type: String,
   })
   @IsOptional()
+  @ValidateIf((_, value) => value !== null)
   @IsString()
   @MaxLength(100)
-  quiet_hours_tz?: string;
+  quiet_hours_tz?: string | null;
 
   @ApiPropertyOptional({
     description: 'Theme preference',

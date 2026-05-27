@@ -28,4 +28,9 @@ vi.mock("react-native", () => ({
     OS: "ios",
     select: vi.fn((opts) => opts.ios),
   },
+  AppState: {
+    addEventListener: vi.fn(() => ({ remove: vi.fn() })),
+    removeEventListener: vi.fn(),
+    currentState: "active",
+  },
 }));

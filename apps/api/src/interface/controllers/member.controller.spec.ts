@@ -142,9 +142,12 @@ describe('MemberController', () => {
     it('removes a member and returns success payload', async () => {
       memberService.remove.mockResolvedValue(undefined);
 
-      const result = await controller.remove('member-1');
+      const result = await controller.remove('chapter-1', 'member-1');
 
-      expect(memberService.remove).toHaveBeenCalledWith('member-1');
+      expect(memberService.remove).toHaveBeenCalledWith(
+        'member-1',
+        'chapter-1',
+      );
       expect(result).toEqual({ success: true });
     });
   });

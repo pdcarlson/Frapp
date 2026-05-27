@@ -170,6 +170,8 @@ Key dependencies to watch:
 - `@tanstack/react-query` — hook API changes
 - `stripe` — webhook signature verification changes
 
+For **transitive CVEs**, prefer the root `overrides` block in [`/package.json`](../../package.json) (established in #245 / `docs/SECURITY_FIXES.md`) over per-workspace upgrades. Pin to the patched range cited by the advisory, then `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+
 ---
 
 ## API contract audit

@@ -18,6 +18,7 @@ import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -32,6 +33,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard)
 @UseInterceptors(AuthSyncInterceptor)
+@FreeTier()
 @Controller('users')
 export class UserController {
   constructor(

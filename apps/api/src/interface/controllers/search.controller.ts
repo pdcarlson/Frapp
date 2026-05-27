@@ -10,6 +10,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -20,6 +21,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 @Controller('search')
 export class SearchController {
   constructor(private readonly searchService: SearchService) {}
