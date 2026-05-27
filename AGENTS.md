@@ -153,6 +153,17 @@ When the user supplies durable environment hints or tool workarounds not documen
 
 When fixing review feedback, resolve related GitHub review threads so merge is not blocked.
 
+## Autonomous PR lifecycle (cloud sessions)
+
+A task is not "done" when the code is pushed — it's done when the PR is ready to merge. After completing the requested work:
+
+1. **Open a PR** against the appropriate base branch (feature → `main`; promotion → `production`). Don't wait to be asked.
+2. **Subscribe to PR activity** (`subscribe_pr_activity`) so CI results and review comments wake the session.
+3. **Babysit until green:** on each CI failure, diagnose and push a fix; on each actionable review comment, address it and resolve the thread. Don't go quiet between rounds — the PR diff is the record.
+4. **Stop conditions:** the PR is green and review-clean, OR a failure is genuinely out of scope (file an issue, report and stop), OR the user says to stop (`unsubscribe_pr_activity`).
+
+This is enforced by `doneMeansMerged: true` in `.claude/settings.json`; the AGENTS.md text is the human-readable contract.
+
 ## Cursor Cloud-specific instructions
 
 These notes are for cloud agents running after the update script has already installed dependencies.
