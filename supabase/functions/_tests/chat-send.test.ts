@@ -8,7 +8,10 @@
 // response queue and then asserts both the response shape AND that the
 // service-role insert was reached only after authz passed.
 
-import { assertEquals, assertNotEquals } from "@std/assert";
+import {
+  deepStrictEqual as assertEquals,
+  notDeepStrictEqual as assertNotEquals,
+} from "node:assert/strict";
 import {
   buildMockClient,
   buildRequest,

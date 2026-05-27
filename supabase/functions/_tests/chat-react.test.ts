@@ -6,7 +6,7 @@
 // the insert must surface as a successful dedup (200 + { deduplicated: true }),
 // not a 5xx, and must NOT retry the insert (i.e. not a read-then-insert TOCTOU).
 
-import { assertEquals } from "@std/assert";
+import { deepStrictEqual as assertEquals } from "node:assert/strict";
 import {
   buildMockClient,
   buildRequest,

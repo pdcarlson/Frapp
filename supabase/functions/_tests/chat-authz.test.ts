@@ -6,7 +6,7 @@
 // predicate is exercised indirectly via `assertChannelAccess` so a future
 // regression that bypasses or mis-orders the lookups would be caught here.
 
-import { assertEquals } from "@std/assert";
+import { deepStrictEqual as assertEquals } from "node:assert/strict";
 import {
   assertChannelAccess,
   assertMessageAccess,
