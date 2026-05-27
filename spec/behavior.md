@@ -414,6 +414,14 @@ Tapping the notification opens the app directly to the relevant content. If the 
 - Per-user configurable start and end time (e.g. 10:00 PM to 8:00 AM).
 - During quiet hours, NORMAL notifications are delivered as badge-only (no sound/vibration). URGENT notifications are unaffected.
 - Quiet hours are timezone-aware (stored as UTC offsets). The implementation uses `Intl.DateTimeFormat` to convert the current UTC time to the user's timezone; midnight is normalized to hour 0 to handle locale-specific h24 hour cycles.
+- `PATCH /v1/settings` accepts `quiet_hours_start`, `quiet_hours_end`, and `quiet_hours_tz` as nullable. Omitting a field preserves its existing value; sending `null` explicitly clears the field, which disables quiet-hour enforcement.
+
+### Mobile preference sync
+
+- The mobile preferences screen (`apps/mobile/app/(tabs)/preferences.tsx`) hydrates from AsyncStorage immediately for offline reads, then reconciles with the server via `useUserSettings` and `useNotificationPreferences` (from `@repo/hooks`) once an auth token is present in `expo-secure-store`.
+- DM-alerts toggle maps to category `chat`; event-reminders toggle maps to category `events` (`PATCH /v1/notifications/preferences`).
+- Quiet-hours toggle ON `PATCH`es `/v1/settings` with the device timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and the 22:00/08:00 default window; toggle OFF `PATCH`es `null` for all three quiet-hour fields.
+- When no auth token is present, all toggles persist locally only and sync state surfaces as "cached" so the UI doesn't claim server enforcement.
 
 ### Notification Grouping
 

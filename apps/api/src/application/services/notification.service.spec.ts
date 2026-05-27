@@ -453,6 +453,63 @@ describe('NotificationService', () => {
       );
       expect(result.theme).toBe('dark');
     });
+
+    it('should preserve existing quiet-hour fields when omitted from update', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+      mockSettingsRepo.upsert.mockResolvedValue(baseSettings);
+
+      await service.updateSettings('u-1', { theme: 'dark' });
+
+      expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+        user_id: 'u-1',
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '08:00:00',
+        quiet_hours_tz: 'America/New_York',
+        theme: 'dark',
+      });
+    });
+
+    it('should clear quiet-hour fields when null is passed explicitly', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+      mockSettingsRepo.upsert.mockResolvedValue({
+        ...baseSettings,
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+      });
+
+      const result = await service.updateSettings('u-1', {
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+      });
+
+      expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+        user_id: 'u-1',
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+        theme: 'system',
+      });
+      expect(result.quiet_hours_start).toBeNull();
+      expect(result.quiet_hours_end).toBeNull();
+      expect(result.quiet_hours_tz).toBeNull();
+    });
+
+    it('should clear only the fields explicitly set to null', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+      mockSettingsRepo.upsert.mockResolvedValue(baseSettings);
+
+      await service.updateSettings('u-1', { quiet_hours_tz: null });
+
+      expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+        user_id: 'u-1',
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '08:00:00',
+        quiet_hours_tz: null,
+        theme: 'system',
+      });
+    });
   });
 
   describe('listNotifications', () => {
