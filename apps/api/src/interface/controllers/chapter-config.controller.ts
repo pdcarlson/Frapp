@@ -16,6 +16,7 @@ import {
   RequireAnyOfPermissions,
   RequirePermissions,
 } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -27,6 +28,7 @@ import { PatchChapterConfigDto } from '../dtos/chapter-config.dto';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.CHAPTER_CONFIG_VIEW)
+@FreeTier()
 @Controller('chapters')
 export class ChapterConfigController {
   constructor(private readonly configService: ChapterConfigService) {}

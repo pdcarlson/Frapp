@@ -18,6 +18,7 @@ This document defines the rules, invariants, edge cases, and error behavior that
 
 - A user who is a member of multiple chapters must explicitly select which chapter is active. The API rejects requests where the chapter context is missing or mismatched.
 - If a user's membership in a chapter is revoked mid-session, all subsequent requests for that chapter return 403 Forbidden.
+- Endpoints that mutate a single resource by ID (e.g. `PATCH /v1/members/:id/roles`, `DELETE /v1/members/:id`) load the target row first and verify its `chapter_id` matches the caller's active chapter, returning 403 Forbidden when an ID from a different chapter is supplied.
 - Cross-chapter data leaks are treated as critical security bugs.
 
 ---
@@ -100,7 +101,7 @@ The President role is a system role that always carries the `*` wildcard permiss
 
 - **Transfer:** The current President assigns the President role to another member and removes it from themselves. This is a **single atomic operation** — the system never allows a chapter to have zero Presidents or two Presidents simultaneously.
 - **Edge case:** If the President leaves the chapter (account deletion or manual removal by Frapp support), the system flags the chapter and prompts the next member with the highest-ranked admin role to claim the presidency. If no suitable member exists, Frapp support intervenes.
-- **Safeguard:** Only the current President can initiate a presidency transfer. No other role (even with `roles:manage`) can assign or remove the President role.
+- **Safeguard:** Only the current President can initiate a presidency transfer. No other role (even with `roles:manage`) can assign or remove the President role. The generic `PATCH /v1/members/:id/roles` endpoint enforces this by resolving the chapter's system President role (the one carrying `*`) and rejecting any payload that adds or removes it with `403 Forbidden`; the dedicated `POST /v1/roles/transfer-presidency` flow remains the only path to move the wildcard role. That same endpoint also validates every incoming `role_id` against the active chapter's roles and rejects unknown IDs with `400 Bad Request` so cross-chapter or fabricated role IDs cannot be persisted on a member.
 
 ### Edge Cases
 
