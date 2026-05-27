@@ -13,7 +13,16 @@ export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
 
 const DEFAULT_QUIET_HOURS_START = "22:00";
 const DEFAULT_QUIET_HOURS_END = "08:00";
-const DEFAULT_QUIET_HOURS_TZ = "America/New_York";
+const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
+
+function resolveDeviceTimeZone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz && tz.length > 0 ? tz : FALLBACK_QUIET_HOURS_TZ;
+  } catch {
+    return FALLBACK_QUIET_HOURS_TZ;
+  }
+}
 
 const NOTIFICATION_CATEGORY = {
   dmAlerts: "chat",
@@ -113,6 +122,8 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
 
   const appliedSettingsRef = useRef(false);
   const appliedPrefsRef = useRef(false);
+  const quietHoursGenRef = useRef(0);
+  const categoryGenRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -196,15 +207,24 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
           setQuietHoursFailed(false);
           return;
         }
+        const generation = ++quietHoursGenRef.current;
         updateSettings.mutate(
           {
             quiet_hours_start: DEFAULT_QUIET_HOURS_START,
             quiet_hours_end: DEFAULT_QUIET_HOURS_END,
-            quiet_hours_tz: DEFAULT_QUIET_HOURS_TZ,
+            quiet_hours_tz: resolveDeviceTimeZone(),
           },
           {
-            onSuccess: () => setQuietHoursFailed(false),
-            onError: () => setQuietHoursFailed(true),
+            onSuccess: () => {
+              if (generation === quietHoursGenRef.current) {
+                setQuietHoursFailed(false);
+              }
+            },
+            onError: () => {
+              if (generation === quietHoursGenRef.current) {
+                setQuietHoursFailed(true);
+              }
+            },
           },
         );
         return;
@@ -215,11 +235,20 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
         key === "dmAlertsEnabled"
           ? NOTIFICATION_CATEGORY.dmAlerts
           : NOTIFICATION_CATEGORY.eventReminders;
+      const generation = ++categoryGenRef.current;
       updatePreference.mutate(
         { chapter_id: chapterId, category, is_enabled: value },
         {
-          onSuccess: () => setCategoryFailed(false),
-          onError: () => setCategoryFailed(true),
+          onSuccess: () => {
+            if (generation === categoryGenRef.current) {
+              setCategoryFailed(false);
+            }
+          },
+          onError: () => {
+            if (generation === categoryGenRef.current) {
+              setCategoryFailed(true);
+            }
+          },
         },
       );
     },

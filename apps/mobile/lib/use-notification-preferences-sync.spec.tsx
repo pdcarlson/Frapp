@@ -6,29 +6,30 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 
-const asyncStorageMap = new Map<string, string>();
+const mockState = vi.hoisted(() => ({
+  asyncStorageMap: new Map<string, string>(),
+  secureStoreToken: null as string | null,
+}));
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
-    getItem: vi.fn(async (key: string) => asyncStorageMap.get(key) ?? null),
+    getItem: vi.fn(async (key: string) => mockState.asyncStorageMap.get(key) ?? null),
     setItem: vi.fn(async (key: string, value: string) => {
-      asyncStorageMap.set(key, value);
+      mockState.asyncStorageMap.set(key, value);
     }),
     removeItem: vi.fn(async (key: string) => {
-      asyncStorageMap.delete(key);
+      mockState.asyncStorageMap.delete(key);
     }),
   },
 }));
 
-let secureStoreToken: string | null = null;
-
 vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(async () => secureStoreToken),
+  getItemAsync: vi.fn(async () => mockState.secureStoreToken),
   setItemAsync: vi.fn(async (_key: string, value: string) => {
-    secureStoreToken = value;
+    mockState.secureStoreToken = value;
   }),
   deleteItemAsync: vi.fn(async () => {
-    secureStoreToken = null;
+    mockState.secureStoreToken = null;
   }),
 }));
 
@@ -78,8 +79,8 @@ function makeQueryClient() {
 
 describe("useNotificationPreferencesSync", () => {
   beforeEach(() => {
-    asyncStorageMap.clear();
-    secureStoreToken = null;
+    mockState.asyncStorageMap.clear();
+    mockState.secureStoreToken = null;
   });
 
   afterEach(() => {
@@ -87,7 +88,7 @@ describe("useNotificationPreferencesSync", () => {
   });
 
   it("hydrates from AsyncStorage when no auth token is present", async () => {
-    asyncStorageMap.set(
+    mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
@@ -116,8 +117,8 @@ describe("useNotificationPreferencesSync", () => {
   });
 
   it("prefers server settings over AsyncStorage when both are available", async () => {
-    secureStoreToken = "test-token";
-    asyncStorageMap.set(
+    mockState.secureStoreToken = "test-token";
+    mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
@@ -166,7 +167,7 @@ describe("useNotificationPreferencesSync", () => {
   });
 
   it("PATCHes category 'chat' when toggling DM alerts with auth + chapter", async () => {
-    secureStoreToken = "test-token";
+    mockState.secureStoreToken = "test-token";
 
     const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
@@ -197,19 +198,19 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     await waitFor(() => {
-      expect(asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
+      expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
         '"dmAlertsEnabled":false',
       );
     });
   });
 
   it("PATCHes /v1/settings with quiet-hour defaults when enabling quiet hours", async () => {
-    secureStoreToken = "test-token";
+    mockState.secureStoreToken = "test-token";
 
     const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
 
-    asyncStorageMap.set(
+    mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
@@ -234,17 +235,20 @@ describe("useNotificationPreferencesSync", () => {
 
     await waitFor(() => {
       expect(patch).toHaveBeenCalledWith("/v1/settings", {
-        body: {
+        body: expect.objectContaining({
           quiet_hours_start: "22:00",
           quiet_hours_end: "08:00",
-          quiet_hours_tz: "America/New_York",
-        },
+          quiet_hours_tz: expect.any(String),
+        }),
       });
     });
+    const tz = patch.mock.calls[0]?.[1]?.body?.quiet_hours_tz;
+    expect(typeof tz).toBe("string");
+    expect(tz.length).toBeGreaterThan(0);
   });
 
   it("surfaces retry state when server PATCH fails", async () => {
-    secureStoreToken = "test-token";
+    mockState.secureStoreToken = "test-token";
 
     const patch = vi.fn().mockResolvedValue({
       data: null,
@@ -269,7 +273,7 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.categorySync).toBe("retry");
     });
 
-    expect(asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
+    expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
       '"eventRemindersEnabled":false',
     );
   });
@@ -294,7 +298,7 @@ describe("useNotificationPreferencesSync", () => {
     expect(patch).not.toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
+      expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
         '"dmAlertsEnabled":false',
       );
     });
