@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { MemberService } from './member.service';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
@@ -212,6 +216,20 @@ describe('MemberService', () => {
       await expect(
         service.updateRoles('member-1', ['role-1'], 'chapter-1'),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects role IDs that do not belong to the chapter', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-1', 'role-from-other-chapter'],
+          'chapter-1',
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
     it('blocks adding the President role through the generic endpoint', async () => {

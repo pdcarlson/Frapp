@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
@@ -94,6 +95,14 @@ export class MemberService {
     }
 
     const roles = await this.roleRepo.findByChapter(chapterId);
+    const validRoleIds = new Set(roles.map((r) => r.id));
+    const unknownRoleIds = roleIds.filter((id) => !validRoleIds.has(id));
+    if (unknownRoleIds.length > 0) {
+      throw new BadRequestException(
+        `Role IDs do not belong to this chapter: ${unknownRoleIds.join(', ')}`,
+      );
+    }
+
     const presidentRole = roles.find(
       (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
     );
