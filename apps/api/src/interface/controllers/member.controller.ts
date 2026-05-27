@@ -67,10 +67,11 @@ export class MemberController {
   @ApiOperation({ summary: 'Update member roles' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
-    return this.memberService.updateRoles(id, dto.role_ids);
+    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
   }
 
   @Patch('me/onboarding')
@@ -88,8 +89,8 @@ export class MemberController {
   @Delete(':id')
   @ApiOperation({ summary: 'Remove member from chapter' })
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
-  async remove(@Param('id') id: string) {
-    await this.memberService.remove(id);
+  async remove(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+    await this.memberService.remove(id, chapterId);
     return { success: true };
   }
 }
