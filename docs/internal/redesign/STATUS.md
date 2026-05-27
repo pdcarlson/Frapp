@@ -2,6 +2,10 @@
 
 Update this file at each state transition: when you start a chunk (`not started` → `in progress`), when you open the PR (`in progress` → `in review`), and when it merges (`in review` → `shipped`). One row per chunk; keep the table compact.
 
+## Program-level risks
+
+- **P0 — cloud-agent sandbox can't exercise the Supabase hot path:** [#401](https://github.com/pdcarlson/Frapp/issues/401). Every chunk since #231 has merged with hot-path runtime checks unverified locally; the gap compounds across Chunks 05, 10*, 11 (chat / Edge Functions / Realtime / push). Research a chosen in-loop + CI verification path before this gap deepens further. #235 is the CI-only sub-fix; #401 is the parent.
+
 | #   | Title                                          | Branch                                          | State        | PR    | Notes |
 | --- | ---------------------------------------------- | ----------------------------------------------- | ------------ | ----- | ----- |
 | 01  | Foundation                                     | `claude/redesign-chunk-01-foundation-kWOsy`     | shipped      | [#229](https://github.com/pdcarlson/Frapp/pull/229) | Tailwind `content` glob fix (added `./components/**`) landed here; `--font-mono` is a deliberate system stack (no Geist Mono); `/home` route left reachable, deletion deferred to Chunk 03. |
