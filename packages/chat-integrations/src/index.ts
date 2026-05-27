@@ -12,8 +12,12 @@
  * dispatch + parsers below.
  */
 
-export * from "./parsers.js";
-export * from "./payloads.js";
+// Re-exports without the `.js` extension because the package is consumed via
+// bundler (Turbopack in dev, tsc in build) and the dev path resolves
+// extensionless TS imports. The tsconfig sets `moduleResolution: "Bundler"`
+// so the build matches.
+export * from "./parsers";
+export * from "./payloads";
 
 /**
  * A slash command the user can invoke from the composer. `requiredModule` ties
