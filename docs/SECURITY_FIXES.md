@@ -30,11 +30,11 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 - **Root `overrides`** (in `package.json`) force patched versions of transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces. Overrides for `undici` and `@xmldom/xmldom` use unbounded floors (`>=6.24.0`, `>=0.8.13`) so consumers that declared a higher major (`jsdom@29`, `expo-server-sdk@5`, `plist@3`) retain it.
 - **`@nestjs/*` patch bumps** in `apps/api/package.json` (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer). The `vite` and `lodash` advisories cleared via the NestJS / vite transitive bumps that rode along, not via overrides.
-- **`@infisical/cli`** bumped at the root (high `tar` advisory).
+- **`@infisical/cli`** kept pinned at `0.43.40` (matches main). Newer `0.43.80+` declares `tar ^7.5.13` natively but breaks the `apps/api` Docker build during the preinstall (`tar.x` extraction in `node:20-alpine` fails consistently). The two resulting high advisories (`@infisical/cli` and its nested `tar`) are accepted as **dev-only install-time exceptions** — `@infisical/cli` is a root `devDependencies` entry used only by `npm run dev:*` scripts and is excluded from production runtime by the `apps/api` Dockerfile `prod-deps` stage (`npm ci --omit=dev`).
 
 ### Result
 
-`npm audit`: **0 critical, 0 high, 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
+`npm audit`: **0 critical, 2 high (dev-only, see above), 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
 
 ### Remaining moderate advisories (deferred, tracked as issues)
 
