@@ -218,6 +218,29 @@ jobs:
         # No npm ci needed — these tests have no dependencies beyond node:test.
         run: npm run test:ci-scripts
 
+  # ── Edge Function entrypoint tests (Deno) ──────────────────────────────
+  # Pins the wiring of `chat-send` / `chat-react` / `_shared/chat-authz.ts`:
+  # JWT extraction, `assertChannelAccess` composition, cross-channel reply
+  # rejection, and the §4 atomic-dedup (23505) branch. Predicate matrix is
+  # covered separately by api-tests (chat-access.spec.ts).
+  edge-fn-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run Edge Function tests
+        # No npm ci needed — the import map points at source paths in this repo
+        # and Deno fetches the npm: specifier (zod) on its own.
+        run: npm run test:edge
+
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:
     needs: packages-build
