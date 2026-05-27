@@ -23,10 +23,22 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "@infisical/cli": "^0.43.40",
+    "@infisical/cli": "0.43.40",
     "prettier": "^3.7.4",
     "turbo": "^2.8.7",
     "typescript": "5.9.2"
+  },
+  "overrides": {
+    "handlebars": "^4.7.9",
+    "minimatch": "^10.2.3",
+    "picomatch": "^4.0.4",
+    "fast-uri": "^3.1.2",
+    "flatted": "^3.4.2",
+    "node-forge": "^1.4.0",
+    "undici": ">=6.24.0 <8.0.0",
+    "path-to-regexp": "^8.4.0",
+    "yaml": "^2.9.0",
+    "@xmldom/xmldom": ">=0.8.13"
   },
   "engines": {
     "node": ">=18"

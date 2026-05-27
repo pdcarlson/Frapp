@@ -20,6 +20,34 @@ Added `escapeFilterValue` to sanitize search input in `SupabaseBackworkResourceR
 ## Bounded row cap on `findPollsByChapter`
 That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/src/domain/constants/list-query-limits.ts` when `options.limit` is missing, invalid, or out of range, so a future caller cannot accidentally fetch an unbounded POLL row set for a chapter. `PollService.listPolls` clamps `limit` the same way as `PointsService.listTransactions` (default 50, inclusive 1–200) before calling the repository; the repository helper still normalizes for defense in depth.
 
+## npm audit triage (issue #245)
+
+### Overview
+
+`npm audit` reported **58 vulnerabilities (1 critical, 19 high, 38 moderate)** at the repo root. The critical was `handlebars` (multiple advisories) pulled in transitively by `ts-jest` in `apps/api`. High-severity items split between direct deps (NestJS injection, multer in `@nestjs/platform-express`, lodash in `@nestjs/config`, etc.) and transitive deps (`minimatch`, `picomatch`, `node-forge`, `tar`, `undici`, `path-to-regexp`, `fast-uri`, `flatted`, `@xmldom/xmldom`) reachable through NestJS, Expo CLI tooling, Jest, and ESLint trees.
+
+### Changes
+
+- **Root `overrides`** (in `package.json`) force patched versions of transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces. The `@xmldom/xmldom` override uses an unbounded floor (`>=0.8.13`) so consumers that declared a higher major (`jsdom@29`, `expo-server-sdk@5`, `plist@3`) retain it. The `undici` override is bounded — `>=6.24.0 <8.0.0` — because undici `8.x` raises its engine to `node>=22.19.0`, which trips `EBADENGINE` and crashes `npm ci` in the `node:20-alpine` Docker base used by `apps/api`. **Only lift the `<8.0.0` cap after** the repo's `engines.node` is bumped to `>=22.19.0`, the `apps/api` Dockerfile base image is moved off `node:20-alpine`, and CI's `setup-node` matrix is updated to match.
+- **`@nestjs/*` patch bumps** in `apps/api/package.json` (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer). The `vite` and `lodash` advisories cleared via the NestJS / vite transitive bumps that rode along, not via overrides.
+- **`@infisical/cli`** kept pinned at `0.43.40` (matches main). Newer `0.43.80+` declares `tar ^7.5.13` natively but breaks the `apps/api` Docker build during the preinstall (`tar.x` extraction in `node:20-alpine` fails consistently). The two resulting high advisories (`@infisical/cli` and its nested `tar`) are accepted as **dev-only install-time exceptions** — `@infisical/cli` is a root `devDependencies` entry used only by `npm run dev:*` scripts and is excluded from production runtime by the `apps/api` Dockerfile `prod-deps` stage (`npm ci --omit=dev`).
+
+### Result
+
+`npm audit`: **0 critical, 2 high (dev-only, see above), 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
+
+### Remaining moderate advisories (deferred, tracked as issues)
+
+- **Expo SDK 54 → 56 upgrade** (closes ~16 of the 26 remaining moderates): #289
+- **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
+- **Outstanding `next` moderate advisories (web + landing)**: #291
+- **`geist` (apps/web)**: #292
+- **`brace-expansion` 5.x in minimatch 10.x tree**: not separately tracked — moderate only, and the override that would close it (`^2.0.3`) breaks minimatch 10.x at runtime (different exported API). Re-evaluate when an audit-clean cross-major version exists.
+
+### Prevention
+
+When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** over per-workspace upgrades. Pin to the patched range cited in the advisory (e.g., `<=1.3.3` ⇒ override to `^1.4.0`) and re-run `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+
 ## Security Fix: Unrestricted File Upload in Chapter Logos
 
 ### Overview

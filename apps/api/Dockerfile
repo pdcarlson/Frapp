@@ -38,7 +38,11 @@ COPY packages/validation/package.json ./packages/validation/
 COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root
+# mkdir guards the runner-stage COPY: when transitive versions hoist
+# entirely to the root, apps/api/node_modules is never created and the
+# COPY --from=prod-deps below would fail with "not found".
+RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root \
+    && mkdir -p apps/api/node_modules
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
