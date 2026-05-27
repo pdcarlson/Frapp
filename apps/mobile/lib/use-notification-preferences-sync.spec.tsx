@@ -303,4 +303,87 @@ describe("useNotificationPreferencesSync", () => {
       );
     });
   });
+
+  it("PATCHes /v1/settings with nulls when disabling quiet hours", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    const client = createMockClient({ PATCH: patch });
+
+    mockState.asyncStorageMap.set(
+      PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        quietHoursEnabled: true,
+        dmAlertsEnabled: true,
+        eventRemindersEnabled: true,
+      }),
+    );
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+    });
+
+    act(() => {
+      result.current.setPreference("quietHoursEnabled", false);
+    });
+
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith("/v1/settings", {
+        body: {
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+          quiet_hours_tz: null,
+        },
+      });
+    });
+
+    expect(result.current.preferences.quietHoursEnabled).toBe(false);
+  });
+
+  it("strips legacy keys (e.g. digestEmailsEnabled) from hydrated state and persisted blob", async () => {
+    mockState.asyncStorageMap.set(
+      PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        quietHoursEnabled: true,
+        dmAlertsEnabled: false,
+        eventRemindersEnabled: true,
+        digestEmailsEnabled: true,
+      }),
+    );
+
+    const client = createMockClient();
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, null, makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+    });
+
+    expect(Object.keys(result.current.preferences).sort()).toEqual([
+      "dmAlertsEnabled",
+      "eventRemindersEnabled",
+      "quietHoursEnabled",
+    ]);
+    expect(
+      (result.current.preferences as Record<string, unknown>).digestEmailsEnabled,
+    ).toBeUndefined();
+
+    await waitFor(() => {
+      const persisted = mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY);
+      expect(persisted).toBeDefined();
+      const parsed = JSON.parse(persisted ?? "{}");
+      expect(Object.keys(parsed).sort()).toEqual([
+        "dmAlertsEnabled",
+        "eventRemindersEnabled",
+        "quietHoursEnabled",
+      ]);
+    });
+  });
 });

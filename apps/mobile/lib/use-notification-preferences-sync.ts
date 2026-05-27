@@ -134,7 +134,11 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
         if (!persisted || !isMounted) return;
         const parsed = JSON.parse(persisted) as unknown;
         if (!isPreferenceState(parsed)) return;
-        setPreferences(parsed);
+        setPreferences({
+          quietHoursEnabled: parsed.quietHoursEnabled,
+          dmAlertsEnabled: parsed.dmAlertsEnabled,
+          eventRemindersEnabled: parsed.eventRemindersEnabled,
+        });
       } catch {
         if (isMounted) setHydrationRecovered(true);
         try {
@@ -203,30 +207,30 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
       if (!isAuthenticated) return;
 
       if (key === "quietHoursEnabled") {
-        if (!value) {
-          setQuietHoursFailed(false);
-          return;
-        }
         const generation = ++quietHoursGenRef.current;
-        updateSettings.mutate(
-          {
-            quiet_hours_start: DEFAULT_QUIET_HOURS_START,
-            quiet_hours_end: DEFAULT_QUIET_HOURS_END,
-            quiet_hours_tz: resolveDeviceTimeZone(),
+        const body = value
+          ? {
+              quiet_hours_start: DEFAULT_QUIET_HOURS_START,
+              quiet_hours_end: DEFAULT_QUIET_HOURS_END,
+              quiet_hours_tz: resolveDeviceTimeZone(),
+            }
+          : {
+              quiet_hours_start: null,
+              quiet_hours_end: null,
+              quiet_hours_tz: null,
+            };
+        updateSettings.mutate(body, {
+          onSuccess: () => {
+            if (generation === quietHoursGenRef.current) {
+              setQuietHoursFailed(false);
+            }
           },
-          {
-            onSuccess: () => {
-              if (generation === quietHoursGenRef.current) {
-                setQuietHoursFailed(false);
-              }
-            },
-            onError: () => {
-              if (generation === quietHoursGenRef.current) {
-                setQuietHoursFailed(true);
-              }
-            },
+          onError: () => {
+            if (generation === quietHoursGenRef.current) {
+              setQuietHoursFailed(true);
+            }
           },
-        );
+        });
         return;
       }
 

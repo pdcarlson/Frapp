@@ -4638,15 +4638,18 @@
         "properties": {
           "quiet_hours_start": {
             "type": "string",
-            "description": "Quiet hours start (HH:mm format, e.g. 22:00)"
+            "description": "Quiet hours start (HH:mm format, e.g. 22:00). Pass null to clear.",
+            "nullable": true
           },
           "quiet_hours_end": {
             "type": "string",
-            "description": "Quiet hours end (HH:mm format, e.g. 08:00)"
+            "description": "Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear.",
+            "nullable": true
           },
           "quiet_hours_tz": {
             "type": "string",
-            "description": "Timezone for quiet hours (e.g. America/New_York)"
+            "description": "Timezone for quiet hours (e.g. America/New_York).",
+            "nullable": true
           },
           "theme": {
             "type": "string",

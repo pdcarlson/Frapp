@@ -224,13 +224,13 @@ export class NotificationService {
     >,
   ): Promise<UserSettings> {
     const existing = await this.settingsRepo.findByUser(userId);
+    const resolve = <K extends keyof typeof data>(field: K) =>
+      field in data ? data[field] ?? null : (existing?.[field] ?? null);
     return this.settingsRepo.upsert({
       user_id: userId,
-      quiet_hours_start:
-        data.quiet_hours_start ?? existing?.quiet_hours_start ?? null,
-      quiet_hours_end:
-        data.quiet_hours_end ?? existing?.quiet_hours_end ?? null,
-      quiet_hours_tz: data.quiet_hours_tz ?? existing?.quiet_hours_tz ?? null,
+      quiet_hours_start: resolve('quiet_hours_start'),
+      quiet_hours_end: resolve('quiet_hours_end'),
+      quiet_hours_tz: resolve('quiet_hours_tz'),
       theme: data.theme ?? existing?.theme ?? 'system',
     });
   }
