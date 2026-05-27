@@ -24,12 +24,12 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 ### Overview
 
-`npm audit` reported **58 vulnerabilities (1 critical, 19 high, 38 moderate)** at the repo root. The critical was `handlebars` (multiple advisories) pulled in transitively by `ts-jest` in `apps/api`. Most high-severity items were transitive (`minimatch`, `picomatch`, `node-forge`, `tar`, `undici`, `path-to-regexp`, `lodash`, `serialize-javascript`, `fast-uri`, `flatted`, `@xmldom/xmldom`, `vite`) reachable through NestJS, Expo CLI tooling, Jest, and ESLint trees.
+`npm audit` reported **58 vulnerabilities (1 critical, 19 high, 38 moderate)** at the repo root. The critical was `handlebars` (multiple advisories) pulled in transitively by `ts-jest` in `apps/api`. High-severity items split between direct deps (NestJS injection, multer in `@nestjs/platform-express`, lodash in `@nestjs/config`, etc.) and transitive deps (`minimatch`, `picomatch`, `node-forge`, `tar`, `undici`, `path-to-regexp`, `fast-uri`, `flatted`, `@xmldom/xmldom`) reachable through NestJS, Expo CLI tooling, Jest, and ESLint trees.
 
 ### Changes
 
-- **Root `overrides`** (in [`/package.json`](/package.json)) force patched versions of the transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces.
-- **`@nestjs/*` patch bumps** in [`apps/api/package.json`](/apps/api/package.json) (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) to versions that close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer).
+- **Root `overrides`** (in `package.json`) force patched versions of transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces. Overrides for `undici` and `@xmldom/xmldom` use unbounded floors (`>=6.24.0`, `>=0.8.13`) so consumers that declared a higher major (`jsdom@29`, `expo-server-sdk@5`, `plist@3`) retain it.
+- **`@nestjs/*` patch bumps** in `apps/api/package.json` (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer). The `vite` and `lodash` advisories cleared via the NestJS / vite transitive bumps that rode along, not via overrides.
 - **`@infisical/cli`** bumped at the root (high `tar` advisory).
 
 ### Result

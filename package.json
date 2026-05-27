@@ -35,14 +35,11 @@
     "fast-uri": "^3.1.2",
     "flatted": "^3.4.2",
     "node-forge": "^1.4.0",
-    "serialize-javascript": "^7.0.5",
     "tar": "^7.5.11",
-    "undici": "^6.24.0",
+    "undici": ">=6.24.0",
     "path-to-regexp": "^8.4.0",
-    "ws": "^8.21.0",
     "yaml": "^2.9.0",
-    "yauzl": "^3.3.1",
-    "@xmldom/xmldom": "^0.8.13"
+    "@xmldom/xmldom": ">=0.8.13"
   },
   "engines": {
     "node": ">=18"
