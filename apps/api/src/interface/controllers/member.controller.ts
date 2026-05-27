@@ -20,6 +20,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentMember,
@@ -32,6 +33,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@FreeTier()
 @Controller('members')
 export class MemberController {
   constructor(private readonly memberService: MemberService) {}
@@ -65,10 +67,11 @@ export class MemberController {
   @ApiOperation({ summary: 'Update member roles' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
   async updateRoles(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
-    return this.memberService.updateRoles(id, dto.role_ids);
+    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
   }
 
   @Patch('me/onboarding')
@@ -86,8 +89,8 @@ export class MemberController {
   @Delete(':id')
   @ApiOperation({ summary: 'Remove member from chapter' })
   @RequirePermissions(SystemPermissions.MEMBERS_REMOVE)
-  async remove(@Param('id') id: string) {
-    await this.memberService.remove(id);
+  async remove(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
+    await this.memberService.remove(id, chapterId);
     return { success: true };
   }
 }

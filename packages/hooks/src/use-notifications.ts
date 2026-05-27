@@ -121,9 +121,9 @@ export function useUpdateUserSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body: {
-      quiet_hours_start?: string;
-      quiet_hours_end?: string;
-      quiet_hours_tz?: string;
+      quiet_hours_start?: string | null;
+      quiet_hours_end?: string | null;
+      quiet_hours_tz?: string | null;
       theme?: "light" | "dark" | "system";
     }) => {
       const { data, error } = await client.PATCH("/v1/settings", { body });

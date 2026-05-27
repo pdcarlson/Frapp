@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useNetworkState } from "expo-network";
 import { View } from "react-native";
 import { NetworkBanner } from "@/components/network-banner";
+import { FrappProvider } from "@/lib/frapp-client";
 import { PreviewSessionProvider } from "@/lib/preview-session";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
@@ -30,7 +31,9 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <FrappThemeProvider>
-      <RootLayoutContent />
+      <FrappProvider>
+        <RootLayoutContent />
+      </FrappProvider>
     </FrappThemeProvider>
   );
 }

@@ -1900,12 +1900,12 @@ export interface components {
             is_enabled: boolean;
         };
         UpdateUserSettingsDto: {
-            /** @description Quiet hours start (HH:mm format, e.g. 22:00) */
-            quiet_hours_start?: string;
-            /** @description Quiet hours end (HH:mm format, e.g. 08:00) */
-            quiet_hours_end?: string;
-            /** @description Timezone for quiet hours (e.g. America/New_York) */
-            quiet_hours_tz?: string;
+            /** @description Quiet hours start (HH:mm format, e.g. 22:00). Pass null to clear. */
+            quiet_hours_start?: string | null;
+            /** @description Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear. */
+            quiet_hours_end?: string | null;
+            /** @description Timezone for quiet hours (e.g. America/New_York). */
+            quiet_hours_tz?: string | null;
             /**
              * @description Theme preference
              * @enum {string}

@@ -1,6 +1,7 @@
 import type { User as SupabaseAuthUser } from '@supabase/supabase-js';
 import type { Request } from 'express';
 import type Stripe from 'stripe';
+import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
 export interface AppUserContext {
   id: string;
@@ -21,6 +22,7 @@ export interface RequestContext extends Request {
   appUser?: AppUserContext;
   member?: MemberContext;
   chapterId?: string;
+  subscriptionStatus?: SubscriptionStatus;
   rawBody?: Buffer;
   stripeEvent?: Stripe.Event;
 }
