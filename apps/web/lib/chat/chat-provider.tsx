@@ -38,6 +38,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     chatRealtime.configure({
       queryClient,
       supabase,
+      viewerId: userId ?? null,
       backfill: async (channelId, since) => {
         const { data, error } = await apiClient.GET(
           "/v1/channels/{id}/messages",
@@ -55,7 +56,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     return () => {
       chatRealtime.destroy();
     };
-  }, [queryClient, supabase, apiClient]);
+  }, [queryClient, supabase, apiClient, userId]);
 
   // Boot-time + on-reconnect outbox flush. The manager also pokes per-channel
   // flushes via `useChatChannel`, but this catches the first paint where no

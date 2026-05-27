@@ -8,10 +8,6 @@ import {
 import { derivePalette } from '@repo/chapter-theme';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
 
-// Well-known system user UUID — must exist in the users table (seeded via
-// supabase/seed.sql). Used as sender_id for system-generated chat messages.
-const SYSTEM_SENDER_ID = '00000000-0000-0000-0000-000000000000';
-
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -172,10 +168,10 @@ export class ChapterConfigService {
       throw auditError;
     }
 
-    // Post system_audit message to #chapter-audit (best-effort)
-    await this.postAuditMessage(chapterId, diff).catch((err) =>
-      this.logger.warn('Failed to post audit message', err),
-    );
+    // ADR-08 (Chunk 05): `#chapter-audit` mirroring is now owned by the
+    // ChatBridgeWorker which subscribes to `chapter_audit_log` INSERTs and
+    // posts the `system_audit` message itself. Each audit-writing service no
+    // longer needs to call into chat.
 
     // Recompute theme palette if branding colors changed. Use the merged
     // branding colors so a partial color patch keeps the untouched channel.
@@ -230,34 +226,5 @@ export class ChapterConfigService {
     }
 
     return result;
-  }
-
-  private async postAuditMessage(
-    chapterId: string,
-    diff: Record<string, unknown>,
-  ) {
-    // Find the #chapter-audit channel for this chapter
-    const { data: channel } = await this.supabase
-      .from('chat_channels')
-      .select('id')
-      .eq('chapter_id', chapterId)
-      .eq('name', 'chapter-audit')
-      .maybeSingle();
-
-    if (!channel) return;
-
-    const keys = Object.keys(diff).join(', ');
-    const { error: msgError } = await this.supabase
-      .from('chat_messages')
-      .insert({
-        channel_id: channel.id,
-        sender_id: SYSTEM_SENDER_ID,
-        content: `Chapter configuration updated: ${keys}`,
-        kind: 'system_audit',
-        payload: diff,
-      });
-    if (msgError) {
-      this.logger.warn('system_audit chat message insert failed', msgError);
-    }
   }
 }

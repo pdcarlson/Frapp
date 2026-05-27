@@ -13,15 +13,17 @@
  * outages and return misleading responses).
  */
 
-import { canAccessChannel } from "@repo/validation";
+import { canAccessChannel, type ChannelOperation } from "@repo/validation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 interface ChannelRow {
   id: string;
   chapter_id: string;
   type: string;
+  name: string;
   member_ids: string[] | null;
   required_permissions: string[] | null;
+  is_read_only: boolean | null;
 }
 
 export type ChannelAuthz =
@@ -62,16 +64,25 @@ export async function resolveAppUserId(
   return { ok: true, userId };
 }
 
-/** Authorize a user for a channel; 404 if unknown, 403 if denied, 500 on DB error. */
+/**
+ * Authorize a user for a channel; 404 if unknown, 403 if denied, 500 on DB
+ * error. `operation` defaults to "read" so existing call sites are
+ * backward-compatible; pass "post" to additionally enforce the read-only /
+ * `announcements:post` gate (Chunk 05). For "post" we always need to load
+ * effective permissions so the gate can be evaluated, even on PUBLIC channels.
+ */
 export async function assertChannelAccess(
   client: SupabaseClient,
   userId: string,
   channelId: string,
+  operation: ChannelOperation = "read",
 ): Promise<ChannelAuthz> {
   try {
     const { data: channel, error: channelError } = await client
       .from("chat_channels")
-      .select("id, chapter_id, type, member_ids, required_permissions")
+      .select(
+        "id, chapter_id, type, name, member_ids, required_permissions, is_read_only",
+      )
       .eq("id", channelId)
       .maybeSingle();
     if (channelError) throw channelError;
@@ -91,7 +102,10 @@ export async function assertChannelAccess(
     const isChapterMember = Boolean(member);
 
     let permissions: string[] = [];
-    if (isChapterMember && ch.type === "ROLE_GATED") {
+    const needsPermissions =
+      isChapterMember &&
+      (ch.type === "ROLE_GATED" || (operation === "post" && ch.is_read_only));
+    if (needsPermissions) {
       const roleIds = (member as { role_ids: string[] | null }).role_ids ?? [];
       permissions = await effectivePermissions(client, roleIds, ch.chapter_id);
     }
@@ -101,10 +115,12 @@ export async function assertChannelAccess(
         type: ch.type,
         member_ids: ch.member_ids,
         required_permissions: ch.required_permissions,
+        is_read_only: ch.is_read_only,
       },
       userId,
       isChapterMember,
       permissions,
+      operation,
     });
 
     if (!allowed) {
@@ -115,6 +131,7 @@ export async function assertChannelAccess(
     console.error("chat-authz: channel access lookup failed", {
       channelId,
       userId,
+      operation,
       error: error instanceof Error ? error.message : String(error),
     });
     return AUTHZ_FAILURE;

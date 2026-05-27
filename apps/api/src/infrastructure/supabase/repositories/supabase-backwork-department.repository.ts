@@ -18,7 +18,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
       .eq('chapter_id', chapterId)
       .order('code', { ascending: true });
     if (error) throw error;
-    return (data as BackworkDepartment[]) || [];
+    return data || [];
   }
 
   async findByCode(
@@ -32,7 +32,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
       .eq('code', code)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkDepartment | null;
+    return data;
   }
 
   async create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment> {
@@ -42,7 +42,7 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
       .select()
       .single();
     if (error) throw error;
-    return created as BackworkDepartment;
+    return created;
   }
 
   async update(
@@ -56,6 +56,6 @@ export class SupabaseBackworkDepartmentRepository implements IBackworkDepartment
       .select()
       .single();
     if (error) throw error;
-    return updated as BackworkDepartment;
+    return updated;
   }
 }

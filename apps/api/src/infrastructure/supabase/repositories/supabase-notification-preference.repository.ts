@@ -22,7 +22,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .eq('chapter_id', chapterId);
 
     if (error) throw error;
-    return (data as NotificationPreference[]) ?? [];
+    return data ?? [];
   }
 
   async findByUserChapterCategory(
@@ -39,7 +39,7 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .maybeSingle();
 
     if (error) throw error;
-    return data as NotificationPreference | null;
+    return data;
   }
 
   async upsert(
@@ -64,6 +64,6 @@ export class SupabaseNotificationPreferenceRepository implements INotificationPr
       .single();
 
     if (error) throw error;
-    return result as NotificationPreference;
+    return result;
   }
 }

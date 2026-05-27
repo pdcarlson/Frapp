@@ -22,7 +22,7 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
-    return data as ChannelReadReceipt | null;
+    return data;
   }
 
   async upsert(
@@ -43,6 +43,6 @@ export class SupabaseReadReceiptRepository implements IChannelReadReceiptReposit
       .select()
       .single();
     if (error) throw error;
-    return data as ChannelReadReceipt;
+    return data;
   }
 }

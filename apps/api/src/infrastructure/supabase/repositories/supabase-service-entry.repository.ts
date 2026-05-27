@@ -19,7 +19,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as ServiceEntry | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<ServiceEntry[]> {
@@ -29,7 +29,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as ServiceEntry[]) || [];
+    return data || [];
   }
 
   async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
@@ -40,7 +40,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as ServiceEntry[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<ServiceEntry>): Promise<ServiceEntry> {
@@ -51,7 +51,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .single();
 
     if (error) throw error;
-    return created as ServiceEntry;
+    return created;
   }
 
   async update(
@@ -68,7 +68,7 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
       .single();
 
     if (error) throw error;
-    return updated as ServiceEntry;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

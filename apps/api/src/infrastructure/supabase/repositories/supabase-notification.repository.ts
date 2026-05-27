@@ -25,7 +25,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .single();
 
     if (error) throw error;
-    return created as Notification;
+    return created;
   }
 
   async findByUser(
@@ -44,7 +44,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data as Notification[]) ?? [];
+    return data ?? [];
   }
 
   async findById(id: string): Promise<Notification | null> {
@@ -55,7 +55,7 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .maybeSingle();
 
     if (error) throw error;
-    return data as Notification | null;
+    return data;
   }
 
   async markRead(id: string, userId: string): Promise<Notification> {
@@ -68,6 +68,6 @@ export class SupabaseNotificationRepository implements INotificationRepository {
       .single();
 
     if (error) throw error;
-    return data as Notification;
+    return data;
   }
 }

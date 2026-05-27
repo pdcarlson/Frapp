@@ -167,9 +167,56 @@ export function applyReactionInsert(
       action.user_id,
     ),
   };
+  // Append the raw row so renderers that need the per-row `payload` (poll
+  // card option tallies) can read it. Filter out any prior row with the
+  // same id (shouldn't happen — guard against duplicate broadcasts).
+  const actions = [
+    ...message.actions.filter((a) => a.id !== action.id),
+    action,
+  ];
   return {
     ...cache,
-    byId: { ...cache.byId, [action.message_id]: { ...message, reactions } },
+    byId: {
+      ...cache.byId,
+      [action.message_id]: { ...message, reactions, actions },
+    },
+    actionIndex: {
+      ...cache.actionIndex,
+      [action.id]: {
+        messageKey: action.message_id,
+        actionType: action.action_type,
+        userId: action.user_id,
+      },
+    },
+  };
+}
+
+/**
+ * Applies a vote-change UPSERT (ADR-07). The unique index on
+ * `(message_id, user_id, action_type)` collapses any prior row for the
+ * same (user, action_type) so the response carries `updated:true` and a
+ * fresh payload. The cache replaces that row in place.
+ */
+export function applyActionUpdate(
+  cache: ChannelCache,
+  action: RawChatMessageAction,
+): ChannelCache {
+  const message = cache.byId[action.message_id];
+  if (!message) return cache;
+  const actions = message.actions.map((a) =>
+    a.user_id === action.user_id && a.action_type === action.action_type
+      ? action
+      : a,
+  );
+  // Reactions map is keyed by action_type → user ids. Vote-change keeps the
+  // same key + same user id, so the user-id list is unchanged; only the
+  // per-row payload moves. No `reactions` mutation needed.
+  return {
+    ...cache,
+    byId: {
+      ...cache.byId,
+      [action.message_id]: { ...message, actions },
+    },
     actionIndex: {
       ...cache.actionIndex,
       [action.id]: {
@@ -201,9 +248,13 @@ export function applyReactionDelete(
   const reactions = { ...message.reactions };
   if (nextUsers.length === 0) delete reactions[entry.actionType];
   else reactions[entry.actionType] = nextUsers;
+  const actions = message.actions.filter((a) => a.id !== actionId);
   return {
     ...cache,
-    byId: { ...cache.byId, [entry.messageKey]: { ...message, reactions } },
+    byId: {
+      ...cache.byId,
+      [entry.messageKey]: { ...message, reactions, actions },
+    },
     actionIndex,
   };
 }

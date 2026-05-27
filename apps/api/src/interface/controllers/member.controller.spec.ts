@@ -76,7 +76,7 @@ describe('MemberController', () => {
 
   describe('search', () => {
     it('forwards chapter-scoped search queries', async () => {
-      memberService.searchByChapterAndName.mockResolvedValue([] as any);
+      memberService.searchByChapterAndName.mockResolvedValue([]);
 
       await controller.search('chapter-1', 'jordan');
 

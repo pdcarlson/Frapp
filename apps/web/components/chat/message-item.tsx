@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
+import { MessageRenderer } from "./renderers";
 import type { ChatMessage } from "@/lib/chat/types";
 
 function formatClock(value: string | null | undefined): string {
@@ -35,6 +36,12 @@ export interface MessageItemProps {
   onOpenThread?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
+  /** Card action invoker (Vote, RSVP, …). Required for kinds like `poll`. */
+  onAct?: (
+    messageId: string,
+    actionType: string,
+    payload: Record<string, unknown>,
+  ) => void;
 }
 
 /**
@@ -54,6 +61,7 @@ export function MessageItem({
   onOpenThread,
   onRetry,
   onDiscard,
+  onAct,
 }: MessageItemProps) {
   const [hovered, setHovered] = useState(false);
   const isMine = !!viewerId && message.sender_id === viewerId;
@@ -63,7 +71,6 @@ export function MessageItem({
   // real chat_messages.id, threads need a stable parent id) — gate the hover
   // affordances on a confirmed status so we never act on a placeholder id.
   const isConfirmed = message._status === "confirmed";
-  const isSelfBubble = isMine;
 
   return (
     <li
@@ -101,17 +108,14 @@ export function MessageItem({
             ) : null}
           </div>
         ) : null}
-        <div
-          className={`mt-0.5 inline-block max-w-full whitespace-pre-wrap break-words text-sm ${
-            message.is_deleted ? "italic text-muted-foreground" : ""
-          } ${
-            isSelfBubble && !message.is_deleted
-              ? "rounded-md bg-[color:var(--chat-self-bubble,theme(colors.primary.50))] px-2 py-1"
-              : ""
-          }`}
-        >
-          {message.is_deleted ? "[message deleted]" : message.content}
-        </div>
+        <MessageRenderer
+          message={message}
+          viewerId={viewerId}
+          isSelf={isMine}
+          isConfirmed={isConfirmed}
+          onAct={onAct ?? (() => {})}
+        />
+
         <ReactionChips
           reactions={message.reactions}
           viewerId={viewerId}

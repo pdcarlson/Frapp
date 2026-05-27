@@ -26,7 +26,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkResource | null;
+    return data;
   }
 
   async findByChapter(
@@ -70,7 +70,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       ascending: false,
     });
     if (error) throw error;
-    return (data as BackworkResource[]) || [];
+    return data || [];
   }
 
   async findByFileHash(
@@ -84,7 +84,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .eq('file_hash', fileHash)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkResource | null;
+    return data;
   }
 
   async create(data: Partial<BackworkResource>): Promise<BackworkResource> {
@@ -94,7 +94,7 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
       .select()
       .single();
     if (error) throw error;
-    return created as BackworkResource;
+    return created;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

@@ -223,7 +223,7 @@ describe('PointsController', () => {
     });
 
     it('coerces flagged=false string to boolean false', async () => {
-      pointsService.listTransactions.mockResolvedValue([] as any);
+      pointsService.listTransactions.mockResolvedValue([]);
 
       await controller.listTransactions('chapter-1', { flagged: 'false' });
 
@@ -237,7 +237,7 @@ describe('PointsController', () => {
     });
 
     it('coerces flagged=1 to boolean true (validator boolean string)', async () => {
-      pointsService.listTransactions.mockResolvedValue([] as any);
+      pointsService.listTransactions.mockResolvedValue([]);
 
       await controller.listTransactions('chapter-1', { flagged: '1' });
 
@@ -251,7 +251,7 @@ describe('PointsController', () => {
     });
 
     it('leaves flagged undefined when the query omits it', async () => {
-      pointsService.listTransactions.mockResolvedValue([] as any);
+      pointsService.listTransactions.mockResolvedValue([]);
 
       await controller.listTransactions('chapter-1', {});
 

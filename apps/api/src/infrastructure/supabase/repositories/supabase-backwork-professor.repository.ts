@@ -18,7 +18,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .eq('chapter_id', chapterId)
       .order('name', { ascending: true });
     if (error) throw error;
-    return (data as BackworkProfessor[]) || [];
+    return data || [];
   }
 
   async findByName(
@@ -32,7 +32,7 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .eq('name', name)
       .maybeSingle();
     if (error) throw error;
-    return data as BackworkProfessor | null;
+    return data;
   }
 
   async create(data: Partial<BackworkProfessor>): Promise<BackworkProfessor> {
@@ -42,6 +42,6 @@ export class SupabaseBackworkProfessorRepository implements IBackworkProfessorRe
       .select()
       .single();
     if (error) throw error;
-    return created as BackworkProfessor;
+    return created;
   }
 }

@@ -157,4 +157,66 @@ describe('canAccessChannel', () => {
       }),
     ).toBe(false);
   });
+
+  describe('operation: "post" on a read-only channel', () => {
+    const readOnly = {
+      type: 'PUBLIC' as const,
+      member_ids: null,
+      required_permissions: null,
+      is_read_only: true,
+    };
+
+    it('reads are unaffected by the read-only flag', () => {
+      expect(
+        canAccessChannel({ ...base, channel: readOnly, operation: 'read' }),
+      ).toBe(true);
+    });
+
+    it('denies a post without announcements:post', () => {
+      expect(
+        canAccessChannel({ ...base, channel: readOnly, operation: 'post' }),
+      ).toBe(false);
+    });
+
+    it('allows a post with announcements:post', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['announcements:post'],
+          channel: readOnly,
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+
+    it('allows a post with the wildcard', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: readOnly,
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+
+    it('non-read-only channels accept posts from any chapter member', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          channel: {
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+            is_read_only: false,
+          },
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+
+    it('defaults operation to "read" when omitted (backward-compat)', () => {
+      expect(canAccessChannel({ ...base, channel: readOnly })).toBe(true);
+    });
+  });
 });

@@ -22,7 +22,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as FinancialInvoice | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<FinancialInvoice[]> {
@@ -32,7 +32,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as FinancialInvoice[]) || [];
+    return data || [];
   }
 
   async findByUser(
@@ -46,7 +46,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as FinancialInvoice[]) || [];
+    return data || [];
   }
 
   async findOverdue(chapterId: string): Promise<FinancialInvoice[]> {
@@ -59,7 +59,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .lt('due_date', today)
       .order('due_date', { ascending: true });
     if (error) throw error;
-    return (data as FinancialInvoice[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice> {
@@ -69,7 +69,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .select()
       .single();
     if (error) throw error;
-    return created as FinancialInvoice;
+    return created;
   }
 
   async update(
@@ -85,6 +85,6 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
       .select()
       .single();
     if (error) throw error;
-    return updated as FinancialInvoice;
+    return updated;
   }
 }

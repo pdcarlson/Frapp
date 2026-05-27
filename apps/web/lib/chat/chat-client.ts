@@ -31,6 +31,7 @@ import {
   type RawChatMessageAction,
 } from "./types";
 import {
+  applyActionUpdate,
   applyReactionInsert,
   emptyCache,
   markFailed,
@@ -409,9 +410,11 @@ export interface CardActionArgs {
 }
 
 /**
- * Action plumbing for inline-card buttons (RSVP / Vote / Done …). The card
- * renderers themselves land in Chunk 05; the transport is the same hardened
- * chat-react Edge Function.
+ * Action plumbing for inline-card buttons (RSVP / Vote / Done …). The
+ * transport is the hardened chat-react Edge Function. For vote-change
+ * (ADR-07) the response sets `updated:true`, so the cache merges via
+ * `applyActionUpdate` (replaces payload on the existing row) instead of
+ * `applyReactionInsert` (which would shadow the prior row).
  */
 export async function actOnCard(
   ctx: ChatActionContext,
@@ -422,6 +425,7 @@ export async function actOnCard(
     const { data, error } = await ctx.supabase.functions.invoke<{
       action: RawChatMessageAction;
       deduplicated?: boolean;
+      updated?: boolean;
     }>("chat-react", {
       body: {
         message_id: args.messageId,
@@ -432,7 +436,9 @@ export async function actOnCard(
     if (error) throw error;
     if (data?.action) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
-        applyReactionInsert(cache, data.action),
+        data.updated
+          ? applyActionUpdate(cache, data.action)
+          : applyReactionInsert(cache, data.action),
       );
     }
   } catch (err) {

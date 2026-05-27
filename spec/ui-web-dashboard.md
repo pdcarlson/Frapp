@@ -425,6 +425,18 @@ The post-sign-in landing surface and the spine of the redesigned product.
 - Offline composer: a Dexie `outbox(clientId, channelId, body, attempts, queuedAt, status)` is flushed in order on reconnect. 4xx → failed with inline Retry/Discard; network/5xx → stays queued.
 - Reconnect: per-channel Postgres Changes subscription status drives the pill with exponential backoff 1→2→4→8→16→30s cap. On reconnect: **resubscribe first** (so live rows route through the same merge), **then** REST-backfill via `?since=<lastSeen>` so any gap closes idempotently.
 - Theme applied via `useChapterTheme()` — sidebar, mention pills, self-bubble, reaction-active read the chapter's derived palette.
+- Presence: on every channel attach the web client calls `channel.track({ userId, ts })` on the `chat:channel:<id>` topic (ADR-10) so the push worker can skip recipients currently in the channel.
+
+**Rich-message renderers (Chunk 05).** `message-item.tsx` dispatches `message.kind` through `components/chat/renderers/` (`MessageRenderer`). Every renderer is keyed off the same `kind` field; unknown kinds fall back to the text renderer.
+
+- **Text** — bone or accent-tinted bubble (self-message uses `--chat-self-bubble`), whitespace-preserved, deleted messages italicized as `[message deleted]`.
+- **Announcement card** — accent-left-border block on a `--mention-bg` tint, mono uppercase eyebrow "Announcement" with a megaphone glyph. Body comes from `payload.body` (fallback to `message.content`). No primary CTA — announcement reads are passive.
+- **Poll card** — mono eyebrow "Poll" (+ "· Closed" when `payload.closes_at` has elapsed). Pre-vote: every option is a full-width semantic `<button>` with the option label and a `0 · 0%` tally tag. Post-vote: the same buttons stay tappable so the user can change their vote (ADR-07 UPSERT), the viewer's choice highlights with `aria-pressed`, and a 1px accent progress bar shows the per-option share. Footer: `<n> vote[s] · your vote is highlighted` or `No votes yet · be the first to vote`.
+- **System-audit card** — mono-style card with `ShieldAlert` eyebrow, `font-mono` action header (`chapter_config_updated by 7f9a0e`), and a "Changed: <keys>" line listing the diff field names. Optimistic payload guard: malformed rows fall back to the prose `content`.
+- **Loading card** — animated spinner with the message's `content` ("Computing overdue list…") used by heavy slash commands while the server replaces the row's `kind` + `payload` via Realtime UPDATE.
+- **Coming-soon card** — dashed-border stub for `event` / `task` / `dues` / `points` / `hours` kinds. Chunk 10 sub-chunks swap each kind to a concrete renderer without touching the dispatcher.
+
+Cards live in the message body slot; reaction chips and the Reply affordance still render below per the Chunk 04 row layout.
 
 ### 3.8 – 3.16 (Remaining Screens Summary)
 

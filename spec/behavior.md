@@ -355,6 +355,22 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Posting to `#announcements` triggers a push notification to all chapter members (respecting their notification preferences).
 - Announcement messages cannot be replied to in-thread (read-only channel for non-admins).
 
+### Slash Commands (Chunk 05)
+
+Slash commands turn chat into the dispatcher for every ops module ("modules-as-integrations"). The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast (Chunk 10 sub-chunks flip them as they ship). Server-side authorization is independent of the client gate — the Edge Function re-checks permission for every send.
+
+Initial catalog (Chunk 05):
+
+| Command | Implemented | Required module | Server gate | Posted to |
+| --- | --- | --- | --- | --- |
+| `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member | current channel |
+| `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
+| `/event`, `/task`, `/dues`, `/points`, `/hours` | no | per-module | n/a | n/a (palette stub) |
+
+Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArgs`, `parseAnnounceArgs`) so web, mobile, and any future heavy-command RPC share one source of truth. Poll arguments tokenize on whitespace but respect double-quoted spans for the question; unterminated quotes return a specific error rather than silently truncating. Polls require at least two distinct options (case-insensitive dedup) and at most ten; an optional trailing `closes=<minutes>` overrides the 24-hour default.
+
+Vote-change uses the UPSERT semantics in ADR-07: every user has at most one row in `chat_message_actions` with `action_type='vote'` per poll message; switching options updates the row's `payload.option_id` in place.
+
 ### Message Persistence
 
 Every message is written to `chat_messages` in Postgres **before** being broadcast to connected clients. If realtime delivery fails, the message is still persisted and will appear on the next history fetch or page refresh.
@@ -443,6 +459,34 @@ Users can mute specific chat channels. Muted channels:
 - Do not generate push notifications for new messages.
 - Still show unread indicators in the app when opened.
 - @mentions in muted channels still generate notifications (override mute).
+
+### Chat notification preferences (Chunk 05)
+
+Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
+
+Defaults when no row is set (encoded in `apps/api/src/modules/chat-push-worker/push-rules.ts:defaultLevelFor`):
+
+| Channel / kind | Default level |
+| --- | --- |
+| `#announcements` | `all` |
+| `#chapter-audit` | `off` |
+| `system_audit` kind (any channel) | `off` |
+| Every other channel | `mentions` |
+
+Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone.
+
+### Audit-log → `#chapter-audit` bridge (Chunk 05)
+
+The bridge worker (`ChatBridgeWorkerService`, ADR-08) subscribes to `chapter_audit_log` INSERT via Supabase Realtime and posts a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender (`00000000-0000-0000-0000-000000000000`). Rows with `member_visible=false` are skipped — internal-scope rows stay out of the channel.
+
+Message shape:
+
+- `sender_id`: the system sender.
+- `content`: human summary (`"<action>: <diff keys>"`).
+- `kind`: `system_audit`.
+- `payload`: `{ action, actor_user_id, diff }` — the renderer reads from `payload`, not the prose `content`.
+
+Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues. The audit row itself is always the source of truth.
 
 ### Notification Triggers (Complete List)
 

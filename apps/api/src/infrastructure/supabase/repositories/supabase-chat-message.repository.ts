@@ -37,7 +37,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
-    return data as ChatMessage | null;
+    return data;
   }
 
   async findByChannel(
@@ -77,7 +77,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data as ChatMessage[]) || [];
+    return data || [];
   }
 
   async findPinnedByChannel(channelId: string): Promise<ChatMessage[]> {
@@ -88,7 +88,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .eq('is_pinned', true)
       .order('pinned_at', { ascending: false });
     if (error) throw error;
-    return (data as ChatMessage[]) || [];
+    return data || [];
   }
 
   async countPinnedByChannel(channelId: string): Promise<number> {
@@ -139,7 +139,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
 
     const { data, error } = await query;
     if (error) throw error;
-    return (data as unknown as ChatMessage[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<ChatMessage>): Promise<ChatMessage> {
@@ -149,7 +149,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select()
       .single();
     if (error) throw error;
-    return created as ChatMessage;
+    return created;
   }
 
   async update(id: string, data: Partial<ChatMessage>): Promise<ChatMessage> {
@@ -160,6 +160,6 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
       .select()
       .single();
     if (error) throw error;
-    return updated as ChatMessage;
+    return updated;
   }
 }

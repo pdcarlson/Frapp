@@ -1,12 +1,19 @@
 /**
- * Chat-integrations registry (Chunk 04 scaffold).
+ * Chat-integrations registry.
  *
- * This package holds the slash-command catalog and parser shared across web,
- * mobile, and API. Chunk 04 ships only the *scaffold*: the command list, the
- * input parser, and module-gating metadata. The rich-message renderers and the
- * actual command dispatch (RSVP cards, dues reminders, polls, …) land in
- * Chunk 05 — every command here is `implemented: false` until then.
+ * This package holds the slash-command catalog, the input parsers, and the
+ * payload shapes shared across web, mobile, and the Edge Functions. Rich
+ * renderers themselves live in the apps (they're framework-bound — React for
+ * web, Expo for mobile), but every renderer reads from the same contract
+ * declared here so a wire change cannot drift across surfaces.
+ *
+ * Chunk 04 shipped the catalog scaffold (all commands `implemented: false`);
+ * Chunk 05 flips `/poll` and `/announce` to `implemented: true` and adds the
+ * dispatch + parsers below.
  */
+
+export * from "./parsers.js";
+export * from "./payloads.js";
 
 /**
  * A slash command the user can invoke from the composer. `requiredModule` ties
@@ -52,9 +59,9 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   {
     name: "poll",
     description: "Start a poll",
-    usage: "<question> | <option> | <option>",
+    usage: '"<question>" <option> <option> …',
     requiredModule: "polls",
-    implemented: false,
+    implemented: true,
   },
   {
     name: "dues",
@@ -82,7 +89,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
     description: "Post an announcement",
     usage: "<message>",
     requiredModule: null,
-    implemented: false,
+    implemented: true,
   },
 ]);
 

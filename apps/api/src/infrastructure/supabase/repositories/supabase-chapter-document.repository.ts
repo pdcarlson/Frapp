@@ -25,7 +25,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as ChapterDocument | null;
+    return data;
   }
 
   async findByChapter(
@@ -49,7 +49,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       ascending: false,
     });
     if (error) throw error;
-    return (data as ChapterDocument[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<ChapterDocument>): Promise<ChapterDocument> {
@@ -59,7 +59,7 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .select()
       .single();
     if (error) throw error;
-    return created as ChapterDocument;
+    return created;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

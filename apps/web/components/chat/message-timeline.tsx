@@ -23,6 +23,11 @@ export interface MessageTimelineProps {
   onOpenThread?: (message: ChatMessage) => void;
   onRetry?: (clientMessageId: string) => void;
   onDiscard?: (clientMessageId: string) => void;
+  onAct?: (
+    messageId: string,
+    actionType: string,
+    payload: Record<string, unknown>,
+  ) => void;
 }
 
 /**
@@ -41,6 +46,7 @@ export function MessageTimeline({
   onOpenThread,
   onRetry,
   onDiscard,
+  onAct,
 }: MessageTimelineProps) {
   const virtuoso = useRef<VirtuosoHandle | null>(null);
 
@@ -97,6 +103,7 @@ export function MessageTimeline({
             onOpenThread={onOpenThread}
             onRetry={onRetry}
             onDiscard={onDiscard}
+            onAct={onAct}
           />
         )}
         computeItemKey={(_, entry) =>

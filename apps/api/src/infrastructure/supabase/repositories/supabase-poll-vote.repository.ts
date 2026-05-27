@@ -91,7 +91,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .eq('message_id', messageId)
       .eq('user_id', userId);
     if (error) throw error;
-    return (data as PollVote[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<PollVote>): Promise<PollVote> {
@@ -101,7 +101,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .select()
       .single();
     if (error) throw error;
-    return created as PollVote;
+    return created;
   }
 
   async createMany(data: Partial<PollVote>[]): Promise<PollVote[]> {
@@ -114,7 +114,7 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
       .insert(data as never)
       .select();
     if (error) throw error;
-    return (created as PollVote[]) || [];
+    return created || [];
   }
 
   async deleteByMessageAndUser(

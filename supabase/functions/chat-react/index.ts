@@ -69,9 +69,16 @@ export async function handler(req: Request): Promise<Response> {
   }
 
   // ── Atomic idempotent insert (unique on message_id + user_id + action_type)
-  // No read-then-insert pre-check: the unique index is the source of truth. A
-  // concurrent identical reaction loses the race with a 23505, which we treat
-  // as a successful dedup — never a 500.
+  // No read-then-insert pre-check: the unique index is the source of truth.
+  //
+  // Poll vote semantics (ADR-07): `action_type === "vote"` is an UPSERT — a
+  // user changing their option updates the row's `payload` + `created_at` in
+  // place rather than creating a second row. Emoji reactions
+  // (`action_type` starting with `reaction:`) keep the 23505 → select-existing
+  // dedup path so a duplicate emoji-react is a no-op.
+  const VOTE_ACTION_TYPE = "vote";
+  const isVote = action_type === VOTE_ACTION_TYPE;
+
   const { data: action, error: insertError } = await serviceSupabase
     .from("chat_message_actions")
     .insert({ message_id, user_id: userId, action_type, payload: payload ?? {} })
@@ -80,6 +87,23 @@ export async function handler(req: Request): Promise<Response> {
 
   if (insertError) {
     if ((insertError as { code?: string }).code === "23505") {
+      if (isVote) {
+        // Vote-change: overwrite payload + created_at on the existing row
+        // keyed by the unique index. The shared row id stays stable so any
+        // already-subscribed client can match the Realtime UPDATE.
+        const { data: updated, error: updateError } = await serviceSupabase
+          .from("chat_message_actions")
+          .update({ payload: payload ?? {}, created_at: new Date().toISOString() })
+          .eq("message_id", message_id)
+          .eq("user_id", userId)
+          .eq("action_type", action_type)
+          .select("*")
+          .single();
+        if (updateError || !updated) {
+          return errorResponse("Failed to update vote", 500);
+        }
+        return jsonResponse({ action: updated, deduplicated: false, updated: true });
+      }
       const { data: deduped, error: dedupError } = await serviceSupabase
         .from("chat_message_actions")
         .select("*")

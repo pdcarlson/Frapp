@@ -265,6 +265,7 @@ export class ChatService {
       input.channel_id,
       input.chapter_id,
       input.sender_id,
+      'post',
     );
 
     if (input.reply_to_id) {
@@ -344,6 +345,7 @@ export class ChatService {
     channelId: string,
     chapterId: string,
     userId: string,
+    operation: 'read' | 'post' = 'read',
   ): Promise<ChatChannel> {
     const channel = await this.channelRepo.findById(channelId, chapterId);
     if (!channel) {
@@ -356,20 +358,28 @@ export class ChatService {
     );
     const isChapterMember = Boolean(member);
 
-    const permissions =
-      isChapterMember && channel.type === 'ROLE_GATED'
-        ? await this.rbac.getEffectivePermissions(chapterId, userId)
-        : [];
+    // For "post" against a read-only channel (#announcements, #chapter-audit)
+    // we need to evaluate the caller's permissions even on a PUBLIC channel
+    // so the announcements:post gate can fire.
+    const needsPermissions =
+      isChapterMember &&
+      (channel.type === 'ROLE_GATED' ||
+        (operation === 'post' && channel.is_read_only === true));
+    const permissions = needsPermissions
+      ? await this.rbac.getEffectivePermissions(chapterId, userId)
+      : [];
 
     const allowed = canAccessChannel({
       channel: {
         type: channel.type,
         member_ids: channel.member_ids,
         required_permissions: channel.required_permissions,
+        is_read_only: channel.is_read_only ?? null,
       },
       userId,
       isChapterMember,
       permissions,
+      operation,
     });
 
     if (!allowed) {

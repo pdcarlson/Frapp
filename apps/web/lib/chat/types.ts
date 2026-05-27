@@ -106,6 +106,13 @@ export interface ChatMessage {
   /** Always present. Equals `client_message_id`, or the server id as a fallback. */
   client_message_id: string;
   reactions: ReactionState;
+  /**
+   * Raw `chat_message_actions` rows for this message. Polls / card actions
+   * need the per-row `payload` (vote option id, RSVP state, …) which the
+   * compact `reactions` aggregate cannot represent. Kept in addition to
+   * `reactions` so emoji-reaction chips stay O(1) lookups.
+   */
+  actions: RawChatMessageAction[];
   _status: MessageStatus;
   _error?: string;
 }
@@ -152,6 +159,7 @@ export function normalizeRow(row: RawChatMessage): ChatMessage {
     created_at: row.created_at,
     client_message_id: clientId,
     reactions: {},
+    actions: [],
     _status: "confirmed",
   };
 }
@@ -181,6 +189,7 @@ export function optimisticMessage(args: {
     created_at: new Date().toISOString(),
     client_message_id: args.clientMessageId,
     reactions: {},
+    actions: [],
     _status: "pending",
   };
 }
