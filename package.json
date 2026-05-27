@@ -23,7 +23,7 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "@infisical/cli": "^0.43.87",
+    "@infisical/cli": "0.43.40",
     "prettier": "^3.7.4",
     "turbo": "^2.8.7",
     "typescript": "5.9.2"
