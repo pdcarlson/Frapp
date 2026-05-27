@@ -1,7 +1,21 @@
 # Chunk 05 — Chat part 2: rich messages + slash commands + system channel + push
 
-**Depends on:** Chunk 04 (chat foundation + hot-path client + slash palette scaffold).
+**Depends on:** Chunk 04 (chat foundation + hot-path client + slash palette scaffold). Also depends on **#310** (slash-palette fail-closed gating) landing — that PR is the Chunk 04 follow-up that protects the dispatch window this chunk turns on.
 **Unblocks:** all Chunk 10 sub-chunks, Chunk 11 (mobile parity needs the renderers).
+
+## Kickoff decisions (locked before implementation)
+
+These were decided at kickoff to avoid mid-chunk relitigation. Each gets a numbered ADR in `spec/architecture.md` (continuing from ADR-05 in Chunk 04) — the ADR records the picked option, the alternatives considered, and the trigger that would force a revisit. Per REVIEW_CHECKLIST §6, the PR body links each ADR by number.
+
+1. **Notification preferences shape — new table.** Add `chat_notification_preferences (user_id, channel_id_or_kind, level)` with `level ∈ all|mentions|off`. Leave the existing `notification_preferences (user, chapter, category, is_enabled)` alone for non-chat categories (RSVPs, dues reminders). Two prefs systems is an accepted wart; unification can come later. **Why:** avoids cross-PR coordination with the in-flight mobile sync work in #288, keeps channel/level semantics clean. Record as **ADR-06**.
+2. **Poll vote semantics — UPSERT in `chat-react`.** Change the Edge Function's insert to `INSERT … ON CONFLICT (message_id, user_id, action_type) DO UPDATE SET value = EXCLUDED.value` for `action_type = "vote"`. Atomic vote-change, idempotent, no delete-then-insert. **Why:** preserves the dedup-via-unique-index discipline from Chunk 02 while allowing vote-change. Distinguish in the response: insert path returns `{action, deduplicated: false}`; UPDATE path returns `{action, vote_changed: true}` (or equivalent). Record as **ADR-07**.
+3. **Audit→chat bridge — NestJS Realtime subscriber.** One worker subscribes to `chapter_audit_log` inserts AND `chat_messages` inserts (shared infra with item 5 below). Each `chapter_audit_log` row produces a `kind="system_audit"` message in the chapter's `#chapter-audit` channel via service-role insert. Pull the inline pattern in `chapter-config.service` out into this worker; the service should no longer post chat messages directly. **Why:** easier to evolve formatting / dedup / suppression than a PL/pgSQL trigger; reuses the push-worker infra. Record as **ADR-08**.
+4. **Push-worker host — in-process API module.** `OnModuleInit` provider inside the existing API process subscribes to Realtime on boot. One deploy target; the audit subscriber lives in the same provider. **Scaling limits to document in the ADR:** the in-process model holds until ~50 active chapters / concurrent activity reaches the API node's event loop ceiling — at that point split to a standalone Render worker service. The ADR captures the watermark (e.g. p99 message-fanout latency > 1s, or sustained worker-loop CPU > 40%) that triggers the split. **Why now:** saves a deploy target + secrets-sync surface for MVP. Record as **ADR-09**, and link it from `docs/DEPLOYMENT.md` so the eventual split is on the deploy roadmap.
+5. **Presence source — Supabase Realtime Presence.** The worker joins `presence:channel:<id>` broadcast topics and reads tracked client state. **Why:** canonical mechanism; no parallel server-side presence map to drift from client state. Record as **ADR-10**.
+6. **PR shape — one PR, three reviewable sections** (schema + announcements gate → dispatch + renderers → push worker + audit bridge). Reassess if it grows past ~40 changed files; if so, split (B) push worker + audit bridge into a follow-up PR. No phase-0 security split — `announcements:post` is the only auth touch and rides with section A.
+7. **Deferred (stay deferred for this chunk).** Channel-unread / mute machinery (Chunk 4 carryover — file a separate issue and link from `STATUS.md`'s Chunk 4 row), `/dues remind overdue` actual dispatch (Chunk 10d), and the other `/event /task /points /hours` commands — ship only the "renderer coming soon" stub cards from item 1 in the brief below. `/poll` and `/announce` are the only `implemented: true` commands at the end of this chunk.
+
+If implementation reveals one of these calls was wrong, follow the standard divergence protocol: edit this section in the same PR with a "**Revised:**" note explaining the change and link the revised ADR.
 
 ## Read first
 

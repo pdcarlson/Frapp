@@ -43,6 +43,7 @@ Run this against every chunk PR (as the author before opening, and as the review
 - [ ] STATUS.md row updated (and the previous chunk flipped to `shipped` if it merged).
 - [ ] Visual baselines: only the affected ones regenerated, listed with reasons + Chromium revision.
 - [ ] Plan divergences edited into the brief/master-plan in the same PR.
+- [ ] **ADR for every architectural decision in the PR.** A new infra placement (worker vs trigger, in-process vs standalone), a new schema choice with multiple viable options, a new pattern that other chunks will inherit, or a scaling limit that defers to a future revisit — each gets its own `spec/architecture.md` ADR (sequentially numbered) explaining the picked option, the alternatives considered, and the trigger that would force a revisit. Sub-100-line code changes that pick a well-trodden pattern don't need an ADR; cross-cutting structural calls do. PR body links the new ADR by number.
 
 ## 7. CodeRabbit triage
 
