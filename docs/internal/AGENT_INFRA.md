@@ -114,3 +114,13 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:migration-safety` — migrations + promotion docs
 
 Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../.cursor/skills/testing.md).
+
+## Claude Code project settings
+
+`.claude/settings.json` ships repo-wide config for Claude Code sessions (cloud and local). Current contents:
+
+| Key                | Value | Effect                                                                                                                          |
+| ------------------ | ----- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `doneMeansMerged`  | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop (open PR → `subscribe_pr_activity` → fix CI failures and review comments until merge-ready, or a self-contained next step). |
+
+Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
