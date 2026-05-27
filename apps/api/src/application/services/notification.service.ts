@@ -225,7 +225,7 @@ export class NotificationService {
   ): Promise<UserSettings> {
     const existing = await this.settingsRepo.findByUser(userId);
     const resolve = <K extends keyof typeof data>(field: K) =>
-      field in data ? data[field] ?? null : (existing?.[field] ?? null);
+      field in data ? (data[field] ?? null) : (existing?.[field] ?? null);
     return this.settingsRepo.upsert({
       user_id: userId,
       quiet_hours_start: resolve('quiet_hours_start'),
