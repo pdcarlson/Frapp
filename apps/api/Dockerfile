@@ -9,7 +9,7 @@ COPY packages/validation/package.json ./packages/validation/
 COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --loglevel=verbose --foreground-scripts --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root 2>&1 || (echo "::: NPM CI FAILED — dumping debug log :::"; ls /root/.npm/_logs/ 2>/dev/null; tail -300 /root/.npm/_logs/*-debug-*.log 2>/dev/null; exit 1)
 
 # Stage 2: Compile TypeScript
 FROM node:20-alpine AS builder
@@ -38,7 +38,7 @@ COPY packages/validation/package.json ./packages/validation/
 COPY packages/org-archetypes/package.json ./packages/org-archetypes/
 COPY packages/chapter-theme/package.json ./packages/chapter-theme/
 COPY packages/typescript-config/package.json ./packages/typescript-config/
-RUN npm ci --omit=dev --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root
+RUN npm ci --omit=dev --loglevel=verbose --foreground-scripts --workspace=apps/api --workspace=packages/validation --workspace=packages/org-archetypes --workspace=packages/chapter-theme --workspace=packages/typescript-config --include-workspace-root 2>&1 || (echo "::: NPM CI (prod-deps) FAILED — dumping debug log :::"; ls /root/.npm/_logs/ 2>/dev/null; tail -300 /root/.npm/_logs/*-debug-*.log 2>/dev/null; exit 1)
 
 # Stage 4: Minimal production image
 FROM node:20-alpine AS runner
