@@ -23,6 +23,10 @@ type Anything = any;
 export interface QueryBuilder {
   select(...args: Anything[]): QueryBuilder;
   insert(...args: Anything[]): QueryBuilder;
+  /** ADR-07: chat-react UPSERTs vote-change rows; the stub exposes
+   * `.update(...)` so the Edge Function type-checks under the test import
+   * map. */
+  update(...args: Anything[]): QueryBuilder;
   eq(column: string, value: Anything): QueryBuilder;
   in(column: string, values: Anything[]): QueryBuilder;
   maybeSingle(): Promise<{ data: Anything; error: Anything }>;
