@@ -111,11 +111,12 @@ describe('MemberController', () => {
       const updatedMember = { id: 'member-1', role_ids: dto.role_ids } as any;
       memberService.updateRoles.mockResolvedValue(updatedMember);
 
-      const result = await controller.updateRoles('member-1', dto);
+      const result = await controller.updateRoles('chapter-1', 'member-1', dto);
 
       expect(memberService.updateRoles).toHaveBeenCalledWith(
         'member-1',
         dto.role_ids,
+        'chapter-1',
       );
       expect(result).toEqual(updatedMember);
     });
