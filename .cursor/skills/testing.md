@@ -15,6 +15,7 @@
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
+| Edge Function tests (Deno) | `npm run test:edge` (requires Deno 2.x) |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
 | Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |

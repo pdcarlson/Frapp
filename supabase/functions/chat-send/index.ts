@@ -16,7 +16,7 @@ import { SendChatMessageSchema } from "@repo/validation";
 import { corsResponse, errorResponse, jsonResponse } from "../_shared/cors.ts";
 import { assertChannelAccess, resolveAppUserId } from "../_shared/chat-authz.ts";
 
-Deno.serve(async (req: Request) => {
+export async function handler(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return corsResponse();
   if (req.method !== "POST") return errorResponse("Method not allowed", 405);
 
@@ -164,4 +164,10 @@ Deno.serve(async (req: Request) => {
   }
 
   return jsonResponse({ message, deduplicated: false }, 201);
-});
+}
+
+// Only bind a port when the file is the deployment entrypoint. Tests that
+// `import { handler }` get the function without spawning a real server.
+if (import.meta.main) {
+  Deno.serve(handler);
+}
