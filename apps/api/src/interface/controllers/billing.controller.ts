@@ -5,6 +5,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
@@ -13,6 +14,7 @@ import { CreateCheckoutDto, CreatePortalDto } from '../dtos/billing.dto';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.BILLING_VIEW)
+@SubscriptionExempt()
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
