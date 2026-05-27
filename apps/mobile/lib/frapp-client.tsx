@@ -3,6 +3,7 @@ import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useMemo, useState } from "react";
+import { AppState } from "react-native";
 
 export const AUTH_TOKEN_STORAGE_KEY = "frapp.mobile.auth-token";
 
@@ -53,15 +54,24 @@ export function useIsApiAuthenticated() {
 
   useEffect(() => {
     let isMounted = true;
-    readAuthToken()
-      .then((token) => {
-        if (isMounted) {
-          setIsAuthenticated(!!token);
-        }
-      })
-      .catch(() => {});
+
+    const refresh = async () => {
+      try {
+        const token = await readAuthToken();
+        if (isMounted) setIsAuthenticated(!!token);
+      } catch {
+        if (isMounted) setIsAuthenticated(false);
+      }
+    };
+
+    void refresh();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refresh();
+    });
+
     return () => {
       isMounted = false;
+      subscription.remove();
     };
   }, []);
 

@@ -107,7 +107,7 @@ export default function PreferencesScreen() {
     quietHoursSync === "synced"
       ? "Server quiet-hour window enforces push delivery."
       : quietHoursSync === "retry"
-        ? "Couldn't reach the server — change will retry."
+        ? "Couldn't reach the server. Toggle again to retry."
         : quietHoursSync === "pending"
           ? "Saving quiet-hour window..."
           : "Saved locally. Server sync needs a signed-in session.";
@@ -116,7 +116,7 @@ export default function PreferencesScreen() {
     categorySync === "synced"
       ? "Category toggles are saved to your account."
       : categorySync === "retry"
-        ? "Couldn't reach the server — change will retry."
+        ? "Couldn't reach the server. Toggle again to retry."
         : categorySync === "pending"
           ? "Sending category change..."
           : "Saved locally. Server sync needs a signed-in chapter session.";
@@ -199,7 +199,7 @@ export default function PreferencesScreen() {
               : categorySync === "pending"
                 ? "Sending category change..."
                 : categorySync === "retry"
-                  ? "Server sync failed — queued for retry"
+                  ? "Server sync failed — toggle again to retry"
                   : "Saved locally — no server sync yet"
         }
         body={
@@ -221,15 +221,15 @@ export default function PreferencesScreen() {
         state={persistenceFailed ? "retry" : "cached"}
         title={
           persistenceFailed
-            ? "Local persistence retrying"
+            ? "Local persistence failed"
             : "Local preference cache healthy"
         }
         body={
           persistenceFailed
-            ? "Preference writes failed and will retry automatically."
+            ? "Preference writes failed. Toggle a preference again to re-attempt."
             : "AsyncStorage cache mirrors the latest toggle state for offline reads."
         }
-        meta={persistenceFailed ? "Retrying local storage write..." : "Last verified just now"}
+        meta={persistenceFailed ? "Local storage write failed" : "Last verified just now"}
       />
     </ScreenShell>
   );

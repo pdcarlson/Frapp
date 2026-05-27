@@ -207,6 +207,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
       if (!isAuthenticated) return;
 
       if (key === "quietHoursEnabled") {
+        setQuietHoursFailed(false);
         const generation = ++quietHoursGenRef.current;
         const body = value
           ? {
@@ -239,6 +240,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
         key === "dmAlertsEnabled"
           ? NOTIFICATION_CATEGORY.dmAlerts
           : NOTIFICATION_CATEGORY.eventReminders;
+      setCategoryFailed(false);
       const generation = ++categoryGenRef.current;
       updatePreference.mutate(
         { chapter_id: chapterId, category, is_enabled: value },
