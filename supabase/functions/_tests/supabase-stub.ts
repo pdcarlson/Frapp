@@ -8,6 +8,12 @@
 // handler. The stub stays sticky across the request so anon and service
 // `createClient` calls return the same mock.
 
+// `chat-authz.ts` does `import type { SupabaseClient } from "@supabase/supabase-js"`.
+// Under the test import map that specifier resolves here, so the stub must
+// also export the type or `deno test`'s default type-check fails with TS2305.
+// deno-lint-ignore no-explicit-any
+export type SupabaseClient = any;
+
 // deno-lint-ignore no-explicit-any
 let nextClient: any = null;
 

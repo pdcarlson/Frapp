@@ -188,15 +188,11 @@ Deno.test(
     // re-select, not a retried insert (proves the unique-violation branch is
     // not a read-then-insert TOCTOU).
     assertEquals(mock.insertCalls("chat_message_actions").length, 1);
-    // And the second `chat_message_actions` call was a select, not an insert.
-    const actionCalls = mock.calls.builder.filter(
-      (c) => c.table === "chat_message_actions",
-    );
-    const insertIdx = actionCalls.findIndex((c) => c.method === "insert");
-    const selectIdx = actionCalls.findIndex(
-      (c, i) => i > insertIdx && c.method === "select",
-    );
-    assertEquals(insertIdx !== -1 && selectIdx > insertIdx, true);
+    // Two distinct `from("chat_message_actions")` calls: the failed insert
+    // and the dedup re-select. (Counting `from()` rather than builder-method
+    // calls — `.insert().select()` would otherwise log a `select` from the
+    // first chain that masquerades as the re-select.)
+    assertEquals(mock.fromCount("chat_message_actions"), 2);
   },
 );
 
