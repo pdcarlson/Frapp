@@ -18,6 +18,7 @@ import {
   RequireAnyOfPermissions,
   RequirePermissions,
 } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CurrentUser,
@@ -34,6 +35,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Chapters')
 @ApiBearerAuth()
+@FreeTier()
 @Controller('chapters')
 export class ChapterController {
   constructor(

@@ -15,6 +15,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -30,6 +31,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard)
 @UseInterceptors(AuthSyncInterceptor)
+@FreeTier()
 @Controller('invites')
 export class InviteController {
   constructor(private readonly inviteService: InviteService) {}
