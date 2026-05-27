@@ -308,12 +308,47 @@ describe('MemberService', () => {
     expect(result).toEqual(updatedMember);
   });
 
-  it('should remove member', async () => {
-    mockRepo.delete.mockResolvedValue(undefined);
+  describe('remove', () => {
+    const existingMember = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'chapter-1',
+      role_ids: ['role-1'],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
 
-    await service.remove('member-1');
+    it('removes a member belonging to the active chapter', async () => {
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRepo.delete.mockResolvedValue(undefined);
 
-    expect(mockRepo.delete).toHaveBeenCalledWith('member-1');
+      await service.remove('member-1', 'chapter-1');
+
+      expect(mockRepo.findById).toHaveBeenCalledWith('member-1');
+      expect(mockRepo.delete).toHaveBeenCalledWith('member-1');
+    });
+
+    it('throws when member is not found', async () => {
+      mockRepo.findById.mockResolvedValue(null);
+
+      await expect(service.remove('member-x', 'chapter-1')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('throws when member belongs to a different chapter', async () => {
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        chapter_id: 'chapter-other',
+      });
+
+      await expect(service.remove('member-1', 'chapter-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockRepo.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('findProfileById', () => {

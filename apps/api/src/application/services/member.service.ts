@@ -132,7 +132,12 @@ export class MemberService {
     });
   }
 
-  async remove(memberId: string): Promise<void> {
+  async remove(memberId: string, chapterId: string): Promise<void> {
+    const member = await this.memberRepo.findById(memberId);
+    if (!member) throw new NotFoundException('Member not found');
+    if (member.chapter_id !== chapterId) {
+      throw new ForbiddenException('Member not in current chapter');
+    }
     await this.memberRepo.delete(memberId);
   }
 
