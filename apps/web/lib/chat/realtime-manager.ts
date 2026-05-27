@@ -15,11 +15,14 @@
  *   - Aggregates per-channel subscribe status into `"live" | "reconnecting" |
  *     "offline"` for the UI "Reconnecting…" pill, with exponential backoff
  *     (1→2→4→8→16→30s capped) on `CHANNEL_ERROR`/`TIMED_OUT`.
- *   - On reconnect for a channel, **resubscribe first** (so any live row
- *     between backfill and re-attach goes through the same idempotent merge),
- *     **then** REST-backfill since the last confirmed message id (persisted
- *     per channel in localStorage). Subscribe-then-backfill tolerates a
- *     harmless overlap (dedup by id) instead of risking a gap.
+ *   - For every channel attach — both the initial join and every reconnect —
+ *     **resubscribe first** (so any live row between backfill and re-attach
+ *     goes through the same idempotent merge), **then** REST-backfill since
+ *     the last confirmed message id (persisted per channel in localStorage).
+ *     Both paths run the backfill from the single `SUBSCRIBED` callback so
+ *     the listener is genuinely attached before the backfill request fires.
+ *     Subscribe-then-backfill tolerates a harmless overlap (dedup by id)
+ *     instead of risking a gap.
  *
  * Channels are ref-counted, so the sidebar can pre-subscribe for unread
  * counts without the timeline tearing the subscription down.
@@ -147,7 +150,10 @@ class ChatRealtimeManager {
     };
     this.channels.set(channelId, state);
     this.openChannel(state);
-    void this.runBackfill(channelId);
+    // Backfill is intentionally NOT fired here. `openChannel`'s SUBSCRIBED
+    // callback is the single gate for both initial join and reconnect, so the
+    // Postgres Changes listener is always attached before the REST backfill
+    // request goes out. See ADR-05.
   }
 
   unsubscribe(channelId: string): void {
@@ -287,6 +293,8 @@ class ChatRealtimeManager {
           clearTimeout(state.retryTimer);
           state.retryTimer = null;
         }
+        // Single gate for backfill — runs on both the initial join's first
+        // SUBSCRIBED and every subsequent SUBSCRIBED after reconnect.
         void this.runBackfill(state.channelId);
         this.emitStatus();
       } else if (
