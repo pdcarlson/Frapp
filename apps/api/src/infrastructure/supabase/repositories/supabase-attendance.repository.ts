@@ -18,7 +18,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
-    return data as EventAttendance | null;
+    return data;
   }
 
   async findByEvent(eventId: string): Promise<EventAttendance[]> {
@@ -27,7 +27,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .select('*')
       .eq('event_id', eventId);
     if (error) throw error;
-    return (data as EventAttendance[]) || [];
+    return data || [];
   }
 
   async findByEventAndUser(
@@ -41,7 +41,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
-    return data as EventAttendance | null;
+    return data;
   }
 
   async create(data: Partial<EventAttendance>): Promise<EventAttendance> {
@@ -52,7 +52,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .single();
 
     if (error) throw error;
-    return created as EventAttendance;
+    return created;
   }
 
   async createMany(
@@ -66,7 +66,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .insert(rows as never)
       .select();
     if (error) throw error;
-    return (data as EventAttendance[]) ?? [];
+    return data ?? [];
   }
 
   async update(
@@ -81,7 +81,7 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
       .single();
 
     if (error) throw error;
-    return updated as EventAttendance;
+    return updated;
   }
 
   async delete(id: string): Promise<void> {

@@ -92,6 +92,17 @@ After any rollback event:
 * **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
 * **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
 
+## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)
+
+Migration is additive (one new table with its own indexes, policy, and trigger). Rollback is safe at any time; the only data loss is per-user preference rows. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.
+
+```sql
+-- The trigger and indexes drop automatically with the table.
+DROP TABLE IF EXISTS chat_notification_preferences;
+```
+
+**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in §3 of `spec/behavior.md`.
+
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 
 Migration is additive (new table + one seeded row). Rollback is safe to run at any time without data-loss risk beyond losing directory-request submissions.

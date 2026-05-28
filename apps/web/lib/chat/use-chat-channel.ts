@@ -27,6 +27,7 @@ import {
   type ConnectionStatus,
 } from "./realtime-manager";
 import {
+  actOnCard,
   discardOutboxRow,
   flushOutbox,
   hydrateOutboxIntoCache,
@@ -36,6 +37,8 @@ import {
   unreact as unreactAction,
   type ToastFn,
 } from "./chat-client";
+import { dispatchSlashCommand } from "./dispatch";
+import type { SlashCommand } from "@repo/chat-integrations";
 import {
   clearDraft,
   getOutboxRow,
@@ -57,6 +60,17 @@ export interface UseChatChannelResult {
   connection: ConnectionStatus;
   retry: (clientMessageId: string) => Promise<void>;
   discard: (clientMessageId: string) => Promise<void>;
+  dispatchSlash: (
+    command: SlashCommand,
+    args: string,
+    announcementsChannelId: string | null,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /** Card action invoker (Vote, RSVP, …). Goes through the hardened chat-react Edge Function. */
+  act: (
+    messageId: string,
+    actionType: string,
+    payload: Record<string, unknown>,
+  ) => Promise<void>;
 }
 
 export function useChatChannel(channelId: string | null): UseChatChannelResult {
@@ -243,6 +257,37 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     [ctx],
   );
 
+  const act = useCallback(
+    async (
+      messageId: string,
+      actionType: string,
+      payload: Record<string, unknown>,
+    ) => {
+      if (!channelId) return;
+      await actOnCard(ctx, { channelId, messageId, actionType, payload });
+    },
+    [channelId, ctx],
+  );
+
+  const dispatchSlash = useCallback(
+    async (
+      command: SlashCommand,
+      args: string,
+      announcementsChannelId: string | null,
+    ) => {
+      if (!channelId) {
+        return { ok: false, error: "No active channel" };
+      }
+      return dispatchSlashCommand(ctx, {
+        command,
+        args,
+        channelId,
+        announcementsChannelId,
+      });
+    },
+    [channelId, ctx],
+  );
+
   // Best-effort flush whenever the connection comes live for this channel.
   useEffect(() => {
     if (connection !== "live") return;
@@ -265,6 +310,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     connection,
     retry,
     discard,
+    dispatchSlash,
+    act,
   };
 }
 

@@ -124,7 +124,7 @@ describe('StudyController', () => {
       it('should call studyService.deleteGeofence and return success', async () => {
         const chapterId = 'chapter-123';
         const geofenceId = 'geo-1';
-        studyService.deleteGeofence.mockResolvedValue(undefined as any);
+        studyService.deleteGeofence.mockResolvedValue(undefined);
 
         const result = await geofenceController.delete(chapterId, geofenceId);
 

@@ -3,6 +3,76 @@
 **Depends on:** Chunk 04 (chat foundation + hot-path client + slash palette scaffold).
 **Unblocks:** all Chunk 10 sub-chunks, Chunk 11 (mobile parity needs the renderers).
 
+## Kickoff decisions (locked before implementation)
+
+These were locked at the start of the implementation session and are
+non-negotiable mid-chunk. If implementation reveals one is wrong, add a
+"Revised:" note immediately under the affected lock in the same PR,
+update the linked ADR, and call it out in the PR body.
+
+1. **`chat_notification_preferences` is a NEW table, not a column added
+   to `notification_preferences`.** Shape:
+   `(id, user_id, chapter_id, scope text check (scope in ('channel','kind')),
+   scope_id uuid|null, scope_kind text|null, level text check (level in
+   ('all','mentions','off')), updated_at)`. The existing
+   `notification_preferences` table is boolean-only (`is_enabled`) and
+   category-keyed; squatting on `category` to encode `channel:<uuid>`
+   loses type safety and makes the migration path painful. A future
+   unification PR can consolidate when chat is the last preference
+   producer. (→ ADR-06)
+
+2. **`chat-react` switches to UPSERT for vote-change.** Keep the
+   `idx_chat_message_actions_dedupe` unique index on
+   `(message_id, user_id, action_type)`. Poll votes share
+   `action_type='vote'`; the option id lives in `payload.option_id`.
+   On conflict the function UPDATEs `payload` + `created_at` and
+   returns a distinct response shape (`updated:true`) so the optimistic
+   client can replay the tally. Emoji reactions
+   (`action_type='reaction:<emoji>'`) keep the 23505 → select-existing
+   dedup path unchanged. (→ ADR-07)
+
+3. **Audit→chat bridge lives in a NestJS Realtime subscriber, not a
+   PG trigger and not inline in writing services.** A new
+   `ChatBridgeWorker` subscribes (service-role) to `postgres_changes`
+   on `chapter_audit_log` INSERT and posts a `kind='system_audit'`
+   message into the chapter's `#chapter-audit` channel. The inline
+   `postAuditMessage` in `chapter-config.service.ts` is removed in the
+   same PR so the bridge has a single owner. (→ ADR-08)
+
+4. **Push worker host = in-process API module
+   (`OnApplicationBootstrap`), not a standalone service.** Same NestJS
+   process; one Supabase Realtime subscription to `chat_messages`
+   INSERT; per-recipient fanout reuses
+   `NotificationService.notifyUser`. Scaling watermark that triggers
+   a standalone split: sustained `p99 fanout latency > 1s` OR
+   `worker-loop CPU > 40%`. Linked from `docs/DEPLOYMENT.md`.
+   (→ ADR-09)
+
+5. **Presence source = Supabase Realtime Presence on the
+   `chat:channel:<id>` topic.** Web client calls
+   `channel.track({userId, ts})` from the `SUBSCRIBED` callback in
+   `realtime-manager.ts`; the push worker opens a service-role
+   subscription per active channel and reads `presenceState()` before
+   fanout. A custom broadcast topic is rejected — it re-implements
+   what Presence already gives us and creates a second source of
+   truth. (→ ADR-10)
+
+6. **PR shape: one PR, three reviewable sections, in this order.** (A)
+   schema + announcements gate; (B) dispatch + renderers; (C) push
+   worker + audit bridge. Reassess at ~40 files; if exceeded, split
+   (C) into a follow-up PR that blocks nothing UI-side.
+
+7. **`announcements:post` gate = extend `canAccessChannel` with an
+   `operation: 'read' | 'post'` parameter (default `'read'`).** Adds a
+   single optional clause to the existing predicate rather than a
+   parallel `canPostToChannel` sister. `ChannelAccessRecord` gains
+   `is_read_only: boolean`. For `operation:'post'`, after the existing
+   read check, deny when `channel.is_read_only` and the caller holds
+   neither `'announcements:post'` nor `'*'`. Server-side enforcement
+   in `chat-send` and the NestJS cold-path `chat.service.sendMessage`;
+   the client hides the disallowed command for UX, but the server is
+   the trust boundary.
+
 ## Read first
 
 1. `docs/internal/redesign/master-plan.md` — *Architecture: Chat as the spine* (modules-as-integrations pattern), *Push notification rules*, *Slash command dispatch path*.

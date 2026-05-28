@@ -66,10 +66,16 @@ export async function handler(req: Request): Promise<Response> {
   const { client_message_id, channel_id, content, kind, payload, reply_to_id } =
     parsed.data;
 
-  // ── Authorize: caller must belong to the channel's chapter ───────────────
-  // Resolved from a trusted DB lookup (channel → chapter → membership) before
-  // any service-role write. Never trust the client-supplied channel_id alone.
-  const authz = await assertChannelAccess(serviceSupabase, senderId, channel_id);
+  // ── Authorize: caller must belong to the channel's chapter AND be allowed
+  // to post (read-only / announcements:post gate from ADR-07). Resolved from a
+  // trusted DB lookup (channel → chapter → membership) before any service-role
+  // write. Never trust the client-supplied channel_id alone.
+  const authz = await assertChannelAccess(
+    serviceSupabase,
+    senderId,
+    channel_id,
+    "post",
+  );
   if (!authz.ok) {
     return errorResponse(authz.message, authz.status);
   }

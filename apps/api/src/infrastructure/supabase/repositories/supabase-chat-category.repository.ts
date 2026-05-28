@@ -18,7 +18,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .eq('chapter_id', chapterId)
       .order('display_order', { ascending: true });
     if (error) throw error;
-    return (data as ChatChannelCategory[]) || [];
+    return data || [];
   }
 
   async create(
@@ -30,7 +30,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .select()
       .single();
     if (error) throw error;
-    return created as ChatChannelCategory;
+    return created;
   }
 
   async update(
@@ -44,7 +44,7 @@ export class SupabaseChatCategoryRepository implements IChatCategoryRepository {
       .select()
       .single();
     if (error) throw error;
-    return updated as ChatChannelCategory;
+    return updated;
   }
 
   async delete(id: string): Promise<void> {

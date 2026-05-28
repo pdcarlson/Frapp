@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { EmojiPicker } from "./emoji-picker";
 import { SlashPalette } from "./slash-palette";
 import {
+  getSlashCommand,
   parseSlashInput,
   type SlashCommand,
 } from "@repo/chat-integrations";
@@ -35,6 +36,16 @@ interface ComposerProps {
   draft: string;
   onChangeDraft: (body: string) => void;
   onSend: (body: string) => void | Promise<void>;
+  /**
+   * Invoked when the user picks a slash command from the palette. Returns a
+   * dispatch result so the composer can toast on failure. The args string is
+   * everything after the command token (already trimmed). The composer
+   * clears its own editor on success.
+   */
+  onSlashDispatch?: (
+    command: SlashCommand,
+    args: string,
+  ) => Promise<{ ok: boolean; error?: string }>;
   onTyping: () => void;
   isModuleEnabled: (moduleKey: string) => boolean;
   /**
@@ -102,6 +113,7 @@ export function Composer({
   draft,
   onChangeDraft,
   onSend,
+  onSlashDispatch,
   onTyping,
   isModuleEnabled,
   slashCommandsStatus = "ready",
@@ -175,10 +187,31 @@ export function Composer({
     if (!editor) return;
     const text = editor.getText().trim();
     if (text.length === 0) return;
+    // If the message begins with an implemented slash command and a dispatch
+    // is wired, route through dispatch instead of sending as plain text — so
+    // Enter on `/poll "Q?" A B` posts a poll card, not a text bubble.
+    const parsed = parseSlashInput(text);
+    if (parsed.isSlash && parsed.command && onSlashDispatch) {
+      const command = getSlashCommand(parsed.command);
+      if (command?.implemented) {
+        editor.commands.clearContent(true);
+        void (async () => {
+          const result = await onSlashDispatch(command, parsed.args);
+          if (!result.ok) {
+            toast({
+              title: `/${command.name} failed`,
+              description: result.error ?? "Couldn't run that command.",
+              variant: "destructive",
+            });
+          }
+        })();
+        return;
+      }
+    }
     void onSend(text);
     // Only clear when a send was actually issued.
     editor.commands.clearContent(true);
-  }, [disabled, editor, onSend]);
+  }, [disabled, editor, onSend, onSlashDispatch, toast]);
   sendRef.current = submit;
 
   const insertEmoji = useCallback(
@@ -236,18 +269,36 @@ export function Composer({
   }, []);
 
   const onPaletteSelect = useCallback(
-    (command: SlashCommand) => {
+    async (command: SlashCommand) => {
       setPalette({ open: false, query: "" });
-      toast({
-        title: `/${command.name}`,
-        description:
-          "Slash-command renderers ship in Chunk 05. The catalog is gated by your chapter's enabled modules.",
-      });
-      if (editor) {
-        editor.commands.clearContent(true);
+      // Implemented commands route through dispatch; unimplemented ones keep
+      // the "coming soon" toast so the Chunk 10 stubs still surface intent.
+      if (!command.implemented || !onSlashDispatch) {
+        toast({
+          title: `/${command.name}`,
+          description:
+            "This command will ship in a later chunk. The catalog is gated by your chapter's enabled modules.",
+        });
+        if (editor) editor.commands.clearContent(true);
+        return;
+      }
+      const text = editor?.getText() ?? "";
+      const parsed = parseSlashInput(text);
+      const args = parsed.command === command.name ? parsed.args : "";
+      // Clear the composer optimistically — the dispatch enqueues the message
+      // through the same hot path as `onSend`, so the optimistic card appears
+      // immediately and a toast surfaces any parse / authz failure.
+      if (editor) editor.commands.clearContent(true);
+      const result = await onSlashDispatch(command, args);
+      if (!result.ok) {
+        toast({
+          title: `/${command.name} failed`,
+          description: result.error ?? "Couldn't run that command.",
+          variant: "destructive",
+        });
       }
     },
-    [editor, toast],
+    [editor, onSlashDispatch, toast],
   );
 
   if (isReadOnly) {

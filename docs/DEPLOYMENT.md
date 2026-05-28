@@ -303,7 +303,18 @@ Create **two** Render Web Services: one for production, one for staging.
 
 Render auto-detects the health check from the Dockerfile `HEALTHCHECK` directive. The API exposes `GET /health`.
 
-### 5.5 Deploy Hooks (for GitHub Actions)
+### 5.5 In-process chat workers (Chunk 05)
+
+Two background workers run inside the API Render service via NestJS `OnApplicationBootstrap` hooks — `ChatBridgeWorkerModule` (audit-log → `#chapter-audit` mirroring) and `ChatPushWorkerModule` (chat push fanout). Both open Supabase Realtime subscriptions with the service-role key on boot.
+
+This is the deliberate default for now per **`spec/architecture.md` ADR-09** (Push worker host = in-process API). The workers should be split into a standalone Render service when **either** condition is sustained:
+
+- `p99 fanout latency > 1s` (measured per recipient, from `chat_messages` INSERT to `notifyUser` returning), **or**
+- `worker-loop CPU > 40%` of the API instance over a 10-minute window.
+
+When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModule` if needed) as a separate Render Background Worker reading from the same secrets; no code changes are required beyond a new entry point that boots just those modules.
+
+### 5.6 Deploy Hooks (for GitHub Actions)
 
 In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
 

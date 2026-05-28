@@ -137,7 +137,7 @@ export class ChapterOnboardingService {
       : 'Welcome to your chapter. Invite your chapter to get the conversation started.';
 
     const { error } = await this.supabase.from('chat_messages').insert({
-      channel_id: (channel as { id: string }).id,
+      channel_id: channel.id,
       sender_id: SYSTEM_SENDER_ID,
       content: welcome,
       kind: 'system_audit',

@@ -80,6 +80,14 @@ export interface ManagerContext {
   queryClient: QueryClient;
   supabase: SupabaseClient;
   backfill: BackfillFetcher;
+  /**
+   * Viewer's app user id, used for Supabase Realtime Presence tracking on
+   * the `chat:channel:<id>` topic (ADR-10). The push worker reads the same
+   * topic via service role to skip recipients currently in the channel.
+   * `null` / omitted disables presence tracking (e.g. signed-out tabs and
+   * tests that don't need it).
+   */
+  viewerId?: string | null;
 }
 
 interface PerChannelState {
@@ -285,6 +293,7 @@ class ChatRealtimeManager {
     });
 
     state.channel = channel;
+    const viewerId = this.ctx?.viewerId ?? null;
     channel.subscribe((subscribeStatus) => {
       if (subscribeStatus === "SUBSCRIBED") {
         state.status = "live";
@@ -292,6 +301,13 @@ class ChatRealtimeManager {
         if (state.retryTimer) {
           clearTimeout(state.retryTimer);
           state.retryTimer = null;
+        }
+        // ADR-10: track the viewer in this channel's presence map so the
+        // push worker can skip them on the same topic. `track` is fire-and
+        // -forget; a failure here is harmless (worst case is one extra
+        // push) so we intentionally swallow.
+        if (viewerId) {
+          void channel.track({ userId: viewerId, ts: Date.now() });
         }
         // Single gate for backfill — runs on both the initial join's first
         // SUBSCRIBED and every subsequent SUBSCRIBED after reconnect.

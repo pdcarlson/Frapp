@@ -89,6 +89,21 @@ Post-apply production checks:
 * **Purpose**: Append `members:view` to Vice President and Secretary so they can use chapter-scoped routes that merge controller- and handler-level `@RequirePermissions` (e.g. dashboard poll list requires both `members:view` and `polls:view_all`).
 * **Checks**: After `db push`, e.g. `select count(*) from public.roles where is_system and name in ('Vice President', 'Secretary') and 'members:view' = any (permissions);` should equal twice the number of chapters with those rows (or verify zero rows missing the permission). Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `backfill_members_view_vp_secretary`.
 
+## 2026-05-27: Chunk 05 — Chat integrations + push: chat_notification_preferences
+
+One additive migration. Creates a new table with one RLS policy (select-own) and an `updated_at` trigger.
+
+### 20260527120000_chat_notification_preferences.sql
+* **Purpose**: Creates `chat_notification_preferences` (ADR-06) — the per-channel + per-kind notification level (`all` / `mentions` / `off`) the Chunk 05 push worker reads. Distinct from the existing `notification_preferences` table (boolean, category-keyed). Two scope arms (`scope ∈ {channel, kind}`) with a check constraint ensuring exactly one of `scope_id` / `scope_kind` is set, a unique index on `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))`, and a `(user_id, chapter_id)` index for the worker's hot path. RLS enabled with one policy: members may read their own rows; writes flow through the API (service role).
+* **Checks**:
+  - Table: `select tablename from pg_tables where tablename = 'chat_notification_preferences';` — should return 1 row.
+  - Indexes: `select indexname from pg_indexes where tablename = 'chat_notification_preferences';` — should include `idx_chat_notif_prefs_unique` and `idx_chat_notif_prefs_user_chapter`.
+  - RLS: `select relrowsecurity from pg_class where relname = 'chat_notification_preferences';` — should return `true`.
+  - Policy: `select policyname from pg_policies where tablename = 'chat_notification_preferences';` — should return `chat_notification_preferences_select_own`.
+  - Trigger: `select tgname from pg_trigger where tgrelid = 'chat_notification_preferences'::regclass and tgname = 'trg_chat_notification_preferences_updated_at';` — should return 1 row.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Chunk 05 migration.
+
 ## 2026-05-24: Chunk 03 — Onboarding wizard: system user seed + chapter_directory_requests
 
 One additive migration. Creates a new table and seeds one well-known row. No existing columns modified, no lock-heavy operations.

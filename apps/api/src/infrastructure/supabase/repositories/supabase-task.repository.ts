@@ -19,7 +19,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as Task | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<Task[]> {
@@ -29,7 +29,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as Task[]) || [];
+    return data || [];
   }
 
   async findByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
@@ -40,7 +40,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .eq('assignee_id', assigneeId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as Task[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<Task>): Promise<Task> {
@@ -51,7 +51,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .single();
 
     if (error) throw error;
-    return created as Task;
+    return created;
   }
 
   async update(
@@ -68,7 +68,7 @@ export class SupabaseTaskRepository implements ITaskRepository {
       .single();
 
     if (error) throw error;
-    return updated as Task;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

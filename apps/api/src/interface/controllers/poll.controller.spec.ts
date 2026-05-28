@@ -163,7 +163,7 @@ describe('PollController', () => {
       const userId = 'user-123';
       const query: ListPollsQueryDto = { active: '1', limit: 10 };
 
-      pollService.listPolls.mockResolvedValue([] as any);
+      pollService.listPolls.mockResolvedValue([]);
 
       await controller.listPolls(chapterId, userId, query);
 

@@ -19,7 +19,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as ChatChannel | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<ChatChannel[]> {
@@ -29,7 +29,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data as ChatChannel[]) || [];
+    return data || [];
   }
 
   async findDm(
@@ -60,7 +60,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .select()
       .single();
     if (error) throw error;
-    return created as ChatChannel;
+    return created;
   }
 
   async update(
@@ -76,7 +76,7 @@ export class SupabaseChatChannelRepository implements IChatChannelRepository {
       .select()
       .single();
     if (error) throw error;
-    return updated as ChatChannel;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

@@ -18,7 +18,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('id', id)
       .maybeSingle();
     if (error) throw error;
-    return data as StudySession | null;
+    return data;
   }
 
   async findActiveByUserAndChapter(
@@ -33,7 +33,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('status', 'ACTIVE')
       .maybeSingle();
     if (error) throw error;
-    return data as StudySession | null;
+    return data;
   }
 
   async findByUserAndChapter(
@@ -47,7 +47,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: false });
     if (error) throw error;
-    return (data as StudySession[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<StudySession>): Promise<StudySession> {
@@ -58,7 +58,7 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .single();
 
     if (error) throw error;
-    return created as StudySession;
+    return created;
   }
 
   async update(id: string, data: Partial<StudySession>): Promise<StudySession> {
@@ -70,6 +70,6 @@ export class SupabaseStudySessionRepository implements IStudySessionRepository {
       .single();
 
     if (error) throw error;
-    return updated as StudySession;
+    return updated;
   }
 }

@@ -19,7 +19,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as Event | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<Event[]> {
@@ -29,7 +29,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .eq('chapter_id', chapterId)
       .order('start_time', { ascending: true });
     if (error) throw error;
-    return (data as Event[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<Event>): Promise<Event> {
@@ -40,7 +40,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .single();
 
     if (error) throw error;
-    return created as Event;
+    return created;
   }
 
   async update(
@@ -57,7 +57,7 @@ export class SupabaseEventRepository implements IEventRepository {
       .single();
 
     if (error) throw error;
-    return updated as Event;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

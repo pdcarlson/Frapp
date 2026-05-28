@@ -19,7 +19,7 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       .maybeSingle();
 
     if (error) throw error;
-    return data as UserSettings | null;
+    return data;
   }
 
   async upsert(data: Partial<UserSettings>): Promise<UserSettings> {
@@ -43,6 +43,6 @@ export class SupabaseUserSettingsRepository implements IUserSettingsRepository {
       .single();
 
     if (error) throw error;
-    return result as UserSettings;
+    return result;
   }
 }

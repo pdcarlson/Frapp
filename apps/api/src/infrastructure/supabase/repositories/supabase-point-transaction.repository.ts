@@ -22,7 +22,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .single();
 
     if (error) throw error;
-    return created as PointTransaction;
+    return created;
   }
 
   async findByUser(
@@ -36,7 +36,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as PointTransaction[]) || [];
+    return data || [];
   }
 
   async findByChapter(chapterId: string): Promise<PointTransaction[]> {
@@ -46,7 +46,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as PointTransaction[]) || [];
+    return data || [];
   }
 
   async findByChapterFiltered(
@@ -77,7 +77,7 @@ export class SupabasePointTransactionRepository implements IPointTransactionRepo
       .order('created_at', { ascending: false })
       .limit(options.limit);
     if (error) throw error;
-    return (data as PointTransaction[]) || [];
+    return data || [];
   }
 
   async countRecentAdjustments(

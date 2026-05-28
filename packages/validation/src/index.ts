@@ -258,7 +258,19 @@ export interface ChannelAccessRecord {
   type: ChatChannelType | string;
   member_ids: string[] | null;
   required_permissions: string[] | null;
+  /**
+   * Whether the channel rejects member writes (e.g. `#announcements` and
+   * `#chapter-audit`). Only consulted when `operation === "post"`; safe to
+   * omit (treated as `false`) for read checks. (Chunk 05 / ADR-07.)
+   */
+  is_read_only?: boolean | null;
 }
+
+/** Operation the predicate is being consulted for. Defaults to "read". */
+export type ChannelOperation = "read" | "post";
+
+/** Permission key that grants posting into a read-only channel (e.g. `#announcements`). */
+export const ANNOUNCEMENTS_POST_PERMISSION = "announcements:post";
 
 export interface ChannelAccessInput {
   channel: ChannelAccessRecord;
@@ -267,10 +279,16 @@ export interface ChannelAccessInput {
   /** Whether the caller is an active member of the chapter that owns the channel. */
   isChapterMember: boolean;
   /**
-   * The caller's effective permission strings in that chapter. Only consulted
-   * for ROLE_GATED channels. `"*"` (wildcard) grants access.
+   * The caller's effective permission strings in that chapter. Consulted for
+   * ROLE_GATED channels and for write checks against read-only channels.
+   * `"*"` (wildcard) grants access.
    */
   permissions: string[];
+  /**
+   * What the caller is trying to do. `"read"` (default) checks visibility;
+   * `"post"` additionally enforces the read-only / announcements:post gate.
+   */
+  operation?: ChannelOperation;
 }
 
 /**
@@ -282,31 +300,47 @@ export interface ChannelAccessInput {
  * - ROLE_GATED: the user must hold `"*"` or one of `required_permissions`. An
  *   empty/absent requirement list means any chapter member may access it.
  * - Unknown channel type: denied (guarded default — never falls open).
+ *
+ * When `operation === "post"`, the read check above must pass AND the
+ * channel must either not be read-only, or the caller must hold `"*"` or
+ * `"announcements:post"`. Existing callers default to `"read"`, so the
+ * predicate stays backward-compatible.
  */
 export function canAccessChannel(input: ChannelAccessInput): boolean {
   const { channel, userId, isChapterMember, permissions } = input;
+  const operation: ChannelOperation = input.operation ?? "read";
 
   if (!isChapterMember) return false;
 
-  switch (channel.type) {
-    case "PUBLIC":
-      return true;
+  const canRead = (() => {
+    switch (channel.type) {
+      case "PUBLIC":
+        return true;
 
-    case "PRIVATE":
-    case "DM":
-    case "GROUP_DM":
-      return (channel.member_ids ?? []).includes(userId);
+      case "PRIVATE":
+      case "DM":
+      case "GROUP_DM":
+        return (channel.member_ids ?? []).includes(userId);
 
-    case "ROLE_GATED": {
-      const required = channel.required_permissions ?? [];
-      if (required.length === 0) return true;
-      if (permissions.includes("*")) return true;
-      return required.some((permission) => permissions.includes(permission));
+      case "ROLE_GATED": {
+        const required = channel.required_permissions ?? [];
+        if (required.length === 0) return true;
+        if (permissions.includes("*")) return true;
+        return required.some((permission) => permissions.includes(permission));
+      }
+
+      default:
+        return false;
     }
+  })();
 
-    default:
-      return false;
-  }
+  if (!canRead) return false;
+  if (operation === "read") return true;
+
+  // operation === "post": gate read-only channels behind announcements:post / *.
+  if (!channel.is_read_only) return true;
+  if (permissions.includes("*")) return true;
+  return permissions.includes(ANNOUNCEMENTS_POST_PERMISSION);
 }
 
 // ── Type Exports ─────────────────────────────────────────────────────────────

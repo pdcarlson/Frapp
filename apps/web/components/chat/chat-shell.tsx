@@ -27,6 +27,7 @@ import { ThreadPanel } from "./thread-panel";
 import { PinsPopover } from "./pins-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { ChatMessage } from "@/lib/chat/types";
+import type { SlashCommand } from "@repo/chat-integrations";
 
 function channelHeaderIcon(channel: ChatChannel | null) {
   if (!channel) return Hash;
@@ -70,6 +71,11 @@ export function ChatShell() {
   const activeChannel = useMemo(
     () => channels.find((ch) => ch.id === activeChannelId) ?? null,
     [channels, activeChannelId],
+  );
+
+  const announcementsChannelId = useMemo(
+    () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
+    [channels],
   );
 
   const channel = useChatChannel(activeChannelId);
@@ -211,6 +217,9 @@ export function ChatShell() {
             onOpenThread={(message) => setThreadParent(message)}
             onRetry={channel.retry}
             onDiscard={channel.discard}
+            onAct={(messageId, actionType, payload) =>
+              void channel.act(messageId, actionType, payload)
+            }
           />
         </div>
         {activeChannel ? (
@@ -221,6 +230,9 @@ export function ChatShell() {
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
             onSend={(body) => channel.send(body)}
+            onSlashDispatch={(command: SlashCommand, args: string) =>
+              channel.dispatchSlash(command, args, announcementsChannelId)
+            }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}
             slashCommandsStatus={slashCommandsStatus}

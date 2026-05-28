@@ -18,7 +18,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as FinancialTransaction[]) || [];
+    return data || [];
   }
 
   async findByInvoice(invoiceId: string): Promise<FinancialTransaction[]> {
@@ -28,7 +28,7 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
       .eq('invoice_id', invoiceId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as FinancialTransaction[]) || [];
+    return data || [];
   }
 
   async create(
@@ -40,6 +40,6 @@ export class SupabaseFinancialTransactionRepository implements IFinancialTransac
       .select()
       .single();
     if (error) throw error;
-    return created as FinancialTransaction;
+    return created;
   }
 }

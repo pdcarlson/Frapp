@@ -18,7 +18,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('message_id', messageId)
       .order('created_at', { ascending: true });
     if (error) throw error;
-    return (data as MessageReaction[]) || [];
+    return data || [];
   }
 
   async findOne(
@@ -34,7 +34,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .eq('emoji', emoji)
       .maybeSingle();
     if (error) throw error;
-    return data as MessageReaction | null;
+    return data;
   }
 
   async create(data: Partial<MessageReaction>): Promise<MessageReaction> {
@@ -44,7 +44,7 @@ export class SupabaseMessageReactionRepository implements IMessageReactionReposi
       .select()
       .single();
     if (error) throw error;
-    return created as MessageReaction;
+    return created;
   }
 
   async delete(

@@ -19,7 +19,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('chapter_id', chapterId)
       .maybeSingle();
     if (error) throw error;
-    return data as StudyGeofence | null;
+    return data;
   }
 
   async findByChapter(chapterId: string): Promise<StudyGeofence[]> {
@@ -29,7 +29,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .eq('chapter_id', chapterId)
       .order('created_at', { ascending: false });
     if (error) throw error;
-    return (data as StudyGeofence[]) || [];
+    return data || [];
   }
 
   async create(data: Partial<StudyGeofence>): Promise<StudyGeofence> {
@@ -40,7 +40,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .single();
 
     if (error) throw error;
-    return created as StudyGeofence;
+    return created;
   }
 
   async update(
@@ -57,7 +57,7 @@ export class SupabaseStudyGeofenceRepository implements IStudyGeofenceRepository
       .single();
 
     if (error) throw error;
-    return updated as StudyGeofence;
+    return updated;
   }
 
   async delete(id: string, chapterId: string): Promise<void> {

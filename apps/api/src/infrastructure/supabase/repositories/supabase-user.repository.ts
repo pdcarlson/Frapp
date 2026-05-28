@@ -28,7 +28,7 @@ export class SupabaseUserRepository implements IUserRepository {
       .select('*')
       .in('id', ids);
     if (error) throw error;
-    return (data as User[]) ?? [];
+    return data ?? [];
   }
 
   async findBySupabaseAuthId(authId: string): Promise<User | null> {

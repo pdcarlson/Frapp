@@ -18,16 +18,30 @@ const PUBLIC_CHANNEL = {
   id: "channel-1",
   chapter_id: "chapter-1",
   type: "PUBLIC",
+  name: "general",
   member_ids: null,
   required_permissions: null,
+  is_read_only: false,
 };
 
 const ROLE_GATED_CHANNEL = {
   id: "channel-2",
   chapter_id: "chapter-1",
   type: "ROLE_GATED",
+  name: "alumni",
   member_ids: null,
   required_permissions: ["chat.admin"],
+  is_read_only: false,
+};
+
+const ANNOUNCEMENTS_CHANNEL = {
+  id: "channel-3",
+  chapter_id: "chapter-1",
+  type: "PUBLIC",
+  name: "announcements",
+  member_ids: null,
+  required_permissions: null,
+  is_read_only: true,
 };
 
 // ── resolveAppUserId ───────────────────────────────────────────────────────
@@ -223,5 +237,77 @@ Deno.test("assertMessageAccess: delegates to assertChannelAccess on hit", async 
     },
   });
   const result = await assertMessageAccess(mock.client, "user-1", "msg-1");
+  assertEquals(result.ok, true);
+});
+
+// ── operation: "post" (Chunk 05 / ADR-07) ──────────────────────────────────
+
+Deno.test('assertChannelAccess "post": denies on a read-only channel without announcements:post', async () => {
+  const mock = buildMockClient({
+    tables: {
+      chat_channels: [{ data: ANNOUNCEMENTS_CHANNEL, error: null }],
+      members: [{ data: { role_ids: ["role-1"] }, error: null }],
+      // Role exists but lacks announcements:post.
+      roles: [{ data: [{ permissions: ["members:view"] }], error: null }],
+    },
+  });
+  const result = await assertChannelAccess(
+    mock.client,
+    "user-1",
+    "channel-3",
+    "post",
+  );
+  assertEquals(result.ok, false);
+  if (result.ok) return;
+  assertEquals(result.status, 403);
+});
+
+Deno.test('assertChannelAccess "post": allows on a read-only channel with announcements:post', async () => {
+  const mock = buildMockClient({
+    tables: {
+      chat_channels: [{ data: ANNOUNCEMENTS_CHANNEL, error: null }],
+      members: [{ data: { role_ids: ["role-1"] }, error: null }],
+      roles: [{ data: [{ permissions: ["announcements:post"] }], error: null }],
+    },
+  });
+  const result = await assertChannelAccess(
+    mock.client,
+    "user-1",
+    "channel-3",
+    "post",
+  );
+  assertEquals(result.ok, true);
+});
+
+Deno.test('assertChannelAccess "post": non-read-only PUBLIC accepts posts without loading roles', async () => {
+  const mock = buildMockClient({
+    tables: {
+      chat_channels: [{ data: PUBLIC_CHANNEL, error: null }],
+      members: [{ data: { role_ids: ["role-1"] }, error: null }],
+    },
+  });
+  const result = await assertChannelAccess(
+    mock.client,
+    "user-1",
+    "channel-1",
+    "post",
+  );
+  assertEquals(result.ok, true);
+  // No `roles` lookup — non-read-only PUBLIC needs no permission resolution.
+  assertEquals(mock.fromCount("roles"), 0);
+});
+
+Deno.test('assertChannelAccess "read" (default) ignores the read-only flag', async () => {
+  const mock = buildMockClient({
+    tables: {
+      chat_channels: [{ data: ANNOUNCEMENTS_CHANNEL, error: null }],
+      members: [{ data: { role_ids: [] }, error: null }],
+    },
+  });
+  const result = await assertChannelAccess(
+    mock.client,
+    "user-1",
+    "channel-3",
+  );
   assertEquals(result.ok, true);
 });

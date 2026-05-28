@@ -18,7 +18,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .eq('chapter_id', chapterId)
       .order('end_date', { ascending: false });
     if (error) throw error;
-    return (data as SemesterArchive[]) || [];
+    return data || [];
   }
 
   async findLatestByChapter(
@@ -32,7 +32,7 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    return data as SemesterArchive | null;
+    return data;
   }
 
   async create(data: Partial<SemesterArchive>): Promise<SemesterArchive> {
@@ -42,6 +42,6 @@ export class SupabaseSemesterArchiveRepository implements ISemesterArchiveReposi
       .select()
       .single();
     if (error) throw error;
-    return created as SemesterArchive;
+    return created;
   }
 }
