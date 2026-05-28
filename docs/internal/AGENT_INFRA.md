@@ -133,58 +133,53 @@ Decision context lives in [ADR-11 (`spec/architecture.md`)](../../spec/architect
 
 Two layers, both runnable from a sandbox with no Docker and no privileged tooling:
 
-1. **Hot-path code is testable in NestJS.** Per ADR-11, chat hot-path writes (`chat-send`, `chat-react`) live in the existing `apps/api` NestJS service alongside cold reads and the in-process push worker (ADR-09). Standard Jest + supertest covers integration; the `SupabaseAuthGuard` and `SUPABASE_CLIENT` provider that the push worker already uses are reused for auth and Realtime emit. Until the move ships, `supabase/functions/` still hosts the Deno surface and the agent must apply the "Runtime checks BLOCKED" protocol below; once it ships, the disclaimer retires for chat-adjacent chunks.
-2. **Migration validation runs on PGlite.** `tools/pglite-harness/` applies every `supabase/migrations/*.sql` to a fresh in-process Postgres-in-WASM and asserts the schema landmarks reviewers care about. Always-on, runs in CI alongside `edge-fn-tests`, and runs identically from any cloud-agent sandbox. No real DB required.
+1. **Hot-path code is testable in NestJS.** Per ADR-11, chat hot-path writes (`chat-send`, `chat-react`) live in the existing `apps/api` NestJS service alongside cold reads and the in-process push worker (ADR-09). Standard Jest + supertest covers integration; the `SupabaseAuthGuard` and `SUPABASE_CLIENT` provider that the push worker already uses are reused for auth and Realtime emit. Since #416 shipped, `supabase/functions/chat-*` is retired and chat-adjacent chunks no longer carry the "Runtime checks BLOCKED" disclaimer.
+2. **Migration validation runs on PGlite.** `scripts/check-pglite-migrations.mjs` applies every `supabase/migrations/*.sql` to a fresh in-process Postgres-in-WASM and asserts the schema landmarks reviewers care about. Always-on, runs in CI as `pglite-migrations`, and runs identically from any cloud-agent sandbox. No real DB required.
 
 ### How to bring it up at session start
 
 Nothing to provision. Both layers run from the repo as plain `npm` scripts:
 
 ```bash
-# Run the API test suite, including chat-related tests (post-Path-D)
+# Run the API test suite, including chat-related tests
 npm run test -w apps/api
 
 # Run the PGlite migration validator
-npm run test:pglite
-
-# Run the Deno edge function tests (until chat-send / chat-react move out of supabase/functions/)
-npm run test:edge
+npm run check:pglite-migrations
 ```
 
 The agent does not need `SUPABASE_URL` / `SUPABASE_ANON_KEY` / service-role keys to run any of these. The PGlite harness instantiates Postgres directly in-process; the NestJS tests use the existing Jest mocks.
 
 ### When you need a real Supabase
 
-For end-to-end verification that touches Realtime, Presence, push fanout, or RLS as GoTrue enforces it, the agent still depends on the hosted `frapp-staging` project. **This requires the Supabase MCP write tools (`create_branch`, `apply_migration`, `deploy_edge_function`) to be allowed in the session's `.claude/settings.json` permissions.** They are denylisted by default — see the [#411 spike comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654) for the failure mode if you call them without that change.
+For end-to-end verification that touches Realtime, Presence, push fanout, or RLS as GoTrue enforces it, the agent still depends on the hosted `frapp-staging` project. **This requires the Supabase MCP write tools (`create_branch`, `apply_migration`) to be allowed in the session's `.claude/settings.json` permissions.** They are denylisted by default — see the [#411 spike comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654) for the failure mode if you call them without that change.
 
 If a future spike re-evaluates Path A and the allowlist lands, the SessionStart hook would:
 
 1. Confirm cost via `mcp__f9f5eb7a-…__get_cost` / `confirm_cost`.
 2. `create_branch` against the staging project (one branch per session, never shared).
 3. Apply every migration in chronological order via `apply_migration`.
-4. Deploy `chat-send` / `chat-react` via `deploy_edge_function` — handle the `@repo/validation` cross-workspace import by inlining at deploy time.
-5. Write `SUPABASE_URL` / `SUPABASE_ANON_KEY` / a scoped, short-lived service-role JWT to `apps/*/.env.local` (gitignored). Never commit. Pre-commit grep for `*.supabase.co` and `eyJ` JWT prefixes hard-fails staged diffs that contain them.
-6. SessionEnd hook calls `delete_branch` (idempotent) and confirms via `list_branches`.
+4. Write `SUPABASE_URL` / `SUPABASE_ANON_KEY` / a scoped, short-lived service-role JWT to `apps/*/.env.local` (gitignored). Never commit. Pre-commit grep for `*.supabase.co` and `eyJ` JWT prefixes hard-fails staged diffs that contain them.
+5. SessionEnd hook calls `delete_branch` (idempotent) and confirms via `list_branches`.
 
-Today this hook does not exist. If a chunk needs it, file a follow-up issue rather than working around it in the chunk PR.
+Today this hook does not exist. If a chunk needs it, file a follow-up issue rather than working around it in the chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
 
 ### "Runtime checks BLOCKED" protocol
 
-When verification crosses a boundary the sandbox can't reach (Realtime, push fanout, RLS-as-enforced-by-GoTrue, anything requiring a live Supabase before ADR-11's NestJS move is complete):
+The disclaimer ADR-11 was written against (chat-adjacent chunks gated on a live Supabase Edge Functions runtime) **retired with #416**. The hot path is now NestJS code that runs in the same Jest tier as the rest of the API, and migrations validate via PGlite — both run in any sandbox.
+
+If a future chunk crosses a boundary the sandbox still can't reach (live Realtime / Presence as the hosted stack negotiates it, push fanout against real APNS/FCM, RLS-as-enforced-by-GoTrue with a real JWT):
 
 - **Do not check the verification box.** Mark it blocked.
-- File or link a tracking issue (`#235` is the existing parent for migration runtime verification; `#401` is the agent infra parent).
+- File or link a tracking issue (`#401` is the agent infra parent; #235 closed-as-subsumed by ADR-11 and should not be reopened — file a fresh issue scoped to the new gap).
 - In the chunk PR body, list each blocked step + the linked issue + which class of verification is missing.
 - In `STATUS.md`, set the chunk's notes column accordingly.
-
-This is the same record-keeping protocol that's been operating since Chunk 02. ADR-11 is what makes it stop applying to future chat-adjacent chunks; until that ships, keep using it honestly.
 
 ### Sandbox-blocked tooling — known list
 
 - **Docker / `supabase start` / `supabase db reset`:** no Docker daemon. Cannot start the local stack. Use the PGlite harness for migration validation.
-- **Supabase MCP write tools (`create_branch`, `apply_migration`, `deploy_edge_function`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** denied by `.claude/settings.json` by default. `list_projects` happens to be allowed. Do not assume any MCP tool works until you've tried it.
+- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** denied by `.claude/settings.json` by default. `list_projects` happens to be allowed. Do not assume any MCP tool works until you've tried it.
 - **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape.
-- **`deno`:** not installed in the cloud sandbox by default; CI's `edge-fn-tests` job installs it explicitly. Local agent sessions cannot run `npm run test:edge` until Deno is on PATH, but the PGlite harness and Jest suite cover most surface.
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
 
 When you hit a new block, add it here in the same PR you discovered it in.

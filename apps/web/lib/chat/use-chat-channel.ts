@@ -22,10 +22,7 @@ import {
   type RawChatMessageAction,
 } from "./types";
 import { emptyCache, mergeServerRows, selectMessages } from "./cache";
-import {
-  chatRealtime,
-  type ConnectionStatus,
-} from "./realtime-manager";
+import { chatRealtime, type ConnectionStatus } from "./realtime-manager";
 import {
   actOnCard,
   discardOutboxRow,
@@ -50,7 +47,10 @@ export interface UseChatChannelResult {
   messages: ChatMessage[];
   isLoading: boolean;
   loadError: Error | null;
-  send: (content: string, opts?: { replyToId?: string | null }) => Promise<void>;
+  send: (
+    content: string,
+    opts?: { replyToId?: string | null },
+  ) => Promise<void>;
   react: (messageId: string, emoji: string) => Promise<void>;
   unreact: (messageId: string, emoji: string) => Promise<void>;
   draft: string;
@@ -65,7 +65,7 @@ export interface UseChatChannelResult {
     args: string,
     announcementsChannelId: string | null,
   ) => Promise<{ ok: boolean; error?: string }>;
-  /** Card action invoker (Vote, RSVP, …). Goes through the hardened chat-react Edge Function. */
+  /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
   act: (
     messageId: string,
     actionType: string,
@@ -91,8 +91,8 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const ctx = useMemo(
-    () => ({ queryClient, supabase, userId, toast }),
-    [queryClient, supabase, userId, toast],
+    () => ({ queryClient, apiClient, supabase, userId, toast }),
+    [queryClient, apiClient, supabase, userId, toast],
   );
 
   // Initial load: REST backfill of the most recent messages + a single

@@ -89,9 +89,7 @@ export function useCategories() {
   return useQuery({
     queryKey: ["channels", "categories"],
     queryFn: async () => {
-      const { data, error } = await client.GET(
-        "/v1/channels/categories/list",
-      );
+      const { data, error } = await client.GET("/v1/channels/categories/list");
       if (error) throw error;
       return data;
     },
@@ -210,7 +208,20 @@ export function useSendMessage() {
     }: {
       channelId: string;
       body: {
+        client_message_id: string;
         content: string;
+        kind?:
+          | "text"
+          | "event"
+          | "task"
+          | "poll"
+          | "dues"
+          | "points"
+          | "hours"
+          | "system_audit"
+          | "loading"
+          | "announcement";
+        payload?: Record<string, never>;
         reply_to_id?: string;
         metadata?: Record<string, never>;
       };

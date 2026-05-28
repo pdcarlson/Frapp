@@ -7,19 +7,20 @@
  * from the React composer, from imperative retry buttons, and from the Dexie
  * outbox flush loop that runs outside React after a reload.
  *
- * Each action: generate a client UUID → optimistic cache write → invoke the
- * hardened Edge Function (chat-send / chat-react) or RLS-protected delete →
- * reconcile by client UUID on success / rollback (4xx) or keep-pending (network).
+ * Each action: generate a client UUID → optimistic cache write → POST to the
+ * NestJS chat controller (ADR-11 / #416) or RLS-protected delete → reconcile
+ * by client UUID on success / rollback (4xx) or keep-pending (network).
  *
  * The "exactly once" property comes from one merge function — `mergeServerRow`
  * in `./cache` — being the only path that lets a server row reach the cache.
- * The Edge Function response and the Postgres Changes echo carry the same
+ * The API response and the Postgres Changes echo carry the same
  * `(client_message_id, id)` pair, so whichever arrives first wins and the
  * other is a no-op.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { createFrappClient } from "@repo/api-sdk";
 import {
   CHAT_MESSAGE_KINDS,
   chatMessagesKey,
@@ -53,11 +54,28 @@ import {
 } from "./offline-queue";
 
 export interface ToastFn {
-  (input: { title: string; description?: string; variant?: "destructive" }): void;
+  (input: {
+    title: string;
+    description?: string;
+    variant?: "destructive";
+  }): void;
 }
+
+export type FrappApiClient = ReturnType<typeof createFrappClient>;
 
 export interface ChatActionContext {
   queryClient: QueryClient;
+  /**
+   * NestJS API client (ADR-11): the transport for chat-send and
+   * chat-react. Replaces the retired Supabase Edge Function invokes.
+   */
+  apiClient: FrappApiClient;
+  /**
+   * Supabase client kept only for: (a) the RLS-protected
+   * `chat_message_actions` DELETE in `unreact` (which needs the viewer's
+   * JWT, not service-role), and (b) the Realtime / Postgres Changes
+   * subscriptions wired elsewhere.
+   */
   supabase: SupabaseClient;
   /** App user id of the viewer. `null` is a hard guard: no writes without identity. */
   userId: string | null;
@@ -77,12 +95,26 @@ function patchCache(
 interface FunctionsErrorWithStatus extends Error {
   context?: { response?: { status?: number } | Response; status?: number };
   status?: number;
+  /** openapi-fetch error envelope; `response.status` carries the HTTP code. */
+  response?: { status?: number };
+}
+
+function extractMessage(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = (value as { message?: unknown }).message;
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : null;
 }
 
 /**
  * Distinguishes terminal client errors (4xx — bad request / forbidden) from
  * transient ones (network, 5xx). 4xx → `failed` + toast; transient → keep the
  * message pending in the outbox for the reconnect flush.
+ *
+ * Handles two error shapes:
+ *   - openapi-fetch `{ error, response }` rejected envelope (NestJS API)
+ *   - generic `Error` with `status` / `context.response.status`
  */
 function classify(error: unknown): {
   terminal: boolean;
@@ -93,6 +125,13 @@ function classify(error: unknown): {
   const e = error as FunctionsErrorWithStatus;
   let status: number | undefined =
     typeof e.status === "number" ? e.status : undefined;
+  if (
+    status === undefined &&
+    e.response &&
+    typeof e.response.status === "number"
+  ) {
+    status = e.response.status;
+  }
   const ctx = e.context;
   if (ctx && typeof ctx === "object") {
     if ("status" in ctx && typeof ctx.status === "number") status = ctx.status;
@@ -103,12 +142,29 @@ function classify(error: unknown): {
     }
   }
   const message =
-    typeof e.message === "string" && e.message.length > 0
-      ? e.message
-      : "Couldn't reach chat server";
-  const terminal =
-    typeof status === "number" && status >= 400 && status < 500;
+    extractMessage(error) ??
+    extractMessage((error as { error?: unknown }).error) ??
+    "Couldn't reach chat server";
+  const terminal = typeof status === "number" && status >= 400 && status < 500;
   return { terminal, status, message };
+}
+
+/**
+ * Normalize an openapi-fetch `{ data, error }` response into the same
+ * thrown-Error shape `classify` understands. NestJS error bodies look
+ * like `{ statusCode, message, error }`; openapi-fetch exposes the raw
+ * `Response` so we hang the status off the thrown error.
+ */
+function throwApiError(
+  error: unknown,
+  response: { status: number } | undefined,
+  fallback: string,
+): never {
+  const msg = extractMessage(error) ?? fallback;
+  const wrapped = new Error(msg) as FunctionsErrorWithStatus;
+  if (response) wrapped.response = { status: response.status };
+  wrapped.context = { status: response?.status, response };
+  throw wrapped;
 }
 
 export interface SendMessageArgs {
@@ -179,25 +235,32 @@ export async function sendMessage(
   });
 
   try {
-    const { data, error } = await ctx.supabase.functions.invoke<{
-      message: RawChatMessage;
-      deduplicated?: boolean;
-    }>("chat-send", {
-      body: {
-        client_message_id: clientId,
-        channel_id: args.channelId,
-        content: args.content,
-        kind: args.kind ?? "text",
-        payload: args.payload ?? undefined,
-        reply_to_id: args.replyToId ?? undefined,
+    const { data, error, response } = await ctx.apiClient.POST(
+      "/v1/channels/{id}/messages",
+      {
+        params: { path: { id: args.channelId } },
+        // `payload` is `object`/`Record<string, any>` in the OpenAPI schema;
+        // openapi-typescript renders that as `{ [x: string]: undefined }` so
+        // we cast through `unknown` to silence the structural mismatch
+        // without losing checking on the rest of the body.
+        body: {
+          client_message_id: clientId,
+          content: args.content,
+          kind: args.kind ?? "text",
+          payload: (args.payload ?? undefined) as unknown as undefined,
+          reply_to_id: args.replyToId ?? undefined,
+        },
       },
-    });
-    if (error) throw error;
-    if (!data?.message) {
-      throw new Error("chat-send returned no message");
+    );
+    if (error || !data) {
+      throwApiError(error, response, "Couldn't send message");
+    }
+    const message = (data as { message?: RawChatMessage }).message;
+    if (!message) {
+      throw new Error("chat send returned no message");
     }
     patchCache(ctx.queryClient, args.channelId, (cache) =>
-      mergeServerRow(cache, data.message),
+      mergeServerRow(cache, message),
     );
     await dequeueOutbox(clientId);
   } catch (err) {
@@ -219,7 +282,8 @@ export async function sendMessage(
 }
 
 function coerceKind(kind: string | undefined): ChatMessageKind {
-  return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ?? "text") as ChatMessageKind;
+  return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ??
+    "text") as ChatMessageKind;
 }
 
 /** Reconstructs a full `SendMessageArgs` from a persisted outbox row. */
@@ -293,11 +357,7 @@ export async function hydrateOutboxIntoCache(
       });
       next = upsertOptimistic(next, optimistic);
       if (row.status === "failed") {
-        next = markFailed(
-          next,
-          row.clientId,
-          row.lastError ?? "Send failed",
-        );
+        next = markFailed(next, row.clientId, row.lastError ?? "Send failed");
       }
     }
     return next;
@@ -310,7 +370,7 @@ export interface ReactArgs {
   emoji: string;
 }
 
-/** Optimistic reaction add via the hardened chat-react Edge Function. */
+/** Optimistic reaction add via the NestJS chat actions endpoint (ADR-11). */
 export async function react(
   ctx: ChatActionContext,
   args: ReactArgs,
@@ -323,19 +383,20 @@ export async function react(
   );
 
   try {
-    const { data, error } = await ctx.supabase.functions.invoke<{
-      action: RawChatMessageAction;
-      deduplicated?: boolean;
-    }>("chat-react", {
-      body: {
-        message_id: args.messageId,
-        action_type: actionType,
+    const { data, error, response } = await ctx.apiClient.POST(
+      "/v1/channels/messages/{messageId}/actions",
+      {
+        params: { path: { messageId: args.messageId } },
+        body: { action_type: actionType },
       },
-    });
-    if (error) throw error;
-    if (data?.action) {
+    );
+    if (error || !data) {
+      throwApiError(error, response, "Couldn't react");
+    }
+    const action = (data as { action?: RawChatMessageAction }).action;
+    if (action) {
       patchCache(ctx.queryClient, args.channelId, (cache) =>
-        applyReactionInsert(cache, data.action),
+        applyReactionInsert(cache, action),
       );
     }
   } catch (err) {
@@ -370,13 +431,7 @@ export async function unreact(
   const actionType = reactionActionType(args.emoji);
 
   patchCache(ctx.queryClient, args.channelId, (cache) =>
-    toggleReactionLocal(
-      cache,
-      args.messageId,
-      actionType,
-      ctx.userId!,
-      false,
-    ),
+    toggleReactionLocal(cache, args.messageId, actionType, ctx.userId!, false),
   );
 
   try {
@@ -411,7 +466,7 @@ export interface CardActionArgs {
 
 /**
  * Action plumbing for inline-card buttons (RSVP / Vote / Done …). The
- * transport is the hardened chat-react Edge Function. For vote-change
+ * transport is the NestJS chat actions endpoint (ADR-11). For vote-change
  * (ADR-07) the response sets `updated:true`, so the cache merges via
  * `applyActionUpdate` (replaces payload on the existing row) instead of
  * `applyReactionInsert` (which would shadow the prior row).
@@ -422,23 +477,32 @@ export async function actOnCard(
 ): Promise<void> {
   if (!ctx.userId) return;
   try {
-    const { data, error } = await ctx.supabase.functions.invoke<{
-      action: RawChatMessageAction;
-      deduplicated?: boolean;
-      updated?: boolean;
-    }>("chat-react", {
-      body: {
-        message_id: args.messageId,
-        action_type: args.actionType,
-        payload: args.payload ?? undefined,
+    const { data, error, response } = await ctx.apiClient.POST(
+      "/v1/channels/messages/{messageId}/actions",
+      {
+        params: { path: { messageId: args.messageId } },
+        body: {
+          action_type: args.actionType,
+          // `payload` is `object` in the OpenAPI schema; cast through
+          // `unknown` to satisfy openapi-typescript's `Record<string,
+          // undefined>` rendering.
+          payload: (args.payload ?? undefined) as unknown as undefined,
+        },
       },
-    });
-    if (error) throw error;
-    if (data?.action) {
+    );
+    if (error || !data) {
+      throwApiError(error, response, "Couldn't record action");
+    }
+    const body = data as {
+      action?: RawChatMessageAction;
+      updated?: boolean;
+    };
+    if (body.action) {
+      const action = body.action;
       patchCache(ctx.queryClient, args.channelId, (cache) =>
-        data.updated
-          ? applyActionUpdate(cache, data.action)
-          : applyReactionInsert(cache, data.action),
+        body.updated
+          ? applyActionUpdate(cache, action)
+          : applyReactionInsert(cache, action),
       );
     }
   } catch (err) {

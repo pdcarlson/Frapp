@@ -79,20 +79,14 @@ Interceptors:
 
 The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and (on pull requests) **`scripts/check-docs-impact.mjs`** so non-doc code changes must include related `docs/` or `spec/` updates in the same PR.
 
-## 5a. Edge Function tests (Deno)
+## 5a. Chat hot-path tests (ADR-11 / #416)
 
-`npm run test:edge` runs `deno test` against `supabase/functions/_tests/` and pins the **wiring** of the two chat hot-path Edge Functions (`chat-send`, `chat-react`) plus the shared `_shared/chat-authz.ts` helpers. The CI job is `edge-fn-tests` in `.github/workflows/ci.yml`; it uses `denoland/setup-deno@v2` and runs the same `test:edge` script.
+The chat hot path (send + react) moved from Supabase Edge Functions into the NestJS `ChatController` in #416 (per ADR-11). The Deno test harness under `supabase/functions/_tests/` and the `edge-fn-tests` CI job retired with it; the same coverage now lives in the standard API Jest tier:
 
-The tests intercept `Deno.serve` so the entrypoint's request handler is captured and called directly with a synthetic `Request`. `@supabase/supabase-js` is swapped for `supabase/functions/_tests/supabase-stub.ts` via the test import map at `supabase/functions/_tests/deno.json`; each test scripts the per-table response queue (`users`, `chat_channels`, `members`, `roles`, `chat_messages`, `chat_message_actions`) and asserts both the response shape AND that the service-role insert was reached **only after** authz passed.
+- **`apps/api/src/application/services/chat.service.spec.ts`** — pins the wiring of `sendMessage` (idempotent insert on `client_message_id`, dedup-as-success on the partial unique index, Realtime broadcast emit) and `recordMessageAction` (atomic dedup on the `chat_message_actions` unique index, vote-action UPSERT per ADR-07, no false-positive dedup on non-23505 errors).
+- **`apps/api/src/application/services/chat-access.spec.ts`** — pins the `canAccessChannel` predicate matrix (channel types, role-gated permissions, read-only / `announcements:post` gate).
 
-What these tests are for (§2 and §4 of [`docs/internal/redesign/REVIEW_CHECKLIST.md`](../internal/redesign/REVIEW_CHECKLIST.md)):
-
-- **§2 predicate wiring.** Every handler test asserts the `chat_messages` / `chat_message_actions` insert is **not** called on any authz failure (missing JWT, invalid JWT, non-member, message-not-accessible). The cross-channel `reply_to_id` test pins that the reject happens before the insert.
-- **§4 idempotency.** The `chat-react` dedup-race test scripts a Postgres `23505` (unique violation) from the insert and asserts the response is `{ action, deduplicated: true }` at status 200 with the insert attempted **exactly once** (proving the unique-violation branch is the source of truth, not a read-then-insert TOCTOU).
-
-The shared `canAccessChannel` predicate matrix is **not** re-litigated here — that lives in `apps/api/src/application/services/chat-access.spec.ts` and runs under `npm run test -w apps/api`. The Edge tests cover the surrounding wiring.
-
-Deno is **not** required to develop or build the rest of the monorepo; it is only needed when running `npm run test:edge` locally. The CI job is the source of truth.
+Both run under `npm run test -w apps/api`. There's no separate Deno tier to install or maintain.
 
 ## 6. E2E scaffolding
 

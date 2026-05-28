@@ -32,7 +32,8 @@ import type { SlashCommand } from "@repo/chat-integrations";
 function channelHeaderIcon(channel: ChatChannel | null) {
   if (!channel) return Hash;
   if (channel.name === "chapter-audit") return ShieldAlert;
-  if (channel.type === "DM" || channel.type === "GROUP_DM") return MessagesSquare;
+  if (channel.type === "DM" || channel.type === "GROUP_DM")
+    return MessagesSquare;
   if (channel.type === "PRIVATE" || channel.type === "ROLE_GATED") return Lock;
   return Hash;
 }
@@ -61,7 +62,8 @@ export function ChatShell() {
       return;
     }
     if (channels.length > 0) {
-      const first = channels.find((ch) => ch.name === "general") ?? channels[0]!;
+      const first =
+        channels.find((ch) => ch.name === "general") ?? channels[0]!;
       setActiveChannelId(first.id);
     } else {
       setActiveChannelId(null);
@@ -80,10 +82,11 @@ export function ChatShell() {
 
   const channel = useChatChannel(activeChannelId);
 
-  // Fail closed while the chapter config is loading or errored. Chunk 05 wires
-  // real /poll and /announce dispatch through chat-send, which trusts the
-  // client-side enabled_modules gate — returning true here would let a user
-  // fire a disabled command before the query resolves (issue #310).
+  // Fail closed while the chapter config is loading or errored. Slash
+  // dispatch (`/poll`, `/announce`) flows through the NestJS chat send
+  // endpoint, which trusts the client-side enabled_modules gate —
+  // returning true here would let a user fire a disabled command before
+  // the query resolves (issue #310).
   const isModuleEnabled = useMemo(() => {
     return (key: string) => {
       const data = orgConfig.data as

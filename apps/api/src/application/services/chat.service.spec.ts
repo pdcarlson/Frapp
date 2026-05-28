@@ -9,12 +9,16 @@ import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
+  CHAT_MESSAGE_ACTION_REPOSITORY,
+  ChatMessageActionDuplicateError,
+  ChatMessageDuplicateError,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
 } from '../../domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatCategoryRepository,
+  IChatMessageActionRepository,
   IChatMessageRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
@@ -22,9 +26,11 @@ import type {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
   ChatMessage,
+  ChatMessageAction,
   ChatChannelCategory,
   MessageReaction,
 } from '../../domain/entities/chat.entity';
@@ -36,6 +42,7 @@ describe('ChatService', () => {
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockCategoryRepo: jest.Mocked<IChatCategoryRepository>;
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
+  let mockActionRepo: jest.Mocked<IChatMessageActionRepository>;
   let mockReactionRepo: jest.Mocked<IMessageReactionRepository>;
   let mockReadReceiptRepo: jest.Mocked<IChannelReadReceiptRepository>;
   let mockStorageProvider: jest.Mocked<IStorageProvider>;
@@ -44,6 +51,19 @@ describe('ChatService', () => {
   >;
   let mockMemberRepo: { findByUserAndChapter: jest.Mock };
   let mockRbac: { getEffectivePermissions: jest.Mock };
+  /**
+   * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
+   * `channel.send({ ... })` and is best-effort. Wire a fake that records
+   * the topic + payload so `sendMessage` tests can assert the emit.
+   */
+  let mockSupabase: {
+    channel: jest.Mock;
+    removeChannel: jest.Mock;
+  };
+  let broadcasts: Array<{
+    topic: string;
+    payload: { type: string; event: string; payload: unknown };
+  }>;
 
   const baseMember = {
     id: 'mem-1',
@@ -106,8 +126,15 @@ describe('ChatService', () => {
       findPinnedByChannel: jest.fn(),
       countPinnedByChannel: jest.fn(),
       findPollsByChapter: jest.fn(),
+      findByClientMessageId: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+    };
+
+    mockActionRepo = {
+      create: jest.fn(),
+      findOne: jest.fn(),
+      updateForVote: jest.fn(),
     };
 
     mockReactionRepo = {
@@ -141,6 +168,17 @@ describe('ChatService', () => {
       getEffectivePermissions: jest.fn(),
     };
 
+    broadcasts = [];
+    mockSupabase = {
+      channel: jest.fn((topic: string) => ({
+        send: jest.fn(async (payload) => {
+          broadcasts.push({ topic, payload });
+          return 'ok';
+        }),
+      })),
+      removeChannel: jest.fn().mockResolvedValue(undefined),
+    };
+
     // Defaults: caller is a member of the chapter, channel resolves, no special
     // permissions. Individual tests override to exercise denial paths.
     mockChannelRepo.findById.mockResolvedValue(baseChannel);
@@ -154,6 +192,10 @@ describe('ChatService', () => {
         { provide: CHAT_CHANNEL_REPOSITORY, useValue: mockChannelRepo },
         { provide: CHAT_CATEGORY_REPOSITORY, useValue: mockCategoryRepo },
         { provide: CHAT_MESSAGE_REPOSITORY, useValue: mockMessageRepo },
+        {
+          provide: CHAT_MESSAGE_ACTION_REPOSITORY,
+          useValue: mockActionRepo,
+        },
         { provide: MESSAGE_REACTION_REPOSITORY, useValue: mockReactionRepo },
         {
           provide: CHANNEL_READ_RECEIPT_REPOSITORY,
@@ -161,6 +203,7 @@ describe('ChatService', () => {
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
       ],
@@ -405,7 +448,122 @@ describe('ChatService', () => {
         content: 'Hello world',
       });
 
-      expect(result).toEqual(baseMessage);
+      expect(result).toEqual({ message: baseMessage, deduplicated: false });
+    });
+
+    it('passes client_message_id, kind, and payload into the insert', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+        client_message_id: '11111111-1111-1111-1111-111111111111',
+        kind: 'announcement',
+        payload: { foo: 'bar' },
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          client_message_id: '11111111-1111-1111-1111-111111111111',
+          kind: 'announcement',
+          payload: { foo: 'bar' },
+        }),
+      );
+    });
+
+    it('returns the existing row with deduplicated:true on a client_message_id retry', async () => {
+      const clientId = '22222222-2222-2222-2222-222222222222';
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError('ch-chan-1', 'user-1', clientId),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue(baseMessage);
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+        client_message_id: clientId,
+      });
+
+      expect(result).toEqual({ message: baseMessage, deduplicated: true });
+      expect(mockMessageRepo.findByClientMessageId).toHaveBeenCalledWith(
+        'ch-chan-1',
+        'user-1',
+        clientId,
+      );
+    });
+
+    it('rethrows when the duplicate-error path cannot re-select an existing row', async () => {
+      const clientId = '33333333-3333-3333-3333-333333333333';
+      mockMessageRepo.create.mockRejectedValue(
+        new ChatMessageDuplicateError('ch-chan-1', 'user-1', clientId),
+      );
+      mockMessageRepo.findByClientMessageId.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Hello',
+          client_message_id: clientId,
+        }),
+      ).rejects.toBeInstanceOf(ChatMessageDuplicateError);
+    });
+
+    it('emits a Realtime broadcast for new messages on the chapter:<channel_id> topic', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+      });
+
+      expect(broadcasts).toHaveLength(1);
+      expect(broadcasts[0]).toEqual({
+        topic: `chapter:${baseMessage.channel_id}`,
+        payload: {
+          type: 'broadcast',
+          event: 'new_message',
+          payload: baseMessage,
+        },
+      });
+    });
+
+    it('does NOT broadcast (and does NOT insert) when authz denies the send', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'outsider',
+          content: 'Hello',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      expect(broadcasts).toHaveLength(0);
+    });
+
+    it('still returns success when the broadcast throws (Postgres Changes is the source of truth)', async () => {
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+      mockSupabase.channel.mockImplementationOnce(() => {
+        throw new Error('boom');
+      });
+
+      const result = await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello',
+      });
+
+      expect(result.message).toEqual(baseMessage);
     });
 
     it('should reject empty content', async () => {
@@ -500,7 +658,7 @@ describe('ChatService', () => {
         content: 'Hello world',
         reply_to_id: 'msg-same',
       });
-      expect(result).toEqual(baseMessage);
+      expect(result).toEqual({ message: baseMessage, deduplicated: false });
       expect(mockMessageRepo.create).toHaveBeenCalled();
     });
   });
@@ -875,7 +1033,114 @@ describe('ChatService', () => {
         content: 'Hello!',
       });
 
-      expect(result).toEqual(baseMessage);
+      expect(result.message).toEqual(baseMessage);
+    });
+  });
+
+  // ── Hot-path actions (chat_message_actions) ──────────────────────────
+
+  describe('recordMessageAction', () => {
+    const baseAction: ChatMessageAction = {
+      id: 'action-1',
+      message_id: 'msg-1',
+      user_id: 'user-1',
+      action_type: 'reaction:👍',
+      payload: {},
+      created_at: '2026-01-01T12:00:00.000Z',
+    };
+
+    it('records a reaction and returns deduplicated:false on the happy path', async () => {
+      mockActionRepo.create.mockResolvedValue(baseAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍' },
+      );
+
+      expect(result).toEqual({ action: baseAction, deduplicated: false });
+      expect(mockActionRepo.create).toHaveBeenCalledWith({
+        message_id: 'msg-1',
+        user_id: 'user-1',
+        action_type: 'reaction:👍',
+        payload: {},
+      });
+    });
+
+    it('rejects when the caller cannot access the message', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.recordMessageAction('msg-1', 'ch-1', 'outsider', {
+          action_type: 'reaction:👍',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockActionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('on a unique-violation for an emoji reaction, surfaces the existing row as deduplicated:true (no second insert)', async () => {
+      mockActionRepo.create.mockRejectedValue(
+        new ChatMessageActionDuplicateError('msg-1', 'user-1', 'reaction:👍'),
+      );
+      mockActionRepo.findOne.mockResolvedValue(baseAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'reaction:👍' },
+      );
+
+      expect(result).toEqual({ action: baseAction, deduplicated: true });
+      expect(mockActionRepo.create).toHaveBeenCalledTimes(1);
+      expect(mockActionRepo.findOne).toHaveBeenCalledWith(
+        'msg-1',
+        'user-1',
+        'reaction:👍',
+      );
+      expect(mockActionRepo.updateForVote).not.toHaveBeenCalled();
+    });
+
+    it('on a unique-violation for action_type="vote", UPSERTS the payload and returns updated:true (ADR-07)', async () => {
+      const updatedAction = {
+        ...baseAction,
+        action_type: 'vote',
+        payload: { option: 2 },
+      };
+      mockActionRepo.create.mockRejectedValue(
+        new ChatMessageActionDuplicateError('msg-1', 'user-1', 'vote'),
+      );
+      mockActionRepo.updateForVote.mockResolvedValue(updatedAction);
+
+      const result = await service.recordMessageAction(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        { action_type: 'vote', payload: { option: 2 } },
+      );
+
+      expect(result).toEqual({
+        action: updatedAction,
+        deduplicated: false,
+        updated: true,
+      });
+      expect(mockActionRepo.updateForVote).toHaveBeenCalledWith(
+        'msg-1',
+        'user-1',
+        'vote',
+        { option: 2 },
+      );
+    });
+
+    it('rethrows non-23505 insert errors instead of falsely deduping', async () => {
+      mockActionRepo.create.mockRejectedValue(new Error('schema mismatch'));
+
+      await expect(
+        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+          action_type: 'reaction:👍',
+        }),
+      ).rejects.toThrow('schema mismatch');
     });
   });
 });

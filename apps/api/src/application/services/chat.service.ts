@@ -11,16 +11,22 @@ import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
+  CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
+  ChatMessageDuplicateError,
+  ChatMessageActionDuplicateError,
 } from '../../domain/repositories/chat.repository.interface';
 import type {
   IChatChannelRepository,
   IChatCategoryRepository,
   IChatMessageRepository,
+  IChatMessageActionRepository,
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
+import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -29,6 +35,8 @@ import type {
   ChatChannel,
   ChatChannelCategory,
   ChatMessage,
+  ChatMessageAction,
+  ChatMessageKind,
   ChannelType,
 } from '../../domain/entities/chat.entity';
 import { canAccessChannel } from '@repo/validation';
@@ -92,8 +100,25 @@ export interface SendMessageInput {
   channel_id: string;
   sender_id: string;
   content: string;
+  /** Client-generated idempotency key; reused on retry. */
+  client_message_id?: string | null;
+  /** Extended hot-path kind (Chunk 02); defaults to `text` when absent. */
+  kind?: ChatMessageKind | null;
+  /** Inline card payload for rich kinds. */
+  payload?: Record<string, any> | null;
   reply_to_id?: string | null;
   metadata?: Record<string, any>;
+}
+
+/** Vote action UPSERTS rather than duplicates (ADR-07). */
+const VOTE_ACTION_TYPE = 'vote';
+/**
+ * Realtime topic the web client subscribes to per channel. Matches the
+ * topic used by the retired `chat-send` Edge Function so subscribed
+ * clients pick up `new_message` broadcasts without any wire change.
+ */
+function realtimeTopicForChannel(channelId: string): string {
+  return `chapter:${channelId}`;
 }
 
 export interface CreateCategoryInput {
@@ -113,6 +138,8 @@ export class ChatService {
     private readonly categoryRepo: IChatCategoryRepository,
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
+    @Inject(CHAT_MESSAGE_ACTION_REPOSITORY)
+    private readonly actionRepo: IChatMessageActionRepository,
     @Inject(MESSAGE_REACTION_REPOSITORY)
     private readonly reactionRepo: IMessageReactionRepository,
     @Inject(CHANNEL_READ_RECEIPT_REPOSITORY)
@@ -121,6 +148,8 @@ export class ChatService {
     private readonly storageProvider: IStorageProvider,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    @Inject(SUPABASE_CLIENT)
+    private readonly supabase: FrappSupabaseClient,
     private readonly notificationService: NotificationService,
     private readonly rbac: RbacService,
   ) {}
@@ -256,7 +285,25 @@ export class ChatService {
     return this.messageRepo.findByChannel(channelId, options);
   }
 
-  async sendMessage(input: SendMessageInput): Promise<ChatMessage> {
+  /**
+   * Hot-path send. Mirrors the retired `chat-send` Edge Function:
+   *
+   * - Authorizes via the shared `canAccessChannel` predicate with
+   *   `operation: "post"` so read-only channels (#announcements,
+   *   #chapter-audit) gate on the `announcements:post` permission.
+   * - Cross-channel reply links are rejected before the insert.
+   * - Idempotent on `client_message_id`: a retried POST with the same
+   *   `(channel_id, sender_id, client_message_id)` triple returns the
+   *   existing row with `deduplicated: true` instead of inserting again
+   *   (partial unique index `idx_chat_messages_dedupe`).
+   * - Best-effort Realtime broadcast on the channel topic so subscribed
+   *   clients see new messages without waiting for Postgres Changes; the
+   *   broadcast failure never fails the request because Postgres Changes
+   *   is the source of truth.
+   */
+  async sendMessage(
+    input: SendMessageInput,
+  ): Promise<{ message: ChatMessage; deduplicated: boolean }> {
     if (!input.content.trim()) {
       throw new BadRequestException('Message content cannot be empty');
     }
@@ -277,14 +324,39 @@ export class ChatService {
       }
     }
 
-    const message = await this.messageRepo.create({
-      channel_id: input.channel_id,
-      sender_id: input.sender_id,
-      content: input.content,
-      type: 'TEXT',
-      reply_to_id: input.reply_to_id ?? null,
-      metadata: input.metadata ?? {},
-    });
+    const kind: ChatMessageKind = input.kind ?? 'text';
+
+    let message: ChatMessage;
+    const deduplicated = false;
+    try {
+      message = await this.messageRepo.create({
+        channel_id: input.channel_id,
+        sender_id: input.sender_id,
+        content: input.content,
+        type: 'TEXT',
+        kind,
+        payload: input.payload ?? null,
+        client_message_id: input.client_message_id ?? null,
+        reply_to_id: input.reply_to_id ?? null,
+        metadata: input.metadata ?? {},
+      });
+    } catch (error) {
+      if (
+        error instanceof ChatMessageDuplicateError &&
+        input.client_message_id
+      ) {
+        const existing = await this.messageRepo.findByClientMessageId(
+          input.channel_id,
+          input.sender_id,
+          input.client_message_id,
+        );
+        if (!existing) {
+          throw error;
+        }
+        return { message: existing, deduplicated: true };
+      }
+      throw error;
+    }
 
     try {
       await this.sendMessageNotification(input, channel);
@@ -297,7 +369,34 @@ export class ChatService {
       });
     }
 
-    return message;
+    await this.broadcastNewMessage(message);
+
+    return { message, deduplicated };
+  }
+
+  /**
+   * Emit a Realtime broadcast on the channel topic. Mirrors the retired
+   * Edge Function: best-effort — a broadcast failure is logged and
+   * swallowed because Postgres Changes is the authoritative source.
+   */
+  private async broadcastNewMessage(message: ChatMessage): Promise<void> {
+    try {
+      const channel = this.supabase.channel(
+        realtimeTopicForChannel(message.channel_id),
+      );
+      await channel.send({
+        type: 'broadcast',
+        event: 'new_message',
+        payload: message,
+      });
+      await this.supabase.removeChannel(channel);
+    } catch (error) {
+      this.logger.debug('chat broadcast failed (Postgres Changes will catch)', {
+        messageId: message.id,
+        channelId: message.channel_id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async sendMessageNotification(
@@ -534,6 +633,67 @@ export class ChatService {
   async getReactions(messageId: string, chapterId: string, userId: string) {
     await this.assertMessageAccess(messageId, chapterId, userId);
     return this.reactionRepo.findByMessage(messageId);
+  }
+
+  /**
+   * Hot-path action / reaction / vote. Mirrors the retired `chat-react`
+   * Edge Function. Writes to `chat_message_actions` (Chunk 02) — distinct
+   * from the legacy `message_reactions` table used by `toggleReaction`.
+   *
+   * - Authorizes via message → channel → chapter membership.
+   * - Atomic dedup via the unique index `(message_id, user_id, action_type)`:
+   *   a 23505 from the insert surfaces as `deduplicated: true` (HTTP 200)
+   *   instead of a 5xx — no read-then-insert TOCTOU.
+   * - Vote-change semantics (ADR-07): when `action_type === "vote"` the
+   *   23505 path UPSERTS instead — same row id, replaced `payload`,
+   *   bumped `created_at` — so subscribed clients see a Realtime UPDATE
+   *   rather than a second row.
+   */
+  async recordMessageAction(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+    input: { action_type: string; payload?: Record<string, unknown> | null },
+  ): Promise<{
+    action: ChatMessageAction;
+    deduplicated: boolean;
+    updated?: boolean;
+  }> {
+    await this.assertMessageAccess(messageId, chapterId, userId);
+
+    const payload = input.payload ?? {};
+    const isVote = input.action_type === VOTE_ACTION_TYPE;
+
+    try {
+      const action = await this.actionRepo.create({
+        message_id: messageId,
+        user_id: userId,
+        action_type: input.action_type,
+        payload,
+      });
+      return { action, deduplicated: false };
+    } catch (error) {
+      if (!(error instanceof ChatMessageActionDuplicateError)) throw error;
+
+      if (isVote) {
+        const updated = await this.actionRepo.updateForVote(
+          messageId,
+          userId,
+          input.action_type,
+          payload,
+        );
+        if (!updated) throw error;
+        return { action: updated, deduplicated: false, updated: true };
+      }
+
+      const existing = await this.actionRepo.findOne(
+        messageId,
+        userId,
+        input.action_type,
+      );
+      if (!existing) throw error;
+      return { action: existing, deduplicated: true };
+    }
   }
 
   // ── Read Receipts ────────────────────────────────────────────────────

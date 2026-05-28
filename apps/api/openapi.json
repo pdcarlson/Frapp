@@ -2636,7 +2636,7 @@
             "bearer": []
           }
         ],
-        "summary": "Send a message",
+        "summary": "Send a message (hot path; idempotent on client_message_id)",
         "tags": [
           "Chat"
         ]
@@ -2788,6 +2788,45 @@
           }
         ],
         "summary": "Unpin a message",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
+    "/v1/channels/messages/{messageId}/actions": {
+      "post": {
+        "operationId": "ChatController_recordMessageAction_v1",
+        "parameters": [
+          {
+            "name": "messageId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageActionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)",
         "tags": [
           "Chat"
         ]
@@ -5120,8 +5159,30 @@
       "SendMessageDto": {
         "type": "object",
         "properties": {
+          "client_message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "content": {
             "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "event",
+              "task",
+              "poll",
+              "dues",
+              "points",
+              "hours",
+              "system_audit",
+              "loading",
+              "announcement"
+            ]
+          },
+          "payload": {
+            "type": "object"
           },
           "reply_to_id": {
             "type": "string"
@@ -5131,6 +5192,7 @@
           }
         },
         "required": [
+          "client_message_id",
           "content"
         ]
       },
@@ -5143,6 +5205,21 @@
         },
         "required": [
           "content"
+        ]
+      },
+      "ChatMessageActionDto": {
+        "type": "object",
+        "properties": {
+          "action_type": {
+            "type": "string",
+            "description": "Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions."
+          },
+          "payload": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "action_type"
         ]
       },
       "ReactionDto": {
