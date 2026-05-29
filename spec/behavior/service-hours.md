@@ -12,7 +12,7 @@ A dedicated tracker for community service and philanthropy hours, separate from 
 
 - New entries start with status PENDING.
 - Admins with `service:approve` permission review entries and mark them APPROVED or REJECTED with an optional comment.
-- **On approval:** A point transaction is automatically created (category: SERVICE) based on a chapter-configurable rate (e.g. 1 point per 60 minutes of service). The `points_awarded` flag on the entry prevents double-awarding.
+- **On approval:** A point transaction is automatically created (category: SERVICE) based on a chapter-configurable rate (e.g. 1 point per 60 minutes of service). The system tracks whether points have been awarded for an entry and prevents double-awarding on repeated approval actions.
 - **On rejection:** No points are awarded. The member is notified with the admin's comment.
 - Admins can view all PENDING entries in a dedicated queue on the web dashboard.
 

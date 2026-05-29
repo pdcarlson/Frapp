@@ -15,7 +15,7 @@ A "Chapter Files" storage area for organizational documents (bylaws, constitutio
 
 ## Metadata
 
-Each document has: title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
+Each document has: a system-generated `id` (UUID, primary key — this is the `{document_id}` referenced in the storage path below), title, description (optional), folder (optional), storage path, uploaded_by (FK users), and created_at. No academic metadata (no department, professor, assignment type, etc.).
 
 ## Storage
 

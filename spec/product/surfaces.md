@@ -7,7 +7,7 @@ A standalone marketing site (`apps/landing`). Deployed independently from the ap
 - Hero section with value proposition.
 - Feature highlights (Backwork, Chat, Points, Study Hours).
 - Pricing (single plan: flat monthly per chapter).
-- Stats row and testimonial quotes **ship in the marketing build** today; copy must either reflect **verified** metrics and real customers or be **explicitly labeled** as illustrative until validated (see [`spec/ui-brand-identity.md`](../ui-brand-identity.md)).
+- Stats row and testimonial quotes are included in the marketing build and **must** reflect verified metrics and real customers, or be clearly labeled as illustrative until validated (see [`spec/ui-brand-identity.md`](../ui-brand-identity.md)).
 - CTA: "Get Started" (redirects to app.frapp.live sign-up) and "Log In" (redirects to app.frapp.live).
 - **Legal pages:** Terms of Service (`/terms`), Privacy Policy (`/privacy`), FERPA Notice (`/ferpa`). Linked from the site footer.
 

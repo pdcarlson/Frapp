@@ -7,6 +7,7 @@ Returns the merged chapter configuration: archetype defaults overlaid with per-c
 **Auth:** Bearer JWT + `x-chapter-id` header (chapter membership required). Permission: `chapter-config:view`.
 
 **Response shape:**
+
 ```json
 {
   "id": "<chapter_id>",

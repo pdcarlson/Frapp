@@ -4,7 +4,7 @@
 
 - Fires on first sign-in when the authenticated user has **no chapter memberships** (`GET /v1/chapters` returns empty). Mounted in the dashboard shell as a full-screen overlay; it replaces the old `chapter-bootstrap` component.
 - Submit calls `POST /v1/chapters/onboard` (cold path, NestJS + service-role Supabase — never the chat Edge Functions). `ChapterOnboardingService.onboard`:
-  1. Materializes the chapter config from the chosen archetype via `buildChapterConfigFromArchetype` (deep-clones the seed with `structuredClone`), setting `org_archetype`, `enabled_modules`, `vocabulary`, and a derived `theme_palette`. The client never supplies the module map — it is resolved server-side from the archetype.
+  1. Materializes the chapter config from the chosen archetype, deep-copying the archetype seed so per-chapter edits never mutate the shared reference. Sets `org_archetype`, `enabled_modules`, `vocabulary`, and a derived `theme_palette`. The client never supplies the module map — it is resolved server-side from the archetype.
   2. Creates the chapter (`ChapterService.create`) with branding + `directory_id` (when the chapter was matched in the directory), plus default roles, the creator's President membership, and the default channels.
   3. Posts a one-time welcome `system_audit` message into `#general`: "Welcome to {greek_letters} {designation}. Invite your chapter to get the conversation started." Sent by the system user; best-effort (a failure does not roll back chapter creation).
   4. Navigates the client to `/chat?channel=general`.
@@ -18,7 +18,7 @@
 - If a token is expired or already used, the API returns 410 Gone.
 - Each token carries a `role` that determines the joining member's initial role.
 - Only users with the `members:invite` permission can generate tokens.
-- Admins can generate multiple tokens at once (batch invite). Batch creation is optimized to use a single bulk database operation to minimize network roundtrips and ensure efficiency.
+- Admins can generate multiple tokens at once (batch invite).
 
 ## Edge Cases
 

@@ -43,7 +43,7 @@ When a user checks into an event:
 - Query parameters (all optional unless noted):
   - `user_id` — restrict to one member’s rows.
   - `category` — one of `ATTENDANCE`, `ACADEMIC`, `SERVICE`, `FINE`, `MANUAL`, `STUDY`.
-  - `flagged` — boolean string (`true`, `false`, `1`, `0`, matching validator strict boolean strings); when true (`true` or `1`), only rows the anomaly rules marked for review.
+  - `flagged` — boolean filter; when true, returns only rows the anomaly rules marked for review. The exact string-to-boolean parsing rules (`true`/`false`/`1`/`0`) are an API-layer detail documented in the OpenAPI spec.
   - `before` — ISO8601 timestamp cursor; return transactions created **strictly before** this instant (older page).
   - `limit` — page size; default **50**, clamped to **1–200** inclusive on the server.
 - Ordering and caps are implementation details of the list endpoint; the **append-only** and **immutability** rules in *Anti-Fraud* still apply to underlying rows.

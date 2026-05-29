@@ -16,5 +16,5 @@ Admins with `semester:rollover` permission can trigger a "New Semester" action f
 
 ## Edge Cases
 
-- A chapter can only trigger a rollover once per calendar month (prevents accidental double-rollover). Attempting a second rollover within the same month returns 409 Conflict.
+- A chapter may trigger a rollover at most once per **named calendar month** — e.g. a rollover on January 15 blocks another until February 1, regardless of how many days have elapsed. Attempting a second rollover within the same calendar month returns `409 Conflict`.
 - If no semester archive exists yet (brand new chapter), the leaderboard shows "All Time" as the default period.
