@@ -377,29 +377,25 @@ card pointing at their chapter president. Flags are raised automatically when
 
 ### 3.6 Settings (`/settings`)
 
-**Tabs:** General | Branding | Notifications | Semester | Danger Zone
+A vertical **tab rail** (9 tabs), rebuilt for the chat-first redesign (Chunk 06). Order: **Organization | Modules | Roles | Fields | Workflows | Dues | Theme | Beta | Audit.** Organization and Modules are functional; Theme preserves the existing accent-color control; the rest are stubs filled by Chunk 07 (Theme/Roles/Fields/Workflows/Dues) and Chunk 08 (Beta/Audit) and render a "coming soon" panel so the full settings IA stays legible.
 
-**General tab:**
+Config reads/writes go through `GET/PATCH /chapters/:id/config` via the `useOrgConfig()` / `usePatchOrgConfig()` hooks (optimistic cache update + rollback on error). Every config PATCH writes a `chapter_audit_log` row that the Chunk 05 bridge mirrors to `#chapter-audit`. Edit controls require `chapter-config:manage` (President holds `*`); reads require `chapter-config:view`.
 
-- Chapter name (text input)
-- University (text input)
-- Donation URL (optional URL input)
+**Organization tab:**
 
-**Branding tab:**
+- _Chapter profile_ (core chapter record): chapter name, university, donation URL — saved via the chapter-update path.
+- _Identity & founding_ (config `branding`): Greek letters, designation, school (short), founded year (guard-parsed; 1776–next year). Saved through the audited config PATCH.
+- _Archetype_ picker: cards for all 8 archetypes resolved through the guarded `getArchetype()` helper (fallback `ifc` — never a bare `ARCHETYPES[key]`). Switching opens a confirm dialog and PATCHes `org_archetype` plus a reset of `vocabulary` and `enabled_modules` to the new archetype's defaults (role pack follows server-side); identity, branding, and custom fields are preserved.
+- _Vocabulary_: three inputs (recruitment / new-member / cohort terms) with archetype-default placeholders, written to config `vocabulary`.
+- _Preserved here until 07/08 relocate them_: semester rollover (gated `semester:rollover`) and a billing + danger card (Stripe portal, gated `billing:manage`; deactivation is support-assisted).
 
-- Logo upload: dropzone with preview. Shows current logo or placeholder.
-- Accent color: hex input + color picker + live preview swatch. WCAG contrast indicator (green check or red X).
+**Modules tab:**
 
-**Semester tab:**
+- Driven by `@repo/org-archetypes` `MODULE_CATALOG`. Always-on (free) modules are locked with a **Free** badge; paid modules show a **Chapter Pro** badge and a toggle writing `enabled_modules[key]`. A single paid tier — no per-module price.
+- A module is enabled unless explicitly `false` (matches `useOrgConfig().isModuleEnabled`). Disabling a module immediately hides its **sidebar item** (module-gated nav, Chunk 06), removes its **slash commands** from the chat palette (Chunk 05 filter), and mutes its system channel. Data is preserved; re-enabling restores everything.
+- Sub-features render as an informational expandable list; per-feature toggles arrive in Chunk 07.
 
-- Current semester label + date range
-- "Start New Semester" button with confirmation dialog
-- Past semesters list
-
-**Danger Zone tab:**
-
-- "Transfer Presidency" — member selector + confirmation
-- "Cancel Subscription" — confirmation with consequences explained
+**Theme tab:** the existing accent-color picker (hex + color input + live swatch + WCAG fallback) is preserved here; full chapter-palette customization (`derivePalette`) ships in Chunk 07.
 
 ### 3.7 Chat (`/chat`) — chat-first redesign, Chunk 04
 
