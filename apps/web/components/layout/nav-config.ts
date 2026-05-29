@@ -34,6 +34,14 @@ import {
  * - `status: 'available'` — route is built and clickable.
  * - `status: 'coming-soon'` — disabled with a chip so users can see what's
  *   on the roadmap but not be frustrated by broken links.
+ *
+ * Module gating:
+ * - `module` — the `enabled_modules` key (see `@repo/org-archetypes`
+ *   `MODULE_CATALOG`) that gates this item. When the chapter disables the
+ *   module in Settings → Modules, the item is hidden from the sidebar. Items
+ *   without a `module` are always-on (chat, profile, members) or governed
+ *   purely by permission. Hiding is fail-safe: while the chapter config is
+ *   still loading the item stays visible.
  */
 
 export type NavPermissionRule =
@@ -53,6 +61,8 @@ export type NavItem = {
   description?: string;
   status: NavStatus;
   statusLabel?: string;
+  /** `enabled_modules` key that gates this item; omit for always-on items. */
+  module?: string;
 } & NavPermissionRule;
 
 export type NavSection = {
@@ -138,6 +148,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "New Event",
         description: "Schedule, attendance, check-ins, calendar export.",
         status: "available",
+        module: "events",
       },
       {
         id: "points",
@@ -148,6 +159,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Adjust Points",
         description: "Leaderboard, transactions, anomaly audit.",
         status: "available",
+        module: "points",
       },
       {
         id: "tasks",
@@ -158,6 +170,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "New Task",
         description: "Assign, track, and confirm chapter tasks.",
         status: "available",
+        module: "tasks",
       },
       {
         id: "service",
@@ -168,6 +181,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Log service",
         description: "Log service hours and approve entries for points.",
         status: "available",
+        module: "hours",
       },
     ],
   },
@@ -184,6 +198,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Open chat",
         description: "Chapter poll list with live results.",
         status: "available",
+        module: "polls",
         requirePermission: "polls:view_all",
       },
     ],
@@ -201,6 +216,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Upload Resource",
         description: "Academic library with rich filters.",
         status: "available",
+        module: "backwork",
       },
       {
         id: "documents",
@@ -211,6 +227,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Upload Document",
         description: "Chapter files and organizational documents.",
         status: "available",
+        module: "documents",
       },
       {
         id: "study",
@@ -221,6 +238,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Start session",
         description: "Start a tracked study session inside a study zone.",
         status: "available",
+        module: "hours",
       },
       {
         id: "geofences",
@@ -231,6 +249,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Add Study Zone",
         description: "Draw study polygons and reward rates.",
         status: "available",
+        module: "geofences",
         requirePermission: "geofences:manage",
       },
     ],
@@ -259,6 +278,7 @@ export const DASHBOARD_NAV: NavSection[] = [
         primaryActionLabel: "Generate Report",
         description: "Attendance, points, roster, and service exports.",
         status: "available",
+        module: "reports",
         requirePermission: "reports:export",
       },
     ],

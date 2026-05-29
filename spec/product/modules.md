@@ -232,7 +232,11 @@ The module catalog governs which features chapters can enable. Two tiers:
 
 ## Module disabling behavior
 
-Disabling a paid module: hides its slash commands from the composer, mutes its system channel (no new messages, unread badge suppressed), and hides its dashboard page from navigation. Data is preserved — re-enabling restores access.
+The control surface is **Settings → Modules** (Chunk 06), driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
+
+Disabling a paid module: removes its slash commands from the chat palette (Chunk 05 `filterSlashCommands`), hides its dashboard nav item (Chunk 06 module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+
+> The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.
 
 ## AI feature pricing
 
