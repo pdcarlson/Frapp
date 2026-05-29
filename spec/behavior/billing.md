@@ -3,7 +3,7 @@
 ## Webhook Reliability
 
 - Stripe webhooks are the **source of truth** for subscription status changes.
-- Every webhook event is checked for idempotency using the Stripe event ID (never process the same event twice).
+- Every webhook event is checked for idempotency using the Stripe event ID persisted in `stripe_webhook_events` (never process the same event twice, including after deploys/restarts).
 - Timestamp-aware: an older webhook event must not overwrite a newer subscription status.
 
 ## Edge Cases
@@ -13,6 +13,7 @@
 | User pays but browser crashes before redirect | Webhook (`checkout.session.completed`) activates the chapter regardless.                                                                       |
 | Stripe is down during chapter creation        | API returns 503 Service Unavailable. Chapter is NOT created in the database (no orphaned records).                                             |
 | Webhook arrives before database commit        | Use upsert logic in the webhook handler; retry naturally on the next Stripe delivery.                                                          |
+| Webhook handler fails mid-processing          | Mark the persisted event row as failed and return an error so Stripe retries. Stale in-progress claims are reclaimable on a later retry.       |
 | Subscription lapses to `past_due`             | 3-day grace period. During grace: read access continues, invite/create actions blocked. After grace or upon `canceled`: hard lock (read-only). |
 | Chapter has active members when canceled      | All members retain read access. No new actions. Data preserved indefinitely for re-activation.                                                 |
 | Duplicate checkout attempts                   | Deduplicate by `stripe_customer_id` + chapter; prevent creating multiple subscriptions for the same chapter.                                   |

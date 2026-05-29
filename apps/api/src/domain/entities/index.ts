@@ -17,3 +17,4 @@ export * from './study.entity';
 export * from './chapter-document.entity';
 export * from './poll-vote.entity';
 export * from './semester-archive.entity';
+export * from './stripe-webhook-event.entity';

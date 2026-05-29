@@ -24,6 +24,8 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import { NotificationService } from './notification.service';
 
 export interface CreateCheckoutInput {
@@ -41,7 +43,6 @@ export interface CreatePortalInput {
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
-  private readonly processedEventIds = new Set<string>();
 
   constructor(
     @Inject(BILLING_PROVIDER)
@@ -52,6 +53,8 @@ export class BillingService {
     private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
+    @Inject(STRIPE_WEBHOOK_EVENT_REPOSITORY)
+    private readonly webhookEventRepo: IStripeWebhookEventRepository,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -137,31 +140,45 @@ export class BillingService {
   }
 
   async handleWebhookEvent(event: WebhookEvent): Promise<void> {
-    if (this.processedEventIds.has(event.id)) {
+    const claim = await this.webhookEventRepo.claim(event.id, event.type);
+
+    if (claim === 'processed') {
       this.logger.debug(`Skipping already-processed event ${event.id}`);
       return;
     }
 
-    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
-
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(event);
-        break;
-      case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event);
-        break;
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event);
-        break;
-      case 'invoice.paid':
-        await this.handleInvoicePaid(event);
-        break;
-      default:
-        this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+    if (claim === 'processing') {
+      this.logger.debug(`Webhook event ${event.id} is already in progress`);
+      throw new ServiceUnavailableException(
+        'Webhook event is already being processed',
+      );
     }
 
-    this.processedEventIds.add(event.id);
+    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await this.handleCheckoutCompleted(event);
+          break;
+        case 'customer.subscription.updated':
+          await this.handleSubscriptionUpdated(event);
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionDeleted(event);
+          break;
+        case 'invoice.paid':
+          await this.handleInvoicePaid(event);
+          break;
+        default:
+          this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+      }
+
+      await this.webhookEventRepo.markProcessed(event.id);
+    } catch (error) {
+      await this.recordWebhookFailure(event.id, error);
+      throw error;
+    }
   }
 
   private async handleCheckoutCompleted(event: WebhookEvent): Promise<void> {
@@ -317,5 +334,20 @@ export class BillingService {
       paused: 'past_due',
     };
     return mapping[stripeStatus] ?? null;
+  }
+
+  private async recordWebhookFailure(
+    eventId: string,
+    error: unknown,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await this.webhookEventRepo.markFailed(eventId, message);
+    } catch (markError) {
+      this.logger.error(
+        `Failed to record webhook failure for ${eventId}`,
+        markError instanceof Error ? markError.stack : markError,
+      );
+    }
   }
 }

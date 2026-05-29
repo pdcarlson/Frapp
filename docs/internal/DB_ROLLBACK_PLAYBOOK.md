@@ -92,6 +92,17 @@ After any rollback event:
 * **Action (best-effort):** `update public.roles set permissions = array_remove(permissions, 'members:view') where is_system = true and name in ('Vice President', 'Secretary');`
 * **Note:** Only use if no chapter intentionally granted `members:view` solely through these roles and depends on it; prefer snapshot restore when unsure.
 
+## Rollback Stripe webhook event idempotency (20260530083000_stripe_webhook_events.sql)
+
+Migration is additive (one API-only table with indexes and trigger). Rollback drops persisted Stripe event history, so duplicate Stripe deliveries after rollback can be reprocessed until the application code is reverted or redeployed with another idempotency store.
+
+```sql
+-- The trigger and indexes drop automatically with the table.
+DROP TABLE IF EXISTS stripe_webhook_events;
+```
+
+**Note:** Prefer rolling back the application change first, then dropping the table after webhook traffic is quiet. Dropping the table while the new billing service is deployed will make webhook handling fail until the table is restored.
+
 ## Rollback Chunk 05 migration (20260527120000_chat_notification_preferences.sql)
 
 Migration is additive (one new table with its own indexes, policy, and trigger). Rollback is safe at any time; the only data loss is per-user preference rows. The push worker tolerates an empty table (it falls back to channel-name defaults in `apps/api/src/modules/chat-push-worker/push-rules.ts`), so dropping the table degrades preferences gracefully without breaking fanout.

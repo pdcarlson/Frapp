@@ -16,6 +16,8 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
 
@@ -29,6 +31,7 @@ describe('BillingService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockStripeWebhookEventRepo: jest.Mocked<IStripeWebhookEventRepository>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
@@ -84,6 +87,12 @@ describe('BillingService', () => {
       delete: jest.fn(),
     };
 
+    mockStripeWebhookEventRepo = {
+      claim: jest.fn().mockResolvedValue('claimed'),
+      markProcessed: jest.fn().mockResolvedValue(undefined),
+      markFailed: jest.fn().mockResolvedValue(undefined),
+    };
+
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
@@ -96,6 +105,10 @@ describe('BillingService', () => {
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        {
+          provide: STRIPE_WEBHOOK_EVENT_REPOSITORY,
+          useValue: mockStripeWebhookEventRepo,
+        },
         { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
@@ -758,10 +771,210 @@ describe('BillingService', () => {
         subscription_status: 'active',
       });
 
+      mockStripeWebhookEventRepo.claim
+        .mockResolvedValueOnce('claimed')
+        .mockResolvedValueOnce('processed');
+
       await service.handleWebhookEvent(event);
       await service.handleWebhookEvent(event);
 
       expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockStripeWebhookEventRepo.markProcessed).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip replayed events after service restart', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_restart_dup',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: 'ch-1' },
+            subscription: 'sub_123',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      const restartedModule = await Test.createTestingModule({
+        providers: [
+          BillingService,
+          { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
+          { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
+          { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+          { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+          {
+            provide: STRIPE_WEBHOOK_EVENT_REPOSITORY,
+            useValue: mockStripeWebhookEventRepo,
+          },
+          { provide: NotificationService, useValue: mockNotificationService },
+        ],
+      }).compile();
+      const restartedService = restartedModule.get(BillingService);
+
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...baseChapter,
+        subscription_status: 'active',
+      });
+      mockStripeWebhookEventRepo.claim
+        .mockResolvedValueOnce('claimed')
+        .mockResolvedValueOnce('processed');
+
+      await service.handleWebhookEvent(event);
+      await restartedService.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockStripeWebhookEventRepo.markProcessed).toHaveBeenCalledTimes(1);
+
+      await restartedModule.close();
+    });
+
+    it('should skip duplicate subscription update events from persisted state', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_update_dup',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+            status: 'past_due',
+          },
+        },
+      };
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'past_due',
+      });
+      mockStripeWebhookEventRepo.claim
+        .mockResolvedValueOnce('claimed')
+        .mockResolvedValueOnce('processed');
+
+      await service.handleWebhookEvent(event);
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockStripeWebhookEventRepo.markProcessed).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip duplicate subscription deletion events from persisted state', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_delete_dup',
+        type: 'customer.subscription.deleted',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+          },
+        },
+      };
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'canceled',
+      });
+      mockStripeWebhookEventRepo.claim
+        .mockResolvedValueOnce('claimed')
+        .mockResolvedValueOnce('processed');
+
+      await service.handleWebhookEvent(event);
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockStripeWebhookEventRepo.markProcessed).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip duplicate invoice paid events from persisted state', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_invoice_paid_dup',
+        type: 'invoice.paid',
+        created: Date.now(),
+        data: {
+          object: {
+            subscription: 'sub_123',
+          },
+        },
+      };
+      const pastDueChapter = {
+        ...baseChapter,
+        subscription_status: 'past_due' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...pastDueChapter,
+        subscription_status: 'active',
+      });
+      mockStripeWebhookEventRepo.claim
+        .mockResolvedValueOnce('claimed')
+        .mockResolvedValueOnce('processed');
+
+      await service.handleWebhookEvent(event);
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(mockStripeWebhookEventRepo.markProcessed).toHaveBeenCalledTimes(1);
+    });
+
+    it('should record failed webhook handling so Stripe can retry', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_checkout_failure',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: 'ch-1' },
+            subscription: 'sub_123',
+            customer: 'cus_123',
+          },
+        },
+      };
+      const updateError = new Error('write failed');
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      mockChapterRepo.update.mockRejectedValue(updateError);
+
+      await expect(service.handleWebhookEvent(event)).rejects.toThrow(
+        updateError,
+      );
+
+      expect(mockStripeWebhookEventRepo.markFailed).toHaveBeenCalledWith(
+        'evt_checkout_failure',
+        'write failed',
+      );
+      expect(mockStripeWebhookEventRepo.markProcessed).not.toHaveBeenCalled();
+    });
+
+    it('should return 503 while another worker is processing the same event', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_processing',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: 'ch-1' },
+          },
+        },
+      };
+      mockStripeWebhookEventRepo.claim.mockResolvedValueOnce('processing');
+
+      await expect(service.handleWebhookEvent(event)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(mockStripeWebhookEventRepo.markProcessed).not.toHaveBeenCalled();
+      expect(mockStripeWebhookEventRepo.markFailed).not.toHaveBeenCalled();
     });
 
     it('should handle checkout with missing chapter_id gracefully', async () => {

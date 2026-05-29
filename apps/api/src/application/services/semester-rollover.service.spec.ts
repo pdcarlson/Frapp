@@ -102,7 +102,9 @@ describe('SemesterRolloverService', () => {
 
     it('should throw ConflictException when same calendar month', async () => {
       const now = new Date();
-      const sameMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const sameMonth = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+      );
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
         created_at: sameMonth.toISOString(),

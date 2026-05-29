@@ -89,6 +89,20 @@ Post-apply production checks:
 * **Purpose**: Append `members:view` to Vice President and Secretary so they can use chapter-scoped routes that merge controller- and handler-level `@RequirePermissions` (e.g. dashboard poll list requires both `members:view` and `polls:view_all`).
 * **Checks**: After `db push`, e.g. `select count(*) from public.roles where is_system and name in ('Vice President', 'Secretary') and 'members:view' = any (permissions);` should equal twice the number of chapters with those rows (or verify zero rows missing the permission). Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `backfill_members_view_vp_secretary`.
 
+## 2026-05-30: Stripe webhook event idempotency
+
+One additive migration. Creates an API-only idempotency table used by the billing webhook handler.
+
+### 20260530083000_stripe_webhook_events.sql
+* **Purpose**: Creates `stripe_webhook_events` keyed by Stripe `event_id`, with processing/processed/failed timestamps and attempt tracking. The billing service claims a row before side effects, skips rows already marked processed, and releases failed rows for Stripe retry.
+* **Checks**:
+  - Table: `select tablename from pg_tables where tablename = 'stripe_webhook_events';` — should return 1 row.
+  - Indexes: `select indexname from pg_indexes where tablename = 'stripe_webhook_events';` — should include `idx_stripe_webhook_events_processing` and `idx_stripe_webhook_events_failed`.
+  - RLS: `select relrowsecurity from pg_class where relname = 'stripe_webhook_events';` — should return `true`.
+  - Trigger: `select tgname from pg_trigger where tgrelid = 'stripe_webhook_events'::regclass and tgname = 'trg_stripe_webhook_events_updated_at';` — should return 1 row.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Stripe webhook event idempotency.
+
 ## 2026-05-27: Chunk 05 — Chat integrations + push: chat_notification_preferences
 
 One additive migration. Creates a new table with one RLS policy (select-own) and an `updated_at` trigger.
