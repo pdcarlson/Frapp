@@ -23,16 +23,26 @@ const subscriptionStatusEnum = z.enum([
 
 // ── Chapter branding schema (Chunk 02: chapters.branding jsonb) ──────────────
 
-export const ChapterBrandingSchema = z.object({
-  greek_letters:  z.string().optional(),
-  designation:    z.string().optional(),
-  school_short:   z.string().optional(),
-  founded_at:     z.number().int().min(1776).optional(),
-  colors: z.object({
-    dark:   z.string().regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).optional(),
-    accent: z.string().regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/).optional(),
-  }).optional(),
-}).optional();
+export const ChapterBrandingSchema = z
+  .object({
+    greek_letters: z.string().optional(),
+    designation: z.string().optional(),
+    school_short: z.string().optional(),
+    founded_at: z.number().int().min(1776).optional(),
+    colors: z
+      .object({
+        dark: z
+          .string()
+          .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
+          .optional(),
+        accent: z
+          .string()
+          .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/)
+          .optional(),
+      })
+      .optional(),
+  })
+  .optional();
 
 /**
  * Subset of the chapter payload consumed by dashboard UI (`GET /v1/chapters/current`).
@@ -141,11 +151,21 @@ export const TransitionInvoiceStatusSchema = z.object({
 
 export const SEMESTERS = ["Spring", "Summer", "Fall", "Winter"] as const;
 export const ASSIGNMENT_TYPES = [
-  "Exam", "Midterm", "Final Exam", "Quiz", "Homework",
-  "Lab", "Project", "Study Guide", "Notes", "Other",
+  "Exam",
+  "Midterm",
+  "Final Exam",
+  "Quiz",
+  "Homework",
+  "Lab",
+  "Project",
+  "Study Guide",
+  "Notes",
+  "Other",
 ] as const;
 export const DOCUMENT_VARIANTS = [
-  "Student Copy", "Blank Copy", "Answer Key",
+  "Student Copy",
+  "Blank Copy",
+  "Answer Key",
 ] as const;
 
 export const RequestUploadUrlSchema = z.object({
@@ -175,76 +195,94 @@ export const ConfirmUploadSchema = z.object({
 const centsAmount = z.number().int().nonnegative();
 
 export const ChapterDuesConfigSchema = z.object({
-  cadence:                  z.enum(["semester", "monthly", "annual"]),
-  active_amount_cents:      centsAmount,
-  new_member_amount_cents:  centsAmount,
-  alumni_amount_cents:      centsAmount,
-  installments_allowed:     z.boolean(),
-  late_fee_cents:           centsAmount,
-  grace_days:               z.number().int().nonnegative(),
-  scholarship_pool_cents:   centsAmount,
+  cadence: z.enum(["semester", "monthly", "annual"]),
+  active_amount_cents: centsAmount,
+  new_member_amount_cents: centsAmount,
+  alumni_amount_cents: centsAmount,
+  installments_allowed: z.boolean(),
+  late_fee_cents: centsAmount,
+  grace_days: z.number().int().nonnegative(),
+  scholarship_pool_cents: centsAmount,
 });
 
 export const PatchChapterConfigSchema = z.object({
-  org_archetype:    z.string().optional(),
-  enabled_modules:  z.record(z.boolean()).optional(),
-  vocabulary:       z.record(z.string()).optional(),
-  branding:         ChapterBrandingSchema,
-  beta_config: z.object({
-    enabled: z.boolean(),
-    style:   z.enum(["sidebar_pill", "top_banner", "corner_badge", "breadcrumb_pill"]),
-  }).optional(),
-  dues:             ChapterDuesConfigSchema.optional(),
+  org_archetype: z.string().optional(),
+  enabled_modules: z.record(z.boolean()).optional(),
+  vocabulary: z.record(z.string()).optional(),
+  branding: ChapterBrandingSchema,
+  beta_config: z
+    .object({
+      enabled: z.boolean(),
+      style: z.enum([
+        "sidebar_pill",
+        "top_banner",
+        "corner_badge",
+        "breadcrumb_pill",
+      ]),
+    })
+    .optional(),
+  dues: ChapterDuesConfigSchema.optional(),
 });
 
-// ── Chat message schemas (Chunk 02 — shared by NestJS and Deno Edge Functions)
-// NOTE: Keep this section dependency-light (zod only) so the Deno Edge
-// Functions can import packages/validation/src/index.ts directly via an
-// import map without Node.js-specific resolution. ────────────────────────────
+// ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
+// Originally shared with the Deno Edge Functions; kept dependency-light
+// (zod only) so any future Deno consumer can still import this file
+// directly via an import map without Node.js-specific resolution. ──────
 
 export const CHAT_MESSAGE_KINDS = [
-  "text", "event", "task", "poll", "dues", "points", "hours",
-  "system_audit", "loading", "announcement",
+  "text",
+  "event",
+  "task",
+  "poll",
+  "dues",
+  "points",
+  "hours",
+  "system_audit",
+  "loading",
+  "announcement",
 ] as const;
 
 export const SendChatMessageSchema = z.object({
   /**
    * Client-generated idempotency key (UUID or UUID-like string).
-   * The Edge Function dedupes on (channel_id, sender_id, client_message_id).
+   * The server dedupes on (channel_id, sender_id, client_message_id).
    * Actor identity is resolved from the authenticated session — never from
    * this payload.
    */
   client_message_id: z.string().uuid(),
-  channel_id:        z.string().uuid(),
-  content:           z.string().min(1).max(10_000),
-  kind:              z.enum(CHAT_MESSAGE_KINDS).default("text"),
-  payload:           z.record(z.unknown()).optional(),
-  reply_to_id:       z.string().uuid().optional(),
+  channel_id: z.string().uuid(),
+  content: z.string().min(1).max(10_000),
+  kind: z.enum(CHAT_MESSAGE_KINDS).default("text"),
+  payload: z.record(z.unknown()).optional(),
+  reply_to_id: z.string().uuid().optional(),
 });
 
 export const ChatMessageActionSchema = z.object({
-  message_id:        z.string().uuid(),
-  action_type:       z.string().min(1).max(50),
-  payload:           z.record(z.unknown()).optional(),
+  message_id: z.string().uuid(),
+  action_type: z.string().min(1).max(50),
+  payload: z.record(z.unknown()).optional(),
 });
 
 export const BackfillMessagesQuerySchema = z.object({
-  since:  z.string().uuid().optional(),
-  limit:  z.coerce.number().int().min(1).max(200).default(50),
+  since: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 // ── Chat channel-access predicate ────────────────────────────────────────────
-// Shared by the NestJS API (chat + search services) and the Deno Edge Functions
-// (chat-send, chat-react). Pure: no zod, no I/O, no framework imports. Each
-// runtime performs its own TRUSTED database lookups (channel record, the
-// caller's chapter membership, and — only for ROLE_GATED channels — the caller's
-// effective permissions) and feeds them in here. Centralizing the rule prevents
-// the API and the Edge Functions from drifting apart, which is how cross-tenant
-// authorization holes appear.
+// Shared by every chat + search code path in the NestJS API: cold reads,
+// the hot-path send + react controllers (`ChatService.sendMessage`,
+// `ChatService.recordMessageAction`), and search. Pure: no zod, no I/O,
+// no framework imports. Callers perform their own TRUSTED database
+// lookups (channel record, the caller's chapter membership, and — only
+// for ROLE_GATED channels — the caller's effective permissions) and feed
+// them in here. Centralizing the rule prevents the layers from drifting
+// apart, which is how cross-tenant authorization holes appear.
 //
-// NOTE: kept inline in this index file (not a separate module) so the Deno Edge
-// Functions, which import this package directly via an import map, never have to
-// resolve an extensionless relative import.
+// (Pre-ADR-11 / #416, the Supabase Edge Functions `chat-send` and
+// `chat-react` imported this same module via a Deno import map — kept
+// inline in `index.ts` so they never had to resolve an extensionless
+// relative import. The chat path now lives entirely in NestJS, but the
+// "keep it inline" rule stays so any future Deno consumer can reuse it.)
 
 export type ChatChannelType =
   | "PUBLIC"
@@ -358,9 +396,15 @@ export type PointsWindow = z.infer<typeof PointsWindowSchema>;
 export type AdjustPoints = z.infer<typeof AdjustPointsSchema>;
 export type CreateCheckout = z.infer<typeof CreateCheckoutSchema>;
 export type CreatePortal = z.infer<typeof CreatePortalSchema>;
-export type CreateFinancialInvoice = z.infer<typeof CreateFinancialInvoiceSchema>;
-export type UpdateFinancialInvoice = z.infer<typeof UpdateFinancialInvoiceSchema>;
-export type TransitionInvoiceStatus = z.infer<typeof TransitionInvoiceStatusSchema>;
+export type CreateFinancialInvoice = z.infer<
+  typeof CreateFinancialInvoiceSchema
+>;
+export type UpdateFinancialInvoice = z.infer<
+  typeof UpdateFinancialInvoiceSchema
+>;
+export type TransitionInvoiceStatus = z.infer<
+  typeof TransitionInvoiceStatusSchema
+>;
 export type RequestUploadUrl = z.infer<typeof RequestUploadUrlSchema>;
 export type ConfirmUpload = z.infer<typeof ConfirmUploadSchema>;
 

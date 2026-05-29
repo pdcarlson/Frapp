@@ -5,7 +5,7 @@
  *
  * Two tables:
  *   - `drafts`     — one row per channel, persisted as the user types.
- *   - `outbox`     — queued messages awaiting a successful chat-send invoke.
+ *   - `outbox`     — queued messages awaiting a successful POST to the NestJS chat send endpoint.
  *
  * The hot path uses these so:
  *   - drafts survive a tab reload while a user is mid-compose,
@@ -73,7 +73,10 @@ export function getChatDB(): ChatDB | null {
   return cached;
 }
 
-export async function saveDraft(channelId: string, body: string): Promise<void> {
+export async function saveDraft(
+  channelId: string,
+  body: string,
+): Promise<void> {
   const db = getChatDB();
   if (!db) return;
   if (body.length === 0) {
@@ -161,10 +164,7 @@ export async function dequeueOutbox(clientId: string): Promise<void> {
 export async function listQueuedOutbox(): Promise<OutboxRow[]> {
   const db = getChatDB();
   if (!db) return [];
-  return db.outbox
-    .where("status")
-    .equals("queued")
-    .sortBy("queuedAt");
+  return db.outbox.where("status").equals("queued").sortBy("queuedAt");
 }
 
 /** All outbox rows for a channel (queued + failed), used on boot to hydrate the cache. */

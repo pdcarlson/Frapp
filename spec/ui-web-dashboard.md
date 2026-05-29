@@ -420,8 +420,8 @@ The post-sign-in landing surface and the spine of the redesigned product.
 
 **Hot-path / state:**
 
-- One normalized cache per channel under `["chat", channelId, "messages"]`: `{ byId, order, actionIndex }`. Every inbound row (Edge response, Postgres Changes, REST backfill) flows through one idempotent `mergeServerRow`, reconciled by `client_message_id`.
-- Sends go to the hardened **`chat-send` Edge Function**; reactions add via **`chat-react`**; reaction removes via a direct RLS-protected delete on `chat_message_actions` (the existing policy scopes deletes to the viewer's own rows). The viewer identity is sourced from `useFrappUser().userId` — never a literal.
+- One normalized cache per channel under `["chat", channelId, "messages"]`: `{ byId, order, actionIndex }`. Every inbound row (API response, Postgres Changes, REST backfill) flows through one idempotent `mergeServerRow`, reconciled by `client_message_id`.
+- Sends go to the NestJS chat controller (`POST /v1/channels/{id}/messages`, ADR-11 / #416); reactions and card actions hit `POST /v1/channels/messages/{messageId}/actions`; reaction removes use a direct RLS-protected delete on `chat_message_actions` (the existing policy scopes deletes to the viewer's own rows). The viewer identity is sourced from `useFrappUser().userId` — never a literal.
 - Offline composer: a Dexie `outbox(clientId, channelId, body, attempts, queuedAt, status)` is flushed in order on reconnect. 4xx → failed with inline Retry/Discard; network/5xx → stays queued.
 - Reconnect: per-channel Postgres Changes subscription status drives the pill with exponential backoff 1→2→4→8→16→30s cap. On reconnect: **resubscribe first** (so live rows route through the same merge), **then** REST-backfill via `?since=<lastSeen>` so any gap closes idempotently.
 - Theme applied via `useChapterTheme()` — sidebar, mention pills, self-bubble, reaction-active read the chapter's derived palette.

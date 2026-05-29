@@ -3,6 +3,10 @@ import { escapeFilterValue } from '../supabase.utils';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { IChatMessageRepository } from '../../../domain/repositories/chat.repository.interface';
+import {
+  ChatMessageDuplicateError,
+  PG_UNIQUE_VIOLATION,
+} from '../../../domain/repositories/chat.repository.interface';
 import { ChatMessage } from '../../../domain/entities/chat.entity';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
@@ -142,13 +146,46 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
     return data || [];
   }
 
+  async findByClientMessageId(
+    channelId: string,
+    senderId: string,
+    clientMessageId: string,
+  ): Promise<ChatMessage | null> {
+    const { data, error } = await this.supabase
+      .from('chat_messages')
+      .select('*')
+      .eq('channel_id', channelId)
+      .eq('sender_id', senderId)
+      .eq('client_message_id', clientMessageId)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async create(data: Partial<ChatMessage>): Promise<ChatMessage> {
     const { data: created, error } = await this.supabase
       .from('chat_messages')
       .insert(data as never)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      // Translate the partial-unique-index hit on (channel_id, sender_id,
+      // client_message_id) into a typed error so the service can re-select
+      // and return the existing row instead of surfacing a 5xx.
+      if (
+        (error as { code?: string }).code === PG_UNIQUE_VIOLATION &&
+        data.channel_id &&
+        data.sender_id &&
+        data.client_message_id
+      ) {
+        throw new ChatMessageDuplicateError(
+          data.channel_id,
+          data.sender_id,
+          data.client_message_id,
+        );
+      }
+      throw error;
+    }
     return created;
   }
 

@@ -369,6 +369,8 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 
 ### ADR-01: Why we split chat to Supabase Edge Functions
 
+> **⚠️ Superseded for the hot path by [ADR-11](#adr-11-agent-dev-stack--chat-hot-path-moves-to-in-process-nestjs-pglite-for-local-db-validation-401) (#401 / #416).** `chat-send` and `chat-react` now live in NestJS (`apps/api/src/interface/controllers/chat.controller.ts`); the `supabase/functions/` Deno surface for chat retired in #416. The rationale below is retained as historical context — the cold-path / shared-validation framing still holds, only the hot-path split was unwound. ADR-11's "Trigger to revisit" governs any future reversal.
+
 **Decision:** Chat hot-path writes (send message, add reaction, action/RSVP) go to Supabase Edge Functions (Deno), not NestJS.
 
 **Rationale:** NestJS runs on a single Render instance (US-East). Edge Functions run at the CDN edge closest to the user, reducing p50 latency from ~150ms (single-region) to <50ms. The hot path is also the highest volume path — routing it past NestJS removes that single point of contention. Cold reads (history backfill, config, reports) stay in NestJS where guards, DTOs, and test infrastructure already live.
@@ -385,7 +387,7 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 
 ### ADR-03: Why optimistic + idempotent client UUIDs
 
-**Decision:** Every outbound message carries a client-generated UUID (`client_message_id`). The UI renders the message optimistically before the server confirms. The Edge Function dedupes on `(channel_id, sender_id, client_message_id)`.
+**Decision:** Every outbound message carries a client-generated UUID (`client_message_id`). The UI renders the message optimistically before the server confirms. The server dedupes on `(channel_id, sender_id, client_message_id)` — historically inside the `chat-send` Edge Function, now inside `ChatService.sendMessage` per ADR-11 / #416.
 
 **Rationale:** Mobile connections drop; retries are the norm, not the exception. Without idempotency, a retry after a network drop creates a duplicate message. With client UUIDs, retries are safe. Optimistic rendering removes the perceived latency of the server round-trip entirely — the user sees their message immediately.
 
@@ -411,13 +413,13 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 ```
 
 - **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, _not_ the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.
-- **Outbox** rows are enqueued _before_ the `chat-send` invoke; the row's `clientId` doubles as `chat_messages.client_message_id`, which the Edge Function dedupes on (ADR-03). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.
+- **Outbox** rows are enqueued _before_ the chat-send POST; the row's `clientId` doubles as `chat_messages.client_message_id`, which the NestJS chat controller dedupes on (ADR-03, ADR-11). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.
 
 **Channel-attach ordering (subscribe-then-backfill):** every channel attach — both the **initial join** for a freshly-subscribed channel and every **reconnect** after `CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` — runs through the same `SUBSCRIBED` callback in the realtime manager. The callback (a) re-attaches the Postgres Changes subscription first, then (b) calls `GET /v1/channels/{id}/messages?since=<lastSeenMessageId>` via the api-sdk. Gating both paths on the single `SUBSCRIBED` callback guarantees the Realtime listener is genuinely attached before the REST backfill HTTP fires, so any row that lands during the overlap is still caught by the live subscription. The last-seen id is persisted per channel in `localStorage` (`chat:lastSeen:{channelId}`) and advanced only from confirmed tail rows. Subscribe-then-backfill tolerates a harmless overlap (deduped by `mergeServerRow` keyed on both `client_message_id` and server `id`) instead of risking a gap. Backoff between failed resubscribes is 1→2→4→8→16→30s capped.
 
 **Rationale:** Mobile/laptop networks drop; without persistence, a 30-second offline window costs the user their draft and any messages they typed but didn't send. With Dexie + the idempotency index from ADR-03, the user can compose offline, reload the tab, come back online minutes later, and see their messages flush in order with zero duplicates.
 
-**Consequences:** Dexie is web-only; the Expo mobile client uses AsyncStorage/SQLite for the analogue (Chunk 11). The reaction subscription is one **global** `chat_message_actions` channel (the table has no `channel_id` column to filter on); reactions on not-yet-loaded messages are intentionally dropped and recovered on next backfill. Reaction _removals_ go to the row directly under RLS (`chat_message_actions_delete` scopes to own rows) rather than extending `chat-react` with a remove path — keeps the merged security-hardened Edge Function untouched.
+**Consequences:** Dexie is web-only; the Expo mobile client uses AsyncStorage/SQLite for the analogue (Chunk 11). The reaction subscription is one **global** `chat_message_actions` channel (the table has no `channel_id` column to filter on); reactions on not-yet-loaded messages are intentionally dropped and recovered on next backfill. Reaction _removals_ go to the row directly under RLS (`chat_message_actions_delete` scopes to own rows) rather than adding a remove path to the NestJS actions endpoint — keeps the server-side surface read+insert+upsert only.
 
 ### ADR-06: `chat_notification_preferences` is a new table, not a column on `notification_preferences` (Chunk 05)
 
@@ -427,9 +429,9 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 **Consequences:** Two preference tables until consolidation. The push worker queries both arms in a single `eq(user_id).eq(chapter_id)` load per recipient and resolves precedence locally (channel-pref ▶ kind-pref ▶ channel-name default). The defaults `(announcements → all, chapter-audit → off, system_audit kind → off, otherwise mentions)` live in `apps/api/src/modules/chat-push-worker/push-rules.ts:defaultLevelFor` so the rule chain is unit-testable without DB seeds.
 
-### ADR-07: `chat-react` UPSERT semantics for poll vote-change (Chunk 05)
+### ADR-07: chat-react UPSERT semantics for poll vote-change (Chunk 05)
 
-**Decision:** When `action_type === 'vote'` and the unique index `(message_id, user_id, action_type)` rejects the INSERT, `chat-react` performs an UPDATE on the existing row — overwriting `payload` (the new `option_id`) and refreshing `created_at` — and returns `{ action, deduplicated:false, updated:true }`. The unique index stays in place; only `action_type='vote'` takes the UPDATE branch. Emoji reactions (`action_type` starts with `reaction:`) keep the 23505 → select-existing dedup path unchanged.
+**Decision:** When `action_type === 'vote'` and the unique index `(message_id, user_id, action_type)` rejects the INSERT, the chat-react handler (originally the Edge Function, now `ChatService.recordMessageAction` per ADR-11 / #416) performs an UPDATE on the existing row — overwriting `payload` (the new `option_id`) and refreshing `created_at` — and returns `{ action, deduplicated:false, updated:true }`. The unique index stays in place; only `action_type='vote'` takes the UPDATE branch. Emoji reactions (`action_type` starts with `reaction:`) keep the 23505 → select-existing dedup path unchanged.
 
 **Rationale:** A poll lets a user change their vote (Mon → Tue). The brief calls vote-change idempotent, but a second INSERT would either duplicate the row or fail; an UPDATE on the existing row keeps "one vote per user per message" enforced by the DB constraint while still letting the option_id move. Distinguishing insert vs UPDATE in the response shape lets the optimistic client merge the new payload onto the same row (`applyActionUpdate` in `apps/web/lib/chat/cache.ts`) without re-inserting into the action list. **Alternatives considered:** (a) per-option `action_type='vote:<option_id>'` — multiplies the action surface and means vote-change is "delete old + insert new", two round-trips; (b) a separate `chat_poll_votes` table — duplicates the dedup index and forks the renderer's data source.
 
@@ -480,12 +482,12 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 **Consequences:**
 
-- `supabase/functions/chat-send`, `supabase/functions/chat-react`, `supabase/functions/_shared/chat-authz.ts`, the Deno test suite under `supabase/functions/_tests/`, and the `edge-fn-tests` CI job retire once the move ships. The 716 LOC of Deno tests is replaced by Jest tests living next to the moved code.
-- Web/mobile clients stop calling `supabase.functions.invoke('chat-send'|'chat-react', …)` and use the existing `packages/api-sdk` `ChatApi` namespace; the SDK regenerates from the extended controller.
-- The Realtime broadcast emit currently in `chat-send` (`channel.send`) moves to the NestJS service. ADR-09's push worker already proves the service-role client there can do this.
+- `supabase/functions/chat-send`, `supabase/functions/chat-react`, `supabase/functions/_shared/chat-authz.ts`, the Deno test suite under `supabase/functions/_tests/`, and the `edge-fn-tests` CI job **retired in #416**. The 716 LOC of Deno tests is replaced by Jest tests living next to the moved code (`apps/api/src/application/services/chat.service.spec.ts`).
+- Web/mobile clients stopped calling `supabase.functions.invoke('chat-send'|'chat-react', …)` and use the existing `packages/api-sdk` chat endpoints (`POST /v1/channels/{id}/messages`, `POST /v1/channels/messages/{messageId}/actions`); the SDK regenerates from the extended controller. (Mobile mirrors in Chunk 11; web shipped with #416.)
+- The Realtime broadcast emit previously in `chat-send` (`channel.send`) moved to `ChatService.broadcastNewMessage`. ADR-09's push worker already proved the service-role client there can do this.
 - ADR-01 is **superseded for the hot path** but stays in this file as historical context (it's still right for the cold-path / Chunk-02 split rationale; the change is "no Edge Functions today" not "no Edge Functions ever").
 - PGlite adds one npm dep (`@electric-sql/pglite`, WASM, no native code, no Docker). It does not replace integration testing against the hosted Supabase project — it complements unit + integration tiers.
-- Chunks after the move ships drop the "Runtime checks BLOCKED — see #235" disclaimer from `STATUS.md`. #235 scopes down to "PGlite migration-apply check in CI" or closes-as-subsumed.
+- Chunks that previously shipped with "Runtime checks BLOCKED — see #235" can drop the disclaimer once the migration completes. #235 closes-as-subsumed; the PGlite job in CI is the migration-validation deliverable.
 
 **Trigger to revisit:**
 

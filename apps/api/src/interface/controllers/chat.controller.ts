@@ -38,6 +38,7 @@ import {
   SendMessageDto,
   EditMessageDto,
   ReactionDto,
+  ChatMessageActionDto,
   RequestChatUploadUrlDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
@@ -216,7 +217,9 @@ export class ChatController {
   }
 
   @Post(':id/messages')
-  @ApiOperation({ summary: 'Send a message' })
+  @ApiOperation({
+    summary: 'Send a message (hot path; idempotent on client_message_id)',
+  })
   async sendMessage(
     @Param('id') channelId: string,
     @CurrentChapterId() chapterId: string,
@@ -228,6 +231,9 @@ export class ChatController {
       channel_id: channelId,
       sender_id: userId,
       content: dto.content,
+      client_message_id: dto.client_message_id,
+      kind: dto.kind,
+      payload: dto.payload,
       reply_to_id: dto.reply_to_id,
       metadata: dto.metadata,
     });
@@ -276,6 +282,25 @@ export class ChatController {
   @ApiOperation({ summary: 'Unpin a message' })
   async unpinMessage(@Param('messageId') messageId: string) {
     return this.chatService.unpinMessage(messageId);
+  }
+
+  // ── Actions (chat_message_actions hot-path: reactions / votes / RSVPs) ──
+
+  @Post('messages/:messageId/actions')
+  @ApiOperation({
+    summary:
+      'Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS)',
+  })
+  async recordMessageAction(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChatMessageActionDto,
+  ) {
+    return this.chatService.recordMessageAction(messageId, chapterId, userId, {
+      action_type: dto.action_type,
+      payload: dto.payload,
+    });
   }
 
   // ── Reactions ────────────────────────────────────────────────────────

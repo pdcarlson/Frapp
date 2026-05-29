@@ -3,13 +3,16 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   Min,
+  MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
 
@@ -121,9 +124,40 @@ export class UpdateCategoryDto {
 }
 
 export class SendMessageDto {
+  /**
+   * Client-generated idempotency key. The server dedupes on
+   * `(channel_id, sender_id, client_message_id)` via the partial unique
+   * index, so a retried POST with the same id returns the existing row
+   * with `deduplicated: true` instead of inserting again.
+   */
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
+  client_message_id: string;
+
   @ApiProperty()
   @IsString()
+  @MinLength(1)
+  @MaxLength(10_000)
   content: string;
+
+  /**
+   * Extended hot-path kind (Chunk 02). Defaults to `text` server-side
+   * when omitted so existing callers stay backward-compatible. The
+   * default is intentionally NOT declared in the OpenAPI schema so the
+   * generated SDK exposes `kind` as a true optional rather than a
+   * "required with default" (openapi-typescript inlines the default and
+   * marks the field non-nullable, which breaks plain `text` callers).
+   */
+  @ApiPropertyOptional({ enum: CHAT_MESSAGE_KINDS })
+  @IsOptional()
+  @IsIn(CHAT_MESSAGE_KINDS)
+  kind?: (typeof CHAT_MESSAGE_KINDS)[number];
+
+  /** Inline card payload for rich kinds (event, poll, task, …). */
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, any>;
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -133,6 +167,28 @@ export class SendMessageDto {
   @ApiPropertyOptional()
   @IsOptional()
   metadata?: Record<string, any>;
+}
+
+/**
+ * Per-user reaction / vote / RSVP / card-action. Writes to
+ * `chat_message_actions` (Chunk 02). For `action_type === "vote"` the
+ * server UPSERTS — same row, replaced `payload` — so a poll vote can
+ * be changed without thrashing the Realtime subscription.
+ */
+export class ChatMessageActionDto {
+  @ApiProperty({
+    description:
+      'Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions.',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  action_type: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, any>;
 }
 
 export class EditMessageDto {

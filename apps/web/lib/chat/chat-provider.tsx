@@ -63,7 +63,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // channel may be active yet (e.g. drafts on a backgrounded channel).
   useEffect(() => {
     if (!userId) return;
-    const ctx = { queryClient, supabase, userId, toast };
+    const ctx = { queryClient, apiClient, supabase, userId, toast };
     void flushOutbox(ctx);
     const onOnline = () => void flushOutbox(ctx);
     if (typeof window !== "undefined") {
@@ -74,7 +74,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         window.removeEventListener("online", onOnline);
       }
     };
-  }, [queryClient, supabase, userId, toast]);
+  }, [queryClient, apiClient, supabase, userId, toast]);
 
   return <>{children}</>;
 }
