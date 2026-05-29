@@ -218,12 +218,14 @@ jobs:
         # No npm ci needed — these tests have no dependencies beyond node:test.
         run: npm run test:ci-scripts
 
-  # ── Edge Function entrypoint tests (Deno) ──────────────────────────────
-  # Pins the wiring of `chat-send` / `chat-react` / `_shared/chat-authz.ts`:
-  # JWT extraction, `assertChannelAccess` composition, cross-channel reply
-  # rejection, and the §4 atomic-dedup (23505) branch. Predicate matrix is
-  # covered separately by api-tests (chat-access.spec.ts).
-  edge-fn-tests:
+  # ── PGlite migration validator (ADR-11) ────────────────────────────────
+  # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
+  # and asserts structural landmarks (unique indexes, RLS policy DDL,
+  # generated columns). Covers what static `check:migration-safety` can't:
+  # the SQL actually runs and the schema lands. Out of reach: Realtime,
+  # Presence, GoTrue with real JWTs — those depend on a hosted Supabase
+  # and live in the NestJS Jest tier (see ADR-11 + AGENT_INFRA.md).
+  pglite-migrations:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -234,15 +236,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          deno-version: v2.x
+          node-version: 20
+          cache: npm
 
-      - name: Run Edge Function tests
-        # No npm ci needed — the import map points at source paths in this repo
-        # and Deno fetches the npm: specifier (zod) on its own.
-        run: npm run test:edge
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations to PGlite + assert schema landmarks
+        run: npm run check:pglite-migrations
 
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:

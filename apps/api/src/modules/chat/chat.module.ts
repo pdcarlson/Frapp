@@ -4,12 +4,14 @@ import { ChatController } from '../../interface/controllers/chat.controller';
 import { SupabaseChatChannelRepository } from '../../infrastructure/supabase/repositories/supabase-chat-channel.repository';
 import { SupabaseChatCategoryRepository } from '../../infrastructure/supabase/repositories/supabase-chat-category.repository';
 import { SupabaseChatMessageRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message.repository';
+import { SupabaseChatMessageActionRepository } from '../../infrastructure/supabase/repositories/supabase-chat-message-action.repository';
 import { SupabaseMessageReactionRepository } from '../../infrastructure/supabase/repositories/supabase-message-reaction.repository';
 import { SupabaseReadReceiptRepository } from '../../infrastructure/supabase/repositories/supabase-read-receipt.repository';
 import {
   CHAT_CHANNEL_REPOSITORY,
   CHAT_CATEGORY_REPOSITORY,
   CHAT_MESSAGE_REPOSITORY,
+  CHAT_MESSAGE_ACTION_REPOSITORY,
   MESSAGE_REACTION_REPOSITORY,
   CHANNEL_READ_RECEIPT_REPOSITORY,
 } from '../../domain/repositories/chat.repository.interface';
@@ -35,6 +37,10 @@ import { RbacModule } from '../rbac/rbac.module';
     {
       provide: CHAT_MESSAGE_REPOSITORY,
       useClass: SupabaseChatMessageRepository,
+    },
+    {
+      provide: CHAT_MESSAGE_ACTION_REPOSITORY,
+      useClass: SupabaseChatMessageActionRepository,
     },
     {
       provide: MESSAGE_REACTION_REPOSITORY,

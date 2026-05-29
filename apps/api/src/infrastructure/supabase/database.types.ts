@@ -9,6 +9,7 @@ import type {
   ChatChannel,
   ChatChannelCategory,
   ChatMessage,
+  ChatMessageAction,
   Event,
   EventAttendance,
   FinancialInvoice,
@@ -69,6 +70,7 @@ export interface Database {
       chat_channel_categories: TableDefinition<ChatChannelCategory>;
       chat_channels: TableDefinition<ChatChannel>;
       chat_messages: TableDefinition<ChatMessage>;
+      chat_message_actions: TableDefinition<ChatMessageAction>;
       message_reactions: TableDefinition<MessageReaction>;
       channel_read_receipts: TableDefinition<ChannelReadReceipt>;
       poll_votes: TableDefinition<PollVote>;

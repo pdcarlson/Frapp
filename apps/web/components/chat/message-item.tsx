@@ -67,9 +67,10 @@ export function MessageItem({
   const isMine = !!viewerId && message.sender_id === viewerId;
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
-  // Reactions and threads operate on the *server* id (chat-react requires a
-  // real chat_messages.id, threads need a stable parent id) — gate the hover
-  // affordances on a confirmed status so we never act on a placeholder id.
+  // Reactions and threads operate on the *server* id (the chat actions
+  // endpoint requires a real chat_messages.id, threads need a stable
+  // parent id) — gate the hover affordances on a confirmed status so we
+  // never act on a placeholder id.
   const isConfirmed = message._status === "confirmed";
 
   return (
@@ -99,7 +100,9 @@ export function MessageItem({
               {formatClock(message.created_at)}
             </span>
             {message.edited_at ? (
-              <span className="text-[11px] text-muted-foreground">(edited)</span>
+              <span className="text-[11px] text-muted-foreground">
+                (edited)
+              </span>
             ) : null}
             {message.is_pinned ? (
               <Badge variant="outline" className="gap-1 text-[10px]">
@@ -146,7 +149,8 @@ export function MessageItem({
         <div role="status" aria-live="polite" aria-atomic="true">
           {isPending ? (
             <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> Sending…
+              <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />{" "}
+              Sending…
             </p>
           ) : null}
           {isFailed ? (

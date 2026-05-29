@@ -5,7 +5,7 @@ Run this against every chunk PR (as the author before opening, and as the review
 ## 1. Verify, don't trust
 
 - [ ] Read the actual diff / checked-out branch, not just the PR description. A PR body claims intent; the code is truth.
-- [ ] Every verification checkbox the author ticked was actually *run*. Boxes for steps the sandbox couldn't run (Docker/Supabase, screenshots) must be marked blocked with a linked tracking issue — not silently checked.
+- [ ] Every verification checkbox the author ticked was actually _run_. Boxes for steps the sandbox couldn't run (Docker/Supabase, screenshots) must be marked blocked with a linked tracking issue — not silently checked.
 - [ ] CI is green **and** the green checks actually cover the change (e.g. static `migration-safety` passing is **not** the same as migrations applying to a real DB).
 
 ## 2. Security (highest priority for backend chunks)
@@ -43,6 +43,7 @@ Run this against every chunk PR (as the author before opening, and as the review
 - [ ] Frapp Launch project board updated (chunk issue moved to *In Review*; previous chunk flipped to *Shipped* if it merged).
 - [ ] Visual baselines: only the affected ones regenerated, listed with reasons + Chromium revision.
 - [ ] Plan divergences edited into the brief / `spec/redesign-context.md` in the same PR.
+- [ ] **ADR discipline.** Architecturally significant decisions — persistence layer, hot-path topology, agent infrastructure, security posture, anything that future sessions will need to know "why" about — land as a sequentially numbered ADR in `spec/architecture.md` in the same PR. Not as a code comment, not as a STATUS note, not as a PR-body paragraph that gets buried. Each ADR includes a **Trigger to revisit** clause naming the conditions under which the next session should reopen it.
 
 ## 7. CodeRabbit triage
 

@@ -1112,7 +1112,7 @@ export interface paths {
         /** Get channel message history (supports since= reconnect replay) */
         get: operations["ChatController_getMessages_v1"];
         put?: never;
-        /** Send a message */
+        /** Send a message (hot path; idempotent on client_message_id) */
         post: operations["ChatController_sendMessage_v1"];
         delete?: never;
         options?: never;
@@ -1168,6 +1168,23 @@ export interface paths {
         post: operations["ChatController_pinMessage_v1"];
         /** Unpin a message */
         delete: operations["ChatController_unpinMessage_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/channels/messages/{messageId}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a reaction / vote / card action (hot path; atomic dedup; vote UPSERTS) */
+        post: operations["ChatController_recordMessageAction_v1"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2059,12 +2076,22 @@ export interface components {
             display_order?: number;
         };
         SendMessageDto: {
+            /** Format: uuid */
+            client_message_id: string;
             content: string;
+            /** @enum {string} */
+            kind?: "text" | "event" | "task" | "poll" | "dues" | "points" | "hours" | "system_audit" | "loading" | "announcement";
+            payload?: Record<string, never>;
             reply_to_id?: string;
             metadata?: Record<string, never>;
         };
         EditMessageDto: {
             content: string;
+        };
+        ChatMessageActionDto: {
+            /** @description Action discriminator. `reaction:<emoji>` for emoji reactions, `vote` for poll votes (UPSERT), free-form for card actions. */
+            action_type: string;
+            payload?: Record<string, never>;
         };
         ReactionDto: {
             /** @description Emoji string (e.g. "👍") */
@@ -4094,6 +4121,29 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChatController_recordMessageAction_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                messageId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageActionDto"];
+            };
+        };
+        responses: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

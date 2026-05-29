@@ -4,22 +4,22 @@
 
 ## 1. High-Level Stack
 
-| Layer         | Technology                                   | Notes                                                                                                                                                                  |
-| ------------- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Monorepo      | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                                                                                                              |
-| Landing       | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                                                                    |
-| Web App       | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                                                                         |
-| Mobile App    | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                                                                       |
-| Developer docs | Markdown in-repo                         | [`docs/guides/`](../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
-| API           | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                                                                  |
-| Database      | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                                                                 |
-| Auth          | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                                                                     |
-| Storage       | Supabase Storage                             | Private buckets for Backwork and chat files. Signed URLs.                                                                                                              |
-| Realtime      | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status.                                                                                |
-| Billing       | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                                                                           |
-| Push          | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                                                                       |
-| Observability | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                                                                                                              |
-| CI/CD         | GitHub Actions + Vercel + EAS                | Lint, typecheck, test, deploy.                                                                                                                                         |
+| Layer          | Technology                                   | Notes                                                                                                                 |
+| -------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Monorepo       | Turborepo + npm workspaces                   | Single repo, task orchestration, caching.                                                                             |
+| Landing        | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                   |
+| Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
+| Mobile App     | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                      |
+| Developer docs | Markdown in-repo                             | [`docs/guides/`](../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
+| API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
+| Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
+| Auth           | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                    |
+| Storage        | Supabase Storage                             | Private buckets for Backwork and chat files. Signed URLs.                                                             |
+| Realtime       | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status.                               |
+| Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
+| Push           | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                      |
+| Observability  | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                                                             |
+| CI/CD          | GitHub Actions + Vercel + EAS                | Lint, typecheck, test, deploy.                                                                                        |
 
 ---
 
@@ -360,6 +360,7 @@ The `TaskStatus` type, originally implemented as a string literal union, has bee
 This ensures greater type safety and consistency across `apps/api` DTOs, service transition logic (`VALID_ASSIGNEE_TRANSITIONS`), and other modules utilizing task statuses. This does not change runtime behavior but improves compile-time checks and API documentation generation.
 
 ## Security Note (2024-03-26)
+
 Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 
 ---
@@ -367,6 +368,8 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 ## 12. Chat Hot-Path Architecture (ADRs — Chunk 02)
 
 ### ADR-01: Why we split chat to Supabase Edge Functions
+
+> **⚠️ Superseded for the hot path by [ADR-11](#adr-11-agent-dev-stack--chat-hot-path-moves-to-in-process-nestjs-pglite-for-local-db-validation-401) (#401 / #416).** `chat-send` and `chat-react` now live in NestJS (`apps/api/src/interface/controllers/chat.controller.ts`); the `supabase/functions/` Deno surface for chat retired in #416. The rationale below is retained as historical context — the cold-path / shared-validation framing still holds, only the hot-path split was unwound. ADR-11's "Trigger to revisit" governs any future reversal.
 
 **Decision:** Chat hot-path writes (send message, add reaction, action/RSVP) go to Supabase Edge Functions (Deno), not NestJS.
 
@@ -384,7 +387,7 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`.
 
 ### ADR-03: Why optimistic + idempotent client UUIDs
 
-**Decision:** Every outbound message carries a client-generated UUID (`client_message_id`). The UI renders the message optimistically before the server confirms. The Edge Function dedupes on `(channel_id, sender_id, client_message_id)`.
+**Decision:** Every outbound message carries a client-generated UUID (`client_message_id`). The UI renders the message optimistically before the server confirms. The server dedupes on `(channel_id, sender_id, client_message_id)` — historically inside the `chat-send` Edge Function, now inside `ChatService.sendMessage` per ADR-11 / #416.
 
 **Rationale:** Mobile connections drop; retries are the norm, not the exception. Without idempotency, a retry after a network drop creates a duplicate message. With client UUIDs, retries are safe. Optimistic rendering removes the perceived latency of the server round-trip entirely — the user sees their message immediately.
 
@@ -409,14 +412,14 @@ drafts(channelId PK, body, updatedAt)
 outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queuedAt, status: "queued"|"failed", lastError?)
 ```
 
-- **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, *not* the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.
-- **Outbox** rows are enqueued *before* the `chat-send` invoke; the row's `clientId` doubles as `chat_messages.client_message_id`, which the Edge Function dedupes on (ADR-03). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.
+- **Drafts** are written debounced from the composer (Tiptap text via `editor.getText()`, _not_ the editor JSON — keeps the schema stable across editor upgrades). Restored on tab reload so a mid-compose user never loses input.
+- **Outbox** rows are enqueued _before_ the chat-send POST; the row's `clientId` doubles as `chat_messages.client_message_id`, which the NestJS chat controller dedupes on (ADR-03, ADR-11). On success the row is dequeued; on a `4xx` it moves to `failed` with an inline Retry/Discard affordance; on network/5xx it stays `queued`. The flush loop iterates `queued` rows oldest-first and **sequentially** so message order is preserved end-to-end.
 
 **Channel-attach ordering (subscribe-then-backfill):** every channel attach — both the **initial join** for a freshly-subscribed channel and every **reconnect** after `CHANNEL_ERROR`/`TIMED_OUT`/`CLOSED` — runs through the same `SUBSCRIBED` callback in the realtime manager. The callback (a) re-attaches the Postgres Changes subscription first, then (b) calls `GET /v1/channels/{id}/messages?since=<lastSeenMessageId>` via the api-sdk. Gating both paths on the single `SUBSCRIBED` callback guarantees the Realtime listener is genuinely attached before the REST backfill HTTP fires, so any row that lands during the overlap is still caught by the live subscription. The last-seen id is persisted per channel in `localStorage` (`chat:lastSeen:{channelId}`) and advanced only from confirmed tail rows. Subscribe-then-backfill tolerates a harmless overlap (deduped by `mergeServerRow` keyed on both `client_message_id` and server `id`) instead of risking a gap. Backoff between failed resubscribes is 1→2→4→8→16→30s capped.
 
 **Rationale:** Mobile/laptop networks drop; without persistence, a 30-second offline window costs the user their draft and any messages they typed but didn't send. With Dexie + the idempotency index from ADR-03, the user can compose offline, reload the tab, come back online minutes later, and see their messages flush in order with zero duplicates.
 
-**Consequences:** Dexie is web-only; the Expo mobile client uses AsyncStorage/SQLite for the analogue (Chunk 11). The reaction subscription is one **global** `chat_message_actions` channel (the table has no `channel_id` column to filter on); reactions on not-yet-loaded messages are intentionally dropped and recovered on next backfill. Reaction *removals* go to the row directly under RLS (`chat_message_actions_delete` scopes to own rows) rather than extending `chat-react` with a remove path — keeps the merged security-hardened Edge Function untouched.
+**Consequences:** Dexie is web-only; the Expo mobile client uses AsyncStorage/SQLite for the analogue (Chunk 11). The reaction subscription is one **global** `chat_message_actions` channel (the table has no `channel_id` column to filter on); reactions on not-yet-loaded messages are intentionally dropped and recovered on next backfill. Reaction _removals_ go to the row directly under RLS (`chat_message_actions_delete` scopes to own rows) rather than adding a remove path to the NestJS actions endpoint — keeps the server-side surface read+insert+upsert only.
 
 ### ADR-06: `chat_notification_preferences` is a new table, not a column on `notification_preferences` (Chunk 05)
 
@@ -426,9 +429,9 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 **Consequences:** Two preference tables until consolidation. The push worker queries both arms in a single `eq(user_id).eq(chapter_id)` load per recipient and resolves precedence locally (channel-pref ▶ kind-pref ▶ channel-name default). The defaults `(announcements → all, chapter-audit → off, system_audit kind → off, otherwise mentions)` live in `apps/api/src/modules/chat-push-worker/push-rules.ts:defaultLevelFor` so the rule chain is unit-testable without DB seeds.
 
-### ADR-07: `chat-react` UPSERT semantics for poll vote-change (Chunk 05)
+### ADR-07: chat-react UPSERT semantics for poll vote-change (Chunk 05)
 
-**Decision:** When `action_type === 'vote'` and the unique index `(message_id, user_id, action_type)` rejects the INSERT, `chat-react` performs an UPDATE on the existing row — overwriting `payload` (the new `option_id`) and refreshing `created_at` — and returns `{ action, deduplicated:false, updated:true }`. The unique index stays in place; only `action_type='vote'` takes the UPDATE branch. Emoji reactions (`action_type` starts with `reaction:`) keep the 23505 → select-existing dedup path unchanged.
+**Decision:** When `action_type === 'vote'` and the unique index `(message_id, user_id, action_type)` rejects the INSERT, the chat-react handler (originally the Edge Function, now `ChatService.recordMessageAction` per ADR-11 / #416) performs an UPDATE on the existing row — overwriting `payload` (the new `option_id`) and refreshing `created_at` — and returns `{ action, deduplicated:false, updated:true }`. The unique index stays in place; only `action_type='vote'` takes the UPDATE branch. Emoji reactions (`action_type` starts with `reaction:`) keep the 23505 → select-existing dedup path unchanged.
 
 **Rationale:** A poll lets a user change their vote (Mon → Tue). The brief calls vote-change idempotent, but a second INSERT would either duplicate the row or fail; an UPDATE on the existing row keeps "one vote per user per message" enforced by the DB constraint while still letting the option_id move. Distinguishing insert vs UPDATE in the response shape lets the optimistic client merge the new payload onto the same row (`applyActionUpdate` in `apps/web/lib/chat/cache.ts`) without re-inserting into the action list. **Alternatives considered:** (a) per-option `action_type='vote:<option_id>'` — multiplies the action surface and means vote-change is "delete old + insert new", two round-trips; (b) a separate `chat_poll_votes` table — duplicates the dedup index and forks the renderer's data source.
 
@@ -457,6 +460,41 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 **Rationale:** A bespoke broadcast topic (e.g. `presence:channel:<id>` with manual heartbeats) would re-implement what Realtime Presence already does — connect/disconnect tracking, a state aggregator, automatic cleanup on socket drop — and create a second source of truth that can drift from the actual subscription state. Presence on the chat channel topic is automatic; we already pay the realtime cost for messages on the same topic. **Alternatives considered:** (a) custom broadcast topic with periodic `still-here` pings — duplicates Presence with more bugs; (b) a global presence map maintained by the API via REST heartbeats — loses ephemerality, creates DB write amplification (ADR-02 anti-pattern); (c) skip presence and always push — trains users to mute notifications (ADR-04 anti-pattern).
 
 **Consequences:** The web client now joins Presence on every active channel — small additional cost on the same socket. The push worker opens a presence subscription per channel it sees a message for (cached for the process lifetime); presence reads are synchronous (`presenceState()`) so the rule chain stays cheap. False negatives (recipient briefly offline) are acceptable; false positives (recipient actively reading) are worse — the rule order skips presence first.
+
+### ADR-11: Agent dev stack — chat hot path moves to in-process NestJS; PGlite for local DB validation (#401)
+
+**Decision:** Two changes, paired to close the cloud-agent testing gap that #401 escalated to a program-level risk.
+
+1. **Chat hot-path writes (`chat-send`, `chat-react`) move from Supabase Edge Functions into the existing NestJS API**, extending `ChatController` (`apps/api/src/interface/controllers/chat.controller.ts`) and mirroring the in-process pattern established by ADR-09's push worker. The Deno surface under `supabase/functions/` retires; `_shared/chat-authz.ts` is replaced by the shared `canAccessChannel` predicate already exported from `@repo/validation`. This reverses the half of ADR-01 that scoped chat writes to Edge — cold reads were already in NestJS and stay there.
+2. **A PGlite-backed harness lands under `tools/pglite-harness/`** as a supplemental always-on layer. It applies every `supabase/migrations/*.sql` to a fresh in-process Postgres-in-WASM instance (~323 ms for the current 12-migration set) and asserts the schema landmarks reviewers care about (chat dedupe partial unique index, `chat_message_actions` unique index, `chapter_audit_log` no-update/no-delete RLS, generated `search_vector`). It runs in CI alongside `edge-fn-tests` and from any cloud-agent sandbox without privileged tooling.
+
+The chosen path is Path D + Path C from #401. Path A (per-session Supabase branches) and Path B (rootless Supabase stack inside the sandbox) were investigated and rejected — see Alternatives.
+
+**Rationale:** Four chunks (02, 04, 05) shipped with `Runtime checks BLOCKED — see #235` in `docs/internal/redesign/STATUS.md`. The auth bugs from #233/#234 landed because nobody could runtime-verify the Edge Function. ADR-01's original framing ("edge proximity reduces p50 from ~150ms to <50ms") did not condition on geography: Frapp's user base today is US-centric Greek-life chapters, where the realistic delta between Render US-East and Supabase Edge's US POP is ~15–30ms p50 — fully hidden by ADR-03's optimistic UI. The latency case for Edge does not survive contact with the actual user base. Meanwhile, the testability case for NestJS is overwhelming: Jest + supertest + the existing `SupabaseAuthGuard` (`apps/api/src/interface/guards/supabase-auth.guard.ts`) + the Realtime-capable service-role `SUPABASE_CLIENT` provider (proven by ADR-09's push worker) cover the move with no new infrastructure. PGlite then makes migration validation a 323-millisecond unit-test problem instead of a "spin up Docker" problem, and runs identically in CI and in any sandbox.
+
+**Alternatives considered:**
+
+- **Path A — Supabase branches per agent session** ([#411 comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654)). Architecturally compatible but relocates #401's blocker: the very Supabase MCP tools needed (`create_branch`, `apply_migration`, `deploy_edge_function`) are denied at the sandbox permission layer, and `deploy_edge_function`'s `files[]` has no monorepo awareness (every deploy would have to inline `packages/validation`'s 372 lines). Documented provisioning latency exceeds 60s (Supabase's own Health step waits up to 120s). Cost is fine ($0.01344/hr Micro) but the spike could not run live to confirm.
+- **Path B — rootless Supabase stack in the sandbox** ([#412 comment](https://github.com/pdcarlson/Frapp/issues/412#issuecomment-4559937215)). Edge Runtime is Docker-only, Realtime requires Elixir/Erlang with ~daily release cadence, Supabase Postgres ships ~30 extensions with no tarball distribution. Estimated 15–25 maintenance hours/month steady-state, spiking past 40h on PG-major / breaking-auth releases. Maintenance cost prohibitive.
+- **Path C alone — PGlite + Deno handler tests** ([#413 comment](https://github.com/pdcarlson/Frapp/issues/413#issuecomment-4559942991)). Covers migration validation and function SQL behavior, but explicitly misses Realtime, Presence, and GoTrue with real JWTs. Not sufficient as the primary path; adopted as supplemental.
+- **Path D alone — move chat to NestJS without PGlite** ([#414 comment](https://github.com/pdcarlson/Frapp/issues/414#issuecomment-4559944971)). Closes the integration-test gap but leaves migration validation slow (requires a real Postgres). Pairing with C is cheap and finishes the job.
+- **Keep ADR-01 as-is.** Documented elsewhere (every "BLOCKED in sandbox" STATUS row since Chunk 02).
+
+**Consequences:**
+
+- `supabase/functions/chat-send`, `supabase/functions/chat-react`, `supabase/functions/_shared/chat-authz.ts`, the Deno test suite under `supabase/functions/_tests/`, and the `edge-fn-tests` CI job **retired in #416**. The 716 LOC of Deno tests is replaced by Jest tests living next to the moved code (`apps/api/src/application/services/chat.service.spec.ts`).
+- Web/mobile clients stopped calling `supabase.functions.invoke('chat-send'|'chat-react', …)` and use the existing `packages/api-sdk` chat endpoints (`POST /v1/channels/{id}/messages`, `POST /v1/channels/messages/{messageId}/actions`); the SDK regenerates from the extended controller. (Mobile mirrors in Chunk 11; web shipped with #416.)
+- The Realtime broadcast emit previously in `chat-send` (`channel.send`) moved to `ChatService.broadcastNewMessage`. ADR-09's push worker already proved the service-role client there can do this.
+- ADR-01 is **superseded for the hot path** but stays in this file as historical context (it's still right for the cold-path / Chunk-02 split rationale; the change is "no Edge Functions today" not "no Edge Functions ever").
+- PGlite adds one npm dep (`@electric-sql/pglite`, WASM, no native code, no Docker). It does not replace integration testing against the hosted Supabase project — it complements unit + integration tiers.
+- Chunks that previously shipped with "Runtime checks BLOCKED — see #235" can drop the disclaimer once the migration completes. #235 closes-as-subsumed; the PGlite job in CI is the migration-validation deliverable.
+
+**Trigger to revisit:**
+
+- **Geography shift.** If Frapp's user base meaningfully expands outside US-East — measured by ≥15% of monthly active chapters resolving to a non-US-East region — re-evaluate moving the hot path back to Edge.
+- **New hot path emerges that genuinely benefits from <50ms global p50.** If a future chunk identifies one, that chunk lands its own Edge Function with the testability problem solved per-case (likely a thin function calling NestJS, so most logic stays testable).
+- **PGlite drops support for an extension we adopt** (e.g. if we add `pg_cron` or `pg_net` to a migration that PGlite can't load), the harness falls back to a documented "schema-only assertion" mode and the migration's runtime behavior gets a real Postgres in CI.
+- **Sandbox unblocks Supabase MCP write tools** (`create_branch`, `apply_migration`, `deploy_edge_function`). Path A becomes runnable; revisit only if we've grown a need for a real Realtime/Edge-Runtime substrate in-loop that PGlite + NestJS unit tests don't cover.
 
 ---
 
