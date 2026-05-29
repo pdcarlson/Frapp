@@ -1,10 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PollService } from './poll.service';
+import { ChannelAccessService } from './channel-access.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
@@ -14,9 +18,14 @@ import type { PollVote } from '../../domain/entities/poll-vote.entity';
 describe('PollService', () => {
   let service: PollService;
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
-  let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
+  let mockChannelAccess: {
+    assertAccess: jest.Mock;
+    filterAccessibleChannelIds: jest.Mock;
+  };
   let loggerErrorSpy: jest.SpyInstance;
+
+  const VIEWER = 'user-2';
 
   const baseChannel: ChatChannel = {
     id: 'ch-1',
@@ -73,25 +82,27 @@ describe('PollService', () => {
       update: jest.fn(),
     };
 
-    mockChannelRepo = {
-      findById: jest.fn(),
-      findByChapter: jest.fn(),
-      findDm: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
-    };
-
     mockVoteRepo = {
       findByMessage: jest.fn(),
       findByMessages: jest.fn(),
-      aggregateOptionTotalsByMessages: jest.fn(),
-      findUserVotesByMessagesForUser: jest.fn(),
+      aggregateOptionTotalsByMessages: jest.fn().mockResolvedValue([]),
+      findUserVotesByMessagesForUser: jest.fn().mockResolvedValue([]),
       findByMessageAndUser: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       deleteByMessageAndUser: jest.fn(),
       deleteByMessageUserAndOption: jest.fn(),
+    };
+
+    mockChannelAccess = {
+      // Default: the caller is authorized. Denial paths override these.
+      assertAccess: jest.fn().mockResolvedValue(baseChannel),
+      filterAccessibleChannelIds: jest
+        .fn()
+        .mockImplementation(
+          async (_chapterId: string, _userId: string, channelIds: string[]) =>
+            new Set(channelIds),
+        ),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -102,12 +113,12 @@ describe('PollService', () => {
           useValue: mockMessageRepo,
         },
         {
-          provide: CHAT_CHANNEL_REPOSITORY,
-          useValue: mockChannelRepo,
-        },
-        {
           provide: POLL_VOTE_REPOSITORY,
           useValue: mockVoteRepo,
+        },
+        {
+          provide: ChannelAccessService,
+          useValue: mockChannelAccess,
         },
       ],
     }).compile();
@@ -121,7 +132,6 @@ describe('PollService', () => {
 
   describe('createPoll', () => {
     it('should create a poll message', async () => {
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue(basePollMessage);
 
       const result = await service.createPoll({
@@ -138,10 +148,19 @@ describe('PollService', () => {
         options: ['Monday', 'Tuesday', 'Wednesday'],
         choice_mode: 'single',
       });
+      // Authorized as a "post" so the read-only gate is enforced too.
+      expect(mockChannelAccess.assertAccess).toHaveBeenCalledWith(
+        'ch-1',
+        'ch-1',
+        'user-1',
+        'post',
+      );
     });
 
-    it('should reject when channel not found', async () => {
-      mockChannelRepo.findById.mockResolvedValue(null);
+    it('should reject when channel not found (wrong chapter)', async () => {
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new NotFoundException('Channel not found'),
+      );
 
       await expect(
         service.createPoll({
@@ -152,11 +171,27 @@ describe('PollService', () => {
           options: ['A', 'B'],
         }),
       ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a sender without access to the channel (403)', async () => {
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+
+      await expect(
+        service.createPoll({
+          channelId: 'ch-private',
+          chapterId: 'ch-1',
+          senderId: 'outsider',
+          question: 'Q?',
+          options: ['A', 'B'],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
     });
 
     it('should reject when options count is less than 2', async () => {
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
-
       await expect(
         service.createPoll({
           channelId: 'ch-1',
@@ -169,8 +204,6 @@ describe('PollService', () => {
     });
 
     it('should reject when options count exceeds 10', async () => {
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
-
       await expect(
         service.createPoll({
           channelId: 'ch-1',
@@ -183,7 +216,6 @@ describe('PollService', () => {
     });
 
     it('should create poll with expiration and multi-choice', async () => {
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockMessageRepo.create.mockResolvedValue({
         ...basePollMessage,
         metadata: {
@@ -214,7 +246,6 @@ describe('PollService', () => {
   describe('vote', () => {
     it('should cast single-choice vote', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
       mockVoteRepo.create.mockResolvedValue(baseVote);
 
@@ -229,6 +260,26 @@ describe('PollService', () => {
         user_id: 'user-2',
         option_index: 1,
       });
+      // Channel visibility checked as a read (voting is participation).
+      expect(mockChannelAccess.assertAccess).toHaveBeenCalledWith(
+        'ch-1',
+        'ch-1',
+        'user-2',
+        'read',
+      );
+    });
+
+    it('should reject a voter without access to the channel (403)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+
+      await expect(
+        service.vote('msg-1', 'outsider', 'ch-1', [1]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+      expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
     });
 
     it('should reject vote on expired poll', async () => {
@@ -240,7 +291,6 @@ describe('PollService', () => {
         },
       };
       mockMessageRepo.findById.mockResolvedValue(expiredPoll);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
       await expect(
         service.vote('msg-1', 'user-2', 'ch-1', [0]),
@@ -252,7 +302,6 @@ describe('PollService', () => {
         ...basePollMessage,
         type: 'TEXT',
       });
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
       await expect(
         service.vote('msg-1', 'user-2', 'ch-1', [0]),
@@ -261,7 +310,6 @@ describe('PollService', () => {
 
     it('should reject invalid option index', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
       await expect(
         service.vote('msg-1', 'user-2', 'ch-1', [99]),
@@ -270,7 +318,6 @@ describe('PollService', () => {
 
     it('should reject multiple options for single-choice poll', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
       await expect(
         service.vote('msg-1', 'user-2', 'ch-1', [0, 1]),
@@ -285,7 +332,6 @@ describe('PollService', () => {
           choice_mode: 'multi',
         },
       });
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
       mockVoteRepo.createMany.mockResolvedValue([
         { ...baseVote, option_index: 0 },
@@ -319,7 +365,6 @@ describe('PollService', () => {
   describe('removeVote', () => {
     it('should remove user vote', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
 
       await service.removeVote('msg-1', 'user-2', 'ch-1');
@@ -328,6 +373,24 @@ describe('PollService', () => {
         'msg-1',
         'user-2',
       );
+      expect(mockChannelAccess.assertAccess).toHaveBeenCalledWith(
+        'ch-1',
+        'ch-1',
+        'user-2',
+        'read',
+      );
+    });
+
+    it('should reject a remover without access to the channel (403)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+
+      await expect(
+        service.removeVote('msg-1', 'outsider', 'ch-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
     });
 
     it('should reject remove vote on expired poll', async () => {
@@ -339,7 +402,6 @@ describe('PollService', () => {
         },
       };
       mockMessageRepo.findById.mockResolvedValue(expiredPoll);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
 
       await expect(
         service.removeVote('msg-1', 'user-2', 'ch-1'),
@@ -350,7 +412,6 @@ describe('PollService', () => {
   describe('getPoll', () => {
     it('should return poll with results and user votes', async () => {
       mockMessageRepo.findById.mockResolvedValue(basePollMessage);
-      mockChannelRepo.findById.mockResolvedValue(baseChannel);
       mockVoteRepo.findByMessage.mockResolvedValue([
         { ...baseVote, option_index: 0 },
         { ...baseVote, user_id: 'user-3', option_index: 0 },
@@ -369,6 +430,25 @@ describe('PollService', () => {
       ]);
       expect(result.userVotes).toEqual([1]);
       expect(result.isExpired).toBe(false);
+      expect(mockChannelAccess.assertAccess).toHaveBeenCalledWith(
+        'ch-1',
+        'ch-1',
+        'user-2',
+        'read',
+      );
+    });
+
+    it('should reject a reader without access to the channel (403)', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new ForbiddenException('You do not have access to this channel'),
+      );
+
+      await expect(
+        service.getPoll('msg-1', 'ch-1', 'outsider'),
+      ).rejects.toThrow(ForbiddenException);
+      // No poll content is read once access is denied.
+      expect(mockVoteRepo.findByMessage).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when poll not found', async () => {
@@ -417,7 +497,7 @@ describe('PollService', () => {
       },
     };
 
-    it('returns every poll for the chapter with aggregate vote counts', async () => {
+    it('returns chapter polls (in accessible channels) with aggregate vote counts', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([
         activePoll,
         expiredPoll,
@@ -427,14 +507,11 @@ describe('PollService', () => {
         { message_id: 'poll-active', option_index: 1, vote_count: 1 },
       ]);
 
-      const result = await service.listPolls('ch-1');
+      const result = await service.listPolls('ch-1', { userId: VIEWER });
 
       expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
         ['poll-active', 'poll-expired'],
       );
-      expect(
-        mockVoteRepo.findUserVotesByMessagesForUser,
-      ).not.toHaveBeenCalled();
       expect(result).toHaveLength(2);
       expect(result[0].id).toBe('poll-active');
       expect(result[0].results).toEqual([
@@ -445,15 +522,58 @@ describe('PollService', () => {
       expect(result[1].isExpired).toBe(true);
     });
 
+    it('excludes polls in channels the caller cannot access and skips their tallies', async () => {
+      const secretPoll: ChatMessage = {
+        ...activePoll,
+        id: 'poll-secret',
+        channel_id: 'channel-secret',
+      };
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        activePoll,
+        secretPoll,
+      ]);
+      // Caller can read channel-1 but not channel-secret.
+      mockChannelAccess.filterAccessibleChannelIds.mockResolvedValue(
+        new Set(['channel-1']),
+      );
+
+      const result = await service.listPolls('ch-1', { userId: VIEWER });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-active']);
+      // Tallies are only fetched for the visible poll — never the hidden one.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['poll-active'],
+      );
+      expect(mockChannelAccess.filterAccessibleChannelIds).toHaveBeenCalledWith(
+        'ch-1',
+        VIEWER,
+        ['channel-1', 'channel-secret'],
+        'read',
+      );
+    });
+
+    it('returns [] and skips all reads when no userId is supplied (no principal)', async () => {
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
+
+      const result = await service.listPolls('ch-1');
+
+      expect(result).toEqual([]);
+      expect(
+        mockChannelAccess.filterAccessibleChannelIds,
+      ).not.toHaveBeenCalled();
+      expect(
+        mockVoteRepo.aggregateOptionTotalsByMessages,
+      ).not.toHaveBeenCalled();
+    });
+
     it('loads vote aggregates in one RPC for many polls (no per-poll vote queries)', async () => {
       const manyPolls = Array.from({ length: 50 }, (_, i) => ({
         ...activePoll,
         id: `poll-${i}`,
       }));
       mockMessageRepo.findPollsByChapter.mockResolvedValue(manyPolls);
-      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
 
-      await service.listPolls('ch-1');
+      await service.listPolls('ch-1', { userId: VIEWER });
 
       expect(
         mockVoteRepo.aggregateOptionTotalsByMessages,
@@ -468,9 +588,11 @@ describe('PollService', () => {
     it('filters to active=true (expired polls excluded)', async () => {
       // Repository applies active/expired before limit; service does not re-filter.
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
-      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
 
-      const result = await service.listPolls('ch-1', { active: true });
+      const result = await service.listPolls('ch-1', {
+        active: true,
+        userId: VIEWER,
+      });
 
       expect(result.map((p) => p.id)).toEqual(['poll-active']);
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
@@ -481,9 +603,11 @@ describe('PollService', () => {
 
     it('filters to active=false (only expired polls)', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([expiredPoll]);
-      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
 
-      const result = await service.listPolls('ch-1', { active: false });
+      const result = await service.listPolls('ch-1', {
+        active: false,
+        userId: VIEWER,
+      });
 
       expect(result.map((p) => p.id)).toEqual(['poll-expired']);
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
@@ -494,7 +618,6 @@ describe('PollService', () => {
 
     it('includes userVotes when a userId is supplied', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([activePoll]);
-      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
       mockVoteRepo.findUserVotesByMessagesForUser.mockResolvedValue([
         { message_id: 'poll-active', option_index: 1 },
       ]);
@@ -511,15 +634,14 @@ describe('PollService', () => {
 
     it('clamps limit to the 1–200 range before calling the repository', async () => {
       mockMessageRepo.findPollsByChapter.mockResolvedValue([]);
-      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
 
-      await service.listPolls('ch-1', { limit: 0 });
+      await service.listPolls('ch-1', { limit: 0, userId: VIEWER });
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenCalledWith(
         'ch-1',
         expect.objectContaining({ limit: 1 }),
       );
 
-      await service.listPolls('ch-1', { limit: 9999 });
+      await service.listPolls('ch-1', { limit: 9999, userId: VIEWER });
       expect(mockMessageRepo.findPollsByChapter).toHaveBeenLastCalledWith(
         'ch-1',
         expect.objectContaining({ limit: 200 }),
@@ -533,7 +655,7 @@ describe('PollService', () => {
         batchError,
       );
 
-      const result = await service.listPolls('chapter-xyz');
+      const result = await service.listPolls('chapter-xyz', { userId: VIEWER });
 
       expect(result).toHaveLength(1);
       expect(result[0].results.every((r) => r.voteCount === 0)).toBe(true);

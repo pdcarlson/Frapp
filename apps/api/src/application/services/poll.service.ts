@@ -7,12 +7,11 @@ import {
 } from '@nestjs/common';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
-import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
-import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { PollMetadata } from '../../domain/entities/poll-vote.entity';
+import { ChannelAccessService } from './channel-access.service';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -52,20 +51,21 @@ export class PollService {
   constructor(
     @Inject(CHAT_MESSAGE_REPOSITORY)
     private readonly messageRepo: IChatMessageRepository,
-    @Inject(CHAT_CHANNEL_REPOSITORY)
-    private readonly channelRepo: IChatChannelRepository,
     @Inject(POLL_VOTE_REPOSITORY)
     private readonly voteRepo: IPollVoteRepository,
+    private readonly channelAccess: ChannelAccessService,
   ) {}
 
   async createPoll(input: CreatePollInput): Promise<ChatMessage> {
-    const channel = await this.channelRepo.findById(
+    // Posting a poll inserts a chat_messages row, so it must clear the same
+    // channel-access + read-only gate as any other send (POLLS_CREATE alone is
+    // not enough — it does not imply membership of a private/role-gated channel).
+    await this.channelAccess.assertAccess(
       input.channelId,
       input.chapterId,
+      input.senderId,
+      'post',
     );
-    if (!channel) {
-      throw new NotFoundException('Channel not found');
-    }
 
     if (
       input.options.length < MIN_OPTIONS ||
@@ -106,13 +106,14 @@ export class PollService {
       throw new BadRequestException('Message is not a poll');
     }
 
-    const channel = await this.channelRepo.findById(
+    // Must be able to see the channel the poll lives in (private/role-gated/DM
+    // membership). `read` — voting is participation, not a message post.
+    await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
+      userId,
+      'read',
     );
-    if (!channel) {
-      throw new NotFoundException('Channel not found');
-    }
 
     const metadata = message.metadata as PollMetadata;
     const isExpired = this.isPollExpired(metadata);
@@ -168,13 +169,12 @@ export class PollService {
       throw new BadRequestException('Message is not a poll');
     }
 
-    const channel = await this.channelRepo.findById(
+    await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
+      userId,
+      'read',
     );
-    if (!channel) {
-      throw new NotFoundException('Channel not found');
-    }
 
     const metadata = message.metadata as PollMetadata;
     if (this.isPollExpired(metadata)) {
@@ -187,7 +187,7 @@ export class PollService {
   async getPoll(
     messageId: string,
     chapterId: string,
-    userId?: string,
+    userId: string,
   ): Promise<PollWithResults> {
     const message = await this.messageRepo.findById(messageId);
     if (!message) {
@@ -197,13 +197,14 @@ export class PollService {
       throw new BadRequestException('Message is not a poll');
     }
 
-    const channel = await this.channelRepo.findById(
+    // Reading a poll's question/options/tallies requires being able to read the
+    // channel it lives in — otherwise private/role-gated poll content leaks.
+    await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
+      userId,
+      'read',
     );
-    if (!channel) {
-      throw new NotFoundException('Channel not found');
-    }
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];
@@ -215,14 +216,11 @@ export class PollService {
       voteCount: votes.filter((v) => v.option_index === optionIndex).length,
     }));
 
-    let userVotes: number[] | undefined;
-    if (userId) {
-      const userVoteList = await this.voteRepo.findByMessageAndUser(
-        messageId,
-        userId,
-      );
-      userVotes = userVoteList.map((v) => v.option_index);
-    }
+    const userVoteList = await this.voteRepo.findByMessageAndUser(
+      messageId,
+      userId,
+    );
+    const userVotes = userVoteList.map((v) => v.option_index);
 
     return {
       id: message.id,
@@ -242,6 +240,33 @@ export class PollService {
     const expiresAt = metadata.expires_at;
     if (!expiresAt) return false;
     return new Date(expiresAt) <= new Date();
+  }
+
+  /**
+   * Drop polls whose channel the caller cannot read. Resolves access once for
+   * the whole page (membership + permissions loaded a single time), so this
+   * adds at most a couple of queries regardless of poll count. A missing
+   * `userId` means there is no principal to authorize against → empty list.
+   */
+  private async filterPollsByChannelAccess(
+    chapterId: string,
+    userId: string | undefined,
+    messages: ChatMessage[],
+  ): Promise<ChatMessage[]> {
+    if (messages.length === 0) return messages;
+    if (!userId) return [];
+
+    const accessibleChannelIds =
+      await this.channelAccess.filterAccessibleChannelIds(
+        chapterId,
+        userId,
+        messages.map((message) => message.channel_id),
+        'read',
+      );
+
+    return messages.filter((message) =>
+      accessibleChannelIds.has(message.channel_id),
+    );
   }
 
   /**
@@ -270,12 +295,23 @@ export class PollService {
       active: options.active,
     });
 
+    // Channel-access filter (same predicate as the per-poll endpoints): a poll
+    // in a channel the caller cannot read must not surface here — nor may its
+    // tallies be assembled below. Without a principal we cannot authorize, so
+    // we return nothing (fail closed). The controller always supplies userId.
+    const visibleMessages = await this.filterPollsByChannelAccess(
+      chapterId,
+      options.userId,
+      messages,
+    );
+    if (visibleMessages.length === 0) return [];
+
     const listRows: {
       message: ChatMessage;
       metadata: PollMetadata;
       expired: boolean;
     }[] = [];
-    for (const message of messages) {
+    for (const message of visibleMessages) {
       const metadata = message.metadata as PollMetadata;
       const expired = this.isPollExpired(metadata);
       // Active/expired scoping is applied in `findPollsByChapter` before `limit`.

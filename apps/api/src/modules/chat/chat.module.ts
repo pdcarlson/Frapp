@@ -20,9 +20,10 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { ChannelAccessModule } from '../channel-access/channel-access.module';
 
 @Module({
-  imports: [NotificationModule, ChapterModule, RbacModule],
+  imports: [NotificationModule, ChapterModule, RbacModule, ChannelAccessModule],
   controllers: [ChatController],
   providers: [
     ChatService,

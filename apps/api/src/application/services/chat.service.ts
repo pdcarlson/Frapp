@@ -29,8 +29,6 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
-import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
-import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type {
   ChatChannel,
   ChatChannelCategory,
@@ -39,9 +37,8 @@ import type {
   ChatMessageKind,
   ChannelType,
 } from '../../domain/entities/chat.entity';
-import { canAccessChannel } from '@repo/validation';
 import { NotificationService } from './notification.service';
-import { RbacService } from './rbac.service';
+import { ChannelAccessService } from './channel-access.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -146,12 +143,10 @@ export class ChatService {
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
-    @Inject(MEMBER_REPOSITORY)
-    private readonly memberRepo: IMemberRepository,
     @Inject(SUPABASE_CLIENT)
     private readonly supabase: FrappSupabaseClient,
     private readonly notificationService: NotificationService,
-    private readonly rbac: RbacService,
+    private readonly channelAccess: ChannelAccessService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -434,11 +429,8 @@ export class ChatService {
   /**
    * Authorize a caller for a channel from a TRUSTED DB lookup
    * (channel → chapter → membership), never client-supplied chapter fields.
-   *
-   * `channelRepo.findById(channelId, chapterId)` scopes the channel to the
-   * caller's active chapter, so a channel in another chapter resolves to 404.
-   * Channel-level visibility (PUBLIC / PRIVATE / ROLE_GATED / DM) is decided by
-   * the shared `canAccessChannel` predicate, which the Edge Functions reuse.
+   * Delegates to the shared {@link ChannelAccessService} so chat, polls, and
+   * search all enforce the identical predicate and cannot drift apart.
    */
   private async assertChannelAccess(
     channelId: string,
@@ -446,46 +438,12 @@ export class ChatService {
     userId: string,
     operation: 'read' | 'post' = 'read',
   ): Promise<ChatChannel> {
-    const channel = await this.channelRepo.findById(channelId, chapterId);
-    if (!channel) {
-      throw new NotFoundException('Channel not found');
-    }
-
-    const member = await this.memberRepo.findByUserAndChapter(
-      userId,
+    return this.channelAccess.assertAccess(
+      channelId,
       chapterId,
-    );
-    const isChapterMember = Boolean(member);
-
-    // For "post" against a read-only channel (#announcements, #chapter-audit)
-    // we need to evaluate the caller's permissions even on a PUBLIC channel
-    // so the announcements:post gate can fire.
-    const needsPermissions =
-      isChapterMember &&
-      (channel.type === 'ROLE_GATED' ||
-        (operation === 'post' && channel.is_read_only === true));
-    const permissions = needsPermissions
-      ? await this.rbac.getEffectivePermissions(chapterId, userId)
-      : [];
-
-    const allowed = canAccessChannel({
-      channel: {
-        type: channel.type,
-        member_ids: channel.member_ids,
-        required_permissions: channel.required_permissions,
-        is_read_only: channel.is_read_only ?? null,
-      },
       userId,
-      isChapterMember,
-      permissions,
       operation,
-    });
-
-    if (!allowed) {
-      throw new ForbiddenException('You do not have access to this channel');
-    }
-
-    return channel;
+    );
   }
 
   /**

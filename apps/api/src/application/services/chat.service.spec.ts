@@ -36,6 +36,7 @@ import type {
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import { ChannelAccessService } from './channel-access.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -206,6 +207,10 @@ describe('ChatService', () => {
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
+        // Real ChannelAccessService wired to the mocked channel/member/rbac
+        // deps above, so the authorization behavior under test is identical to
+        // production (the logic ChatService used to hold inline).
+        ChannelAccessService,
       ],
     }).compile();
 
