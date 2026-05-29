@@ -40,6 +40,7 @@ import {
   type NavItem,
 } from "@/components/layout/nav-config";
 import { ProtectedNavItem } from "@/components/layout/protected-nav-item";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { ChapterWizardGate } from "@/components/onboarding/chapter-wizard";
 import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial";
 import { signOutCurrentSession } from "@/lib/auth/session";
@@ -212,6 +213,10 @@ export function DashboardShell({ children }: DashboardShellProps) {
     () => permissionsPayload?.permissions,
     [permissionsPayload],
   );
+  // Module gating for the sidebar: items tied to a disabled module hide once
+  // the chapter config resolves (Chunk 06). Undefined while loading → show all.
+  const orgConfig = useOrgConfig();
+  const isModuleEnabled = orgConfig.data?.isModuleEnabled;
   const { data: notificationsData } = useNotifications();
   const unreadNotifications = useMemo(() => {
     if (!Array.isArray(notificationsData)) return 0;
@@ -240,6 +245,7 @@ export function DashboardShell({ children }: DashboardShellProps) {
             iconClassName={navIconClassName}
             onNavigate={onNavigate}
             focusClassName={sidebarFocusRingClassName}
+            isModuleEnabled={isModuleEnabled}
           />
         ))}
       </div>

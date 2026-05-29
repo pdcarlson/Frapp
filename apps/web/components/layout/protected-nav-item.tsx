@@ -13,6 +13,13 @@ type Props = {
   statusIconClassName?: string;
   onNavigate?: () => void;
   focusClassName: string;
+  /**
+   * Predicate from `useOrgConfig().data?.isModuleEnabled`. When provided and
+   * the item declares a `module`, the item is hidden if that module is
+   * disabled. Omitted (e.g. while the chapter config is still loading) means
+   * "don't module-gate" so items never flash out during the initial load.
+   */
+  isModuleEnabled?: (moduleKey: string) => boolean;
 };
 
 function isGranted(
@@ -37,7 +44,9 @@ function isGranted(
  * Permission checks fall back to the plain "always show" behavior while
  * the permissions query is loading — UI hides only when the fetch has
  * resolved and the caller definitively lacks access. This avoids a flash
- * of nav options during the initial load.
+ * of nav options during the initial load. Module gating (Chunk 06) layers
+ * on top: an item tied to a disabled module is hidden once the chapter
+ * config has loaded.
  */
 export function ProtectedNavItem({
   item,
@@ -46,8 +55,15 @@ export function ProtectedNavItem({
   iconClassName,
   onNavigate,
   focusClassName,
+  isModuleEnabled,
 }: Props) {
   if (permissions !== undefined && permissions !== null && !isGranted(item, permissions)) {
+    return null;
+  }
+
+  // Module gating: hide an item whose module the chapter has turned off.
+  // Fail-safe: only hide once we have a resolved predicate.
+  if (item.module && isModuleEnabled && !isModuleEnabled(item.module)) {
     return null;
   }
 

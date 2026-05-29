@@ -1,0 +1,231 @@
+"use client";
+
+import { useState } from "react";
+import { ChevronDown, ChevronRight, Lock } from "lucide-react";
+import {
+  MODULE_CATALOG,
+  type ModuleCatalogEntry,
+} from "@repo/org-archetypes";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+
+type Props = {
+  /** Merged `enabled_modules` map from the chapter config. */
+  enabledModules: Record<string, boolean>;
+  /** Whether the caller holds `chapter-config:manage`. */
+  canManage: boolean;
+  /** Persist a single module toggle through `usePatchOrgConfig`. */
+  onToggle: (moduleKey: string, enabled: boolean) => void;
+  isSaving?: boolean;
+};
+
+/**
+ * A module is "on" unless explicitly set to `false` — the same semantics as
+ * `useOrgConfig().isModuleEnabled`, so the tab, the sidebar gate, and the
+ * slash-command palette all agree on a module's state.
+ */
+function moduleIsOn(
+  enabledModules: Record<string, boolean>,
+  key: string,
+): boolean {
+  return enabledModules[key] !== false;
+}
+
+const FREE_MODULES = MODULE_CATALOG.filter(
+  (m) => m.alwaysOn || m.tier === "free",
+);
+const PAID_MODULES = MODULE_CATALOG.filter(
+  (m) => !m.alwaysOn && m.tier === "paid",
+);
+
+/**
+ * Settings → Modules. Toggles the chapter's enabled integrations. Always-on
+ * (free) modules are locked; paid modules toggle `enabled_modules[key]`.
+ * Disabling a module immediately removes its sidebar item (Chunk 06 nav gate)
+ * and its slash commands (Chunk 05 palette filter), and mutes its system
+ * channel — re-enabling restores everything; no data is deleted.
+ */
+export function SettingsModulesTab({
+  enabledModules,
+  canManage,
+  onToggle,
+  isSaving,
+}: Props) {
+  const enabledCount = MODULE_CATALOG.filter((m) =>
+    moduleIsOn(enabledModules, m.key),
+  ).length;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Modules</CardTitle>
+        <CardDescription>
+          {enabledCount} of {MODULE_CATALOG.length} modules enabled. Disabling a
+          module hides it from the sidebar and chat slash commands and mutes its
+          system channel. Re-enabling restores everything — data is never
+          deleted.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <ModuleGroup
+          title="Always on"
+          modules={FREE_MODULES}
+          enabledModules={enabledModules}
+          canManage={canManage}
+          onToggle={onToggle}
+          isSaving={isSaving}
+        />
+        <ModuleGroup
+          title="Chapter Pro"
+          modules={PAID_MODULES}
+          enabledModules={enabledModules}
+          canManage={canManage}
+          onToggle={onToggle}
+          isSaving={isSaving}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ModuleGroup({
+  title,
+  modules,
+  enabledModules,
+  canManage,
+  onToggle,
+  isSaving,
+}: {
+  title: string;
+  modules: readonly ModuleCatalogEntry[];
+  enabledModules: Record<string, boolean>;
+  canManage: boolean;
+  onToggle: (moduleKey: string, enabled: boolean) => void;
+  isSaving?: boolean;
+}) {
+  return (
+    <section className="space-y-2">
+      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        {title}
+      </p>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {modules.map((m) => (
+          <ModuleRow
+            key={m.key}
+            module={m}
+            on={moduleIsOn(enabledModules, m.key)}
+            canManage={canManage}
+            onToggle={onToggle}
+            isSaving={isSaving}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ModuleRow({
+  module: m,
+  on,
+  canManage,
+  onToggle,
+  isSaving,
+}: {
+  module: ModuleCatalogEntry;
+  on: boolean;
+  canManage: boolean;
+  onToggle: (moduleKey: string, enabled: boolean) => void;
+  isSaving?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const hasSubFeatures = m.subFeatures.length > 0;
+  const locked = m.alwaysOn;
+
+  return (
+    <li>
+      <div className="flex items-start gap-3 p-4">
+        {hasSubFeatures ? (
+          <button
+            type="button"
+            onClick={() => setOpen((prev) => !prev)}
+            aria-expanded={open}
+            aria-label={
+              open
+                ? `Collapse ${m.label} sub-features`
+                : `Expand ${m.label} sub-features`
+            }
+            className="mt-0.5 rounded-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {open ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span className="mt-0.5 inline-block w-4" aria-hidden />
+        )}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium">{m.label}</span>
+            {locked ? (
+              <Badge variant="outline" className="border-success/50 text-success">
+                Free
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="border-primary/40 text-primary">
+                Chapter Pro
+              </Badge>
+            )}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">{m.description}</p>
+        </div>
+
+        <div className="flex shrink-0 items-center">
+          {locked ? (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Lock className="h-3 w-3" aria-hidden />
+              Always on
+            </span>
+          ) : (
+            <Switch
+              checked={on}
+              disabled={!canManage || isSaving}
+              onCheckedChange={(next) => onToggle(m.key, next)}
+              aria-label={`${m.label} enabled`}
+            />
+          )}
+        </div>
+      </div>
+
+      {open && hasSubFeatures ? (
+        <div className="border-t border-border bg-muted/30 px-4 py-3 pl-11">
+          <ul className="space-y-1.5">
+            {m.subFeatures.map((sub) => (
+              <li
+                key={sub.key}
+                className="flex items-center justify-between text-sm"
+              >
+                <span className="text-muted-foreground">{sub.label}</span>
+                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {sub.defaultOn ? "On by default" : "Off by default"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Per-feature toggles arrive with Settings customization (Chunk 07).
+          </p>
+        </div>
+      ) : null}
+    </li>
+  );
+}
