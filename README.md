@@ -44,8 +44,8 @@ supabase/     — Supabase project config + migrations
 
 All product decisions, behavior rules, and architecture are documented in the `spec/` directory:
 
-- **[spec/product.md](spec/product.md)** — Features, user flows, surfaces, onboarding.
-- **[spec/behavior.md](spec/behavior.md)** — Rules, edge cases, invariants, error handling.
+- **[spec/product/](spec/product/README.md)** — Features, user flows, surfaces, onboarding.
+- **[spec/behavior/](spec/behavior/README.md)** — Rules, edge cases, invariants, error handling.
 - **[spec/architecture.md](spec/architecture.md)** — Stack, data model, auth, storage, API contracts.
 - **[spec/environments.md](spec/environments.md)** — Local, staging, production setup; CI/CD.
 

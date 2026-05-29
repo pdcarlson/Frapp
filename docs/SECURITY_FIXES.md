@@ -64,13 +64,13 @@ Always enforce strict content-type and extension allowlists when generating sign
 ## Security Fix: Chapter subscription read/write lock enforcement
 
 ### Overview
-A critical-severity entitlement gap was fixed in `apps/api/src/interface/guards/chapter.guard.ts`. The `canceled` and `past_due` subscription states defined in `spec/behavior.md` §5 and §26 were modeled but never enforced at the API layer, so a canceled chapter could still create chat messages, events, invoices, tasks, points, backwork uploads, and other write operations.
+A critical-severity entitlement gap was fixed in `apps/api/src/interface/guards/chapter.guard.ts`. The `canceled` and `past_due` subscription states defined in [`spec/behavior/billing.md`](../spec/behavior/billing.md) and [`spec/behavior/data-retention.md`](../spec/behavior/data-retention.md) were modeled but never enforced at the API layer, so a canceled chapter could still create chat messages, events, invoices, tasks, points, backwork uploads, and other write operations.
 
 ### Details
 `ChapterGuard` now loads `chapters.subscription_status` alongside the membership check and applies the spec's read/write lock at the request boundary. Reads (GET / HEAD / OPTIONS) remain allowed for every status (matching §26's "all data preserved indefinitely in read-only mode"). Writes are gated by status × route classification:
 
-- `canceled` — all chapter-scoped writes return `403` with code `chapter.subscription.canceled`. The hard lock applies even to free-tier modules, matching §26 ("cannot create new content, invite members, or perform any write operations").
-- `past_due` — paid-ops writes return `403 chapter.subscription.write_locked`. Free-tier writes (chat, members, invites, roles, chapter config, user profile, search, chapter admin) continue to work, honoring the Chunk 03 free-tier wedge in §10 / line 574 ("Inviting members is free-tier and not billing-gated").
+- `canceled` — all chapter-scoped writes return `403` with code `chapter.subscription.canceled`. The hard lock applies even to free-tier modules, matching [`data-retention.md`](../spec/behavior/data-retention.md) ("cannot create new content, invite members, or perform any write operations").
+- `past_due` — paid-ops writes return `403 chapter.subscription.write_locked`. Free-tier writes (chat, members, invites, roles, chapter config, user profile, search, chapter admin) continue to work, honoring the Chunk 03 free-tier wedge in [`onboarding.md`](../spec/behavior/onboarding/README.md) ("Inviting members is free-tier and not billing-gated").
 - `incomplete` — paid-ops writes return `403 chapter.subscription.required`. Free-tier writes continue so a brand-new chapter can chat and invite before completing checkout.
 - `active` — all writes allowed.
 

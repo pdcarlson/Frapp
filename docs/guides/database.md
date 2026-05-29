@@ -76,7 +76,7 @@ npx supabase db reset
 
 - `spec/architecture.md` (data model)
 - Domain entity & repository interfaces in the API
-- Any relevant behavior in `spec/behavior.md`
+- Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security
 

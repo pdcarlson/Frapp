@@ -158,7 +158,7 @@ without dumping them back to the sign-in page.
 
 - Breadcrumb: auto-generated from route segments
 - Search: Opens command palette (⌘K / Ctrl+K). Searches across members, events, backwork.
-- Notifications: Bell icon with a live unread badge count. Click opens the notification drawer (slide from right). The drawer polls `/v1/notifications` via TanStack Query and subscribes to Supabase Realtime INSERT events on `public.notifications` filtered by the current user so new notifications appear without a manual refresh. Tapping a notification deep-links to the dashboard surface (events, points, billing, tasks, service, profile) and marks it read via `PATCH /v1/notifications/{id}/read`. Web push is intentionally out of scope for this phase per `spec/behavior.md §7`.
+- Notifications: Bell icon with a live unread badge count. Click opens the notification drawer (slide from right). The drawer polls `/v1/notifications` via TanStack Query and subscribes to Supabase Realtime INSERT events on `public.notifications` filtered by the current user so new notifications appear without a manual refresh. Tapping a notification deep-links to the dashboard surface (events, points, billing, tasks, service, profile) and marks it read via `PATCH /v1/notifications/{id}/read`. Web push is intentionally out of scope for this phase per [`spec/behavior/notifications.md`](behavior/notifications.md).
 - Theme: Toggle (sun/moon/system cycle)
 
 ---
@@ -333,7 +333,7 @@ and category + member filters. Backed by `GET /v1/points/transactions` which
 requires `points:view_all`. The optional `limit` query parameter is validated
 to 1–200 at the API boundary (default 50 when omitted). Members without that permission see an explanatory
 card pointing at their chapter president. Flags are raised automatically when
-`|amount| ≥ 100` on a manual adjustment (see `spec/behavior.md §4`).
+`|amount| ≥ 100` on a manual adjustment (see [`spec/behavior/points.md`](behavior/points.md)).
 
 **Adjust modal:**
 

@@ -48,7 +48,7 @@ Do not modify code or open pull requests.
 This is NOT a review of the most recent PR. If a merged PR triggered you, treat it as just one
 small signal — look across the whole codebase, the product spec (spec/), and the user
 experience. Cover three lenses: (1) engineering gaps, (2) product & behavior gaps grounded in
-spec/product.md and spec/behavior.md, and (3) creative next steps & research. Be generalized
+spec/product/ and spec/behavior/, and (3) creative next steps & research. Be generalized
 and inventive, not narrow.
 
 Follow .cursor/skills/suggestion-triage.md EXACTLY — it defines the lenses, the balance rules

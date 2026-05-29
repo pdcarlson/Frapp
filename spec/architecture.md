@@ -336,7 +336,7 @@ Configurable alerts via the monitoring provider:
 
 **Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), Points (me, leaderboard, per-member summary, adjust, **chapter-wide transaction list**), and Polls (create in channel, get, vote / remove vote, **chapter-wide list**) are implemented and included in the OpenAPI spec.
 
-**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Treasurer includes `points:view_all` and `polls:view_all` alongside billing and points tools. Vice President and Secretary system roles include `members:view` and `polls:view_all` so the polls dashboard matches `PollController` guards (see seeded role matrix in [`behavior.md`](behavior.md)). Full query parameters, pagination, and invariants: Points ledger section and **Polls and Voting** in [`behavior.md`](behavior.md).
+**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Treasurer includes `points:view_all` and `polls:view_all` alongside billing and points tools. Vice President and Secretary system roles include `members:view` and `polls:view_all` so the polls dashboard matches `PollController` guards (see seeded role matrix in [`behavior/rbac.md`](behavior/rbac.md)). Full query parameters, pagination, and invariants: [`behavior/points.md`](behavior/points.md) and [`behavior/polls.md`](behavior/polls.md).
 
 ---
 
@@ -495,3 +495,70 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - **New hot path emerges that genuinely benefits from <50ms global p50.** If a future chunk identifies one, that chunk lands its own Edge Function with the testability problem solved per-case (likely a thin function calling NestJS, so most logic stays testable).
 - **PGlite drops support for an extension we adopt** (e.g. if we add `pg_cron` or `pg_net` to a migration that PGlite can't load), the harness falls back to a documented "schema-only assertion" mode and the migration's runtime behavior gets a real Postgres in CI.
 - **Sandbox unblocks Supabase MCP write tools** (`create_branch`, `apply_migration`, `deploy_edge_function`). Path A becomes runnable; revisit only if we've grown a need for a real Realtime/Edge-Runtime substrate in-loop that PGlite + NestJS unit tests don't cover.
+
+---
+
+## 13. AI Corpus Architecture (v1)
+
+### Sources
+
+The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casual chat is not indexed — see [`behavior/ai.md`](behavior/ai.md) for the product rules.
+
+| Source           | Table / location                                     | Indexer                                       |
+| ---------------- | ---------------------------------------------------- | --------------------------------------------- |
+| Meeting minutes  | `meeting_recordings`, `meeting_summaries`            | Indexed on insert; re-indexed on summary edit. |
+| Chapter documents | `chapter_documents` + Supabase Storage `documents/` | Indexed on upload; OCR/extraction at index time for PDFs. |
+| Structured data  | `chapters`, `members`, `events`, `dues_*`, `roles`   | Materialized via a thin "facts" view; refreshed on write. |
+| Announcements    | `chat_messages` where channel is `#announcements`    | Indexed on insert; deleted/edited mirrored.    |
+
+### Retrieval
+
+- Vector index per chapter (pgvector or equivalent), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors.
+- Retrieval returns source rows with provenance metadata (source type, author or document title, timestamp, internal ID). The LLM prompt template injects this metadata so the model can cite it back.
+- Recency decay is applied at retrieval time so newer authoritative content outranks older content on time-sensitive questions ("when is the meeting"); decay is off for time-invariant content (policies, bylaws).
+
+### Citation protocol
+
+- The LLM prompt mandates inline citations on every answer. The post-processor parses citation tokens out of the model output and renders them as links to the source surface.
+- Answers without resolvable citations are rejected and re-prompted; if the second attempt fails, the user sees a "couldn't find a confident answer" response rather than an uncited synthesis.
+
+### Evals
+
+- Adversarial test set under `apps/api/test/ai-evals/` covering: stale information (old meeting minutes contradicted by newer ones), conflicting sources (two documents disagreeing), missing information (corpus has nothing on the question), prompt injection from user-uploaded content.
+- The eval suite runs on every change to the prompt template or retrieval logic. A regression fails the build.
+
+### Out of scope for v1
+
+- Chat indexing (see [`behavior/ai.md`](behavior/ai.md) non-goals).
+- Vault content (see [`behavior/vault.md`](behavior/vault.md)).
+- Cross-chapter aggregate analytics (would require national-tier infrastructure).
+
+---
+
+## 14. Vault Key Management
+
+The vault ([`behavior/vault.md`](behavior/vault.md)) stores high-sensitivity chapter content (risk, standards, legal). Key management lives in a managed KMS / HSM, not in Frapp application memory.
+
+### Per-chapter key
+
+- One symmetric key per chapter, generated at chapter creation and stored in the KMS.
+- Application code never reads the raw key — encryption/decryption operations go through the KMS API. The KMS enforces access via service-role policy.
+- Storage path: `chapters/{chapter_id}/vault/{document_id}/{filename}`. Blobs are AEAD-encrypted (e.g. AES-GCM) with the chapter's key plus a per-document nonce stored alongside the blob.
+
+### Break-glass recovery
+
+- A separate HSM-protected recovery key exists per environment. The recovery key can derive any chapter's per-chapter key on demand.
+- Recovery operations require multi-party authorization at the HSM layer (split between Frapp ops and a designated escrow holder). Single-operator recovery is not possible.
+- Every recovery operation emits an audit row: `(operation_id, chapter_id, requesting_president_id, request_reference, hsm_operator, completed_at)`. The audit row is written to a separate database from the application database (defense-in-depth — operations on the application DB cannot tamper with the audit trail).
+
+### Transparency log
+
+- The recovery audit table feeds the quarterly transparency report. The report is auto-generated from the audit table, manually reviewed by Frapp leadership, and published at `frapp.live/transparency`.
+- Reports include: total recovery operations per quarter, anonymized chapter identifier, request reason category, completion latency. They do not include chapter content.
+
+### Threat model
+
+- **Attacker with application DB access:** sees encrypted blobs, cannot decrypt without KMS access.
+- **Attacker with Supabase Storage access:** same — blobs are AEAD-encrypted.
+- **Compromised Frapp operator:** can request recovery but cannot complete it solo (multi-party HSM authorization). Every operation is logged.
+- **Legal compulsion (subpoena):** recovery is possible but logged in the transparency report.

@@ -40,9 +40,9 @@ Run this against every chunk PR (as the author before opening, and as the review
 
 - [ ] PR body links the chunk brief and attests to each "Engineering principles applied here" bullet.
 - [ ] Spec docs updated in the same PR (doc-sync CI).
-- [ ] STATUS.md row updated (and the previous chunk flipped to `shipped` if it merged).
+- [ ] Frapp Launch project board updated (chunk issue moved to *In Review*; previous chunk flipped to *Shipped* if it merged).
 - [ ] Visual baselines: only the affected ones regenerated, listed with reasons + Chromium revision.
-- [ ] Plan divergences edited into the brief/master-plan in the same PR.
+- [ ] Plan divergences edited into the brief / `spec/redesign-context.md` in the same PR.
 - [ ] **ADR discipline.** Architecturally significant decisions — persistence layer, hot-path topology, agent infrastructure, security posture, anything that future sessions will need to know "why" about — land as a sequentially numbered ADR in `spec/architecture.md` in the same PR. Not as a code comment, not as a STATUS note, not as a PR-body paragraph that gets buried. Each ADR includes a **Trigger to revisit** clause naming the conditions under which the next session should reopen it.
 
 ## 7. CodeRabbit triage

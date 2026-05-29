@@ -1,0 +1,52 @@
+# Backwork (Academic Library)
+
+## Rich Metadata
+
+Every uploaded resource carries the following metadata fields. **All fields except the file itself are optional** to allow graceful handling of incomplete information.
+
+| Field                 | Type               | Description                                                                         |
+| --------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| **Department**        | Free text          | e.g. "CS", "MATH", "ECON". Auto-vivified per chapter.                               |
+| **Course number**     | Free text          | e.g. "101", "3320". Combined with department for display (e.g. "CS 101").           |
+| **Professor name**    | Free text          | Auto-vivified per chapter.                                                          |
+| **Year**              | Integer            | e.g. 2025.                                                                          |
+| **Semester**          | Enum               | Spring, Summer, Fall, Winter.                                                       |
+| **Assignment type**   | Enum               | Exam, Midterm, Final Exam, Quiz, Homework, Lab, Project, Study Guide, Notes, Other. |
+| **Assignment number** | Integer (optional) | For "Homework 3", "Lab 2", "Exam 1", etc.                                           |
+| **Document variant**  | Enum               | Student Copy, Blank Copy (professor-released), Answer Key.                          |
+| **Tags**              | Text array         | Free-form for additional categorization.                                            |
+| **File hash**         | String             | SHA-256 of the uploaded file. Used for duplicate detection.                         |
+
+## Auto-Vivification
+
+When a member provides a department or professor name that does not exist in the chapter's dictionary, the system automatically creates the corresponding record.
+
+- Lookup is scoped to the chapter. "CS" in Chapter A is independent of "CS" in Chapter B.
+- Auto-vivification is atomic with the resource creation (same transaction).
+- Department records store the short code (e.g. "CS") and an optional full name (e.g. "Computer Science") that admins can fill in later.
+
+## Duplicate Prevention
+
+Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.
+
+## Browsing and Search
+
+- Resources are browsable by department, course, professor, semester/year, assignment type, and tags.
+- Full-text search across title, tags, course name, and professor name.
+- Results are always scoped to the user's active chapter.
+
+## PDF Redaction (Phase: v2)
+
+When uploading a Student Copy, the user can optionally redact personal information:
+
+1. The in-app viewer renders the PDF page-by-page.
+2. The user drags and resizes opaque black rectangles over areas to redact (name, student ID, handwriting, etc.).
+3. On confirm, the app **rasterizes** each page to a flat image with the redaction boxes baked in. This is effectively a screenshot — the underlying text and PDF metadata are destroyed.
+4. The rasterized version is what gets uploaded and stored. The original PDF is never sent to the server.
+5. The storage record is flagged as `is_redacted: true`.
+
+**Rationale:** Overlaying black boxes on an existing PDF does not prevent text selection of the underlying content. Rasterization ensures true redaction.
+
+## AI Metadata Extraction (Phase: v3+)
+
+On upload, an optional AI step parses the PDF and pre-fills metadata fields (department, course number, professor, assignment type, etc.). The user reviews and corrects before confirming. The data model and upload flow must not block this future capability (all metadata fields are optional; the upload endpoint accepts partial metadata).

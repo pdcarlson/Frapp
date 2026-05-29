@@ -101,7 +101,7 @@ Migration is additive (one new table with its own indexes, policy, and trigger).
 DROP TABLE IF EXISTS chat_notification_preferences;
 ```
 
-**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in §3 of `spec/behavior.md`.
+**Note:** No NestJS worker change is required after rollback — the push worker's preference repository tolerates an empty result set and treats it as "no preference set," which falls back to the defaults table in [`spec/behavior/notifications.md`](../../spec/behavior/notifications.md).
 
 ## Rollback Chunk 03 migration (20260524120000_chapter_directory_requests.sql)
 

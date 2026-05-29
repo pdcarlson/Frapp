@@ -1,0 +1,137 @@
+# Notifications
+
+## Decoupled Architecture
+
+The Notification service exposes two methods:
+
+- `notifyUser(userId, payload)` — sends to a specific user.
+- `notifyChapter(chapterId, payload)` — sends to all members of a chapter.
+
+Other modules (Chat, Events, Study, Billing) call these methods without knowing about push tokens, Expo, or delivery mechanics.
+
+## Delivery Flow
+
+1. Check the user's notification preferences for the payload's category. If disabled, skip.
+2. Check quiet hours. If active and priority is not URGENT, queue as badge-only (no sound/vibration).
+3. Save notification to `notifications` table (in-app history).
+4. Fetch the user's `push_tokens`.
+5. Send push notification via Expo Push Service with the appropriate priority.
+6. If delivery fails (invalid token, Expo error), remove the invalid token from `push_tokens`.
+
+## Deep Linking
+
+Every notification payload includes a `target` object with screen and parameters:
+
+```json
+{
+  "target": {
+    "screen": "chat",
+    "channelId": "uuid",
+    "messageId": "uuid"
+  }
+}
+```
+
+Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
+
+## Priority Levels
+
+| Priority | Behavior                                                                                              |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| URGENT   | Plays sound even during Do Not Disturb. Used for emergency announcements and critical billing alerts. |
+| NORMAL   | Standard notification with sound and vibration (respects device settings).                            |
+| SILENT   | Badge-only. No sound, no vibration. Used for low-priority updates (e.g. weekly digest).               |
+
+## Quiet Hours
+
+- Per-user configurable start and end time (e.g. 10:00 PM to 8:00 AM).
+- During quiet hours, NORMAL notifications are delivered as badge-only (no sound/vibration). URGENT notifications are unaffected.
+- Quiet hours are timezone-aware (stored as UTC offsets). The implementation uses `Intl.DateTimeFormat` to convert the current UTC time to the user's timezone; midnight is normalized to hour 0 to handle locale-specific h24 hour cycles.
+- `PATCH /v1/settings` accepts `quiet_hours_start`, `quiet_hours_end`, and `quiet_hours_tz` as nullable. Omitting a field preserves its existing value; sending `null` explicitly clears the field, which disables quiet-hour enforcement.
+
+## Mobile preference sync
+
+- The mobile preferences screen (`apps/mobile/app/(tabs)/preferences.tsx`) hydrates from AsyncStorage immediately for offline reads, then reconciles with the server via `useUserSettings` and `useNotificationPreferences` (from `@repo/hooks`) once an auth token is present in `expo-secure-store`.
+- DM-alerts toggle maps to category `chat`; event-reminders toggle maps to category `events` (`PATCH /v1/notifications/preferences`).
+- Quiet-hours toggle ON `PATCH`es `/v1/settings` with the device timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and the 22:00/08:00 default window; toggle OFF `PATCH`es `null` for all three quiet-hour fields.
+- When no auth token is present, all toggles persist locally only and sync state surfaces as "cached" so the UI doesn't claim server enforcement.
+
+## Notification Grouping
+
+Multiple notifications from the same source are collapsed on the device:
+
+- Chat: "3 new messages in #general" (instead of 3 separate notifications).
+- Events: "2 upcoming events today."
+
+Grouping is handled client-side using notification category/thread identifiers provided in the payload.
+
+## Badge Count
+
+The app icon badge shows the total unread count: unread in-app notifications + unread chat messages across all channels. Badge count is updated on every notification delivery and when the user reads content.
+
+## Per-Channel Mute
+
+Users can mute specific chat channels. Muted channels:
+
+- Do not generate push notifications for new messages.
+- Still show unread indicators in the app when opened.
+- @mentions in muted channels still generate notifications (override mute).
+
+## Chat notification preferences (Chunk 05)
+
+Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
+
+Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes the precedence rules):
+
+| Channel / kind | Default level |
+| --- | --- |
+| `#announcements` | `all` |
+| `#chapter-audit` | `off` |
+| `system_audit` kind (any channel) | `off` |
+| Every other channel | `mentions` |
+
+Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone.
+
+## Audit-log → `#chapter-audit` bridge (Chunk 05)
+
+The bridge worker (see ADR-08) subscribes to `chapter_audit_log` INSERT via Supabase Realtime and posts a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender (`00000000-0000-0000-0000-000000000000`). Rows with `member_visible=false` are skipped — internal-scope rows stay out of the channel.
+
+Message shape:
+
+- `sender_id`: the system sender.
+- `content`: human summary (`"<action>: <diff keys>"`).
+- `kind`: `system_audit`.
+- `payload`: `{ action, actor_user_id, diff }` — the renderer reads from `payload`, not the prose `content`.
+
+Chapters that pre-date the `#chapter-audit` channel have no mirror; the bridge logs and continues. The audit row itself is always the source of truth.
+
+## Notification Triggers (Complete List)
+
+| Domain        | Trigger                                                            | Priority                    |
+| ------------- | ------------------------------------------------------------------ | --------------------------- |
+| Chat          | @mention                                                           | NORMAL                      |
+| Chat          | DM received                                                        | NORMAL                      |
+| Chat          | New message in unmuted channel                                     | NORMAL                      |
+| Announcements | New announcement posted                                            | URGENT                      |
+| Events        | Upcoming event reminder (configurable: 1hr / 30min / 15min before) | NORMAL                      |
+| Events        | New event created                                                  | SILENT                      |
+| Events        | Event updated (time/location change)                               | NORMAL                      |
+| Points        | Points awarded                                                     | NORMAL                      |
+| Points        | Points deducted (fine)                                             | NORMAL                      |
+| Points        | Leaderboard position change                                        | SILENT (weekly digest)      |
+| Study         | Session paused (app backgrounded)                                  | NORMAL (local notification) |
+| Study         | Session expired                                                    | NORMAL                      |
+| Study         | Geofence departure                                                 | NORMAL                      |
+| Billing       | Invoice created (member)                                           | NORMAL                      |
+| Billing       | Invoice due soon (3 days, 1 day before)                            | NORMAL                      |
+| Billing       | Payment received                                                   | SILENT                      |
+| Billing       | Subscription status change                                         | URGENT (for admin)          |
+| Tasks         | Task assigned to you                                               | NORMAL                      |
+| Tasks         | Task due soon (1 day before)                                       | NORMAL                      |
+| Tasks         | Task overdue                                                       | NORMAL                      |
+| Tasks         | Task completion confirmed (points awarded)                         | NORMAL                      |
+| Service       | Service hours approved                                             | NORMAL                      |
+| Service       | Service hours rejected                                             | NORMAL                      |
+| Admin         | New member joined                                                  | NORMAL                      |
+| Admin         | Invite accepted                                                    | SILENT                      |
+| Admin         | Role change on a member                                            | SILENT                      |

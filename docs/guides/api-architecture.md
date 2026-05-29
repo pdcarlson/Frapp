@@ -81,13 +81,13 @@ Example: adding a `polls` module.
    - Add a controller in `src/interface/controllers/poll.controller.ts`.
    - Decorate endpoints with `@UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)` and `@RequirePermissions(...)` as needed (for example `polls:create` to post a poll, `polls:view_all` for `GET /v1/polls` chapter-wide aggregates).
 
-   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes add `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler **in addition to** the controller baseline `members:view` (merged by `PermissionsGuard`). The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior.md`](../../spec/behavior.md).
+   **Dashboard list endpoints (reference):** `GET /v1/polls` lists polls for the chapter (aggregate tallies; optional `channel_id`, `active`, `limit`). `GET /v1/points/transactions` lists chapter `point_transactions` for the Points Audit UI (`user_id`, `category`, `flagged`, `before`, `limit`). Both are chapter-scoped via `ChapterGuard`; those routes add `@RequirePermissions(polls:view_all)` / `@RequirePermissions(points:view_all)` on the handler **in addition to** the controller baseline `members:view` (merged by `PermissionsGuard`). The chapter-wide polls list is **not** on the default Member role (Treasurer, Vice President, Secretary, and President have it via seeds or wildcard); chapters can still grant `polls:view_all` through custom roles. Full behavior and query semantics: [`spec/behavior/points.md`](../../spec/behavior/points.md) and [`spec/behavior/polls.md`](../../spec/behavior/polls.md).
 
 5. **Module wiring**
    - Create `PollModule` in `src/interface/modules/poll.module.ts`, providing controller, service, and repository implementation.
    - Import `PollModule` into `AppModule`.
 
-> **Tip:** Always start new features by updating the **specs** (`spec/product.md`, `spec/behavior.md`, `spec/architecture.md`). The API implementation should follow, not lead, the spec.
+> **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture.md`). The API implementation should follow, not lead, the spec.
 
 ## 4. Error handling
 

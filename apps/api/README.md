@@ -62,4 +62,4 @@ npm run check:migration-safety
 - Deployment runbook: `docs/DEPLOYMENT.md`
 - Environment spec: `spec/environments.md`
 - Architecture spec: `spec/architecture.md`
-- Behavior spec: `spec/behavior.md`
+- Behavior spec: `spec/behavior/`

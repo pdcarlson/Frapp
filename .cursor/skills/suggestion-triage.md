@@ -50,8 +50,8 @@ Plus what tools miss: weak/missing tests on complex logic, N+1 / in-memory aggre
 
 The spec is the source of truth — compare it against what's actually implemented:
 
-- **`spec/product.md`** (16 core domains: IAM, Backwork, Financials, Comms, Events, Polls, Service Hours, Tasks, Semester Rollover, Reports, Alumni, …) — which domains are **unbuilt or only partial**? Which **phased features** (marked v2 / v3+) are now ready to start? Which **user flows are missing across surfaces** (landing / web / mobile)?
-- **`spec/behavior.md`** — which **invariants, edge cases, role-lifecycle / presidency-transfer rules, anti-fraud, atomicity** aren't implemented or tested?
+- **`spec/product/`** (17 core domains under `modules.md`: IAM, Backwork, Financials, Comms, Events, Polls, Service Hours, Tasks, Semester Rollover, Reports, Alumni, …) — which domains are **unbuilt or only partial**? Which **phased features** (marked v2 / v3+) are now ready to start? Which **user flows are missing across surfaces** (landing / web / mobile)?
+- **`spec/behavior/`** — which **invariants, edge cases, role-lifecycle / presidency-transfer rules, anti-fraud, atomicity** aren't implemented or tested? Start at `behavior/README.md`.
 - **`spec/architecture.md`** + the **`spec/ui-*.md`** files — drift between intended and actual architecture; cross-surface inconsistency; missing resilience, empty, error, and loading states; accessibility gaps.
 
 A spec'd capability with no or partial code is a **product gap**, not just a tech nit — file it.
@@ -158,7 +158,7 @@ Keep every issue in this exact shape so the backlog reads consistently:
 `area:<x>` · `type:<gap|improvement|idea>` · `severity:<x>`
 
 ### Location
-`path/to/file.ext:line`  (or `spec/product.md §3.x` for product/behavior items)
+`path/to/file.ext:line`  (or `spec/product/<topic>.md` / `spec/behavior/<topic>.md` for product/behavior items)
 
 ### Description
 <what's wrong, missing, or worth pursuing>
