@@ -2,7 +2,9 @@
 
 The chat-first redesign (see [`spec/README.md`](../README.md#roadmap)) inverts the historical "12 modules side-by-side" model. **Chat is the magnum opus**; every other capability (events, tasks, dues, points, polls) is a *chat integration* — surfaced inline in conversation, not behind a separate nav tab. Chat is non-optional, free, and the default landing route on web (`/chat`) and mobile (chat tab).
 
-The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. The chunk roadmap in [`spec/README.md`](../README.md#roadmap) is the canonical context for that direction; this spec captures the current ship state.
+The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports) and the AI features (meeting transcription/summary, Q&A over chapter content). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. The chunk roadmap in [`spec/README.md`](../README.md#roadmap) is the canonical context for that direction; this spec captures the current ship state.
+
+**AI features are anchored on authoritative content, not casual chat.** The AI corpus is meeting minutes, uploaded documents, structured chapter data, and announcements — not the general channels. This is an intentional product call: smaller AI that's reliably right, instead of bigger AI that's frequently embarrassing. See [`spec/behavior/ai.md`](../behavior/ai.md) for scope and non-goals.
 
 ---
 

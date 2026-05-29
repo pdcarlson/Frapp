@@ -457,3 +457,70 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 **Rationale:** A bespoke broadcast topic (e.g. `presence:channel:<id>` with manual heartbeats) would re-implement what Realtime Presence already does — connect/disconnect tracking, a state aggregator, automatic cleanup on socket drop — and create a second source of truth that can drift from the actual subscription state. Presence on the chat channel topic is automatic; we already pay the realtime cost for messages on the same topic. **Alternatives considered:** (a) custom broadcast topic with periodic `still-here` pings — duplicates Presence with more bugs; (b) a global presence map maintained by the API via REST heartbeats — loses ephemerality, creates DB write amplification (ADR-02 anti-pattern); (c) skip presence and always push — trains users to mute notifications (ADR-04 anti-pattern).
 
 **Consequences:** The web client now joins Presence on every active channel — small additional cost on the same socket. The push worker opens a presence subscription per channel it sees a message for (cached for the process lifetime); presence reads are synchronous (`presenceState()`) so the rule chain stays cheap. False negatives (recipient briefly offline) are acceptable; false positives (recipient actively reading) are worse — the rule order skips presence first.
+
+---
+
+## 13. AI Corpus Architecture (v1)
+
+### Sources
+
+The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casual chat is not indexed — see [`behavior/ai.md`](behavior/ai.md) for the product rules.
+
+| Source           | Table / location                                     | Indexer                                       |
+| ---------------- | ---------------------------------------------------- | --------------------------------------------- |
+| Meeting minutes  | `meeting_recordings`, `meeting_summaries`            | Indexed on insert; re-indexed on summary edit. |
+| Chapter documents | `chapter_documents` + Supabase Storage `documents/` | Indexed on upload; OCR/extraction at index time for PDFs. |
+| Structured data  | `chapters`, `members`, `events`, `dues_*`, `roles`   | Materialized via a thin "facts" view; refreshed on write. |
+| Announcements    | `chat_messages` where channel is `#announcements`    | Indexed on insert; deleted/edited mirrored.    |
+
+### Retrieval
+
+- Vector index per chapter (pgvector or equivalent), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors.
+- Retrieval returns source rows with provenance metadata (source type, author or document title, timestamp, internal ID). The LLM prompt template injects this metadata so the model can cite it back.
+- Recency decay is applied at retrieval time so newer authoritative content outranks older content on time-sensitive questions ("when is the meeting"); decay is off for time-invariant content (policies, bylaws).
+
+### Citation protocol
+
+- The LLM prompt mandates inline citations on every answer. The post-processor parses citation tokens out of the model output and renders them as links to the source surface.
+- Answers without resolvable citations are rejected and re-prompted; if the second attempt fails, the user sees a "couldn't find a confident answer" response rather than an uncited synthesis.
+
+### Evals
+
+- Adversarial test set under `apps/api/test/ai-evals/` covering: stale information (old meeting minutes contradicted by newer ones), conflicting sources (two documents disagreeing), missing information (corpus has nothing on the question), prompt injection from user-uploaded content.
+- The eval suite runs on every change to the prompt template or retrieval logic. A regression fails the build.
+
+### Out of scope for v1
+
+- Chat indexing (see [`behavior/ai.md`](behavior/ai.md) non-goals).
+- Vault content (see [`behavior/vault.md`](behavior/vault.md)).
+- Cross-chapter aggregate analytics (would require national-tier infrastructure).
+
+---
+
+## 14. Vault Key Management
+
+The vault ([`behavior/vault.md`](behavior/vault.md)) stores high-sensitivity chapter content (risk, standards, legal). Key management lives in a managed KMS / HSM, not in Frapp application memory.
+
+### Per-chapter key
+
+- One symmetric key per chapter, generated at chapter creation and stored in the KMS.
+- Application code never reads the raw key — encryption/decryption operations go through the KMS API. The KMS enforces access via service-role policy.
+- Storage path: `chapters/{chapter_id}/vault/{document_id}/{filename}`. Blobs are AEAD-encrypted (e.g. AES-GCM) with the chapter's key plus a per-document nonce stored alongside the blob.
+
+### Break-glass recovery
+
+- A separate HSM-protected recovery key exists per environment. The recovery key can derive any chapter's per-chapter key on demand.
+- Recovery operations require multi-party authorization at the HSM layer (split between Frapp ops and a designated escrow holder). Single-operator recovery is not possible.
+- Every recovery operation emits an audit row: `(operation_id, chapter_id, requesting_president_id, request_reference, hsm_operator, completed_at)`. The audit row is written to a separate database from the application database (defense-in-depth — operations on the application DB cannot tamper with the audit trail).
+
+### Transparency log
+
+- The recovery audit table feeds the quarterly transparency report. The report is auto-generated from the audit table, manually reviewed by Frapp leadership, and published at `frapp.live/transparency`.
+- Reports include: total recovery operations per quarter, anonymized chapter identifier, request reason category, completion latency. They do not include chapter content.
+
+### Threat model
+
+- **Attacker with application DB access:** sees encrypted blobs, cannot decrypt without KMS access.
+- **Attacker with Supabase Storage access:** same — blobs are AEAD-encrypted.
+- **Compromised Frapp operator:** can request recovery but cannot complete it solo (multi-party HSM authorization). Every operation is logged.
+- **Legal compulsion (subpoena):** recovery is possible but logged in the transparency report.

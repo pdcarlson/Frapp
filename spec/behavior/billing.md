@@ -28,3 +28,31 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Payments tracked via Stripe PaymentIntents. Webhook confirms payment and moves invoice to PAID.
 - Overdue invoices: if an invoice is OPEN past its `due_date`, a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.
 - Financial transactions log all payments, refunds, and adjustments with Stripe charge IDs for reconciliation.
+
+## AI Usage Pricing
+
+AI features ([`ai.md`](ai.md), meeting summarization in [`meetings.md`](meetings.md)) are gated behind the paid tier with an **allowance + at-cost overage** model. Two design goals: members never see a meter at point-of-use, and the chapter treasurer never gets a surprise bill.
+
+### Monthly allowance
+
+- The paid tier includes a monthly AI allowance (size: TBD — sized so that ~90% of chapters never overage based on usage analysis. Carried as `TBD: pricing analysis` until the launch number is set).
+- Allowance covers LLM tokens (Q&A, summarization) and transcription minutes, normalized to a dollar equivalent of upstream provider cost.
+- Allowance resets on the chapter's monthly billing anniversary.
+- Unused allowance does **not** roll over.
+
+### At-cost overage
+
+- Usage past the monthly allowance bills the chapter at the actual upstream provider cost — zero markup.
+- The treasurer sees a real-time usage dashboard per chapter: allowance used / remaining / projected overage if current pace continues.
+- A configurable hard cap (default: $0 overage allowed, configurable by the treasurer) prevents runaway costs. When the cap is reached, AI features return a "monthly cap reached — contact treasurer" error rather than continuing to bill.
+- Alerts fire at 75%, 90%, and 100% of allowance + at 75%, 90%, 100% of any configured overage cap.
+
+### Member-facing UX
+
+Members **never see a meter or "this costs X" prompt at the point of using an AI feature.** The allowance + overage cost is a chapter-level concern surfaced only to the treasurer (`billing:view`/`billing:manage`). Member-facing prompts about cost would create perverse incentives against using the feature that the chapter is already paying for.
+
+### Implementation invariants
+
+- Every AI request is metered: `(chapter_id, feature, tokens_in, tokens_out, transcription_seconds, upstream_cost_cents, billed_at)`. The metering row is written before the response is returned to the client.
+- Allowance and overage are computed from the meter, not from a separate balance. There is no mutable "balance" column.
+- The hard cap is enforced server-side; clients never compute "should this request go through" locally.

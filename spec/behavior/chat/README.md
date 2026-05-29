@@ -31,6 +31,7 @@
 - DMs appear in a separate "Messages" section in the UI, not mixed with chapter channels.
 - DMs are not role-gated; they are scoped by an explicit member list stored on the channel.
 - A user can leave a Group DM. If only one member remains, the Group DM is archived.
+- **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md). They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations. This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
 
 ## Messages
 
@@ -64,12 +65,22 @@
 - A sender can delete their own messages. Users with `channels:manage` permission can delete any message in channels they manage.
 - Deleted messages are soft-deleted: content is replaced with "[message deleted]", `is_deleted = true`. Attachments for deleted messages are removed from Storage.
 
-**Pinned messages:**
+**Pinned messages (chapter-elevated):**
 
 - Users with `channels:manage` permission can pin messages in a channel.
 - Pinned messages are accessible via a dedicated "Pins" panel in the channel UI.
 - A channel can have up to 50 pinned messages. Pinning a 51st requires unpinning an older one.
 - Pinning a message sets `is_pinned = true` and `pinned_at` on the message.
+- Pin is the **chapter-public** elevation: the message becomes durable and prominent for everyone who can see the channel. Pinning is the right answer for chapter-wide important content.
+
+**Bookmarks (personal):**
+
+- Any member can bookmark any message they can see. Bookmarks are **private to the bookmarker** — no one else (not even channel admins) can see who bookmarked what.
+- Bookmarked messages appear in a personal "Bookmarks" view, scoped per chapter.
+- A bookmark does not affect the underlying message's lifecycle. If the original message is deleted, the bookmark surfaces a "[message deleted]" placeholder.
+- Bookmarks are the right answer for "I want to remember this myself" without elevating to chapter-wide visibility.
+
+**No sender-extend on ephemerality.** Senders cannot extend the lifetime of their own message past channel retention rules. The two ways content becomes durable are a chapter-elevated **pin** (visible to everyone who can see the channel) or a **bookmark** (private to the bookmarker). This keeps ephemerality real — there's no third path that lets a sender unilaterally make their own content stick around.
 
 **Typing indicators:**
 

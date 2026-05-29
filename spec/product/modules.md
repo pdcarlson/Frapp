@@ -222,6 +222,9 @@ The module catalog governs which features chapters can enable. Two tiers:
 | Reports | `reports` | Health dashboard, nationals export, advisor digest |
 | Onboarding | `onboarding` | Structured new-member pathway |
 | Geofences | `geofences` | Geo-fenced check-in zones |
+| Meetings | `meetings` | Audio transcription + AI summary + single-template per type ([`spec/behavior/meetings.md`](../behavior/meetings.md)) |
+| Vault | `vault` | Encrypted private storage for risk / standards content ([`spec/behavior/vault.md`](../behavior/vault.md)) |
+| AI Q&A | `ai` | Ask-anything over meeting minutes, documents, structured data, announcements ([`spec/behavior/ai.md`](../behavior/ai.md)) |
 
 ## Archetype-specific extras (prototype extras carried forward)
 
@@ -230,3 +233,7 @@ The module catalog governs which features chapters can enable. Two tiers:
 ## Module disabling behavior
 
 Disabling a paid module: hides its slash commands from the composer, mutes its system channel (no new messages, unread badge suppressed), and hides its dashboard page from navigation. Data is preserved — re-enabling restores access.
+
+## AI feature pricing
+
+The AI Q&A and Meetings modules are bundled into the paid tier with a monthly **AI allowance** included; usage past the allowance is **at-cost passthrough** with treasurer visibility and a configurable hard cap. See [`spec/behavior/billing.md`](../behavior/billing.md) for the allowance + overage rules. The intent: members never see a meter at the point of using AI; treasurers see usage but only see a real overage bill when the chapter is outlier-heavy.

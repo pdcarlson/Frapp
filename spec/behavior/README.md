@@ -34,6 +34,9 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | Chapter branding                                     | [`branding/`](branding/README.md)          |
 | Settings shell, customization, audit (chunks 06–08)  | [`settings/`](settings/README.md)          |
 | Ops integrations (chunk 10a–10h)                     | [`integrations/`](integrations/README.md)  |
+| Meetings (transcription + AI summary)                | [`meetings.md`](meetings.md)               |
+| Vault (encrypted private storage)                    | [`vault.md`](vault.md)                     |
+| AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
 Chunk briefs from the chat rework live next to the topic they primarily implement, under `<topic>/chunks/NN-<slug>.md`. The cross-cutting roadmap (which chunk is shipped vs. queued) lives in the top-level [`spec/README.md`](../README.md#roadmap).
