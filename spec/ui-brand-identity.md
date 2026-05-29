@@ -6,10 +6,10 @@
 
 ## 1. Positioning and voice
 
-- **Line:** “The operating system for Greek life.” (see [product.md](product.md).)
+- **Line:** “The operating system for Greek life.” (see [product/](product/README.md).)
 - **Voice:** Direct, operational, chapter-native. Prefer concrete nouns (attendance, dues, roster) over abstract “synergy.” Avoid startup clichés (“supercharge,” “10×,” “all-in-one” without proof).
 - **Trust:** Differentiation comes from **clarity and honesty**, not invented metrics. Stats, logos, and testimonials on the marketing site must be **true** or **clearly marked as illustrative** until verified.
-- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see `master-plan.md` *Theming model*).
+- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see [`redesign-context.md`](redesign-context.md) *Theming model*).
 
 ---
 
@@ -92,7 +92,7 @@ Avoid as **default** patterns:
 | [ui-landing.md](ui-landing.md)                           | frapp.live layout and sections   |
 | [ui-web-dashboard.md](ui-web-dashboard.md)               | app.frapp.live shell and screens |
 | [ui-assets.md](ui-assets.md)                             | Logos, favicons, OG, asset sync  |
-| [product.md](product.md)                                 | Surfaces and features            |
+| [product/](product/README.md)                                 | Surfaces and features            |
 
 ---
 

@@ -2,7 +2,7 @@
 
 Visual reference bundle exported from claude.ai/design (handoff ID `uUVhoSAtPSXszJas884LAw`). Lands here so every redesign chunk can reference the same source of truth without re-fetching.
 
-> **Not canonical.** The bundle is a *visual* reference — palette, typography, shell layout, BETA badge styles, settings rail, archetype catalog, ledger-line motifs. Product positioning, hot-path architecture, and theming model live in [`docs/internal/redesign/master-plan.md`](../docs/internal/redesign/master-plan.md). Where the bundle and the master plan disagree, the master plan wins.
+> **Not canonical.** The bundle is a *visual* reference — palette, typography, shell layout, BETA badge styles, settings rail, archetype catalog, ledger-line motifs. Product positioning, hot-path architecture, and theming model live in [`spec/redesign-context.md`](../spec/redesign-context.md). Where the bundle and the redesign context disagree, the redesign context wins.
 
 ## What's here
 

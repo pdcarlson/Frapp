@@ -187,7 +187,7 @@ This uses git diff to verify `openapi.json` and `types.ts` are updated when API 
 ### Manual review
 
 1. Open `http://localhost:3001/docs` (Swagger UI)
-2. Verify endpoints match the product spec in `spec/product.md`
+2. Verify endpoints match the product spec under `spec/product/`
 3. Check for undocumented endpoints or missing `@ApiOperation` summaries
 4. Verify request/response schemas match DTOs
 
@@ -254,8 +254,8 @@ Compare output with expected checks in `CONTRIBUTING.md`.
 
 The spec is the source of truth. When auditing:
 
-1. **Product**: Compare implemented features against `spec/product.md` domains
-2. **Behavior**: Verify edge cases and invariants from `spec/behavior.md` are tested
+1. **Product**: Compare implemented features against domains under `spec/product/`
+2. **Behavior**: Verify edge cases and invariants from topics under `spec/behavior/` are tested
 3. **Architecture**: Check stack choices and patterns match `spec/architecture.md`
 4. **Environments**: Verify env setup matches `spec/environments.md`
 

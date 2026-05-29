@@ -6,7 +6,7 @@ Where to put updates so **`docs/`** and **`spec/`** stay navigable and do not dr
 
 | Kind of change                                | Primary place                         | Notes                                                                                                          |
 | --------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Product behavior, rules, flows                | `spec/product.md`, `spec/behavior.md` | Link from guides only if onboarding must mention the flow                                                      |
+| Product behavior, rules, flows                | `spec/product/`, `spec/behavior/`     | Link from guides only if onboarding must mention the flow. Both are folders — start at each `README.md`.       |
 | Architecture, data model, API patterns        | `spec/architecture.md`                | OpenAPI/SDK artifacts are code-owned; spec describes intent                                                    |
 | Environments, CI/CD model                     | `spec/environments.md`                | Pair with `docs/DEPLOYMENT.md` when rollout steps change                                                       |
 | UI product requirements                       | `spec/ui-*.md`                        | Design-system ops: `docs/internal/UI_UX_SYSTEM.md`, `UX_WRITING_GUIDE.md`                                      |
@@ -25,7 +25,7 @@ Where to put updates so **`docs/`** and **`spec/`** stay navigable and do not dr
 
 `scripts/check-docs-impact.mjs` fails if the PR changes **any** path outside `docs/` or `spec/` without also changing **at least one** path under `docs/` or `spec/`. It does not pick _which_ file—maintainers still judge relevance.
 
-- **API / domain:** `spec/architecture.md` and/or `spec/behavior.md`, plus `docs/guides/api-architecture.md` or `database.md` when contributor docs need it.
+- **API / domain:** `spec/architecture.md` and/or the relevant topic under `spec/behavior/`, plus `docs/guides/api-architecture.md` or `database.md` when contributor docs need it.
 - **UI:** Relevant `spec/ui-*.md` and/or `docs/internal/UI_UX_SYSTEM.md` / `UX_WRITING_GUIDE.md` per PR template.
 - **Infra / CI:** `spec/environments.md` and/or `docs/internal/AGENT_INFRA.md`, `DOCS_CI.md`, or focused runbooks.
 - **Mechanical / non-user-visible:** A short note in an existing related doc (e.g. `docs/internal/refactor-notes.md` or the nearest guide) is enough.
