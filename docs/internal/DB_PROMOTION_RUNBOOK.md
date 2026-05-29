@@ -94,6 +94,7 @@ Post-apply production checks:
 One additive migration. Creates an API-only idempotency table used by the billing webhook handler.
 
 ### 20260530083000_stripe_webhook_events.sql
+
 * **Purpose**: Creates `stripe_webhook_events` keyed by Stripe `event_id`, with processing/processed/failed timestamps and attempt tracking. The billing service claims a row before side effects, skips rows already marked processed, and releases failed rows for Stripe retry.
 * **Checks**:
   - Table: `select tablename from pg_tables where tablename = 'stripe_webhook_events';` — should return 1 row.

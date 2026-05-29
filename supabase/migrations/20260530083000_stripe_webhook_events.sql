@@ -7,7 +7,9 @@ create table stripe_webhook_events (
   last_error            text,
   attempts              integer      not null default 1 check (attempts > 0),
   created_at            timestamptz  not null default now(),
-  updated_at            timestamptz  not null default now()
+  updated_at            timestamptz  not null default now(),
+  constraint stripe_webhook_events_terminal_state_check
+    check (processed_at is null or failed_at is null)
 );
 
 create index idx_stripe_webhook_events_processing
