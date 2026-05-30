@@ -7,12 +7,23 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { ContentFreePropertyError } from '@repo/validation';
 import { AnalyticsService } from '../../application/services/analytics.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { CurrentUser } from '../decorators/current-user.decorator';
-import { TrackEventDto } from '../dtos/analytics.dto';
+import {
+  IdentityResponseDto,
+  TrackEventDto,
+  TrackEventResponseDto,
+} from '../dtos/analytics.dto';
 
 @ApiTags('Analytics')
 @ApiBearerAuth()
@@ -27,7 +38,8 @@ export class AnalyticsController {
     summary:
       "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
   })
-  getIdentity(@CurrentUser('id') userId: string) {
+  @ApiOkResponse({ type: IdentityResponseDto })
+  getIdentity(@CurrentUser('id') userId: string): IdentityResponseDto {
     // `enabled: false` tells the client SDK to stay dark (no key configured).
     const distinctId = this.analytics.getDistinctId(userId);
     return { distinct_id: distinctId, enabled: distinctId !== null };
@@ -38,18 +50,24 @@ export class AnalyticsController {
     summary:
       'Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out.',
   })
-  async track(@CurrentUser('id') userId: string, @Body() dto: TrackEventDto) {
+  @ApiCreatedResponse({ type: TrackEventResponseDto })
+  async track(
+    @CurrentUser('id') userId: string,
+    @Body() dto: TrackEventDto,
+  ): Promise<TrackEventResponseDto> {
     try {
       await this.analytics.track(dto.name, userId, {
         chapterId: dto.chapter_id,
         properties: dto.properties,
       });
     } catch (error) {
-      // assertContentFreeProperties throws on a content/PII payload — surface
-      // that to the caller as a 400 so the bad event is fixed, not swallowed.
-      throw new BadRequestException(
-        error instanceof Error ? error.message : 'Invalid analytics event',
-      );
+      // Only a content/PII payload is a caller error → 400. Anything else is an
+      // unexpected server fault; rethrow so Nest maps it to 500 rather than
+      // masking it as a client mistake.
+      if (error instanceof ContentFreePropertyError) {
+        throw new BadRequestException(error.message);
+      }
+      throw error;
     }
     return { success: true };
   }

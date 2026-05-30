@@ -2320,6 +2320,12 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
         };
+        IdentityResponseDto: {
+            /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
+            distinct_id: string | null;
+            /** @description Whether analytics is enabled for this caller. */
+            enabled: boolean;
+        };
         TrackEventDto: {
             /**
              * @description Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.
@@ -2328,10 +2334,13 @@ export interface components {
             name: string;
             /** @description Chapter the event is attributed to (enables the opt-out gate) */
             chapter_id?: string;
-            /** @description Behavioral, content-free properties. Keys that look like content/PII (content, body, email, name, …) are rejected. */
+            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected. */
             properties?: {
-                [key: string]: unknown;
+                [key: string]: (string | number | boolean) | null;
             };
+        };
+        TrackEventResponseDto: {
+            success: boolean;
         };
     };
     responses: never;
@@ -5130,7 +5139,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["IdentityResponseDto"];
+                };
             };
         };
     };
@@ -5151,7 +5162,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TrackEventResponseDto"];
+                };
             };
         };
     };

@@ -420,6 +420,7 @@ export {
   hashUserIdForAnalytics,
   hmacSha256Hex,
   assertContentFreeProperties,
+  ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
 } from "./analytics";
 export type {

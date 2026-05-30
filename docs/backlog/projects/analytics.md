@@ -7,8 +7,9 @@
 
 > Pseudonymous product-analytics pipeline. Events are keyed by `hmac_sha256(per-environment-salt,
 > user_id)`; the salt is held outside the analytics provider's environment. Chapter presidents can
-> disable analytics for their chapter (enforced client- and server-side). Payloads describe behavior,
-> never content.
+> disable analytics for their chapter. The opt-out is enforced server-side for events that carry a
+> `chapter_id` — today that's web; mobile has no active-chapter context yet (gated to a no-op until
+> #253/#466 wire it). Payloads describe behavior, never content.
 
 ## Work units
 

@@ -122,9 +122,12 @@ export class AnalyticsService {
    * A chapter opts out by setting `chapters.analytics_opt_out = true`
    * (wired by the Settings toggle, #466). Read fresh per event — analytics is a
    * fire-and-forget cold path, not latency-critical, and a single PK-indexed
-   * read keeps the toggle effective immediately (no cache to go stale). Fails
-   * open on lookup error so a DB blip doesn't silently drop all analytics, but
-   * the `analytics_opt_out = true` result is authoritative.
+   * read keeps the toggle effective immediately (no cache to go stale).
+   *
+   * Fails *closed*: a lookup error suppresses the event. For a privacy control
+   * the safe default is to not send when we cannot confirm the chapter is
+   * opted in — losing a few events on a DB blip is preferable to emitting for a
+   * chapter that may have opted out.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
     const { data, error } = await this.supabase
@@ -135,10 +138,10 @@ export class AnalyticsService {
 
     if (error) {
       this.logger.warn(
-        `analytics opt-out lookup failed for chapter ${chapterId}`,
+        `analytics opt-out lookup failed for chapter ${chapterId}; suppressing event`,
         error,
       );
-      return true; // fail open on a transient error
+      return false; // fail closed: do not emit when opt-out state is unknown
     }
 
     const optedOut =

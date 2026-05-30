@@ -4246,7 +4246,14 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4276,7 +4283,14 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackEventResponseDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5763,6 +5777,24 @@
           }
         }
       },
+      "IdentityResponseDto": {
+        "type": "object",
+        "properties": {
+          "distinct_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether analytics is enabled for this caller."
+          }
+        },
+        "required": [
+          "distinct_id",
+          "enabled"
+        ]
+      },
       "TrackEventDto": {
         "type": "object",
         "properties": {
@@ -5777,12 +5809,36 @@
           },
           "properties": {
             "type": "object",
-            "description": "Behavioral, content-free properties. Keys that look like content/PII (content, body, email, name, …) are rejected.",
-            "additionalProperties": true
+            "description": "Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected.",
+            "additionalProperties": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
           }
         },
         "required": [
           "name"
+        ]
+      },
+      "TrackEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
         ]
       }
     }

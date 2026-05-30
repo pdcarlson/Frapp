@@ -110,6 +110,28 @@ describe('analytics keying util', () => {
       ).toThrow(/display/i);
     });
 
+    it('rejects non-scalar values that could smuggle content (nested object)', () => {
+      expect(() =>
+        assertContentFreeProperties({
+          name: 'opened-channel',
+          distinctId: 'abc',
+          properties: {
+            meta: { body: 'hidden' } as unknown as string,
+          },
+        }),
+      ).toThrow(/non-scalar/i);
+    });
+
+    it('rejects array values', () => {
+      expect(() =>
+        assertContentFreeProperties({
+          name: 'opened-channel',
+          distinctId: 'abc',
+          properties: { tags: ['a', 'b'] as unknown as string },
+        }),
+      ).toThrow(/non-scalar/i);
+    });
+
     it('allows an event with no properties', () => {
       expect(() =>
         assertContentFreeProperties({ name: 'app-opened', distinctId: 'abc' }),

@@ -193,7 +193,7 @@ describe('AnalyticsService', () => {
       expect(provider.capture).toHaveBeenCalledTimes(1);
     });
 
-    it('fails open (still sends) when the opt-out lookup errors', async () => {
+    it('fails closed (suppresses) when the opt-out lookup errors', async () => {
       const { client } = makeSupabaseMock({
         data: null,
         error: { message: 'db down' },
@@ -208,7 +208,8 @@ describe('AnalyticsService', () => {
         chapterId: 'chapter-1',
       });
 
-      expect(provider.capture).toHaveBeenCalledTimes(1);
+      // Privacy-safe default: don't emit when opt-out state is unknown.
+      expect(provider.capture).not.toHaveBeenCalled();
     });
   });
 

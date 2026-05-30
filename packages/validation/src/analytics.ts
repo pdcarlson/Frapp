@@ -238,21 +238,49 @@ export interface AnalyticsEvent {
 }
 
 /**
- * Throw if an event's property keys look like content/PII. Returns the event
- * unchanged on success so it can be used inline at the SDK boundary.
+ * Thrown when an analytics event carries content/PII. A distinct type so the
+ * API boundary can map it to a 400 (caller error) while letting genuine server
+ * faults surface as 500 instead of being masked.
+ */
+export class ContentFreePropertyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ContentFreePropertyError';
+  }
+}
+
+/**
+ * Throw if an event's properties look like content/PII. Rejects both forbidden
+ * keys (email, body, …) and non-scalar values — a nested object or array could
+ * smuggle content past the key check (e.g. `{ meta: { body: "…" } }`). Returns
+ * the event unchanged on success so it can be used inline at the SDK boundary.
  */
 export function assertContentFreeProperties(
   event: AnalyticsEvent,
 ): AnalyticsEvent {
-  const offending = Object.keys(event.properties ?? {}).filter((key) =>
+  const properties = event.properties ?? {};
+
+  const forbiddenKeys = Object.keys(properties).filter((key) =>
     FORBIDDEN_KEY_SET.has(normalizeKey(key)),
   );
-  if (offending.length > 0) {
-    throw new Error(
+  if (forbiddenKeys.length > 0) {
+    throw new ContentFreePropertyError(
       `Analytics event "${event.name}" carries forbidden content/PII propert${
-        offending.length === 1 ? 'y' : 'ies'
-      }: ${offending.join(', ')}. Event properties must describe behavior, not content.`,
+        forbiddenKeys.length === 1 ? 'y' : 'ies'
+      }: ${forbiddenKeys.join(', ')}. Event properties must describe behavior, not content.`,
     );
   }
+
+  const nonScalarKeys = Object.entries(properties)
+    .filter(([, value]) => value !== null && typeof value === 'object')
+    .map(([key]) => key);
+  if (nonScalarKeys.length > 0) {
+    throw new ContentFreePropertyError(
+      `Analytics event "${event.name}" has non-scalar propert${
+        nonScalarKeys.length === 1 ? 'y' : 'ies'
+      }: ${nonScalarKeys.join(', ')}. Properties must be a string, number, boolean, or null — nested objects/arrays can smuggle content.`,
+    );
+  }
+
   return event;
 }

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useMemo } from "react";
-import { useFrappClient } from "@repo/hooks";
+import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { AnalyticsProperties } from "@repo/validation";
 
 /**
@@ -21,7 +21,9 @@ import type { AnalyticsProperties } from "@repo/validation";
  * `chapter_id`, so the server's per-chapter opt-out gate cannot apply to them.
  * Wiring the active chapter into analytics events is tracked alongside mobile
  * parity (#253) and the opt-out toggle (#466); the web provider already passes
- * it. This is the documented limitation, not a silent bypass.
+ * it. Until that lands, `track` is **gated**: with no active chapter it is a
+ * no-op, so mobile events can never escape a chapter's opt-out by omitting
+ * `chapter_id`.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 
@@ -29,13 +31,18 @@ const AnalyticsContext = createContext<TrackFn | null>(null);
 
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
+  const chapterId = useActiveChapterId();
 
   const track = useCallback<TrackFn>(
     (name, properties) => {
+      // Gate on chapter context: without it the server can't apply the
+      // per-chapter opt-out, so don't emit (see provider doc comment).
+      if (!chapterId) return;
       void client
         .POST("/v1/analytics/events", {
           body: {
             name,
+            chapter_id: chapterId,
             ...(properties ? { properties } : {}),
           },
         })
@@ -43,7 +50,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
           // Best-effort: analytics must never surface an error to the user.
         });
     },
-    [client],
+    [client, chapterId],
   );
 
   const value = useMemo(() => track, [track]);

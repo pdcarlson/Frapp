@@ -27,7 +27,9 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
 
   constructor(options: PosthogProviderOptions) {
     this.apiKey = options.apiKey;
-    this.host = (options.host ?? 'https://us.i.posthog.com').replace(/\/$/, '');
+    // `??` would keep an empty/whitespace POSTHOG_HOST; treat blank as unset.
+    const host = options.host?.trim() || 'https://us.i.posthog.com';
+    this.host = host.replace(/\/$/, '');
   }
 
   async capture(event: AnalyticsEvent): Promise<void> {
