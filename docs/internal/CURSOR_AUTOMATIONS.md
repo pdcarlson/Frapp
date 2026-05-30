@@ -52,13 +52,16 @@ spec/product/ and spec/behavior/, and (3) creative next steps & research. Be gen
 and inventive, not narrow.
 
 Follow .cursor/skills/suggestion-triage.md EXACTLY — it defines the lenses, the balance rules
-(span multiple areas; at most ~2 findings from recently-changed files; include product/UX/
-research items; ~6–10 total), the labels, the issue template, the dedup rule, and how to
-create/search issues with the gh CLI (run `export GH_TOKEN="$GITHUB_PAT"` first).
+(at most ~2 findings from recently-changed files; spread genuine findings across areas rather
+than clustering), the labels, the issue template, the dedup rule, and how to create/search
+issues with the gh CLI (run `export GH_TOKEN="$GITHUB_PAT"` first).
 
-Before filing, skim existing open `suggestion` issues to avoid duplicates and to find
-under-covered domains. Report findings grouped by severity. If nothing new is found, take no
-action.
+There is NO target number of findings. File an issue only when it is genuinely worth a
+maintainer's time to act on — do not pad a run to hit a count, and do not manufacture findings
+to broaden coverage. A run that files ZERO issues is a valid, expected outcome.
+
+Before filing, skim existing open `suggestion` issues to avoid duplicates. Report findings
+grouped by severity. If nothing clears the bar, take no action and report "no new suggestions".
 ```
 
 
