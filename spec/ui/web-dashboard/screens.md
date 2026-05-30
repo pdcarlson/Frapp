@@ -8,7 +8,7 @@ Chat is the spine of the product and the default landing surface; every ops surf
 
 ## Chat (`/chat`)
 
-The post-sign-in landing surface and the spine of the redesigned product.
+The post-sign-in landing surface and the spine of the chat-first product.
 
 **Layout — Slack-grade 3-pane (`md:grid-cols-[260px_1fr_300px]`):**
 
@@ -162,7 +162,7 @@ A subscription summary card sits above an `InvoiceAdminCard` that lists every me
 
 ## Settings (`/settings`)
 
-A vertical **tab rail of 9 tabs**, rebuilt for the chat-first redesign. Order: **Organization | Modules | Roles | Fields | Workflows | Dues | Theme | Beta | Audit.** Tabs are semantic interactives (`<button>` when the active tab is client state, `Link` when URL-routed) — never `<div onClick>`.
+A vertical **tab rail of 9 tabs**, rebuilt for the chat-first product. Order: **Organization | Modules | Roles | Fields | Workflows | Dues | Theme | Beta | Audit.** Tabs are semantic interactives (`<button>` when the active tab is client state, `Link` when URL-routed) — never `<div onClick>`.
 
 Config reads/writes go through `GET/PATCH /chapters/:id/config` via the `useOrgConfig()` / `usePatchOrgConfig()` hooks (optimistic cache update + rollback on error). **Every config PATCH writes a `chapter_audit_log` row**, which the audit bridge mirrors to `#chapter-audit`. Edit controls require `chapter-config:manage` (President holds `*`); reads require `chapter-config:view`.
 
@@ -242,7 +242,7 @@ A dismissible card (on `/chat` or as a banner in `#general`) nudges officers tow
 | Reports | Report-type selector, date-range picker, format toggle (JSON/CSV), download | Form + preview |
 | Polls | Poll list, create-poll form, results bar chart | List + chart |
 
-The standalone `/home` overview dashboard was removed in the chat-first redesign; the post-sign-in landing is `/chat` (a chat catch-up). Chapter health and quick actions are re-homed as inline chat artifacts.
+The standalone `/home` overview dashboard was removed in the chat-first product; the post-sign-in landing is `/chat` (a chat catch-up). Chapter health and quick actions are re-homed as inline chat artifacts.
 
 ---
 

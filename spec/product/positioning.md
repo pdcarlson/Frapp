@@ -1,6 +1,6 @@
 # Positioning — chat is the spine
 
-The chat-first redesign (see [`spec/README.md`](../README.md#roadmap)) inverts the historical "12 modules side-by-side" model. **Chat is the magnum opus**; every other capability (events, tasks, dues, points, polls) is a *chat integration* — surfaced inline in conversation, not behind a separate nav tab. Chat is non-optional, free, and the default landing route on web (`/chat`) and mobile (chat tab).
+The chat-first product (see [`spec/README.md`](../README.md#roadmap)) inverts the historical "12 modules side-by-side" model. **Chat is the magnum opus**; every other capability (events, tasks, dues, points, polls) is a *chat integration* — surfaced inline in conversation, not behind a separate nav tab. Chat is non-optional, free, and the default landing route on web (`/chat`) and mobile (chat tab).
 
 The paid tier gates the ops integrations (events with check-in, dues invoicing, points ledger, reports) and the AI features (meeting transcription/summary, Q&A over chapter content). The free tier — unlimited chat, unlimited members, unlimited chapters — is the wedge. The chunk roadmap in [`spec/README.md`](../README.md#roadmap) is the canonical context for that direction; this spec captures the current ship state.
 

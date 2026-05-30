@@ -35,7 +35,7 @@ Dashboard surfaces should reach for the `.eyebrow` and `.ledger-line` utility cl
 
 ## 3. Color roles
 
-The chat-first redesign moves the chrome palette from royal-blue + navy to **bone / bronze / ink**. The semantic token names (`primary`, `success`, `foreground`, `border`, etc.) are stable; the *values* changed in [`packages/theme/src/globals.css`](../../packages/theme/src/globals.css) and [`packages/theme/src/tokens.ts`](../../packages/theme/src/tokens.ts). Existing Tailwind utility classes that reference `navy.*` or `royal-blue.*` keep compiling — they now resolve to ink and bronze, respectively. New work should prefer the semantic tokens.
+The chat-first product moves the chrome palette from royal-blue + navy to **bone / bronze / ink**. The semantic token names (`primary`, `success`, `foreground`, `border`, etc.) are stable; the *values* changed in [`packages/theme/src/globals.css`](../../packages/theme/src/globals.css) and [`packages/theme/src/tokens.ts`](../../packages/theme/src/tokens.ts). Existing Tailwind utility classes that reference `navy.*` or `royal-blue.*` keep compiling — they now resolve to ink and bronze, respectively. New work should prefer the semantic tokens.
 
 | Role                         | Token / usage                                                              | Where                                                                                                         |
 | ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |

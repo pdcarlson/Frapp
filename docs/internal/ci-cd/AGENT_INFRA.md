@@ -135,7 +135,7 @@ Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](.
 
 ## Agent dev stack (cloud sessions)
 
-Decision context lives in [ADR-11 (`spec/architecture.md`)](../../spec/architecture.md); track program-level state in [`redesign/STATUS.md`](./redesign/STATUS.md) under "Program-level risks". This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
+Decision context lives in [ADR-11 (`spec/architecture/README.md`)](../../../spec/architecture/README.md); track program-level state in the backlog ([`docs/backlog/projects/agent-infra.md`](../../backlog/projects/agent-infra.md)). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
 
 ### What the stack is
 

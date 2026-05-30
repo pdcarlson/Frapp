@@ -8,7 +8,7 @@
 
 Inherits `@repo/theme` (Tailwind preset + CSS variables). Uses ShadCN UI as the component library (installed into `apps/web` via CLI, customized to match the Frapp palette).
 
-Semantic tokens match [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css) (source of truth). The chat-first redesign repaints the palette to **bone / bronze / ink** — `--primary` is deep bronze (not royal blue), `--success` is moss, and the sidebar lives on a parallel set of `--side-*` tokens that stay dark in both light and dark mode. See [brand-identity.md](../brand-identity.md) for the full token table and chapter-accent overlay model.
+Semantic tokens match [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css) (source of truth). The chat-first product repaints the palette to **bone / bronze / ink** — `--primary` is deep bronze (not royal blue), `--success` is moss, and the sidebar lives on a parallel set of `--side-*` tokens that stay dark in both light and dark mode. See [brand-identity.md](../brand-identity.md) for the full token table and chapter-accent overlay model.
 
 | Token       | Light (CSS vars)            | Dark (CSS vars)              | Usage                                  |
 | ----------- | --------------------------- | --------------------------- | -------------------------------------- |

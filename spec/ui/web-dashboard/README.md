@@ -1,6 +1,6 @@
 # UI/UX Specification: Web Dashboard (app.frapp.live)
 
-> The web dashboard is the command center for chapter admins. It must be information-dense without feeling cluttered, responsive down to tablet, and resilient on slow connections. In the chat-first redesign it is **secondary to chat** — every ops capability exists first as an inline chat artifact, and the dashboard page is the longer-form view.
+> The web dashboard is the command center for chapter admins. It must be information-dense without feeling cluttered, responsive down to tablet, and resilient on slow connections. In the chat-first product it is **secondary to chat** — every ops capability exists first as an inline chat artifact, and the dashboard page is the longer-form view.
 
 **Cross-app identity:** Motifs, color semantics, motion budget, and trust rules live in **[brand-identity.md](../brand-identity.md)** (palette, typography, radii, theming model). This document set specifies the dashboard shell, screens, components, and data behavior.
 
@@ -37,7 +37,7 @@
 
 ### Sidebar
 
-**Background:** `--side-bg` (always dark ink, regardless of light/dark mode) per the chat-first redesign. The sidebar palette never inverts; light/dark mode only swaps the content surfaces. Companion tokens (`--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent`) live in [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css).
+**Background:** `--side-bg` (always dark ink, regardless of light/dark mode) per the chat-first product. The sidebar palette never inverts; light/dark mode only swaps the content surfaces. Companion tokens (`--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent`) live in [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css).
 
 **Text:** `--side-fg`; active item: `--side-fg-hi` with a `--side-accent` left border.
 
@@ -89,13 +89,13 @@ controls. This divergence is called out in-copy on `/study` so there are
 no surprises.
 
 **Default route.** Chat is the default landing surface for the chat-first
-redesign. The unauthenticated landing page lives at `/` and redirects to
+chat-first rework. The unauthenticated landing page lives at `/` and redirects to
 `/chat` once a Supabase session is present. `/dashboard` is a legacy alias
 that also redirects to `/chat`. The dashboard route group includes
 `app/(dashboard)/page.tsx`, which redirects to `/chat` as well, so the
 `(dashboard)` tree always has an index page for parity with bookmarks and
 internal tooling that expect a segment root. The standalone `/home` overview
-was removed in the redesign.
+was removed in the chat-first rework.
 
 Roadmap entries render disabled with a `Soon` chip (soft-disabled via
 `aria-disabled="true"` + `tabIndex={-1}`) so the full footprint of the
