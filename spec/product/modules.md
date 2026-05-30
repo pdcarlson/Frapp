@@ -121,7 +121,7 @@
 - Polls have a question, 2-10 options, optional expiration time, and single-choice or multi-choice mode.
 - Members in the channel vote; results visible in real-time.
 - Polls are a special message type within chat.
-- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. Default seeds place that permission on Treasurer, Vice President, and Secretary (President has `*`); it is not on the default Member role. See [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui-web-dashboard.md`](../ui-web-dashboard.md).
+- Chapter-wide poll **listing** with aggregate results (web dashboard) is a separate surface from channel voting: it requires `polls:view_all` in addition to baseline chapter read permissions. Default seeds place that permission on Treasurer, Vice President, and Secretary (President has `*`); it is not on the default Member role. See [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md).
 
 ## Member Directory
 

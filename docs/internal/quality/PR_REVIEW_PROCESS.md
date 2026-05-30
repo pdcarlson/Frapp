@@ -58,7 +58,7 @@ Use this order so each PR has a single failure domain:
 5. **PR E — Release workflow only**
    - `.github/workflows/release.yml`
 6. **PR F — Contributor/spec docs follow-up**
-   - `CONTRIBUTING.md`, `spec/environments.md`, related runbooks
+   - `CONTRIBUTING.md`, `spec/environments/README.md`, related runbooks
 
 Each PR should merge before opening the next one, unless you explicitly need stacked PRs.
 

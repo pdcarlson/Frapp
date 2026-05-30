@@ -137,7 +137,7 @@ npm run generate -w packages/api-sdk
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/internal/ops/DEPLOYMENT.md`](../docs/internal/ops/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -324,7 +324,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
 - Every migration should have a documented rollback strategy in `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
-- See `docs/DEPLOYMENT.md` for the full migration deployment workflow.
+- See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
 
 ## Jules Cloud Environment
 

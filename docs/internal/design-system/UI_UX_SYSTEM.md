@@ -115,5 +115,5 @@ Typography roles and usage standards are documented in:
 
 Frapp logos, favicons, Open Graph, and asset sync are documented in:
 
-- `spec/ui-assets.md`
-- `docs/internal/BRAND_ASSETS.md`
+- `spec/ui/assets.md`
+- `docs/internal/design-system/BRAND_ASSETS.md`

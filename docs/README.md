@@ -11,7 +11,7 @@ Start here to find developer guides, operator runbooks, and how they relate to *
 | **Product & architecture spec** | [`spec/`](../spec/README.md)             | Product behavior, UI specs, security notes, environments, test specs                   |
 | **Deployment runbook**          | [`DEPLOYMENT.md`](DEPLOYMENT.md)         | Full operator deployment setup (DNS, providers, staging/production)                    |
 | **Performance notes**           | [`performance/`](performance/README.md)  | Ad-hoc performance investigations                                                      |
-| **Security fix log**            | [`SECURITY_FIXES.md`](SECURITY_FIXES.md) | Historical security fixes (link to `spec/security-*.md` for durable rules)             |
+| **Security fix log**            | [`SECURITY_FIXES.md`](internal/security/SECURITY_FIXES.md) | Historical security fixes (link to `docs/internal/security/` for durable rules)             |
 | **Hooks package**               | [`hooks/`](hooks/README.md)              | Conventions and tests for `packages/hooks`                                             |
 | **Archive**                     | [`archive/`](archive/README.md)          | Historical audits and roadmaps (not canonical)                                         |
 
@@ -23,7 +23,7 @@ Pull requests that change files **outside** `docs/` or `spec/` must also change 
 
 ## Quick links
 
-- Web dashboard **chapter-wide list APIs** (`GET /v1/points/transactions`, `GET /v1/polls`) and **`polls:view_all` / default role seeds**: behavior in [`spec/behavior/`](../spec/behavior/README.md) ([`rbac.md`](../spec/behavior/rbac.md), [`points.md`](../spec/behavior/points.md), [`polls.md`](../spec/behavior/polls.md)), nav and screens in [`spec/ui-web-dashboard.md`](../spec/ui-web-dashboard.md), implementation notes in [`docs/guides/api-architecture.md`](guides/api-architecture.md) (guards example + dashboard list endpoints).
+- Web dashboard **chapter-wide list APIs** (`GET /v1/points/transactions`, `GET /v1/polls`) and **`polls:view_all` / default role seeds**: behavior in [`spec/behavior/`](../spec/behavior/README.md) ([`rbac.md`](../spec/behavior/rbac.md), [`points.md`](../spec/behavior/points.md), [`polls.md`](../spec/behavior/polls.md)), nav and screens in [`spec/ui/web-dashboard/README.md`](../spec/ui/web-dashboard/README.md), implementation notes in [`docs/guides/api-architecture.md`](guides/api-architecture.md) (guards example + dashboard list endpoints).
 - Hands-on setup: [`docs/guides/getting-started.md`](guides/getting-started.md)
 - Local dev detail: [`docs/internal/environment/LOCAL_DEV.md`](internal/environment/LOCAL_DEV.md)
 - Environment variables: [`docs/internal/environment/ENV_REFERENCE.md`](internal/environment/ENV_REFERENCE.md)

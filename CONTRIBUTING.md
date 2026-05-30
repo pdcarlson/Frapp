@@ -187,4 +187,4 @@ The version tag and GitHub Release are created automatically by the release work
 - **DRY** — extract repeated code into shared packages.
 - **Self-documenting code** — comments explain _why_, not _what_.
 
-See `spec/architecture.md` Section 11 for the full quality standards.
+See `spec/architecture/README.md` Section 11 for the full quality standards.

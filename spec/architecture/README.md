@@ -522,7 +522,7 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 **Rationale:** Standalone deployments cost an extra Render instance, a separate deploy pipeline, and a second source of secrets. At MVP scale (~50 active chapters) the fanout cost is tiny vs the REST request mix, so in-process is the right default. Putting the trigger ahead of time in the ADR means no one has to re-derive when to split. **Alternatives considered:** (a) cron-pull every 10s — adds latency and can miss bursts; (b) standalone Render worker from day one — operational overhead with no payoff at current scale.
 
-**Consequences:** API restarts drop the Realtime subscription for the restart window — the missed messages do not retroactively push (acceptable: cold-path notifications are best-effort). Burst bundling, presence skipping, and preference resolution all run in the same memory space as the REST app; future scaling moves the entire `ChatPushWorkerModule` out without API code changes. Documented in `docs/DEPLOYMENT.md`.
+**Consequences:** API restarts drop the Realtime subscription for the restart window — the missed messages do not retroactively push (acceptable: cold-path notifications are best-effort). Burst bundling, presence skipping, and preference resolution all run in the same memory space as the REST app; future scaling moves the entire `ChatPushWorkerModule` out without API code changes. Documented in `docs/internal/ops/DEPLOYMENT.md`.
 
 ### ADR-10: Supabase Realtime Presence is the presence source — no custom broadcast topic (Chunk 05)
 

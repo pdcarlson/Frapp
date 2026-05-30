@@ -68,4 +68,4 @@ When a chapter's subscription status moves to `canceled` (see [`data-retention.m
 
 ## Architecture cross-references
 
-Vault key management (HSM provisioning, audit log shape, recovery operator workflow) is specified in [`spec/architecture.md`](../architecture.md) under "Vault key management."
+Vault key management (HSM provisioning, audit log shape, recovery operator workflow) is specified in [`spec/architecture/README.md`](../architecture/README.md) under "Vault key management."

@@ -29,7 +29,7 @@ Feature branches (`feature/*`) merge into `main` first, then `main` is promoted 
 
 ## Deployment sources of truth
 
-- Environment and CI/CD spec: `spec/environments.md`
+- Environment and CI/CD spec: `spec/environments/README.md`
 - Full deployment runbook: `docs/internal/ops/DEPLOYMENT.md`
 
 ## Safe documentation rule

@@ -46,8 +46,8 @@ All product decisions, behavior rules, and architecture are documented in the `s
 
 - **[spec/product/](spec/product/README.md)** — Features, user flows, surfaces, onboarding.
 - **[spec/behavior/](spec/behavior/README.md)** — Rules, edge cases, invariants, error handling.
-- **[spec/architecture.md](spec/architecture.md)** — Stack, data model, auth, storage, API contracts.
-- **[spec/environments.md](spec/environments.md)** — Local, staging, production setup; CI/CD.
+- **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
+- **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
 
 The spec is the single source of truth. Implementation follows the spec.
 
@@ -71,4 +71,4 @@ npm run dev:stack
 
 Per-app commands, no-Infisical fallback, mobile, and URLs: **[docs/internal/LOCAL_DEV.md](docs/internal/LOCAL_DEV.md)** (single reference for anything beyond `dev:stack`).
 
-See [spec/environments.md](spec/environments.md) for environment model and variables.
+See [spec/environments/README.md](spec/environments/README.md) for environment model and variables.

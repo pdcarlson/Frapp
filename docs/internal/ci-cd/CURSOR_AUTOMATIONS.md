@@ -171,4 +171,4 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 
 - Behavior changes go in [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md); only re-paste the dashboard prompt if the prompt itself changes.
 - Keep the label list aligned with `AGENTS.md`.
-- See the environment notes in [`spec/environments.md`](../../spec/environments.md#cursor-automations-environment).
+- See the environment notes in [`spec/environments/README.md`](../../spec/environments/README.md#cursor-automations-environment).

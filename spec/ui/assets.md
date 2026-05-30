@@ -1,6 +1,6 @@
 # Frapp UI assets — logos, icons, Open Graph
 
-> Normative companion to [ui-brand-identity.md](ui-brand-identity.md). Defines **Frapp-owned** raster/SVG assets, where they live, and how apps consume them without drift.
+> Normative companion to [ui/brand-identity.md](ui/brand-identity.md). Defines **Frapp-owned** raster/SVG assets, where they live, and how apps consume them without drift.
 
 ---
 
@@ -13,7 +13,7 @@
 | **Open Graph image**                    | Product | Preview card when a **Frapp marketing URL** is shared (Slack, iMessage, etc.)                                         |
 | **Chapter logo**                        | Tenant  | In-app surfaces, PDFs, onboarding — from Storage (`logo_path`); **does not** replace Frapp marks on marketing or docs |
 
-Chapter accent color applies **inside chapter context** only per [ui-brand-identity.md](ui-brand-identity.md) §3.
+Chapter accent color applies **inside chapter context** only per [ui/brand-identity.md](ui/brand-identity.md) §3.
 
 ---
 
@@ -50,7 +50,7 @@ All canonical files live in **`@repo/brand-assets`** (`packages/brand-assets/ass
 
 ## 5. Mobile (Expo)
 
-Expo requires **raster** launcher icons. When `app-icon.svg` changes, regenerate `apps/mobile/assets/images/icon.png`, `adaptive-icon.png`, `favicon.png`, and splash assets per [docs/internal/BRAND_ASSETS.md](../docs/internal/BRAND_ASSETS.md).
+Expo requires **raster** launcher icons. When `app-icon.svg` changes, regenerate `apps/mobile/assets/images/icon.png`, `adaptive-icon.png`, `favicon.png`, and splash assets per [docs/internal/design-system/BRAND_ASSETS.md](../docs/internal/design-system/BRAND_ASSETS.md).
 
 ---
 
@@ -60,7 +60,7 @@ Expo requires **raster** launcher icons. When `app-icon.svg` changes, regenerate
 2. Run `node scripts/sync-brand-assets.mjs` from repo root.
 3. Align `apps/landing/components/frapp-lockup.tsx` with `frapp-lockup.svg` if the lockup geometry changes (or regenerate from SVG).
 4. Run `npm run check:brand-assets` (root) before PR.
-5. Update [docs/internal/BRAND_ASSETS.md](../docs/internal/BRAND_ASSETS.md) if email paths or CI change.
+5. Update [docs/internal/design-system/BRAND_ASSETS.md](../docs/internal/design-system/BRAND_ASSETS.md) if email paths or CI change.
 
 ---
 

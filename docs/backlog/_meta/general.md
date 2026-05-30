@@ -32,7 +32,7 @@ Chapter-elevated Pin + personal Bookmark; no sender-extend. Spec: [`spec/behavio
 
 ### Spec maintenance — [#432](https://github.com/pdcarlson/Frapp/issues/432)
 
-- #467 Split `spec/ui-web-dashboard.md` into folder layout — **subsumed by the current restructure** (close on merge)
+- #467 Split `spec/ui/web-dashboard/README.md` into folder layout — **subsumed by the current restructure** (close on merge)
 
 ## Un-projected issues by area
 

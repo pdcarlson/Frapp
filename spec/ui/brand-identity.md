@@ -131,4 +131,4 @@ Avoid as **default** patterns:
 | Open Graph preview image             | `apps/landing/app/opengraph-image.tsx` — social cards when links are shared; do not reference missing static URLs   |
 | Chapter logo (tenant)                | Supabase Storage `chapters/{id}/branding/logo.*` — **never** replaces Frapp marketing assets                        |
 | Next apps                            | `apps/landing`, `apps/web` — both use `@repo/theme` preset                                              |
-| Email / external templates           | Embed or host files from `@repo/brand-assets` per [docs/internal/BRAND_ASSETS.md](../../docs/internal/BRAND_ASSETS.md) |
+| Email / external templates           | Embed or host files from `@repo/brand-assets` per [docs/internal/design-system/BRAND_ASSETS.md](../../docs/internal/design-system/BRAND_ASSETS.md) |

@@ -180,5 +180,5 @@ If CI job names change (e.g., renaming a workflow job), update:
 1. `scripts/configure-branch-protection.mjs` — `CI_CHECKS`, `DOCS_CHECKS` arrays
 2. This runbook — required checks tables
 3. `CONTRIBUTING.md` — required checks section
-4. `spec/environments.md` — CI job matrix
+4. `spec/environments/README.md` — CI job matrix
 5. Re-run `npm run configure:branch-protection` to apply the new names

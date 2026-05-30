@@ -7,7 +7,7 @@ A standalone marketing site (`apps/landing`). Deployed independently from the ap
 - Hero section with value proposition.
 - Feature highlights (Backwork, Chat, Points, Study Hours).
 - Pricing (single plan: flat monthly per chapter).
-- Stats row and testimonial quotes are included in the marketing build and **must** reflect verified metrics and real customers, or be clearly labeled as illustrative until validated (see [`spec/ui-brand-identity.md`](../ui-brand-identity.md)).
+- Stats row and testimonial quotes are included in the marketing build and **must** reflect verified metrics and real customers, or be clearly labeled as illustrative until validated (see [`spec/ui/brand-identity.md`](../ui/brand-identity.md)).
 - CTA: "Get Started" (redirects to app.frapp.live sign-up) and "Log In" (redirects to app.frapp.live).
 - **Legal pages:** Terms of Service (`/terms`), Privacy Policy (`/privacy`), FERPA Notice (`/ferpa`). Linked from the site footer.
 
@@ -27,7 +27,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 - **Points Ledger** — Leaderboard (all-time, semester, month). Full transaction log with audit trail (who adjusted, reason). Manual point adjustments. Anomaly flagging and audit tab (chapter-wide list via `GET /v1/points/transactions`, gated by `points:view_all`; see [`spec/behavior/points.md`](../behavior/points.md)).
 - **Study Geofences** — Draw/manage geofence polygons for study locations. Configure reward rates and minimum session lengths.
 - **Chat (admin view)** — Channel management: create/edit/delete channels, organize into categories, set permission requirements. Manage pinned messages. View #announcements posting.
-- **Polls** — Chapter-wide poll list with aggregate tallies on the web app (`GET /v1/polls`, gated by `polls:view_all`; see [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui-web-dashboard.md`](../ui-web-dashboard.md)). Create polls and vote in channels per chat permissions.
+- **Polls** — Chapter-wide poll list with aggregate tallies on the web app (`GET /v1/polls`, gated by `polls:view_all`; see [`spec/behavior/polls.md`](../behavior/polls.md) and [`spec/ui/web-dashboard/README.md`](../ui/web-dashboard/README.md)). Create polls and vote in channels per chat permissions.
 - **Tasks** — Create/assign tasks to members. Track status (TODO, IN_PROGRESS, COMPLETED, OVERDUE). Confirm completion and award points. Filter by assignee, status, due date.
 - **Service Hours** — Admin review queue for submitted service entries. Approve/reject with optional comments. Chapter-wide service report. Configure points-per-hour rate.
 - **Chapter Documents** — Upload, organize, and manage chapter files (bylaws, constitutions, agendas). Flat folder structure. All members can view/download.

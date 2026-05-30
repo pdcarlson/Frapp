@@ -87,7 +87,7 @@ Example: adding a `polls` module.
    - Create `PollModule` in `src/interface/modules/poll.module.ts`, providing controller, service, and repository implementation.
    - Import `PollModule` into `AppModule`.
 
-> **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture.md`). The API implementation should follow, not lead, the spec.
+> **Tip:** Always start new features by updating the **specs** (`spec/product/`, `spec/behavior/`, `spec/architecture/README.md`). The API implementation should follow, not lead, the spec.
 
 ## 4. Error handling
 
