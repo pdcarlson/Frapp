@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { components } from "@repo/api-sdk";
-import type { PatchChapterConfig } from "@repo/validation";
+import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";
 
 /**
  * Merged chapter config returned by `GET /chapters/:id/config` (archetype
@@ -19,6 +19,12 @@ export interface OrgWorkflow {
   units?: string;
 }
 
+/**
+ * The singleton dues config returned by `GET /chapters/:id/config`. Sourced from
+ * the shared zod schema so the web shape can't drift from the wire contract.
+ */
+export type OrgDues = ChapterDuesConfig;
+
 export interface OrgConfig {
   org_archetype?: string;
   enabled_modules?: Record<string, boolean>;
@@ -27,6 +33,7 @@ export interface OrgConfig {
   theme_palette?: Record<string, string>;
   beta_config?: Record<string, unknown>;
   workflows?: OrgWorkflow[];
+  dues?: OrgDues;
   [key: string]: unknown;
 }
 

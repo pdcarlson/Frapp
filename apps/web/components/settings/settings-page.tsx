@@ -38,10 +38,15 @@ import { useToast } from "@/hooks/use-toast";
 import { can } from "@/lib/auth/can";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
-import { useOrgConfig, usePatchOrgConfig } from "@/lib/hooks/use-org-config";
+import {
+  useOrgConfig,
+  usePatchOrgConfig,
+  type OrgDues,
+} from "@/lib/hooks/use-org-config";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
+import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
 
 type SemesterArchive = {
@@ -60,6 +65,20 @@ type Branding = {
 };
 
 const RAIL_TRIGGER_CLASS = "flex-1 justify-start lg:w-full lg:flex-none";
+
+// Fallback shown before the config query resolves. Mirrors the API's
+// chapter_dues_config defaults for an unconfigured chapter.
+const DEFAULT_DUES: OrgDues = {
+  cadence: "per_semester",
+  active_amount_cents: 0,
+  new_member_amount_cents: 0,
+  alumni_amount_cents: 0,
+  installments_allowed: false,
+  installment_count: 1,
+  late_fee_cents: 0,
+  grace_days: 7,
+  scholarship_pool_cents: 0,
+};
 
 // Tabs whose internals land in later chunks. The rail entry stays visible so
 // the full settings IA is legible (brief: "the remaining tabs are stubs").
@@ -82,13 +101,6 @@ const COMING_SOON_TABS: ReadonlyArray<{
     label: "Fields",
     title: "Custom member fields",
     description: "Define extra member fields and their visibility.",
-    chunk: "Chunk 07",
-  },
-  {
-    value: "dues",
-    label: "Dues",
-    title: "Dues structure",
-    description: "Cadence, amounts, payment plans, and scholarships.",
     chunk: "Chunk 07",
   },
   {
@@ -201,6 +213,7 @@ export function SettingsPage() {
   };
   const enabledModules = config?.enabled_modules ?? {};
   const workflows = config?.workflows ?? [];
+  const dues = config?.dues ?? DEFAULT_DUES;
 
   const accent = resolveChapterAccentColor(accentDraft || undefined);
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
@@ -569,6 +582,17 @@ export function SettingsPage() {
                 onSave={(next) =>
                   patchConfig({ workflows: next }, "Workflows saved")
                 }
+              />,
+            )}
+          </TabsContent>
+
+          <TabsContent value="dues" className="mt-0">
+            {renderConfigGated(
+              <SettingsDuesTab
+                dues={dues}
+                canManage={canManage}
+                isSaving={patchOrgConfig.isPending}
+                onSave={(next) => patchConfig({ dues: next }, "Dues saved")}
               />,
             )}
           </TabsContent>

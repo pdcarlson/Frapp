@@ -195,11 +195,12 @@ export const ConfirmUploadSchema = z.object({
 const centsAmount = z.number().int().nonnegative();
 
 export const ChapterDuesConfigSchema = z.object({
-  cadence: z.enum(["semester", "monthly", "annual"]),
+  cadence: z.enum(["monthly", "per_semester", "per_quarter"]),
   active_amount_cents: centsAmount,
   new_member_amount_cents: centsAmount,
   alumni_amount_cents: centsAmount,
   installments_allowed: z.boolean(),
+  installment_count: z.number().int().min(1),
   late_fee_cents: centsAmount,
   grace_days: z.number().int().nonnegative(),
   scholarship_pool_cents: centsAmount,

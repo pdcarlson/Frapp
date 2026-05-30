@@ -80,7 +80,7 @@ export interface WorkflowEntry {
 }
 
 export interface DuesConfigSeed {
-  readonly cadence: "semester" | "monthly" | "annual";
+  readonly cadence: "monthly" | "per_semester" | "per_quarter";
   /** All monetary amounts are in cents to match the DB schema. */
   readonly active_amount_cents: number;
   readonly new_member_amount_cents: number;
@@ -102,7 +102,7 @@ export interface Archetype {
   readonly recruitmentLanguage: string;
   readonly pledgeLanguage: string;
   readonly classLanguage: string;
-  readonly duesCadence: "semester" | "monthly" | "annual";
+  readonly duesCadence: "monthly" | "per_semester" | "per_quarter";
   readonly requirePresidentApprovalOnBudgetOver: number;
 }
 
@@ -138,7 +138,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "New member",
     classLanguage: "Pledge class",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 500,
   }),
 
@@ -162,7 +162,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "New member",
     classLanguage: "New member class",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
 
@@ -186,7 +186,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Intake",
     pledgeLanguage: "Aspirant",
     classLanguage: "Line",
-    duesCadence: "annual" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
 
@@ -210,7 +210,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Intake",
     pledgeLanguage: "New member",
     classLanguage: "Line",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 300,
   }),
 
@@ -234,7 +234,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Recruitment",
     pledgeLanguage: "Candidate",
     classLanguage: "Cohort",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 250,
   }),
 
@@ -258,7 +258,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Pledge",
     classLanguage: "Pledge class",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 150,
   }),
 
@@ -282,7 +282,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Induction",
     pledgeLanguage: "Inductee",
     classLanguage: "Class",
-    duesCadence: "annual" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 100,
   }),
 
@@ -306,7 +306,7 @@ export const ARCHETYPES = Object.freeze({
     recruitmentLanguage: "Rush",
     pledgeLanguage: "Founding member",
     classLanguage: "Founding class",
-    duesCadence: "semester" as const,
+    duesCadence: "per_semester" as const,
     requirePresidentApprovalOnBudgetOver: 0,
   }),
 } satisfies Record<ArchetypeKey, Archetype>);
@@ -650,7 +650,7 @@ export const VOCABULARY_DEFAULTS: Readonly<Record<ArchetypeKey, VocabularyDefaul
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DUES_CONFIG_SEED: Readonly<DuesConfigSeed> = Object.freeze({
-  cadence:                  "semester",
+  cadence:                  "per_semester",
   active_amount_cents:      85000,  // $850
   new_member_amount_cents:  42500,  // $425
   alumni_amount_cents:      0,

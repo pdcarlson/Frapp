@@ -64,6 +64,17 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-05-30: Chunk 07d — Dues config schema alignment (#540)
+
+One migration that modifies an existing (but empty) table to match the spec.
+
+### 20260530193000_chapter_dues_config_align_spec.sql
+* **Purpose**: Aligns `chapter_dues_config.cadence` to the canonical spec (`spec/behavior/settings/customization.md` → Dues Tab): drops the old `cadence in ('semester','monthly','annual')` CHECK, sets the default to `per_semester`, and adds a new CHECK `cadence in ('monthly','per_semester','per_quarter')`. Also adds `installment_count int not null default 1 check (installment_count >= 1)` for the spec's installment "count".
+* **Safety**: `chapter_dues_config` has had **no write path** since it was created (`20260523120000`) — no API wrote it (this chunk adds the first), onboarding never provisioned a row, and `seed.sql` doesn't touch it. So the table is empty in every environment and the new CHECK cannot be violated by an existing row; no data backfill/remap is required. The new column is `NOT NULL DEFAULT 1`, filled for any (hypothetical) existing row on add.
+* **Checks**: After `db push`, `select pg_get_constraintdef(oid) from pg_constraint where conname = 'chapter_dues_config_cadence_check';` — should list `monthly`/`per_semester`/`per_quarter`. `select column_name from information_schema.columns where table_name = 'chapter_dues_config' and column_name = 'installment_count';` — should return 1 row.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Chunk 07d dues config alignment.
+
 ## 2026-05-30: Analytics opt-out flag on `chapters` (#464)
 
 One additive migration. Adds a single boolean column with a default — fully backward-compatible, no backfill, no lock-heavy operation (Postgres fills existing rows with the default on add).

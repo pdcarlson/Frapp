@@ -87,9 +87,9 @@ export class WorkflowConfigDto {
 }
 
 export class DuesConfigDto {
-  @ApiPropertyOptional({ enum: ['semester', 'monthly', 'annual'] })
+  @ApiPropertyOptional({ enum: ['monthly', 'per_semester', 'per_quarter'] })
   @IsOptional()
-  @IsEnum(['semester', 'monthly', 'annual'])
+  @IsEnum(['monthly', 'per_semester', 'per_quarter'])
   cadence?: string;
 
   @ApiPropertyOptional({ description: 'Active member dues in cents' })
@@ -114,6 +114,12 @@ export class DuesConfigDto {
   @IsOptional()
   @IsBoolean()
   installments_allowed?: boolean;
+
+  @ApiPropertyOptional({ description: 'Number of installments (>= 1)' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  installment_count?: number;
 
   @ApiPropertyOptional({ description: 'Late fee in cents' })
   @IsOptional()

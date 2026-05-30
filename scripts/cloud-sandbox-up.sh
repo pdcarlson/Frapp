@@ -74,7 +74,15 @@ cs_ensure_docker_daemon || fail "Docker daemon did not start."
 cs_docker_login_if_creds
 
 cs_log "Starting Supabase (images cached)..."
-npx supabase start || fail "'supabase start' failed."
+# Exclude the Deno edge-runtime container: it sets an rlimit (RLIMIT_NOFILE) the
+# cloud sandbox denies ("error setting rlimit type 7: operation not permitted"),
+# which otherwise aborts the whole `supabase start`. The API connects to Postgres
+# directly and hot-path logic has moved into NestJS (ADR-11/ADR-12), so edge
+# functions are not needed for local dev here. Override with FRAPP_SUPABASE_START_ARGS
+# if a session genuinely needs them.
+SUPABASE_START_ARGS="${FRAPP_SUPABASE_START_ARGS:--x edge-runtime}"
+# shellcheck disable=SC2086
+npx supabase start $SUPABASE_START_ARGS || fail "'supabase start' failed."
 
 cs_log "Applying local migrations..."
 npx supabase db push --local || fail "'supabase db push --local' failed."

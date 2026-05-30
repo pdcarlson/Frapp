@@ -42,7 +42,10 @@ type WorkflowRow = { key: string; enabled: boolean; threshold: number | null };
  * tables resolve their awaited value directly. Mutating calls are captured so
  * tests can assert on them.
  */
-function makeSupabase(workflowRows: WorkflowRow[]) {
+function makeSupabase(
+  workflowRows: WorkflowRow[],
+  duesRow: Record<string, unknown> | null = null,
+) {
   const chapterRow = {
     id: CHAPTER_ID,
     org_archetype: 'ifc',
@@ -54,6 +57,7 @@ function makeSupabase(workflowRows: WorkflowRow[]) {
   };
 
   const workflowUpsert = jest.fn().mockReturnValue({ error: null });
+  const duesUpsert = jest.fn().mockReturnValue({ error: null });
   const auditInsert = jest.fn().mockResolvedValue({ error: null });
   const chapterUpdate = jest.fn();
 
@@ -86,13 +90,26 @@ function makeSupabase(workflowRows: WorkflowRow[]) {
       );
       return builder;
     }
+    if (table === 'chapter_dues_config') {
+      const builder: Record<string, jest.Mock> = {};
+      builder.select = jest.fn().mockReturnValue(builder);
+      builder.eq = jest.fn().mockReturnValue({
+        maybeSingle: jest
+          .fn()
+          .mockResolvedValue({ data: duesRow, error: null }),
+      });
+      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
+        duesUpsert(rows, opts),
+      );
+      return builder;
+    }
     if (table === 'chapter_audit_log') {
       return { insert: auditInsert };
     }
     return {};
   });
 
-  return { from, workflowUpsert, auditInsert, chapterUpdate };
+  return { from, workflowUpsert, duesUpsert, auditInsert, chapterUpdate };
 }
 
 async function buildService(supabase: { from: jest.Mock }) {
@@ -203,6 +220,104 @@ describe('ChapterConfigService — workflows', () => {
 
       // Nothing changed → no upsert, no audit, returns existing config.
       expect(supabase.workflowUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(result.id).toBe(CHAPTER_ID);
+    });
+  });
+});
+
+describe('ChapterConfigService — dues', () => {
+  describe('getConfig', () => {
+    it('returns the table defaults when the chapter has no dues row', async () => {
+      const supabase = makeSupabase([], null);
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.dues).toEqual({
+        cadence: 'per_semester',
+        active_amount_cents: 0,
+        new_member_amount_cents: 0,
+        alumni_amount_cents: 0,
+        installments_allowed: false,
+        installment_count: 1,
+        late_fee_cents: 0,
+        grace_days: 7,
+        scholarship_pool_cents: 0,
+      });
+    });
+
+    it('returns the persisted dues row when one exists', async () => {
+      const supabase = makeSupabase([], {
+        cadence: 'monthly',
+        active_amount_cents: 85000,
+        new_member_amount_cents: 42500,
+        alumni_amount_cents: 0,
+        installments_allowed: true,
+        installment_count: 4,
+        late_fee_cents: 2500,
+        grace_days: 10,
+        scholarship_pool_cents: 120000,
+      });
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.dues).toMatchObject({
+        cadence: 'monthly',
+        active_amount_cents: 85000,
+        installment_count: 4,
+        grace_days: 10,
+      });
+    });
+  });
+
+  describe('patchConfig', () => {
+    it('upserts the singleton dues row and audits the change', async () => {
+      const supabase = makeSupabase([], null);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        dues: { cadence: 'monthly', active_amount_cents: 50000 },
+      });
+
+      expect(supabase.duesUpsert).toHaveBeenCalledTimes(1);
+      const [row, opts] = supabase.duesUpsert.mock.calls[0];
+      // Provided fields applied; untouched fields fall back to the defaults.
+      expect(row).toMatchObject({
+        chapter_id: CHAPTER_ID,
+        cadence: 'monthly',
+        active_amount_cents: 50000,
+        installment_count: 1,
+      });
+      expect(opts).toEqual({ onConflict: 'chapter_id' });
+
+      // No chapters-table column changed, but the audit row still fires.
+      expect(supabase.chapterUpdate).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(auditRow.diff.dues.to).toMatchObject({ cadence: 'monthly' });
+    });
+
+    it('is a no-op when the dues payload matches the current row', async () => {
+      const supabase = makeSupabase([], {
+        cadence: 'monthly',
+        active_amount_cents: 50000,
+        new_member_amount_cents: 0,
+        alumni_amount_cents: 0,
+        installments_allowed: false,
+        installment_count: 1,
+        late_fee_cents: 0,
+        grace_days: 7,
+        scholarship_pool_cents: 0,
+      });
+      const service = await buildService(supabase);
+
+      const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+        dues: { cadence: 'monthly', active_amount_cents: 50000 },
+      });
+
+      expect(supabase.duesUpsert).not.toHaveBeenCalled();
       expect(supabase.auditInsert).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });

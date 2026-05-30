@@ -5723,9 +5723,9 @@
           "cadence": {
             "type": "string",
             "enum": [
-              "semester",
               "monthly",
-              "annual"
+              "per_semester",
+              "per_quarter"
             ]
           },
           "active_amount_cents": {
@@ -5742,6 +5742,10 @@
           },
           "installments_allowed": {
             "type": "boolean"
+          },
+          "installment_count": {
+            "type": "number",
+            "description": "Number of installments (>= 1)"
           },
           "late_fee_cents": {
             "type": "number",

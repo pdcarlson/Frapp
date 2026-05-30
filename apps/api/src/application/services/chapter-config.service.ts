@@ -29,6 +29,50 @@ function deepMerge(base: unknown, patch: unknown): unknown {
   return result;
 }
 
+/** Dues config returned by `getConfig` and persisted by `patchConfig`. */
+export interface DuesConfig {
+  cadence: string;
+  active_amount_cents: number;
+  new_member_amount_cents: number;
+  alumni_amount_cents: number;
+  installments_allowed: boolean;
+  installment_count: number;
+  late_fee_cents: number;
+  grace_days: number;
+  scholarship_pool_cents: number;
+}
+
+const DUES_FIELDS = [
+  'cadence',
+  'active_amount_cents',
+  'new_member_amount_cents',
+  'alumni_amount_cents',
+  'installments_allowed',
+  'installment_count',
+  'late_fee_cents',
+  'grace_days',
+  'scholarship_pool_cents',
+] as const satisfies ReadonlyArray<keyof DuesConfig>;
+
+const DUES_SELECT = DUES_FIELDS.join(', ');
+
+/**
+ * Returned when a chapter has no `chapter_dues_config` row yet. Mirrors the
+ * table's column defaults (migration 20260530193000): an unconfigured chapter
+ * reports zero amounts on a per-semester cadence with no installment plan.
+ */
+const DUES_DEFAULTS: DuesConfig = {
+  cadence: 'per_semester',
+  active_amount_cents: 0,
+  new_member_amount_cents: 0,
+  alumni_amount_cents: 0,
+  installments_allowed: false,
+  installment_count: 1,
+  late_fee_cents: 0,
+  grace_days: 7,
+  scholarship_pool_cents: 0,
+};
+
 @Injectable()
 export class ChapterConfigService {
   private readonly logger = new Logger(ChapterConfigService.name);
@@ -88,6 +132,18 @@ export class ChapterConfigService {
       };
     });
 
+    // Dues are a singleton row (chapter_dues_config, PK = chapter_id). An
+    // unconfigured chapter has no row yet, so fall back to the table defaults.
+    const { data: duesRow } = await this.supabase
+      .from('chapter_dues_config')
+      .select(DUES_SELECT)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    const dues: DuesConfig = {
+      ...DUES_DEFAULTS,
+      ...((duesRow as Partial<DuesConfig> | null) ?? {}),
+    };
+
     return {
       id: chapterId,
       org_archetype: archetypeKey,
@@ -116,6 +172,7 @@ export class ChapterConfigService {
         (chapter as Record<string, unknown>)['theme_palette'] ?? {},
       beta_config: (chapter as Record<string, unknown>)['beta_config'] ?? {},
       workflows,
+      dues,
       role_pack: archetype.rolePack,
     };
   }
@@ -216,7 +273,30 @@ export class ChapterConfigService {
       }
     }
 
-    if (Object.keys(update).length === 0 && workflowUpserts.length === 0) {
+    // Dues are a singleton row (chapter_dues_config, PK = chapter_id). A partial
+    // PATCH merges the provided fields onto the current row; only a real change
+    // writes (and audits). Numeric/enum guards are enforced by the DTO.
+    let duesUpsert: (DuesConfig & { chapter_id: string }) | null = null;
+    if (dto.dues !== undefined) {
+      const current = existing.dues;
+      const next: DuesConfig = { ...current };
+      for (const key of DUES_FIELDS) {
+        const incoming = (dto.dues as Partial<DuesConfig>)[key];
+        if (incoming !== undefined) {
+          (next as unknown as Record<string, unknown>)[key] = incoming;
+        }
+      }
+      if (DUES_FIELDS.some((key) => next[key] !== current[key])) {
+        duesUpsert = { chapter_id: chapterId, ...next };
+        diff['dues'] = { from: current, to: next };
+      }
+    }
+
+    if (
+      Object.keys(update).length === 0 &&
+      workflowUpserts.length === 0 &&
+      duesUpsert === null
+    ) {
       return existing;
     }
 
@@ -240,6 +320,17 @@ export class ChapterConfigService {
       if (workflowError) {
         this.logger.error('Failed to update chapter workflows', workflowError);
         throw workflowError;
+      }
+    }
+
+    if (duesUpsert) {
+      const { error: duesError } = await this.supabase
+        .from('chapter_dues_config')
+        .upsert(duesUpsert, { onConflict: 'chapter_id' });
+
+      if (duesError) {
+        this.logger.error('Failed to update chapter dues config', duesError);
+        throw duesError;
       }
     }
 
