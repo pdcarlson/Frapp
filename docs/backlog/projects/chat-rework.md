@@ -56,6 +56,7 @@
 - Chat is the spine; ops modules are integrations (slash command + rich renderer + system channel +
   optional dashboard). The integration pattern is canonical in `spec/behavior/integrations.md`.
 - Solo project: an issue's open/closed state is its status; PRs close issues via `Closes #N`.
+- 07d (#540) follow-ups: [#547](https://github.com/pdcarlson/Frapp/issues/547) (live GET/PATCH dues verification — blocked this session by the sandbox Supabase stack), [#548](https://github.com/pdcarlson/Frapp/issues/548) (annual-cadence decision + provision `chapter_dues_config` at onboarding).
 - Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
   dispatch), #485/#486 (Chunk 06 follow-ups), #491 (Chunk 12 landing), #492 (ops-module nudges),
   #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels). #490 (Chunk 07 tabs)
