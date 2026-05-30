@@ -14,6 +14,15 @@ This README only documents the **process** for working a chunk. The content of e
 
 Do **not** start coding from a vague "redesign Frapp" prompt. Always work a specific chunk. If you don't know which chunk to start, work the lowest-numbered chunk whose dependencies are complete.
 
+## Reusable session commands
+
+Two Claude Code project slash commands (under [`.claude/commands/`](../../../.claude/commands/)) encode this workflow so it doesn't have to be pasted each session:
+
+- **`/next-task`** — pick the next viable project task collaboratively, complete it, and tidy the backlog.
+- **`/tackle-issue [#]`** — verify/fix/close a specific issue, or shortlist an easy/important one when no number is given.
+
+Both begin in plan mode, fan out to sub-agents for research, run `/code-review` before opening a draft PR, and close issues via `Closes #N` (solo project — no *In Review* stage).
+
 ## Operating conventions for chunk sessions
 
 - **Branch per chunk.** Create `claude/redesign-chunk-NN-<slug>` from `main`. Never push directly to `main` or `production`.
