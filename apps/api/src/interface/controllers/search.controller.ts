@@ -1,4 +1,5 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -35,7 +36,16 @@ export class SearchController {
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Query('q') query: string,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.searchService.search(chapterId, userId, query ?? '');
+    const { results, timedOut } = await this.searchService.searchWithinBudget(
+      chapterId,
+      userId,
+      query ?? '',
+    );
+    if (timedOut) {
+      res.setHeader('x-search-timeout', '1');
+    }
+    return results;
   }
 }
