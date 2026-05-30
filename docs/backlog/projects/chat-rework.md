@@ -12,9 +12,9 @@
 
 ## Work units
 
-> `State` mirrors the GitHub issue. **Drift note:** chunks 05 (#433) and 06 (#434) are merged in git
-> (PRs #400, #487) but their issues are still open on GitHub — `/triage` should close them. Chunks
-> 01–04 predate the per-chunk sub-issues and are tracked by their merge PRs.
+> `State` mirrors the GitHub issue. Chunks 05/06 shipped (PRs #400/#487); their tracking issues
+> #433/#434 were reconciled **closed** on 2026-05-30 to match this backlog. Chunks 01–04 predate the
+> per-chunk sub-issues and are tracked by their merge PRs.
 
 | Chunk | Issue | State | Shipped via | Notes |
 | ----- | ----- | ----- | ----------- | ----- |
@@ -22,8 +22,8 @@
 | 02 — Data model + chapter directory + Edge Function | — | shipped | PR #231 | hot-path schema/ADRs → `spec/architecture/`; config → `spec/behavior/chapter-config.md` |
 | 03 — Onboarding wizard | — | shipped | PR #239 | → `spec/behavior/onboarding.md`, `spec/ui/web-dashboard/` |
 | 04 — Chat foundation + hot-path client | — | shipped | PR #278 | → `spec/behavior/chat/`, `spec/ui/web-dashboard/`, `spec/architecture/` |
-| 05 — Chat integrations + slash commands + push | [#433](https://github.com/pdcarlson/Frapp/issues/433) | shipped | PR #400 | issue still open → close via `/triage`. Canon → `spec/behavior/chat/`, `spec/behavior/notifications.md` |
-| 06 — Settings shell + Org + Modules tabs | [#434](https://github.com/pdcarlson/Frapp/issues/434) | shipped | PR #487 | issue still open → close via `/triage`. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
+| 05 — Chat integrations + slash commands + push | [#433](https://github.com/pdcarlson/Frapp/issues/433) | shipped | PR #400 | issue closed (reconciled). Canon → `spec/behavior/chat/`, `spec/behavior/notifications.md` |
+| 06 — Settings shell + Org + Modules tabs | [#434](https://github.com/pdcarlson/Frapp/issues/434) | shipped | PR #487 | issue closed (reconciled). Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
 | 07 — Settings: Theme + Roles + Fields + Workflows + Dues | [#435](https://github.com/pdcarlson/Frapp/issues/435) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/behavior/chapter-config.md`, `spec/ui/web-dashboard/` |
 | 08 — Settings: Beta + Audit + ops-setup nudges | [#436](https://github.com/pdcarlson/Frapp/issues/436) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
 | 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | open | — | depends on 06. Canon → `spec/behavior/members.md`, `spec/ui/web-dashboard/` |
