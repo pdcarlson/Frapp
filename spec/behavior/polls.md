@@ -1,5 +1,9 @@
 # Polls and Voting
 
+- **Channel-access enforcement.** A poll is a chat message (`type: POLL`) and is governed by the same channel-access invariant as the rest of chat (`chat/README.md`, "Channel-access enforcement"). Every poll operation authorizes through the shared `ChannelAccessService` (`canAccessChannel` predicate) before doing anything else, in addition to its `@RequirePermissions` gate:
+  - `createPoll`, `vote`, and `removeVote` authorize as a **`post`** to the poll's channel; `getPoll` authorizes as a **`read`**.
+  - An operation on a poll in a channel the caller cannot access returns **403** (or **404** when the poll/channel id does not resolve within the caller's chapter). The `polls:create` / `members:view` permission is necessary but not sufficient — channel visibility (`PRIVATE` / `ROLE_GATED` / `DM`) is enforced independently, so a member cannot read or vote in a restricted channel they are not in.
+  - `GET /v1/polls` is **not a side-channel:** beyond the `polls:view_all` gate, it excludes polls in channels the caller cannot read (filtered via `ChannelAccessService.filterAccessibleChannelIds`). Filtering is applied after the result `limit`, so a page may contain fewer than `limit` rows; the list is never widened to backfill hidden polls.
 - Users with `polls:create` permission can create polls in any channel they have access to.
 - `GET /v1/polls` (chapter-wide list with aggregate tallies) requires `members:view` (controller baseline) **and** `polls:view_all` on the list route.
 - `PermissionsGuard` merges class- and handler-level `@RequirePermissions` so both apply together.

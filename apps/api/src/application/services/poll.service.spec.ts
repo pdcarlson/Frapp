@@ -1,14 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PollService } from './poll.service';
+import { ChannelAccessService } from './channel-access.service';
+import { RbacService } from './rbac.service';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
 import { CHAT_CHANNEL_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatChannelRepository } from '../../domain/repositories/chat.repository.interface';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
 import type { IPollVoteRepository } from '../../domain/repositories/poll-vote.repository.interface';
 import type { ChatMessage } from '../../domain/entities/chat.entity';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
+import type { Member } from '../../domain/entities/member.entity';
 import type { PollVote } from '../../domain/entities/poll-vote.entity';
 
 describe('PollService', () => {
@@ -16,6 +26,8 @@ describe('PollService', () => {
   let mockMessageRepo: jest.Mocked<IChatMessageRepository>;
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
+  let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockRbac: { getEffectivePermissions: jest.Mock };
   let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
@@ -94,9 +106,33 @@ describe('PollService', () => {
       deleteByMessageUserAndOption: jest.fn(),
     };
 
+    mockMemberRepo = {
+      findById: jest.fn(),
+      findByUser: jest.fn(),
+      findByUserAndChapter: jest.fn(),
+      findByChapter: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+      delete: jest.fn(),
+    };
+
+    mockRbac = { getEffectivePermissions: jest.fn() };
+
+    // Default: caller is a chapter member with no extra permissions, and the
+    // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).
+    // Individual tests override these to exercise PRIVATE / ROLE_GATED / 404.
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+      id: 'm-1',
+    } as Member);
+    mockRbac.getEffectivePermissions.mockResolvedValue([]);
+    mockChannelRepo.findByChapter.mockResolvedValue([
+      { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
+    ]);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PollService,
+        ChannelAccessService,
         {
           provide: CHAT_MESSAGE_REPOSITORY,
           useValue: mockMessageRepo,
@@ -108,6 +144,14 @@ describe('PollService', () => {
         {
           provide: POLL_VOTE_REPOSITORY,
           useValue: mockVoteRepo,
+        },
+        {
+          provide: MEMBER_REPOSITORY,
+          useValue: mockMemberRepo,
+        },
+        {
+          provide: RbacService,
+          useValue: mockRbac,
         },
       ],
     }).compile();
@@ -541,6 +585,155 @@ describe('PollService', () => {
         expect.stringContaining('chapter-xyz'),
         expect.stringContaining('postgrest timeout'),
       );
+    });
+  });
+
+  describe('channel-access enforcement', () => {
+    const privateChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-private',
+      type: 'PRIVATE',
+      member_ids: ['other-user'],
+    };
+
+    const roleGatedChannel: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-role',
+      type: 'ROLE_GATED',
+      member_ids: null,
+      required_permissions: ['secret:view'],
+    };
+
+    const privatePoll: ChatMessage = {
+      ...basePollMessage,
+      channel_id: 'ch-private',
+    };
+
+    const roleGatedPoll: ChatMessage = {
+      ...basePollMessage,
+      channel_id: 'ch-role',
+    };
+
+    it('createPoll → 403 when the caller cannot post to the channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.createPoll({
+          channelId: 'ch-private',
+          chapterId: 'ch-1',
+          senderId: 'user-1',
+          question: 'Q?',
+          options: ['A', 'B'],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('vote → 403 when the caller cannot access the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.vote('msg-1', 'user-1', 'ch-1', [0]),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('vote → 404 when the poll channel does not resolve within the chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.vote('msg-1', 'user-1', 'ch-1', [0]),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('removeVote → 403 when the caller cannot access the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(
+        service.removeVote('msg-1', 'user-1', 'ch-1'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
+    });
+
+    it('getPoll → 403 when the caller cannot read the channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(privatePoll);
+      mockChannelRepo.findById.mockResolvedValue(privateChannel);
+
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('getPoll → allowed for a ROLE_GATED channel when the caller holds the permission', async () => {
+      mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
+      mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+      mockVoteRepo.findByMessage.mockResolvedValue([]);
+      mockVoteRepo.findByMessageAndUser.mockResolvedValue([]);
+
+      const result = await service.getPoll('msg-1', 'ch-1', 'user-1');
+
+      expect(result.id).toBe('msg-1');
+    });
+
+    it('getPoll → 403 for a ROLE_GATED channel when the caller lacks the permission', async () => {
+      mockMessageRepo.findById.mockResolvedValue(roleGatedPoll);
+      mockChannelRepo.findById.mockResolvedValue(roleGatedChannel);
+      mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
+      await expect(service.getPoll('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('listPolls excludes polls in channels the caller cannot read', async () => {
+      const visiblePoll: ChatMessage = {
+        ...basePollMessage,
+        id: 'poll-visible',
+        channel_id: 'channel-1',
+      };
+      const hiddenPoll: ChatMessage = {
+        ...basePollMessage,
+        id: 'poll-hidden',
+        channel_id: 'channel-2',
+      };
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        visiblePoll,
+        hiddenPoll,
+      ]);
+      mockChannelRepo.findByChapter.mockResolvedValue([
+        { ...baseChannel, id: 'channel-1', type: 'PUBLIC', member_ids: null },
+        {
+          ...baseChannel,
+          id: 'channel-2',
+          type: 'PRIVATE',
+          member_ids: ['other-user'],
+        },
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { userId: 'user-1' });
+
+      expect(result.map((p) => p.id)).toEqual(['poll-visible']);
+      // The hidden poll's votes are never even aggregated.
+      expect(mockVoteRepo.aggregateOptionTotalsByMessages).toHaveBeenCalledWith(
+        ['poll-visible'],
+      );
+    });
+
+    it('listPolls returns nothing when the caller is not a chapter member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockMessageRepo.findPollsByChapter.mockResolvedValue([
+        { ...basePollMessage, id: 'poll-1', channel_id: 'channel-1' },
+      ]);
+      mockVoteRepo.aggregateOptionTotalsByMessages.mockResolvedValue([]);
+
+      const result = await service.listPolls('ch-1', { userId: 'ghost' });
+
+      expect(result).toEqual([]);
     });
   });
 });
