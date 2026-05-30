@@ -633,3 +633,62 @@ The vault ([`behavior/vault.md`](behavior/vault.md)) stores high-sensitivity cha
 - **Attacker with Supabase Storage access:** same — blobs are AEAD-encrypted.
 - **Compromised Frapp operator:** can request recovery but cannot complete it solo (multi-party HSM authorization). Every operation is logged.
 - **Legal compulsion (subpoena):** recovery is possible but logged in the transparency report.
+
+---
+
+## 15. Theming Model
+
+Chapter theming runs deeper than an accent chip — it themes the entire experience (sidebar, headers, chat bubble accents, message highlights, mention pills, reaction highlights). A chapter picks **two colors only**: `branding.colors = { dark, accent }`. The product-facing description is in [`product/positioning.md`](../product/positioning.md); the derivation is canonical here.
+
+### Palette derivation
+
+`derivePalette({ dark, accent })` (in `packages/chapter-theme/`) returns the full CSS-variable token map the client writes onto `:root` per active chapter:
+
+- `--side-bg` — chapter dark tinted toward ink for legibility (mix 70% chapter-dark + 30% neutral ink).
+- `--side-accent` — the accent.
+- `--brand-band` — accent at low saturation, for header strips.
+- `--mention-bg`, `--mention-fg` — derived from the accent with contrast guarantees.
+- `--chat-self-bubble` — accent at 8% over bone.
+- `--reaction-active` — accent.
+- `--ring` — accent.
+
+### WCAG validation and fallback
+
+Every derived token is WCAG-validated against **both** the bone (light) and ink (dark) backgrounds. If a token fails AA 4.5:1 against either, it falls back to bronze **for that token specifically** — never the whole palette. Validation reuses `packages/theme/src/accent.ts`.
+
+### Computation and caching
+
+The palette is rebuilt **server-side** whenever `branding.colors` changes (via `POST /chapters/:id/theme-palette`, also triggered automatically by a config PATCH that touches colors) and cached in `chapters.theme_palette`. Clients read it through `useChapterTheme()` and write the CSS variables on `:root` on each chapter switch — no client-side recomputation on read. The Theme settings tab computes a live preview from the controlled form state (not a cached value) before save.
+
+### Monospace decision
+
+`--font-mono` is a deliberate system-monospace stack (`ui-monospace, SFMono-Regular, …, monospace`), **not** a bundled webfont. Ledger-line motifs, eyebrow labels, and `#chapter-audit` cards render against the system stack. Do not bundle a mono webfont unless brand explicitly revisits this — the "monospace family must be loaded" requirement is satisfied by a stack that needs no loading.
+
+---
+
+## 16. Mobile Chat Architecture
+
+The Expo app opens directly into chat and holds real-time parity with web on reactions, inline cards, voice memos, and presence. The hot-path client (`chat-client.ts`) and the rich-message renderer registry are shared across platforms; mobile abstracts the platform-specific layers behind thin seams rather than forking.
+
+### Storage layer (the Dexie analogue)
+
+Web persists composer state in IndexedDB via Dexie (ADR-05); mobile uses the native equivalents behind the same storage interface:
+
+- **Drafts + outbound send/action queue:** AsyncStorage. Persist between cold launches so a force-quit mid-compose never loses input, and a queued message flushes in order on reconnect (idempotent on `client_message_id`, same dedupe index as web).
+- **Inbound message cache:** SQLite (`op-sqlite` or `expo-sqlite`) — last N messages per channel for offline reads and fast cold-start render.
+
+The same TanStack Query mutations and Supabase Realtime subscriptions run on both platforms; only the storage seam differs.
+
+### App lifecycle and presence
+
+- **Foreground:** resubscribe Realtime and REST-backfill since the last cursor **before** rendering the channel, so the user never sees a stale thread.
+- **Background:** persist per-channel cursors.
+- **Presence states:** active → `online`; backgrounded → `idle`; force-quit → `offline`. Presence is Supabase Realtime Presence on the channel topic (ADR-10), consistent with web.
+
+### Background sync on silent push
+
+A silent push handler wakes the app to sync new messages when the websocket isn't alive, keeping unread counts honest without a foreground session. Native channel categorization splits announcements / mentions / DMs into separate iOS Notification Center groups and Android channels. Burst bundling and presence-aware suppression match the web push rules (ADR-04, ADR-09).
+
+### Voice memos
+
+The mobile composer records a voice memo, uploads it to Supabase Storage (pre-signed upload, same flow as other attachments), and sends it as `kind="audio"` with waveform metadata in `payload`. Web renders the `audio` card with waveform playback — the renderer is shared, so a memo recorded on mobile plays back on web.
