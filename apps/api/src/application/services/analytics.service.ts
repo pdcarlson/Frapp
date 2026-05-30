@@ -39,8 +39,6 @@ export interface TrackOptions {
 export class AnalyticsService {
   private readonly logger = new Logger(AnalyticsService.name);
   private readonly salt: string;
-  /** Cache of chapterId → analytics-enabled, avoiding a read per event. */
-  private readonly optOutCache = new Map<string, boolean>();
 
   constructor(
     private readonly config: ConfigService,
@@ -122,14 +120,13 @@ export class AnalyticsService {
   /**
    * Per-chapter opt-out (defense in depth; the client SDK is the first gate).
    * A chapter opts out by setting `chapters.analytics_opt_out = true`
-   * (wired by the Settings toggle, #466). Fails open on lookup error so a DB
-   * blip doesn't silently drop all analytics, but the cached negative result is
-   * authoritative once read.
+   * (wired by the Settings toggle, #466). Read fresh per event — analytics is a
+   * fire-and-forget cold path, not latency-critical, and a single PK-indexed
+   * read keeps the toggle effective immediately (no cache to go stale). Fails
+   * open on lookup error so a DB blip doesn't silently drop all analytics, but
+   * the `analytics_opt_out = true` result is authoritative.
    */
   private async isChapterAnalyticsEnabled(chapterId: string): Promise<boolean> {
-    const cached = this.optOutCache.get(chapterId);
-    if (cached !== undefined) return cached;
-
     const { data, error } = await this.supabase
       .from('chapters')
       .select('analytics_opt_out')
@@ -141,20 +138,13 @@ export class AnalyticsService {
         `analytics opt-out lookup failed for chapter ${chapterId}`,
         error,
       );
-      return true; // fail open; do not cache a transient error
+      return true; // fail open on a transient error
     }
 
     const optedOut =
       ((data as Record<string, unknown> | null)?.['analytics_opt_out'] as
         | boolean
         | null) ?? false;
-    const enabled = !optedOut;
-    this.optOutCache.set(chapterId, enabled);
-    return enabled;
-  }
-
-  /** Invalidate the opt-out cache for a chapter (called when the toggle flips). */
-  invalidateOptOutCache(chapterId: string): void {
-    this.optOutCache.delete(chapterId);
+    return !optedOut;
   }
 }

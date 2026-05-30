@@ -28,5 +28,13 @@
   provisioning/rotation) and the `chapters.analytics_opt_out` column + server-side gate (#466 owns the
   Settings toggle UI + `chapter-config:manage` permission). Account-deletion propagation exposes
   `AnalyticsService.forgetUser`; wiring it into the deletion flow belongs to #281.
+- **Known limitations from #464 (carry into the dependent units):**
+  - The server opt-out gate keys off the event's `chapter_id`. Web supplies the active chapter; the
+    **mobile** client has no active-chapter context yet (preview shell — #253), so mobile events carry
+    no `chapter_id` and the gate can't apply to them. Wire the active chapter into mobile analytics
+    when mobile member flows land (#253) / under #466.
+  - `forgetUser` → PostHog uses a sentinel `account-deleted` event; the provider-side "deleted users"
+    automation that turns that into delete-all-events is **operational setup**, not code (configure
+    when the PostHog project is provisioned under #465).
 - Related standalone duplicate to reconcile during triage: #480 (pseudonymous analytics / PostHog),
   #502 (analytics opt-out in Settings).

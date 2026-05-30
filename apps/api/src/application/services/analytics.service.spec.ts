@@ -164,22 +164,33 @@ describe('AnalyticsService', () => {
       ).resolves.toBeUndefined();
     });
 
-    it('caches the opt-out result across events for the same chapter', async () => {
-      const mock = makeSupabaseMock({
-        data: { analytics_opt_out: false },
-        error: null,
-      });
+    it('reads the opt-out fresh per event so a toggle takes effect immediately', async () => {
+      // First read: enabled → event sent. Second read: opted out → suppressed.
+      const maybeSingle = jest
+        .fn()
+        .mockResolvedValueOnce({
+          data: { analytics_opt_out: false },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { analytics_opt_out: true },
+          error: null,
+        });
+      const eq = jest.fn().mockReturnValue({ maybeSingle });
+      const select = jest.fn().mockReturnValue({ eq });
+      const client = { from: jest.fn().mockReturnValue({ select }) } as unknown;
       const service = await buildService({
         salt: SALT,
-        supabase: mock.client,
+        supabase: client,
         provider,
       });
 
       await service.track('a', USER_ID, { chapterId: 'chapter-1' });
       await service.track('b', USER_ID, { chapterId: 'chapter-1' });
 
-      expect(mock.maybeSingle).toHaveBeenCalledTimes(1);
-      expect(provider.capture).toHaveBeenCalledTimes(2);
+      // No caching: both events trigger a fresh lookup, and the flip is honored.
+      expect(maybeSingle).toHaveBeenCalledTimes(2);
+      expect(provider.capture).toHaveBeenCalledTimes(1);
     });
 
     it('fails open (still sends) when the opt-out lookup errors', async () => {
@@ -228,26 +239,6 @@ describe('AnalyticsService', () => {
       await service.forgetUser(USER_ID);
 
       expect(provider.forget).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('invalidateOptOutCache', () => {
-    it('forces a re-read after the toggle flips', async () => {
-      const mock = makeSupabaseMock({
-        data: { analytics_opt_out: false },
-        error: null,
-      });
-      const service = await buildService({
-        salt: SALT,
-        supabase: mock.client,
-        provider,
-      });
-
-      await service.track('a', USER_ID, { chapterId: 'chapter-1' });
-      service.invalidateOptOutCache('chapter-1');
-      await service.track('b', USER_ID, { chapterId: 'chapter-1' });
-
-      expect(mock.maybeSingle).toHaveBeenCalledTimes(2);
     });
   });
 });

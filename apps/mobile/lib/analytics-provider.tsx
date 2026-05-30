@@ -14,6 +14,14 @@ import type { AnalyticsProperties } from "@repo/validation";
  * (#analytics-events-pseudonymous).
  *
  * `track` is fire-and-forget so a failed event never disrupts the UI.
+ *
+ * NOTE: the mobile client has no active-chapter context yet (it is still the
+ * preview shell — real member flows land in #253, and `frapp-client.tsx`
+ * hardcodes `getChapterId: () => null`). Until then mobile events carry no
+ * `chapter_id`, so the server's per-chapter opt-out gate cannot apply to them.
+ * Wiring the active chapter into analytics events is tracked alongside mobile
+ * parity (#253) and the opt-out toggle (#466); the web provider already passes
+ * it. This is the documented limitation, not a silent bypass.
  */
 type TrackFn = (name: string, properties?: AnalyticsProperties) => void;
 

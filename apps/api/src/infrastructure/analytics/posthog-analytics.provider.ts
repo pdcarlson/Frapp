@@ -52,11 +52,16 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
   }
 
   private async send(payload: Record<string, unknown>): Promise<void> {
+    // Bound the request so a stalled provider (DNS hang, slow POP) can't pile
+    // up pending promises on the API event loop.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5_000);
     try {
       const response = await fetch(`${this.host}/capture/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       if (!response.ok) {
         this.logger.warn(
@@ -65,6 +70,8 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
       }
     } catch (error) {
       this.logger.warn('PostHog capture request failed', error as Error);
+    } finally {
+      clearTimeout(timeout);
     }
   }
 }
