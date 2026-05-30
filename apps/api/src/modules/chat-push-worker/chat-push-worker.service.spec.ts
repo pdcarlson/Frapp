@@ -139,6 +139,34 @@ describe('ChatPushWorkerService', () => {
     expect(notifyUser).toHaveBeenCalledTimes(0);
   });
 
+  it('pushes a per-channel off recipient when they are @mentioned (mute override)', async () => {
+    service.__setChannelForTest(CHANNEL);
+    setMembers(['sender', 'a']);
+    const pref: ChatNotificationPreferenceRow = {
+      user_id: 'a',
+      chapter_id: 'chap-1',
+      scope: 'channel',
+      scope_id: CHANNEL.id,
+      scope_kind: null,
+      level: 'off',
+    };
+    findForUser.mockResolvedValue([pref]);
+    // `mentions` rides on the message row (the composer writes it); the worker
+    // reads it via a `MentionsCarrier` cast, so attach it and cast here too.
+    const row = {
+      id: 'm1',
+      channel_id: CHANNEL.id,
+      sender_id: 'sender',
+      content: 'hey @a can you cover tonight?',
+      kind: 'text',
+      created_at: '',
+      mentions: { a: true },
+    };
+    await service.handleMessage(row);
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith('a', 'chap-1', expect.any(Object));
+  });
+
   it('suppresses system_audit unless the user opted in', async () => {
     service.__setChannelForTest({
       ...CHANNEL,
