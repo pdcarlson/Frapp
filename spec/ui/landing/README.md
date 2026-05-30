@@ -84,7 +84,7 @@ Do not use scale-on-hover on marketing cards, the pricing card, feature rows, or
 - **Below md:** nav links hidden; logo + primary CTA remain visible. **Log In** shows from `md` upward (`hidden md:inline-flex`). A full-screen hamburger menu is optional and not part of the current home.
 - Logo: Frapp lockup (`packages/brand-assets/assets/frapp-lockup.svg` + `apps/landing/components/frapp-lockup.tsx`) — see [assets.md](../assets.md).
 - Nav links: `text-muted-foreground`, hover → `text-foreground`; color transitions only, no hover scale on primary chrome.
-- "Log In": ghost-style link/button to the signup base + `/login`.
+- "Log In": ghost-style link/button to the app base + `/sign-in` (the web app's Supabase Auth sign-in route; there is no `/login` route).
 - Primary CTA: `bg-primary` / `text-primary-foreground` (deep bronze), hover `bg-primary/90`. Routes to `/sign-up` → onboarding wizard.
 
 ### Footer
