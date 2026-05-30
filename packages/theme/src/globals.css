@@ -8,7 +8,7 @@
  * The shadcn-style variable names (`--background`, `--primary`, etc.) are
  * preserved so the Tailwind preset and every existing surface keeps
  * resolving. The values now map to the warm-stone / ink / bronze system
- * defined in `design-handoff/project/styles.css`. Sidebar-specific tokens
+ * defined in `docs/internal/design-reference/styles.css`. Sidebar-specific tokens
  * (`--side-*`) live alongside the shadcn names because the chat-first
  * shell needs an "always dark ink" sidebar regardless of the active
  * light/dark mode of the rest of the app.
@@ -188,7 +188,7 @@
   /*
    * Ledger line — full-width hairline divider with a primary dot.
    * Anchors section titles to ledger-style rules; matches the
-   * `design-handoff/project/styles.css` `.ledger-line` motif.
+   * `docs/internal/design-reference/styles.css` `.ledger-line` motif.
    */
   .ledger-line {
     display: flex;

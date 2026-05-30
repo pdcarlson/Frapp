@@ -1,4 +1,4 @@
-# design-handoff/
+# docs/internal/design-reference/
 
 Visual reference bundle exported from claude.ai/design (handoff ID `uUVhoSAtPSXszJas884LAw`). Lands here so every redesign chunk can reference the same source of truth without re-fetching.
 
