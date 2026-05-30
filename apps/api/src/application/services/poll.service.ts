@@ -102,18 +102,20 @@ export class PollService {
     if (!message) {
       throw new NotFoundException('Poll not found');
     }
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
-    // Must be able to see the channel the poll lives in (private/role-gated/DM
-    // membership). `read` — voting is participation, not a message post.
+    // Authorize channel access BEFORE inspecting the message, so a non-poll or
+    // foreign-chapter message never leaks its existence/type via the
+    // "not a poll" 400. `read` — voting is participation, not a message post.
     await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
       userId,
       'read',
     );
+
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
 
     const metadata = message.metadata as PollMetadata;
     const isExpired = this.isPollExpired(metadata);
@@ -165,16 +167,18 @@ export class PollService {
     if (!message) {
       throw new NotFoundException('Poll not found');
     }
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
+    // Authorize channel access before inspecting the message (no type leak).
     await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
       userId,
       'read',
     );
+
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
 
     const metadata = message.metadata as PollMetadata;
     if (this.isPollExpired(metadata)) {
@@ -193,18 +197,20 @@ export class PollService {
     if (!message) {
       throw new NotFoundException('Poll not found');
     }
-    if (message.type !== 'POLL') {
-      throw new BadRequestException('Message is not a poll');
-    }
 
     // Reading a poll's question/options/tallies requires being able to read the
-    // channel it lives in — otherwise private/role-gated poll content leaks.
+    // channel it lives in — otherwise private/role-gated poll content (and even
+    // a foreign message's existence/type) leaks. Authorize before inspecting.
     await this.channelAccess.assertAccess(
       message.channel_id,
       chapterId,
       userId,
       'read',
     );
+
+    if (message.type !== 'POLL') {
+      throw new BadRequestException('Message is not a poll');
+    }
 
     const metadata = message.metadata as PollMetadata;
     const options = metadata.options ?? [];

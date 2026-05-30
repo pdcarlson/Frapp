@@ -282,6 +282,29 @@ describe('PollService', () => {
       expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
     });
 
+    it('checks channel access before the poll-type check (foreign non-poll message 404s, no type leak)', async () => {
+      // messageRepo.findById is global (not chapter-scoped), so a non-poll
+      // message from another chapter resolves here. assertAccess must run first
+      // and reject (channel not in the caller's chapter → 404) BEFORE the
+      // `message.type !== 'POLL'` check — otherwise the 400 "Message is not a
+      // poll" would leak the foreign message's existence/type. The denial is a
+      // 404 (chapter scoping), never converted into a 403.
+      mockMessageRepo.findById.mockResolvedValue({
+        ...basePollMessage,
+        type: 'TEXT',
+        channel_id: 'foreign-channel',
+      });
+      mockChannelAccess.assertAccess.mockRejectedValue(
+        new NotFoundException('Channel not found'),
+      );
+
+      await expect(
+        service.vote('msg-1', 'outsider', 'ch-1', [0]),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockVoteRepo.create).not.toHaveBeenCalled();
+      expect(mockVoteRepo.deleteByMessageAndUser).not.toHaveBeenCalled();
+    });
+
     it('should reject vote on expired poll', async () => {
       const expiredPoll = {
         ...basePollMessage,
