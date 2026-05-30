@@ -65,6 +65,18 @@ describe('SearchService', () => {
       });
     });
 
+    it('should return empty results without querying for sub-3-char queries', async () => {
+      const result = await service.search('ch-1', 'user-1', 'ab');
+      expect(result).toEqual({
+        backwork: [],
+        events: [],
+        members: [],
+        messages: [],
+      });
+      // Spec default: shorter queries never touch the database.
+      expect(mockSupabase.from).not.toHaveBeenCalled();
+    });
+
     it('should return grouped results from all domains', async () => {
       const backworkChain = makeChain({ data: [], error: null });
       const eventsChain = makeChain({
@@ -301,6 +313,46 @@ describe('SearchService', () => {
       await service.search('ch-1', 'user-1', 'test,id.eq.secret');
 
       expect(backworkOrCall).toContain('"%test,id.eq.secret%"');
+    });
+  });
+
+  describe('searchWithinBudget', () => {
+    const emptyResult = {
+      backwork: [],
+      events: [],
+      members: [],
+      messages: [],
+    };
+
+    it('passes through results when search resolves within the budget', async () => {
+      const results = { ...emptyResult, events: [{ id: 'ev-1' }] } as never;
+      jest.spyOn(service, 'search').mockResolvedValue(results);
+
+      const outcome = await service.searchWithinBudget(
+        'ch-1',
+        'user-1',
+        'hello',
+      );
+
+      expect(outcome).toEqual({ results, timedOut: false });
+    });
+
+    it('returns empty results and timedOut when search exceeds the budget', async () => {
+      jest.useFakeTimers();
+      try {
+        // A search that never settles within the budget window.
+        jest
+          .spyOn(service, 'search')
+          .mockReturnValue(new Promise(() => {}) as never);
+
+        const promise = service.searchWithinBudget('ch-1', 'user-1', 'hello');
+        await jest.advanceTimersByTimeAsync(500);
+        const outcome = await promise;
+
+        expect(outcome).toEqual({ results: emptyResult, timedOut: true });
+      } finally {
+        jest.useRealTimers();
+      }
     });
   });
 });

@@ -30,7 +30,13 @@ export interface SearchResult {
 }
 
 const SEARCH_LIMIT = 10;
+const MIN_QUERY_LENGTH = 3;
+const SEARCH_TIMEOUT_MS = 500;
 const PATTERN = (q: string) => `%${q}%`;
+
+function emptyResult(): SearchResult {
+  return { backwork: [], events: [], members: [], messages: [] };
+}
 
 interface QueryError {
   message: string;
@@ -59,8 +65,10 @@ export class SearchService {
     query: string,
   ): Promise<SearchResult> {
     const q = query.trim();
-    if (!q) {
-      return { backwork: [], events: [], members: [], messages: [] };
+    // Spec default: queries shorter than 3 characters return an empty result
+    // without touching the database (spec/behavior/search.md).
+    if (q.length < MIN_QUERY_LENGTH) {
+      return emptyResult();
     }
 
     const pattern = PATTERN(q);
@@ -80,6 +88,39 @@ export class SearchService {
       members: membersRes,
       messages: messagesRes,
     };
+  }
+
+  /**
+   * Runs {@link search} under a {@link SEARCH_TIMEOUT_MS} budget. On timeout the
+   * caller gets an empty result plus `timedOut: true` so the HTTP layer can set
+   * the `x-search-timeout` header (spec/behavior/search.md). This is an
+   * application-level budget via `Promise.race`; it does not abort the in-flight
+   * Supabase queries (supabase-js does not cleanly expose per-query
+   * `statement_timeout`), but each scan is already capped at `SEARCH_LIMIT`.
+   */
+  async searchWithinBudget(
+    chapterId: string,
+    userId: string,
+    query: string,
+  ): Promise<{ results: SearchResult; timedOut: boolean }> {
+    const TIMED_OUT = Symbol('search-timeout');
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+      timer = setTimeout(() => resolve(TIMED_OUT), SEARCH_TIMEOUT_MS);
+    });
+
+    try {
+      const outcome = await Promise.race([
+        this.search(chapterId, userId, query),
+        timeout,
+      ]);
+      if (outcome === TIMED_OUT) {
+        return { results: emptyResult(), timedOut: true };
+      }
+      return { results: outcome, timedOut: false };
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async searchBackwork(
