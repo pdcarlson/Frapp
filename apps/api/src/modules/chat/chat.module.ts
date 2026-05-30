@@ -18,11 +18,10 @@ import {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { NotificationModule } from '../notification/notification.module';
-import { ChapterModule } from '../chapter/chapter.module';
-import { RbacModule } from '../rbac/rbac.module';
+import { ChannelAccessModule } from '../channel-access/channel-access.module';
 
 @Module({
-  imports: [NotificationModule, ChapterModule, RbacModule],
+  imports: [NotificationModule, ChannelAccessModule],
   controllers: [ChatController],
   providers: [
     ChatService,

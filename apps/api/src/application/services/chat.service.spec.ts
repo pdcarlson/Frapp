@@ -36,6 +36,7 @@ import type {
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
 import { RbacService } from './rbac.service';
+import { ChannelAccessService } from './channel-access.service';
 
 describe('ChatService', () => {
   let service: ChatService;
@@ -206,6 +207,11 @@ describe('ChatService', () => {
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
+        // ChatService now authorizes through the shared ChannelAccessService;
+        // wire a real one over the same mocked channel/member/rbac so the
+        // existing PRIVATE / ROLE_GATED rejection tests still exercise the
+        // predicate end-to-end.
+        ChannelAccessService,
       ],
     }).compile();
 
