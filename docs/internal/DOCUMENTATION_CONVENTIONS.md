@@ -36,7 +36,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Design-system (typography, icons, microcopy, brand assets) | `docs/internal/design-system/` |
 | Mobile testing / smoke | `docs/internal/mobile/` |
 | Accessibility / PR-review process | `docs/internal/quality/` |
-| Env reference / secrets / local-dev detail | `docs/internal/environment/` |
+| Env reference / secrets / local-dev / cloud sandbox / agent credentials | `docs/internal/environment/` |
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Visual prototype reference | `docs/internal/design-reference/` |
 | Per-service performance notes | `docs/internal/services/` |

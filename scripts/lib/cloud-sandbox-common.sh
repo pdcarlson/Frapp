@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shared helpers for the cloud-sandbox scripts (setup / per-session bringup) and
-# the Jules VM bootstrap. Sourced, not executed. No `set -e` here — callers decide
-# their own error policy; these helpers signal failure via return codes.
+# Shared helpers for the cloud-sandbox scripts (setup / per-session bringup).
+# Sourced, not executed. No `set -e` here — callers decide their own error policy;
+# these helpers signal failure via return codes.
 
 # Timestamped log line to stderr (keeps stdout clean for callers that capture it).
 cs_log() {

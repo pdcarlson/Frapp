@@ -1,5 +1,9 @@
 # Local development
 
+> The **primary** dev environment is the Claude Code web sandbox — see
+> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md). This file is the **secondary** path: running
+> Frapp on a laptop/local machine.
+
 **Canonical run command (after bootstrap + Infisical login):** from the repo root,
 
 ```bash
@@ -56,23 +60,11 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
-## Claude Code web sandbox (automated cloud sessions)
+## Claude Code web sandbox
 
-Claude Code web sessions can run the full local stack (Docker + local Supabase + API)
-automatically. The canonical setup — exact env vars, setup-script line, and the required
-network policy — lives in [`../ci-cd/CLOUD_SANDBOX.md`](../ci-cd/CLOUD_SANDBOX.md). In short:
-
-- **Setup script** (web UI → *Setup script* field): `bash scripts/cloud-sandbox-setup.sh || true`
-  — replaces a bare `npm install`; it installs deps and pre-pulls/caches the Supabase images.
-- **Environment variables** (web UI): `FRAPP_CLOUD_SANDBOX=1` (enables background bringup in
-  the SessionStart hook), `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` (read-only token; avoids
-  pull rate limits), and restricted **test-mode** `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`
-  / `STRIPE_PRICE_ID`. `CLAUDE_CODE_SUBAGENT_MODEL` is set in `.claude/settings.json`, not here.
-- **Network access:** **Full** (or Custom + `public.ecr.aws` + `*.cloudfront.net`). Trusted is
-  **not** sufficient — `supabase start` pulls Postgres from AWS ECR Public / CloudFront.
-- At session start, `scripts/cloud-sandbox-up.sh` runs in the background and writes
-  `apps/api/.env.local` (local Supabase keys + Stripe vars), so `npm run start:dev -w apps/api`
-  boots **without Infisical**. Wait for `.cloud-sandbox-up.done` / `.cloud-sandbox-up.failed`.
+The primary, automated environment. Full config (setup script, env vars, network policy),
+auto-bringup, and failure troubleshooting live in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
+It generates `apps/api/.env.local` so the API boots without Infisical.
 
 ## SWC builder for API dev server
 
@@ -82,7 +74,7 @@ The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--build
 npx -w apps/api nest start --watch --builder swc
 ```
 
-For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../../AGENTS.md) reference this workaround.
+For type safety, run `npm run check-types` separately. The cloud-sandbox fallback in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) also uses this.
 
 ## Web visual regression suite
 
@@ -105,7 +97,8 @@ import in the visual-regression environment.
 
 ## Related docs
 
+- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web sandbox (primary dev env)
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
-- [`../ci-cd/CLOUD_SANDBOX.md`](../ci-cd/CLOUD_SANDBOX.md) — Claude Code web sandbox config
+- [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md) — agent/provider creds + cloud-sandbox vars
 - [`AGENTS.md`](../../../AGENTS.md) — agent-oriented repo rules (short index)

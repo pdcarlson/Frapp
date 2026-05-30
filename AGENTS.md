@@ -4,18 +4,9 @@ Concise operating guide for AI agents and developers. **Deep detail:** [`docs/in
 
 ## Optional agent credentials (automation / cloud sessions)
 
-These environment variables sometimes exist in hosted agent VMs. Omit on a normal laptop; use `npx infisical login` for local app secrets.
+Hosted agent sessions may carry provider/research credentials and cloud-sandbox runtime vars. **Canonical list:** [`docs/internal/environment/AGENT_CREDENTIALS.md`](docs/internal/environment/AGENT_CREDENTIALS.md). Omit all on a normal laptop; use `npx infisical login` for local app secrets.
 
-| Env var                                    | Purpose                                     |
-| ------------------------------------------ | ------------------------------------------- |
-| `INFISICAL_API_KEY`                        | Infisical API (may not include `local` env) |
-| `RENDER_API_KEY` / `VERCEL_API_KEY`        | Provider APIs                               |
-| `SUPABASE_API_KEY`                         | Supabase Management API                     |
-| `GITHUB_PAT`                               | GitHub PAT (export as `GH_TOKEN` for `gh`); branch-protection script |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                |
-| `JULES_USER_API_KEY`                       | Jules automation (if used)                  |
-
-**Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values. Full policy and CI tables: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md).
+**Research-first:** when these exist, gather runtime truth (CI, deploys, schema, secret presence) before proposing changes. Never print secret values. GitHub PAT usage policy + CI tables: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md).
 
 ## Operating mindset
 
@@ -24,6 +15,7 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 - Confirm before external/public actions; be proactive on internal/repo work.
 - If agent operating files change, say so in the response.
 - **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained implementation chunks to sub-agents (Explore/Plan/general-purpose), launching independent ones in parallel in a single message. Keep heavy reading out of your own context and stay focused on integration and review. Sub-agents run on Sonnet 4.6 by default (`CLAUDE_CODE_SUBAGENT_MODEL` in [`.claude/settings.json`](.claude/settings.json)).
+- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the Claude Code web environment (network policy, env var, setup script), then wait. These are environment config you cannot fix from inside the session; env/network changes apply to new sessions only. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails").
 
 ## Project overview
 
@@ -86,11 +78,9 @@ Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/environment/
 
 ## Starting the dev environment
 
-**Laptop / WSL / Linux:** With Docker reachable, run `bash scripts/local-dev-setup.sh` from the repo root (deps, Supabase, `db push --local`, optional checks). Flags: `--quick`, `--reset-supabase`, `--reset-supabase-data` — see script `--help`.
+**Primary — Claude Code web sandbox:** the local stack (Docker + Supabase + API) auto-starts in the background at session start. Wait for `.cloud-sandbox-up.done`, then `npm run start:dev -w apps/api`. Config, env vars, and failure troubleshooting: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md).
 
-**Headless cloud VM (e.g. Jules):** `scripts/jules-setup.sh` may start Docker differently; do not copy that pattern to a normal laptop.
-
-**Secrets:** `npx infisical login` once, then **`npm run dev:stack`** from repo root. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
+**Secondary — laptop / WSL / Linux:** with Docker reachable, run `bash scripts/local-dev-setup.sh` (deps, Supabase, `db push --local`, optional checks; flags `--quick`, `--reset-supabase`, `--reset-supabase-data`). Then `npx infisical login` once and **`npm run dev:stack`**. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
 ## Secrets and environment variables
 
@@ -167,40 +157,9 @@ This is enforced by `doneMeansMerged: true` in `.claude/settings.json`; the AGEN
 
 ## Claude Code web sandbox
 
-When the environment is configured per [`docs/internal/ci-cd/CLOUD_SANDBOX.md`](docs/internal/ci-cd/CLOUD_SANDBOX.md) (env var `FRAPP_CLOUD_SANDBOX=1`, the `scripts/cloud-sandbox-setup.sh` setup script, and Trusted network), `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start — it starts Docker + local Supabase and writes `apps/api/.env.local`.
+`.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start (gated on the `/etc/frapp-cloud-sandbox` marker the setup script writes, or `FRAPP_CLOUD_SANDBOX=1`) — it starts Docker + local Supabase and writes `apps/api/.env.local`.
 
 - **Wait before using the DB/API:** poll for `.cloud-sandbox-up.done` (success) or `.cloud-sandbox-up.failed` (error); live log at `/tmp/cloud-sandbox-up.log`.
 - **Boot the API** with `npm run start:dev -w apps/api` (the generated `.env.local` means no Infisical is needed).
-- If the env isn't configured (no `FRAPP_CLOUD_SANDBOX`), nothing auto-starts; you can run `bash scripts/cloud-sandbox-up.sh` manually, or fall back to the PGlite harness for migration-only checks.
-
-## Cursor Cloud-specific instructions
-
-These notes are for cloud agents running after the update script has already installed dependencies.
-
-### Docker and Supabase
-
-- Docker must be started before Supabase. Run `sudo dockerd &>/tmp/dockerd.log &`, wait for the socket (`while [ ! -e /var/run/docker.sock ]; do sleep 1; done`), then add the current user to the docker group (`sudo usermod -aG docker $USER` and open a new shell) so Docker commands work without `sudo`. In ephemeral cloud/CI containers where group changes cannot take effect, prefix Docker and Supabase commands with `sudo` instead. Never print secret values or credentials in docs or logs.
-- Start Supabase with `npx supabase start` and apply migrations with `npx supabase db push --local`.
-- If Supabase containers are stuck: `bash scripts/local-dev-setup.sh --reset-supabase`.
-
-### Running apps without Infisical
-
-The cloud VM does not have Infisical CLI session access. Use the fallback `.env.local` approach instead of `npm run dev:stack`:
-
-1. Create `.env.local` in each app directory with values from `docs/internal/environment/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
-2. Start apps individually (no Infisical wrapper):
-   - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
-   - Web: `npm run dev -w apps/web`
-   - Landing: `npm run dev -w apps/landing`
-
-### API dev server (optional SWC)
-
-`nest start --watch` uses the same TypeScript program as `nest build` by default. For faster rebuilds in large trees you can use `nest start --watch --builder swc` (requires `@swc/cli` / `@swc/core` in `apps/api`). CI and Render use **`nest build`**; keep `npm run build -w apps/api` green before merging API changes.
-
-### Key commands (standard, documented in root `package.json`)
-
-| Task | Command |
-|------|---------|
-| Lint | `npm run lint` |
-| API tests | `npm run test -w apps/api` |
-| Type-check | `npm run check-types` |
+- **On failure, STOP and report** what to fix in the web environment (see Operating mindset). Don't paper over it.
+- Manual/fallback bringup, the full config, and the symptom→fix table all live in [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md). Local-only `.env.local` and SWC notes: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).

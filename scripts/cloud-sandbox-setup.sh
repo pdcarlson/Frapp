@@ -6,7 +6,7 @@
 # Runs once as root before the agent starts; its FILESYSTEM is cached (~7 days) but
 # running daemons are NOT. So this only does work whose *output is files*: install
 # node deps and pre-pull the Supabase Docker images so the per-session bringup
-# (scripts/cloud-sandbox-up.sh) is fast. See docs/internal/ci-cd/CLOUD_SANDBOX.md.
+# (scripts/cloud-sandbox-up.sh) is fast. See docs/internal/environment/CLOUD_SANDBOX.md.
 #
 # Deliberately not `set -e`: a slow or failed image pull must never block session
 # start. Non-critical steps fall through with a warning.
@@ -16,6 +16,12 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT"
 # shellcheck source=scripts/lib/cloud-sandbox-common.sh
 . "$ROOT/scripts/lib/cloud-sandbox-common.sh"
+
+# Drop a marker so .claude/hooks/session-start.sh can auto-detect the cloud sandbox
+# without requiring the FRAPP_CLOUD_SANDBOX env var. This setup script only ever runs in
+# the configured cloud environment, and the marker is part of the cached filesystem.
+# Written first so per-session bringup is gated even if the image pre-pull below fails.
+touch /etc/frapp-cloud-sandbox 2>/dev/null || cs_log "WARN: could not write /etc/frapp-cloud-sandbox marker (set FRAPP_CLOUD_SANDBOX=1 instead)."
 
 cs_log "Installing node dependencies..."
 npm ci || npm install || cs_log "WARN: dependency install failed; the session may need 'npm install'."

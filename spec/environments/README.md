@@ -52,7 +52,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see below). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -326,13 +326,10 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Every migration should have a documented rollback strategy in `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
 
-## Jules Cloud Environment
+## Claude Code cloud sandbox (primary dev environment)
 
-The Jules agent execution environment uses a pre-configured headless cloud VM.
-Bootstrap with [`scripts/jules-setup.sh`](../../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
-
-Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.
+Frapp is primarily developed in Claude Code web sessions. Each runs in a fresh, ephemeral VM; a setup script pre-caches Docker images and the SessionStart hook brings up Docker + local Supabase + the API in the background, generating `apps/api/.env.local` so the API boots without Infisical. Full configuration (setup script, env vars, network policy) and failure troubleshooting are in [`docs/internal/environment/CLOUD_SANDBOX.md`](../../docs/internal/environment/CLOUD_SANDBOX.md).
 
 ## Cursor Automations Environment
 
-Cursor Automations run a cloud agent in a fresh sandbox cloned from `main` on a schedule and/or GitHub event. The sandbox bootstraps from [`.cursor/environment.json`](../../.cursor/environment.json) (currently `npm install`) — read-only audits don't need Docker/Supabase, unlike the Jules VM above. The automations are configured in the Cursor dashboard (config-as-code isn't supported yet), so the canonical prompt and every setting are version-controlled in [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md); the agent's behavior contract is [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md). The current automation ("Suggestion Triage") runs on PR-merge and weekly, performs a broad product + engineering review (engineering gaps; product/behavior gaps grounded in `spec/`; creative next-steps/research), and files deduplicated, labeled GitHub issues — it never edits code or opens PRs.
+Cursor Automations run a cloud agent in a fresh sandbox cloned from `main` on a schedule and/or GitHub event. The sandbox bootstraps from [`.cursor/environment.json`](../../.cursor/environment.json) (currently `npm install`) — read-only audits don't need Docker/Supabase. The automations are configured in the Cursor dashboard (config-as-code isn't supported yet), so the canonical prompt and every setting are version-controlled in [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md); the agent's behavior contract is [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md). The current automation ("Suggestion Triage") runs on PR-merge and weekly, performs a broad product + engineering review (engineering gaps; product/behavior gaps grounded in `spec/`; creative next-steps/research), and files deduplicated, labeled GitHub issues — it never edits code or opens PRs.

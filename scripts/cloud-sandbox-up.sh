@@ -7,10 +7,10 @@
 #   3. supabase db push --local
 #   4. write apps/api/.env.local from `supabase status` + Stripe env vars
 #
-# Auto-launched in the background by .claude/hooks/session-start.sh when
-# FRAPP_CLOUD_SANDBOX=1, or run directly. Writes a .cloud-sandbox-up.done /
-# .cloud-sandbox-up.failed sentinel at repo root so callers can poll completion.
-# See docs/internal/ci-cd/CLOUD_SANDBOX.md.
+# Auto-launched in the background by .claude/hooks/session-start.sh (gated on the
+# /etc/frapp-cloud-sandbox marker or FRAPP_CLOUD_SANDBOX=1), or run directly. Writes a
+# .cloud-sandbox-up.done / .cloud-sandbox-up.failed sentinel at repo root so callers can
+# poll completion. See docs/internal/environment/CLOUD_SANDBOX.md.
 set -uo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
