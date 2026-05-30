@@ -29,7 +29,7 @@
 | 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | open | — | depends on 06. Canon → `spec/behavior/members.md`, `spec/ui/web-dashboard/` |
 | 10a — Ops: Events (slash + RSVP renderer + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | open | — | integration pattern → `spec/behavior/integrations.md`; module → `spec/behavior/events.md` |
 | 10b — Ops: Tasks (slash + assignment renderer) | [#439](https://github.com/pdcarlson/Frapp/issues/439) | open | — | → `spec/behavior/tasks.md` |
-| 10c — Ops: Points (slash + ledger renderer) | [#440](https://github.com/pdcarlson/Frapp/issues/440) | open | — | → `spec/behavior/points.md` |
+| 10c — Ops: Points (slash + ledger renderer) | [#440](https://github.com/pdcarlson/Frapp/issues/440) | open (PR #535) | — | `/points grant\|deduct`; server-originated card. Canon → `spec/behavior/points.md`, `spec/behavior/chat/integrations.md` |
 | 10d — Ops: Dues / Billing (slash + invoice renderer) | [#441](https://github.com/pdcarlson/Frapp/issues/441) | open | — | → `spec/behavior/billing.md` |
 | 10e — Ops: Rush / Recruitment / Intake (vocab-aware) | [#442](https://github.com/pdcarlson/Frapp/issues/442) | open | — | → new `spec/behavior/rush.md` |
 | 10f — Ops: Backwork (chat share + dashboard upload) | [#443](https://github.com/pdcarlson/Frapp/issues/443) | open | — | → `spec/behavior/backwork.md` |
