@@ -34,7 +34,7 @@ import {
   unreact as unreactAction,
   type ToastFn,
 } from "./chat-client";
-import { dispatchSlashCommand } from "./dispatch";
+import { dispatchSlashCommand, type ResolveMember } from "./dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import {
   clearDraft,
@@ -64,6 +64,7 @@ export interface UseChatChannelResult {
     command: SlashCommand,
     args: string,
     announcementsChannelId: string | null,
+    resolveMember?: ResolveMember,
   ) => Promise<{ ok: boolean; error?: string }>;
   /** Card action invoker (Vote, RSVP, …). Goes through the NestJS chat actions endpoint (ADR-11). */
   act: (
@@ -274,6 +275,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
       command: SlashCommand,
       args: string,
       announcementsChannelId: string | null,
+      resolveMember?: ResolveMember,
     ) => {
       if (!channelId) {
         return { ok: false, error: "No active channel" };
@@ -283,6 +285,7 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
         args,
         channelId,
         announcementsChannelId,
+        resolveMember,
       });
     },
     [channelId, ctx],

@@ -15,19 +15,7 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 
 ## Optional environment credentials
 
-These may appear in **cloud agent** or automation sessions. Local Cursor development often omits most of them; use Infisical login for app secrets instead.
-
-| Env var                                    | Typical use                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------- |
-| `GITHUB_PAT`                               | GitHub PAT — branch-protection script; export as `GH_TOKEN` for `gh` |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI / management                                            |
-| `INFISICAL_API_KEY`                        | Infisical API (may lack `local` env)                                 |
-| `RENDER_API_KEY`                           | Render API                                                           |
-| `VERCEL_API_KEY`                           | Vercel API                                                           |
-| `SUPABASE_API_KEY`                         | Supabase Management API                                              |
-| `JULES_USER_API_KEY`                       | Jules automation (if used)                                           |
-
-> **Canonical name & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT`. Do **not** confuse it with `GITHUB_TOKEN`, which is the GitHub Actions runtime token (a different credential that lacks branch-administration scope). Scripts still tolerate the aliases `GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`, and older images may expose `GITHUB_PERSONAL_ACCESS_TOKEN` / `GITHUB_FULL_PERSONAL_ACCESS_TOKEN` / `RENDER_APIKEY` — but new code and docs use the canonical names only.
+Provider/research credentials and cloud-sandbox runtime vars that may appear in cloud agent / automation sessions are listed canonically in [`../environment/AGENT_CREDENTIALS.md`](../environment/AGENT_CREDENTIALS.md) (including the canonical-name/alias discussion). Local development omits most of them; use Infisical login for app secrets instead. The GitHub PAT usage policy below stays here.
 
 ## GitHub PAT usage policy
 
@@ -56,7 +44,7 @@ their open/closed state, closed on completion by `Closes #N` in the PR body. Rec
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api`; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing unit tests; `api-tests` runs `apps/api` Jest; `web-tests` runs `apps/web` Vitest; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
@@ -185,9 +173,9 @@ If a future chunk crosses a boundary the sandbox still can't reach (live Realtim
 
 ### Sandbox-blocked tooling — known list
 
-- **Docker / `supabase start` / `supabase db reset`:** no Docker daemon. Cannot start the local stack. Use the PGlite harness for migration validation.
+- **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web sandbox configured per [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)** (setup script + Full/Custom network), `scripts/cloud-sandbox-up.sh` brings up Docker + local Supabase and writes `apps/api/.env.local`, so the full stack and `npm run start:dev -w apps/api` work and the API boots with no Infisical. Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
 - **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** denied by `.claude/settings.json` by default. `list_projects` happens to be allowed. Do not assume any MCP tool works until you've tried it.
-- **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape.
+- **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape. Note `supabase start` pulls images from **AWS ECR Public** (`public.ecr.aws`) + **CloudFront** (`*.cloudfront.net`), which the **Trusted** policy does not reliably allow — use **Full** (or a Custom allowlist adding those hosts). See [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md).
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
 
 When you hit a new block, add it here in the same PR you discovered it in.

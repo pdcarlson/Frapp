@@ -14,12 +14,13 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
-import { useChannels, useCategories } from "@repo/hooks";
+import { useChannels, useCategories, useMembers } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray } from "@/lib/utils";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
+import type { ResolveMember } from "@/lib/chat/dispatch";
 import { ChannelList, type ChatChannel } from "./channel-list";
 import { MessageTimeline } from "./message-timeline";
 import { Composer } from "./composer";
@@ -28,6 +29,44 @@ import { PinsPopover } from "./pins-popover";
 import { ReconnectPill } from "./reconnect-pill";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { SlashCommand } from "@repo/chat-integrations";
+
+interface DirectoryMember {
+  user_id: string;
+  display_name: string;
+}
+
+/**
+ * Resolve a `/points @member` token to a single chapter member. Tiered and
+ * fail-closed: exact user id → exact display name → name without spaces →
+ * first name → unique prefix. Ambiguity at any tier (or no match) returns
+ * `null` so the dispatcher never adjusts the wrong person.
+ */
+function matchMember(
+  list: DirectoryMember[],
+  token: string,
+): DirectoryMember | null {
+  const needle = token.trim().toLowerCase();
+  if (needle.length === 0) return null;
+  const lower = (s: string) => s.toLowerCase();
+  const noSpace = (s: string) => s.toLowerCase().replace(/\s+/g, "");
+  const firstWord = (s: string) => s.toLowerCase().split(/\s+/)[0] ?? "";
+
+  const tiers: Array<(m: DirectoryMember) => boolean> = [
+    (m) => m.user_id.toLowerCase() === needle,
+    (m) => lower(m.display_name) === needle,
+    (m) => noSpace(m.display_name) === needle,
+    (m) => firstWord(m.display_name) === needle,
+    (m) => lower(m.display_name).startsWith(needle),
+  ];
+  for (const pred of tiers) {
+    const hits = list.filter(pred);
+    if (hits.length === 1) {
+      return { user_id: hits[0]!.user_id, display_name: hits[0]!.display_name };
+    }
+    if (hits.length > 1) return null;
+  }
+  return null;
+}
 
 function channelHeaderIcon(channel: ChatChannel | null) {
   if (!channel) return Hash;
@@ -79,6 +118,13 @@ export function ChatShell() {
     () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
     [channels],
   );
+
+  // Backs `@member` resolution for member-targeted slash commands (/points).
+  const membersQuery = useMembers();
+  const resolveMember = useMemo<ResolveMember>(() => {
+    const list = asArray<DirectoryMember>(membersQuery.data);
+    return (token: string) => matchMember(list, token);
+  }, [membersQuery.data]);
 
   const channel = useChatChannel(activeChannelId);
 
@@ -234,7 +280,12 @@ export function ChatShell() {
             onChangeDraft={channel.setDraft}
             onSend={(body) => channel.send(body)}
             onSlashDispatch={(command: SlashCommand, args: string) =>
-              channel.dispatchSlash(command, args, announcementsChannelId)
+              channel.dispatchSlash(
+                command,
+                args,
+                announcementsChannelId,
+                resolveMember,
+              )
             }
             onTyping={channel.emitTyping}
             isModuleEnabled={isModuleEnabled}

@@ -1640,599 +1640,6 @@
         ]
       }
     },
-    "/v1/billing/status": {
-      "get": {
-        "operationId": "BillingController_getStatus_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get chapter billing status",
-        "tags": [
-          "Billing"
-        ]
-      }
-    },
-    "/v1/billing/checkout": {
-      "post": {
-        "operationId": "BillingController_createCheckout_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCheckoutDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create Stripe Checkout session",
-        "tags": [
-          "Billing"
-        ]
-      }
-    },
-    "/v1/billing/portal": {
-      "post": {
-        "operationId": "BillingController_createPortal_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreatePortalDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create Stripe Customer Portal session",
-        "tags": [
-          "Billing"
-        ]
-      }
-    },
-    "/v1/webhooks/stripe": {
-      "post": {
-        "operationId": "WebhookController_handleStripeWebhook_v1",
-        "parameters": [
-          {
-            "name": "stripe-signature",
-            "required": true,
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "summary": "Handle Stripe webhook events",
-        "tags": [
-          "Webhooks"
-        ]
-      }
-    },
-    "/v1/invoices": {
-      "get": {
-        "operationId": "FinancialInvoiceController_list_v1",
-        "parameters": [
-          {
-            "name": "user_id",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List invoices (billing: all, member: own)",
-        "tags": [
-          "Financial Invoices"
-        ]
-      },
-      "post": {
-        "operationId": "FinancialInvoiceController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateFinancialInvoiceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a member invoice",
-        "tags": [
-          "Financial Invoices"
-        ]
-      }
-    },
-    "/v1/invoices/overdue": {
-      "get": {
-        "operationId": "FinancialInvoiceController_listOverdue_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List overdue invoices (OPEN past due_date)",
-        "tags": [
-          "Financial Invoices"
-        ]
-      }
-    },
-    "/v1/invoices/{id}": {
-      "get": {
-        "operationId": "FinancialInvoiceController_getOne_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get invoice by ID",
-        "tags": [
-          "Financial Invoices"
-        ]
-      },
-      "patch": {
-        "operationId": "FinancialInvoiceController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateFinancialInvoiceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a draft invoice",
-        "tags": [
-          "Financial Invoices"
-        ]
-      }
-    },
-    "/v1/invoices/{id}/status": {
-      "post": {
-        "operationId": "FinancialInvoiceController_transitionStatus_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TransitionInvoiceStatusDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Transition invoice status (OPEN, PAID, VOID)",
-        "tags": [
-          "Financial Invoices"
-        ]
-      }
-    },
-    "/v1/invoices/{id}/transactions": {
-      "get": {
-        "operationId": "FinancialInvoiceController_getInvoiceTransactions_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get transactions for an invoice",
-        "tags": [
-          "Financial Invoices"
-        ]
-      }
-    },
-    "/v1/backwork/upload-url": {
-      "post": {
-        "operationId": "BackworkController_requestUploadUrl_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/RequestBackworkUploadUrlDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Request a signed upload URL",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
-    "/v1/backwork": {
-      "post": {
-        "operationId": "BackworkController_confirmUpload_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfirmBackworkUploadDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Confirm upload and store resource metadata",
-        "tags": [
-          "Backwork"
-        ]
-      },
-      "get": {
-        "operationId": "BackworkController_list_v1",
-        "parameters": [
-          {
-            "name": "department_id",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "professor_id",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "course_number",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "year",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "semester",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "assignment_type",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "document_variant",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "search",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Browse/search backwork resources",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
-    "/v1/backwork/departments": {
-      "get": {
-        "operationId": "BackworkController_listDepartments_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter departments",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
-    "/v1/backwork/departments/{id}": {
-      "patch": {
-        "operationId": "BackworkController_updateDepartment_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateDepartmentDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update department name",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
-    "/v1/backwork/professors": {
-      "get": {
-        "operationId": "BackworkController_listProfessors_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter professors",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
-    "/v1/backwork/{id}": {
-      "get": {
-        "operationId": "BackworkController_getOne_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get resource detail with download URL",
-        "tags": [
-          "Backwork"
-        ]
-      },
-      "delete": {
-        "operationId": "BackworkController_delete_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a backwork resource",
-        "tags": [
-          "Backwork"
-        ]
-      }
-    },
     "/v1/channels": {
       "get": {
         "operationId": "ChatController_listChannels_v1",
@@ -2963,6 +2370,599 @@
         "summary": "Mark channel as read",
         "tags": [
           "Chat"
+        ]
+      }
+    },
+    "/v1/billing/status": {
+      "get": {
+        "operationId": "BillingController_getStatus_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get chapter billing status",
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/v1/billing/checkout": {
+      "post": {
+        "operationId": "BillingController_createCheckout_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCheckoutDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create Stripe Checkout session",
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/v1/billing/portal": {
+      "post": {
+        "operationId": "BillingController_createPortal_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePortalDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create Stripe Customer Portal session",
+        "tags": [
+          "Billing"
+        ]
+      }
+    },
+    "/v1/webhooks/stripe": {
+      "post": {
+        "operationId": "WebhookController_handleStripeWebhook_v1",
+        "parameters": [
+          {
+            "name": "stripe-signature",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Handle Stripe webhook events",
+        "tags": [
+          "Webhooks"
+        ]
+      }
+    },
+    "/v1/invoices": {
+      "get": {
+        "operationId": "FinancialInvoiceController_list_v1",
+        "parameters": [
+          {
+            "name": "user_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List invoices (billing: all, member: own)",
+        "tags": [
+          "Financial Invoices"
+        ]
+      },
+      "post": {
+        "operationId": "FinancialInvoiceController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFinancialInvoiceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a member invoice",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/overdue": {
+      "get": {
+        "operationId": "FinancialInvoiceController_listOverdue_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List overdue invoices (OPEN past due_date)",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/{id}": {
+      "get": {
+        "operationId": "FinancialInvoiceController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get invoice by ID",
+        "tags": [
+          "Financial Invoices"
+        ]
+      },
+      "patch": {
+        "operationId": "FinancialInvoiceController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFinancialInvoiceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a draft invoice",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/{id}/status": {
+      "post": {
+        "operationId": "FinancialInvoiceController_transitionStatus_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransitionInvoiceStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Transition invoice status (OPEN, PAID, VOID)",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/invoices/{id}/transactions": {
+      "get": {
+        "operationId": "FinancialInvoiceController_getInvoiceTransactions_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get transactions for an invoice",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
+    "/v1/backwork/upload-url": {
+      "post": {
+        "operationId": "BackworkController_requestUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestBackworkUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Request a signed upload URL",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork": {
+      "post": {
+        "operationId": "BackworkController_confirmUpload_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmBackworkUploadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Confirm upload and store resource metadata",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "get": {
+        "operationId": "BackworkController_list_v1",
+        "parameters": [
+          {
+            "name": "department_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "professor_id",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "course_number",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "year",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "number"
+            }
+          },
+          {
+            "name": "semester",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "assignment_type",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "document_variant",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Browse/search backwork resources",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/departments": {
+      "get": {
+        "operationId": "BackworkController_listDepartments_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter departments",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/departments/{id}": {
+      "patch": {
+        "operationId": "BackworkController_updateDepartment_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDepartmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update department name",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/professors": {
+      "get": {
+        "operationId": "BackworkController_listProfessors_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter professors",
+        "tags": [
+          "Backwork"
+        ]
+      }
+    },
+    "/v1/backwork/{id}": {
+      "get": {
+        "operationId": "BackworkController_getOne_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get resource detail with download URL",
+        "tags": [
+          "Backwork"
+        ]
+      },
+      "delete": {
+        "operationId": "BackworkController_delete_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a backwork resource",
+        "tags": [
+          "Backwork"
         ]
       }
     },
@@ -4892,6 +4892,14 @@
           },
           "reason": {
             "type": "string"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
           }
         },
         "required": [
@@ -4900,211 +4908,6 @@
           "category",
           "reason"
         ]
-      },
-      "CreateCheckoutDto": {
-        "type": "object",
-        "properties": {
-          "customer_email": {
-            "type": "string",
-            "description": "Email for the checkout session"
-          },
-          "success_url": {
-            "type": "string",
-            "description": "URL to redirect on successful payment"
-          },
-          "cancel_url": {
-            "type": "string",
-            "description": "URL to redirect on canceled payment"
-          }
-        },
-        "required": [
-          "customer_email",
-          "success_url",
-          "cancel_url"
-        ]
-      },
-      "CreatePortalDto": {
-        "type": "object",
-        "properties": {
-          "return_url": {
-            "type": "string",
-            "description": "URL to redirect when leaving the portal"
-          }
-        },
-        "required": [
-          "return_url"
-        ]
-      },
-      "CreateFinancialInvoiceDto": {
-        "type": "object",
-        "properties": {
-          "user_id": {
-            "type": "string",
-            "description": "Member user ID to invoice"
-          },
-          "title": {
-            "type": "string",
-            "description": "Invoice title (e.g. \"Fall 2026 Dues\")"
-          },
-          "description": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "description": "Amount in cents (e.g. 15000 = $150.00)"
-          },
-          "due_date": {
-            "type": "string",
-            "description": "Due date (ISO date string)"
-          }
-        },
-        "required": [
-          "user_id",
-          "title",
-          "amount",
-          "due_date"
-        ]
-      },
-      "UpdateFinancialInvoiceDto": {
-        "type": "object",
-        "properties": {
-          "title": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "description": "Amount in cents"
-          },
-          "due_date": {
-            "type": "string"
-          }
-        }
-      },
-      "TransitionInvoiceStatusDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "description": "New invoice status",
-            "enum": [
-              "OPEN",
-              "PAID",
-              "VOID"
-            ]
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "RequestBackworkUploadUrlDto": {
-        "type": "object",
-        "properties": {
-          "filename": {
-            "type": "string",
-            "description": "Original filename"
-          },
-          "content_type": {
-            "type": "string",
-            "description": "MIME content type (e.g. application/pdf)"
-          }
-        },
-        "required": [
-          "filename",
-          "content_type"
-        ]
-      },
-      "ConfirmBackworkUploadDto": {
-        "type": "object",
-        "properties": {
-          "storage_path": {
-            "type": "string",
-            "description": "Storage path returned from upload-url"
-          },
-          "file_hash": {
-            "type": "string",
-            "description": "SHA-256 hash of the uploaded file"
-          },
-          "title": {
-            "type": "string"
-          },
-          "department_code": {
-            "type": "string",
-            "description": "Department code (e.g. \"CS\")"
-          },
-          "course_number": {
-            "type": "string",
-            "description": "Course number (e.g. \"101\")"
-          },
-          "professor_name": {
-            "type": "string",
-            "description": "Professor name"
-          },
-          "year": {
-            "type": "number"
-          },
-          "semester": {
-            "type": "string",
-            "enum": [
-              "Spring",
-              "Summer",
-              "Fall",
-              "Winter"
-            ]
-          },
-          "assignment_type": {
-            "type": "string",
-            "enum": [
-              "Exam",
-              "Midterm",
-              "Final Exam",
-              "Quiz",
-              "Homework",
-              "Lab",
-              "Project",
-              "Study Guide",
-              "Notes",
-              "Other"
-            ]
-          },
-          "assignment_number": {
-            "type": "number"
-          },
-          "document_variant": {
-            "type": "string",
-            "enum": [
-              "Student Copy",
-              "Blank Copy",
-              "Answer Key"
-            ]
-          },
-          "tags": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "is_redacted": {
-            "type": "boolean",
-            "default": false
-          }
-        },
-        "required": [
-          "storage_path",
-          "file_hash"
-        ]
-      },
-      "UpdateDepartmentDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Full department name"
-          }
-        }
       },
       "CreateChannelDto": {
         "type": "object",
@@ -5314,6 +5117,211 @@
           "filename",
           "content_type"
         ]
+      },
+      "CreateCheckoutDto": {
+        "type": "object",
+        "properties": {
+          "customer_email": {
+            "type": "string",
+            "description": "Email for the checkout session"
+          },
+          "success_url": {
+            "type": "string",
+            "description": "URL to redirect on successful payment"
+          },
+          "cancel_url": {
+            "type": "string",
+            "description": "URL to redirect on canceled payment"
+          }
+        },
+        "required": [
+          "customer_email",
+          "success_url",
+          "cancel_url"
+        ]
+      },
+      "CreatePortalDto": {
+        "type": "object",
+        "properties": {
+          "return_url": {
+            "type": "string",
+            "description": "URL to redirect when leaving the portal"
+          }
+        },
+        "required": [
+          "return_url"
+        ]
+      },
+      "CreateFinancialInvoiceDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Member user ID to invoice"
+          },
+          "title": {
+            "type": "string",
+            "description": "Invoice title (e.g. \"Fall 2026 Dues\")"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in cents (e.g. 15000 = $150.00)"
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date (ISO date string)"
+          }
+        },
+        "required": [
+          "user_id",
+          "title",
+          "amount",
+          "due_date"
+        ]
+      },
+      "UpdateFinancialInvoiceDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in cents"
+          },
+          "due_date": {
+            "type": "string"
+          }
+        }
+      },
+      "TransitionInvoiceStatusDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "New invoice status",
+            "enum": [
+              "OPEN",
+              "PAID",
+              "VOID"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "RequestBackworkUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. application/pdf)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
+      },
+      "ConfirmBackworkUploadDto": {
+        "type": "object",
+        "properties": {
+          "storage_path": {
+            "type": "string",
+            "description": "Storage path returned from upload-url"
+          },
+          "file_hash": {
+            "type": "string",
+            "description": "SHA-256 hash of the uploaded file"
+          },
+          "title": {
+            "type": "string"
+          },
+          "department_code": {
+            "type": "string",
+            "description": "Department code (e.g. \"CS\")"
+          },
+          "course_number": {
+            "type": "string",
+            "description": "Course number (e.g. \"101\")"
+          },
+          "professor_name": {
+            "type": "string",
+            "description": "Professor name"
+          },
+          "year": {
+            "type": "number"
+          },
+          "semester": {
+            "type": "string",
+            "enum": [
+              "Spring",
+              "Summer",
+              "Fall",
+              "Winter"
+            ]
+          },
+          "assignment_type": {
+            "type": "string",
+            "enum": [
+              "Exam",
+              "Midterm",
+              "Final Exam",
+              "Quiz",
+              "Homework",
+              "Lab",
+              "Project",
+              "Study Guide",
+              "Notes",
+              "Other"
+            ]
+          },
+          "assignment_number": {
+            "type": "number"
+          },
+          "document_variant": {
+            "type": "string",
+            "enum": [
+              "Student Copy",
+              "Blank Copy",
+              "Answer Key"
+            ]
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "is_redacted": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "storage_path",
+          "file_hash"
+        ]
+      },
+      "UpdateDepartmentDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full department name"
+          }
+        }
       },
       "CreateServiceEntryDto": {
         "type": "object",
@@ -5748,6 +5756,22 @@
           }
         }
       },
+      "WorkflowConfigDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Workflow key from the chapter catalog"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
+          }
+        }
+      },
       "PatchChapterConfigDto": {
         "type": "object",
         "properties": {
@@ -5774,6 +5798,12 @@
           },
           "dues": {
             "$ref": "#/components/schemas/DuesConfigDto"
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowConfigDto"
+            }
           }
         }
       },

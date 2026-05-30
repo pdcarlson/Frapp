@@ -13,7 +13,7 @@ Operations, infrastructure, agent/CI reference, and design-system guidance. Grou
 | Design system | [`design-system/`](design-system/) | UI/UX system, typography, iconography, microcopy, brand assets, UX writing |
 | Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
 | Quality | [`quality/`](quality/) | accessibility protocol, PR review process |
-| Environment | [`environment/`](environment/) | env reference, secrets management, local dev |
+| Environment | [`environment/`](environment/) | **Claude Code cloud sandbox (primary dev env)**, local dev, env reference, secrets management, agent credentials |
 | Security | [`security/`](security/) | upload validation, path traversal, fixes log |
 | Services | [`services/`](services/) | per-service performance notes |
 | Design reference | [`design-reference/`](design-reference/) | visual prototype bundle (palette, JSX, screenshots) |

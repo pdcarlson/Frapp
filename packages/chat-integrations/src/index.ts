@@ -76,10 +76,10 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   },
   {
     name: "points",
-    description: "Award or check points",
-    usage: "award <amount> @member",
+    description: "Grant or deduct member points",
+    usage: "grant|deduct @member <amount> for <reason>",
     requiredModule: "points",
-    implemented: false,
+    implemented: true,
   },
   {
     name: "hours",

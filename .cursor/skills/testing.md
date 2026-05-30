@@ -14,6 +14,7 @@
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
+| Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
@@ -172,9 +173,12 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 3. `npm run build -w apps/api` → `CI / lint-and-typecheck` (full `nest build`; catches issues `tsc --noEmit` alone might miss)
 4. `docker build -f apps/api/Dockerfile .` → `CI / api-docker-build` (optional locally; needs Docker)
 5. `npm run test -w apps/api` → `CI / api-tests`
-6. `npm run check:api-contract` → `CI / api-contract-check`
-7. `npm run check:migration-safety` → `CI / migration-safety`
-8. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
+6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
+   Playwright visual tests under `tests/visual/**` are excluded by
+   `apps/web/vitest.config.ts` and run separately — see item 9)
+7. `npm run check:api-contract` → `CI / api-contract-check`
+8. `npm run check:migration-safety` → `CI / migration-safety`
+9. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
    match the job’s single-worker Playwright run; see

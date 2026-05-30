@@ -21,6 +21,19 @@ export interface AnnounceArgs {
   message: string;
 }
 
+/** Result of a successful parse for `/points`. */
+export interface PointsArgs {
+  /** `grant` adds points (MANUAL), `deduct` removes them (FINE). */
+  action: "grant" | "deduct";
+  /** Member token with the leading `@` stripped. Resolved to a user id at dispatch. */
+  memberToken: string;
+  /** Positive magnitude; the dispatcher applies the sign from `action`. */
+  amount: number;
+  reason: string;
+  /** grant → MANUAL (reward), deduct → FINE (penalty). Matches `point_transactions.category`. */
+  category: "MANUAL" | "FINE";
+}
+
 export type ParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
@@ -120,6 +133,75 @@ export function parseAnnounceArgs(args: string): ParseResult<AnnounceArgs> {
     return { ok: false, error: "Announcement is too long (max 4000 chars)" };
   }
   return { ok: true, value: { message } };
+}
+
+const POINTS_MAX_REASON_LENGTH = 500;
+const POINTS_USAGE =
+  "Usage: /points grant|deduct @member <amount> for <reason>";
+
+/**
+ * Parse `/points grant|deduct @member <amount> for <reason>`. The member token
+ * (leading `@` stripped) is resolved to a user id at dispatch — the parser is
+ * grammar-only and never touches the directory. Amount is a positive whole
+ * number; the sign is applied from `action` downstream (grant → +/MANUAL,
+ * deduct → −/FINE). The reason is everything after the literal `for`.
+ */
+export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in /points arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: POINTS_USAGE };
+  }
+
+  const action = tokens[0]!.toLowerCase();
+  if (action !== "grant" && action !== "deduct") {
+    return {
+      ok: false,
+      error: `Unknown /points action "${tokens[0]}". ${POINTS_USAGE}`,
+    };
+  }
+
+  const memberRaw = tokens[1];
+  if (!memberRaw || !memberRaw.startsWith("@") || memberRaw.length < 2) {
+    return { ok: false, error: `Name a member with @. ${POINTS_USAGE}` };
+  }
+  const memberToken = memberRaw.slice(1);
+
+  const amount = parseNumericArg(tokens[2]);
+  if (amount === null || !Number.isInteger(amount) || amount <= 0) {
+    return {
+      ok: false,
+      error: "Amount must be a positive whole number of points",
+    };
+  }
+
+  if (!tokens[3] || tokens[3].toLowerCase() !== "for") {
+    return { ok: false, error: `Add a reason after "for". ${POINTS_USAGE}` };
+  }
+
+  const reason = tokens.slice(4).join(" ").trim();
+  if (reason.length === 0) {
+    return { ok: false, error: "A reason is required for point adjustments" };
+  }
+  if (reason.length > POINTS_MAX_REASON_LENGTH) {
+    return {
+      ok: false,
+      error: `Reason is too long (max ${POINTS_MAX_REASON_LENGTH} chars)`,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      action,
+      memberToken,
+      amount,
+      reason,
+      category: action === "grant" ? "MANUAL" : "FINE",
+    },
+  };
 }
 
 /**

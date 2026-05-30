@@ -1,5 +1,9 @@
 # Local development
 
+> The **primary** dev environment is the Claude Code web sandbox — see
+> [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md). This file is the **secondary** path: running
+> Frapp on a laptop/local machine.
+
 **Canonical run command (after bootstrap + Infisical login):** from the repo root,
 
 ```bash
@@ -56,6 +60,12 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
+## Claude Code web sandbox
+
+The primary, automated environment. Full config (setup script, env vars, network policy),
+auto-bringup, and failure troubleshooting live in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md).
+It generates `apps/api/.env.local` so the API boots without Infisical.
+
 ## SWC builder for API dev server
 
 The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--builder swc` flag for `nest start`. This transpiles without type-checking, which is useful when the default tsc watcher is blocked by transient type errors. Usage:
@@ -64,7 +74,7 @@ The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--build
 npx -w apps/api nest start --watch --builder swc
 ```
 
-For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../../AGENTS.md) reference this workaround.
+For type safety, run `npm run check-types` separately. The cloud-sandbox fallback in [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) also uses this.
 
 ## Web visual regression suite
 
@@ -87,6 +97,8 @@ import in the visual-regression environment.
 
 ## Related docs
 
+- [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web sandbox (primary dev env)
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
+- [`AGENT_CREDENTIALS.md`](./AGENT_CREDENTIALS.md) — agent/provider creds + cloud-sandbox vars
 - [`AGENTS.md`](../../../AGENTS.md) — agent-oriented repo rules (short index)

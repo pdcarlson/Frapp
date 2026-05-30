@@ -41,5 +41,30 @@ export interface PollVoteActionPayload {
   option_id: string;
 }
 
+/**
+ * Payload for a `kind:"points"` card. Built server-side from the committed
+ * `point_transactions` row (after `PointsService.adjustPoints` succeeds) so the
+ * card can never disagree with the ledger. Names are embedded at write time,
+ * keeping the card a correct immutable audit record even if a member later
+ * leaves the chapter. Append-only: the card has no actions and is never edited.
+ */
+export interface PointsPayload {
+  /** Admin who ran the command (the message sender). */
+  actor_user_id: string;
+  actor_name: string;
+  /** Member whose balance changed. */
+  recipient_user_id: string;
+  recipient_name: string;
+  /** Signed: `+N` for a grant, `-N` for a deduct. Matches the ledger row. */
+  amount: number;
+  /** grant → MANUAL (reward), deduct → FINE (penalty). */
+  category: "MANUAL" | "FINE";
+  reason: string;
+  /** `point_transactions.id` of the committed row (audit link). */
+  transaction_id: string;
+  /** `point_transactions.created_at`. */
+  created_at: string;
+}
+
 /** Action type used for poll votes. Shared between renderer + Edge Function. */
 export const POLL_VOTE_ACTION_TYPE = "vote";
