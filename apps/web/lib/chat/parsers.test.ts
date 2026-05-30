@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parsePollArgs,
   parseAnnounceArgs,
+  parsePointsArgs,
   tokenizeQuotedArgs,
 } from "@repo/chat-integrations";
 
@@ -94,5 +95,91 @@ describe("parseAnnounceArgs", () => {
   it("rejects an overlong message", () => {
     const r = parseAnnounceArgs("x".repeat(4001));
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("parsePointsArgs", () => {
+  it("parses a grant into a positive MANUAL adjustment", () => {
+    const r = parsePointsArgs("grant @alice 5 for great work");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toEqual({
+      action: "grant",
+      memberToken: "alice",
+      amount: 5,
+      reason: "great work",
+      category: "MANUAL",
+    });
+  });
+
+  it("parses a deduct into a FINE (sign applied downstream)", () => {
+    const r = parsePointsArgs("deduct @bob 3 for late dues");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.action).toBe("deduct");
+    expect(r.value.category).toBe("FINE");
+    expect(r.value.amount).toBe(3);
+    expect(r.value.reason).toBe("late dues");
+  });
+
+  it("is case-insensitive on the action", () => {
+    const r = parsePointsArgs("GRANT @alice 2 for x");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.action).toBe("grant");
+  });
+
+  it("keeps a multi-word reason", () => {
+    const r = parsePointsArgs("grant @alice 1 for showing up early again");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.reason).toBe("showing up early again");
+  });
+
+  it("rejects an unknown action", () => {
+    const r = parsePointsArgs("award @alice 5 for x");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects a missing @member token", () => {
+    const r = parsePointsArgs("grant alice 5 for x");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects an empty @ token", () => {
+    const r = parsePointsArgs("grant @ 5 for x");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects a non-positive amount", () => {
+    expect(parsePointsArgs("grant @alice 0 for x").ok).toBe(false);
+    expect(parsePointsArgs("grant @alice -2 for x").ok).toBe(false);
+  });
+
+  it("rejects a non-integer amount", () => {
+    expect(parsePointsArgs("grant @alice 2.5 for x").ok).toBe(false);
+    expect(parsePointsArgs("grant @alice abc for x").ok).toBe(false);
+  });
+
+  it("rejects a missing 'for' keyword", () => {
+    const r = parsePointsArgs("grant @alice 5 great work");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects an empty reason", () => {
+    const r = parsePointsArgs("grant @alice 5 for");
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects an overlong reason", () => {
+    const r = parsePointsArgs(`grant @alice 5 for ${"x".repeat(501)}`);
+    expect(r.ok).toBe(false);
+  });
+
+  it("returns an error on an unterminated quote", () => {
+    const r = parsePointsArgs('grant @alice 5 for "great work');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/quote/i);
   });
 });

@@ -4,6 +4,7 @@ import type { ChatMessage } from "@/lib/chat/types";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
 import { LoadingCard } from "./loading-card";
+import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { SystemAuditCard } from "./system-audit-card";
 import { TextRenderer } from "./text-renderer";
@@ -58,10 +59,11 @@ export function MessageRenderer({
       return <SystemAuditCard message={message} />;
     case "loading":
       return <LoadingCard message={message} />;
+    case "points":
+      return <PointsCard message={message} />;
     case "event":
     case "task":
     case "dues":
-    case "points":
     case "hours":
       return <ComingSoonCard message={message} />;
     default:

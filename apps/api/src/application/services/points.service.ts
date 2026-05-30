@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   BadRequestException,
   ForbiddenException,
   HttpException,
@@ -10,11 +11,14 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import type {
   PointTransaction,
   PointCategory,
 } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 import {
   LIST_QUERY_LIMIT_DEFAULT,
   LIST_QUERY_LIMIT_MAX,
@@ -30,16 +34,28 @@ interface AdjustPointsInput {
   amount: number;
   category: Extract<PointCategory, 'MANUAL' | 'FINE'>;
   reason: string;
+  /**
+   * When set together with `clientMessageId`, an append-only points card is
+   * posted to this chat channel after the ledger write (the `/points` slash
+   * command). Omitted for dashboard adjustments.
+   */
+  channelId?: string;
+  clientMessageId?: string;
 }
 
 @Injectable()
 export class PointsService {
+  private readonly logger = new Logger(PointsService.name);
+
   constructor(
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(SEMESTER_ARCHIVE_REPOSITORY)
     private readonly semesterArchiveRepo: ISemesterArchiveRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
   private filterByWindow(
@@ -211,8 +227,9 @@ export class PointsService {
       metadata,
     });
 
+    const isFine = input.category === 'FINE' || input.amount < 0;
+
     try {
-      const isFine = input.category === 'FINE' || input.amount < 0;
       await this.notificationService.notifyUser(
         input.targetUserId,
         input.chapterId,
@@ -228,6 +245,72 @@ export class PointsService {
       );
     } catch {}
 
+    // The `/points` slash command asks us to surface an append-only card in
+    // chat. The card is server-originated (a client cannot forge `kind:"points"`
+    // — see ChatService.SERVER_ONLY_KINDS) and best-effort: the ledger row is the
+    // source of truth, so a failed post is logged and never rolls the txn back.
+    if (input.channelId && input.clientMessageId) {
+      try {
+        await this.postPointsCard(input, txn, isFine);
+      } catch (error) {
+        this.logger.warn('Failed to post points card to chat', {
+          transactionId: txn.id,
+          channelId: input.channelId,
+          chapterId: input.chapterId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return txn;
+  }
+
+  /**
+   * Post the `kind:"points"` card for a committed adjustment. Names are resolved
+   * here and embedded in the payload so the card stays a correct immutable audit
+   * record even if a member later leaves the chapter. Posts as the admin (the
+   * actor) into the channel they ran the command from; channel access is
+   * re-checked by `ChatService.sendMessage`.
+   */
+  private async postPointsCard(
+    input: AdjustPointsInput,
+    txn: PointTransaction,
+    isFine: boolean,
+  ): Promise<void> {
+    const users = await this.userRepo.findByIds([
+      input.adminUserId,
+      input.targetUserId,
+    ]);
+    const nameOf = (id: string): string =>
+      users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
+    const actorName = nameOf(input.adminUserId);
+    const recipientName = nameOf(input.targetUserId);
+
+    const payload = {
+      actor_user_id: input.adminUserId,
+      actor_name: actorName,
+      recipient_user_id: input.targetUserId,
+      recipient_name: recipientName,
+      amount: txn.amount,
+      category: input.category,
+      reason: input.reason,
+      transaction_id: txn.id,
+      created_at: txn.created_at,
+    };
+
+    const verb = isFine ? 'Deducted' : 'Granted';
+    const preposition = isFine ? 'from' : 'to';
+    const content = `${verb} ${Math.abs(txn.amount)} points ${preposition} ${recipientName}: ${input.reason}`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapterId,
+      channel_id: input.channelId!,
+      sender_id: input.adminUserId,
+      content,
+      kind: 'points',
+      payload,
+      client_message_id: input.clientMessageId,
+      system_originated: true,
+    });
   }
 }
