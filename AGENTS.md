@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `suggestion-triage.md`).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `suggestion-triage.md`).
 
 ## Optional agent credentials (automation / cloud sessions)
 
@@ -15,7 +15,7 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 | `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI                                |
 | `JULES_USER_API_KEY`                       | Jules automation (if used)                  |
 
-**Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values. Full policy and CI tables: [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md).
+**Research-first:** When these exist, gather runtime truth (CI, deploys, schema, secrets) before proposing changes. Never print secret values. Full policy and CI tables: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md).
 
 ## Operating mindset
 
@@ -36,18 +36,18 @@ Frapp is a Turborepo + npm workspaces monorepo (4 apps, 7 shared packages). Stru
 
 ## Documentation sync mandate (non-optional)
 
-For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
+For **every** non-doc code change (tests, refactors, tooling, CI, config), update at least one related file under **`docs/`** or **`spec/`** in the same PR. Satisfy the gate by updating the **relevant** existing doc/spec per the placement map in [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md) — never by dropping a new stray file. **Canonical developer guides** live under [`docs/guides/`](docs/guides/README.md).
 
 - Run or reason against `scripts/check-docs-impact.mjs` before finishing.
 - If user-visible behavior is unchanged, add brief maintenance notes on what changed technically.
 
-## Active multi-session work: chat-first redesign
+## Work tracking
 
-A multi-chunk redesign of `apps/web` (with downstream `apps/mobile`, `apps/landing`) is in flight. **Before starting any redesign work, read [`docs/internal/redesign/README.md`](docs/internal/redesign/README.md)** (process conventions) and the specific chunk brief — chunks now live co-located with the topic they implement under [`spec/behavior/<topic>/chunks/`](spec/behavior/) and [`spec/architecture-chunks/`](spec/architecture-chunks/). Architectural context (product positioning, hot-path architecture, theming, chunk dependency graph) is at [`spec/redesign-context.md`](spec/redesign-context.md). Status of each chunk lives on the **Frapp Launch** GitHub project board (and a roadmap summary at [`spec/README.md`](spec/README.md#roadmap)). If you're a fresh cloud-agent session asked to "continue the redesign," start at the roadmap and the project board for the next unblocked chunk. Before opening a chunk PR, run the reviewer checklist at [`docs/internal/redesign/REVIEW_CHECKLIST.md`](docs/internal/redesign/REVIEW_CHECKLIST.md) against your own work.
+Work is organized as **Frapp → projects → work units → GitHub issues**, tracked in the in-repo backlog at [`docs/backlog/`](docs/backlog/README.md) — the **single source of truth** for status. GitHub issues mirror the backlog; when they disagree, the repo wins and the issue is brought into line (run `/triage`; it also runs at session start). To start work, read [`docs/backlog/README.md`](docs/backlog/README.md) and pick the next unblocked unit from a project, or run `/next-task`. Use `/status` for a read-only progress dashboard. Add a new project by copying [`docs/backlog/_meta/_TEMPLATE.md`](docs/backlog/_meta/_TEMPLATE.md). Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); the backlog links out to it and never duplicates it.
 
 ## GitHub issues (the durable backlog between sessions)
 
-Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file an issue** rather than dropping it or stuffing it in. Issues are completed by AI agents, so write each one to be executed cold by a fresh agent — same philosophy as the chunk briefs.
+Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file an issue** and add it to the backlog. Issues are completed by AI agents, so write each one to be executed cold by a fresh agent.
 
 **When to file:**
 
@@ -55,7 +55,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - **Blocked verification** — when the sandbox can't run something (Docker/Supabase won't start, missing external creds), file an issue so the gap is tracked. **Never check a verification box you couldn't actually run** — say it's blocked and link the issue.
 - Review findings you're not fixing in the current PR (with a reason).
 - A bug or security hole found outside the current scope.
-- Cross-chunk prerequisites or blockers.
+- Cross-cutting prerequisites or blockers.
 
 **Don't file** for trivial nits you can fix in the current PR (just fix them), or duplicates — search open issues first (`list_issues` / search) before creating.
 
@@ -67,9 +67,9 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Closes #N`, criteria met, CI green."
 
-**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `chunk-NN` (ties an issue to a redesign chunk), `agent-ready` (fully specified, safe to hand to an agent). A security issue that gates a chunk gets `security` + `blocked` + `chunk-NN`. The Cursor "Suggestion Triage" automation files issues with `suggestion` + one `area:<x>` + one `severity:<x>` (deduped by a hidden fingerprint) — see [`docs/internal/CURSOR_AUTOMATIONS.md`](docs/internal/CURSOR_AUTOMATIONS.md).
+**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `agent-ready` (fully specified, safe to hand to an agent). The Cursor "Suggestion Triage" automation files issues with `suggestion` + one `area:<x>` + one `severity:<x>` (deduped by a hidden fingerprint) — see [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
 
-**Lifecycle.** File → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. **List any chunk's blocking issues at the top of its brief** so the chunk can't be started until they're resolved.
+**Lifecycle.** File → add to the backlog → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. List a unit's blocking issues in its backlog project row so it can't be started until they're resolved.
 
 ## Services and ports
 
@@ -81,7 +81,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 | Landing         | 3002  |                                           |
 | Supabase Studio | 54323 | After `npx supabase start`                |
 
-Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md).
+Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md).
 
 ## Starting the dev environment
 
@@ -89,11 +89,11 @@ Per-app `dev:*` commands, fallbacks, mobile, Turbo: [`docs/internal/LOCAL_DEV.md
 
 **Headless cloud VM (e.g. Jules):** `scripts/jules-setup.sh` may start Docker differently; do not copy that pattern to a normal laptop.
 
-**Secrets:** `npx infisical login` once, then **`npm run dev:stack`** from repo root. See [`docs/internal/LOCAL_DEV.md`](docs/internal/LOCAL_DEV.md) and [`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md).
+**Secrets:** `npx infisical login` once, then **`npm run dev:stack`** from repo root. See [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) and [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
 ## Secrets and environment variables
 
-Managed in **Infisical** (project ID in `.infisical.json`). Canonical lists: [`docs/internal/ENV_REFERENCE.md`](docs/internal/ENV_REFERENCE.md), [`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md).
+Managed in **Infisical** (project ID in `.infisical.json`). Canonical lists: [`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md), [`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md).
 
 - No `.env.example` in repo — use `ENV_REFERENCE.md`.
 - No placeholder secrets in CI.
@@ -102,7 +102,7 @@ Managed in **Infisical** (project ID in `.infisical.json`). Canonical lists: [`d
 
 ## CI/CD, GitHub, PAT rules, Infisical syncs
 
-See [`docs/internal/AGENT_INFRA.md`](docs/internal/AGENT_INFRA.md). Deploy architecture: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). Deploy architecture: [`docs/internal/ops/DEPLOYMENT.md`](docs/internal/ops/DEPLOYMENT.md).
 
 ## Lint, test, build, type-check
 
@@ -178,7 +178,7 @@ These notes are for cloud agents running after the update script has already ins
 
 The cloud VM does not have Infisical CLI session access. Use the fallback `.env.local` approach instead of `npm run dev:stack`:
 
-1. Create `.env.local` in each app directory with values from `docs/internal/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
+1. Create `.env.local` in each app directory with values from `docs/internal/environment/ENV_REFERENCE.md` and `npx supabase status -o env`. **These files are gitignored (root `.gitignore`) — never commit them. Never print secret values or credentials to logs, terminal output, or docs.**
 2. Start apps individually (no Infisical wrapper):
    - API: `npx -w apps/api nest start --watch --builder swc` (uses SWC to skip type-checking; see note below)
    - Web: `npm run dev -w apps/web`
