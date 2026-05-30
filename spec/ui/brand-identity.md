@@ -9,7 +9,7 @@
 - **Line:** “The operating system for Greek life.” (see [../product/](../product/README.md).)
 - **Voice:** Direct, operational, chapter-native. Prefer concrete nouns (attendance, dues, roster) over abstract “synergy.” Avoid startup clichés (“supercharge,” “10×,” “all-in-one” without proof).
 - **Trust:** Differentiation comes from **clarity and honesty**, not invented metrics. Stats, logos, and testimonials on the marketing site must be **true** or **clearly marked as illustrative** until verified.
-- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see [`../redesign-context.md`](../redesign-context.md) *Theming model* and §3a below).
+- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see the *Theming model* in §3a below and [`../architecture/README.md`](../architecture/README.md) §15).
 
 ---
 

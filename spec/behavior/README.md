@@ -39,7 +39,7 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
-Chunk briefs from the chat rework live next to the topic they primarily implement, under `<topic>/chunks/NN-<slug>.md`. The cross-cutting roadmap (which chunk is shipped vs. queued) lives in the top-level [`spec/README.md`](../README.md#roadmap).
+Each topic file is canonical behavior. Delivery of the chat-rework chunks (which is shipped vs. queued) is tracked in the backlog at [`docs/backlog/projects/chat-rework.md`](../../docs/backlog/projects/chat-rework.md), not in this spec.
 
 ---
 
