@@ -17,7 +17,7 @@ Do **not** start coding from a vague "redesign Frapp" prompt. Always work a spec
 ## Operating conventions for chunk sessions
 
 - **Branch per chunk.** Create `claude/redesign-chunk-NN-<slug>` from `main`. Never push directly to `main` or `production`.
-- **Step 0: reconcile the project board.** Before you start, check the *Frapp Launch* project for any chunk issue that merged since the last update and move it to *Shipped* (cloud-agent sessions end at PR-open, so the author or the *next* session owns the *In Review → Shipped* flip — don't assume the previous agent did it). Then move your chunk to *In Progress*.
+- **Step 0: reconcile open issues.** Before you start, glance at open issues for anything already shipped that should be closed. **This is a solo project — there is no "In Review" stage.** When work lands, the issue gets **closed**, not shuffled across board columns. So: when you open a PR, put `Closes #N` in the body and let the merge close the issue; if you finish and merge in-session, confirm the issue closed. Don't spend effort moving Projects v2 cards (see "Project board" below).
 - **Read the spec docs the chunk lists before writing code.** Each chunk lists specific `spec/*.md` and `docs/*` files that constrain its work.
 - **Update spec docs in the same PR.** Frapp's doc-sync mandate requires every non-doc PR to update at least one file under `docs/` or `spec/`. The chunk briefs list which specs each chunk should touch.
 - **Verification is non-negotiable.** Each chunk has a verification checklist. Don't open a PR with the checklist incomplete; surface what didn't work in the PR body instead of pretending it did.
@@ -25,11 +25,11 @@ Do **not** start coding from a vague "redesign Frapp" prompt. Always work a spec
 - **Reference the chunk in your PR body.** `Implements <co-located chunk path>.` That keeps the trail back to the spec.
 - **If you make a scope decision that diverges from the chunk brief, edit the brief in the same PR.** The spec is the source of truth, not your in-flight assumptions.
 
-## Moving a card on the board
+## Project board
 
-The board is a GitHub **Projects v2** board: **GraphQL-only**, no REST and no `mcp__github__*` tool. Move cards with the GraphQL API using `GITHUB_PAT` (which needs **Projects → Read and write** — see [`AGENT_INFRA.md` § GitHub PAT usage policy](../AGENT_INFRA.md#github-pat-usage-policy) for the permission requirement and the `FORBIDDEN` failure signature).
+**Solo project, so the board is not part of the workflow — the issue's open/closed state _is_ the status.** Don't move Projects v2 cards or chase an "In Review" column; just close the issue when the work merges (`Closes #N` in the PR body does this automatically). Skipping the board is the expected default, not a shortcut.
 
-Three calls — find the project's status field + the item for your issue, then set the value:
+The rest of this section is kept only as reference for the rare case someone explicitly asks to update a board. The board is a GitHub **Projects v2** board: **GraphQL-only**, no REST and no `mcp__github__*` tool. It needs `GITHUB_PAT` with **Projects → Read and write** (see [`AGENT_INFRA.md` § GitHub PAT usage policy](../AGENT_INFRA.md#github-pat-usage-policy) for the permission and the `FORBIDDEN` failure signature). Three calls — find the project's status field + the item for your issue, then set the value:
 
 ```bash
 GQL() { curl -s https://api.github.com/graphql -H "Authorization: bearer $GITHUB_PAT" \
