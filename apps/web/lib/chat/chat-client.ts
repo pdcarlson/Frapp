@@ -281,6 +281,44 @@ export async function sendMessage(
   }
 }
 
+/**
+ * Insert a cache-only optimistic placeholder for a heavy / server-originated
+ * command (e.g. `/points`). Unlike `sendMessage`, it performs NO HTTP POST and
+ * NO outbox enqueue: the server writes the authoritative row carrying the same
+ * `client_message_id`, and the Realtime echo reconciles the placeholder in
+ * place via `mergeServerRow`. The caller passes `clientMessageId` to the heavy
+ * RPC and removes the placeholder on failure (`removeLocalPlaceholder`).
+ */
+export function insertLocalPlaceholder(
+  ctx: ChatActionContext,
+  args: { channelId: string; clientMessageId: string; content: string },
+): void {
+  if (!ctx.userId) return;
+  const optimistic = optimisticMessage({
+    clientMessageId: args.clientMessageId,
+    channelId: args.channelId,
+    senderId: ctx.userId,
+    content: args.content,
+    kind: "loading",
+    payload: null,
+    replyToId: null,
+  });
+  patchCache(ctx.queryClient, args.channelId, (cache) =>
+    upsertOptimistic(cache, optimistic),
+  );
+}
+
+/** Remove a cache-only placeholder (e.g. when the heavy-command RPC fails). */
+export function removeLocalPlaceholder(
+  ctx: ChatActionContext,
+  channelId: string,
+  clientMessageId: string,
+): void {
+  patchCache(ctx.queryClient, channelId, (cache) =>
+    removeMessage(cache, clientMessageId),
+  );
+}
+
 function coerceKind(kind: string | undefined): ChatMessageKind {
   return (CHAT_MESSAGE_KINDS.find((k) => k === kind) ??
     "text") as ChatMessageKind;

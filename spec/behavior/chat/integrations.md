@@ -10,15 +10,20 @@ Slash commands turn chat into the dispatcher for every ops module. The catalog i
 | --- | --- | --- | --- | --- |
 | `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member | current channel |
 | `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
-| `/event`, `/task`, `/dues`, `/points`, `/hours` | no | per-module | n/a | n/a (palette stub) |
+| `/points grant\|deduct @member <amount> for <reason>` | yes | `points` | `points:adjust`, re-checked on `POST /v1/points/adjust` (no self-adjust, 50/hr rate limit) | current channel |
+| `/event`, `/task`, `/dues`, `/hours` | no | per-module | n/a | n/a (palette stub) |
 
-Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArgs`, `parseAnnounceArgs`) so web, mobile, and any future heavy-command RPC share one source of truth. Poll arguments tokenize on whitespace but respect double-quoted spans for the question; unterminated quotes return a specific error rather than silently truncating. Polls require at least two distinct options (case-insensitive dedup) and at most ten; an optional trailing `closes=<minutes>` overrides the 24-hour default.
+Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArgs`, `parseAnnounceArgs`, `parsePointsArgs`) so web, mobile, and any future heavy-command RPC share one source of truth. Poll arguments tokenize on whitespace but respect double-quoted spans for the question; unterminated quotes return a specific error rather than silently truncating. Polls require at least two distinct options (case-insensitive dedup) and at most ten; an optional trailing `closes=<minutes>` overrides the 24-hour default. `/points` parses `grant`/`deduct`, an `@member` token (resolved to a user id at dispatch from the chapter directory), a positive whole amount, and the reason after the literal `for`; `grant` maps to a `+amount` `MANUAL` adjustment and `deduct` to a `−amount` `FINE`.
 
 ## Slash command dispatch
 
 - **Simple commands** (`/poll`, `/announce`) parse on the client and post via the `chat-send` Edge Function with the appropriate `kind` (`poll` | `announcement`) and parsed args in `payload`. One round-trip.
-- **Heavy commands** (e.g. `/dues remind overdue`) render a `kind="loading"` placeholder card optimistically, then call a NestJS RPC; the server replaces the card in place via Realtime by updating the row's `kind` + `payload`. The renderer registry handles this row mutation gracefully.
+- **Heavy commands** (e.g. `/points grant`, `/dues remind overdue`) render a `kind="loading"` placeholder card optimistically (cache-only, with a `client_message_id`), then call a NestJS RPC; the server performs the side effect and posts the rich card itself carrying the **same `client_message_id`**, so the Realtime echo reconciles the placeholder in place via `mergeServerRow`. `/points` calls `POST /v1/points/adjust` with the active `channel_id` + `client_message_id`; on a committed ledger row the service posts the `kind="points"` card (see *Server-originated kinds* below). The ledger write is the source of truth — a failed card post is logged, never rolled back; the client drops the placeholder on an HTTP error.
 - A plain text message (no leading slash) goes through `chat-send` as `kind="text"`.
+
+## Server-originated kinds (anti-forgery)
+
+A `points` or `system_audit` card asserts that a server-side side effect happened (a committed ledger row, an audit entry). A client therefore **cannot** post these kinds directly: `chat.service.sendMessage` rejects any send whose `kind` is in `SERVER_ONLY_KINDS` (`points`, `system_audit`) unless the trusted internal caller sets `system_originated: true` (never exposed on `SendMessageDto`). `PointsService.adjustPoints` is the only writer of `points` cards; the `#chapter-audit` bridge worker is the only writer of `system_audit`. The optimistic `loading` placeholder stays client-postable — it carries no assertion until the server's real card replaces it.
 
 ## Announcement gating
 
@@ -30,7 +35,7 @@ Poll votes are written to `chat_message_actions` via the `chat-react` Edge Funct
 
 ## Rich-message renderer registry
 
-The `packages/chat-integrations/` registry maps a message `kind` → a React component, shared by web (Tailwind) and mobile (NativeWind) so the registry is never forked. Concrete renderers exist for `text` (default), `poll`, `announcement`, `system_audit`, and `loading` (placeholder while a heavy command computes). The remaining ops kinds (`event`, `task`, `dues`, `points`, `hours`) have stub renderers that show a "renderer coming soon" card, so modules can drop in concrete renderers without UI-plumbing work. Card action buttons (Vote, RSVP, Pay, Confirm, Submit) fire through the chat hot path — optimistic and idempotent.
+The `packages/chat-integrations/` registry maps a message `kind` → a React component, shared by web (Tailwind) and mobile (NativeWind) so the registry is never forked. Concrete renderers exist for `text` (default), `poll`, `announcement`, `system_audit`, `loading` (placeholder while a heavy command computes), and `points` (read-only ledger card: `actor → recipient`, signed amount, reason — append-only, no actions). The remaining ops kinds (`event`, `task`, `dues`, `hours`) have stub renderers that show a "renderer coming soon" card, so modules can drop in concrete renderers without UI-plumbing work. Card action buttons (Vote, RSVP, Pay, Confirm, Submit) fire through the chat hot path — optimistic and idempotent.
 
 See [README.md](./README.md) → *Message Kinds and Actions* for the canonical `kind` table.
 
