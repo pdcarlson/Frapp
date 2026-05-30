@@ -1,0 +1,55 @@
+# Chat rework
+
+**Status:** active
+**Epic:** [#426 — Chat rework (chunks 5–12)](https://github.com/pdcarlson/Frapp/issues/426)
+**Spec:** canonical behavior lives in [`spec/behavior/chat/`](../../../spec/behavior/chat/), [`spec/behavior/settings/`](../../../spec/behavior/settings/), [`spec/ui/web-dashboard/`](../../../spec/ui/web-dashboard/), [`spec/architecture/`](../../../spec/architecture/), and the per-module behavior files. Architectural narrative + engineering principles: [`spec/architecture/`](../../../spec/architecture/) and [`spec/engineering.md`](../../../spec/engineering.md).
+**Updated:** 2026-05-30
+
+> The chat-first rework of `apps/web` (with downstream `apps/mobile`, `apps/landing`): chat is the
+> product spine, ops modules are integrations on top of it. Delivered as numbered chunks. Chunks
+> 01–06 are shipped; 07–12 are queued. This file tracks delivery; the durable behavior these chunks
+> implement now lives in the real `spec/` files linked above (no more chunk briefs in spec).
+
+## Work units
+
+> `State` mirrors the GitHub issue. **Drift note:** chunks 05 (#433) and 06 (#434) are merged in git
+> (PRs #400, #487) but their issues are still open on GitHub — `/triage` should close them. Chunks
+> 01–04 predate the per-chunk sub-issues and are tracked by their merge PRs.
+
+| Chunk | Issue | State | Shipped via | Notes |
+| ----- | ----- | ----- | ----------- | ----- |
+| 01 — Foundation: theme + shell | — | shipped | PR #229 | palette/type/shell → `spec/ui/brand-identity.md`, `spec/ui/web-dashboard/` |
+| 02 — Data model + chapter directory + Edge Function | — | shipped | PR #231 | hot-path schema/ADRs → `spec/architecture/`; config → `spec/behavior/chapter-config.md` |
+| 03 — Onboarding wizard | — | shipped | PR #239 | → `spec/behavior/onboarding.md`, `spec/ui/web-dashboard/` |
+| 04 — Chat foundation + hot-path client | — | shipped | PR #278 | → `spec/behavior/chat/`, `spec/ui/web-dashboard/`, `spec/architecture/` |
+| 05 — Chat integrations + slash commands + push | [#433](https://github.com/pdcarlson/Frapp/issues/433) | shipped | PR #400 | issue still open → close via `/triage`. Canon → `spec/behavior/chat/`, `spec/behavior/notifications.md` |
+| 06 — Settings shell + Org + Modules tabs | [#434](https://github.com/pdcarlson/Frapp/issues/434) | shipped | PR #487 | issue still open → close via `/triage`. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
+| 07 — Settings: Theme + Roles + Fields + Workflows + Dues | [#435](https://github.com/pdcarlson/Frapp/issues/435) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/behavior/chapter-config.md`, `spec/ui/web-dashboard/` |
+| 08 — Settings: Beta + Audit + ops-setup nudges | [#436](https://github.com/pdcarlson/Frapp/issues/436) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
+| 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | open | — | depends on 06. Canon → `spec/behavior/members.md`, `spec/ui/web-dashboard/` |
+| 10a — Ops: Events (slash + RSVP renderer + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | open | — | integration pattern → `spec/behavior/integrations.md`; module → `spec/behavior/events.md` |
+| 10b — Ops: Tasks (slash + assignment renderer) | [#439](https://github.com/pdcarlson/Frapp/issues/439) | open | — | → `spec/behavior/tasks.md` |
+| 10c — Ops: Points (slash + ledger renderer) | [#440](https://github.com/pdcarlson/Frapp/issues/440) | open | — | → `spec/behavior/points.md` |
+| 10d — Ops: Dues / Billing (slash + invoice renderer) | [#441](https://github.com/pdcarlson/Frapp/issues/441) | open | — | → `spec/behavior/billing.md` |
+| 10e — Ops: Rush / Recruitment / Intake (vocab-aware) | [#442](https://github.com/pdcarlson/Frapp/issues/442) | open | — | → new `spec/behavior/rush.md` |
+| 10f — Ops: Backwork (chat share + dashboard upload) | [#443](https://github.com/pdcarlson/Frapp/issues/443) | open | — | → `spec/behavior/backwork.md` |
+| 10g — Ops: Reports (dashboard-only) | [#444](https://github.com/pdcarlson/Frapp/issues/444) | open | — | → `spec/behavior/reports.md` |
+| 10h — Ops: Onboarding pathway (8-week milestones) | [#445](https://github.com/pdcarlson/Frapp/issues/445) | open | — | → `spec/behavior/onboarding.md` |
+| 11 — Mobile chat parity (Expo) | [#446](https://github.com/pdcarlson/Frapp/issues/446) | open | — | → `spec/behavior/chat/`, `spec/architecture/`; smoke → `docs/internal/mobile/` |
+| 12 — Marketing site refresh (chat-first CTA) | [#447](https://github.com/pdcarlson/Frapp/issues/447) | open | — | → `spec/ui/landing/`, `spec/product/positioning.md` |
+
+## Dependency graph
+
+- 01 → 02 → 03, 04 (foundation + data before onboarding/chat).
+- 05 builds on 04 (chat hot path). 06 → {07, 08, 09} (settings shell before its tabs/members).
+- 10a–10h build on 05 (chat integration pattern) and can proceed in parallel once 05 shipped.
+- 11 (mobile parity) and 12 (marketing) can slip to immediately post-launch.
+
+## Notes / decisions
+
+- Chat is the spine; ops modules are integrations (slash command + rich renderer + system channel +
+  optional dashboard). The integration pattern is canonical in `spec/behavior/integrations.md`.
+- Solo project: an issue's open/closed state is its status; PRs close issues via `Closes #N`.
+- Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
+  dispatch), #485/#486 (Chunk 06 follow-ups), #490 (Chunk 07 tabs), #491 (Chunk 12 landing), #492
+  (ops-module nudges), #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels).
