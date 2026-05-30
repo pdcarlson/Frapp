@@ -2278,6 +2278,13 @@ export interface components {
             /** @description Scholarship pool in cents */
             scholarship_pool_cents?: number;
         };
+        WorkflowConfigDto: {
+            /** @description Workflow key from the chapter catalog */
+            key?: string;
+            enabled?: boolean;
+            /** @description Optional numeric threshold (guard-parsed; NaN/negative rejected) */
+            threshold?: number;
+        };
         PatchChapterConfigDto: {
             org_archetype?: string;
             enabled_modules?: {
@@ -2289,6 +2296,7 @@ export interface components {
             branding?: components["schemas"]["BrandingDto"];
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
+            workflows?: components["schemas"]["WorkflowConfigDto"][];
         };
     };
     responses: never;
