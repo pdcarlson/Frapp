@@ -1,0 +1,9 @@
+# Internal-only link checking. Validates local file links and heading-anchor
+# fragments; never checks external URLs (the workflow runs lychee with --offline).
+# See .github/workflows/links.yml.
+
+# Validate `#fragment` anchors against target headings.
+include_fragments = true
+
+# Skip prototype bundle (non-maintained .jsx/.html) and deps.
+exclude_path = ["node_modules", "docs/internal/design-reference"]
