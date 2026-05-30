@@ -13,21 +13,25 @@ truth; `/triage` keeps these rows in sync with GitHub (repo wins).
 These are scoped v1 feature epics. Promote any of them to `projects/<slug>.md` when active work begins.
 
 ### AI features (v1) — [#427](https://github.com/pdcarlson/Frapp/issues/427)
+
 Q&A + summarization over authoritative sources only (chat-as-corpus deferred to v2+). Spec: [`spec/behavior/ai.md`](../../../spec/behavior/ai.md).
 - #448 Corpus ingestion · #449 Meeting summarization (type-aware) · #450 Q&A surface · #451 Citation UI · #452 Evals harness
 - Standalone dups to reconcile: #477 (meetings transcription + AI summaries), #478 (AI Q&A over corpus)
 
 ### Vault & security — [#428](https://github.com/pdcarlson/Frapp/issues/428)
+
 Encrypted private storage with HSM break-glass + quarterly transparency. Spec: [`spec/behavior/vault.md`](../../../spec/behavior/vault.md).
 - #453 Storage layer · #454 HSM key provisioning · #455 Break-glass workflow · #456 Quarterly transparency report
 - Standalone dup: #476 (Vault encrypted storage)
 
 ### Save & permanence (Pin + Bookmark) — [#430](https://github.com/pdcarlson/Frapp/issues/430)
+
 Chapter-elevated Pin + personal Bookmark; no sender-extend. Spec: [`spec/behavior/chat/`](../../../spec/behavior/chat/).
 - #461 Pin model · #462 Bookmark model · #463 Ephemerality clock
 - Standalone dups: #488 (chat bookmarks), #421 (web pin/unpin)
 
 ### Spec maintenance — [#432](https://github.com/pdcarlson/Frapp/issues/432)
+
 - #467 Split `spec/ui-web-dashboard.md` into folder layout — **subsumed by the current restructure** (close on merge)
 
 ## Un-projected issues by area
