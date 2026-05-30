@@ -120,7 +120,11 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       // Require a numeric, unexpired `exp`: a verified Supabase token always
       // carries one, so a token without it is anomalous and must not yield a
       // perpetual per-user bucket.
-      if (typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now()) {
+      if (
+        typeof payload.exp !== 'number' ||
+        !Number.isFinite(payload.exp) ||
+        payload.exp * 1000 <= Date.now()
+      ) {
         return null;
       }
       return typeof payload.sub === 'string' && payload.sub.length > 0
