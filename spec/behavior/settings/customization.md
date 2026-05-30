@@ -29,8 +29,8 @@ Behavior rules for the customization-heavy settings tabs (Theme, Roles, Fields, 
 
 ## Dues Tab
 
-- Writes a singleton `chapter_dues_config` row per chapter.
-- Cadence is one of: monthly / per-semester / per-quarter.
+- Writes a singleton `chapter_dues_config` row per chapter, read via `GET /chapters/:id/config` (`dues`) and written via `PATCH /chapters/:id/config` (`dues: { … }`), which audit-logs the change (mirrored to `#chapter-audit`) like every other settings save. No tab writes the table directly. An unconfigured chapter has no row yet; the config endpoint returns the table defaults.
+- Cadence is one of `monthly` / `per_semester` / `per_quarter` (the stored values).
 - Amounts are configured per member class: active member, new member, alumni.
-- Conditional configuration: installments allowed (toggle + count), grace period (days), late fee (cents), scholarship pool (cents).
-- **All numeric inputs guard-parse.** A value is committed only when it parses to a finite number `>= 0`; an invalid intermediate value preserves the previous value. Storing `NaN` is forbidden. Applies to every numeric input above (cadence amounts, installment count, grace days, late fee cents, scholarship pool cents).
+- Conditional configuration: installments allowed (`installments_allowed` toggle + `installment_count`, an integer `>= 1` shown only while the toggle is on), grace period (`grace_days`), late fee (`late_fee_cents`), scholarship pool (`scholarship_pool_cents`).
+- **All numeric inputs guard-parse.** A value is committed only when it parses to a finite integer in range (cents/days `>= 0`; `installment_count >= 1`); an invalid, negative, or empty intermediate value preserves the previous value. Storing `NaN` is forbidden. Applies to every numeric input above (cadence amounts, installment count, grace days, late fee cents, scholarship pool cents).

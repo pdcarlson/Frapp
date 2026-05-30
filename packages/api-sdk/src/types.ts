@@ -2264,7 +2264,7 @@ export interface components {
         };
         DuesConfigDto: {
             /** @enum {string} */
-            cadence?: "semester" | "monthly" | "annual";
+            cadence?: "monthly" | "per_semester" | "per_quarter";
             /** @description Active member dues in cents */
             active_amount_cents?: number;
             /** @description New member dues in cents */
@@ -2272,6 +2272,8 @@ export interface components {
             /** @description Alumni dues in cents */
             alumni_amount_cents?: number;
             installments_allowed?: boolean;
+            /** @description Number of installments (>= 1) */
+            installment_count?: number;
             /** @description Late fee in cents */
             late_fee_cents?: number;
             grace_days?: number;

@@ -19,6 +19,19 @@ export interface OrgWorkflow {
   units?: string;
 }
 
+/** The singleton dues config returned by `GET /chapters/:id/config`. */
+export interface OrgDues {
+  cadence: "monthly" | "per_semester" | "per_quarter";
+  active_amount_cents: number;
+  new_member_amount_cents: number;
+  alumni_amount_cents: number;
+  installments_allowed: boolean;
+  installment_count: number;
+  late_fee_cents: number;
+  grace_days: number;
+  scholarship_pool_cents: number;
+}
+
 export interface OrgConfig {
   org_archetype?: string;
   enabled_modules?: Record<string, boolean>;
@@ -27,6 +40,7 @@ export interface OrgConfig {
   theme_palette?: Record<string, string>;
   beta_config?: Record<string, unknown>;
   workflows?: OrgWorkflow[];
+  dues?: OrgDues;
   [key: string]: unknown;
 }
 
