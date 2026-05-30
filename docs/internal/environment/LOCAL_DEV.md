@@ -56,6 +56,24 @@ Requires Expo Go on a device or emulator; not usable on typical headless VMs.
 
 Build `.env.local` per app using `npx supabase status -o env` and [`ENV_REFERENCE.md`](./ENV_REFERENCE.md). Then run the “Without Infisical” commands in the table above. NestJS reads `.env.local` then `.env`.
 
+## Claude Code web sandbox (automated cloud sessions)
+
+Claude Code web sessions can run the full local stack (Docker + local Supabase + API)
+automatically. The canonical setup — exact env vars, setup-script line, and the required
+network policy — lives in [`../ci-cd/CLOUD_SANDBOX.md`](../ci-cd/CLOUD_SANDBOX.md). In short:
+
+- **Setup script** (web UI → *Setup script* field): `bash scripts/cloud-sandbox-setup.sh || true`
+  — replaces a bare `npm install`; it installs deps and pre-pulls/caches the Supabase images.
+- **Environment variables** (web UI): `FRAPP_CLOUD_SANDBOX=1` (enables background bringup in
+  the SessionStart hook), `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` (read-only token; avoids
+  pull rate limits), and restricted **test-mode** `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET`
+  / `STRIPE_PRICE_ID`. `CLAUDE_CODE_SUBAGENT_MODEL` is set in `.claude/settings.json`, not here.
+- **Network access:** **Full** (or Custom + `public.ecr.aws` + `*.cloudfront.net`). Trusted is
+  **not** sufficient — `supabase start` pulls Postgres from AWS ECR Public / CloudFront.
+- At session start, `scripts/cloud-sandbox-up.sh` runs in the background and writes
+  `apps/api/.env.local` (local Supabase keys + Stripe vars), so `npm run start:dev -w apps/api`
+  boots **without Infisical**. Wait for `.cloud-sandbox-up.done` / `.cloud-sandbox-up.failed`.
+
 ## SWC builder for API dev server
 
 The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--builder swc` flag for `nest start`. This transpiles without type-checking, which is useful when the default tsc watcher is blocked by transient type errors. Usage:
@@ -89,4 +107,5 @@ import in the visual-regression environment.
 
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
+- [`../ci-cd/CLOUD_SANDBOX.md`](../ci-cd/CLOUD_SANDBOX.md) — Claude Code web sandbox config
 - [`AGENTS.md`](../../../AGENTS.md) — agent-oriented repo rules (short index)

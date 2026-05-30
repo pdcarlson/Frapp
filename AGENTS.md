@@ -23,6 +23,7 @@ These environment variables sometimes exist in hosted agent VMs. Omit on a norma
 - Read context before asking; handle what you can without the user.
 - Confirm before external/public actions; be proactive on internal/repo work.
 - If agent operating files change, say so in the response.
+- **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained implementation chunks to sub-agents (Explore/Plan/general-purpose), launching independent ones in parallel in a single message. Keep heavy reading out of your own context and stay focused on integration and review. Sub-agents run on Sonnet 4.6 by default (`CLAUDE_CODE_SUBAGENT_MODEL` in [`.claude/settings.json`](.claude/settings.json)).
 
 ## Project overview
 
