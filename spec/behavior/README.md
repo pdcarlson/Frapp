@@ -17,9 +17,9 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | Notifications and chat push                          | [`notifications.md`](notifications.md)     |
 | Study sessions and geofences                         | [`study-sessions.md`](study-sessions.md)   |
 | Events, attendance, recurring events, calendar       | [`events.md`](events.md)                   |
-| Onboarding wizard + invites + walkthrough            | [`onboarding/`](onboarding/README.md)      |
+| Onboarding wizard + invites + walkthrough            | [`onboarding.md`](onboarding.md)           |
 | Polls and voting                                     | [`polls.md`](polls.md)                     |
-| Member directory and profiles                        | [`members/`](members/README.md)            |
+| Member directory and profiles                        | [`members.md`](members.md)                 |
 | Activity feed                                        | [`activity-feed.md`](activity-feed.md)     |
 | Global search                                        | [`search.md`](search.md)                   |
 | Observability                                        | [`observability.md`](observability.md)     |
@@ -31,15 +31,15 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | Legal (ToS, Privacy, FERPA)                          | [`legal.md`](legal.md)                     |
 | Data retention                                       | [`data-retention.md`](data-retention.md)   |
 | Alumni features                                      | [`alumni.md`](alumni.md)                   |
-| Chapter branding                                     | [`branding/`](branding/README.md)          |
+| Chapter branding                                     | [`branding.md`](branding.md)               |
 | Settings shell, customization, audit (chunks 06–08)  | [`settings/`](settings/README.md)          |
-| Ops integrations (chunk 10a–10h)                     | [`integrations/`](integrations/README.md)  |
+| Ops integrations (chunk 10a–10h)                     | [`integrations.md`](integrations.md)       |
 | Meetings (transcription + AI summary)                | [`meetings.md`](meetings.md)               |
 | Vault (encrypted private storage)                    | [`vault.md`](vault.md)                     |
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
-Chunk briefs from the chat rework live next to the topic they primarily implement, under `<topic>/chunks/NN-<slug>.md`. The cross-cutting roadmap (which chunk is shipped vs. queued) lives in the top-level [`spec/README.md`](../README.md#roadmap).
+Each topic file is canonical behavior. Delivery of the chat-rework chunks (which is shipped vs. queued) is tracked in the backlog at [`docs/backlog/projects/chat-rework.md`](../../docs/backlog/projects/chat-rework.md), not in this spec.
 
 ---
 

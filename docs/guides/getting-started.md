@@ -73,20 +73,20 @@ You can open Supabase Studio at:
 - `http://127.0.0.1:54323`
 
 > **Note:** The `supabase/` directory in the repo is the single source of truth for the database schema and seed data. Never edit tables manually in Studio without also adding a migration.
-> **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `docs/internal/BRAND_ASSETS.md` and `spec/ui-assets.md`.
+> **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `docs/internal/design-system/BRAND_ASSETS.md` and `spec/ui/assets.md`.
 
 ## 4. Configure environment variables
 
 **Recommended:** use **Infisical** so you do not maintain `.env.local` copies for every app.
 
 1. From the repo root, authenticate once: `npx infisical login`.
-2. Ensure the Infisical **`local`** environment is populated (Supabase values from `npx supabase status -o env`, plus keys per [`docs/internal/ENV_REFERENCE.md`](../internal/ENV_REFERENCE.md)). See [`docs/internal/SECRETS_MANAGEMENT.md`](../internal/SECRETS_MANAGEMENT.md) for project setup and syncs.
+2. Ensure the Infisical **`local`** environment is populated (Supabase values from `npx supabase status -o env`, plus keys per [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md)). See [`docs/internal/environment/SECRETS_MANAGEMENT.md`](../internal/environment/SECRETS_MANAGEMENT.md) for project setup and syncs.
 
 When `supabase start` finishes, it prints the local project URL and keys (`API URL`, `anon key`, `service_role key`) — use those when filling Infisical `local` or when building `.env.local` manually.
 
-**Fallback:** create `.env.local` per app from those values and `docs/internal/ENV_REFERENCE.md`, then run the non-Infisical commands in [`docs/internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md).
+**Fallback:** create `.env.local` per app from those values and `docs/internal/environment/ENV_REFERENCE.md`, then run the non-Infisical commands in [`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md).
 
-> **Warning:** Never commit `.env.local` files. They contain real secrets. All staging and production secrets are managed in Infisical — see `docs/internal/SECRETS_MANAGEMENT.md`.
+> **Warning:** Never commit `.env.local` files. They contain real secrets. All staging and production secrets are managed in Infisical — see `docs/internal/environment/SECRETS_MANAGEMENT.md`.
 
 ## 5. Run the dev servers
 
@@ -98,7 +98,7 @@ npm run dev:stack
 
 This starts API, web, and landing in one terminal (prefixed logs). It matches what `scripts/local-dev-setup.sh` prints when it finishes.
 
-**Everything else** — separate terminals per app, running without Infisical, mobile (Expo), Turbo vs API, and the URL table — lives in one place: **[`docs/internal/LOCAL_DEV.md`](../internal/LOCAL_DEV.md)**. Do not duplicate those lists in other docs; link there instead.
+**Everything else** — separate terminals per app, running without Infisical, mobile (Expo), Turbo vs API, and the URL table — lives in one place: **[`docs/internal/environment/LOCAL_DEV.md`](../internal/environment/LOCAL_DEV.md)**. Do not duplicate those lists in other docs; link there instead.
 
 ## 6. Verify everything is healthy
 

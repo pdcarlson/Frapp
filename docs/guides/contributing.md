@@ -52,7 +52,7 @@ Frapp is explicitly **spec-driven**:
 1. Update specs in `spec/` first:
    - `spec/product/` — high-level product view (folder of topic files; start at `README.md`)
    - `spec/behavior/` — feature behavior and edge cases (folder of topic files; start at `README.md`)
-   - `spec/architecture.md` — system/data model
+   - `spec/architecture/README.md` — system/data model
 2. Only then implement the behavior in:
    - `apps/api` (API)
    - `apps/web` / `apps/mobile` (UI)
@@ -96,7 +96,7 @@ In CI, we also run:
 ## 6. Documentation obligations
 
 - If you change **behavior** — update the appropriate topic file under `spec/behavior/`.
-- If you change **data model** — update `spec/architecture.md`.
+- If you change **data model** — update `spec/architecture/README.md`.
 - If you change **developer workflow** — update the relevant file under **`docs/guides/`** (or another path under `docs/` if it is operator-only).
 
 > **Warning:** Out-of-date documentation is a real bug. When in doubt, fix the docs in the same PR as the implementation change.
@@ -105,4 +105,4 @@ In CI, we also run:
 
 PRs that change files **outside** `docs/` and `spec/` must also change **at least one** file under **`docs/`** or **`spec/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`** together when behavior changes.
 
-See also [`docs/internal/DOCS_CI.md`](../internal/DOCS_CI.md) for rationale and optional future tightening of the gate.
+See also [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md) for rationale and optional future tightening of the gate.

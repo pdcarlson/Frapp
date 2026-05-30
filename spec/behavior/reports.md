@@ -26,3 +26,7 @@ PDF reports use a clean, branded template with:
 - Frapp branding in the footer.
 - Report title and date range.
 - Tabular data with alternating row shading for readability.
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).

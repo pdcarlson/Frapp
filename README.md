@@ -46,8 +46,8 @@ All product decisions, behavior rules, and architecture are documented in the `s
 
 - **[spec/product/](spec/product/README.md)** — Features, user flows, surfaces, onboarding.
 - **[spec/behavior/](spec/behavior/README.md)** — Rules, edge cases, invariants, error handling.
-- **[spec/architecture.md](spec/architecture.md)** — Stack, data model, auth, storage, API contracts.
-- **[spec/environments.md](spec/environments.md)** — Local, staging, production setup; CI/CD.
+- **[spec/architecture/README.md](spec/architecture/README.md)** — Stack, data model, auth, storage, API contracts.
+- **[spec/environments/README.md](spec/environments/README.md)** — Local, staging, production setup; CI/CD.
 
 The spec is the single source of truth. Implementation follows the spec.
 
@@ -63,12 +63,12 @@ bash scripts/local-dev-setup.sh
 
 If local Supabase containers are stuck or exited: `bash scripts/local-dev-setup.sh --reset-supabase`. If Postgres fails with **incompatible data directory** (e.g. after a CLI / `major_version` bump), wipe local volumes once: `bash scripts/local-dev-setup.sh --reset-supabase-data`. Full walkthrough: [docs/guides/getting-started.md](docs/guides/getting-started.md) and `bash scripts/local-dev-setup.sh --help`.
 
-**Run all app dev servers (default):** from the repo root, after `npx infisical login` once — see [docs/internal/SECRETS_MANAGEMENT.md](docs/internal/SECRETS_MANAGEMENT.md):
+**Run all app dev servers (default):** from the repo root, after `npx infisical login` once — see [docs/internal/environment/SECRETS_MANAGEMENT.md](docs/internal/environment/SECRETS_MANAGEMENT.md):
 
 ```bash
 npm run dev:stack
 ```
 
-Per-app commands, no-Infisical fallback, mobile, and URLs: **[docs/internal/LOCAL_DEV.md](docs/internal/LOCAL_DEV.md)** (single reference for anything beyond `dev:stack`).
+Per-app commands, no-Infisical fallback, mobile, and URLs: **[docs/internal/environment/LOCAL_DEV.md](docs/internal/environment/LOCAL_DEV.md)** (single reference for anything beyond `dev:stack`).
 
-See [spec/environments.md](spec/environments.md) for environment model and variables.
+See [spec/environments/README.md](spec/environments/README.md) for environment model and variables.

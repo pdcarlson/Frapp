@@ -53,3 +53,7 @@ When a user checks into an event:
 - Negative balances are allowed. The system does not block fines even if the balance would go negative.
 - If a member is removed from a chapter, their point history is preserved for audit purposes but they no longer appear on the leaderboard.
 - Points awarded for study sessions and events cannot be manually reversed by the recipient; only admins can create offsetting transactions.
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).

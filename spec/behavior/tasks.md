@@ -33,3 +33,7 @@ A lightweight task management system for chapter operations.
 - The assignee sees their own tasks.
 - All admins (users with `tasks:manage`) see all tasks.
 - Members without `tasks:manage` only see tasks assigned to themselves.
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).

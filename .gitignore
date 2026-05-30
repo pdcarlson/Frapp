@@ -48,3 +48,7 @@ supabase/.branches/
 !.cursor/rules/
 !.cursor/rules/**
 !.cursor/environment.json
+# link checker binary (downloaded locally; never committed)
+/lychee
+lychee-*.tar.gz
+lychee-*/

@@ -41,7 +41,7 @@ Examples:
 - Chat: `chat_channel_categories`, `chat_channels`, `chat_messages`, `message_reactions`
 - Others: `study_sessions`, `service_entries`, `tasks`, `chapter_documents`, `semester_archives`
 
-> **Note:** The canonical description of the data model is in `spec/architecture.md` Section 5. Always update the spec before changing the schema.
+> **Note:** The canonical description of the data model is in `spec/architecture/README.md` Section 5. Always update the spec before changing the schema.
 
 ## 4. Adding a new table
 
@@ -74,7 +74,7 @@ npx supabase db reset
 
 4. Update:
 
-- `spec/architecture.md` (data model)
+- `spec/architecture/README.md` (data model)
 - Domain entity & repository interfaces in the API
 - Any relevant behavior under `spec/behavior/`
 
@@ -94,7 +94,7 @@ When adding tables:
 
 ## 6. Table inventory (high level)
 
-See `spec/architecture.md` §5 for a full table-by-table reference. At a high level:
+See `spec/architecture/README.md` §5 for a full table-by-table reference. At a high level:
 
 - **Core**: users, chapters, members, roles, invites
 - **Engagement**: events, event_attendance, point_transactions (including `idx_point_transactions_chapter_created_at` for admin audit pagination), study_sessions, service_entries, tasks

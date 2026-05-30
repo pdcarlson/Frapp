@@ -12,9 +12,9 @@ We maintain three main environments:
 
 ## 2. Secrets management
 
-All staging and production secrets are centrally managed in **Infisical** and automatically synced to deployment targets (Vercel, Render, and GitHub Actions). For the full per-app/per-environment mapping, see [`docs/internal/ENV_REFERENCE.md`](../internal/ENV_REFERENCE.md).
+All staging and production secrets are centrally managed in **Infisical** and automatically synced to deployment targets (Vercel, Render, and GitHub Actions). For the full per-app/per-environment mapping, see [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
-> **Note:** For the complete list of every environment variable, per app, per environment, see [`docs/internal/ENV_REFERENCE.md`](../internal/ENV_REFERENCE.md).
+> **Note:** For the complete list of every environment variable, per app, per environment, see [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
 Key principles:
 
@@ -32,7 +32,7 @@ npx infisical run --env=local -- npm run start:dev -w apps/api
 npx infisical run --env=local -- npm run dev -w apps/web
 ```
 
-For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`local`** environment using values from `npx supabase status -o env` plus the app-specific keys listed in [`docs/internal/ENV_REFERENCE.md`](../internal/ENV_REFERENCE.md).
+For all three apps in one terminal, use `npm run dev:stack` from the repo root (it wraps the same Infisical pattern). Populate the Infisical **`local`** environment using values from `npx supabase status -o env` plus the app-specific keys listed in [`docs/internal/environment/ENV_REFERENCE.md`](../internal/environment/ENV_REFERENCE.md).
 
 ### Fallback: Supabase CLI + `.env.local`
 
@@ -57,7 +57,7 @@ When adding new env vars:
 
 1. Add to the config module / validation.
 2. Add to Infisical (staging and production environments).
-3. Update `docs/internal/ENV_REFERENCE.md`.
+3. Update `docs/internal/environment/ENV_REFERENCE.md`.
 4. Update this guide if it matters to other developers.
 
 ## 5. Secrets and safety
@@ -67,7 +67,7 @@ When adding new env vars:
 - Use `.env.local` for **local only** values (never committed).
 - All staging/production secrets live in Infisical and are synced to providers.
 - Rotate keys immediately if they are ever exposed.
-- See `docs/internal/SECRETS_MANAGEMENT.md` for the rotation policy.
+- See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the rotation policy.
 
 ## 6. Supabase projects
 

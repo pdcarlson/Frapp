@@ -56,3 +56,7 @@ Members **never see a meter or "this costs X" prompt at the point of using an AI
 - Every AI request is metered: `(chapter_id, feature, tokens_in, tokens_out, transcription_seconds, upstream_cost_cents, billed_at)`. The metering row is written before the response is returned to the client.
 - Allowance and overage are computed from the meter, not from a separate balance. There is no mutable "balance" column.
 - The hard cap is enforced server-side; clients never compute "should this request go through" locally.
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).

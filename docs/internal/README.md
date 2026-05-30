@@ -1,45 +1,22 @@
-# Internal Operations Docs
+# Internal docs
 
-This folder holds operator-facing runbooks and rollout trackers that are intended
-for the engineering team.
+Operations, infrastructure, agent/CI reference, and design-system guidance. Grouped by area.
 
-Use this area for:
+- **Conventions:** [`DOCUMENTATION_CONVENTIONS.md`](DOCUMENTATION_CONVENTIONS.md) — the authoritative
+  placement map for where docs/spec changes go (read before adding any doc).
+- **Admin:** [`ADMIN_DASHBOARD.md`](ADMIN_DASHBOARD.md)
 
-- environment rollout status
-- deployment checklists
-- incident and postmortem templates
-- provider-specific operational procedures
+| Area | Folder | Contents |
+| ---- | ------ | -------- |
+| Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
+| CI / agent infra | [`ci-cd/`](ci-cd/) | docs-sync CI, agent infra, Cursor automations, CodeRabbit |
+| Design system | [`design-system/`](design-system/) | UI/UX system, typography, iconography, microcopy, brand assets, UX writing |
+| Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
+| Quality | [`quality/`](quality/) | accessibility protocol, PR review process |
+| Environment | [`environment/`](environment/) | env reference, secrets management, local dev |
+| Security | [`security/`](security/) | upload validation, path traversal, fixes log |
+| Services | [`services/`](services/) | per-service performance notes |
+| Design reference | [`design-reference/`](design-reference/) | visual prototype bundle (palette, JSX, screenshots) |
 
-## Current runbooks
-
-- `DEPLOYMENT_STATUS.md`
-- `DB_PROMOTION_RUNBOOK.md`
-- `DB_ROLLBACK_PLAYBOOK.md`
-- `CODERABBIT_RUNBOOK.md`
-- `CODERABBIT_MIGRATION_PLAN.md`
-- `LOCAL_DEV.md` — **Default `npm run dev:stack`; ports, per-app commands, fallbacks**
-- `ENV_REFERENCE.md` — **Definitive reference for all environment variables**
-- `GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
-- `PR_REVIEW_PROCESS.md`
-- `INCIDENT_RESPONSE_API_DOWN.md`
-- `INCIDENT_RESPONSE_WEBHOOK_FAILURES.md`
-- `INCIDENT_RESPONSE_DB_LATENCY.md`
-- `SECRETS_MANAGEMENT.md` — Infisical setup and rotation policy
-- `AGENT_INFRA.md` — CI/GitHub/PAT reference for agents
-- `CURSOR_AUTOMATIONS.md` — Cursor Automations spec (suggestion-triage agent: prompt, settings, labels, dedup)
-- `ALERT_ROUTING.md`
-- `ACCESSIBILITY_TESTING_PROTOCOL.md`
-- `STATE_MICROCOPY_PACK.md`
-- `UX_WRITING_GUIDE.md`
-- `ICONOGRAPHY_GUIDELINES.md`
-- `ICON_INTENT_MAP.md`
-- `TYPOGRAPHY_GUIDELINES.md`
-- `BRAND_ASSETS.md` — Frapp logos, favicons, OG, Expo export notes
-- `MOBILE_INTERACTION_SMOKE_CHECKLIST.md`
-- `MOBILE_THREAD_RESOLUTION_MAP.md`
-- `PR_CONSOLIDATION_CANONICAL_PR_BODY.md`
-- `PR_CONSOLIDATION_OPERATOR_CHECKLIST.md`
-- `DOCS_CI.md` — docs/spec PR gate (`check-docs-impact.mjs`) and trade-offs
-- `DOCUMENTATION_CONVENTIONS.md` — where to put updates (`docs/` vs `spec/`), DRY, CI alignment
-
-Developer-facing guides (canonical, markdown) live in [`docs/guides/`](../guides/README.md). There is no separate docs web app in the monorepo; a public docs site may be added later.
+Work status is tracked in the in-repo backlog at [`../backlog/`](../backlog/README.md), not here.
+Developer-facing guides live in [`../guides/`](../guides/README.md).

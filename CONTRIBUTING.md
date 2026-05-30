@@ -109,7 +109,7 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- CodeRabbit should review the PR automatically. If it does not, add a top-level `@coderabbitai review` comment. Never type `@cursor` or `@cursoragent` unless you explicitly want to spawn a paid Cursor background agent — see [`docs/internal/CODERABBIT_RUNBOOK.md`](docs/internal/CODERABBIT_RUNBOOK.md).
+- CodeRabbit should review the PR automatically. If it does not, add a top-level `@coderabbitai review` comment. Never type `@cursor` or `@cursoragent` unless you explicitly want to spawn a paid Cursor background agent — see [`docs/internal/ci-cd/CODERABBIT_RUNBOOK.md`](docs/internal/ci-cd/CODERABBIT_RUNBOOK.md).
 
 ### 4. Address feedback
 
@@ -160,8 +160,8 @@ CI validates migration filenames and requires promotion docs to be updated. Migr
 - **Never** log secrets.
 - **Never** use placeholder secrets in CI/CD workflows.
 - All secrets are managed in Infisical and synced to providers (Vercel, Render, EAS, GitHub Actions).
-- See **[`docs/internal/ENV_REFERENCE.md`](docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
-- See **[`docs/internal/SECRETS_MANAGEMENT.md`](docs/internal/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
+- See **[`docs/internal/environment/ENV_REFERENCE.md`](docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
+- See **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](docs/internal/environment/SECRETS_MANAGEMENT.md)** for the Infisical setup guide and rotation policy.
 
 ---
 
@@ -187,4 +187,4 @@ The version tag and GitHub Release are created automatically by the release work
 - **DRY** — extract repeated code into shared packages.
 - **Self-documenting code** — comments explain _why_, not _what_.
 
-See `spec/architecture.md` Section 11 for the full quality standards.
+See `spec/architecture/README.md` Section 11 for the full quality standards.

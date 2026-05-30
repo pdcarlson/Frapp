@@ -2,7 +2,7 @@
 
 This page is the public-facing deployment overview for Frapp.
 
-For the full operator runbook (DNS, provider setup, and detailed checklists), use the repository file [`docs/DEPLOYMENT.md`](../DEPLOYMENT.md).
+For the full operator runbook (DNS, provider setup, and detailed checklists), use the repository file [`docs/internal/ops/DEPLOYMENT.md`](../internal/ops/DEPLOYMENT.md).
 
 ## Branch and environment model
 
@@ -24,13 +24,13 @@ Feature branches (`feature/*`) merge into `main` first, then `main` is promoted 
   - web dashboard (`app.frapp.live`)
 - **Last verified: 2026-03-22** — Preview deployments for the web and landing apps are produced when changes are **merged** into `main` (not from direct pushes; protected branches require PR merge).
 - **Last verified: 2026-03-22** — On Vercel, **automatic production deployments** for web and landing run from the **`production`** branch only. **Merges to `main`** produce **preview / staging** deployments (not production). Feature/PR branches are not promoted to production hosting automatically.
-- **Last verified: 2026-03-22** — API deployment (Render) is still being finalized; confirm hooks and health checks in `docs/DEPLOYMENT.md` before relying on automation.
+- **Last verified: 2026-03-22** — API deployment (Render) is still being finalized; confirm hooks and health checks in `docs/internal/ops/DEPLOYMENT.md` before relying on automation.
 - **Last verified: 2026-03-22** — Mobile App Store / Play Store deployment is still being finalized (EAS); treat store releases as manual until the release runbook is complete.
 
 ## Deployment sources of truth
 
-- Environment and CI/CD spec: `spec/environments.md`
-- Full deployment runbook: `docs/DEPLOYMENT.md`
+- Environment and CI/CD spec: `spec/environments/README.md`
+- Full deployment runbook: `docs/internal/ops/DEPLOYMENT.md`
 
 ## Safe documentation rule
 

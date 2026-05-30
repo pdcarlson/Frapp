@@ -19,7 +19,7 @@ The AI surface reads from these sources, and only these sources:
 - **DMs are excluded.** Direct messages and group DMs are never part of the AI corpus, regardless of channel-level settings.
 - **No "Canon" data model.** Structured chapter data already serves as canon (the dues amount is a field; the officer roster is a table); the AI defers to it. No additional "chapter facts" surface is introduced in v1.
 
-A v2+ revisit of chat-as-corpus may happen after observing what real chapters wish they could ask. The architecture should not preclude it (see [`spec/architecture.md`](../architecture.md) AI corpus section), but no v1 work depends on it.
+A v2+ revisit of chat-as-corpus may happen after observing what real chapters wish they could ask. The architecture should not preclude it (see [`spec/architecture/README.md`](../architecture/README.md) AI corpus section), but no v1 work depends on it.
 
 ## Citation requirement
 

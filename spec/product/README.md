@@ -14,4 +14,4 @@ Frapp is a multi-tenant SaaS platform that replaces the disjointed tools fratern
 | Core domains and module catalog                      | [`modules.md`](modules.md)                 |
 | Chapter creation, lifecycle, invites                 | [`onboarding.md`](onboarding.md)           |
 
-Chunk briefs from the chat rework that primarily affect product surfaces live under `<topic>/chunks/NN-<slug>.md`. The cross-cutting roadmap (chunk status) lives at [`spec/README.md`](../README.md#roadmap).
+Chat-rework delivery (chunk status) is tracked in the backlog at [`docs/backlog/projects/chat-rework.md`](../../docs/backlog/projects/chat-rework.md), not in this spec.

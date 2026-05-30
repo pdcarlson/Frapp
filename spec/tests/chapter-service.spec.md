@@ -1,1 +1,0 @@
-- [x] Added tests for chapter delete logo

@@ -83,7 +83,7 @@ push regardless of the resolved `off` level. The one exception is the `system_au
 those system messages never page anyone unless explicitly opted in (see below), so a mention
 does not lift their `off` default.
 
-## Chat notification preferences (Chunk 05)
+## Chat notification preferences
 
 Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
 
@@ -98,7 +98,7 @@ Defaults when no row is set (see ADR-06; the `defaultLevelFor` helper encodes th
 
 Precedence in the push worker is **channel-pref ▶ kind-pref ▶ default**. A user who explicitly sets `(scope='kind', scope_kind='system_audit', level='all')` opts in to audit-bridge pushes; otherwise audit messages never page anyone.
 
-## Audit-log → `#chapter-audit` bridge (Chunk 05)
+## Audit-log → `#chapter-audit` bridge
 
 The bridge worker (see ADR-08) subscribes to `chapter_audit_log` INSERT via Supabase Realtime and posts a `kind='system_audit'` message into the chapter's `#chapter-audit` channel as the system sender (`00000000-0000-0000-0000-000000000000`). Rows with `member_visible=false` are skipped — internal-scope rows stay out of the channel.
 

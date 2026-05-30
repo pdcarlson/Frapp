@@ -1,38 +1,64 @@
-# Documentation conventions
+# Documentation conventions — placement map
 
-Where to put updates so **`docs/`** and **`spec/`** stay navigable and do not drift. PR checklist: [`.github/pull_request_template.md`](../../.github/pull_request_template.md).
+The **authoritative** guide to where docs/spec changes go. Read this before adding or moving any doc.
+The goal: keep `docs/` and `spec/` clean and navigable, and stop the structure from drifting when
+agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs-structure.mjs`](../../scripts/check-docs-structure.mjs).
 
-## `spec/` vs `docs/`
+## Hard rules
 
-| Kind of change                                | Primary place                         | Notes                                                                                                          |
-| --------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Product behavior, rules, flows                | `spec/product/`, `spec/behavior/`     | Link from guides only if onboarding must mention the flow. Both are folders — start at each `README.md`.       |
-| Architecture, data model, API patterns        | `spec/architecture.md`                | OpenAPI/SDK artifacts are code-owned; spec describes intent                                                    |
-| Environments, CI/CD model                     | `spec/environments.md`                | Pair with `docs/DEPLOYMENT.md` when rollout steps change                                                       |
-| UI product requirements                       | `spec/ui-*.md`                        | Design-system ops: `docs/internal/UI_UX_SYSTEM.md`, `UX_WRITING_GUIDE.md`                                      |
-| Security requirements / threat notes          | `spec/security-*.md`                  | Historical fixes: `docs/SECURITY_FIXES.md`—do not duplicate long mitigation writeups; link to spec or runbooks |
-| Test intent / coverage targets                | `spec/tests/*.spec.md`                | All test spec files use the `*.spec.md` suffix                                                                |
-| How to run locally, test, contribute          | `docs/guides/`                        |                                                                                                                |
-| Secrets, incidents, branch protection, agents | `docs/internal/`                      |                                                                                                                |
-| Full deployment procedures                    | `docs/DEPLOYMENT.md`                  | Short overview: `docs/guides/deployment.md`                                                                    |
+1. **Never create a new top-level file** in `docs/` or `spec/`, and never invent a new top-level
+   folder. Put the change in the **relevant existing** doc/spec (see the map below).
+2. **Satisfy the docs-sync gate by updating the relevant doc — never by dropping a stray file.**
+   `scripts/check-docs-impact.mjs` only checks that *some* doc/spec changed; it is on you to edit the
+   *right* one.
+3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
+   "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
+   removed. Durable facts go in the canonical doc; ephemeral work goes in a GitHub issue / the backlog.
+4. **Work status is not a doc.** It lives in the in-repo backlog at [`../backlog/`](../backlog/README.md).
+   A new initiative → copy [`../backlog/_meta/_TEMPLATE.md`](../backlog/_meta/_TEMPLATE.md) into
+   `docs/backlog/projects/`. Don't track status in `spec/`.
+5. **One canonical place per fact.** Elsewhere, link to it (path + heading). If two docs must
+   summarize, one paragraph max, then link out.
 
-### Edge cases
+## Where things go
 
-- **Deployment:** Update **`docs/DEPLOYMENT.md`** and **`spec/environments.md`** when DNS, providers, or environment topology change. Adjust **`docs/guides/deployment.md`** only if contributor-facing “where to read” needs change.
-- **DRY:** One canonical place per fact. Elsewhere, link to it (path + heading if helpful). If two docs must summarize, keep one paragraph max and link out.
+| Kind of change | Canonical home |
+| -------------- | -------------- |
+| Product behavior, rules, flows, invariants | `spec/behavior/<topic>.md` (or `<topic>/README.md` if it has 2+ files) |
+| Product features, surfaces, positioning, module catalog | `spec/product/` |
+| Architecture, data model, API patterns, ADRs | `spec/architecture/README.md` |
+| Engineering principles | `spec/engineering.md` |
+| Environments, CI/CD model | `spec/environments/README.md` |
+| UI requirements (web, landing, brand, assets, resilience) | `spec/ui/` |
+| How to run locally / test / contribute | `docs/guides/` |
+| Ops runbooks (DB, incidents, branch protection, deploy) | `docs/internal/ops/` |
+| CI / agent infra / automations | `docs/internal/ci-cd/` |
+| Design-system (typography, icons, microcopy, brand assets) | `docs/internal/design-system/` |
+| Mobile testing / smoke | `docs/internal/mobile/` |
+| Accessibility / PR-review process | `docs/internal/quality/` |
+| Env reference / secrets / local-dev detail | `docs/internal/environment/` |
+| Security implementation notes / fixes log | `docs/internal/security/` |
+| Visual prototype reference | `docs/internal/design-reference/` |
+| Per-service performance notes | `docs/internal/services/` |
+| Work status / backlog | `docs/backlog/` |
 
-## CI: same PR, one docs/spec touch
+## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
-`scripts/check-docs-impact.mjs` fails if the PR changes **any** path outside `docs/` or `spec/` without also changing **at least one** path under `docs/` or `spec/`. It does not pick _which_ file—maintainers still judge relevance.
+It fails when a PR changes a path outside `docs/`/`spec/` without also changing at least one path under
+them. Pick the **relevant** canonical home above:
 
-- **API / domain:** `spec/architecture.md` and/or the relevant topic under `spec/behavior/`, plus `docs/guides/api-architecture.md` or `database.md` when contributor docs need it.
-- **UI:** Relevant `spec/ui-*.md` and/or `docs/internal/UI_UX_SYSTEM.md` / `UX_WRITING_GUIDE.md` per PR template.
-- **Infra / CI:** `spec/environments.md` and/or `docs/internal/AGENT_INFRA.md`, `DOCS_CI.md`, or focused runbooks.
-- **Mechanical / non-user-visible:** A short note in an existing related doc (e.g. `docs/internal/refactor-notes.md` or the nearest guide) is enough.
+- **API / domain:** `spec/architecture/README.md` and/or the topic under `spec/behavior/`; add a
+  contributor note in `docs/guides/api-architecture.md` or `database.md` only if needed.
+- **UI:** the relevant file under `spec/ui/` and/or `docs/internal/design-system/`.
+- **Infra / CI:** `spec/environments/README.md` and/or `docs/internal/ci-cd/`, or a focused ops runbook.
+- **Mechanical / non-user-visible:** a short note in the nearest existing related doc is enough — do
+  not create a new file for it.
 
-**Root-level files** such as `AGENTS.md` or `CONTRIBUTING.md` count as outside `docs/`/`spec/`—still require a `docs/` or `spec/` change in the same PR when edited.
+Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
+`docs/` or `spec/` change in the same PR when edited.
 
-## Agents and humans
+## See also
 
-- Map of folders: [`docs/README.md`](../README.md).
-- Docs gate behavior: [`DOCS_CI.md`](DOCS_CI.md).
+- Folder map: [`docs/README.md`](../README.md)
+- Docs gate behavior: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)
+- Backlog rules: [`../backlog/_meta/conventions.md`](../backlog/_meta/conventions.md)

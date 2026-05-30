@@ -50,3 +50,7 @@ When uploading a Student Copy, the user can optionally redact personal informati
 ## AI Metadata Extraction (Phase: v3+)
 
 On upload, an optional AI step parses the PDF and pre-fills metadata fields (department, course number, professor, assignment type, etc.). The user reviews and corrects before confirming. The data model and upload flow must not block this future capability (all metadata fields are optional; the upload endpoint accepts partial metadata).
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).
