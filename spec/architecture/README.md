@@ -384,7 +384,7 @@ Configurable alerts via the monitoring provider:
 - **Linting:** ESLint (shared config), Prettier for formatting.
 - **Type safety:** TypeScript strict mode across all apps and packages.
 - **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
-- **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint (100 req/min read, 30 req/min write). File upload MIME type validation.
+- **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint — keyed on the authenticated user (Supabase JWT `sub`, after verifying the token's HS256 signature against `SUPABASE_JWT_SECRET`), falling back to client IP for unauthenticated, invalid, or expired tokens so a forged/rotating `sub` cannot evade the limit — at 100 req/min read and 30 req/min write; a standard `Retry-After` header (seconds) accompanies every `429`. File upload MIME type validation.
 
 ## Database Performance
 

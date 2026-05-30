@@ -1,0 +1,219 @@
+import { ExecutionContext } from '@nestjs/common';
+import {
+  ThrottlerException,
+  ThrottlerLimitDetail,
+  ThrottlerRequest,
+} from '@nestjs/throttler';
+import { createHmac } from 'node:crypto';
+import { CustomThrottlerGuard } from './custom-throttler.guard';
+
+// Expose the protected members under test.
+class TestableGuard extends CustomThrottlerGuard {
+  public track(req: Record<string, any>): Promise<string> {
+    return this.getTracker(req);
+  }
+  public handle(props: ThrottlerRequest): Promise<boolean> {
+    return this.handleRequest(props);
+  }
+  public throwThrottling(
+    context: ExecutionContext,
+    detail: ThrottlerLimitDetail,
+  ): Promise<void> {
+    return this.throwThrottlingException(context, detail);
+  }
+}
+
+const TEST_SECRET = 'test-jwt-secret-at-least-32-characters-long!!';
+
+const b64url = (obj: Record<string, unknown>): string =>
+  Buffer.from(JSON.stringify(obj)).toString('base64url');
+
+/** Build a JWT signed (HS256) with `secret`, unless `secret` is null (then a
+ * bogus signature is used to model a forged token). */
+const makeJwt = (
+  payload: Record<string, unknown>,
+  secret: string | null = TEST_SECRET,
+  header: Record<string, unknown> = { alg: 'HS256', typ: 'JWT' },
+): string => {
+  const signingInput = `${b64url(header)}.${b64url(payload)}`;
+  const signature =
+    secret === null
+      ? 'forged-signature'
+      : createHmac('sha256', secret).update(signingInput).digest('base64url');
+  return `${signingInput}.${signature}`;
+};
+
+const futureExp = () => Math.floor(Date.now() / 1000) + 3600;
+
+describe('CustomThrottlerGuard', () => {
+  let guard: TestableGuard;
+
+  beforeEach(() => {
+    process.env.SUPABASE_JWT_SECRET = TEST_SECRET;
+    guard = new TestableGuard(
+      [],
+      {} as unknown as ConstructorParameters<typeof CustomThrottlerGuard>[1],
+      {} as unknown as ConstructorParameters<typeof CustomThrottlerGuard>[2],
+    );
+  });
+
+  afterEach(() => {
+    delete process.env.SUPABASE_JWT_SECRET;
+  });
+
+  describe('getTracker', () => {
+    it('keys on the sub of a validly signed token', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'user-123', exp: futureExp() })}`,
+        },
+        ip: '10.0.0.1',
+      };
+      await expect(guard.track(req)).resolves.toBe('user:user-123');
+    });
+
+    it('handles a header delivered as an array', async () => {
+      const req = {
+        headers: {
+          authorization: [
+            `Bearer ${makeJwt({ sub: 'user-9', exp: futureExp() })}`,
+          ],
+        },
+        ip: '10.0.0.1',
+      };
+      await expect(guard.track(req)).resolves.toBe('user:user-9');
+    });
+
+    it('falls back to IP for a forged (bad-signature) token — the bypass is closed', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'attacker', exp: futureExp() }, null)}`,
+        },
+        ip: '203.0.113.1',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.1');
+    });
+
+    it('falls back to IP for a token signed with the wrong secret', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'x', exp: futureExp() }, 'some-other-secret-value-not-ours-32xx')}`,
+        },
+        ip: '203.0.113.2',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.2');
+    });
+
+    it('falls back to IP for an expired token', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) - 10 })}`,
+        },
+        ip: '203.0.113.3',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.3');
+    });
+
+    it('rejects a non-HS256 alg even if the signature segment matches', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'user-1', exp: futureExp() }, TEST_SECRET, { alg: 'none', typ: 'JWT' })}`,
+        },
+        ip: '203.0.113.4',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.4');
+    });
+
+    it('falls back to IP when no secret is configured, even for a valid token', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ sub: 'user-1', exp: futureExp() })}`,
+        },
+        ip: '203.0.113.5',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.5');
+    });
+
+    it('falls back to IP when there is no Authorization header', async () => {
+      await expect(
+        guard.track({ headers: {}, ip: '203.0.113.7' }),
+      ).resolves.toBe('ip:203.0.113.7');
+    });
+
+    it('prefers the first forwarded IP when present', async () => {
+      const req = {
+        headers: {},
+        ips: ['198.51.100.4', '10.0.0.1'],
+        ip: '10.0.0.1',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:198.51.100.4');
+    });
+
+    it('falls back to IP for a structurally malformed bearer token', async () => {
+      const req = {
+        headers: { authorization: 'Bearer not-a-jwt' },
+        ip: '203.0.113.9',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.9');
+    });
+
+    it('falls back to IP when a validly signed token has no sub', async () => {
+      const req = {
+        headers: {
+          authorization: `Bearer ${makeJwt({ role: 'admin', exp: futureExp() })}`,
+        },
+        ip: '203.0.113.10',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.10');
+    });
+
+    it('ignores a non-Bearer Authorization scheme', async () => {
+      const req = {
+        headers: { authorization: 'Basic abc123' },
+        ip: '203.0.113.11',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.11');
+    });
+  });
+
+  describe('handleRequest method gating', () => {
+    const ctxFor = (method: string): ExecutionContext =>
+      ({
+        switchToHttp: () => ({ getRequest: () => ({ method }) }),
+      }) as unknown as ExecutionContext;
+
+    const props = (name: string, method: string): ThrottlerRequest =>
+      ({
+        context: ctxFor(method),
+        throttler: { name },
+      }) as unknown as ThrottlerRequest;
+
+    it('skips the write throttler for read methods', async () => {
+      await expect(guard.handle(props('write', 'GET'))).resolves.toBe(true);
+    });
+
+    it('skips the read throttler for write methods', async () => {
+      await expect(guard.handle(props('read', 'POST'))).resolves.toBe(true);
+    });
+  });
+
+  describe('throwThrottlingException', () => {
+    it('sets a standard Retry-After header before throwing', async () => {
+      const header = jest.fn();
+      const context = {
+        switchToHttp: () => ({ getResponse: () => ({ header }) }),
+        getClass: () => class {},
+        getHandler: () => () => undefined,
+      } as unknown as ExecutionContext;
+      const detail = {
+        timeToBlockExpire: 42,
+      } as unknown as ThrottlerLimitDetail;
+
+      await expect(
+        guard.throwThrottling(context, detail),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+      expect(header).toHaveBeenCalledWith('Retry-After', '42');
+    });
+  });
+});
