@@ -164,6 +164,14 @@ A task is not "done" when the code is pushed — it's done when the PR is ready 
 
 This is enforced by `doneMeansMerged: true` in `.claude/settings.json`; the AGENTS.md text is the human-readable contract.
 
+## Claude Code web sandbox
+
+When the environment is configured per [`docs/internal/ci-cd/CLOUD_SANDBOX.md`](docs/internal/ci-cd/CLOUD_SANDBOX.md) (env var `FRAPP_CLOUD_SANDBOX=1`, the `scripts/cloud-sandbox-setup.sh` setup script, and Trusted network), `.claude/hooks/session-start.sh` launches `scripts/cloud-sandbox-up.sh` in the **background** at session start — it starts Docker + local Supabase and writes `apps/api/.env.local`.
+
+- **Wait before using the DB/API:** poll for `.cloud-sandbox-up.done` (success) or `.cloud-sandbox-up.failed` (error); live log at `/tmp/cloud-sandbox-up.log`.
+- **Boot the API** with `npm run start:dev -w apps/api` (the generated `.env.local` means no Infisical is needed).
+- If the env isn't configured (no `FRAPP_CLOUD_SANDBOX`), nothing auto-starts; you can run `bash scripts/cloud-sandbox-up.sh` manually, or fall back to the PGlite harness for migration-only checks.
+
 ## Cursor Cloud-specific instructions
 
 These notes are for cloud agents running after the update script has already installed dependencies.

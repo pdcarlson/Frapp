@@ -185,9 +185,9 @@ If a future chunk crosses a boundary the sandbox still can't reach (live Realtim
 
 ### Sandbox-blocked tooling — known list
 
-- **Docker / `supabase start` / `supabase db reset`:** no Docker daemon. Cannot start the local stack. Use the PGlite harness for migration validation.
+- **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web sandbox configured per [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md)** (`FRAPP_CLOUD_SANDBOX=1` + setup script + Trusted network), `scripts/cloud-sandbox-up.sh` brings up Docker + local Supabase and writes `apps/api/.env.local`, so the full stack and `npm run start:dev -w apps/api` work and the API boots with no Infisical. Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
 - **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** denied by `.claude/settings.json` by default. `list_projects` happens to be allowed. Do not assume any MCP tool works until you've tried it.
-- **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape.
+- **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape. The Claude Code web sandbox's **Trusted** policy already allows Docker Hub, npm, GitHub, and the Supabase registries.
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
 
 When you hit a new block, add it here in the same PR you discovered it in.

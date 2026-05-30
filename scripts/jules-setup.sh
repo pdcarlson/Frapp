@@ -3,13 +3,13 @@
 # Jules Environment Setup Script
 # This script is used by Jules headless cloud VM environments to bootstrap the repository.
 
-echo "Starting Docker daemon..."
-sudo dockerd &>/tmp/dockerd.log &
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/lib/cloud-sandbox-common.sh
+. "$ROOT/scripts/lib/cloud-sandbox-common.sh"
 
-# Wait for Docker socket to become available
-echo "Waiting for Docker socket..."
-while [ ! -e /var/run/docker.sock ]; do sleep 1; done
-echo "Docker is ready!"
+# Start Docker and (if DOCKERHUB_USERNAME/TOKEN are set) authenticate to avoid pull limits.
+cs_ensure_docker_daemon
+cs_docker_login_if_creds
 
 echo "Installing node dependencies..."
 npm install
