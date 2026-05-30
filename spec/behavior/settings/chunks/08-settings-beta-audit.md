@@ -44,4 +44,4 @@ Finish the settings surface and add the gentle on-ramp that nudges officers towa
 ## Handoff
 
 - Branch `claude/redesign-chunk-08-settings-beta-audit`. PR title `Chunk 08 — Settings: Beta + Audit + nudges`.
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.

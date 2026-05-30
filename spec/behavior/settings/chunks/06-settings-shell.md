@@ -57,4 +57,4 @@ Rebuild `/settings` with the 9-tab rail (Org, Modules, Roles, Fields, Workflows,
 ## Handoff
 
 - Branch `claude/redesign-chunk-06-settings-shell`. PR title `Chunk 06 — Settings shell + Org + Modules`.
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.

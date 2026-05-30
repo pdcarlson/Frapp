@@ -98,7 +98,7 @@ Rebuild the chat surface as a Slack-grade 3-pane client with the full hot-path p
 ## Handoff
 
 - Branch `claude/redesign-chunk-04-chat-foundation`. Push, open PR `Chunk 04 — Chat foundation + hot-path client`. Body: link this brief, attach screenshots, paste the reconnect + offline test results.
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
 
 ## Phase 1 — scoping notes (recorded with the implementation)
 

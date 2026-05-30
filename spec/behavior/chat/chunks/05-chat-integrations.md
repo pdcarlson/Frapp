@@ -147,4 +147,4 @@ Establish the "ops modules are chat integrations" pattern by shipping two end-to
 
 - Branch `claude/redesign-chunk-05-chat-integrations`. PR title `Chunk 05 — Chat integrations + push`.
 - Body: link this brief, attach short screen recording of the `/poll` flow if practical (a PNG sequence is fine too).
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.

@@ -49,4 +49,4 @@ Bring the chat experience to mobile with first-class offline + background behavi
 
 - Branch `claude/redesign-chunk-11-mobile-chat`. PR title `Chunk 11 — Mobile chat parity`.
 - Attach a short screen capture of the web ↔ mobile real-time interaction if practical.
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.

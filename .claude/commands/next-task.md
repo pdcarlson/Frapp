@@ -1,15 +1,19 @@
 ---
-description: Pick the next viable project task with me, complete it, and tidy the backlog
+description: Work an issue — target one by number, or pick the next viable one with me — then complete it and tidy the backlog
+argument-hint: "[issue number (optional)]"
 ---
 Project issues: https://github.com/pdcarlson/Frapp/issues
 
-Pick up and complete the next viable piece of work, then leave the tracker cleaner than you found it.
+The single work command. Pick up and complete a piece of work, then leave the tracker cleaner than you found it.
 
-1. Start in plan mode. Use Explore/Plan sub-agents in parallel to survey open issues and the relevant code/specs, keeping the heavy reading out of your own context. Read AGENTS.md and related spec files.
-2. Pick with me: shortlist the issues that are genuinely viable now (dependencies actually shipped — confirm by reading code/merged PRs, not the status label) and use AskUserQuestion to let me choose. Prefer small, focused issues; batch several only if they comfortably fit your context window; split anything too big and file a follow-up sub-issue for the rest.
-3. Verify each chosen issue against current code and specs; research best practices. Fix only if valid. If already resolved, close it and any duplicates. If scope drifted, edit the issue first. If issue and spec conflict, the spec wins. Flag anything that seems off and use AskUserQuestion for real decisions.
-4. Triage the backlog: add stray repo issues to the project, close resolved/duplicates, and file fresh self-contained follow-ups for work you shouldn't do now.
-5. Branch from main as claude/<slug>. Focused commits. Update related spec/docs in the same PR (doc-sync requires it). Verify end-to-end (run tests/app) — never claim a step you didn't run. Run /code-review and address findings before opening the PR.
-6. Open a draft PR with `Closes #N`. Solo project: the issue's open/closed state is the status — no "In Review" stage, no board shuffle.
+**Target:** issue #$ARGUMENTS. If a number was given, work that issue. If no number was given, first scan the open issues, shortlist the ones that are genuinely viable now (dependencies actually shipped — confirm by reading code/merged PRs and the roadmap table in `spec/README.md`, not a status label) plus any that are easy to knock out or important to resolve, and use AskUserQuestion to let me pick. Prefer small, focused issues; batch several only if they comfortably fit your context window; split anything too big and file a follow-up sub-issue for the rest.
+
+Then, for the chosen issue(s):
+
+1. Start in plan mode. Use Explore/Plan sub-agents in parallel to research, keeping the heavy reading out of your own context. Read AGENTS.md and any spec files related to the issue.
+2. Verify each chosen issue against current code and specs; research best practices for its scope. Fix only if valid. If already resolved, close it and any duplicates. If scope drifted, edit the issue first. If issue and spec conflict, the spec wins. Flag anything that seems off and use AskUserQuestion for real decisions.
+3. Triage the backlog: close resolved/duplicate issues and file fresh, self-contained follow-ups for work you surface but shouldn't do now. Make sure the issue carries its `chunk-NN` label if it belongs to a redesign chunk.
+4. Branch from main as claude/<slug>. Focused commits. Update related spec/docs in the same PR (doc-sync requires it). If your work ships or moves a redesign chunk, update that chunk's row in the `spec/README.md` roadmap table — it's the source of truth for chunk status. Verify end-to-end (run tests/app) — never claim a step you didn't run. Run /code-review and address findings before opening the PR.
+5. Open a draft PR with `Closes #N`. Solo project: the issue's open/closed state is the status — no "In Review" stage, no project-board shuffle (agents can't update the Projects board anyway).
 
 If blocked on a decision that's mine, stop and ask with AskUserQuestion.

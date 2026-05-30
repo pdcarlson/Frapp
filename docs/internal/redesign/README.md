@@ -1,12 +1,12 @@
 # Chat-first redesign — process conventions
 
-> **Spec content has moved.** Per-chunk briefs now live under [`spec/behavior/<topic>/chunks/`](../../../spec/behavior/) and [`spec/architecture-chunks/`](../../../spec/architecture-chunks/). The architectural narrative (product positioning, hot-path architecture, theming model, engineering principles — was `master-plan.md`) is at [`spec/redesign-context.md`](../../../spec/redesign-context.md). The STATUS doc has been retired in favor of the *Frapp Launch* GitHub project (status tracking); a roadmap summary lives at [`spec/README.md`'s Roadmap section](../../../spec/README.md#roadmap).
+> **Spec content has moved.** Per-chunk briefs now live under [`spec/behavior/<topic>/chunks/`](../../../spec/behavior/) and [`spec/architecture-chunks/`](../../../spec/architecture-chunks/). The architectural narrative (product positioning, hot-path architecture, theming model, engineering principles — was `master-plan.md`) is at [`spec/redesign-context.md`](../../../spec/redesign-context.md). The STATUS doc has been retired; **the chunk status table in [`spec/README.md`'s Roadmap section](../../../spec/README.md#roadmap) is the source of truth for chunk status** (it's in git, so agents can read and update it). Run `/status` for a live progress dashboard. A *Frapp Launch* Projects board, if maintained, is only an optional human-facing mirror.
 
 This README only documents the **process** for working a chunk. The content of each chunk lives at its co-located spec path (linked from the spec roadmap).
 
 ## Read order for a fresh session
 
-1. **[`spec/README.md`](../../../spec/README.md)** — start here. The Roadmap section lists every chunk with its co-located brief path and current PR.
+1. **[`spec/README.md`](../../../spec/README.md)** — start here. The Roadmap section is the source-of-truth status table: every chunk, its co-located brief path, and current status/PR. Run `/status` for a live dashboard that cross-checks it against open issues.
 2. **The specific chunk brief you've been assigned.** Each brief is self-contained: read these files, build this, verify like this, commit & push to this branch.
 3. **`AGENTS.md`** at the repo root and the linked playbooks (`.cursor/skills/`). Standard operating context — branch model, doc-sync mandate, secrets policy, and the GitHub-issues workflow.
    - Before opening your chunk PR, self-review against **[`REVIEW_CHECKLIST.md`](REVIEW_CHECKLIST.md)** (peer to this file). The same checklist is used by whoever reviews the PR.
@@ -18,10 +18,10 @@ Do **not** start coding from a vague "redesign Frapp" prompt. Always work a spec
 
 Two Claude Code project slash commands (under [`.claude/commands/`](../../../.claude/commands/)) encode this workflow so it doesn't have to be pasted each session:
 
-- **`/next-task`** — pick the next viable project task collaboratively, complete it, and tidy the backlog.
-- **`/tackle-issue [#]`** — verify/fix/close a specific issue, or shortlist an easy/important one when no number is given.
+- **`/next-task [#]`** — the single work command. Given an issue number it targets that issue; with no number it scans the backlog, shortlists viable/easy/important issues, and lets you pick. It verifies, fixes, tidies the backlog, and opens a draft PR. (Replaces the old `/next-task` + `/tackle-issue` pair, which had nearly identical flows.)
+- **`/status`** — read-only progress dashboard: cross-checks the roadmap status table against open issues per chunk and prints how close we are to launch.
 
-Both begin in plan mode, fan out to sub-agents for research, run `/code-review` before opening a draft PR, and close issues via `Closes #N` (solo project — no *In Review* stage).
+`/next-task` begins in plan mode, fans out to sub-agents for research, runs `/code-review` before opening a draft PR, and closes issues via `Closes #N` (solo project — no *In Review* stage).
 
 ## Operating conventions for chunk sessions
 
@@ -58,4 +58,4 @@ If the PAT lacks the Projects permission this fails with `FORBIDDEN: Resource no
 
 ## When the chunk is wrong
 
-The chunk briefs are forecasts, not contracts. If a chunk's assumptions don't survive contact with the code, push back: edit the chunk brief in place, leave a note in the chunk issue on the GitHub board, and pick up from the corrected plan. Future sessions will read what you left, not what was originally written.
+The chunk briefs are forecasts, not contracts. If a chunk's assumptions don't survive contact with the code, push back: edit the chunk brief in place, leave a note on the chunk's GitHub issue, and pick up from the corrected plan. Future sessions will read what you left, not what was originally written.

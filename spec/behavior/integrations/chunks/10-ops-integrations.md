@@ -107,5 +107,5 @@ Ship one ops integration end-to-end following the integration pattern: slash com
 ## Handoff (per sub-chunk)
 
 - Branch + PR named per sub-chunk (e.g. `Chunk 10a — Events`).
-- Move the sub-chunk issue to *In Review* on the *Frapp Launch* GitHub project.
-- Sub-chunks can be in flight in parallel after Chunk 05 ships — coordinate via the project board.
+- Status tracking: each sub-chunk issue's open/closed state is the status — close it via `Closes #N`. When the parent chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Sub-chunks can be in flight in parallel after Chunk 05 ships — coordinate via their GitHub issues/sub-issues.

@@ -48,7 +48,7 @@ If only a legacy GitHub token alias is exposed in an older VM, copy it into `GIT
 
 > **Solo project: the board isn't part of the workflow.** Track status by the issue's open/closed state — close issues on completion (`Closes #N` in the PR body), don't shuffle them to an "In Review" column. The rest of this subsection is reference only, for the rare case someone explicitly asks to update a board.
 
-Project status lives on a **Projects v2** board, which is **GraphQL-only** — there is no REST endpoint and **no `mcp__github__*` tool** for it. Use the GraphQL API directly with `GITHUB_PAT` (see [`docs/internal/redesign/README.md`](redesign/README.md#project-board) for the exact 3-call flow).
+The source of truth for chunk status is the roadmap table in [`spec/README.md`](../../spec/README.md#roadmap), not any board. If someone nonetheless wants to mirror status onto the optional *Frapp Launch* **Projects v2** board, note it is **GraphQL-only** — there is no REST endpoint and **no `mcp__github__*` tool** for it. Use the GraphQL API directly with `GITHUB_PAT` (see [`docs/internal/redesign/README.md`](redesign/README.md#project-board) for the exact 3-call flow).
 
 **Required token permission:** the PAT must carry **Projects → Read and write** (fine-grained PAT) or the `project` scope (classic PAT). The default hosted-agent PAT is fine-grained and **may not** include Projects. The failure signature when it doesn't:
 

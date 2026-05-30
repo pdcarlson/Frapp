@@ -48,4 +48,4 @@ Rebuild the members directory around the always-on `members` module. Custom fiel
 ## Handoff
 
 - Branch `claude/redesign-chunk-09-members`. PR title `Chunk 09 — Members + custom fields rendering`.
-- Move the issue to *In Review* on the *Frapp Launch* GitHub project.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
