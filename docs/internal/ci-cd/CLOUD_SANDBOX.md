@@ -50,10 +50,18 @@ STRIPE_PRICE_ID=price_...
 bash scripts/cloud-sandbox-setup.sh || true
 ```
 
-**3. Network access:** **Trusted**. The default allowlist already covers Docker Hub,
-npm, GitHub, and the Supabase image registries — enough for `docker login`,
-`supabase start`, and `npm ci`. Choose Full only if a task needs arbitrary outbound
-hosts (e.g. live `api.stripe.com` calls).
+**3. Network access:** **Full** (recommended), or **Custom** = Trusted defaults plus
+`public.ecr.aws` and `*.cloudfront.net`.
+
+`supabase start` does **not** pull only from Docker Hub: the Postgres image (and several
+others) come from **AWS ECR Public** (`public.ecr.aws/supabase/*`), whose blobs are
+served via **CloudFront** (`*.cloudfront.net`). If those hosts aren't allowed the pull
+fails with `403 Forbidden` / `Host not in allowlist`, even with Docker Hub creds set.
+Trusted alone covers npm, GitHub, and Docker Hub — enough for `npm ci` and `docker
+login`, but **not** guaranteed to cover ECR Public + CloudFront. Use Full for reliability,
+or a Custom allowlist that adds those two hosts. `DOCKERHUB_*` creds are still needed for
+the images that *do* come from Docker Hub (e.g. `mailpit`), which otherwise hit anonymous
+rate limits.
 
 ## How it works (two phases)
 
