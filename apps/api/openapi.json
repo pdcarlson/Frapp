@@ -4239,6 +4239,70 @@
           "Chapter Directory"
         ]
       }
+    },
+    "/v1/analytics/identity": {
+      "get": {
+        "operationId": "AnalyticsController_getIdentity_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/v1/analytics/events": {
+      "post": {
+        "operationId": "AnalyticsController_track_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackEventResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out.",
+        "tags": [
+          "Analytics"
+        ]
+      }
     }
   },
   "info": {
@@ -5742,6 +5806,70 @@
             }
           }
         }
+      },
+      "IdentityResponseDto": {
+        "type": "object",
+        "properties": {
+          "distinct_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Whether analytics is enabled for this caller."
+          }
+        },
+        "required": [
+          "distinct_id",
+          "enabled"
+        ]
+      },
+      "TrackEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Behavioral event name in kebab-case, e.g. \"opened-channel\", \"ran-slash-command\". Must describe behavior, never content.",
+            "example": "opened-channel"
+          },
+          "chapter_id": {
+            "type": "string",
+            "description": "Chapter the event is attributed to (enables the opt-out gate)"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected.",
+            "additionalProperties": {
+              "nullable": true,
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TrackEventResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success"
+        ]
       }
     }
   }

@@ -1782,6 +1782,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/analytics/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt. */
+        get: operations["AnalyticsController_getIdentity_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/analytics/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out. */
+        post: operations["AnalyticsController_track_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2297,6 +2331,28 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
+        };
+        IdentityResponseDto: {
+            /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
+            distinct_id: string | null;
+            /** @description Whether analytics is enabled for this caller. */
+            enabled: boolean;
+        };
+        TrackEventDto: {
+            /**
+             * @description Behavioral event name in kebab-case, e.g. "opened-channel", "ran-slash-command". Must describe behavior, never content.
+             * @example opened-channel
+             */
+            name: string;
+            /** @description Chapter the event is attributed to (enables the opt-out gate) */
+            chapter_id?: string;
+            /** @description Behavioral, content-free properties. Values must be scalars (string/number/boolean/null); keys that look like content/PII (content, body, email, name, …) are rejected. */
+            properties?: {
+                [key: string]: (string | number | boolean) | null;
+            };
+        };
+        TrackEventResponseDto: {
+            success: boolean;
         };
     };
     responses: never;
@@ -5079,6 +5135,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    AnalyticsController_getIdentity_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IdentityResponseDto"];
+                };
+            };
+        };
+    };
+    AnalyticsController_track_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrackEventDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackEventResponseDto"];
+                };
             };
         };
     };

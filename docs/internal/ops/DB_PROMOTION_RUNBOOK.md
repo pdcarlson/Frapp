@@ -64,6 +64,16 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-05-30: Analytics opt-out flag on `chapters` (#464)
+
+One additive migration. Adds a single boolean column with a default — fully backward-compatible, no backfill, no lock-heavy operation (Postgres fills existing rows with the default on add).
+
+### 20260530180000_chapter_analytics_opt_out.sql
+* **Purpose**: Adds `chapters.analytics_opt_out boolean not null default false`. Read server-side by `AnalyticsService` as defense-in-depth before any server-originated analytics event is sent (pseudonymous pipeline, `spec/behavior/data-retention.md` #analytics-events-pseudonymous). The Settings toggle that writes it is tracked as #466.
+* **Checks**: After `db push`, `select column_name from information_schema.columns where table_name = 'chapters' and column_name = 'analytics_opt_out';` — should return 1 row; `select analytics_opt_out from public.chapters limit 1;` — defaults to `false`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback analytics opt-out flag.
+
 ## 2025-02-26: Add `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Purpose**: Creates an RPC for faster points report aggregation.

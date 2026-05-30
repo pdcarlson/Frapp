@@ -4,6 +4,7 @@ import { useNetworkState } from "expo-network";
 import { View } from "react-native";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
+import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { PreviewSessionProvider } from "@/lib/preview-session";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
@@ -32,7 +33,9 @@ export default function RootLayout() {
   return (
     <FrappThemeProvider>
       <FrappProvider>
-        <RootLayoutContent />
+        <AnalyticsProvider>
+          <RootLayoutContent />
+        </AnalyticsProvider>
       </FrappProvider>
     </FrappThemeProvider>
   );
