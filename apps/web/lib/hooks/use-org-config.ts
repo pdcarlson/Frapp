@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { components } from "@repo/api-sdk";
-import type { PatchChapterConfig } from "@repo/validation";
+import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";
 
 /**
  * Merged chapter config returned by `GET /chapters/:id/config` (archetype
@@ -19,18 +19,11 @@ export interface OrgWorkflow {
   units?: string;
 }
 
-/** The singleton dues config returned by `GET /chapters/:id/config`. */
-export interface OrgDues {
-  cadence: "monthly" | "per_semester" | "per_quarter";
-  active_amount_cents: number;
-  new_member_amount_cents: number;
-  alumni_amount_cents: number;
-  installments_allowed: boolean;
-  installment_count: number;
-  late_fee_cents: number;
-  grace_days: number;
-  scholarship_pool_cents: number;
-}
+/**
+ * The singleton dues config returned by `GET /chapters/:id/config`. Sourced from
+ * the shared zod schema so the web shape can't drift from the wire contract.
+ */
+export type OrgDues = ChapterDuesConfig;
 
 export interface OrgConfig {
   org_archetype?: string;
