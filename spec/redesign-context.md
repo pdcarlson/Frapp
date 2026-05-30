@@ -2,7 +2,7 @@
 
 > **You are reading the canonical architectural context for the Frapp chat-first redesign.** Per-chunk briefs (co-located under [`spec/behavior/<topic>/chunks/`](README.md#roadmap) and [`spec/architecture-chunks/`](architecture-chunks/)) reference this document by section. Don't skip ahead to a chunk without reading at least the *Product positioning* and *System architecture* sections here first.
 >
-> **Status note.** This doc was previously `docs/internal/redesign/master-plan.md`. The chunk-status table (was `STATUS.md`) now lives at [`spec/README.md`](README.md#roadmap), which is **the source of truth for chunk status** (it's in git, so agents can read and update it — there is no authoritative project board). The *Chunked roadmap* section below is preserved for the dependency graph; for live status, consult the roadmap table or run `/status`.
+> **Status note.** This doc was previously `docs/internal/redesign/master-plan.md`. Chunk status (was `STATUS.md`) is tracked in the in-repo project board at [`docs/internal/board/chat-redesign.md`](../docs/internal/board/chat-redesign.md) — the source of truth (run `/status`). This doc keeps the *Chunked roadmap* section below for the dependency graph.
 
 ## Context
 

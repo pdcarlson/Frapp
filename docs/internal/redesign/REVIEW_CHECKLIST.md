@@ -40,7 +40,7 @@ Run this against every chunk PR (as the author before opening, and as the review
 
 - [ ] PR body links the chunk brief and attests to each "Engineering principles applied here" bullet.
 - [ ] Spec docs updated in the same PR (doc-sync CI).
-- [ ] Issue closed on completion via `Closes #N` in the PR body (solo project — no *In Review* stage and no Projects v2 board shuffle; the issue's open/closed state is the status).
+- [ ] Issue closed on completion via `Closes #N` in the PR body, and its row updated on the in-repo board ([`../board/chat-redesign.md`](../board/chat-redesign.md)); the board is the source of truth and the issue's open/closed state mirrors it. No GitHub Projects board.
 - [ ] Visual baselines: only the affected ones regenerated, listed with reasons + Chromium revision.
 - [ ] Plan divergences edited into the brief / `spec/redesign-context.md` in the same PR.
 - [ ] **ADR discipline.** Architecturally significant decisions — persistence layer, hot-path topology, agent infrastructure, security posture, anything that future sessions will need to know "why" about — land as a sequentially numbered ADR in `spec/architecture.md` in the same PR. Not as a code comment, not as a STATUS note, not as a PR-body paragraph that gets buried. Each ADR includes a **Trigger to revisit** clause naming the conditions under which the next session should reopen it.

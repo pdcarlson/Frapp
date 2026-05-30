@@ -39,23 +39,23 @@ Conventions for documentation updates: [`docs/internal/DOCUMENTATION_CONVENTIONS
 
 ## Roadmap
 
-The chat-first redesign is delivered as numbered chunks. Each chunk's full brief is co-located with the topic it primarily affects under [`behavior/<topic>/chunks/`](behavior/) or [`architecture-chunks/`](architecture-chunks/). Architectural context (product positioning, hot-path architecture, theming model, engineering principles) lives in [`redesign-context.md`](redesign-context.md).
+The chat-first redesign is one **project** in Frapp's in-repo project board. It is delivered as numbered chunks; each chunk's full brief is co-located with the topic it primarily affects under [`behavior/<topic>/chunks/`](behavior/) or [`architecture-chunks/`](architecture-chunks/). Architectural context (product positioning, hot-path architecture, theming model, engineering principles) lives in [`redesign-context.md`](redesign-context.md).
 
-**This table is the source of truth for chunk status.** It lives in git, so it survives ephemeral agent sessions, is diffable in PRs, and — unlike a GitHub Projects v2 board — can be read and updated by the agents that do the work. GitHub issues (and their sub-issues) are the execution queue that feeds each chunk; run `/status` for a live progress dashboard that cross-checks this table against open issues. A *Frapp Launch* Projects board, if maintained, is an optional human-facing mirror only — never the authority. **Doc-sync rule:** when a chunk's state changes (a chunk PR merges, or work moves into review), update its `Status` cell in the same PR.
+**Status lives on the board, not here.** Chunk status, the issue list, and progress are tracked in [`docs/internal/board/chat-redesign.md`](../docs/internal/board/chat-redesign.md) — the source of truth (run `/status` for a live dashboard). This section is just the index of chunk **briefs** (the normative specs); the briefs themselves stay in `spec/`.
 
-| #   | Title                                              | Brief                                                                                            | Status |
-| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------ |
-| 01  | Foundation: design bundle + theme + shell          | [`behavior/branding/chunks/01-foundation.md`](behavior/branding/chunks/01-foundation.md)         | shipped — [#229](https://github.com/pdcarlson/Frapp/pull/229) |
-| 02  | Data model + chapter directory + Edge Function     | [`architecture-chunks/02-data-edge.md`](architecture-chunks/02-data-edge.md)                     | shipped — [#231](https://github.com/pdcarlson/Frapp/pull/231) |
-| 03  | Onboarding wizard + chapter directory UX           | [`behavior/onboarding/chunks/03-onboarding.md`](behavior/onboarding/chunks/03-onboarding.md)     | shipped — [#239](https://github.com/pdcarlson/Frapp/pull/239) |
-| 04  | Chat foundation + hot-path client                  | [`behavior/chat/chunks/04-chat-foundation.md`](behavior/chat/chunks/04-chat-foundation.md)       | shipped — [#278](https://github.com/pdcarlson/Frapp/pull/278) |
-| 05  | Chat integrations + slash commands + push          | [`behavior/chat/chunks/05-chat-integrations.md`](behavior/chat/chunks/05-chat-integrations.md)   | shipped — [#400](https://github.com/pdcarlson/Frapp/pull/400) |
-| 06  | Settings shell + Org + Modules tabs                | [`behavior/settings/chunks/06-settings-shell.md`](behavior/settings/chunks/06-settings-shell.md) | queued |
-| 07  | Settings customization (theme, roles, fields, dues) | [`behavior/settings/chunks/07-settings-custom.md`](behavior/settings/chunks/07-settings-custom.md) | queued |
-| 08  | Settings Beta + Audit + ops-setup nudges           | [`behavior/settings/chunks/08-settings-beta-audit.md`](behavior/settings/chunks/08-settings-beta-audit.md) | queued |
-| 09  | Members directory + custom fields rendering        | [`behavior/members/chunks/09-members.md`](behavior/members/chunks/09-members.md)                 | queued |
-| 10  | Ops integrations (10a–10h)                         | [`behavior/integrations/chunks/10-ops-integrations.md`](behavior/integrations/chunks/10-ops-integrations.md) | queued |
-| 11  | Mobile chat parity                                 | [`behavior/chat/chunks/11-mobile-chat.md`](behavior/chat/chunks/11-mobile-chat.md)               | queued |
-| 12  | Marketing site refresh                             | [`product/chunks/12-marketing.md`](product/chunks/12-marketing.md)                               | queued |
+| #   | Title                                              | Brief                                                                                            |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 01  | Foundation: design bundle + theme + shell          | [`behavior/branding/chunks/01-foundation.md`](behavior/branding/chunks/01-foundation.md)         |
+| 02  | Data model + chapter directory + Edge Function     | [`architecture-chunks/02-data-edge.md`](architecture-chunks/02-data-edge.md)                     |
+| 03  | Onboarding wizard + chapter directory UX           | [`behavior/onboarding/chunks/03-onboarding.md`](behavior/onboarding/chunks/03-onboarding.md)     |
+| 04  | Chat foundation + hot-path client                  | [`behavior/chat/chunks/04-chat-foundation.md`](behavior/chat/chunks/04-chat-foundation.md)       |
+| 05  | Chat integrations + slash commands + push          | [`behavior/chat/chunks/05-chat-integrations.md`](behavior/chat/chunks/05-chat-integrations.md)   |
+| 06  | Settings shell + Org + Modules tabs                | [`behavior/settings/chunks/06-settings-shell.md`](behavior/settings/chunks/06-settings-shell.md) |
+| 07  | Settings customization (theme, roles, fields, dues) | [`behavior/settings/chunks/07-settings-custom.md`](behavior/settings/chunks/07-settings-custom.md) |
+| 08  | Settings Beta + Audit + ops-setup nudges           | [`behavior/settings/chunks/08-settings-beta-audit.md`](behavior/settings/chunks/08-settings-beta-audit.md) |
+| 09  | Members directory + custom fields rendering        | [`behavior/members/chunks/09-members.md`](behavior/members/chunks/09-members.md)                 |
+| 10  | Ops integrations (10a–10h)                         | [`behavior/integrations/chunks/10-ops-integrations.md`](behavior/integrations/chunks/10-ops-integrations.md) |
+| 11  | Mobile chat parity                                 | [`behavior/chat/chunks/11-mobile-chat.md`](behavior/chat/chunks/11-mobile-chat.md)               |
+| 12  | Marketing site refresh                             | [`product/chunks/12-marketing.md`](product/chunks/12-marketing.md)                               |
 
 Roadmap process conventions (branch model, doc-sync mandate, review checklist) live at [`docs/internal/redesign/README.md`](../docs/internal/redesign/README.md).

@@ -43,4 +43,4 @@ Align the marketing site with the chat-first positioning and route signups direc
 ## Handoff
 
 - Branch `claude/redesign-chunk-12-marketing`. PR title `Chunk 12 — Marketing refresh`.
-- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the project board (`docs/internal/board/chat-redesign.md`) — the source of truth. No GitHub Projects board.

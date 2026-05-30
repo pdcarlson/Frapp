@@ -44,20 +44,9 @@ export GH_TOKEN="$GITHUB_PAT"   # required for gh / git
 
 If only a legacy GitHub token alias is exposed in an older VM, copy it into `GITHUB_PAT` for the session; otherwise prefer the canonical name.
 
-### Moving cards on the *Frapp Launch* project board
+### Project tracking — no GitHub Projects board
 
-> **Solo project: the board isn't part of the workflow.** Track status by the issue's open/closed state — close issues on completion (`Closes #N` in the PR body), don't shuffle them to an "In Review" column. The rest of this subsection is reference only, for the rare case someone explicitly asks to update a board.
-
-The source of truth for chunk status is the roadmap table in [`spec/README.md`](../../spec/README.md#roadmap), not any board. If someone nonetheless wants to mirror status onto the optional *Frapp Launch* **Projects v2** board, note it is **GraphQL-only** — there is no REST endpoint and **no `mcp__github__*` tool** for it. Use the GraphQL API directly with `GITHUB_PAT` (see [`docs/internal/redesign/README.md`](redesign/README.md#project-board) for the exact 3-call flow).
-
-**Required token permission:** the PAT must carry **Projects → Read and write** (fine-grained PAT) or the `project` scope (classic PAT). The default hosted-agent PAT is fine-grained and **may not** include Projects. The failure signature when it doesn't:
-
-```
-"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token", ... "path":["user","projectsV2", ...]}]
-```
-
-(`projectsV2.totalCount` resolves but every node is `null`/`FORBIDDEN`; an issue's `projectItems` comes back empty.) If you hit this, **do not silently claim "no tool exists."** Report it precisely and ask the owner to add the Projects permission to the PAT — then complete the move. Until the token is scoped, the card move is the **one** board step the agent cannot do; leave it as an explicit handoff in the PR body.
-
+Frapp's work is tracked in the in-repo project board at [`board/`](board/) — markdown in git, the source of truth. GitHub issues mirror it (synced by `/triage`). There is **no** GitHub Projects (v2) board and no PAT/GraphQL flow for one; never create or update one.
 
 ## CI/CD summary
 

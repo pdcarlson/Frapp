@@ -66,4 +66,4 @@ Land the in-repo design reference, rewrite the theme tokens to the bone/bronze/i
 - Commit on the chunk branch with messages like `feat(theme): swap to bone/bronze/ink palette` / `feat(shell): chapter-led sidebar with BETA badge` / `chore(design): land in-repo design reference`.
 - Push: `git push -u origin claude/redesign-chunk-01-foundation`.
 - Open a PR titled `Chunk 01 — Foundation: theme + shell + design reference`. PR body: link to `spec/behavior/branding/chunks/01-foundation.md` and tick the verification checklist.
-- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. On merge, flip Chunk 01's row to `shipped` in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. On merge, flip Chunk 01's row to ✅ in the project board (`docs/internal/board/chat-redesign.md`) — the source of truth. No GitHub Projects board.

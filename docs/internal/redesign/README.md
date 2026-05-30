@@ -1,12 +1,12 @@
 # Chat-first redesign — process conventions
 
-> **Spec content has moved.** Per-chunk briefs now live under [`spec/behavior/<topic>/chunks/`](../../../spec/behavior/) and [`spec/architecture-chunks/`](../../../spec/architecture-chunks/). The architectural narrative (product positioning, hot-path architecture, theming model, engineering principles — was `master-plan.md`) is at [`spec/redesign-context.md`](../../../spec/redesign-context.md). The STATUS doc has been retired; **the chunk status table in [`spec/README.md`'s Roadmap section](../../../spec/README.md#roadmap) is the source of truth for chunk status** (it's in git, so agents can read and update it). Run `/status` for a live progress dashboard. A *Frapp Launch* Projects board, if maintained, is only an optional human-facing mirror.
+> **Spec content has moved.** Per-chunk briefs now live under [`spec/behavior/<topic>/chunks/`](../../../spec/behavior/) and [`spec/architecture-chunks/`](../../../spec/architecture-chunks/). The architectural narrative (product positioning, hot-path architecture, theming model, engineering principles — was `master-plan.md`) is at [`spec/redesign-context.md`](../../../spec/redesign-context.md). The STATUS doc has been retired; **chunk status is tracked in the in-repo project board at [`../board/chat-redesign.md`](../board/chat-redesign.md)** (the source of truth — run `/status`). The redesign is one project on that board; see [`../board/README.md`](../board/README.md) for the whole-product view.
 
 This README only documents the **process** for working a chunk. The content of each chunk lives at its co-located spec path (linked from the spec roadmap).
 
 ## Read order for a fresh session
 
-1. **[`spec/README.md`](../../../spec/README.md)** — start here. The Roadmap section is the source-of-truth status table: every chunk, its co-located brief path, and current status/PR. Run `/status` for a live dashboard that cross-checks it against open issues.
+1. **[`../board/chat-redesign.md`](../board/chat-redesign.md)** — start here. The project board is the source of truth for chunk status, issues, and progress. [`spec/README.md`](../../../spec/README.md)'s Roadmap section indexes the chunk briefs. Run `/status` for a live dashboard.
 2. **The specific chunk brief you've been assigned.** Each brief is self-contained: read these files, build this, verify like this, commit & push to this branch.
 3. **`AGENTS.md`** at the repo root and the linked playbooks (`.cursor/skills/`). Standard operating context — branch model, doc-sync mandate, secrets policy, and the GitHub-issues workflow.
    - Before opening your chunk PR, self-review against **[`REVIEW_CHECKLIST.md`](REVIEW_CHECKLIST.md)** (peer to this file). The same checklist is used by whoever reviews the PR.
@@ -26,7 +26,7 @@ Two Claude Code project slash commands (under [`.claude/commands/`](../../../.cl
 ## Operating conventions for chunk sessions
 
 - **Branch per chunk.** Create `claude/redesign-chunk-NN-<slug>` from `main`. Never push directly to `main` or `production`.
-- **Step 0: reconcile open issues.** Before you start, glance at open issues for anything already shipped that should be closed. **This is a solo project — there is no "In Review" stage.** When work lands, the issue gets **closed**, not shuffled across board columns. So: when you open a PR, put `Closes #N` in the body and let the merge close the issue; if you finish and merge in-session, confirm the issue closed. Don't spend effort moving Projects v2 cards (see "Project board" below).
+- **Step 0: reconcile open issues.** Before you start, glance at open issues for anything already shipped that should be closed. **This is a solo project — there is no "In Review" stage.** When work lands, the issue gets **closed**, not held open. So: when you open a PR, put `Closes #N` in the body and let the merge close the issue; if you finish and merge in-session, confirm the issue closed.
 - **Read the spec docs the chunk lists before writing code.** Each chunk lists specific `spec/*.md` and `docs/*` files that constrain its work.
 - **Update spec docs in the same PR.** Frapp's doc-sync mandate requires every non-doc PR to update at least one file under `docs/` or `spec/`. The chunk briefs list which specs each chunk should touch.
 - **Verification is non-negotiable.** Each chunk has a verification checklist. Don't open a PR with the checklist incomplete; surface what didn't work in the PR body instead of pretending it did.

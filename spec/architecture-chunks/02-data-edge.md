@@ -87,4 +87,4 @@ Ship the database schema, the cold-path API endpoints, shared TS packages (`org-
 - Commit per concern (migrations / packages / api / edge functions / docs).
 - Push: `git push -u origin claude/redesign-chunk-02-data-edge`.
 - PR title: `Chunk 02 — Data model + chapter directory + Edge Function scaffold`. Body: link this brief, paste the four curl outputs, mention any Deno import gotchas.
-- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the project board (`docs/internal/board/chat-redesign.md`) — the source of truth. No GitHub Projects board.

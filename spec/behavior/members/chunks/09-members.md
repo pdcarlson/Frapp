@@ -48,4 +48,4 @@ Rebuild the members directory around the always-on `members` module. Custom fiel
 ## Handoff
 
 - Branch `claude/redesign-chunk-09-members`. PR title `Chunk 09 — Members + custom fields rendering`.
-- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the project board (`docs/internal/board/chat-redesign.md`) — the source of truth. No GitHub Projects board.

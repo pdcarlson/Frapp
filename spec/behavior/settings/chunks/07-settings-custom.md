@@ -76,4 +76,4 @@ Ship the customization-heavy settings tabs that make chapters feel like the prod
 ## Handoff
 
 - Branch `claude/redesign-chunk-07-settings-custom`. PR title `Chunk 07 — Settings: Theme + Roles + Fields + Workflows + Dues`.
-- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the `spec/README.md` roadmap table (the source-of-truth status table). No project-board move.
+- Status tracking: the issue's open/closed state is the status — close it via `Closes #N`. When this chunk ships, flip its row in the project board (`docs/internal/board/chat-redesign.md`) — the source of truth. No GitHub Projects board.

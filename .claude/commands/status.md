@@ -1,13 +1,25 @@
 ---
-description: Read-only launch-progress dashboard — chunk status from the roadmap, cross-checked against open issues
+description: Read-only progress dashboard across all Frapp projects — reads the in-repo board, cross-checked against open issues
 ---
-Project issues: https://github.com/pdcarlson/Frapp/issues
+Board: [`docs/internal/board/`](../../docs/internal/board/)
 
-Render a live picture of how close the chat-first redesign is to launch. **Read-only: make no commits, branches, PRs, label changes, or issue edits.**
+Render how Frapp is progressing, project by project. **Read-only: make no commits, branches,
+PRs, label changes, or issue edits.**
 
-1. Read the roadmap status table in [`spec/README.md`](../../spec/README.md#roadmap) — it is the source of truth for each chunk's title and status (`shipped` / `in review` / `queued`). Read the chunk dependency graph in [`spec/redesign-context.md`](../../spec/redesign-context.md) so you can show what blocks each unfinished chunk.
-2. For each chunk 01–12, count the **open** issues that belong to it. Use `mcp__github__list_issues` / `mcp__github__search_issues` on `pdcarlson/frapp`. Match by the `chunk-NN` label if it exists; otherwise fall back to title text — chunk issues are titled like `Chunk 06`, `[Chunk 06]`, or `[Chunk 10h]`. Do the counting inside a sub-agent if the issue payloads are large, and have it return only the per-chunk counts (the issues endpoint returns very large responses).
-3. Print a compact dashboard, one row per chunk: `# · title · status · open issues · blocked-by (unsatisfied deps, if any)`. Lead with a headline — `N/12 chunks shipped` — and the total open-issue count.
-4. End with suggested next work: for the earliest chunk that isn't shipped, list its top few open `agent-ready` issues (number + title) as candidates for `/next-task`.
+1. Read [`docs/internal/board/README.md`](../../docs/internal/board/README.md) for the list of
+   projects, then each project file for its work units + tracked issues, and
+   [`backlog.md`](../../docs/internal/board/backlog.md).
+2. For each project, count work units by status (done / in progress / queued) and its open vs
+   closed issues. Cross-check against open GitHub issues (`mcp__github__list_issues` /
+   `search_issues`) to flag any drift (open issues not on the board, or board issues now closed).
+   If the issue payloads are large, do the counting in a sub-agent that returns only the counts.
+3. Print a compact dashboard:
+   - **Headline:** overall — e.g. `Frapp: 1 project in progress · 5/12 redesign chunks shipped`.
+   - **Per project:** `name · status · progress (units) · open issues · blocked-by` (deps from
+     the project's dependency notes).
+   - **General backlog:** count by theme.
+   - **Drift warning** if GitHub and the board disagree → suggest running `/triage`.
+4. End with suggested next work: the earliest unblocked work unit's top open `agent-ready` issues
+   as candidates for `/next-task`.
 
-Keep it scannable. This command only reports — to actually do the work, hand off to `/next-task`.
+Reporting only. To re-sync the board with GitHub, run `/triage`; to do the work, `/next-task`.
