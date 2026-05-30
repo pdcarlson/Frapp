@@ -16,11 +16,11 @@ This skill is the behavior contract for the automation in [`docs/internal/CURSOR
 
 This is **not** a diff review. If a merged PR triggered this run, treat that PR as **one small signal** — most findings should come from broad analysis across the entire codebase, the product spec (`spec/`), and the user experience.
 
-To keep the backlog broadening over time rather than re-mining the same files:
+To avoid re-mining the same files and re-filing what's already tracked:
 
-- **Before starting, skim existing open `suggestion` issues** (`gh issue list --repo pdcarlson/Frapp --state open --label suggestion --json title,labels`) to see what's already covered, and deliberately explore **under-covered domains and surfaces**.
-- **Vary your lens each run.** Rotate across the product domains and the three lenses below.
-- **Balance guardrail per run:** at most ~2 findings from the most recently changed files; span **at least 3 different areas**; include **at least 2** product/behavior/UX or research items. Aim for **~6–10 findings** total — quality and breadth over volume.
+- **Before starting, skim existing open `suggestion` issues** (`gh issue list --repo pdcarlson/Frapp --state open --label suggestion --json title,labels`) to see what's already covered, so you don't re-file it.
+- **Vary your lens each run.** Rotate across the product domains and the three lenses below so a run isn't blind to whole categories of problems.
+- **No quota — quality gate only.** There is **no target number of findings**, and **filing nothing is a valid and common outcome**. File an issue only when it's genuinely worth a maintainer's time to act on; **never pad a run to hit a count or manufacture a finding just to broaden coverage**. When you do file, keep at most ~2 findings from the most recently changed files and prefer spreading real findings across areas rather than clustering.
 
 ---
 
@@ -193,7 +193,7 @@ Title format: `[suggestion] <title>`.
 - **Never** print secret values (follow `AGENTS.md`).
 - Ground product/behavior claims in the spec or code — don't invent features the project hasn't scoped. Ideas can be inventive, but say so (`type:idea`) and keep them relevant to Frapp's domain.
 - If a check can't run in the sandbox (e.g. Supabase down), note it in the relevant issue rather than guessing — and don't claim a verification you didn't run.
-- If nothing new is found, take no action and report "no new suggestions".
+- If nothing clears the "genuinely worth acting on" bar, take no action and report "no new suggestions" — a run that files **zero** issues is a success, not a failure. Do not lower the bar to produce output.
 
 ---
 
