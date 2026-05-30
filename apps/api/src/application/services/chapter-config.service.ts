@@ -57,6 +57,37 @@ export class ChapterConfigService {
     const archetype = getArchetype(archetypeKey);
     const seed = buildChapterConfigFromArchetype(archetypeKey);
 
+    // Workflows live in their own table; overlay per-chapter overrides onto the
+    // archetype catalog. Label/units always come from the seed (the catalog is
+    // the source of truth for presentation); enabled/threshold come from the
+    // chapter row when one exists, else the seed default.
+    const { data: workflowRows } = await this.supabase
+      .from('chapter_workflows')
+      .select('key, enabled, threshold')
+      .eq('chapter_id', chapterId);
+    const workflowOverrides = new Map(
+      (
+        (workflowRows ?? []) as Array<{
+          key: string;
+          enabled: boolean;
+          threshold: number | null;
+        }>
+      ).map((row) => [row.key, row]),
+    );
+    const workflows = seed.workflows.map((wf) => {
+      const override = workflowOverrides.get(wf.key);
+      return {
+        key: wf.key,
+        label: wf.label,
+        enabled: override ? override.enabled : wf.enabled,
+        threshold:
+          override && override.threshold != null
+            ? override.threshold
+            : wf.threshold,
+        units: wf.units,
+      };
+    });
+
     return {
       id: chapterId,
       org_archetype: archetypeKey,
@@ -83,8 +114,8 @@ export class ChapterConfigService {
       branding: (chapter as Record<string, unknown>)['branding'] ?? {},
       theme_palette:
         (chapter as Record<string, unknown>)['theme_palette'] ?? {},
-      beta_config:
-        (chapter as Record<string, unknown>)['beta_config'] ?? seed.dues,
+      beta_config: (chapter as Record<string, unknown>)['beta_config'] ?? {},
+      workflows,
       role_pack: archetype.rolePack,
     };
   }
@@ -134,18 +165,82 @@ export class ChapterConfigService {
       update['beta_config'] = merged;
     }
 
-    if (Object.keys(update).length === 0) {
+    // Workflows are persisted to their own table (chapter_workflows). Incoming
+    // keys are validated against the chapter catalog (from getConfig) so an
+    // unknown key can never write a row, and only changed rows are upserted.
+    const workflowUpserts: Array<{
+      chapter_id: string;
+      key: string;
+      enabled: boolean;
+      threshold: number | null;
+    }> = [];
+    if (dto.workflows !== undefined) {
+      const catalog = new Map(
+        (
+          existing.workflows as Array<{
+            key: string;
+            enabled: boolean;
+            threshold?: number;
+          }>
+        ).map((wf) => [wf.key, wf]),
+      );
+      const from: Record<string, { enabled: boolean; threshold?: number }> = {};
+      const to: Record<string, { enabled: boolean; threshold?: number }> = {};
+      for (const incoming of dto.workflows) {
+        const current = catalog.get(incoming.key);
+        if (!current) continue; // ignore unknown keys — no bare write
+        const nextThreshold = incoming.threshold ?? current.threshold;
+        if (
+          incoming.enabled === current.enabled &&
+          nextThreshold === current.threshold
+        ) {
+          continue; // unchanged
+        }
+        workflowUpserts.push({
+          chapter_id: chapterId,
+          key: incoming.key,
+          enabled: incoming.enabled,
+          threshold: nextThreshold ?? null,
+        });
+        from[incoming.key] = {
+          enabled: current.enabled,
+          threshold: current.threshold,
+        };
+        to[incoming.key] = {
+          enabled: incoming.enabled,
+          threshold: nextThreshold,
+        };
+      }
+      if (workflowUpserts.length > 0) {
+        diff['workflows'] = { from, to };
+      }
+    }
+
+    if (Object.keys(update).length === 0 && workflowUpserts.length === 0) {
       return existing;
     }
 
-    const { error: updateError } = await this.supabase
-      .from('chapters')
-      .update(update)
-      .eq('id', chapterId);
+    if (Object.keys(update).length > 0) {
+      const { error: updateError } = await this.supabase
+        .from('chapters')
+        .update(update)
+        .eq('id', chapterId);
 
-    if (updateError) {
-      this.logger.error('Failed to update chapter config', updateError);
-      throw updateError;
+      if (updateError) {
+        this.logger.error('Failed to update chapter config', updateError);
+        throw updateError;
+      }
+    }
+
+    if (workflowUpserts.length > 0) {
+      const { error: workflowError } = await this.supabase
+        .from('chapter_workflows')
+        .upsert(workflowUpserts, { onConflict: 'chapter_id,key' });
+
+      if (workflowError) {
+        this.logger.error('Failed to update chapter workflows', workflowError);
+        throw workflowError;
+      }
     }
 
     // Write audit log entry. The audit trail is a hard requirement, so a

@@ -5684,6 +5684,22 @@
           }
         }
       },
+      "WorkflowConfigDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Workflow key from the chapter catalog"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
+          }
+        }
+      },
       "PatchChapterConfigDto": {
         "type": "object",
         "properties": {
@@ -5710,6 +5726,12 @@
           },
           "dues": {
             "$ref": "#/components/schemas/DuesConfigDto"
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowConfigDto"
+            }
           }
         }
       }

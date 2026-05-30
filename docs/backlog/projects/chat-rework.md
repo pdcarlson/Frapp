@@ -7,7 +7,8 @@
 
 > The chat-first rework of `apps/web` (with downstream `apps/mobile`, `apps/landing`): chat is the
 > product spine, ops modules are integrations on top of it. Delivered as numbered chunks. Chunks
-> 01–06 are shipped; 07–12 are queued. This file tracks delivery; the durable behavior these chunks
+> 01–06 are shipped; 07 is in progress (split into per-tab sub-issues 07a–07e); 08–12 are queued.
+> This file tracks delivery; the durable behavior these chunks
 > implement now lives in the real `spec/` files linked above (no more chunk briefs in spec).
 
 ## Work units
@@ -24,7 +25,12 @@
 | 04 — Chat foundation + hot-path client | — | shipped | PR #278 | → `spec/behavior/chat/`, `spec/ui/web-dashboard/`, `spec/architecture/` |
 | 05 — Chat integrations + slash commands + push | [#433](https://github.com/pdcarlson/Frapp/issues/433) | shipped | PR #400 | issue closed (reconciled). Canon → `spec/behavior/chat/`, `spec/behavior/notifications.md` |
 | 06 — Settings shell + Org + Modules tabs | [#434](https://github.com/pdcarlson/Frapp/issues/434) | shipped | PR #487 | issue closed (reconciled). Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
-| 07 — Settings: Theme + Roles + Fields + Workflows + Dues | [#435](https://github.com/pdcarlson/Frapp/issues/435) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/behavior/chapter-config.md`, `spec/ui/web-dashboard/` |
+| 07 — Settings: Theme + Roles + Fields + Workflows + Dues | [#435](https://github.com/pdcarlson/Frapp/issues/435) | in progress | — | umbrella; split into 07a–07e sub-issues (was too big + mostly backend-blocked). Supersedes dup #490. Canon → `spec/behavior/settings/customization.md`, `spec/behavior/chapter-config.md`, `spec/ui/web-dashboard/` |
+| ↳ 07a — Settings: Workflows tab | [#537](https://github.com/pdcarlson/Frapp/issues/537) | in progress | — | UI + config wiring (`workflows[]` read/write via config endpoint, audit-logged). No new migration. Canon → `spec/behavior/settings/customization.md` → Workflows |
+| ↳ 07b — Settings: Roles tab | [#538](https://github.com/pdcarlson/Frapp/issues/538) | open | — | Pack / Matrix / Custom + new `chapter_custom_roles` CRUD API. Reconcile `/roles` IA |
+| ↳ 07c — Settings: Fields tab | [#539](https://github.com/pdcarlson/Frapp/issues/539) | open | — | custom member fields + new `chapter_custom_fields` CRUD API; options deep-cloned per chapter |
+| ↳ 07d — Settings: Dues tab | [#540](https://github.com/pdcarlson/Frapp/issues/540) | open | — | wire `chapter_dues_config` read/write (DTO/schema declare `dues` but service drops it) + guard-parsed UI |
+| ↳ 07e — Settings: Theme dark color | [#541](https://github.com/pdcarlson/Frapp/issues/541) | open | — | UI-only (backend ready): add dark picker beside accent + WCAG + palette re-apply |
 | 08 — Settings: Beta + Audit + ops-setup nudges | [#436](https://github.com/pdcarlson/Frapp/issues/436) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
 | 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | open | — | depends on 06. Canon → `spec/behavior/members.md`, `spec/ui/web-dashboard/` |
 | 10a — Ops: Events (slash + RSVP renderer + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | open | — | integration pattern → `spec/behavior/integrations.md`; module → `spec/behavior/events.md` |
@@ -51,5 +57,6 @@
   optional dashboard). The integration pattern is canonical in `spec/behavior/integrations.md`.
 - Solo project: an issue's open/closed state is its status; PRs close issues via `Closes #N`.
 - Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
-  dispatch), #485/#486 (Chunk 06 follow-ups), #490 (Chunk 07 tabs), #491 (Chunk 12 landing), #492
-  (ops-module nudges), #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels).
+  dispatch), #485/#486 (Chunk 06 follow-ups), #491 (Chunk 12 landing), #492 (ops-module nudges),
+  #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels). #490 (Chunk 07 tabs)
+  closed 2026-05-30 as a duplicate of #435.
