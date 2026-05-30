@@ -33,6 +33,6 @@
   hatch with SessionEnd teardown and denylisted MCP writes by default; B (rootless stack) is rejected.
 - #235 (Postgres-in-CI migration verification) is **subsumed → CI migration verification only** (per
   #401); the PGlite CI job (#531) owns it. #423 (PGlite RLS smoke), #356 (migrations on fresh DB), and
-  #360 (RLS coverage) are folded into / linked from #526.
+  #360 (RLS coverage) are folded into / linked from #531.
 - Still un-reconciled CI candidates (separate from the ADR-12 follow-ups): #322/#380 (Edge Function
-  tests), #424 (Edge Function deprecation spike) — revisit alongside the Edge→NestJS migration (#528).
+  tests), #424 (Edge Function deprecation spike) — revisit alongside the Edge→NestJS migration (#533).
