@@ -12,20 +12,17 @@
 alter table chapter_dues_config
   drop constraint if exists chapter_dues_config_cadence_check;
 
--- 2. Re-map any pre-existing cadence values onto the spec vocabulary before the
---    new constraint lands. 'semester' and the now-unsupported 'annual' both fall
---    back to the modal 'per_semester' (proper annual support is a follow-up).
-update chapter_dues_config
-  set cadence = 'per_semester'
-  where cadence in ('semester', 'annual');
-
--- 3. New default + CHECK matching the spec.
+-- 2. New default + CHECK matching the spec.
+-- No data re-map is needed: chapter_dues_config has had no read/write path since
+-- it was created (20260523120000) — no API, onboarding never provisions a row,
+-- and seed.sql doesn't touch it — so the table is empty in every environment and
+-- the new CHECK can't be violated by an existing row.
 alter table chapter_dues_config
   alter column cadence set default 'per_semester',
   add constraint chapter_dues_config_cadence_check
     check (cadence in ('monthly', 'per_semester', 'per_quarter'));
 
--- 4. Installment count (the spec's "toggle + count"; the toggle stays as the
+-- 3. Installment count (the spec's "toggle + count"; the toggle stays as the
 --    existing installments_allowed boolean). At least 1 when a plan exists.
 alter table chapter_dues_config
   add column if not exists installment_count int not null default 1
