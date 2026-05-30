@@ -69,6 +69,12 @@ export type PushOutcome = 'send' | 'skip-level' | 'skip-presence';
  * Apply the full chain. Order matters: presence is the cheapest skip and the
  * one that protects users from notifications they don't need (they're
  * actively reading). Level filtering follows.
+ *
+ * @mentions override a muted channel: an explicit (or default) `off` level is
+ * bypassed when the recipient is mentioned (spec `behavior/notifications.md`,
+ * "Per-Channel Mute"). The one exception is the `system_audit` kind — audit
+ * messages never page anyone unless explicitly opted in (ADR-06), so a mention
+ * does not lift their `off` default.
  */
 export function decidePush(
   input: PushDecisionInput,
@@ -81,6 +87,7 @@ export function decidePush(
     input.messageKind,
     input.preferences,
   );
+  if (input.hasMention && input.messageKind !== 'system_audit') return 'send';
   if (level === 'off') return 'skip-level';
   if (level === 'mentions' && !input.hasMention) return 'skip-level';
   return 'send';

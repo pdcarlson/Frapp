@@ -147,7 +147,7 @@ describe('decidePush', () => {
     ).toBe('send');
   });
 
-  it('off pref skips even with a mention', () => {
+  it('channel off pref still pushes on a mention (mute override)', () => {
     expect(
       decidePush(
         {
@@ -155,6 +155,30 @@ describe('decidePush', () => {
           messageKind: 'text',
           recipientIsPresent: false,
           hasMention: true,
+          preferences: [
+            {
+              user_id: 'u',
+              chapter_id: 'c',
+              scope: 'channel',
+              scope_id: 'ch-1',
+              scope_kind: null,
+              level: 'off',
+            },
+          ],
+        },
+        'ch-1',
+      ),
+    ).toBe('send');
+  });
+
+  it('channel off pref skips when there is no mention', () => {
+    expect(
+      decidePush(
+        {
+          channelName: 'general',
+          messageKind: 'text',
+          recipientIsPresent: false,
+          hasMention: false,
           preferences: [
             {
               user_id: 'u',

@@ -77,6 +77,12 @@ Users can mute specific chat channels. Muted channels:
 - Still show unread indicators in the app when opened.
 - @mentions in muted channels still generate notifications (override mute).
 
+The mention-override is implemented in the push worker's `decidePush`
+(`apps/api/src/modules/chat-push-worker/push-rules.ts`): a `hasMention` recipient is sent a
+push regardless of the resolved `off` level. The one exception is the `system_audit` kind —
+those system messages never page anyone unless explicitly opted in (see below), so a mention
+does not lift their `off` default.
+
 ## Chat notification preferences (Chunk 05)
 
 Chat-specific levels live in the `chat_notification_preferences` table (ADR-06), separately from the broader `notification_preferences` table because chat needs a tri-state (`all` / `mentions` / `off`) and two scope arms — per-channel and per-kind. Both arms are keyed by `(user_id, chapter_id, scope, coalesce(scope_id::text, scope_kind))` with a unique constraint that allows exactly one row per (scope, key).
