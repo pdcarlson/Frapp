@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { FrappLockup } from "../components/frapp-lockup";
+import { buildAuthUrls } from "../lib/auth-urls";
 import {
   BookOpen,
   CalendarDays,
@@ -105,14 +106,7 @@ const faqs = [
 ];
 
 export default function Home() {
-  const appBaseUrlRaw =
-    process.env.NEXT_PUBLIC_APP_URL ?? "https://app.frapp.live";
-  const trimmedAppBaseUrl = appBaseUrlRaw.replace(/\/$/, "");
-  const appBaseUrl = trimmedAppBaseUrl.endsWith("/signup")
-    ? trimmedAppBaseUrl.slice(0, -"/signup".length)
-    : trimmedAppBaseUrl;
-  const signupUrl = new URL("/signup", `${appBaseUrl}/`).toString();
-  const loginUrl = new URL("/login", `${appBaseUrl}/`).toString();
+  const { signupUrl, loginUrl } = buildAuthUrls(process.env.NEXT_PUBLIC_APP_URL);
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",

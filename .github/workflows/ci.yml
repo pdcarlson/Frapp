@@ -71,6 +71,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Landing unit tests
+        run: npm run test -w apps/landing
+
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
