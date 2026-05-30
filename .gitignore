@@ -51,3 +51,4 @@ supabase/.branches/
 # link checker binary (downloaded locally; never committed)
 /lychee
 lychee-*.tar.gz
+lychee-*/
