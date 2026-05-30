@@ -6,9 +6,9 @@
 npm run dev:stack
 ```
 
-This is what `scripts/local-dev-setup.sh` prints at the end. For step-by-step setup, see **[`docs/guides/getting-started.md`](../guides/getting-started.md)**. This file is the **single place** for alternatives (per-app terminals, no Infisical, mobile, Turbo quirks, URLs).
+This is what `scripts/local-dev-setup.sh` prints at the end. For step-by-step setup, see **[`docs/guides/getting-started.md`](../../guides/getting-started.md)**. This file is the **single place** for alternatives (per-app terminals, no Infisical, mobile, Turbo quirks, URLs).
 
-Bootstrap Supabase + deps: [`scripts/local-dev-setup.sh`](../../scripts/local-dev-setup.sh) from the repo root.
+Bootstrap Supabase + deps: [`scripts/local-dev-setup.sh`](../../../scripts/local-dev-setup.sh) from the repo root.
 
 ## Infisical (primary path)
 
@@ -64,7 +64,7 @@ The API has `@swc/cli` and `@swc/core` as devDependencies, enabling the `--build
 npx -w apps/api nest start --watch --builder swc
 ```
 
-For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../AGENTS.md) reference this workaround.
+For type safety, run `npm run check-types` separately. Cloud agent instructions in [`AGENTS.md`](../../../AGENTS.md) reference this workaround.
 
 ## Web visual regression suite
 
@@ -72,7 +72,7 @@ For type safety, run `npm run check-types` separately. Cloud agent instructions 
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and
 `NEXT_PUBLIC_API_URL` when no real values are in the shell. Real values always
 win — the defaults are only used to let CI capture baselines without
-credentials. See [`apps/web/tests/visual/README.md`](../../apps/web/tests/visual/README.md)
+credentials. See [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
 for the rationale and for how to refresh snapshots locally.
 
 When GitHub’s **`web-visual-regression`** job fails with small `<main>` width
@@ -89,4 +89,4 @@ import in the visual-regression environment.
 
 - [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) — Infisical project, syncs, login
 - [`ENV_REFERENCE.md`](./ENV_REFERENCE.md) — variable list per app
-- [`AGENTS.md`](../../AGENTS.md) — agent-oriented repo rules (short index)
+- [`AGENTS.md`](../../../AGENTS.md) — agent-oriented repo rules (short index)

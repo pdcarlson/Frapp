@@ -10,7 +10,7 @@
 | Landing        | Next.js (App Router)                         | `apps/landing` at frapp.live. Static/SSG for speed.                                                                   |
 | Web App        | Next.js (App Router), Tailwind, ShadCN UI    | `apps/web` at app.frapp.live. Admin dashboard.                                                                        |
 | Mobile App     | Expo (React Native), Expo Router, NativeWind | `apps/mobile`. Member experience. iOS + Android.                                                                      |
-| Developer docs | Markdown in-repo                             | [`docs/guides/`](../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
+| Developer docs | Markdown in-repo                             | [`docs/guides/`](../../docs/guides/README.md) + `spec/`. No deployed docs web app; a public site may return post-launch. |
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
 | Auth           | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                    |
@@ -90,10 +90,10 @@ Frapp/
 
 ### 3.5 Documentation (no `apps/docs` web app)
 
-- **Authoring:** Developer guides in **[`docs/guides/`](../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
+- **Authoring:** Developer guides in **[`docs/guides/`](../../docs/guides/README.md)**; product and architecture in **`spec/`**. Read and edit in GitHub or your editor; there is no separate Next.js documentation deployment in this repo for now.
 - **Spec rendering:** Previously the removed docs app rendered `spec/*.md` in a browser. Today, use the repo view on GitHub (or a local markdown preview). A future public docs site may restore styled rendering.
 - **Sync rule:** When behavior, architecture, or workflows change, update **`docs/`** and/or **`spec/`** in the same change set. Divergence is a bug.
-  - **Enforcement:** CI fails PRs that change product code without also updating **`docs/`** or **`spec/`**. See [`docs/internal/DOCS_CI.md`](../docs/internal/DOCS_CI.md).
+  - **Enforcement:** CI fails PRs that change product code without also updating **`docs/`** or **`spec/`**. See [`docs/internal/DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md).
   - **Workflow:** The PR template requires a “Docs / Spec impact” section; treat “None” as an explicit claim that reviewers should challenge.
 
 ---
@@ -374,7 +374,7 @@ Configurable alerts via the monitoring provider:
 
 **Implementation status (Phase 2):** Events (CRUD), Event Attendance (check-in, list, update status), Points (me, leaderboard, per-member summary, adjust, **chapter-wide transaction list**), and Polls (create in channel, get, vote / remove vote, **chapter-wide list**) are implemented and included in the OpenAPI spec.
 
-**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Treasurer includes `points:view_all` and `polls:view_all` alongside billing and points tools. Vice President and Secretary system roles include `members:view` and `polls:view_all` so the polls dashboard matches `PollController` guards (see seeded role matrix in [`behavior/rbac.md`](behavior/rbac.md)). Full query parameters, pagination, and invariants: [`behavior/points.md`](behavior/points.md) and [`behavior/polls.md`](behavior/polls.md).
+**Dashboard list surfaces (permissions):** `GET /v1/points/transactions` is gated by `points:view_all` (same permission as `GET /v1/points/members/:userId` for another member’s summary). `GET /v1/polls` requires `members:view` (controller baseline) plus `polls:view_all` on the list route; it is **not** part of the default Member role seed. Treasurer includes `points:view_all` and `polls:view_all` alongside billing and points tools. Vice President and Secretary system roles include `members:view` and `polls:view_all` so the polls dashboard matches `PollController` guards (see seeded role matrix in [`behavior/rbac.md`](../behavior/rbac.md)). Full query parameters, pagination, and invariants: [`behavior/points.md`](../behavior/points.md) and [`behavior/polls.md`](../behavior/polls.md).
 
 ---
 
@@ -573,7 +573,7 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 ### Sources
 
-The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casual chat is not indexed — see [`behavior/ai.md`](behavior/ai.md) for the product rules.
+The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casual chat is not indexed — see [`behavior/ai.md`](../behavior/ai.md) for the product rules.
 
 | Source           | Table / location                                     | Indexer                                       |
 | ---------------- | ---------------------------------------------------- | --------------------------------------------- |
@@ -600,15 +600,15 @@ The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casua
 
 ### Out of scope for v1
 
-- Chat indexing (see [`behavior/ai.md`](behavior/ai.md) non-goals).
-- Vault content (see [`behavior/vault.md`](behavior/vault.md)).
+- Chat indexing (see [`behavior/ai.md`](../behavior/ai.md) non-goals).
+- Vault content (see [`behavior/vault.md`](../behavior/vault.md)).
 - Cross-chapter aggregate analytics (would require national-tier infrastructure).
 
 ---
 
 ## 14. Vault Key Management
 
-The vault ([`behavior/vault.md`](behavior/vault.md)) stores high-sensitivity chapter content (risk, standards, legal). Key management lives in a managed KMS / HSM, not in Frapp application memory.
+The vault ([`behavior/vault.md`](../behavior/vault.md)) stores high-sensitivity chapter content (risk, standards, legal). Key management lives in a managed KMS / HSM, not in Frapp application memory.
 
 ### Per-chapter key
 

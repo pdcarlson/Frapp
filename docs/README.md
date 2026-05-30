@@ -1,30 +1,33 @@
 # Documentation index
 
-Start here to find developer guides, operator runbooks, and how they relate to **`spec/`** (product and architecture truth).
+Developer guides, operator runbooks, and work tracking. Product and architecture truth lives in **[`spec/`](../spec/README.md)**.
 
-## Where things live
+## Folders
 
-| Area                            | Path                                     | Use for                                                                                |
-| ------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| **Developer guides**            | [`docs/guides/`](guides/README.md)       | Onboarding, local dev pointers, testing, API/database overview, contributing narrative |
-| **Internal / ops**              | [`docs/internal/`](internal/README.md)   | Secrets, incidents, branch protection, agent/CI reference, design ops                  |
-| **Product & architecture spec** | [`spec/`](../spec/README.md)             | Product behavior, UI specs, security notes, environments, test specs                   |
-| **Deployment runbook**          | [`DEPLOYMENT.md`](DEPLOYMENT.md)         | Full operator deployment setup (DNS, providers, staging/production)                    |
-| **Performance notes**           | [`performance/`](performance/README.md)  | Ad-hoc performance investigations                                                      |
-| **Security fix log**            | [`SECURITY_FIXES.md`](internal/security/SECURITY_FIXES.md) | Historical security fixes (link to `docs/internal/security/` for durable rules)             |
-| **Hooks package**               | [`hooks/`](hooks/README.md)              | Conventions and tests for `packages/hooks`                                             |
-| **Archive**                     | [`archive/`](archive/README.md)          | Historical audits and roadmaps (not canonical)                                         |
+| Area | Path | Use for |
+| ---- | ---- | ------- |
+| **Backlog** | [`backlog/`](backlog/README.md) | Work tracking and project status — the source of truth for what is shipped vs. queued (mirrored by GitHub issues) |
+| **Guides** | [`guides/`](guides/README.md) | Contributor docs: getting started, testing, API/database overview, env config, Docker, deployment |
+| **Internal** | [`internal/`](internal/README.md) | Operations, CI/CD, design system, mobile, quality, environment, security, services, and the design reference |
+| **Performance** | [`performance/`](performance/README.md) | Ad-hoc performance investigations and optimization notes |
+| **Hooks** | [`hooks/`](hooks/README.md) | Conventions and tests for `packages/hooks` |
 
-Conventions for what to update in a PR: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
+## Internal subfolders
 
-## CI: docs/spec sync
+| Topic | Path |
+| ----- | ---- |
+| Operations & runbooks | [`internal/ops/`](internal/ops/DEPLOYMENT.md) |
+| CI/CD & automations | [`internal/ci-cd/`](internal/ci-cd/DOCS_CI.md) |
+| Design system | [`internal/design-system/`](internal/design-system/UI_UX_SYSTEM.md) |
+| Mobile | [`internal/mobile/`](internal/mobile/MOBILE_TESTING.md) |
+| Quality | [`internal/quality/`](internal/quality/PR_REVIEW_PROCESS.md) |
+| Environment & secrets | [`internal/environment/`](internal/environment/ENV_REFERENCE.md) |
+| Security | [`internal/security/`](internal/security/README.md) |
+| Design reference (prototype) | [`internal/design-reference/`](internal/design-reference/README.md) |
+| Service performance notes | [`internal/services/`](internal/services/chapter-service-perf.md) |
 
-Pull requests that change files **outside** `docs/` or `spec/` must also change **at least one** file under `docs/` or `spec/`. Details: [`docs/internal/DOCS_CI.md`](internal/DOCS_CI.md) (`scripts/check-docs-impact.mjs`).
+## Conventions
 
-## Quick links
+What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
 
-- Web dashboard **chapter-wide list APIs** (`GET /v1/points/transactions`, `GET /v1/polls`) and **`polls:view_all` / default role seeds**: behavior in [`spec/behavior/`](../spec/behavior/README.md) ([`rbac.md`](../spec/behavior/rbac.md), [`points.md`](../spec/behavior/points.md), [`polls.md`](../spec/behavior/polls.md)), nav and screens in [`spec/ui/web-dashboard/README.md`](../spec/ui/web-dashboard/README.md), implementation notes in [`docs/guides/api-architecture.md`](guides/api-architecture.md) (guards example + dashboard list endpoints).
-- Hands-on setup: [`docs/guides/getting-started.md`](guides/getting-started.md)
-- Local dev detail: [`docs/internal/environment/LOCAL_DEV.md`](internal/environment/LOCAL_DEV.md)
-- Environment variables: [`docs/internal/environment/ENV_REFERENCE.md`](internal/environment/ENV_REFERENCE.md)
-- Deployment overview (short): [`docs/guides/deployment.md`](guides/deployment.md)
+The docs/spec CI gate (a change outside `docs/` or `spec/` must also touch one of them) is described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md).

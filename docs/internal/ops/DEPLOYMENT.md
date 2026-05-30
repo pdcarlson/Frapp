@@ -465,7 +465,7 @@ See `CONTRIBUTING.md` for the full list of CI jobs required for merge.
 
 Render builds the API with `nest build` inside `apps/api/Dockerfile` (see the builder stage). That uses `tsconfig.build.json`, which can surface TypeScript errors that never ran in CI if the API workspace had no `check-types` task aligned with that config.
 
-CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `CONTRIBUTING.md` and applied by [`scripts/configure-branch-protection.mjs`](../scripts/configure-branch-protection.mjs); re-run `npm run configure:branch-protection` after changing CI job names).
+CI now runs **`npm run build -w apps/api`** in `lint-and-typecheck` (same `nest build` as production) and **`docker build -f apps/api/Dockerfile .`** in a separate `api-docker-build` job so the image layer that compiles the API is exercised on every push and PR. **`api-docker-build`** is a required status check for merge (listed in `CONTRIBUTING.md` and applied by [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs); re-run `npm run configure:branch-protection` after changing CI job names).
 
 **Optional hardening (not implemented here):** poll the Render [Deploys API](https://render.com/docs/deploys) after CI for the commit SHA and fail if the deploy never leaves `build_in_progress` / reaches `build_failed` — closest to “exactly what Render does,” but slower and flakier than building the same Dockerfile in Actions.
 
@@ -476,9 +476,9 @@ After a push to `main` or `production`, `.github/workflows/verify-deployments.ym
 - **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
 - **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral (turbo-ignore skip). Treat "no deployment for this SHA within 3 minutes" as neutral, because turbo-ignore legitimately skips builds when nothing in the app tree changed.
 
-The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
+The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
 
-Script implementations and unit tests live under [`scripts/ci/`](../scripts/ci/).
+Script implementations and unit tests live under [`scripts/ci/`](../../../scripts/ci/).
 
 ### Secrets in CI vs CD
 
@@ -508,7 +508,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **Canonical values stored once** per environment — no duplication.
 - **Secret references** handle framework prefixes (`NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}`).
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
-- **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/LOCAL_DEV.md`](internal/LOCAL_DEV.md).
+- **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
 
 ### Sync Map (7 of 10 free-tier integrations; docs Vercel project retired)
 

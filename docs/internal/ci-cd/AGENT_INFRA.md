@@ -1,6 +1,6 @@
 # Agent infrastructure and CI reference
 
-Operational detail for AI agents and maintainers working on deploys, CI, secrets, and provider APIs. Day-to-day local setup lives in [`LOCAL_DEV.md`](./LOCAL_DEV.md).
+Operational detail for AI agents and maintainers working on deploys, CI, secrets, and provider APIs. Day-to-day local setup lives in [`LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
 
 ## Research-first workflow
 
@@ -11,7 +11,7 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 3. Align proposals to observed reality; avoid stale assumptions.
 4. **Never print secret values** — only names and presence/absence.
 
-**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.cursor/skills/infrastructure-research.md`](../../.cursor/skills/infrastructure-research.md).
+**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.cursor/skills/infrastructure-research.md`](../../../.cursor/skills/infrastructure-research.md).
 
 ## Optional environment credentials
 
@@ -74,7 +74,7 @@ npm run configure:branch-protection -- --dry-run
 npm run configure:branch-protection
 ```
 
-Deeper deploy architecture: [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
+Deeper deploy architecture: [`../ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md).
 
 ## Infisical sync map
 
@@ -88,7 +88,7 @@ Deeper deploy architecture: [`../DEPLOYMENT.md`](../DEPLOYMENT.md).
 | 6   | production    | Vercel → frapp-landing (Production) |
 | 7   | per-env       | GitHub Actions (OIDC)               |
 
-Project ID is documented in [`SECRETS_MANAGEMENT.md`](./SECRETS_MANAGEMENT.md) and root `.infisical.json`.
+Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) and root `.infisical.json`.
 
 ## GitHub environments and bootstrap secrets
 
@@ -121,7 +121,7 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:api-contract` — OpenAPI / SDK drift
 - `npm run check:migration-safety` — migrations + promotion docs
 
-Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../.cursor/skills/testing.md).
+Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../../.cursor/skills/testing.md).
 
 ## Claude Code project settings
 
@@ -131,7 +131,7 @@ Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../.cursor/ski
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop (open PR → `subscribe_pr_activity` → fix CI failures and review comments until merge-ready, or a self-contained next step). |
 
-Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
+Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
 
 ## Agent dev stack (cloud sessions)
 

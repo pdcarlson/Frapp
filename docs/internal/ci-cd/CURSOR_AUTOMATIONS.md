@@ -5,7 +5,7 @@ in its **dashboard only** (config-as-code is not supported yet — it's an open 
 this file is the source of truth you copy into the dashboard. Keep it in sync when you change the
 automation.
 
-The behavior the agent must follow lives in [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md);
+The behavior the agent must follow lives in [`.cursor/skills/suggestion-triage.md`](../../../.cursor/skills/suggestion-triage.md);
 the dashboard prompt is intentionally thin and defers to that skill.
 
 ---
@@ -80,7 +80,7 @@ grouped by severity. If nothing clears the bar, take no action and report "no ne
 | Secrets / env | `GITHUB_PAT` Cursor env secret = fine-grained PAT, **Issues: read/write** on `pdcarlson/Frapp` | ⚠️ Cursor pre-auths `gh` as its own GitHub App, which 403s on label/issue writes (`Resource not accessible by integration`). The skill runs `export GH_TOKEN="$GITHUB_PAT"` + `gh api user` to force/verify the PAT (`gh` doesn't read `GITHUB_PAT` directly). `GITHUB_PAT` is distinct from Cursor's injected `GITHUB_TOKEN`. **Not** in the repo. |
 | Memory | **on** | Lets the agent learn what it already filed. |
 | Network access | default | Audit is local to the sandbox; `npm audit` needs registry access. |
-| Sandbox setup | from [`.cursor/environment.json`](../../.cursor/environment.json) (`npm install`) | Makes lint/typecheck/`npm audit` available. |
+| Sandbox setup | from [`.cursor/environment.json`](../../../.cursor/environment.json) (`npm install`) | Makes lint/typecheck/`npm audit` available. |
 | Slack summary | off (optional) | Enable later if you want a digest posted to a channel. |
 
 ---
@@ -115,7 +115,7 @@ It's embedded in every issue body as a hidden marker:
 
 Before creating an issue the agent searches **open and closed** `label:suggestion` issues for the
 `fp=` string and skips on any match — so re-runs (and the merge-vs-weekly overlap) never duplicate.
-Full rules: [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md).
+Full rules: [`.cursor/skills/suggestion-triage.md`](../../../.cursor/skills/suggestion-triage.md).
 
 ---
 
@@ -169,6 +169,6 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 
 ## Maintenance
 
-- Behavior changes go in [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md); only re-paste the dashboard prompt if the prompt itself changes.
+- Behavior changes go in [`.cursor/skills/suggestion-triage.md`](../../../.cursor/skills/suggestion-triage.md); only re-paste the dashboard prompt if the prompt itself changes.
 - Keep the label list aligned with `AGENTS.md`.
-- See the environment notes in [`spec/environments/README.md`](../../spec/environments/README.md#cursor-automations-environment).
+- See the environment notes in [`spec/environments/README.md`](../../../spec/environments/README.md#cursor-automations-environment).

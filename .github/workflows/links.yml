@@ -1,0 +1,24 @@
+name: Links
+
+on:
+  pull_request:
+    branches: [main, production]
+  push:
+    branches: [main, production]
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Internal links + heading anchors only. `--offline` never hits external
+      # URLs; options are passed as CLI args (no lychee.toml) to stay
+      # version-stable across lychee releases. design-reference is the
+      # non-maintained visual prototype bundle.
+      - name: Check internal markdown links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: "--offline --include-fragments --no-progress --exclude-path docs/internal/design-reference docs spec AGENTS.md README.md CONTRIBUTING.md"
+          fail: true

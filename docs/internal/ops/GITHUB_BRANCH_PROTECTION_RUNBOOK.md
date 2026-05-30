@@ -77,7 +77,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `mobile-validate`    | Mobile lint + typecheck                                                                         |
 | `ci-scripts-tests`   | `node --test` unit tests for deploy-gate scripts under `scripts/ci/`                            |
 
-**Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
+**Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
 
 **Docs check (from `.github/workflows/docs.yml`):**
 
@@ -109,7 +109,7 @@ Recipe to mark them required on `production` (do not run until the workflow has 
      | jq -r '.check_runs[].name'
    ```
 
-2. Add the three context names to the production required-checks list in [`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+2. Add the three context names to the production required-checks list in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs).
 
 3. Dry-run and apply:
 
@@ -122,7 +122,7 @@ Do **not** mark these required on `main` — staging deploys are allowed to fail
 
 ### CodeRabbit review policy
 
-CodeRabbit reviews are advisory on both branches. There is no required CodeRabbit status check. See [`CODERABBIT_RUNBOOK.md`](./CODERABBIT_RUNBOOK.md) for how CodeRabbit is configured and triggered.
+CodeRabbit reviews are advisory on both branches. There is no required CodeRabbit status check. See [`CODERABBIT_RUNBOOK.md`](../ci-cd/CODERABBIT_RUNBOOK.md) for how CodeRabbit is configured and triggered.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

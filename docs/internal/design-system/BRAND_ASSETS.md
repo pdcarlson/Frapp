@@ -1,6 +1,6 @@
 # Brand assets — operations
 
-> Canonical specs: [spec/ui/assets.md](../../spec/ui/assets.md) and [spec/ui/brand-identity.md](../../spec/ui/brand-identity.md).
+> Canonical specs: [spec/ui/assets.md](../../../spec/ui/assets.md) and [spec/ui/brand-identity.md](../../../spec/ui/brand-identity.md).
 
 ## Locations
 

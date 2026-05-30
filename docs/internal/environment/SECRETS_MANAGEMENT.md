@@ -64,7 +64,7 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 ### 3. Add Canonical Values
 
-For each environment, add the canonical values from the table in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#canonical-variables). Start with staging:
+For each environment, add the canonical values from the table in [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#canonical-variables--the-complete-grid). Start with staging:
 
 | Variable                    | Staging value                                      |
 | --------------------------- | -------------------------------------------------- |

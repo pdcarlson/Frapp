@@ -105,4 +105,4 @@ In CI, we also run:
 
 PRs that change files **outside** `docs/` and `spec/` must also change **at least one** file under **`docs/`** or **`spec/`**. Prefer updating **`docs/`** (e.g. `docs/guides/`) and **`spec/`** together when behavior changes.
 
-See also [`docs/internal/DOCS_CI.md`](../internal/DOCS_CI.md) for rationale and optional future tightening of the gate.
+See also [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md) for rationale and optional future tightening of the gate.

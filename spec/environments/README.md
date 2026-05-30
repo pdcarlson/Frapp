@@ -52,7 +52,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)). It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (unlike Jules cloud VMs — see `scripts/jules-setup.sh`). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -75,7 +75,7 @@ npm run dev:stack
 
 If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npx supabase status -o env`.
 
-See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
+See **[`docs/internal/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
 **Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
 
@@ -137,7 +137,7 @@ npm run generate -w packages/api-sdk
 - **Stripe:** Live mode (`sk_live_`). Requires business verification (KYC) before launch.
 - **Monitoring:** Error tracking (Sentry or equivalent), structured logging, uptime checks.
 
-> **Full setup walkthrough:** See [`docs/internal/ops/DEPLOYMENT.md`](../docs/internal/ops/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
+> **Full setup walkthrough:** See [`docs/internal/ops/DEPLOYMENT.md`](../../docs/internal/ops/DEPLOYMENT.md) for step-by-step instructions covering Vercel, Render, Supabase, EAS, DNS, and environment variables.
 
 ---
 
@@ -172,7 +172,7 @@ These checks are also required for merge:
 - CodeRabbit feedback is advisory on both branches. There is no required CodeRabbit status check.
 - On `main`, conversation resolution is not required, so unresolved CodeRabbit comment threads do not block merge.
 - On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; CodeRabbit does not).
-- Manual trigger if auto-review misses a PR: post a top-level `@coderabbitai review` comment. Full runbook: [`docs/internal/CODERABBIT_RUNBOOK.md`](../docs/internal/CODERABBIT_RUNBOOK.md).
+- Manual trigger if auto-review misses a PR: post a top-level `@coderabbitai review` comment. Full runbook: [`docs/internal/CODERABBIT_RUNBOOK.md`](../../docs/internal/ci-cd/CODERABBIT_RUNBOOK.md).
 
 ### Key Design Decisions
 
@@ -261,7 +261,7 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 
 Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication, no environment suffixes.
 
-See **[`docs/internal/ENV_REFERENCE.md`](../docs/internal/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/SECRETS_MANAGEMENT.md`](../docs/internal/SECRETS_MANAGEMENT.md)** for the setup guide.
+See **[`docs/internal/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md)** for the setup guide.
 
 ### Bootstrap Secrets (GitHub only)
 
@@ -282,7 +282,7 @@ npx infisical login       # One-time setup
 npm run dev:stack         # Default: API + web + landing (repo root)
 ```
 
-Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../docs/internal/LOCAL_DEV.md)**.
+Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)**.
 
 ### Rules
 
@@ -329,10 +329,10 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 ## Jules Cloud Environment
 
 The Jules agent execution environment uses a pre-configured headless cloud VM.
-Bootstrap with [`scripts/jules-setup.sh`](../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
+Bootstrap with [`scripts/jules-setup.sh`](../../scripts/jules-setup.sh): it starts `dockerd`, runs `npm install`, `npx supabase start`, `npx supabase db push --local`, then `check-types` and `check:migration-safety`. Run or paste that script in the Jules "Initial Setup" flow — **do not** use it on a normal developer machine (use `scripts/local-dev-setup.sh` with Docker Desktop / Engine instead).
 
 Agent-oriented rules and skills live under `.cursor/` (canonical). The earlier `.jules/` prompt mirror was removed because no automation consumed it and its contents had drifted from `.cursor/`.
 
 ## Cursor Automations Environment
 
-Cursor Automations run a cloud agent in a fresh sandbox cloned from `main` on a schedule and/or GitHub event. The sandbox bootstraps from [`.cursor/environment.json`](../.cursor/environment.json) (currently `npm install`) — read-only audits don't need Docker/Supabase, unlike the Jules VM above. The automations are configured in the Cursor dashboard (config-as-code isn't supported yet), so the canonical prompt and every setting are version-controlled in [`docs/internal/CURSOR_AUTOMATIONS.md`](../docs/internal/CURSOR_AUTOMATIONS.md); the agent's behavior contract is [`.cursor/skills/suggestion-triage.md`](../.cursor/skills/suggestion-triage.md). The current automation ("Suggestion Triage") runs on PR-merge and weekly, performs a broad product + engineering review (engineering gaps; product/behavior gaps grounded in `spec/`; creative next-steps/research), and files deduplicated, labeled GitHub issues — it never edits code or opens PRs.
+Cursor Automations run a cloud agent in a fresh sandbox cloned from `main` on a schedule and/or GitHub event. The sandbox bootstraps from [`.cursor/environment.json`](../../.cursor/environment.json) (currently `npm install`) — read-only audits don't need Docker/Supabase, unlike the Jules VM above. The automations are configured in the Cursor dashboard (config-as-code isn't supported yet), so the canonical prompt and every setting are version-controlled in [`docs/internal/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md); the agent's behavior contract is [`.cursor/skills/suggestion-triage.md`](../../.cursor/skills/suggestion-triage.md). The current automation ("Suggestion Triage") runs on PR-merge and weekly, performs a broad product + engineering review (engineering gaps; product/behavior gaps grounded in `spec/`; creative next-steps/research), and files deduplicated, labeled GitHub issues — it never edits code or opens PRs.
