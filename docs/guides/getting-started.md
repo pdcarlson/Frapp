@@ -2,6 +2,11 @@
 
 This guide walks you through setting up the Frapp monorepo and running the full stack locally with Supabase.
 
+> **Using the Claude Code web sandbox?** That's the primary dev environment and it sets
+> itself up automatically — skip this guide and see
+> [`../internal/environment/CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md).
+> The steps below are for local/laptop development.
+
 ## Prerequisites
 
 - **Node.js** 20+
@@ -30,7 +35,7 @@ This runs `npm install`, `npx supabase start`, `npx supabase db push --local`, t
 - **`--quick`** — Skips post-install checks (typecheck, migration-safety).
 - **`--reset-supabase`** — Runs `supabase stop` for **this project only** (good for stuck or exited containers); **keeps** Docker volumes.
 - **`--reset-supabase-data`** — Runs `supabase stop --no-backup` and **wipes local Supabase data volumes** (destructive). See `bash scripts/local-dev-setup.sh --help`. Use when local Postgres was created under an older major than `[db] major_version` in `supabase/config.toml`.
-- **Retries / Docker** — The script does **not** stop unrelated containers or start `dockerd`. If `supabase start` fails, you may get an interactive, **volume-preserving** retry (it does not fix Postgres major-version mismatches). On headless cloud VMs without Docker Desktop, use `scripts/jules-setup.sh`.
+- **Retries / Docker** — The script does **not** stop unrelated containers or start `dockerd`. If `supabase start` fails, you may get an interactive, **volume-preserving** retry (it does not fix Postgres major-version mismatches).
 
 If `./scripts/local-dev-setup.sh` fails with `env: 'bash\r': No such file`, the file had Windows (CRLF) line endings. Prefer `bash scripts/local-dev-setup.sh`, or re-checkout after `.gitattributes` normalizes `*.sh` to LF.
 

@@ -6,9 +6,13 @@ import { SupabasePointTransactionRepository } from '../../infrastructure/supabas
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import { SupabaseSemesterArchiveRepository } from '../../infrastructure/supabase/repositories/supabase-semester-archive.repository';
 import { NotificationModule } from '../notification/notification.module';
+import { ChatModule } from '../chat/chat.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [NotificationModule],
+  // ChatModule → ChatService (posts the /points card); AuthModule → USER_REPOSITORY
+  // (resolves actor/recipient display names embedded in the card payload).
+  imports: [NotificationModule, ChatModule, AuthModule],
   controllers: [PointsController],
   providers: [
     PointsService,

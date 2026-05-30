@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
@@ -64,6 +65,25 @@ export class BetaConfigDto {
   @IsOptional()
   @IsEnum(['sidebar_pill', 'top_banner', 'corner_badge', 'breadcrumb_pill'])
   style?: string;
+}
+
+export class WorkflowConfigDto {
+  @ApiPropertyOptional({ description: 'Workflow key from the chapter catalog' })
+  @IsString()
+  key!: string;
+
+  @ApiPropertyOptional()
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional numeric threshold (guard-parsed; NaN/negative rejected)',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  threshold?: number;
 }
 
 export class DuesConfigDto {
@@ -153,4 +173,11 @@ export class PatchChapterConfigDto {
   @ValidateNested()
   @Type(() => DuesConfigDto)
   dues?: DuesConfigDto;
+
+  @ApiPropertyOptional({ type: () => WorkflowConfigDto, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => WorkflowConfigDto)
+  workflows?: WorkflowConfigDto[];
 }

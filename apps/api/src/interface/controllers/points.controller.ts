@@ -104,6 +104,8 @@ export class PointsController {
       amount: dto.amount,
       category: dto.category,
       reason: dto.reason,
+      channelId: dto.channel_id,
+      clientMessageId: dto.client_message_id,
     });
   }
 }

@@ -10,6 +10,15 @@ import type { PatchChapterConfig } from "@repo/validation";
  * defaults overlaid with per-chapter overrides). Known fields are typed; the
  * index signature keeps it forward-compatible with fields added server-side.
  */
+/** A workflow row in the merged config: catalog presentation + chapter state. */
+export interface OrgWorkflow {
+  key: string;
+  label: string;
+  enabled: boolean;
+  threshold?: number;
+  units?: string;
+}
+
 export interface OrgConfig {
   org_archetype?: string;
   enabled_modules?: Record<string, boolean>;
@@ -17,6 +26,7 @@ export interface OrgConfig {
   branding?: Record<string, unknown>;
   theme_palette?: Record<string, string>;
   beta_config?: Record<string, unknown>;
+  workflows?: OrgWorkflow[];
   [key: string]: unknown;
 }
 

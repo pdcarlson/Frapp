@@ -105,7 +105,25 @@ export interface SendMessageInput {
   payload?: Record<string, any> | null;
   reply_to_id?: string | null;
   metadata?: Record<string, any>;
+  /**
+   * Internal-only: set by trusted server callers (e.g. `PointsService` posting
+   * a `points` card after a committed ledger write) to bypass the
+   * server-originated-kind guard. Never present on `SendMessageDto`, so a
+   * client request can never set it.
+   */
+  system_originated?: boolean;
 }
+
+/**
+ * Kinds that assert a server-side side effect (a ledger write, an audit row).
+ * A client must never post these directly — only a trusted server caller may,
+ * via `SendMessageInput.system_originated`. `loading` stays client-postable: it
+ * is the optimistic placeholder for the heavy-command pattern.
+ */
+const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
+  'points',
+  'system_audit',
+]);
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
@@ -301,6 +319,16 @@ export class ChatService {
   ): Promise<{ message: ChatMessage; deduplicated: boolean }> {
     if (!input.content.trim()) {
       throw new BadRequestException('Message content cannot be empty');
+    }
+
+    if (
+      input.kind &&
+      SERVER_ONLY_KINDS.has(input.kind) &&
+      input.system_originated !== true
+    ) {
+      throw new ForbiddenException(
+        `Messages of kind "${input.kind}" are server-originated and cannot be posted directly`,
+      );
     }
 
     const channel = await this.assertChannelAccess(

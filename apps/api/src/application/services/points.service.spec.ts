@@ -13,8 +13,13 @@ import {
   SEMESTER_ARCHIVE_REPOSITORY,
   ISemesterArchiveRepository,
 } from '../../domain/repositories/semester-archive.repository.interface';
+import {
+  USER_REPOSITORY,
+  IUserRepository,
+} from '../../domain/repositories/user.repository.interface';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 
 describe('PointsService', () => {
   let service: PointsService;
@@ -23,6 +28,8 @@ describe('PointsService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockUserRepo: jest.Mocked<IUserRepository>;
+  let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
 
   const txn1: PointTransaction = {
     id: 'pt-1',
@@ -84,6 +91,24 @@ describe('PointsService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockUserRepo = {
+      findById: jest.fn(),
+      findByIds: jest.fn().mockResolvedValue([
+        { id: 'admin-1', display_name: 'Alex Admin' },
+        { id: 'user-2', display_name: 'Bobby Member' },
+      ]),
+      findBySupabaseAuthId: jest.fn(),
+      findByEmail: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    };
+
+    mockChatService = {
+      sendMessage: jest
+        .fn()
+        .mockResolvedValue({ message: {}, deduplicated: false }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PointsService,
@@ -92,7 +117,9 @@ describe('PointsService', () => {
           provide: SEMESTER_ARCHIVE_REPOSITORY,
           useValue: mockSemesterArchiveRepo,
         },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -414,6 +441,106 @@ describe('PointsService', () => {
       });
 
       expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('posts a server-originated points card when a channel + client id are given', async () => {
+      const created: PointTransaction = {
+        id: 'pt-card',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'great work',
+        metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+
+      await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 5,
+        category: 'MANUAL',
+        reason: 'great work',
+        channelId: 'chan-1',
+        clientMessageId: 'cmid-1',
+      });
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          channel_id: 'chan-1',
+          sender_id: 'admin-1',
+          kind: 'points',
+          client_message_id: 'cmid-1',
+          system_originated: true,
+          payload: expect.objectContaining({
+            actor_name: 'Alex Admin',
+            recipient_user_id: 'user-2',
+            recipient_name: 'Bobby Member',
+            amount: 5,
+            category: 'MANUAL',
+            reason: 'great work',
+            transaction_id: 'pt-card',
+          }),
+        }),
+      );
+    });
+
+    it('does not post a card for a dashboard adjustment (no channel id)', async () => {
+      const created: PointTransaction = {
+        id: 'pt-nocard',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'dashboard reward',
+        metadata: { adjusted_by: 'admin-1', reason: 'dashboard reward' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+
+      await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 5,
+        category: 'MANUAL',
+        reason: 'dashboard reward',
+      });
+
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('still commits the ledger when the chat post fails (append-only, best-effort)', async () => {
+      const created: PointTransaction = {
+        id: 'pt-besteffort',
+        chapter_id: 'ch-1',
+        user_id: 'user-2',
+        amount: 5,
+        category: 'MANUAL',
+        description: 'great work',
+        metadata: { adjusted_by: 'admin-1', reason: 'great work' },
+        created_at: '2026-02-26T20:00:00.000Z',
+      };
+      mockPointTxnRepo.create.mockResolvedValue(created);
+      mockChatService.sendMessage.mockRejectedValue(new Error('channel gone'));
+
+      const result = await service.adjustPoints({
+        chapterId: 'ch-1',
+        targetUserId: 'user-2',
+        adminUserId: 'admin-1',
+        amount: 5,
+        category: 'MANUAL',
+        reason: 'great work',
+        channelId: 'chan-1',
+        clientMessageId: 'cmid-1',
+      });
+
+      expect(result).toEqual(created);
+      expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
     });
   });
 
