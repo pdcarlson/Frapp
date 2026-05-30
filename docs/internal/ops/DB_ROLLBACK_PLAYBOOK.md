@@ -66,6 +66,19 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback Chunk 07d dues config alignment
+* **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`
+* **Action (forward-fix)**: Drop the added column and restore the prior cadence CHECK/default:
+  ```sql
+  ALTER TABLE chapter_dues_config DROP COLUMN IF EXISTS installment_count;
+  ALTER TABLE chapter_dues_config DROP CONSTRAINT IF EXISTS chapter_dues_config_cadence_check;
+  ALTER TABLE chapter_dues_config
+    ALTER COLUMN cadence SET DEFAULT 'semester',
+    ADD CONSTRAINT chapter_dues_config_cadence_check
+      CHECK (cadence IN ('semester','monthly','annual'));
+  ```
+* **Note**: Safe at any time — `chapter_dues_config` has no write path until the API shipped in this chunk, so the table is empty and there is no data to lose. If rows exist by rollback time, any `per_semester`/`per_quarter` value must be reconciled to the old vocabulary first or the restored CHECK will reject them.
+
 ## Rollback analytics opt-out flag
 * **Migration**: `20260530180000_chapter_analytics_opt_out.sql`
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
