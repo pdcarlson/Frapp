@@ -1,5 +1,14 @@
 # Chat — Discord/Slack/GroupMe Hybrid
 
+## Chat is the spine
+
+Chat is not a module — it is the spine of the app, and every other capability (events, tasks, dues, points, polls) is a **chat integration** surfaced inline in conversation rather than behind a separate nav tab. The mobile app opens directly into chat.
+
+- **Chat is non-optional. It cannot be disabled.** Every chapter always has, at minimum: `#general` (everyone, default landing), `#announcements` (exec-write, member-read, push by default), `#chapter-audit` (system-write only, member-read — the audit feed), and DMs / group DMs (always on).
+- **Modules-as-integrations.** When an ops module is enabled it does not get a top-level nav tab first. It gets: (1) one or more **slash commands** in chat, (2) a **rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit), (3) a **system channel** where the module's notifications land (`#events`, `#dues`, etc.) so the firehose doesn't drown `#general`, and (4) *optionally* a secondary dashboard page for the longer-form view. The dashboard is secondary to the chat experience, never primary.
+- **Slash-command dispatch** is the entry point for module actions — a treasurer typing `/dues remind overdue` in `#general` gets a rich card inline, no tab-switching. The command catalog, dispatch path, and renderer registry are specified in [integrations.md](./integrations.md).
+- Disabling a paid module hides its slash commands, mutes its system channel, and hides its dashboard page.
+
 ## Channels
 
 **Types:**
@@ -20,7 +29,8 @@
   - **Search is not a side-channel:** `GET /v1/search` filters chat-message hits to channels the caller can read, using the same predicate. Snippets never include messages from inaccessible (private/DM/role-gated/other-chapter) channels. The same rule applies to the chapter-wide poll list (see `polls.md`).
 - **Channel categories** (like Discord): chapters can organize channels into named groups (e.g. "General", "Executive", "Committees"). Categories are display-only grouping with a sort order. Channels not assigned to a category appear in a default "Channels" group.
 - **Default channels** created on chapter setup (`DEFAULT_CHANNELS` in `apps/api/src/domain/constants/permissions.ts`): `#general` (PUBLIC), `#announcements` (all-read, requires `announcements:post` to write), `#chapter-audit` (PUBLIC, read-only — system-write audit feed, all members read), `#alumni` (ROLE_GATED, visible to Alumni role + active members).
-- **Seeding happens at chapter creation (applies to all tiers)** — both `POST /v1/chapters` and the onboarding submit `POST /v1/chapters/onboard` seed channels. It is **not** gated on billing/subscription. `#chapter-audit` is required so the Chunk 02 audit bridge (and the onboarding welcome message) have a destination.
+- **Seeding happens at chapter creation (applies to all tiers)** — both `POST /v1/chapters` and the onboarding submit `POST /v1/chapters/onboard` seed channels. It is **not** gated on billing/subscription. `#chapter-audit` is required so the audit bridge (and the onboarding welcome message) have a destination.
+- **Welcome message on onboarding submit.** When a chapter is created via the onboarding wizard submit, a one-time welcome `system_audit` message is seeded into `#chapter-audit` (the user lands on `/chat?channel=general`): `"Welcome to <Greek letters> <designation>. Invite your chapter to get the conversation started."` This is the first message every new chapter sees.
 - **Performance requirement:** chapter setup must seed default channels in one write operation to avoid N+1 insert latency.
 - **Failure behavior:** chapter setup must fail if default channel seeding fails; the API must not return chapter-create success when channel seeding errors.
 
@@ -32,6 +42,7 @@
 - DMs are not role-gated; they are scoped by an explicit member list stored on the channel.
 - A user can leave a Group DM. If only one member remains, the Group DM is archived.
 - **Privacy invariant:** DMs and group DMs are **never** part of the [AI corpus](../ai.md). They are not indexed for AI Q&A, not used as summarization context, and not surfaced via citations. This is enforced server-side regardless of any chapter-level AI consent settings — opting in to AI does not opt in DMs.
+- **System DM on invite accept.** When a member accepts an invite, the inviter receives a `kind="system_audit"` message in their DM channel with that member — `"Alex Chen accepted your invite."` This is the same server-originated system-message pattern as the audit bridge, but targeted to a DM rather than `#chapter-audit`.
 
 ## Messages
 
@@ -107,21 +118,9 @@
 - Posting to `#announcements` triggers a push notification to all chapter members (respecting their notification preferences).
 - Announcement messages cannot be replied to in-thread (read-only channel for non-admins).
 
-## Slash Commands (Chunk 05)
+## Slash Commands and Integrations
 
-Slash commands turn chat into the dispatcher for every ops module ("modules-as-integrations"). The catalog is filtered by the chapter's `enabled_modules` so disabling a paid module hides its command from the palette without UI churn. Commands marked `implemented: true` post a rich message; `implemented: false` commands surface a "coming soon" toast (Chunk 10 sub-chunks flip them as they ship). Server-side authorization is independent of the client gate — the Edge Function re-checks permission for every send.
-
-Initial catalog (Chunk 05):
-
-| Command | Implemented | Required module | Server gate | Posted to |
-| --- | --- | --- | --- | --- |
-| `/poll "Q?" Opt1 Opt2 [closes=<mins>]` | yes | `polls` | chapter member | current channel |
-| `/announce <message>` | yes | always-on | `announcements:post` (or `*`) via `canAccessChannel({ operation:'post' })` | `#announcements` |
-| `/event`, `/task`, `/dues`, `/points`, `/hours` | no | per-module | n/a | n/a (palette stub) |
-
-Parsing rules live in `packages/chat-integrations/src/parsers.ts` (`parsePollArgs`, `parseAnnounceArgs`) so web, mobile, and any future heavy-command RPC share one source of truth. Poll arguments tokenize on whitespace but respect double-quoted spans for the question; unterminated quotes return a specific error rather than silently truncating. Polls require at least two distinct options (case-insensitive dedup) and at most ten; an optional trailing `closes=<minutes>` overrides the 24-hour default.
-
-Vote-change uses the UPSERT semantics in ADR-07: every user has at most one row in `chat_message_actions` with `action_type='vote'` per poll message; switching options updates the row's `payload.option_id` in place.
+Slash commands turn chat into the dispatcher for every ops module. The full command catalog, slash-command dispatch path (simple vs heavy commands), announcement gating, vote-change semantics, the rich-message renderer registry, and the audit bridge are specified in [integrations.md](./integrations.md). Push-notification behavior for chat lives in [../notifications.md](../notifications.md).
 
 ## Message Persistence
 
@@ -131,7 +130,7 @@ Every message is written to `chat_messages` in Postgres **before** being broadca
 
 Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table. Unread count per channel = count of messages created after the user's last-read timestamp for that channel.
 
-## Message Kinds and Actions (Chunk 02)
+## Message Kinds and Actions
 
 `chat_messages.kind` extends the simple TEXT/POLL distinction:
 
@@ -144,12 +143,31 @@ Each user's last-read timestamp per channel is tracked in a `channel_read_receip
 | `dues` | Dues reminder card |
 | `points` | Points award notification |
 | `hours` | Service hours log confirmation |
-| `system_audit` | System-generated audit message (posted to #chapter-audit) |
+| `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata |
+| `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
 | `announcement` | Broadcast announcement |
 
 `chat_message_actions` records per-user actions on messages (reactions, RSVPs, votes, payment confirmations). Indexed on `(message_id, user_id)` for per-message aggregation and `(user_id, action_type, created_at desc)` for user history.
 
+## Hot-path client behavior
+
+These are the user-observable guarantees of the chat client (web and mobile), independent of the underlying implementation:
+
+- **Optimistic + idempotent sends.** Every send/react/card-action is applied to the local view immediately under a client-generated UUID (`client_message_id`), then confirmed against the canonical row. A failed send rolls back with a toast; a duplicate (same `client_message_id`) reconciles to a single message — racing two sends of the same body yields exactly one stored message, never two.
+- **Offline composer queue.** Drafts persist across reloads/cold launches. Messages composed while offline are queued and flushed in order on reconnect. A send that hard-fails (4xx) surfaces inline with a retry affordance rather than disappearing.
+- **Reconnect pill.** On loss of the realtime connection the client shows an unobtrusive "Reconnecting…" indicator near the channel header and retries with capped backoff.
+- **Backfill before resubscribe.** On reconnect, for each channel the client reads its last-seen message id and backfills missed messages *before* resubscribing to realtime, so no message is lost and none is duplicated.
+- **Empty states are explicit.** No visible channels, no messages in a channel, no DM threads, and no search results each render a purposeful empty state rather than a blank pane.
+
 ## Reconnect replay
 
 `GET /channels/:id/messages?since=<message_uuid>&limit=50` returns messages created AFTER the given message UUID. Clients use this on reconnect to backfill missed messages before resubscribing to Realtime.
+
+## Web ↔ mobile parity
+
+The mobile (Expo) chat experience is held to **parity** with web: reactions, inline rich-message cards, presence, and the offline composer queue all behave the same across platforms. Differences that are canonical:
+
+- **Voice memos** are mobile-native: recorded in the composer, uploaded to Storage, and sent as `kind="audio"` with waveform metadata. Web clients play them back.
+- **Presence lifecycle on mobile** maps app state to presence: backgrounded → `idle`, force-quit → `offline` (consistent with the Idle/Offline statuses tracked via Realtime Presence above).
+- The authenticated entry point on mobile lands directly on chat, with the channel list as the default tab.

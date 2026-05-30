@@ -33,3 +33,7 @@
 - Events display an "Add to Calendar" action.
 - Tapping it generates an `.ics` file (or deep-links to the device's calendar app on mobile) with event name, description, location, start/end time, and a link back to the event in Frapp.
 - Recurring events generate recurring calendar entries.
+
+## Chat Integration
+
+Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).

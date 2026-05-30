@@ -192,9 +192,24 @@
 
 ---
 
-# Module Catalog (Chunk 02 — revised)
+# Module Catalog
 
-The module catalog governs which features chapters can enable. Two tiers:
+The module catalog governs which features chapters can enable.
+
+## Modules are chat integrations, not nav tabs
+
+Chat is the spine of the app (see [`spec/product/positioning.md`](./positioning.md)), so an ops module does not primarily get a top-level nav tab. When a module is enabled it gets:
+
+1. **A slash command** in chat (`/event`, `/task`, `/poll`, `/dues`, `/points`, `/hours`).
+2. **A rich message renderer** that turns the artifact into an inline card with primary actions (RSVP / Done / Vote / Pay / Confirm / Submit).
+3. **A system channel** where the module's notifications land (`#events`, `#dues`, etc.) so the firehose does not drown `#general`.
+4. **Optionally, a dashboard page** for the longer-form view (calendar, ledger, kanban). The dashboard page is secondary to the chat experience, not primary.
+
+Example: a treasurer types `/dues remind overdue` in `#general`; a rich card summarizes overdue members with a per-row "Send DM reminder" button that DMs each member a templated message with a Pay button — no tab-switching, no separate workflow.
+
+Every paid module ships with: slash command(s), rich renderer, system channel, and an optional dashboard surface.
+
+## Tiers
 
 ## Always-on (free tier — cannot be disabled)
 
@@ -232,9 +247,9 @@ The module catalog governs which features chapters can enable. Two tiers:
 
 ## Module disabling behavior
 
-The control surface is **Settings → Modules** (Chunk 06), driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
+The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (Chunk 05 `filterSlashCommands`), hides its dashboard nav item (Chunk 06 module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
 
 > The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.
 
