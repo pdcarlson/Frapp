@@ -41,6 +41,7 @@ import { asArray, getErrorMessage } from "@/lib/utils";
 import { useOrgConfig, usePatchOrgConfig } from "@/lib/hooks/use-org-config";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
+import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
 import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
 
 type SemesterArchive = {
@@ -81,13 +82,6 @@ const COMING_SOON_TABS: ReadonlyArray<{
     label: "Fields",
     title: "Custom member fields",
     description: "Define extra member fields and their visibility.",
-    chunk: "Chunk 07",
-  },
-  {
-    value: "workflows",
-    label: "Workflows",
-    title: "Workflows",
-    description: "Approvals, grace periods, and enforcement thresholds.",
     chunk: "Chunk 07",
   },
   {
@@ -206,6 +200,7 @@ export function SettingsPage() {
         : undefined,
   };
   const enabledModules = config?.enabled_modules ?? {};
+  const workflows = config?.workflows ?? [];
 
   const accent = resolveChapterAccentColor(accentDraft || undefined);
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
@@ -560,6 +555,19 @@ export function SettingsPage() {
                     { enabled_modules: { [key]: enabled } },
                     enabled ? "Module enabled" : "Module disabled",
                   )
+                }
+              />,
+            )}
+          </TabsContent>
+
+          <TabsContent value="workflows" className="mt-0">
+            {renderConfigGated(
+              <SettingsWorkflowsTab
+                workflows={workflows}
+                canManage={canManage}
+                isSaving={patchOrgConfig.isPending}
+                onSave={(next) =>
+                  patchConfig({ workflows: next }, "Workflows saved")
                 }
               />,
             )}

@@ -205,6 +205,17 @@ export const ChapterDuesConfigSchema = z.object({
   scholarship_pool_cents: centsAmount,
 });
 
+/**
+ * A single workflow override submitted from Settings → Workflows. `key`
+ * identifies a workflow in the chapter's catalog; `threshold` guard-parses to a
+ * nonnegative integer (NaN/negative rejected — never stored).
+ */
+export const ChapterWorkflowConfigSchema = z.object({
+  key: z.string(),
+  enabled: z.boolean(),
+  threshold: z.number().int().nonnegative().optional(),
+});
+
 export const PatchChapterConfigSchema = z.object({
   org_archetype: z.string().optional(),
   enabled_modules: z.record(z.boolean()).optional(),
@@ -222,6 +233,7 @@ export const PatchChapterConfigSchema = z.object({
     })
     .optional(),
   dues: ChapterDuesConfigSchema.optional(),
+  workflows: z.array(ChapterWorkflowConfigSchema).optional(),
 });
 
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
