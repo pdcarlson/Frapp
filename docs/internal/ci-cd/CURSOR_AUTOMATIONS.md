@@ -10,17 +10,11 @@ the dashboard prompt is intentionally thin and defers to that skill.
 
 ---
 
-## Why Cursor (not the Jules API)
+## Why Cursor Automations
 
-The original idea was to read Jules' **Suggestions (BETA)** panel via API and file the findings as
-issues. The Jules public REST API (`https://jules.googleapis.com/v1alpha`) only exposes `sources`,
-`sessions`, and `sessions.activities` — there is **no suggestions endpoint** (verified against
-Google's API discovery document). The panel is web-UI-only and authenticated by the browser session,
-not the API key.
-
-Cursor Automations give the same outcome with infra Frapp already uses (`.cursor/` rules + skills):
-a cloud agent runs on a schedule/event, audits the repo in a fresh sandbox, and files GitHub issues —
-**no GitHub Actions, no `gh` script, no `JULES_USER_API_KEY`**.
+Cursor Automations reuse infra Frapp already has (`.cursor/` rules + skills): a cloud agent
+runs on a schedule/event, audits the repo in a fresh sandbox, and files GitHub issues —
+**no GitHub Actions, no `gh` script** required.
 
 ---
 
