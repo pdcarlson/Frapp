@@ -71,6 +71,9 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Landing unit tests
+        run: npm run test -w apps/landing
+
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
@@ -102,6 +105,31 @@ jobs:
 
       - name: Run API tests
         run: npm run test -w apps/api
+
+  # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
+  web-tests:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Run web unit tests
+        run: npm run test -w apps/web
 
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
