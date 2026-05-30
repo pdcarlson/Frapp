@@ -479,6 +479,61 @@ describe('ChatService', () => {
       );
     });
 
+    it('rejects client posts of server-originated kinds (points, system_audit)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      for (const kind of ['points', 'system_audit'] as const) {
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'forged card',
+            kind,
+          }),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      }
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('allows server-originated kinds when system_originated is set', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Granted 5 points to Bob: great work',
+        kind: 'points',
+        payload: { amount: 5 },
+        system_originated: true,
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'points' }),
+      );
+    });
+
+    it('still allows client posts of the loading placeholder kind', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Recording points…',
+        kind: 'loading',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'loading' }),
+      );
+    });
+
     it('returns the existing row with deduplicated:true on a client_message_id retry', async () => {
       const clientId = '22222222-2222-2222-2222-222222222222';
       mockMessageRepo.create.mockRejectedValue(

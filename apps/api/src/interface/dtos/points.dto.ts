@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -30,6 +31,22 @@ export class AdjustPointsDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments.',
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
 }
 
 export class PointsWindowQueryDto {

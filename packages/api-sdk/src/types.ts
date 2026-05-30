@@ -1969,6 +1969,10 @@ export interface components {
             /** @enum {string} */
             category: "MANUAL" | "FINE";
             reason: string;
+            /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         CreateCheckoutDto: {
             /** @description Email for the checkout session */
