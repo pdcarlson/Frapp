@@ -28,3 +28,12 @@ Frapp ships product analytics (PostHog or equivalent) to measure feature usage a
 - **Chapter-level opt-out.** Chapter presidents can disable analytics for their chapter via chapter settings. When opted out, the client emits zero events for that chapter's members regardless of the active environment. Opt-out is enforced client-side at the SDK boundary and server-side as a defense-in-depth check before any server-originated event is sent.
 - **Event payloads exclude content.** Event names and properties describe behavior ("opened-channel", "ran-slash-command"), not content. Message bodies, document contents, transcript text, and personal-information fields are never sent.
 - **Account deletion clears the pseudonym mapping.** When a user account is deleted (per the *Individual Account Deletion* section above), the user's hashed ID is added to the analytics provider's "deleted users" list, which triggers a delete-all-events workflow for that hash.
+
+### Keying happens server-side
+
+To keep the salt out of every client bundle (a `NEXT_PUBLIC_`/`EXPO_PUBLIC_` salt would ship to the browser/app and defeat the pseudonymity guarantee above), the HMAC is computed **on the API**, never on the client:
+
+- The keying function (`hmac_sha256(salt, user_id)`) is shared in `@repo/validation` so the server and any future server-side caller derive identical pseudonyms; the salt is read only by the API (`ANALYTICS_HMAC_SALT`).
+- Clients (web, mobile) emit behavioral events through the API (`POST /v1/analytics/events`); the API keys them, enforces the per-chapter opt-out as defense in depth, rejects content/PII payloads, and forwards to the provider. The raw `user_id` and the salt never reach the client or the provider.
+- A client that needs its own pseudonymous id (e.g. to initialise a provider SDK) fetches it from `GET /v1/analytics/identity`.
+- Provider selection is config-driven: with no `POSTHOG_API_KEY` the API uses a no-op/logging provider, so non-prod environments emit nothing off-box.

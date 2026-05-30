@@ -1,8 +1,8 @@
 # Agent infrastructure (hot-path verification)
 
-**Status:** active (research complete; implementation pending decision)
+**Status:** active (decision recorded as ADR-12; implementation follow-ups filed)
 **Epic:** [#401 — cloud-agent sandbox cannot exercise the Supabase hot path](https://github.com/pdcarlson/Frapp/issues/401)
-**Spec:** [`docs/internal/ci-cd/AGENT_INFRA.md`](../../internal/ci-cd/AGENT_INFRA.md); ADR to land in [`spec/architecture/`](../../../spec/architecture/)
+**Spec:** [`docs/internal/ci-cd/AGENT_INFRA.md`](../../internal/ci-cd/AGENT_INFRA.md); decision in [ADR-12](../../../spec/architecture/README.md)
 **Updated:** 2026-05-30
 
 > P0 program-level blocker: cloud-agent sandboxes can't apply migrations / run Edge Functions /
@@ -12,19 +12,27 @@
 ## Work units
 
 > All four research spikes are **closed/completed**; each delivered a recommendation comment on #401.
-> The remaining work is to pick the in-loop path + CI path, land an ADR, and document the workflow.
+> The decision is recorded as **[ADR-12](../../../spec/architecture/README.md)** (C+D default substrate,
+> A opt-in escape hatch, B rejected). Implementation is now split into three follow-up units below.
 
 | Unit | Issue | State | Notes |
 | ---- | ----- | ----- | ----- |
-| Path A research: Supabase branches per agent session | [#411](https://github.com/pdcarlson/Frapp/issues/411) | closed | most architecturally compatible |
-| Path B research: rootless Supabase stack in sandbox | [#412](https://github.com/pdcarlson/Frapp/issues/412) | closed | likely no-go on maintenance cost |
-| Path C research: PGlite + Deno harness | [#413](https://github.com/pdcarlson/Frapp/issues/413) | closed | cheap supplemental win |
-| Path D research: move logic out of Edge Functions | [#414](https://github.com/pdcarlson/Frapp/issues/414) | closed | revisits ADR-01 |
-| **Decision + ADR + AGENT_INFRA workflow** | #401 | open | pick in-loop + CI paths; land ADR; update `AGENT_INFRA.md` |
+| Path A research: Supabase branches per agent session | [#411](https://github.com/pdcarlson/Frapp/issues/411) | closed | adopted as opt-in escape hatch |
+| Path B research: rootless Supabase stack in sandbox | [#412](https://github.com/pdcarlson/Frapp/issues/412) | closed | rejected (maintenance/flakiness) |
+| Path C research: PGlite + Deno harness | [#413](https://github.com/pdcarlson/Frapp/issues/413) | closed | adopted as CI + in-loop substrate |
+| Path D research: move logic out of Edge Functions | [#414](https://github.com/pdcarlson/Frapp/issues/414) | closed | adopted as strategic direction (ADR-11) |
+| **Decision + ADR-12 + AGENT_INFRA workflow** | [#401](https://github.com/pdcarlson/Frapp/issues/401) | open | closes on the ADR-12 PR (`Closes #401`) |
+| Impl: PGlite migration + RLS CI job (Path C) | [#531](https://github.com/pdcarlson/Frapp/issues/531) | open | consolidates #423/#356/#360; #235 subsumed → CI-only |
+| Impl: Path A SessionEnd teardown + scoped MCP allowlist | [#532](https://github.com/pdcarlson/Frapp/issues/532) | open | opt-in branch-per-session; off by default |
+| Impl: continue Edge→NestJS hot-path migration | [#533](https://github.com/pdcarlson/Frapp/issues/533) | open | follow-on to ADR-11/#425; relates #417/#470 |
 
 ## Notes / decisions
 
-- #235 (Postgres-in-CI migration verification) is referenced by #401 as "subsumed / scope down to CI
-  migration verification only" — confirm and re-link during triage (state UNVERIFIED in seed).
-- CI-side candidates to reconcile during triage: #356 (migrations apply on fresh DB), #360 (RLS
-  coverage), #322/#380 (Edge Function tests), #423 (PGlite RLS smoke), #424 (Edge Function spike).
+- **ADR-12** (`spec/architecture/README.md`) records the decision: C (PGlite) + D (NestJS logic) are
+  the default substrate (CI + in-loop, no daemon); A (Supabase branch/session) is the opt-in escape
+  hatch with SessionEnd teardown and denylisted MCP writes by default; B (rootless stack) is rejected.
+- #235 (Postgres-in-CI migration verification) is **subsumed → CI migration verification only** (per
+  #401); the PGlite CI job (#531) owns it. #423 (PGlite RLS smoke), #356 (migrations on fresh DB), and
+  #360 (RLS coverage) are folded into / linked from #531.
+- Still un-reconciled CI candidates (separate from the ADR-12 follow-ups): #322/#380 (Edge Function
+  tests), #424 (Edge Function deprecation spike) — revisit alongside the Edge→NestJS migration (#533).

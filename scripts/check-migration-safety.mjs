@@ -106,9 +106,9 @@ function validatePromotionDocs(base, head) {
 
   const hasPromotionDocsUpdate = changedFiles.some(
     (file) =>
-      file === "docs/internal/DB_PROMOTION_RUNBOOK.md" ||
-      file === "docs/internal/DB_ROLLBACK_PLAYBOOK.md" ||
-      file === "spec/environments.md",
+      file === "docs/internal/ops/DB_PROMOTION_RUNBOOK.md" ||
+      file === "docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md" ||
+      file.startsWith("spec/environments/"),
   );
 
   if (!hasPromotionDocsUpdate) {
@@ -117,7 +117,7 @@ function validatePromotionDocs(base, head) {
       "You changed migration files without updating promotion/rollback docs.",
     );
     console.error(
-      "Update docs/internal/DB_PROMOTION_RUNBOOK.md, docs/internal/DB_ROLLBACK_PLAYBOOK.md, or spec/environments.md in the same change set.",
+      "Update docs/internal/ops/DB_PROMOTION_RUNBOOK.md, docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md, or a spec/environments/ doc in the same change set.",
     );
     process.exit(1);
   }

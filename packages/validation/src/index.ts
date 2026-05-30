@@ -427,3 +427,16 @@ export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
 export type SendChatMessage = z.infer<typeof SendChatMessageSchema>;
 export type ChatMessageAction = z.infer<typeof ChatMessageActionSchema>;
 export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;
+
+// ── Pseudonymous analytics (issue #464) ──────────────────────────────────────
+export {
+  hashUserIdForAnalytics,
+  hmacSha256Hex,
+  assertContentFreeProperties,
+  ContentFreePropertyError,
+  FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
+} from "./analytics";
+export type {
+  AnalyticsEvent,
+  AnalyticsProperties,
+} from "./analytics";
