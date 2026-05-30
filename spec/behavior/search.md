@@ -18,7 +18,7 @@ v1 ships with the following defaults. Chapter admins cannot override them; tunin
 - **Snippet highlighting:** `ts_headline` on the primary content field, capped at 160 characters per snippet.
 - **Typo tolerance:** none in v1. Trigram fuzzy match (`pg_trgm`) is a v2 consideration if real usage shows demand.
 - **Stopwords:** Postgres default English stopword list.
-- **Server-side timeout:** `statement_timeout` of 500 ms per search query. Timeouts surface as an empty result with an `x-search-timeout: 1` response header so clients can distinguish "no matches" from "we gave up."
+- **Server-side timeout:** 500 ms budget per search query. Timeouts surface as an empty result with an `x-search-timeout: 1` response header so clients can distinguish "no matches" from "we gave up." v1 enforces this as an application-level budget (`Promise.race` in `SearchService.searchWithinBudget`) rather than a Postgres `statement_timeout`, since the supabase-js client does not cleanly expose per-query `statement_timeout`; revisit with a DB-level timeout alongside the full-text migration (#284).
 
 ## Acceptance criteria
 

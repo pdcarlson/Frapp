@@ -100,4 +100,15 @@ describe("useSearch", () => {
     expect(mockClient.GET).not.toHaveBeenCalled();
     expect(result.current.fetchStatus).toBe("idle");
   });
+
+  it("is disabled for queries shorter than 3 characters", () => {
+    const mockClient = { GET: vi.fn() };
+
+    const { result } = renderHook(() => useSearch("ab"), {
+      wrapper: createWrapper(queryClient, mockClient, "chapter-a"),
+    });
+
+    expect(mockClient.GET).not.toHaveBeenCalled();
+    expect(result.current.fetchStatus).toBe("idle");
+  });
 });

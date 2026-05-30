@@ -17,7 +17,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
-import { useSearch } from "@repo/hooks";
+import { SEARCH_MIN_QUERY_LENGTH, useSearch } from "@repo/hooks";
 import {
   CommandDialog,
   CommandEmpty,
@@ -194,11 +194,12 @@ export function DashboardCommandMenu({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const debouncedQuery = useDebouncedValue(query.trim(), 200);
+  const hasMinQuery = debouncedQuery.length >= SEARCH_MIN_QUERY_LENGTH;
   const searchResults = useSearch(debouncedQuery);
 
   const groups = useMemo(
-    () => (debouncedQuery ? buildSearchGroups(searchResults.data) : []),
-    [debouncedQuery, searchResults.data],
+    () => (hasMinQuery ? buildSearchGroups(searchResults.data) : []),
+    [hasMinQuery, searchResults.data],
   );
 
   const filteredNavigation = useMemo(() => {
@@ -228,7 +229,9 @@ export function DashboardCommandMenu({
             <span className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Searching...
             </span>
-          ) : debouncedQuery ? (
+          ) : debouncedQuery && !hasMinQuery ? (
+            `Type at least ${SEARCH_MIN_QUERY_LENGTH} characters to search.`
+          ) : hasMinQuery ? (
             "No matches across chapter data."
           ) : (
             "No matching commands."
