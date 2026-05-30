@@ -25,6 +25,28 @@ Do **not** start coding from a vague "redesign Frapp" prompt. Always work a spec
 - **Reference the chunk in your PR body.** `Implements <co-located chunk path>.` That keeps the trail back to the spec.
 - **If you make a scope decision that diverges from the chunk brief, edit the brief in the same PR.** The spec is the source of truth, not your in-flight assumptions.
 
+## Moving a card on the board
+
+The board is a GitHub **Projects v2** board: **GraphQL-only**, no REST and no `mcp__github__*` tool. Move cards with the GraphQL API using `GITHUB_PAT` (which needs **Projects → Read and write** — see [`AGENT_INFRA.md` § GitHub PAT usage policy](../AGENT_INFRA.md#github-pat-usage-policy) for the permission requirement and the `FORBIDDEN` failure signature).
+
+Three calls — find the project's status field + the item for your issue, then set the value:
+
+```bash
+GQL() { curl -s https://api.github.com/graphql -H "Authorization: bearer $GITHUB_PAT" \
+  -H "Content-Type: application/json" -d "{\"query\":\"$1\"}"; }
+
+# 1. Project id + the Status field's id and option ids (find the "In Review" / "Shipped" id)
+GQL 'query{ user(login:\"pdcarlson\"){ projectV2(number:N){ id field(name:\"Status\"){ ... on ProjectV2SingleSelectField { id options{ id name } } } } } }'
+
+# 2. The project item id for your issue (add it first with addProjectV2ItemById if projectItems is empty)
+GQL 'query{ repository(owner:\"pdcarlson\",name:\"frapp\"){ issue(number:484){ projectItems(first:10){ nodes{ id project{ id } } } } } }'
+
+# 3. Set the status
+GQL 'mutation{ updateProjectV2ItemFieldValue(input:{ projectId:\"PROJECT_ID\", itemId:\"ITEM_ID\", fieldId:\"STATUS_FIELD_ID\", value:{ singleSelectOptionId:\"OPTION_ID\" } }){ projectV2Item{ id } } }'
+```
+
+If the PAT lacks the Projects permission this fails with `FORBIDDEN: Resource not accessible by personal access token` — report it and ask for the permission rather than claiming the move is impossible.
+
 ## When the chunk is wrong
 
 The chunk briefs are forecasts, not contracts. If a chunk's assumptions don't survive contact with the code, push back: edit the chunk brief in place, leave a note in the chunk issue on the GitHub board, and pick up from the corrected plan. Future sessions will read what you left, not what was originally written.
