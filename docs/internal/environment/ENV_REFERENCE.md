@@ -64,6 +64,18 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 
 > `SUPABASE_JWT_SECRET` is **optional**. It lets the API verify access-token signatures locally so the rate limiter can key buckets per authenticated user (see `spec/architecture/README.md`, Security). When it is absent the limiter safely falls back to per-IP keying — set it in every environment to enable per-user limiting.
 
+### Analytics (Pseudonymous — API-only)
+
+Product analytics is pseudonymous by construction: the API keys every event by `hmac_sha256(salt, user_id)` and the raw user id never reaches the provider (`spec/behavior/data-retention.md` #analytics-events-pseudonymous). **The salt is API-only on purpose** — it must never be exposed to a client bundle (no `NEXT_PUBLIC_`/`EXPO_PUBLIC_` reference), or the dataset could be rainbow-tabled back to user ids. Clients fetch their pseudonymous id from `GET /v1/analytics/identity` and post events through `POST /v1/analytics/events`; the API does the keying.
+
+| Variable | `local` | `staging` | `production` |
+|---|---|---|---|
+| `ANALYTICS_HMAC_SALT` | _(optional locally)_ a random 32+ char hex string — generate with `openssl rand -hex 32`. When empty, server analytics is disabled. | A **distinct** random per-environment salt (`openssl rand -hex 32`). Held only here, never in the analytics provider. | A **distinct** random per-environment salt (`openssl rand -hex 32`). Held only here, never in the analytics provider. |
+| `POSTHOG_API_KEY` | _(leave empty → no-op provider, events logged at debug only)_ | PostHog project API key (`phc_...`) for the staging project | PostHog project API key (`phc_...`) for the production project |
+| `POSTHOG_HOST` | _(leave empty → defaults to `https://us.i.posthog.com`)_ | Override only for EU/self-host | Override only for EU/self-host |
+
+> All three are **optional**. With no `POSTHOG_API_KEY` the API uses a no-op provider (debug logging), and with no `ANALYTICS_HMAC_SALT` server analytics is disabled entirely — so local dev, tests, and CI run without any analytics secret.
+
 ### CD Secrets (Deploy Workflows Only)
 
 These are only used by GitHub Actions. Leave them empty in the `local` environment — they're not needed for local development.
@@ -114,6 +126,9 @@ Reads these directly (no prefix needed):
 | `SENTRY_DSN` | `main.ts` (optional) | ❌ |
 | `SENTRY_TRACES_SAMPLE_RATE` | `main.ts` (default: `0.1`) | ❌ |
 | `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
+| `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (per-env salt for pseudonymous keying; analytics disabled when unset) | ❌ |
+| `POSTHOG_API_KEY` | `analytics.module.ts` (selects PostHog vs no-op provider) | ❌ |
+| `POSTHOG_HOST` | `analytics.module.ts` (provider host override; default PostHog US) | ❌ |
 
 ### apps/web (Next.js — Vercel)
 

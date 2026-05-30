@@ -32,6 +32,7 @@ import { ChapterConfigModule } from './modules/chapter-config/chapter-config.mod
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
 import { ChatPushWorkerModule } from './modules/chat-push-worker/chat-push-worker.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { validateEnv } from './config/env.validation';
 
 @Module({
@@ -74,6 +75,7 @@ import { validateEnv } from './config/env.validation';
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,
     ChatPushWorkerModule,
+    AnalyticsModule,
   ],
   providers: [
     {

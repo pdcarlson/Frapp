@@ -4239,6 +4239,56 @@
           "Chapter Directory"
         ]
       }
+    },
+    "/v1/analytics/identity": {
+      "get": {
+        "operationId": "AnalyticsController_getIdentity_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get the caller's pseudonymous analytics id (HMAC of user id). Lets the client attribute events without ever holding the salt.",
+        "tags": [
+          "Analytics"
+        ]
+      }
+    },
+    "/v1/analytics/events": {
+      "post": {
+        "operationId": "AnalyticsController_track_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackEventDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out.",
+        "tags": [
+          "Analytics"
+        ]
+      }
     }
   },
   "info": {
@@ -5712,6 +5762,28 @@
             "$ref": "#/components/schemas/DuesConfigDto"
           }
         }
+      },
+      "TrackEventDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Behavioral event name in kebab-case, e.g. \"opened-channel\", \"ran-slash-command\". Must describe behavior, never content.",
+            "example": "opened-channel"
+          },
+          "chapter_id": {
+            "type": "string",
+            "description": "Chapter the event is attributed to (enables the opt-out gate)"
+          },
+          "properties": {
+            "type": "object",
+            "description": "Behavioral, content-free properties. Keys that look like content/PII (content, body, email, name, …) are rejected.",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "name"
+        ]
       }
     }
   }
