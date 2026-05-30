@@ -22,9 +22,9 @@
 | Path C research: PGlite + Deno harness | [#413](https://github.com/pdcarlson/Frapp/issues/413) | closed | adopted as CI + in-loop substrate |
 | Path D research: move logic out of Edge Functions | [#414](https://github.com/pdcarlson/Frapp/issues/414) | closed | adopted as strategic direction (ADR-11) |
 | **Decision + ADR-12 + AGENT_INFRA workflow** | [#401](https://github.com/pdcarlson/Frapp/issues/401) | open | closes on the ADR-12 PR (`Closes #401`) |
-| Impl: PGlite migration + RLS CI job (Path C) | [#526](https://github.com/pdcarlson/Frapp/issues/526) | open | consolidates #423/#356/#360; #235 subsumed → CI-only |
-| Impl: Path A SessionEnd teardown + scoped MCP allowlist | [#527](https://github.com/pdcarlson/Frapp/issues/527) | open | opt-in branch-per-session; off by default |
-| Impl: continue Edge→NestJS hot-path migration | [#528](https://github.com/pdcarlson/Frapp/issues/528) | open | follow-on to ADR-11/#425; relates #417/#470 |
+| Impl: PGlite migration + RLS CI job (Path C) | [#531](https://github.com/pdcarlson/Frapp/issues/531) | open | consolidates #423/#356/#360; #235 subsumed → CI-only |
+| Impl: Path A SessionEnd teardown + scoped MCP allowlist | [#532](https://github.com/pdcarlson/Frapp/issues/532) | open | opt-in branch-per-session; off by default |
+| Impl: continue Edge→NestJS hot-path migration | [#533](https://github.com/pdcarlson/Frapp/issues/533) | open | follow-on to ADR-11/#425; relates #417/#470 |
 
 ## Notes / decisions
 
@@ -32,7 +32,7 @@
   the default substrate (CI + in-loop, no daemon); A (Supabase branch/session) is the opt-in escape
   hatch with SessionEnd teardown and denylisted MCP writes by default; B (rootless stack) is rejected.
 - #235 (Postgres-in-CI migration verification) is **subsumed → CI migration verification only** (per
-  #401); the PGlite CI job (#526) owns it. #423 (PGlite RLS smoke), #356 (migrations on fresh DB), and
+  #401); the PGlite CI job (#531) owns it. #423 (PGlite RLS smoke), #356 (migrations on fresh DB), and
   #360 (RLS coverage) are folded into / linked from #526.
 - Still un-reconciled CI candidates (separate from the ADR-12 follow-ups): #322/#380 (Edge Function
   tests), #424 (Edge Function deprecation spike) — revisit alongside the Edge→NestJS migration (#528).

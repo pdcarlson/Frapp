@@ -135,7 +135,7 @@ Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](.
 
 ## Agent dev stack (cloud sessions)
 
-Decision context lives in [ADR-11 (`spec/architecture/README.md`)](../../../spec/architecture/README.md); track program-level state in the backlog ([`docs/backlog/projects/agent-infra.md`](../../backlog/projects/agent-infra.md)). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
+Decision is recorded in [**ADR-12** (`spec/architecture/README.md`)](../../../spec/architecture/README.md) (extending ADR-11): PGlite-backed NestJS tests are the **default substrate** (Paths C+D), a per-session Supabase branch is the **opt-in escape hatch** (Path A), and a rootless in-sandbox stack (Path B) is rejected. Track program-level state in the backlog ([`docs/backlog/projects/agent-infra.md`](../../backlog/projects/agent-infra.md)). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
 
 ### What the stack is
 
@@ -162,7 +162,7 @@ The agent does not need `SUPABASE_URL` / `SUPABASE_ANON_KEY` / service-role keys
 
 For end-to-end verification that touches Realtime, Presence, push fanout, or RLS as GoTrue enforces it, the agent still depends on the hosted `frapp-staging` project. **This requires the Supabase MCP write tools (`create_branch`, `apply_migration`) to be allowed in the session's `.claude/settings.json` permissions.** They are denylisted by default — see the [#411 spike comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654) for the failure mode if you call them without that change.
 
-If a future spike re-evaluates Path A and the allowlist lands, the SessionStart hook would:
+Per **ADR-12** this is the **sanctioned opt-in escape hatch** (not a hypothetical). It is off by default: a session must explicitly opt in and acknowledge cost. When opted in, a SessionStart hook would:
 
 1. Confirm cost via `mcp__f9f5eb7a-…__get_cost` / `confirm_cost`.
 2. `create_branch` against the staging project (one branch per session, never shared).
@@ -170,7 +170,7 @@ If a future spike re-evaluates Path A and the allowlist lands, the SessionStart 
 4. Write `SUPABASE_URL` / `SUPABASE_ANON_KEY` / a scoped, short-lived service-role JWT to `apps/*/.env.local` (gitignored). Never commit. Pre-commit grep for `*.supabase.co` and `eyJ` JWT prefixes hard-fails staged diffs that contain them.
 5. SessionEnd hook calls `delete_branch` (idempotent) and confirms via `list_branches`.
 
-Today this hook does not exist. If a chunk needs it, file a follow-up issue rather than working around it in the chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
+This hook does not exist yet — the SessionEnd teardown + scoped MCP write allowlist are tracked as **#532**. Until it lands, the MCP write tools stay denylisted in `.claude/settings.json` and the branch path is unavailable; do not work around it in a chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
 
 ### "Runtime checks BLOCKED" protocol
 

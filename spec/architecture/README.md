@@ -567,6 +567,27 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - **PGlite drops support for an extension we adopt** (e.g. if we add `pg_cron` or `pg_net` to a migration that PGlite can't load), the harness falls back to a documented "schema-only assertion" mode and the migration's runtime behavior gets a real Postgres in CI.
 - **Sandbox unblocks Supabase MCP write tools** (`create_branch`, `apply_migration`, `deploy_edge_function`). Path A becomes runnable; revisit only if we've grown a need for a real Realtime/Edge-Runtime substrate in-loop that PGlite + NestJS unit tests don't cover.
 
+### ADR-12: Agent hot-path verification — PGlite+NestJS default, Supabase branch opt-in (#401)
+
+**Decision:** Cloud agents and CI verify the Supabase hot path with **PGlite-backed NestJS tests as the default substrate** (Path C + Path D), and a **per-session Supabase branch as an opt-in escape hatch** (Path A) for work that genuinely needs Realtime, Storage, or the Edge runtime. A rootless in-sandbox Supabase stack (Path B) is **rejected**. The same substrate runs in CI and in the agent loop. This operationalises the testability that ADR-11 created; ADR-11 moved the logic, ADR-12 records how it is verified and where the branch escape hatch fits.
+
+- **Default (C + D).** Hot-path logic lives in NestJS (ADR-11) and is unit-tested with PGlite (in-process Postgres-in-WASM): schema, constraints, and RLS are exercised deterministically in milliseconds with no daemon, no Docker, no privileged tooling. This is the substrate for both CI and in-loop verification and covers the data layer for most chunks.
+- **Opt-in escape hatch (A).** When a task must observe Realtime / Storage / the Edge runtime, a real Supabase preview branch may be created for the session. It is **off by default**: it requires explicit opt-in, cost acknowledgement (`confirm_cost`), and a SessionEnd teardown that always deletes the branch so cost can't leak. The Supabase MCP write tools (`create_branch` / `apply_migration` / `delete_branch`) stay **denylisted in `.claude/settings.json`** until a session opts in.
+- **Rejected (B).** Running the full Supabase Docker/`podman` stack rootless inside the sandbox is too flaky across providers (Docker-only Edge runtime, Elixir/Erlang Realtime, ~30 PG extensions without a tarball distribution; ~15–25 maint hrs/month) for too little gain over A.
+
+**Context:** #401 (P0): cloud-agent sandboxes can't apply migrations to real Postgres, run Edge Functions, observe Realtime, or exercise the push worker, so chat-adjacent chunks shipped with unverified runtime paths. Four research spikes settled the trade-offs:
+
+| Path | Verdict | Role |
+| ---- | ------- | ---- |
+| A — Supabase branch per session (#411) | adopt, opt-in | full hot path, in-loop when needed |
+| B — rootless Supabase stack in sandbox (#412) | no-go | — |
+| C — PGlite + Deno harness (#413) | adopt | CI + cheap in-loop data layer |
+| D — hot-path logic into NestJS (#414) | adopt, strategic | makes C sufficient for most work |
+
+**Consequences:** CI gains a PGlite migration + RLS smoke job (no live Postgres needed). Agents verify the data layer in-loop cheaply and deterministically and stop handing off blind on the data layer. Work needing the full hot path is explicit, opt-in, and self-cleaning, so the MCP write-tool security surface stays closed by default. Continuing the Edge→NestJS migration is load-bearing: the more hot-path logic lives in NestJS, the more PGlite alone suffices and the rarer the branch escape hatch is needed. Implementation is tracked in dedicated follow-up issues (PGlite CI job #531; Path-A SessionEnd teardown + scoped allowlist #532; continued Edge→NestJS migration #533).
+
+**Revisit-when:** PGlite proves insufficient for a recurring class of work (forcing the branch escape hatch to become routine), or Supabase branch cost/security posture shifts enough that Path A should become the default rather than an opt-in.
+
 ---
 
 ## 13. AI Corpus Architecture (v1)
