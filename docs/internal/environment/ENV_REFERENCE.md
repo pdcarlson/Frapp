@@ -60,7 +60,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `NODE_ENV` | `development` | `production` | `production` |
 | `SENTRY_DSN` | **Same as staging** — use the same DSN so errors during local development show up in Sentry. Copy from Sentry → Settings → Client Keys → DSN. | ← same DSN as local | Copy from Sentry → Settings → Client Keys → DSN (use a separate production project if you want isolation) |
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | `0.1` | `0.1` |
-| `SUPABASE_JWT_SECRET` | The `JWT secret` from `npx supabase status -o env` for your local stack (the default `super-secret-jwt-token-...` value) | Copy from Supabase staging dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) |
+| `SUPABASE_JWT_SECRET` | The `JWT secret` field from `npx supabase status -o env` for your local stack | Copy from Supabase staging dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) |
 
 > `SUPABASE_JWT_SECRET` is **optional**. It lets the API verify access-token signatures locally so the rate limiter can key buckets per authenticated user (see `spec/architecture/README.md`, Security). When it is absent the limiter safely falls back to per-IP keying — set it in every environment to enable per-user limiting.
 
@@ -113,6 +113,7 @@ Reads these directly (no prefix needed):
 | `NODE_ENV` | `main.ts` (default: `development`) | ❌ |
 | `SENTRY_DSN` | `main.ts` (optional) | ❌ |
 | `SENTRY_TRACES_SAMPLE_RATE` | `main.ts` (default: `0.1`) | ❌ |
+| `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
 
 ### apps/web (Next.js — Vercel)
 

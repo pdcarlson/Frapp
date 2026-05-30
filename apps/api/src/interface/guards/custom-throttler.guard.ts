@@ -117,7 +117,10 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const payload = JSON.parse(
         Buffer.from(payloadSeg, 'base64url').toString('utf8'),
       ) as { sub?: unknown; exp?: unknown };
-      if (typeof payload.exp === 'number' && payload.exp * 1000 <= Date.now()) {
+      // Require a numeric, unexpired `exp`: a verified Supabase token always
+      // carries one, so a token without it is anomalous and must not yield a
+      // perpetual per-user bucket.
+      if (typeof payload.exp !== 'number' || payload.exp * 1000 <= Date.now()) {
         return null;
       }
       return typeof payload.sub === 'string' && payload.sub.length > 0

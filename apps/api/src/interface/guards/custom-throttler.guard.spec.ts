@@ -1,8 +1,12 @@
 import { ExecutionContext } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { Test, TestingModule } from '@nestjs/testing';
 import {
   ThrottlerException,
   ThrottlerLimitDetail,
   ThrottlerRequest,
+  getOptionsToken,
+  getStorageToken,
 } from '@nestjs/throttler';
 import { createHmac } from 'node:crypto';
 import { CustomThrottlerGuard } from './custom-throttler.guard';
@@ -48,13 +52,20 @@ const futureExp = () => Math.floor(Date.now() / 1000) + 3600;
 describe('CustomThrottlerGuard', () => {
   let guard: TestableGuard;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.SUPABASE_JWT_SECRET = TEST_SECRET;
-    guard = new TestableGuard(
-      [],
-      {} as unknown as ConstructorParameters<typeof CustomThrottlerGuard>[1],
-      {} as unknown as ConstructorParameters<typeof CustomThrottlerGuard>[2],
-    );
+    // Build the guard through Nest DI (rather than `new`) so its inherited
+    // ThrottlerGuard constructor wiring is exercised and a future
+    // constructor/provider regression would surface here.
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      providers: [
+        TestableGuard,
+        Reflector,
+        { provide: getOptionsToken(), useValue: [] },
+        { provide: getStorageToken(), useValue: { increment: jest.fn() } },
+      ],
+    }).compile();
+    guard = moduleRef.get(TestableGuard);
   });
 
   afterEach(() => {
@@ -112,6 +123,14 @@ describe('CustomThrottlerGuard', () => {
         ip: '203.0.113.3',
       };
       await expect(guard.track(req)).resolves.toBe('ip:203.0.113.3');
+    });
+
+    it('falls back to IP for a validly signed token with no exp claim', async () => {
+      const req = {
+        headers: { authorization: `Bearer ${makeJwt({ sub: 'user-1' })}` },
+        ip: '203.0.113.6',
+      };
+      await expect(guard.track(req)).resolves.toBe('ip:203.0.113.6');
     });
 
     it('rejects a non-HS256 alg even if the signature segment matches', async () => {
