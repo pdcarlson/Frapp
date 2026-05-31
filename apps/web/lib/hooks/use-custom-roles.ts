@@ -2,23 +2,18 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
-import type { ChapterCustomRole } from "@repo/validation";
+import type {
+  ChapterCustomRole,
+  CreateCustomRole,
+  UpdateCustomRole,
+} from "@repo/validation";
 
-/** Body for creating a custom role (`POST /v1/custom-roles`). */
-export interface CreateCustomRoleInput {
-  key: string;
-  label: string;
-  rank?: number;
-  capabilities?: string[];
-  core?: boolean;
-}
-
-/** Body for editing a custom role (`PATCH /v1/custom-roles/:id`). */
-export interface UpdateCustomRoleInput {
-  label?: string;
-  rank?: number;
-  capabilities?: string[];
-}
+/**
+ * Request bodies derived from the shared zod schemas so the hook stays in sync
+ * with the API's validation contract (`@repo/validation`).
+ */
+export type CreateCustomRoleInput = CreateCustomRole;
+export type UpdateCustomRoleInput = UpdateCustomRole;
 
 /**
  * Lists the chapter's `chapter_custom_roles` (Settings → Roles → Custom),
@@ -34,7 +29,9 @@ export function useCustomRoles() {
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/custom-roles");
       if (error) throw error;
-      return (data ?? []) as unknown as ChapterCustomRole[];
+      // The SDK response (CustomRoleDto[]) is structurally the shared
+      // ChapterCustomRole; surface the shared type to consumers.
+      return (data ?? []) as ChapterCustomRole[];
     },
     enabled: !!chapterId,
     staleTime: 60_000,

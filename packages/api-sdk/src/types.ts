@@ -2370,6 +2370,17 @@ export interface components {
             dues?: components["schemas"]["DuesConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
         };
+        CustomRoleDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            rank: number;
+            capabilities: string[];
+            core: boolean;
+            created_at: string;
+            updated_at: string;
+        };
         CreateCustomRoleDto: {
             /** @description Machine-readable slug, unique per chapter */
             key: string;
@@ -2377,13 +2388,15 @@ export interface components {
             /** @description Hierarchy order; lower ranks first */
             rank?: number;
             capabilities?: string[];
-            /** @description Core roles are protected from deletion */
-            core?: boolean;
         };
         UpdateCustomRoleDto: {
             label?: string;
             rank?: number;
             capabilities?: string[];
+        };
+        RemoveCustomRoleResponseDto: {
+            /** @example true */
+            success: boolean;
         };
         IdentityResponseDto: {
             /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
@@ -5182,7 +5195,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"][];
+                };
             };
         };
     };
@@ -5203,6 +5218,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+            /** @description A custom role with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content?: never;
             };
         };
@@ -5219,6 +5243,15 @@ export interface operations {
         requestBody?: never;
         responses: {
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
+                };
+            };
+            /** @description Core roles cannot be deleted */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5245,7 +5278,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
             };
         };
     };

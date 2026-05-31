@@ -8,7 +8,15 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CustomRoleService } from '../../application/services/custom-role.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -25,6 +33,8 @@ import {
 import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   CreateCustomRoleDto,
+  CustomRoleDto,
+  RemoveCustomRoleResponseDto,
   UpdateCustomRoleDto,
 } from '../dtos/custom-role.dto';
 
@@ -44,6 +54,7 @@ export class CustomRoleController {
 
   @Get()
   @ApiOperation({ summary: 'List the chapter custom roles' })
+  @ApiOkResponse({ type: CustomRoleDto, isArray: true })
   async list(@CurrentChapterId() chapterId: string) {
     return this.customRoleService.findByChapter(chapterId);
   }
@@ -54,6 +65,10 @@ export class CustomRoleController {
     SystemPermissions.WILDCARD,
   )
   @ApiOperation({ summary: 'Create a custom role (audit-logged)' })
+  @ApiCreatedResponse({ type: CustomRoleDto })
+  @ApiConflictResponse({
+    description: 'A custom role with this key already exists in this chapter',
+  })
   async create(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
@@ -68,6 +83,7 @@ export class CustomRoleController {
     SystemPermissions.WILDCARD,
   )
   @ApiOperation({ summary: 'Update a custom role (audit-logged)' })
+  @ApiOkResponse({ type: CustomRoleDto })
   async update(
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,
@@ -85,6 +101,8 @@ export class CustomRoleController {
   @ApiOperation({
     summary: 'Delete a non-core custom role (audit-logged)',
   })
+  @ApiOkResponse({ type: RemoveCustomRoleResponseDto })
+  @ApiForbiddenResponse({ description: 'Core roles cannot be deleted' })
   async remove(
     @Param('id') id: string,
     @CurrentChapterId() chapterId: string,

@@ -235,7 +235,10 @@ export const ChapterCustomRoleSchema = z.object({
   updated_at: z.string(),
 });
 
-/** Body for `POST /custom-roles`. */
+/**
+ * Body for `POST /custom-roles`. `core` is intentionally absent — only system
+ * seeding marks a role core; user-created roles are always non-core.
+ */
 export const CreateCustomRoleSchema = z.object({
   key: z
     .string()
@@ -244,7 +247,6 @@ export const CreateCustomRoleSchema = z.object({
   label: z.string().min(1),
   rank: z.number().int().nonnegative().optional(),
   capabilities: z.array(z.string()).optional(),
-  core: z.boolean().optional(),
 });
 
 /** Body for `PATCH /custom-roles/:id` (key and core are immutable). */

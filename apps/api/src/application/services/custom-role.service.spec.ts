@@ -148,6 +148,28 @@ describe('CustomRoleService', () => {
       });
     });
 
+    it('ignores a client-supplied core flag and always persists core: false', async () => {
+      const supabase = makeSupabase({
+        insertResult: {
+          data: { id: 'r1', chapter_id: CHAPTER_ID, core: false },
+          error: null,
+        },
+      });
+      const service = await buildService(supabase);
+
+      // `core` is not part of CreateCustomRoleDto; even if a caller smuggles it
+      // through, the insert must force core: false (only seeding sets core).
+      await service.create(CHAPTER_ID, ACTOR_ID, {
+        key: 'sneaky',
+        label: 'Sneaky',
+        core: true,
+      } as never);
+
+      expect(supabase.customRoleInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ core: false }),
+      );
+    });
+
     it('maps a unique-violation to 409 Conflict and does not audit', async () => {
       const supabase = makeSupabase({
         insertResult: { data: null, error: { code: '23505' } },

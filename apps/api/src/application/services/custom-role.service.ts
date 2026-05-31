@@ -66,7 +66,10 @@ export class CustomRoleService {
         label: dto.label,
         rank: dto.rank ?? 99,
         capabilities: dto.capabilities ?? [],
-        core: dto.core ?? false,
+        // `core` is never client-settable: only system seeding marks a role
+        // core (and core roles can't be deleted). User-created roles are
+        // always non-core so they remain deletable.
+        core: false,
       })
       .select()
       .single();

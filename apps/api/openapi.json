@@ -4207,7 +4207,17 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomRoleDto"
+                  }
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4235,7 +4245,17 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom role with this key already exists in this chapter"
           }
         },
         "security": [
@@ -4274,7 +4294,14 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4301,7 +4328,17 @@
         ],
         "responses": {
           "200": {
-            "description": ""
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Core roles cannot be deleted"
           }
         },
         "security": [
@@ -5925,6 +5962,52 @@
           }
         }
       },
+      "CustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "core": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "rank",
+          "capabilities",
+          "core",
+          "created_at",
+          "updated_at"
+        ]
+      },
       "CreateCustomRoleDto": {
         "type": "object",
         "properties": {
@@ -5944,10 +6027,6 @@
             "items": {
               "type": "string"
             }
-          },
-          "core": {
-            "type": "boolean",
-            "description": "Core roles are protected from deletion"
           }
         },
         "required": [
@@ -5971,6 +6050,18 @@
             }
           }
         }
+      },
+      "RemoveCustomRoleResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
+        ]
       },
       "IdentityResponseDto": {
         "type": "object",
