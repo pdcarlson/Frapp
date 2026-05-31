@@ -11,7 +11,7 @@ disagree, **the repo wins** and the issue is brought into line (run `/triage`).
 
 | Project | Status | Epic | Progress |
 | ------- | ------ | ---- | -------- |
-| [Chat rework](projects/chat-rework.md) | active | [#426](https://github.com/pdcarlson/Frapp/issues/426) | 6 of 12 chunks shipped (01–06); 07 in progress (07a shipped, 07d in PR; 07b/07c/07e queued); 10c shipped; rest of 08–12 queued |
+| [Chat rework](projects/chat-rework.md) | active | [#426](https://github.com/pdcarlson/Frapp/issues/426) | 6 of 12 chunks shipped (01–06); 07 in progress (07a/07b/07d shipped; 07c/07e queued); 10c shipped; rest of 08–12 queued |
 | [Analytics](projects/analytics.md) | active | [#431](https://github.com/pdcarlson/Frapp/issues/431) | pipeline (#464) in flight; salt mgmt (#465) + opt-out toggle (#466) queued |
 | [Pricing & billing](projects/billing.md) | queued | [#429](https://github.com/pdcarlson/Frapp/issues/429) | 0 of 4 units (blocked on pricing analysis) |
 | [Agent infrastructure](projects/agent-infra.md) | active | [#401](https://github.com/pdcarlson/Frapp/issues/401) | research done (4 spikes closed); ADR-12 landed; 3 impl follow-ups filed (#531–#533) |
