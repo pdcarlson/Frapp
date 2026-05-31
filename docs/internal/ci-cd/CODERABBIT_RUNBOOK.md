@@ -24,7 +24,7 @@ required status check and does not gate merges.
 Verify in the CodeRabbit dashboard:
 
 1. The CodeRabbit GitHub App is installed for `https://github.com/pdcarlson/Frapp`.
-2. The repository is recognized as a **private** repository (Frapp went public → private on 2026-05-31). CodeRabbit's free tier covers open-source/public repos only, so a private repo needs a paid CodeRabbit plan — confirm billing/seat coverage is active for `pdcarlson/Frapp`.
+2. The repository is recognized as a **private** repository (Frapp went public → private on 2026-05-31). On a private repo, CodeRabbit's **Free** plan posts high-level summaries + walkthroughs only; the full line-by-line (assertive) reviews configured in `.coderabbit.yaml` require **CodeRabbit Pro** (paid). Decide whether to upgrade or accept summary-only reviews, and confirm plan/seat coverage for `pdcarlson/Frapp`.
 3. Native auto-review is enabled.
 4. Learnings are enabled and scoped to this repository.
 5. Autofix is disabled in repository or organization settings if CodeRabbit
