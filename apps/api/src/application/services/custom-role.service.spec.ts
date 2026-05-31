@@ -142,6 +142,8 @@ describe('CustomRoleService', () => {
         actor_user_id: ACTOR_ID,
         action: 'chapter_custom_role_created',
         target_type: 'chapter_custom_role',
+        // target_id is the role id so the audit log filters by entity.
+        target_id: created.id,
         member_visible: true,
       });
     });

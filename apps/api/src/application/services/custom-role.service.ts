@@ -85,6 +85,7 @@ export class CustomRoleService {
       chapterId,
       actorUserId,
       'chapter_custom_role_created',
+      role.id,
       {
         role: { from: null, to: role },
       },
@@ -123,6 +124,7 @@ export class CustomRoleService {
       chapterId,
       actorUserId,
       'chapter_custom_role_updated',
+      id,
       {
         role: { from: existing, to: role },
       },
@@ -151,6 +153,7 @@ export class CustomRoleService {
       chapterId,
       actorUserId,
       'chapter_custom_role_deleted',
+      id,
       {
         role: { from: existing, to: null },
       },
@@ -178,6 +181,7 @@ export class CustomRoleService {
     chapterId: string,
     actorUserId: string,
     action: string,
+    targetId: string,
     diff: Record<string, { from: unknown; to: unknown }>,
   ): Promise<void> {
     const { error }: MutateResponse = await this.supabase
@@ -187,7 +191,8 @@ export class CustomRoleService {
         actor_user_id: actorUserId,
         action,
         target_type: 'chapter_custom_role',
-        target_id: chapterId,
+        // The role being changed — lets the audit log filter by entity.
+        target_id: targetId,
         scope: 'chapter',
         diff,
         member_visible: true,

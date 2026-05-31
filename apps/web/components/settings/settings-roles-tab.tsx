@@ -145,10 +145,18 @@ function MatrixView({
     [customRolesData],
   );
 
+  // Columns derive from the pack keys + custom-role keys at render time. Pack
+  // roles carry no capability data client-side (the archetype `RoleEntry` is
+  // label/rank only — live permissions live in the `roles` table edited under
+  // "Live roles"), so their cells render "n/a" rather than a misleading "—".
   const columns = useMemo(
     () => [
-      ...pack.map((r) => ({ key: r.key, label: r.label })),
-      ...customRoles.map((r) => ({ key: r.key, label: r.label })),
+      ...pack.map((r) => ({ key: r.key, label: r.label, kind: "pack" as const })),
+      ...customRoles.map((r) => ({
+        key: r.key,
+        label: r.label,
+        kind: "custom" as const,
+      })),
     ],
     [pack, customRoles],
   );
@@ -191,6 +199,20 @@ function MatrixView({
                 <tr key={entry.permission} className="border-b border-border/60">
                   <td className="p-2 font-mono text-xs">{entry.permission}</td>
                   {columns.map((col) => {
+                    if (col.kind === "pack") {
+                      // Pack roles have no capability data on the client.
+                      return (
+                        <td key={col.key} className="p-2 text-center">
+                          <span
+                            aria-label={`${col.label} capabilities managed under Live roles`}
+                            className="text-muted-foreground/40"
+                            title="Pack-role permissions are managed under Live roles"
+                          >
+                            n/a
+                          </span>
+                        </td>
+                      );
+                    }
                     const held =
                       capabilityByRole.get(col.key)?.has(entry.permission) ??
                       false;

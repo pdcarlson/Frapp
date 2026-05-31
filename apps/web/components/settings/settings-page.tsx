@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, CreditCard, Loader2, Trash2 } from "lucide-react";
 import {
@@ -128,7 +128,7 @@ const COMING_SOON_TABS: ReadonlyArray<{
   },
 ];
 
-export function SettingsPage() {
+function SettingsPageContent() {
   const { toast } = useToast();
   const activeChapterId = useChapterStore((s) => s.activeChapterId);
   const chapterQuery = useCurrentChapter({
@@ -701,5 +701,15 @@ export function SettingsPage() {
         </div>
       </Tabs>
     </div>
+  );
+}
+
+// `SettingsPageContent` reads `?tab=` via `useSearchParams`, which Next requires
+// to sit under a Suspense boundary (matches the sign-in/sign-up/join pattern).
+export function SettingsPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading chapter settings..." />}>
+      <SettingsPageContent />
+    </Suspense>
   );
 }
