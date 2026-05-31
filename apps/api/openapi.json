@@ -5967,6 +5967,10 @@
             "items": {
               "$ref": "#/components/schemas/WorkflowConfigDto"
             }
+          },
+          "analytics_opt_out": {
+            "type": "boolean",
+            "description": "When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous)."
           }
         }
       },

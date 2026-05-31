@@ -3,7 +3,7 @@
 **Status:** active
 **Epic:** [#431 — Analytics (pseudonymous events)](https://github.com/pdcarlson/Frapp/issues/431)
 **Spec:** [`spec/behavior/data-retention.md`](../../../spec/behavior/data-retention.md) #analytics-events-pseudonymous
-**Updated:** 2026-05-30
+**Updated:** 2026-05-31
 
 > Pseudonymous product-analytics pipeline. Events are keyed by `hmac_sha256(per-environment-salt,
 > user_id)`; the salt is held outside the analytics provider's environment. Chapter presidents can
@@ -17,7 +17,7 @@
 | ---- | ----- | ----- | ---------- | ----- |
 | Pseudonymous event pipeline (HMAC keying) | [#464](https://github.com/pdcarlson/Frapp/issues/464) | open | — | shared keying util + server pipeline + web/mobile emitters + PostHog provider (PR in flight) |
 | Salt management (per-env, out-of-provider) | [#465](https://github.com/pdcarlson/Frapp/issues/465) | open | — | one salt/env in the Stripe/Supabase secret store; consumes `ANALYTICS_HMAC_SALT` (#464) |
-| Chapter opt-out toggle | [#466](https://github.com/pdcarlson/Frapp/issues/466) | open | #464 | gated by `chapter-config:manage`; writes `chapters.analytics_opt_out` (column + server check added by #464) |
+| Chapter opt-out toggle | [#466](https://github.com/pdcarlson/Frapp/issues/466) | shipped | #464 | Settings → **Privacy** tab toggle (gated by `chapter-config:manage`); writes `chapters.analytics_opt_out` via config PATCH (audit-logged). Client SDK suppresses events when opted out (server gate from #464 is the backstop). Onboarding disclosure added. Mobile still uncovered (no active-chapter context, #253). |
 
 ## Notes / decisions
 

@@ -2373,6 +2373,8 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
+            /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
+            analytics_opt_out?: boolean;
         };
         CustomRoleDto: {
             id: string;

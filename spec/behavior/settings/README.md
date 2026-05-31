@@ -1,6 +1,6 @@
 # Chapter Settings
 
-The settings surface is the chapter's configuration home. It is organized as a **settings rail** with nine tabs: **Org, Modules, Roles, Fields, Workflows, Dues, Theme, Beta, Audit**. This file covers the cross-cutting behavior plus the **Org** and **Modules** tabs; the customization-heavy tabs (Theme, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
+The settings surface is the chapter's configuration home. It is organized as a **settings rail** with ten tabs: **Org, Modules, Roles, Fields, Workflows, Dues, Theme, Privacy, Beta, Audit**. This file covers the cross-cutting behavior plus the **Org**, **Modules**, and **Privacy** tabs; the customization-heavy tabs (Theme, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
 
 Related canon lives in:
 
@@ -8,6 +8,7 @@ Related canon lives in:
 - [`../rbac.md`](../rbac.md) — role lifecycle and permission catalog.
 - [`../branding.md`](../branding.md) — chapter logo and accent color.
 - [`../billing.md`](../billing.md) — dues invoicing.
+- [`../data-retention.md`](../data-retention.md) — pseudonymous analytics + the chapter opt-out surfaced by the Privacy tab.
 
 ## Org Tab
 
@@ -26,6 +27,12 @@ Related canon lives in:
   - Removes its slash commands from the chat palette.
   - Mutes its system channel — it is **not** deleted, so re-enabling restores it.
 - Module state is read from chapter config, never from a `window.*` global.
+
+## Privacy Tab
+
+- Chapter-wide data controls, gated by `chapter-config:manage`. Non-managers see the toggles read-only.
+- **Analytics opt-out.** A single toggle writes the `chapters.analytics_opt_out` scalar through the config PATCH mutation (so it is audit-logged like every other settings change). The switch is framed positively ("Chapter analytics" on/off) to avoid a double-negative — *checked = analytics enabled = `analytics_opt_out` false*. Default is opt-in (analytics on); onboarding discloses this.
+- When opted out, the web client emits **zero** events for the chapter's members (enforced at the SDK boundary) and the API repeats the check server-side as defense-in-depth. Full pipeline + keying semantics live in [`../data-retention.md`](../data-retention.md) (#analytics-events-pseudonymous).
 
 ## Audit Rules
 
