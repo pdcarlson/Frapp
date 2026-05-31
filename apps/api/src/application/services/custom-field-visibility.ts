@@ -7,8 +7,11 @@ import type { CustomFieldVisibility } from '../../domain/entities/chapter-custom
  * the target. Enforced server-side per spec/behavior/members.md → Custom Fields.
  *
  * Tier rules (spec/behavior/rbac.md → Custom-field visibility tiers):
- *   - `chapter`   → any viewer who can see the directory (always included; the
- *                   caller has already passed the `members:view` guard).
+ *   - `chapter`   → any viewer who can see the directory (`members:view`), plus
+ *                   exec/president who are strictly more privileged and so also
+ *                   see the less-restricted chapter tier. Gated explicitly here
+ *                   as defense-in-depth: a caller with none of these can never
+ *                   receive chapter-tier fields.
  *   - `self`      → only when the viewer is the member themselves (owner). NOT
  *                   president-overridden: private fields stay private.
  *   - `exec`      → viewers with member/role management authority
@@ -29,7 +32,16 @@ export function allowedVisibilities(
     perms.has(SystemPermissions.ROLES_MANAGE) ||
     perms.has(SystemPermissions.MEMBERS_REMOVE);
 
-  const allowed = new Set<CustomFieldVisibility>(['chapter']);
+  const allowed = new Set<CustomFieldVisibility>();
+  // `chapter` = directory viewers (`members:view`). Exec/president are strictly
+  // more privileged (they see exec/president-tier fields), so they also get the
+  // less-restricted chapter tier — and their effective set may be just `['*']`
+  // or an exec permission without the literal `members:view` token, so gate on
+  // `isExec` (which includes the wildcard) as well. A viewer with none of these
+  // can never receive chapter-tier fields (defense-in-depth).
+  if (isExec || perms.has(SystemPermissions.MEMBERS_VIEW)) {
+    allowed.add('chapter');
+  }
   if (isSelf) allowed.add('self');
   if (isExec) allowed.add('exec');
   if (isPresident) allowed.add('president');

@@ -44,8 +44,15 @@ describe('allowedVisibilities', () => {
     ]);
   });
 
-  it('returns chapter only for an empty permission set when not self', () => {
+  it('returns nothing for an empty permission set when not self (no directory access)', () => {
     const allowed = allowedVisibilities([], false);
-    expect([...allowed].sort()).toEqual(['chapter']);
+    expect([...allowed]).toEqual([]);
+  });
+
+  it('grants only self (not chapter) to a self-viewer who lacks directory access', () => {
+    // Defense-in-depth: a viewer without `members:view`/exec/president can never
+    // receive chapter-tier fields, even on their own profile.
+    const allowed = allowedVisibilities([], true);
+    expect([...allowed].sort()).toEqual(['self']);
   });
 });

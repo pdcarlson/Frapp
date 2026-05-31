@@ -47,7 +47,7 @@ type MemberRow = {
   email: string;
 };
 
-type RoleOption = { id: string; name: string };
+type RoleOption = { id: string; name: string; isPresident: boolean };
 
 type SortKey = "name" | "role" | "points" | "joined";
 type SortDir = "asc" | "desc";
@@ -104,11 +104,24 @@ export default function MembersPage() {
     return asArray<Record<string, unknown>>(rolesQuery.data).flatMap((role) => {
       if (!role || typeof role !== "object") return [];
       if (typeof role.id !== "string" || typeof role.name !== "string") return [];
-      return [{ id: role.id, name: role.name }];
+      // The President role carries the wildcard (`*`) permission. `PATCH
+      // /members/:id/roles` rejects president changes (they go through the
+      // dedicated presidency-transfer flow), so flag it to keep it out of the
+      // bulk-assign dropdown below.
+      const permissions = Array.isArray(role.permissions) ? role.permissions : [];
+      const isPresident = role.is_system === true && permissions.includes("*");
+      return [{ id: role.id, name: role.name, isPresident }];
     });
   }, [rolesQuery.data]);
   const roleNameById = useMemo(
     () => new Map(roleOptions.map((role) => [role.id, role.name])),
+    [roleOptions],
+  );
+  // Bulk role assignment can't set the President role — the endpoint rejects it
+  // — so offering it would guarantee a failing action. It stays available in the
+  // filter dropdown (filtering by President is valid); only assignment excludes it.
+  const assignableRoleOptions = useMemo(
+    () => roleOptions.filter((role) => !role.isPresident),
     [roleOptions],
   );
 
@@ -290,6 +303,27 @@ export default function MembersPage() {
     );
   }
 
+  // Roles and points underpin the role filter, bulk assignment, the role column
+  // and points sorting. If either query fails silently the directory still looks
+  // healthy while those features are quietly broken, so surface their load state.
+  if (rolesQuery.isLoading || leaderboardQuery.isLoading) {
+    return <LoadingState message="Loading roles and points…" />;
+  }
+
+  if (rolesQuery.isError || leaderboardQuery.isError) {
+    return (
+      <ErrorState
+        title="Unable to load member directory data"
+        description="Role metadata and points power filtering, assignment and sorting. Verify your chapter access and API health, then retry."
+        onRetry={() => {
+          void activeQuery.refetch();
+          void rolesQuery.refetch();
+          void leaderboardQuery.refetch();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -401,7 +435,7 @@ export default function MembersPage() {
                 className={dashboardFilterSelectClassName}
               >
                 <option value="">Assign role…</option>
-                {roleOptions.map((role) => (
+                {assignableRoleOptions.map((role) => (
                   <option key={role.id} value={role.id}>
                     {role.name}
                   </option>

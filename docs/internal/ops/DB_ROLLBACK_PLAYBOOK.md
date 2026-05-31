@@ -67,9 +67,14 @@ After any rollback event:
 - add preventive checks to migration or CI workflow
 
 ## Rollback Chunk 09 member custom-field values
+
 * **Migration**: `20260531120000_member_custom_field_values.sql`
-* **Action**: Run `DROP TABLE IF EXISTS member_custom_field_values;` (its indexes and the `updated_at` trigger drop automatically with the table).
-* **Note**: Additive table; it holds per-member values for the `chapter_custom_fields` definitions. Dropping it loses any stored custom-field values but does not touch the definitions or any other table. There is no value-write API yet (deferred to #581), so in most environments the table is empty.
+* **Action**: Run `DROP TABLE IF EXISTS member_custom_field_values;` (its indexes, composite foreign keys, and the `updated_at` trigger drop automatically with the table). To fully revert the migration, also drop the helper unique constraints it added to the parent tables (safe to keep — they are redundant supersets of each table's primary key):
+  ```sql
+  ALTER TABLE members DROP CONSTRAINT IF EXISTS members_id_chapter_id_key;
+  ALTER TABLE chapter_custom_fields DROP CONSTRAINT IF EXISTS chapter_custom_fields_id_chapter_id_key;
+  ```
+* **Note**: The table holds per-member values for the `chapter_custom_fields` definitions, carrying a `chapter_id` enforced by composite FKs so a row can never pair a member with a field from another chapter. Dropping it loses any stored custom-field values but does not touch the definitions. There is no value-write API yet (deferred to #581), so in most environments the table is empty.
 
 ## Rollback Chunk 07d dues config alignment
 * **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`

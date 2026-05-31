@@ -118,6 +118,40 @@ describe('CustomFieldService.findVisibleValuesForMember', () => {
     ]);
   });
 
+  it('restricts the value lookup to the visibility-filtered field IDs', async () => {
+    // Defense-in-depth: out-of-tier / sensitive values are never even selected
+    // server-side — the value query is narrowed to the visible definitions.
+    const defs = [
+      {
+        id: 'f1',
+        key: 'gpa',
+        label: 'GPA',
+        type: 'decimal',
+        visibility: 'chapter',
+      },
+      {
+        id: 'f2',
+        key: 'major',
+        label: 'Major',
+        type: 'text',
+        visibility: 'chapter',
+      },
+    ];
+    const { client, inCalls } = makeSupabase({ defs, values: [] });
+    const service = await build(client);
+
+    await service.findVisibleValuesForMember(
+      CHAPTER_ID,
+      MEMBER_ID,
+      new Set<CustomFieldVisibility>(['chapter']),
+    );
+
+    expect(inCalls).toContainEqual({
+      column: 'field_id',
+      values: ['f1', 'f2'],
+    });
+  });
+
   it('short-circuits to empty (no query) when no visibility tier is allowed', async () => {
     const { client, inCalls } = makeSupabase({ defs: [{ id: 'f1' }] });
     const service = await build(client);

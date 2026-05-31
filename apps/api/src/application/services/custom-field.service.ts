@@ -89,11 +89,17 @@ export class CustomFieldService {
     if (defsError) throw defsError;
     if (!defs || defs.length === 0) return [];
 
+    // Restrict the value lookup to the already visibility-filtered field IDs so
+    // out-of-tier / `sensitive` values are never even selected server-side —
+    // not merely dropped after the fact (spec/behavior/members.md: values are
+    // queried against the allowed tiers, never post-fetch scrubbed).
+    const visibleFieldIds = defs.map((def) => def.id);
     const { data: values, error: valuesError }: ValuesResponse =
       await this.supabase
         .from('member_custom_field_values')
         .select('field_id, value')
-        .eq('member_id', memberId);
+        .eq('member_id', memberId)
+        .in('field_id', visibleFieldIds);
     if (valuesError) throw valuesError;
 
     const valueByFieldId = new Map(
