@@ -188,11 +188,14 @@ Config reads/writes go through `GET/PATCH /chapters/:id/config` via the `useOrgC
 - **Inline WCAG warnings** surface when a token fails AA 4.5:1 against bone or ink (using `packages/theme/src/accent.ts`); a failing token falls back to bronze for that token specifically, and the save still succeeds.
 - Save → `POST /chapters/:id/theme-palette` → the server recomputes `theme_palette` → the client refetches via `useChapterTheme()` and applies the CSS variables immediately, with no full reload.
 
-### Roles tab — 3 sub-tabs
+### Roles tab — 4 sub-tabs
 
-- **Pack** (read-only): the active archetype's role-pack table.
-- **Matrix**: a capabilities × roles permission matrix. Columns derive from the active role pack at render time (`pack.roleKeys`, with a guarded fallback to archetype-default keys) — adding a custom role extends the columns without a code change.
-- **Custom**: create/edit `chapter_custom_roles`. Inputs: label, rank, capabilities (native multi-select), core (boolean — if false, the role can be deleted).
+- **Pack** (read-only): the active archetype's role-pack table, resolved via `getRolePack(getArchetype(key).rolePack)` (guarded fallback to `ifc_standard`).
+- **Matrix**: a capabilities × roles permission matrix. Columns derive from the active role pack at render time (`pack.roleKeys`, with a guarded fallback to archetype-default keys) plus the live `chapter_custom_roles` keys — adding a custom role extends the columns without a code change.
+- **Custom**: create/edit `chapter_custom_roles`. Inputs: label, rank, capabilities (native multi-select from the permission catalog), core (boolean — if false, the role can be deleted). Persisted via the dedicated CRUD endpoints below (audit-logged), not the config blob.
+- **Live roles**: the RBAC manager folded in from the former standalone `/roles` page — edit the live `roles` table (system-role permissions, create/delete custom RBAC roles, presidency transfer, assignment). The standalone `/roles` route now redirects to `/settings?tab=roles`; the Settings rail is the single home for role IA.
+
+The custom-role rows live in `chapter_custom_roles` and are served by dedicated endpoints (read gated by `chapter-config:view`; write by `chapter-config:manage`): `GET /custom-roles`, `POST /custom-roles`, `PATCH /custom-roles/:id`, `DELETE /custom-roles/:id`. Each write appends a `chapter_audit_log` row (mirrored to `#chapter-audit`) like every other settings save; a `core` role cannot be deleted (`403`), and a duplicate `(chapter_id, key)` is rejected (`409`). These rows are presentation-only today — wiring `chapter_custom_roles` into permission enforcement and member assignment is tracked as a follow-up.
 
 ### Fields tab
 

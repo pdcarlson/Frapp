@@ -4201,6 +4201,157 @@
         ]
       }
     },
+    "/v1/custom-roles": {
+      "get": {
+        "operationId": "CustomRoleController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomRoleDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter custom roles",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "post": {
+        "operationId": "CustomRoleController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom role with this key already exists in this chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
+    "/v1/custom-roles/{id}": {
+      "patch": {
+        "operationId": "CustomRoleController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "delete": {
+        "operationId": "CustomRoleController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Core roles cannot be deleted"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a non-core custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -5810,6 +5961,107 @@
             }
           }
         }
+      },
+      "CustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "core": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "rank",
+          "capabilities",
+          "core",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Machine-readable slug, unique per chapter"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number",
+            "description": "Hierarchy order; lower ranks first"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "UpdateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RemoveCustomRoleResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
+        ]
       },
       "IdentityResponseDto": {
         "type": "object",

@@ -80,6 +80,10 @@ The President role is a system role that always carries the `*` wildcard permiss
   - `PATCH /v1/members/:id/roles` (the generic role-update endpoint) rejects any payload that adds or removes the chapter's system President role (the role carrying `*`) with **`403 Forbidden`**. The dedicated `POST /v1/roles/transfer-presidency` flow is the only path that can move the wildcard role.
   - `PATCH /v1/members/:id/roles` also validates every incoming `role_id` against the active chapter's roles and returns **`400 Bad Request`** for unknown or cross-chapter / fabricated role IDs, preventing such IDs from being persisted on a member.
 
+## Custom roles vs. `chapter_custom_roles`
+
+Two role models coexist. The live `roles` table described above is the **enforcement** source — the permission-check algorithm reads it, and the Settings → Roles "Live roles" sub-tab edits it. The separate `chapter_custom_roles` table (label, rank, capabilities, `core`) backs the Settings → Roles "Custom" sub-tab and its dedicated CRUD endpoints (see [`settings/customization.md`](settings/customization.md) → Roles Tab). `chapter_custom_roles` is presentation-only today; wiring it into the permission-check algorithm and member assignment is tracked as a follow-up and is **not** consulted by the enforcement path until then.
+
 ## Edge Cases
 
 - If a role is deleted while members still hold it, those members lose the permissions from that role on their next request (no stale cached permissions).

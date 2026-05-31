@@ -1765,6 +1765,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/custom-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom roles */
+        get: operations["CustomRoleController_list_v1"];
+        put?: never;
+        /** Create a custom role (audit-logged) */
+        post: operations["CustomRoleController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a non-core custom role (audit-logged) */
+        delete: operations["CustomRoleController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom role (audit-logged) */
+        patch: operations["CustomRoleController_update_v1"];
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -2333,6 +2369,34 @@ export interface components {
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
+        };
+        CustomRoleDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            rank: number;
+            capabilities: string[];
+            core: boolean;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomRoleDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @description Hierarchy order; lower ranks first */
+            rank?: number;
+            capabilities?: string[];
+        };
+        UpdateCustomRoleDto: {
+            label?: string;
+            rank?: number;
+            capabilities?: string[];
+        };
+        RemoveCustomRoleResponseDto: {
+            /** @example true */
+            success: boolean;
         };
         IdentityResponseDto: {
             /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
@@ -5115,6 +5179,108 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    CustomRoleController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"][];
+                };
+            };
+        };
+    };
+    CustomRoleController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+            /** @description A custom role with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
+                };
+            };
+            /** @description Core roles cannot be deleted */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
             };
         };
     };

@@ -1,0 +1,149 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { ChapterCustomRole } from "@repo/validation";
+
+// Mock the data hooks so the tab renders without a query client / network.
+const mockUseCustomRoles = vi.fn();
+const mockCreate = vi.fn();
+const mockUpdate = vi.fn();
+const mockDelete = vi.fn();
+
+vi.mock("@/lib/hooks/use-custom-roles", () => ({
+  useCustomRoles: () => mockUseCustomRoles(),
+  useCreateCustomRole: () => ({ mutateAsync: mockCreate, isPending: false }),
+  useUpdateCustomRole: () => ({ mutateAsync: mockUpdate, isPending: false }),
+  useDeleteCustomRole: () => ({ mutateAsync: mockDelete, isPending: false }),
+}));
+
+// The folded-in live RBAC manager pulls in @repo/hooks; stub it out.
+vi.mock("@/components/roles/roles-page", () => ({
+  RolesAndPermissionsPage: () => <div data-testid="live-roles" />,
+}));
+
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+import { SettingsRolesTab } from "./settings-roles-tab";
+
+const CATALOG = [
+  { key: "MEMBERS_VIEW", permission: "members:view" },
+  { key: "EVENTS_CREATE", permission: "events:create" },
+];
+
+function customRole(over: Partial<ChapterCustomRole> = {}): ChapterCustomRole {
+  return {
+    id: "r1",
+    chapter_id: "c1",
+    key: "pledge_educator",
+    label: "Pledge Educator",
+    rank: 9,
+    capabilities: ["members:view"],
+    core: false,
+    created_at: "",
+    updated_at: "",
+    ...over,
+  };
+}
+
+describe("SettingsRolesTab", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseCustomRoles.mockReturnValue({
+      data: [],
+      isPending: false,
+      isError: false,
+    });
+  });
+
+  it("renders the role pack (read-only) from the active archetype", () => {
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+    );
+    // Pack sub-tab is the default; ifc_standard includes President.
+    expect(screen.getByText("President")).toBeInTheDocument();
+  });
+
+  it("derives matrix columns from the pack plus live custom roles", async () => {
+    const user = userEvent.setup();
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole({ label: "Pledge Educator" })],
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+    );
+    await user.click(screen.getByRole("tab", { name: /matrix/i }));
+    // A pack column and the custom-role column are both present as headers.
+    expect(
+      screen.getByRole("columnheader", { name: "President" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: "Pledge Educator" }),
+    ).toBeInTheDocument();
+    // The capability the custom role holds is reflected in the matrix.
+    expect(
+      screen.getByLabelText("Pledge Educator has members:view"),
+    ).toBeInTheDocument();
+  });
+
+  it("hides the delete control for core roles and shows it for non-core", async () => {
+    const user = userEvent.setup();
+    mockUseCustomRoles.mockReturnValue({
+      data: [
+        customRole({ id: "core1", label: "Core Role", core: true }),
+        customRole({ id: "free1", label: "Free Role", core: false }),
+      ],
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+    );
+    await user.click(screen.getByRole("tab", { name: /custom/i }));
+    expect(
+      screen.queryByRole("button", { name: /delete core role/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /delete free role/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("creates a custom role with the drafted key, label, and capabilities", async () => {
+    const user = userEvent.setup();
+    mockCreate.mockResolvedValue({});
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+    );
+    await user.click(screen.getByRole("tab", { name: /custom/i }));
+    await user.type(screen.getByLabelText("Key"), "social_chair");
+    await user.type(screen.getByLabelText("Label"), "Social Chair");
+    await user.click(screen.getByLabelText("new role events:create"));
+    await user.click(screen.getByRole("button", { name: /create role/i }));
+
+    expect(mockCreate).toHaveBeenCalledWith({
+      key: "social_chair",
+      label: "Social Chair",
+      rank: 99,
+      capabilities: ["events:create"],
+    });
+  });
+
+  it("disables custom-role editing controls when the caller cannot manage", async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsRolesTab
+        archetypeKey="ifc"
+        canManage={false}
+        catalog={CATALOG}
+      />,
+    );
+    await user.click(screen.getByRole("tab", { name: /custom/i }));
+    expect(screen.getByLabelText("Key")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /create role/i }),
+    ).toBeDisabled();
+  });
+});

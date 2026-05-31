@@ -11,8 +11,9 @@ Behavior rules for the customization-heavy settings tabs (Theme, Roles, Fields, 
 ## Roles Tab
 
 - **Pack** (read-only): the active archetype's role pack. Assigning members to roles happens in the member directory, not here.
-- **Matrix:** the capabilities × roles permission matrix. Its **columns derive from the active role pack at render time** (with a guarded fallback to archetype-default keys), never a hardcoded column array. Adding a custom role must extend the matrix columns with no code change.
-- **Custom:** create and edit `chapter_custom_roles`. Each custom role carries: label, rank, capabilities (multi-select from the permission catalog), and a `core` flag — a non-core role can be deleted.
+- **Matrix:** the capabilities × roles permission matrix. Its **columns derive from the active role pack at render time** (with a guarded fallback to archetype-default keys) plus the live custom-role keys, never a hardcoded column array. Adding a custom role must extend the matrix columns with no code change.
+- **Custom:** create and edit `chapter_custom_roles`. Each custom role carries: label, rank, capabilities (multi-select from the permission catalog), and a `core` flag — a non-core role can be deleted. Unlike the Workflows/Dues tabs (which write through the config blob), custom roles use **dedicated CRUD endpoints** (`GET/POST /custom-roles`, `PATCH/DELETE /custom-roles/:id`) because they are individually addressable rows; reads require `chapter-config:view` and writes require `chapter-config:manage`. Every write appends a `chapter_audit_log` row (mirrored to `#chapter-audit`) like every other settings save. A duplicate `(chapter_id, key)` is rejected (`409`) and a `core` role cannot be deleted (`403`).
+- **Live roles:** the RBAC manager (live `roles` table — system-role permissions, custom RBAC roles, presidency transfer, assignment) is folded into this tab; the former standalone `/roles` page redirects to `/settings?tab=roles`. The live `roles` table remains the source of truth for permission enforcement (see [`../rbac.md`](../rbac.md)); `chapter_custom_roles` is presentation-only until a follow-up wires it into enforcement and member assignment.
 
 ## Fields Tab
 

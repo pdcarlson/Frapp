@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 const dashboardRouteSnapshots = [
   { path: "/members", snapshotName: "members-main-content.png" },
   { path: "/alumni", snapshotName: "alumni-main-content.png" },
-  { path: "/roles", snapshotName: "roles-main-content.png" },
+  // `/roles` now redirects into Settings → Roles (Chunk 07b, #538); the
+  // standalone snapshot is retired. The settings surface is covered by
+  // the `/settings` baseline below.
   { path: "/events", snapshotName: "events-main-content.png" },
   { path: "/tasks", snapshotName: "tasks-main-content.png" },
   { path: "/service", snapshotName: "service-main-content.png" },
