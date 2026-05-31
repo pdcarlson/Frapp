@@ -38,7 +38,6 @@ vi.mock("@/components/shared/can", () => ({
     canManage ? <>{children}</> : null,
 }));
 
-const VIEWER = "viewer-1";
 const ASSIGNEE = "assignee-1";
 
 function makeMessage(overrides: Record<string, unknown> = {}): ChatMessage {
