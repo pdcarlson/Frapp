@@ -2,15 +2,18 @@
 
 // PGlite migration validator — applies every `supabase/migrations/*.sql` to a
 // fresh in-process Postgres-in-WASM instance and asserts the schema landmarks
-// reviewers care about. Always-on supplemental verification per ADR-11; runs
-// in CI alongside `edge-fn-tests` and from any cloud-agent sandbox without
-// Docker or a hosted Supabase project.
+// reviewers care about. Always-on supplemental verification per ADR-11/ADR-12;
+// runs in CI as the `pglite-migrations` job and from any cloud-agent sandbox
+// without Docker or a hosted Supabase project.
 //
 // Coverage: migration syntax, ordering, presence of structural landmarks
-// (unique indexes, RLS policy DDL, generated columns). Out of reach:
-// Realtime, Presence, GoTrue with real JWTs, RLS enforcement via auth.uid().
-// See `docs/internal/AGENT_INFRA.md` ("Agent dev stack") for the integration
-// tier (NestJS Jest + hosted Supabase).
+// (unique indexes, generated columns), and an RLS smoke tier — every public
+// table has RLS enabled (Frapp's default-deny invariant) plus the chat
+// hot-path RLS posture (default-deny channels/messages; ownership-scoped
+// reaction policies). Out of reach: Realtime, Presence, GoTrue with real JWTs,
+// and RLS *enforcement* as the `authenticated` role (SET ROLE + real JWT) —
+// tracked in #423 and the NestJS Jest tier. See
+// `docs/internal/ci-cd/AGENT_INFRA.md` ("Agent dev stack").
 
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
@@ -107,6 +110,85 @@ const LANDMARKS = [
       /action_type/.test(rows[0].indexdef),
   },
   {
+    name: "chapter_directory has GENERATED search_vector column",
+    sql: `select attgenerated from pg_attribute
+           where attrelid = 'chapter_directory'::regclass and attname = 'search_vector'`,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
+  },
+];
+
+// ─── RLS smoke (ADR-12) ─────────────────────────────────────────────────────
+//
+// Frapp's data model is default-deny RLS + service-role bypass: the API holds
+// the service-role key and enforces access control in NestJS, while direct
+// Supabase-client access is denied unless a policy explicitly opens it. This
+// tier guards that invariant — it asserts policy *presence* and shape, not
+// enforcement as the `authenticated` role (that's #423 + the NestJS Jest tier).
+
+// Tables intentionally exempt from the "RLS enabled" invariant. Empty today —
+// all 38 tables enable RLS. Add a table here ONLY with a reviewed justification
+// (e.g. a stateless lookup view), and prefer keeping RLS on with a deny policy.
+const RLS_EXEMPT_TABLES = new Set([]);
+
+const RLS_SMOKE = [
+  {
+    name: "RLS enabled on chat_channels + default-deny (no policies)",
+    sql: `select c.relrowsecurity as rls,
+                 (select count(*)::int from pg_policy p where p.polrelid = c.oid) as policies
+            from pg_class c where c.relname = 'chat_channels'`,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
+  },
+  {
+    name: "RLS enabled on chat_messages + default-deny (no policies)",
+    sql: `select c.relrowsecurity as rls,
+                 (select count(*)::int from pg_policy p where p.polrelid = c.oid) as policies
+            from pg_class c where c.relname = 'chat_messages'`,
+    ok: (rows) =>
+      rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
+  },
+  {
+    name: "RLS enabled on chat_message_actions",
+    sql: `select relrowsecurity from pg_class where relname = 'chat_message_actions'`,
+    ok: (rows) => rows.length === 1 && rows[0].relrowsecurity === true,
+  },
+  {
+    name: "chat_message_actions SELECT gated to the authenticated role",
+    sql: `select pg_get_expr(polqual, polrelid) as using_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_message_actions' and polcmd = 'r'`,
+    ok: (rows) =>
+      rows.length >= 1 &&
+      rows.some((r) => /auth\.role\(\)\s*=\s*'authenticated'/i.test(String(r.using_expr))),
+  },
+  {
+    name: "chat_message_actions INSERT scoped to the caller's own user_id (auth.uid())",
+    sql: `select pg_get_expr(polwithcheck, polrelid) as check_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_message_actions' and polcmd = 'a'`,
+    ok: (rows) =>
+      rows.length >= 1 &&
+      rows.some(
+        (r) =>
+          /user_id/i.test(String(r.check_expr)) &&
+          /auth\.uid\(\)/i.test(String(r.check_expr)),
+      ),
+  },
+  {
+    name: "chat_message_actions DELETE scoped to the caller's own user_id (auth.uid())",
+    sql: `select pg_get_expr(polqual, polrelid) as using_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_message_actions' and polcmd = 'd'`,
+    ok: (rows) =>
+      rows.length >= 1 &&
+      rows.some(
+        (r) =>
+          /user_id/i.test(String(r.using_expr)) &&
+          /auth\.uid\(\)/i.test(String(r.using_expr)),
+      ),
+  },
+  {
     name: "chapter_audit_log denies UPDATE via RLS policy (qual = false)",
     sql: `select pg_get_expr(polqual, polrelid) as expr
             from pg_policy p
@@ -124,23 +206,11 @@ const LANDMARKS = [
     ok: (rows) =>
       rows.length >= 1 && rows.some((r) => /false/i.test(String(r.expr))),
   },
-  {
-    name: "chapter_directory has GENERATED search_vector column",
-    sql: `select attgenerated from pg_attribute
-           where attrelid = 'chapter_directory'::regclass and attname = 'search_vector'`,
-    ok: (rows) =>
-      rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
-  },
-  {
-    name: "RLS enabled on chat_message_actions",
-    sql: `select relrowsecurity from pg_class where relname = 'chat_message_actions'`,
-    ok: (rows) => rows.length === 1 && rows[0].relrowsecurity === true,
-  },
 ];
 
-console.log("\n=== Schema landmarks ===");
 let missing = 0;
-for (const lm of LANDMARKS) {
+
+async function runOne(lm) {
   try {
     const res = await db.query(lm.sql);
     if (lm.ok(res.rows)) {
@@ -159,6 +229,38 @@ for (const lm of LANDMARKS) {
   }
 }
 
+async function runAssertions(title, list) {
+  console.log(`\n=== ${title} ===`);
+  for (const lm of list) await runOne(lm);
+}
+
+await runAssertions("Schema landmarks", LANDMARKS);
+
+// Default-deny invariant (#360): every base table in `public` must enable RLS.
+// Catalog-driven, so it covers CREATE TABLE IF NOT EXISTS / quoted / schema-
+// qualified forms for free — it inspects the applied schema, not the SQL text.
+console.log("\n=== RLS smoke ===");
+{
+  const res = await db.query(
+    `select c.relname from pg_class c
+       join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and c.relrowsecurity = false
+      order by c.relname`,
+  );
+  const offenders = res.rows
+    .map((r) => r.relname)
+    .filter((t) => !RLS_EXEMPT_TABLES.has(t));
+  if (offenders.length === 0) {
+    console.log("OK    every public table enables RLS (default-deny invariant)");
+  } else {
+    missing += 1;
+    console.log(
+      `MISS  ${offenders.length} public table(s) without RLS enabled\n        ↳ ${offenders.join(", ")}`,
+    );
+  }
+}
+for (const lm of RLS_SMOKE) await runOne(lm);
+
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,
 );
@@ -167,8 +269,12 @@ console.log(`\nPublic tables: ${tableCount.rows[0].n}`);
 await db.close();
 
 if (missing > 0) {
-  console.error(`\nFAILED: ${missing} schema landmark(s) missing or wrong.`);
+  console.error(
+    `\nFAILED: ${missing} schema landmark / RLS smoke assertion(s) missing or wrong.`,
+  );
   process.exit(1);
 }
 
-console.log("\nOK — all migrations applied; all schema landmarks present.");
+console.log(
+  "\nOK — all migrations applied; schema landmarks + RLS smoke assertions present.",
+);
