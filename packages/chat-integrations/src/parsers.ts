@@ -21,6 +21,17 @@ export interface AnnounceArgs {
   message: string;
 }
 
+/** Result of a successful parse for `/task`. */
+export interface TaskArgs {
+  title: string;
+  /** Assignee token with the leading `@` stripped. Resolved to a user id at dispatch. */
+  assigneeToken: string;
+  /** Due date as `YYYY-MM-DD` (validated calendar date). */
+  dueDate: string;
+  /** Optional points awarded on confirmed completion; `null` when omitted. */
+  pointReward: number | null;
+}
+
 /** Result of a successful parse for `/points`. */
 export interface PointsArgs {
   /** `grant` adds points (MANUAL), `deduct` removes them (FINE). */
@@ -201,6 +212,86 @@ export function parsePointsArgs(args: string): ParseResult<PointsArgs> {
       reason,
       category: action === "grant" ? "MANUAL" : "FINE",
     },
+  };
+}
+
+const TASK_MAX_TITLE_LENGTH = 255;
+const TASK_USAGE = 'Usage: /task "<title>" @assignee <YYYY-MM-DD> [points]';
+
+/**
+ * Validates a `YYYY-MM-DD` token as a real calendar date (rejects `2026-02-30`,
+ * `2026-13-01`, and non-date junk). Returns the normalized string on success or
+ * `null` so the caller surfaces a precise error rather than passing `NaN`
+ * downstream (the NestJS `@IsDateString` would 400, but failing in the parser
+ * keeps the slash UX local).
+ */
+function parseIsoDate(token: string | undefined): string | null {
+  if (!token) return null;
+  const trimmed = token.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const parsed = new Date(`${trimmed}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  // Round-trip guard: `Date` is lenient (2026-02-30 → Mar 2), so reject any
+  // token that doesn't survive a UTC round-trip back to the same string.
+  if (parsed.toISOString().slice(0, 10) !== trimmed) return null;
+  return trimmed;
+}
+
+/**
+ * Parse `/task "<title>" @assignee <YYYY-MM-DD> [points]`. The title is quoted
+ * because chapter task titles routinely contain spaces (same rationale as
+ * `/poll`). The assignee token (leading `@` stripped) is resolved to a user id
+ * at dispatch — the parser is grammar-only and never touches the directory. The
+ * due date is required (the backend `due_date` is non-null) and validated as a
+ * real calendar date. Points are optional and, when present, a non-negative
+ * whole number.
+ */
+export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in /task arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: TASK_USAGE };
+  }
+
+  const title = tokens[0]!.trim();
+  if (title.length === 0) {
+    return { ok: false, error: "Task title cannot be empty" };
+  }
+  if (title.length > TASK_MAX_TITLE_LENGTH) {
+    return {
+      ok: false,
+      error: `Task title is too long (max ${TASK_MAX_TITLE_LENGTH} chars)`,
+    };
+  }
+
+  const assigneeRaw = tokens[1];
+  if (!assigneeRaw || !assigneeRaw.startsWith("@") || assigneeRaw.length < 2) {
+    return { ok: false, error: `Name an assignee with @. ${TASK_USAGE}` };
+  }
+  const assigneeToken = assigneeRaw.slice(1);
+
+  const dueDate = parseIsoDate(tokens[2]);
+  if (dueDate === null) {
+    return { ok: false, error: "Add a due date as YYYY-MM-DD" };
+  }
+
+  let pointReward: number | null = null;
+  if (tokens[3] != null && tokens[3].trim().length > 0) {
+    const parsed = parseNumericArg(tokens[3]);
+    if (parsed === null || !Number.isInteger(parsed) || parsed < 0) {
+      return {
+        ok: false,
+        error: "Point reward must be a non-negative whole number",
+      };
+    }
+    pointReward = parsed;
+  }
+
+  return {
+    ok: true,
+    value: { title, assigneeToken, dueDate, pointReward },
   };
 }
 

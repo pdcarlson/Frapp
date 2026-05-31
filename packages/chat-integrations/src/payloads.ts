@@ -66,5 +66,35 @@ export interface PointsPayload {
   created_at: string;
 }
 
+/**
+ * Payload for a `kind:"task"` card. Built server-side after `TaskService.create`
+ * commits the row (the `/task` slash command), so the card can never assert a
+ * task that does not exist. Names are embedded at write time, keeping the
+ * assignment snapshot correct even if a member later leaves the chapter.
+ *
+ * The snapshot is immutable: `status` is always the creation-time `"TODO"`. The
+ * card renderer shows the *live* status by reading `task_id` back through the
+ * task query — the chat message row is never mutated.
+ */
+export interface TaskPayload {
+  /** `tasks.id` of the committed row — the renderer reads live status from this. */
+  task_id: string;
+  title: string;
+  /** Admin who ran the command (the message sender). */
+  assigner_user_id: string;
+  assigner_name: string;
+  /** Member the task is assigned to. */
+  assignee_user_id: string;
+  assignee_name: string;
+  /** `tasks.due_date` (YYYY-MM-DD). */
+  due_date: string;
+  /** Creation-time status; always `"TODO"`. Live status comes from the task query. */
+  status: "TODO";
+  /** Points awarded on confirmed completion, or `null` when none. */
+  point_reward: number | null;
+  /** `tasks.created_at`. */
+  created_at: string;
+}
+
 /** Action type used for poll votes. Shared between renderer + Edge Function. */
 export const POLL_VOTE_ACTION_TYPE = "vote";

@@ -11,19 +11,24 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Task, TaskStatus } from '../../domain/entities/task.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 
 describe('TaskService', () => {
   let service: TaskService;
   let mockTaskRepo: jest.Mocked<ITaskRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockUserRepo: jest.Mocked<Pick<IUserRepository, 'findByIds'>>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockChatService: jest.Mocked<Pick<ChatService, 'sendMessage'>>;
 
   const baseTask: Task = {
     id: 'task-1',
@@ -89,9 +94,20 @@ describe('TaskService', () => {
       delete: jest.fn(),
     };
 
+    mockUserRepo = {
+      findByIds: jest.fn().mockResolvedValue([]),
+    };
+
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockChatService = {
+      sendMessage: jest.fn().mockResolvedValue({
+        message: { id: 'msg-1' },
+        deduplicated: false,
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -100,7 +116,9 @@ describe('TaskService', () => {
         { provide: TASK_REPOSITORY, useValue: mockTaskRepo },
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -180,6 +198,78 @@ describe('TaskService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
       expect(mockTaskRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('posts a server-originated task card when channel + client_message_id are set', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'admin-1', display_name: 'Admin Alice' },
+        { id: 'user-1', display_name: 'Member Bob' },
+      ] as never);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        point_reward: 10,
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      });
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chapter_id: 'ch-1',
+          channel_id: 'channel-1',
+          sender_id: 'admin-1',
+          kind: 'task',
+          system_originated: true,
+          client_message_id: 'cmid-1',
+          payload: expect.objectContaining({
+            task_id: 'task-1',
+            title: 'Test Task',
+            assigner_name: 'Admin Alice',
+            assignee_name: 'Member Bob',
+            status: 'TODO',
+            point_reward: 10,
+          }),
+        }),
+      );
+    });
+
+    it('does not post a card for a dashboard create (no channel)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+      });
+
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('returns the created task even if the card post fails (best-effort)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
+      mockTaskRepo.create.mockResolvedValue(baseTask);
+      mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+      const result = await service.create({
+        chapter_id: 'ch-1',
+        title: 'Test Task',
+        assignee_id: 'user-1',
+        created_by: 'admin-1',
+        due_date: '2099-03-15',
+        channel_id: 'channel-1',
+        client_message_id: 'cmid-1',
+      });
+
+      expect(result).toEqual(baseTask);
     });
   });
 

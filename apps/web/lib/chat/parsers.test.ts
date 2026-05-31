@@ -3,6 +3,7 @@ import {
   parsePollArgs,
   parseAnnounceArgs,
   parsePointsArgs,
+  parseTaskArgs,
   tokenizeQuotedArgs,
 } from "@repo/chat-integrations";
 
@@ -178,6 +179,72 @@ describe("parsePointsArgs", () => {
 
   it("returns an error on an unterminated quote", () => {
     const r = parsePointsArgs('grant @alice 5 for "great work');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/quote/i);
+  });
+});
+
+describe("parseTaskArgs", () => {
+  it("parses a quoted title, assignee, date, and points", () => {
+    const r = parseTaskArgs('"Clean the house" @alice 2026-06-15 10');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toEqual({
+      title: "Clean the house",
+      assigneeToken: "alice",
+      dueDate: "2026-06-15",
+      pointReward: 10,
+    });
+  });
+
+  it("treats points as optional (null when omitted)", () => {
+    const r = parseTaskArgs('"Ship 10b" @bob 2026-07-01');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.pointReward).toBeNull();
+  });
+
+  it("rejects an empty title", () => {
+    const r = parseTaskArgs('"" @alice 2026-06-15');
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects a missing @assignee token", () => {
+    const r = parseTaskArgs('"Task" alice 2026-06-15');
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects an empty @ token", () => {
+    const r = parseTaskArgs('"Task" @ 2026-06-15');
+    expect(r.ok).toBe(false);
+  });
+
+  it("requires a due date", () => {
+    const r = parseTaskArgs('"Task" @alice');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/due date/i);
+  });
+
+  it("rejects a malformed date", () => {
+    expect(parseTaskArgs('"Task" @alice 06/15/2026').ok).toBe(false);
+    expect(parseTaskArgs('"Task" @alice 2026-6-15').ok).toBe(false);
+  });
+
+  it("rejects an impossible calendar date", () => {
+    expect(parseTaskArgs('"Task" @alice 2026-02-30').ok).toBe(false);
+    expect(parseTaskArgs('"Task" @alice 2026-13-01').ok).toBe(false);
+  });
+
+  it("rejects a negative or non-integer point reward", () => {
+    expect(parseTaskArgs('"Task" @alice 2026-06-15 -5').ok).toBe(false);
+    expect(parseTaskArgs('"Task" @alice 2026-06-15 2.5').ok).toBe(false);
+    expect(parseTaskArgs('"Task" @alice 2026-06-15 abc').ok).toBe(false);
+  });
+
+  it("returns an error on an unterminated quote", () => {
+    const r = parseTaskArgs('"Task @alice 2026-06-15');
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toMatch(/quote/i);
