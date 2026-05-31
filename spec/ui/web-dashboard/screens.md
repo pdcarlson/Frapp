@@ -199,8 +199,9 @@ The custom-role rows live in `chapter_custom_roles` and are served by dedicated 
 
 ### Fields tab
 
-- An editable table over `chapter_custom_fields`. Columns: label, type, required, visibility (self / chapter / exec / president), sensitive.
-- An "Add field" modal with type-specific config (text → max length; select → options; date → no extra; …). Option lists deep-clone when added so editing one chapter's options never mutates another's.
+- An editable table over `chapter_custom_fields`. Columns: label, type, required, visibility (self / chapter / exec / president), sensitive. Existing rows edit inline (toggle required/sensitive, change visibility); each field renders its `select` options as chips.
+- An "Add field" form with type-specific config (text → max length; select → options list; the remaining types → no extra config). A `select` field must declare at least one option before it can be saved. Option lists are deep-cloned per chapter (server-side) so editing one chapter's options never mutates another's.
+- The rows are served by dedicated endpoints (read gated by `chapter-config:view`; write by `chapter-config:manage`): `GET /custom-fields`, `POST /custom-fields`, `PATCH /custom-fields/:id`, `DELETE /custom-fields/:id`. Each write appends a `chapter_audit_log` row (mirrored to `#chapter-audit`) like every other settings save; a duplicate `(chapter_id, key)` is rejected (`409`). `key` and `type` are immutable after creation (changing `type` would orphan stored member values); every field is deletable. Visibility/`sensitive` are stored here and enforced when the member directory renders the values (see the directory section).
 
 ### Workflows tab
 

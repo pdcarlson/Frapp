@@ -1801,6 +1801,42 @@ export interface paths {
         patch: operations["CustomRoleController_update_v1"];
         trace?: never;
     };
+    "/v1/custom-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom fields */
+        get: operations["CustomFieldController_list_v1"];
+        put?: never;
+        /** Create a custom field (audit-logged) */
+        post: operations["CustomFieldController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-fields/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom field (audit-logged) */
+        delete: operations["CustomFieldController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom field (audit-logged) */
+        patch: operations["CustomFieldController_update_v1"];
+        trace?: never;
+    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -2401,6 +2437,60 @@ export interface components {
             capabilities?: string[];
         };
         RemoveCustomRoleResponseDto: {
+            /** @example true */
+            success: boolean;
+        };
+        CustomFieldOptionsDto: {
+            /** @description Option list for select */
+            choices?: string[];
+            /** @description Max length for text fields */
+            max_length?: number;
+        };
+        CustomFieldDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            required: boolean;
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort: number;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomFieldDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @default false */
+            required: boolean;
+            /**
+             * @default chapter
+             * @enum {string}
+             */
+            visibility: "self" | "chapter" | "exec" | "president";
+            /** @default false */
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"];
+            /** @description Display order; lower sorts first */
+            sort?: number;
+        };
+        UpdateCustomFieldDto: {
+            label?: string;
+            required?: boolean;
+            /** @enum {string} */
+            visibility?: "self" | "chapter" | "exec" | "president";
+            sensitive?: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort?: number;
+        };
+        RemoveCustomFieldResponseDto: {
             /** @example true */
             success: boolean;
         };
@@ -5286,6 +5376,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"][];
+                };
+            };
+        };
+    };
+    CustomFieldController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomFieldDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
+                };
+            };
+            /** @description A custom field with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomFieldController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomFieldResponseDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomFieldDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
                 };
             };
         };
