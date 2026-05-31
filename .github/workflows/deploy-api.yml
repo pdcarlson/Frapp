@@ -96,8 +96,11 @@ jobs:
         run: node scripts/run-migration.mjs --env staging
 
   # ── Run database migrations (production) ───────────────────────────────
-  # NOTE: The "production" environment has protection rules that require
-  # manual approval. The workflow pauses here until an admin approves.
+  # NOTE: The "production" environment is used for job scoping only. Required-reviewer
+  # environment protection rules are GitHub Enterprise-only on PRIVATE repos, so on this
+  # (private, Pro) repo this job does NOT pause for manual approval — it runs straight
+  # through once CI passes. The human gate is the main->production promotion PR
+  # (branch protection: CI + approving review + conversation resolution).
   migrate-production:
     needs: check-changes
     if: |

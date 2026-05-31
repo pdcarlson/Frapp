@@ -83,7 +83,9 @@ Project ID is documented in [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MAN
 | Environment  | Protection        | Purpose                             |
 | ------------ | ----------------- | ----------------------------------- |
 | `staging`    | None              | Staging deploys (`main`)            |
-| `production` | Required reviewer | Production deploys + migration gate |
+| `production` | Promotion-PR gate | Production deploys + migrations |
+
+> **Private-repo note:** GitHub *environment* required-reviewer protection rules are GitHub Enterprise-only on private repos, so they do **not** gate this (private, Pro) repo. The production gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution); the `production` environment still exists for job scoping.
 
 Repository secrets for Infisical bootstrap: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, `INFISICAL_PROJECT_ID`.
 

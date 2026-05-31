@@ -196,7 +196,7 @@ CI passes → DB migration (dry-run then apply) → API deploy (Render)
 Vercel preview/production deployments are push-triggered from `main`/`production` and can proceed in parallel
 ```
 
-Production deployments additionally require manual approval before the migration step runs.
+Production deployments run automatically after the `main` → `production` promotion PR merges and CI passes. There is no separate GitHub Actions environment-approval pause: required-reviewer environment protection rules are GitHub Enterprise-only on private repositories, so the control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution).
 
 ### Web and Landing (Vercel)
 
@@ -315,7 +315,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 2. **Dry run** (CD): `supabase db push --dry-run` shows what will change before applying.
 3. **Apply** (CD): `supabase db push` applies pending migrations.
 4. **Failure handling**: If migration fails, the pipeline stops — no app deploy happens.
-5. **Production gate**: Production migrations require manual approval via GitHub Actions environment protection.
+5. **Production gate**: The gate is the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution). GitHub Actions environment-approval rules do **not** gate production on this repo — required-reviewer environment protection is GitHub Enterprise-only on private repos.
 
 ### Safety Rules
 

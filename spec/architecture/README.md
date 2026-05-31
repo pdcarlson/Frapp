@@ -588,6 +588,28 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 **Revisit-when:** PGlite proves insufficient for a recurring class of work (forcing the branch escape hatch to become routine), or Supabase branch cost/security posture shifts enough that Path A should become the default rather than an opt-in.
 
+### ADR-13: Repository visibility — public → private on GitHub Pro (2026-05-31)
+
+**Decision:** The `pdcarlson/Frapp` repository moved from **public** to **private**, on a **GitHub Pro** plan. Frapp is a commercial multi-tenant SaaS; the source, the issue backlog/roadmap, and implementation details are no longer publicly visible.
+
+**Rationale:** Protect proprietary source (multi-tenant RLS model, Stripe billing, business logic); stop publicly exposing the roadmap (the issue backlog mirrored to GitHub was world-readable); reduce the source-disclosure attack surface. The project is effectively solo (one human collaborator + AI agents), so the open-source/community upside given up is negligible.
+
+**Consequences:**
+
+- **Branch protection and repository-level Actions secrets are unaffected** — both are available on private repos with Pro. The deploy pipeline resolves runtime secrets from Infisical at workflow time and uses only repo-level bootstrap secrets, so it keeps working.
+- **The `production` environment's manual-approval pause is gone.** Required-reviewer **environment** protection rules are GitHub **Enterprise-only** on private repos. On Pro+private the `migrate-production` / `deploy-production` jobs no longer pause; the human gate is now solely the `main` → `production` promotion PR (branch protection: CI + an approving review + conversation resolution). Acceptable while solo. Docs updated: `deploy-api.yml`, `docs/internal/ops/DEPLOYMENT.md`, `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`, `docs/internal/ci-cd/AGENT_INFRA.md`, `spec/environments/README.md`.
+- **GitHub Actions minutes are now metered** (public repos are unlimited; private on Pro includes 3,000 min/month, then per-minute overage). The CI suite is heavy. A dedicated CI-cost/efficiency audit is **deferred to its own effort** — intentionally not done in this change.
+- **GitHub-native secret scanning, push protection, and code scanning stop** (public-repo-only / otherwise require paid GitHub Advanced Security). Mitigation: adopt a local `gitleaks` pre-commit/CI check to replace the lost push protection.
+- **The repository's past is already disclosed.** One public fork existed at flip time; GitHub detaches it into its own network (it is not retracted), and any prior clone retains the public history. A full-history secret scan on 2026-05-31 (provider-pattern + assignment-pattern across all 50 commits, plus a committed-file check) found **no leaked secrets**, so nothing required rotation — but treat all pre-2026-05-31 history as potentially public regardless.
+- **CodeRabbit's free OSS tier no longer applies** — a private repo needs a paid CodeRabbit plan. Other integrations authenticate via the GitHub App / deploy hooks (Vercel, Render, EAS, Infisical, Claude Code on the web) and are unaffected by visibility.
+- **Stars/watchers were erased** by the visibility change (cosmetic; the project had ~1 of each).
+
+**Trigger to revisit:**
+
+- The project open-sources again for adoption/marketing (would restore free Actions + GitHub Advanced Security and the public-tier integrations).
+- Metered Actions cost exceeds budget (drives the deferred CI-efficiency audit).
+- Additional human collaborators are added — reconsider real approval gates (and whether GitHub Enterprise's private-repo environment protection is worth a true production-deploy approval pause).
+
 ---
 
 ## 13. AI Corpus Architecture (v1)
