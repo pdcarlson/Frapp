@@ -337,6 +337,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/custom-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom-field definitions */
+        get: operations["CustomFieldController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites": {
         parameters: {
             query?: never;
@@ -1937,6 +1954,16 @@ export interface components {
         TransferPresidencyDto: {
             target_member_id: string;
         };
+        MemberCustomFieldValueDto: {
+            field_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            value: string | null;
+        };
         MemberProfileDto: {
             id: string;
             user_id: string;
@@ -1952,12 +1979,30 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
+            custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
         };
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
+        };
+        CustomFieldDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            required: boolean;
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            sensitive: boolean;
+            options: string[] | null;
+            sort: number;
+            created_at: string;
+            updated_at: string;
         };
         CreateInviteDto: {
             /** @description Role name to assign to invited member */
@@ -2948,6 +2993,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    CustomFieldController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"][];
+                };
             };
         };
     };

@@ -740,6 +740,36 @@
         ]
       }
     },
+    "/v1/custom-fields": {
+      "get": {
+        "operationId": "CustomFieldController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomFieldDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter custom-field definitions",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      }
+    },
     "/v1/invites": {
       "post": {
         "operationId": "InviteController_create_v1",
@@ -4713,6 +4743,52 @@
           "target_member_id"
         ]
       },
+      "MemberCustomFieldValueDto": {
+        "type": "object",
+        "properties": {
+          "field_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "field_id",
+          "key",
+          "label",
+          "type",
+          "visibility",
+          "value"
+        ]
+      },
       "MemberProfileDto": {
         "type": "object",
         "properties": {
@@ -4765,6 +4841,13 @@
           },
           "email": {
             "type": "string"
+          },
+          "custom_fields": {
+            "description": "Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberCustomFieldValueDto"
+            }
           }
         },
         "required": [
@@ -4807,6 +4890,79 @@
         },
         "required": [
           "has_completed_onboarding"
+        ]
+      },
+      "CustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "options": {
+            "nullable": true,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "type",
+          "required",
+          "visibility",
+          "sensitive",
+          "options",
+          "sort",
+          "created_at",
+          "updated_at"
         ]
       },
       "CreateInviteDto": {
