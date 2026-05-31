@@ -21,7 +21,7 @@
 | Path B research: rootless Supabase stack in sandbox | [#412](https://github.com/pdcarlson/Frapp/issues/412) | closed | rejected (maintenance/flakiness) |
 | Path C research: PGlite + Deno harness | [#413](https://github.com/pdcarlson/Frapp/issues/413) | closed | adopted as CI + in-loop substrate |
 | Path D research: move logic out of Edge Functions | [#414](https://github.com/pdcarlson/Frapp/issues/414) | closed | adopted as strategic direction (ADR-11) |
-| **Decision + ADR-12 + AGENT_INFRA workflow** | [#401](https://github.com/pdcarlson/Frapp/issues/401) | open | closes on the ADR-12 PR (`Closes #401`) |
+| **Decision + ADR-12 + AGENT_INFRA workflow** | [#401](https://github.com/pdcarlson/Frapp/issues/401) | closed | ADR-12 PR merged (`Closes #401`); decision + workflow landed |
 | Impl: PGlite migration + RLS CI job (Path C) | [#531](https://github.com/pdcarlson/Frapp/issues/531) | shipped | RLS smoke tier added to `pglite-migrations` (every-table-RLS invariant + chat hot-path posture). Subsumes #356 (fresh-DB apply, already shipped) + #360 (RLS-enabled coverage); #235 subsumed → CI-only. #423 (authenticated enforcement smoke) is the follow-up |
 | Impl: Path A SessionEnd teardown + scoped MCP allowlist | [#532](https://github.com/pdcarlson/Frapp/issues/532) | open | opt-in branch-per-session; off by default |
 | Impl: continue Edge→NestJS hot-path migration | [#533](https://github.com/pdcarlson/Frapp/issues/533) | open | follow-on to ADR-11/#425; relates #417/#470 |
