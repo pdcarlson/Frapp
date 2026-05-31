@@ -19,7 +19,7 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import { useNetwork } from "@/lib/providers/network-provider";
-import { asArray } from "@/lib/utils";
+import { asArray, initials } from "@/lib/utils";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 
 type AlumniRow = {
@@ -33,12 +33,6 @@ type AlumniRow = {
   current_company: string | null;
   email: string | null;
 };
-
-function initials(name: string | null | undefined): string {
-  if (!name) return "?";
-  const parts = name.trim().split(/\s+/).slice(0, 2);
-  return parts.map((p) => p[0]?.toUpperCase()).join("") || "?";
-}
 
 export function AlumniDirectory() {
   const { isOffline } = useNetwork();

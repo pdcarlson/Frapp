@@ -15,13 +15,56 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
+import { asArray } from "@/lib/utils";
 
 type MemberRecord = Record<string, unknown>;
+
+type CustomFieldValue = {
+  field_id: string;
+  key: string;
+  label: string;
+  type: string;
+  visibility: string;
+  value: string | null;
+};
+
 function formatDate(value: unknown): string {
   if (typeof value !== "string") return "—";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "—";
   return parsed.toLocaleDateString();
+}
+
+function formatCustomValue(field: CustomFieldValue): string {
+  if (field.value === null || field.value === "") return "—";
+  if (field.type === "boolean") {
+    return field.value === "true" ? "Yes" : "No";
+  }
+  return field.value;
+}
+
+function parseCustomFields(member: MemberRecord | null): CustomFieldValue[] {
+  return asArray<Record<string, unknown>>(member?.custom_fields).flatMap((entry) => {
+    if (
+      !entry ||
+      typeof entry.field_id !== "string" ||
+      typeof entry.label !== "string" ||
+      typeof entry.type !== "string" ||
+      typeof entry.visibility !== "string"
+    ) {
+      return [];
+    }
+    return [
+      {
+        field_id: entry.field_id,
+        key: typeof entry.key === "string" ? entry.key : entry.field_id,
+        label: entry.label,
+        type: entry.type,
+        visibility: entry.visibility,
+        value: typeof entry.value === "string" ? entry.value : null,
+      },
+    ];
+  });
 }
 
 function getErrorMessage(error: unknown): string {
@@ -35,6 +78,7 @@ type MemberDetailSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   member: MemberRecord | null;
+  points?: number | null;
   usingPreviewData: boolean;
 };
 
@@ -42,6 +86,7 @@ export function MemberDetailSheet({
   open,
   onOpenChange,
   member,
+  points,
   usingPreviewData,
 }: MemberDetailSheetProps) {
   const memberId =
@@ -115,6 +160,7 @@ export function MemberDetailSheet({
     typeof resolvedMember?.has_completed_onboarding === "boolean"
       ? resolvedMember.has_completed_onboarding
       : false;
+  const customFields = useMemo(() => parseCustomFields(resolvedMember), [resolvedMember]);
   const canMutate = !usingPreviewData && !rolesQuery.isError && !memberQuery.isError;
 
   async function handleSaveRoles() {
@@ -214,11 +260,31 @@ export function MemberDetailSheet({
             <p className="text-xs text-muted-foreground">Email</p>
             <p className="mt-1 text-sm">{email}</p>
           </div>
-          <div className="rounded-md border border-border p-3 sm:col-span-2">
+          <div className="rounded-md border border-border p-3">
             <p className="text-xs text-muted-foreground">Joined chapter</p>
             <p className="mt-1 text-sm">{formatDate(resolvedMember?.created_at)}</p>
           </div>
+          <div className="rounded-md border border-border p-3">
+            <p className="text-xs text-muted-foreground">Points</p>
+            <p className="mt-1 text-sm">
+              {typeof points === "number" ? points : "—"}
+            </p>
+          </div>
         </div>
+
+        {customFields.length > 0 ? (
+          <section className="mt-6 space-y-3">
+            <p className="text-sm font-medium">Custom fields</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {customFields.map((field) => (
+                <div key={field.field_id} className="rounded-md border border-border p-3">
+                  <p className="text-xs text-muted-foreground">{field.label}</p>
+                  <p className="mt-1 text-sm">{formatCustomValue(field)}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="mt-6 space-y-3">
           <div className="flex items-center gap-2">
