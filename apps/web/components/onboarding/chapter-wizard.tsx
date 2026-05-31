@@ -722,7 +722,15 @@ function InviteStep({
             Members.
           </p>
         </div>
-      ) : (
+      ) : null}
+
+      <p className="text-xs text-muted-foreground">
+        Frapp collects pseudonymous usage analytics (on by default) to fix bugs
+        and improve the product — never message content. You can turn it off
+        anytime in Settings → Privacy.
+      </p>
+
+      {!inviteLink ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border p-6 text-center">
           <p className="text-sm text-muted-foreground">
             Generate a one-tap invite link to drop in your group chat.
@@ -736,7 +744,7 @@ function InviteStep({
             Generate invite link
           </Button>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

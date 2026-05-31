@@ -3,7 +3,7 @@
 **Status:** queued
 **Epic:** [#429 — Pricing & billing](https://github.com/pdcarlson/Frapp/issues/429)
 **Spec:** [`spec/behavior/billing.md`](../../../spec/behavior/billing.md) #ai-usage-pricing, #at-cost-overage, #member-facing-ux
-**Updated:** 2026-05-30
+**Updated:** 2026-05-31
 
 > Paid tier includes a monthly AI allowance; overage bills at upstream provider cost with zero markup,
 > visible to the treasurer only. Members never see a meter at point of use. A configurable hard cap is
@@ -21,4 +21,5 @@
 ## Notes / decisions
 
 - Open question blocking #457: allowance size in $ (needs pricing analysis to land first).
-- Related standalone duplicate to reconcile during triage: #479 (treasurer AI usage dashboard).
+- Standalone duplicate reconciled (closed during 2026-05-31 triage): #479 (treasurer AI usage
+  dashboard) → folded into #459.

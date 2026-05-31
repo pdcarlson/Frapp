@@ -29,7 +29,6 @@ import { SemesterRolloverModule } from './modules/semester-rollover/semester-rol
 import { ReportModule } from './modules/report/report.module';
 import { SearchModule } from './modules/search/search.module';
 import { ChapterConfigModule } from './modules/chapter-config/chapter-config.module';
-import { CustomFieldModule } from './modules/custom-field/custom-field.module';
 import { ChapterDirectoryModule } from './modules/chapter-directory/chapter-directory.module';
 import { ChatBridgeWorkerModule } from './modules/chat-bridge-worker/chat-bridge-worker.module';
 import { ChatPushWorkerModule } from './modules/chat-push-worker/chat-push-worker.module';
@@ -73,7 +72,6 @@ import { validateEnv } from './config/env.validation';
     ReportModule,
     SearchModule,
     ChapterConfigModule,
-    CustomFieldModule,
     ChapterDirectoryModule,
     ChatBridgeWorkerModule,
     ChatPushWorkerModule,

@@ -85,7 +85,7 @@ export class ChapterConfigService {
     const { data: chapter, error } = await this.supabase
       .from('chapters')
       .select(
-        'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config',
+        'id, name, university, org_archetype, enabled_modules, vocabulary, branding, theme_palette, beta_config, analytics_opt_out',
       )
       .eq('id', chapterId)
       .maybeSingle();
@@ -171,6 +171,10 @@ export class ChapterConfigService {
       theme_palette:
         (chapter as Record<string, unknown>)['theme_palette'] ?? {},
       beta_config: (chapter as Record<string, unknown>)['beta_config'] ?? {},
+      analytics_opt_out:
+        ((chapter as Record<string, unknown>)['analytics_opt_out'] as
+          | boolean
+          | undefined) ?? false,
       workflows,
       dues,
       role_pack: archetype.rolePack,
@@ -197,6 +201,18 @@ export class ChapterConfigService {
         to: dto.org_archetype,
       };
       update['org_archetype'] = dto.org_archetype;
+    }
+    // Scalar boolean on the chapters row (mirrors org_archetype). Drives the
+    // per-chapter analytics opt-out the AnalyticsService gate reads per event.
+    if (
+      dto.analytics_opt_out !== undefined &&
+      dto.analytics_opt_out !== existing.analytics_opt_out
+    ) {
+      diff['analytics_opt_out'] = {
+        from: existing.analytics_opt_out,
+        to: dto.analytics_opt_out,
+      };
+      update['analytics_opt_out'] = dto.analytics_opt_out;
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.

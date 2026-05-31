@@ -740,6 +740,252 @@
         ]
       }
     },
+    "/v1/chapters/{id}/config": {
+      "get": {
+        "operationId": "ChapterConfigController_getConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get merged chapter config (archetype defaults + overrides)",
+        "tags": [
+          "Chapter Config"
+        ]
+      },
+      "patch": {
+        "operationId": "ChapterConfigController_patchConfig_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchChapterConfigDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update chapter config (writes audit log + posts to #chapter-audit)",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/chapters/{id}/theme-palette": {
+      "post": {
+        "operationId": "ChapterConfigController_recomputePalette_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Recompute and persist derived theme palette from branding.colors",
+        "tags": [
+          "Chapter Config"
+        ]
+      }
+    },
+    "/v1/custom-roles": {
+      "get": {
+        "operationId": "CustomRoleController_list_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomRoleDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List the chapter custom roles",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "post": {
+        "operationId": "CustomRoleController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom role with this key already exists in this chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
+    "/v1/custom-roles/{id}": {
+      "patch": {
+        "operationId": "CustomRoleController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomRoleDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      },
+      "delete": {
+        "operationId": "CustomRoleController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Core roles cannot be deleted"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a non-core custom role (audit-logged)",
+        "tags": [
+          "Chapter Custom Roles"
+        ]
+      }
+    },
     "/v1/custom-fields": {
       "get": {
         "operationId": "CustomFieldController_list_v1",
@@ -764,7 +1010,125 @@
             "bearer": []
           }
         ],
-        "summary": "List the chapter custom-field definitions",
+        "summary": "List the chapter custom fields",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      },
+      "post": {
+        "operationId": "CustomFieldController_create_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCustomFieldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A custom field with this key already exists in this chapter"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a custom field (audit-logged)",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      }
+    },
+    "/v1/custom-fields/{id}": {
+      "patch": {
+        "operationId": "CustomFieldController_update_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCustomFieldDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomFieldDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update a custom field (audit-logged)",
+        "tags": [
+          "Chapter Custom Fields"
+        ]
+      },
+      "delete": {
+        "operationId": "CustomFieldController_remove_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemoveCustomFieldResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a custom field (audit-logged)",
         "tags": [
           "Chapter Custom Fields"
         ]
@@ -4136,252 +4500,6 @@
         ]
       }
     },
-    "/v1/chapters/{id}/config": {
-      "get": {
-        "operationId": "ChapterConfigController_getConfig_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get merged chapter config (archetype defaults + overrides)",
-        "tags": [
-          "Chapter Config"
-        ]
-      },
-      "patch": {
-        "operationId": "ChapterConfigController_patchConfig_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PatchChapterConfigDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update chapter config (writes audit log + posts to #chapter-audit)",
-        "tags": [
-          "Chapter Config"
-        ]
-      }
-    },
-    "/v1/chapters/{id}/theme-palette": {
-      "post": {
-        "operationId": "ChapterConfigController_recomputePalette_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Recompute and persist derived theme palette from branding.colors",
-        "tags": [
-          "Chapter Config"
-        ]
-      }
-    },
-    "/v1/custom-roles": {
-      "get": {
-        "operationId": "CustomRoleController_list_v1",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/CustomRoleDto"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List the chapter custom roles",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "post": {
-        "operationId": "CustomRoleController_create_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A custom role with this key already exists in this chapter"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Create a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      }
-    },
-    "/v1/custom-roles/{id}": {
-      "patch": {
-        "operationId": "CustomRoleController_update_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateCustomRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CustomRoleDto"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update a custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      },
-      "delete": {
-        "operationId": "CustomRoleController_remove_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemoveCustomRoleResponseDto"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Core roles cannot be deleted"
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Delete a non-core custom role (audit-logged)",
-        "tags": [
-          "Chapter Custom Roles"
-        ]
-      }
-    },
     "/v1/chapter-directory/search": {
       "get": {
         "operationId": "ChapterDirectoryController_search_v1",
@@ -4892,6 +5010,238 @@
           "has_completed_onboarding"
         ]
       },
+      "BetaConfigDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "style": {
+            "type": "string",
+            "enum": [
+              "sidebar_pill",
+              "top_banner",
+              "corner_badge",
+              "breadcrumb_pill"
+            ]
+          }
+        }
+      },
+      "DuesConfigDto": {
+        "type": "object",
+        "properties": {
+          "cadence": {
+            "type": "string",
+            "enum": [
+              "monthly",
+              "per_semester",
+              "per_quarter"
+            ]
+          },
+          "active_amount_cents": {
+            "type": "number",
+            "description": "Active member dues in cents"
+          },
+          "new_member_amount_cents": {
+            "type": "number",
+            "description": "New member dues in cents"
+          },
+          "alumni_amount_cents": {
+            "type": "number",
+            "description": "Alumni dues in cents"
+          },
+          "installments_allowed": {
+            "type": "boolean"
+          },
+          "installment_count": {
+            "type": "number",
+            "description": "Number of installments (>= 1)"
+          },
+          "late_fee_cents": {
+            "type": "number",
+            "description": "Late fee in cents"
+          },
+          "grace_days": {
+            "type": "number"
+          },
+          "scholarship_pool_cents": {
+            "type": "number",
+            "description": "Scholarship pool in cents"
+          }
+        }
+      },
+      "WorkflowConfigDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Workflow key from the chapter catalog"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
+          }
+        }
+      },
+      "PatchChapterConfigDto": {
+        "type": "object",
+        "properties": {
+          "org_archetype": {
+            "type": "string"
+          },
+          "enabled_modules": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "vocabulary": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "branding": {
+            "$ref": "#/components/schemas/BrandingDto"
+          },
+          "beta_config": {
+            "$ref": "#/components/schemas/BetaConfigDto"
+          },
+          "dues": {
+            "$ref": "#/components/schemas/DuesConfigDto"
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowConfigDto"
+            }
+          },
+          "analytics_opt_out": {
+            "type": "boolean",
+            "description": "When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous)."
+          }
+        }
+      },
+      "CustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "chapter_id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "core": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "chapter_id",
+          "key",
+          "label",
+          "rank",
+          "capabilities",
+          "core",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Machine-readable slug, unique per chapter"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number",
+            "description": "Hierarchy order; lower ranks first"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
+      "UpdateCustomRoleDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "number"
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "RemoveCustomRoleResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "CustomFieldOptionsDto": {
+        "type": "object",
+        "properties": {
+          "choices": {
+            "description": "Option list for select",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_length": {
+            "type": "number",
+            "description": "Max length for text fields"
+          }
+        }
+      },
       "CustomFieldDto": {
         "type": "object",
         "properties": {
@@ -4935,10 +5285,12 @@
           },
           "options": {
             "nullable": true,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomFieldOptionsDto"
+              }
+            ]
           },
           "sort": {
             "type": "number"
@@ -4959,10 +5311,109 @@
           "required",
           "visibility",
           "sensitive",
-          "options",
           "sort",
           "created_at",
           "updated_at"
+        ]
+      },
+      "CreateCustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Machine-readable slug, unique per chapter"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "text",
+              "number",
+              "decimal",
+              "phone",
+              "select",
+              "boolean"
+            ]
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ],
+            "default": "chapter"
+          },
+          "sensitive": {
+            "type": "boolean",
+            "default": false
+          },
+          "options": {
+            "$ref": "#/components/schemas/CustomFieldOptionsDto"
+          },
+          "sort": {
+            "type": "number",
+            "description": "Display order; lower sorts first"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type"
+        ]
+      },
+      "UpdateCustomFieldDto": {
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "self",
+              "chapter",
+              "exec",
+              "president"
+            ]
+          },
+          "sensitive": {
+            "type": "boolean"
+          },
+          "options": {
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CustomFieldOptionsDto"
+              }
+            ]
+          },
+          "sort": {
+            "type": "number"
+          }
+        }
+      },
+      "RemoveCustomFieldResponseDto": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "success"
         ]
       },
       "CreateInviteDto": {
@@ -6014,218 +6465,6 @@
             "description": "End date (YYYY-MM-DD)"
           }
         }
-      },
-      "BetaConfigDto": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "style": {
-            "type": "string",
-            "enum": [
-              "sidebar_pill",
-              "top_banner",
-              "corner_badge",
-              "breadcrumb_pill"
-            ]
-          }
-        }
-      },
-      "DuesConfigDto": {
-        "type": "object",
-        "properties": {
-          "cadence": {
-            "type": "string",
-            "enum": [
-              "monthly",
-              "per_semester",
-              "per_quarter"
-            ]
-          },
-          "active_amount_cents": {
-            "type": "number",
-            "description": "Active member dues in cents"
-          },
-          "new_member_amount_cents": {
-            "type": "number",
-            "description": "New member dues in cents"
-          },
-          "alumni_amount_cents": {
-            "type": "number",
-            "description": "Alumni dues in cents"
-          },
-          "installments_allowed": {
-            "type": "boolean"
-          },
-          "installment_count": {
-            "type": "number",
-            "description": "Number of installments (>= 1)"
-          },
-          "late_fee_cents": {
-            "type": "number",
-            "description": "Late fee in cents"
-          },
-          "grace_days": {
-            "type": "number"
-          },
-          "scholarship_pool_cents": {
-            "type": "number",
-            "description": "Scholarship pool in cents"
-          }
-        }
-      },
-      "WorkflowConfigDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Workflow key from the chapter catalog"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "threshold": {
-            "type": "number",
-            "description": "Optional numeric threshold (guard-parsed; NaN/negative rejected)"
-          }
-        }
-      },
-      "PatchChapterConfigDto": {
-        "type": "object",
-        "properties": {
-          "org_archetype": {
-            "type": "string"
-          },
-          "enabled_modules": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "boolean"
-            }
-          },
-          "vocabulary": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
-          "branding": {
-            "$ref": "#/components/schemas/BrandingDto"
-          },
-          "beta_config": {
-            "$ref": "#/components/schemas/BetaConfigDto"
-          },
-          "dues": {
-            "$ref": "#/components/schemas/DuesConfigDto"
-          },
-          "workflows": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/WorkflowConfigDto"
-            }
-          }
-        }
-      },
-      "CustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string"
-          },
-          "chapter_id": {
-            "type": "string"
-          },
-          "key": {
-            "type": "string"
-          },
-          "label": {
-            "type": "string"
-          },
-          "rank": {
-            "type": "number"
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "core": {
-            "type": "boolean"
-          },
-          "created_at": {
-            "type": "string"
-          },
-          "updated_at": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "id",
-          "chapter_id",
-          "key",
-          "label",
-          "rank",
-          "capabilities",
-          "core",
-          "created_at",
-          "updated_at"
-        ]
-      },
-      "CreateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "description": "Machine-readable slug, unique per chapter"
-          },
-          "label": {
-            "type": "string"
-          },
-          "rank": {
-            "type": "number",
-            "description": "Hierarchy order; lower ranks first"
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "key",
-          "label"
-        ]
-      },
-      "UpdateCustomRoleDto": {
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string"
-          },
-          "rank": {
-            "type": "number"
-          },
-          "capabilities": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        }
-      },
-      "RemoveCustomRoleResponseDto": {
-        "type": "object",
-        "properties": {
-          "success": {
-            "type": "boolean",
-            "example": true
-          }
-        },
-        "required": [
-          "success"
-        ]
       },
       "IdentityResponseDto": {
         "type": "object",

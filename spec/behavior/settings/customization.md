@@ -17,9 +17,10 @@ Behavior rules for the customization-heavy settings tabs (Theme, Roles, Fields, 
 
 ## Fields Tab
 
-- An editable table over `chapter_custom_fields`. Each field has: label, type, `required`, **visibility** (`self` / `chapter` / `exec` / `president`), and a `sensitive` flag.
-- Add-field configuration is type-specific (text → max length; select → options list; date → none; etc.).
-- **Custom-field options lists are deep-cloned per chapter.** Editing one chapter's options must never mutate another chapter's options (no sharing of the seed reference).
+- An editable table over `chapter_custom_fields`. Each field has: label, type (`text` / `number` / `decimal` / `phone` / `select` / `boolean`), `required`, **visibility** (`self` / `chapter` / `exec` / `president`), and a `sensitive` flag.
+- Add-field configuration is type-specific (text → max length; select → options list; the remaining types → none). A `select` field must declare a non-empty options list before it can be saved (enforced on both the shared validation boundary and the server).
+- Like the Roles tab — and unlike the Workflows/Dues tabs, which write through the config blob — custom fields are individually-addressable rows and use **dedicated CRUD endpoints** (`GET/POST /custom-fields`, `PATCH/DELETE /custom-fields/:id`); reads require `chapter-config:view` and writes require `chapter-config:manage`. Every write appends a `chapter_audit_log` row (mirrored to `#chapter-audit`) like every other settings save — actions `chapter_custom_field_created` / `chapter_custom_field_updated` / `chapter_custom_field_deleted`. A duplicate `(chapter_id, key)` is rejected (`409`). `key` and `type` are immutable after creation (changing `type` would orphan stored member values); every field is deletable (there is no `core` concept).
+- **Custom-field options lists are deep-cloned per chapter.** Editing one chapter's options must never mutate another chapter's options (no sharing of a seed reference). This is honored by construction: each chapter's row owns its own `options` jsonb, the service `structuredClone`s the payload on write, and the archetype seed (`CUSTOM_FIELDS_SEED` in `@repo/org-archetypes`) is already deep-cloned by `buildChapterConfigFromArchetype` when a chapter is provisioned.
 - Visibility semantics are enforced when rendering the member directory — see [`../members.md`](../members.md) for the server-side enforcement rule.
 
 ## Workflows Tab

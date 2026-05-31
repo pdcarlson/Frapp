@@ -256,6 +256,95 @@ export const UpdateCustomRoleSchema = z.object({
   capabilities: z.array(z.string()).optional(),
 });
 
+/**
+ * A chapter custom *field* (Settings → Fields), persisted to
+ * `chapter_custom_fields`. The set of field types and visibility tiers mirrors
+ * the table's CHECK constraints (`supabase/migrations/20260523120000`).
+ */
+export const CustomFieldTypeSchema = z.enum([
+  "text",
+  "number",
+  "decimal",
+  "phone",
+  "select",
+  "boolean",
+]);
+
+export const CustomFieldVisibilitySchema = z.enum([
+  "self",
+  "chapter",
+  "exec",
+  "president",
+]);
+
+/**
+ * Type-specific configuration stored in the `options` jsonb column.
+ * `choices` carries a `select` field's option list; `max_length` is an optional
+ * constraint for `text`. Other types carry no config (the column is null).
+ */
+export const CustomFieldOptionsSchema = z
+  .object({
+    choices: z.array(z.string().min(1)).optional(),
+    max_length: z.number().int().positive().optional(),
+  })
+  .strict();
+
+export const ChapterCustomFieldSchema = z.object({
+  id: z.string(),
+  chapter_id: z.string(),
+  key: z.string(),
+  label: z.string(),
+  type: CustomFieldTypeSchema,
+  required: z.boolean(),
+  visibility: CustomFieldVisibilitySchema,
+  sensitive: z.boolean(),
+  options: CustomFieldOptionsSchema.nullable(),
+  sort: z.number().int().nonnegative(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+/**
+ * Body for `POST /custom-fields`. `key` is a lowercase slug unique per chapter.
+ * A `select` field must declare a non-empty `choices` list.
+ */
+export const CreateCustomFieldSchema = z
+  .object({
+    key: z
+      .string()
+      .min(1)
+      .regex(
+        /^[a-z0-9_]+$/,
+        "key must be lowercase letters, numbers, underscores",
+      ),
+    label: z.string().min(1),
+    type: CustomFieldTypeSchema,
+    required: z.boolean().optional(),
+    visibility: CustomFieldVisibilitySchema.optional(),
+    sensitive: z.boolean().optional(),
+    options: CustomFieldOptionsSchema.optional(),
+    sort: z.number().int().nonnegative().optional(),
+  })
+  .refine(
+    (v) =>
+      v.type !== "select" ||
+      (v.options?.choices?.length ?? 0) > 0,
+    {
+      message: "A select field requires a non-empty options.choices list",
+      path: ["options", "choices"],
+    },
+  );
+
+/** Body for `PATCH /custom-fields/:id` (`key` and `type` are immutable). */
+export const UpdateCustomFieldSchema = z.object({
+  label: z.string().min(1).optional(),
+  required: z.boolean().optional(),
+  visibility: CustomFieldVisibilitySchema.optional(),
+  sensitive: z.boolean().optional(),
+  options: CustomFieldOptionsSchema.nullable().optional(),
+  sort: z.number().int().nonnegative().optional(),
+});
+
 export const PatchChapterConfigSchema = z.object({
   org_archetype: z.string().optional(),
   enabled_modules: z.record(z.boolean()).optional(),
@@ -274,6 +363,8 @@ export const PatchChapterConfigSchema = z.object({
     .optional(),
   dues: ChapterDuesConfigSchema.optional(),
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
+  // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
+  analytics_opt_out: z.boolean().optional(),
 });
 
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
@@ -466,6 +557,12 @@ export type PatchChapterConfig = z.infer<typeof PatchChapterConfigSchema>;
 export type ChapterCustomRole = z.infer<typeof ChapterCustomRoleSchema>;
 export type CreateCustomRole = z.infer<typeof CreateCustomRoleSchema>;
 export type UpdateCustomRole = z.infer<typeof UpdateCustomRoleSchema>;
+export type CustomFieldType = z.infer<typeof CustomFieldTypeSchema>;
+export type CustomFieldVisibility = z.infer<typeof CustomFieldVisibilitySchema>;
+export type CustomFieldOptions = z.infer<typeof CustomFieldOptionsSchema>;
+export type ChapterCustomField = z.infer<typeof ChapterCustomFieldSchema>;
+export type CreateCustomField = z.infer<typeof CreateCustomFieldSchema>;
+export type UpdateCustomField = z.infer<typeof UpdateCustomFieldSchema>;
 export type SendChatMessage = z.infer<typeof SendChatMessageSchema>;
 export type ChatMessageAction = z.infer<typeof ChatMessageActionSchema>;
 export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;

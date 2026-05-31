@@ -50,6 +50,8 @@ import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
 import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
+import { SettingsPrivacyTab } from "@/components/settings/settings-privacy-tab";
+import { SettingsFieldsTab } from "@/components/settings/settings-fields-tab";
 import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
 
 type SemesterArchive = {
@@ -78,6 +80,7 @@ const SETTINGS_TAB_VALUES: readonly string[] = [
   "workflows",
   "dues",
   "theme",
+  "privacy",
   "beta",
   "audit",
 ];
@@ -105,13 +108,6 @@ const COMING_SOON_TABS: ReadonlyArray<{
   description: string;
   chunk: string;
 }> = [
-  {
-    value: "fields",
-    label: "Fields",
-    title: "Custom member fields",
-    description: "Define extra member fields and their visibility.",
-    chunk: "Chunk 07",
-  },
   {
     value: "beta",
     label: "Beta",
@@ -422,6 +418,9 @@ function SettingsPageContent() {
           <TabsTrigger value="theme" className={RAIL_TRIGGER_CLASS}>
             Theme
           </TabsTrigger>
+          <TabsTrigger value="privacy" className={RAIL_TRIGGER_CLASS}>
+            Privacy
+          </TabsTrigger>
           <TabsTrigger value="beta" className={RAIL_TRIGGER_CLASS}>
             Beta
           </TabsTrigger>
@@ -610,6 +609,10 @@ function SettingsPageContent() {
             )}
           </TabsContent>
 
+          <TabsContent value="fields" className="mt-0">
+            {renderConfigGated(<SettingsFieldsTab canManage={canManage} />)}
+          </TabsContent>
+
           <TabsContent value="workflows" className="mt-0">
             {renderConfigGated(
               <SettingsWorkflowsTab
@@ -687,6 +690,22 @@ function SettingsPageContent() {
                 </CardFooter>
               </form>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="privacy" className="mt-0">
+            {renderConfigGated(
+              <SettingsPrivacyTab
+                analyticsOptOut={config?.analytics_opt_out === true}
+                canManage={canManage}
+                isSaving={patchOrgConfig.isPending}
+                onToggle={(optOut) =>
+                  patchConfig(
+                    { analytics_opt_out: optOut },
+                    optOut ? "Analytics disabled" : "Analytics enabled",
+                  )
+                }
+              />,
+            )}
           </TabsContent>
 
           {COMING_SOON_TABS.map((tab) => (
