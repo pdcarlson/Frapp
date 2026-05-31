@@ -36,3 +36,17 @@ export interface ChapterCustomField {
   created_at: string;
   updated_at: string;
 }
+
+/**
+ * A member's value for a custom field, joined with the field definition and
+ * already filtered to the fields the requesting viewer may see (Chunk 09 — the
+ * member directory renders these, enforcing `visibility` server-side).
+ */
+export interface MemberCustomFieldValue {
+  field_id: string;
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  visibility: CustomFieldVisibility;
+  value: string | null;
+}

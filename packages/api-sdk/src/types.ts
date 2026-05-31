@@ -337,6 +337,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chapters/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get merged chapter config (archetype defaults + overrides) */
+        get: operations["ChapterConfigController_getConfig_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update chapter config (writes audit log + posts to #chapter-audit) */
+        patch: operations["ChapterConfigController_patchConfig_v1"];
+        trace?: never;
+    };
+    "/v1/chapters/{id}/theme-palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Recompute and persist derived theme palette from branding.colors */
+        post: operations["ChapterConfigController_recomputePalette_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom roles */
+        get: operations["CustomRoleController_list_v1"];
+        put?: never;
+        /** Create a custom role (audit-logged) */
+        post: operations["CustomRoleController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-roles/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a non-core custom role (audit-logged) */
+        delete: operations["CustomRoleController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom role (audit-logged) */
+        patch: operations["CustomRoleController_update_v1"];
+        trace?: never;
+    };
+    "/v1/custom-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the chapter custom fields */
+        get: operations["CustomFieldController_list_v1"];
+        put?: never;
+        /** Create a custom field (audit-logged) */
+        post: operations["CustomFieldController_create_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/custom-fields/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a custom field (audit-logged) */
+        delete: operations["CustomFieldController_remove_v1"];
+        options?: never;
+        head?: never;
+        /** Update a custom field (audit-logged) */
+        patch: operations["CustomFieldController_update_v1"];
+        trace?: never;
+    };
     "/v1/invites": {
         parameters: {
             query?: never;
@@ -1730,113 +1837,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/chapters/{id}/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get merged chapter config (archetype defaults + overrides) */
-        get: operations["ChapterConfigController_getConfig_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update chapter config (writes audit log + posts to #chapter-audit) */
-        patch: operations["ChapterConfigController_patchConfig_v1"];
-        trace?: never;
-    };
-    "/v1/chapters/{id}/theme-palette": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Recompute and persist derived theme palette from branding.colors */
-        post: operations["ChapterConfigController_recomputePalette_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/custom-roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List the chapter custom roles */
-        get: operations["CustomRoleController_list_v1"];
-        put?: never;
-        /** Create a custom role (audit-logged) */
-        post: operations["CustomRoleController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/custom-roles/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a non-core custom role (audit-logged) */
-        delete: operations["CustomRoleController_remove_v1"];
-        options?: never;
-        head?: never;
-        /** Update a custom role (audit-logged) */
-        patch: operations["CustomRoleController_update_v1"];
-        trace?: never;
-    };
-    "/v1/custom-fields": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List the chapter custom fields */
-        get: operations["CustomFieldController_list_v1"];
-        put?: never;
-        /** Create a custom field (audit-logged) */
-        post: operations["CustomFieldController_create_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/custom-fields/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a custom field (audit-logged) */
-        delete: operations["CustomFieldController_remove_v1"];
-        options?: never;
-        head?: never;
-        /** Update a custom field (audit-logged) */
-        patch: operations["CustomFieldController_update_v1"];
-        trace?: never;
-    };
     "/v1/chapter-directory/search": {
         parameters: {
             query?: never;
@@ -1973,6 +1973,16 @@ export interface components {
         TransferPresidencyDto: {
             target_member_id: string;
         };
+        MemberCustomFieldValueDto: {
+            field_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            value: string | null;
+        };
         MemberProfileDto: {
             id: string;
             user_id: string;
@@ -1988,12 +1998,141 @@ export interface components {
             current_city: string | null;
             current_company: string | null;
             email: string;
+            /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
+            custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
         };
         UpdateMemberRolesDto: {
             role_ids: string[];
         };
         UpdateOnboardingDto: {
             has_completed_onboarding: boolean;
+        };
+        BetaConfigDto: {
+            enabled?: boolean;
+            /** @enum {string} */
+            style?: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
+        };
+        DuesConfigDto: {
+            /** @enum {string} */
+            cadence?: "monthly" | "per_semester" | "per_quarter";
+            /** @description Active member dues in cents */
+            active_amount_cents?: number;
+            /** @description New member dues in cents */
+            new_member_amount_cents?: number;
+            /** @description Alumni dues in cents */
+            alumni_amount_cents?: number;
+            installments_allowed?: boolean;
+            /** @description Number of installments (>= 1) */
+            installment_count?: number;
+            /** @description Late fee in cents */
+            late_fee_cents?: number;
+            grace_days?: number;
+            /** @description Scholarship pool in cents */
+            scholarship_pool_cents?: number;
+        };
+        WorkflowConfigDto: {
+            /** @description Workflow key from the chapter catalog */
+            key?: string;
+            enabled?: boolean;
+            /** @description Optional numeric threshold (guard-parsed; NaN/negative rejected) */
+            threshold?: number;
+        };
+        PatchChapterConfigDto: {
+            org_archetype?: string;
+            enabled_modules?: {
+                [key: string]: boolean;
+            };
+            vocabulary?: {
+                [key: string]: string;
+            };
+            branding?: components["schemas"]["BrandingDto"];
+            beta_config?: components["schemas"]["BetaConfigDto"];
+            dues?: components["schemas"]["DuesConfigDto"];
+            workflows?: components["schemas"]["WorkflowConfigDto"][];
+            /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
+            analytics_opt_out?: boolean;
+        };
+        CustomRoleDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            rank: number;
+            capabilities: string[];
+            core: boolean;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomRoleDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @description Hierarchy order; lower ranks first */
+            rank?: number;
+            capabilities?: string[];
+        };
+        UpdateCustomRoleDto: {
+            label?: string;
+            rank?: number;
+            capabilities?: string[];
+        };
+        RemoveCustomRoleResponseDto: {
+            /** @example true */
+            success: boolean;
+        };
+        CustomFieldOptionsDto: {
+            /** @description Option list for select */
+            choices?: string[];
+            /** @description Max length for text fields */
+            max_length?: number;
+        };
+        CustomFieldDto: {
+            id: string;
+            chapter_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            required: boolean;
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort: number;
+            created_at: string;
+            updated_at: string;
+        };
+        CreateCustomFieldDto: {
+            /** @description Machine-readable slug, unique per chapter */
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @default false */
+            required: boolean;
+            /**
+             * @default chapter
+             * @enum {string}
+             */
+            visibility: "self" | "chapter" | "exec" | "president";
+            /** @default false */
+            sensitive: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"];
+            /** @description Display order; lower sorts first */
+            sort?: number;
+        };
+        UpdateCustomFieldDto: {
+            label?: string;
+            required?: boolean;
+            /** @enum {string} */
+            visibility?: "self" | "chapter" | "exec" | "president";
+            sensitive?: boolean;
+            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
+            sort?: number;
+        };
+        RemoveCustomFieldResponseDto: {
+            /** @example true */
+            success: boolean;
         };
         CreateInviteDto: {
             /** @description Role name to assign to invited member */
@@ -2366,133 +2505,6 @@ export interface components {
             start_date?: string;
             /** @description End date (YYYY-MM-DD) */
             end_date?: string;
-        };
-        BetaConfigDto: {
-            enabled?: boolean;
-            /** @enum {string} */
-            style?: "sidebar_pill" | "top_banner" | "corner_badge" | "breadcrumb_pill";
-        };
-        DuesConfigDto: {
-            /** @enum {string} */
-            cadence?: "monthly" | "per_semester" | "per_quarter";
-            /** @description Active member dues in cents */
-            active_amount_cents?: number;
-            /** @description New member dues in cents */
-            new_member_amount_cents?: number;
-            /** @description Alumni dues in cents */
-            alumni_amount_cents?: number;
-            installments_allowed?: boolean;
-            /** @description Number of installments (>= 1) */
-            installment_count?: number;
-            /** @description Late fee in cents */
-            late_fee_cents?: number;
-            grace_days?: number;
-            /** @description Scholarship pool in cents */
-            scholarship_pool_cents?: number;
-        };
-        WorkflowConfigDto: {
-            /** @description Workflow key from the chapter catalog */
-            key?: string;
-            enabled?: boolean;
-            /** @description Optional numeric threshold (guard-parsed; NaN/negative rejected) */
-            threshold?: number;
-        };
-        PatchChapterConfigDto: {
-            org_archetype?: string;
-            enabled_modules?: {
-                [key: string]: boolean;
-            };
-            vocabulary?: {
-                [key: string]: string;
-            };
-            branding?: components["schemas"]["BrandingDto"];
-            beta_config?: components["schemas"]["BetaConfigDto"];
-            dues?: components["schemas"]["DuesConfigDto"];
-            workflows?: components["schemas"]["WorkflowConfigDto"][];
-            /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
-            analytics_opt_out?: boolean;
-        };
-        CustomRoleDto: {
-            id: string;
-            chapter_id: string;
-            key: string;
-            label: string;
-            rank: number;
-            capabilities: string[];
-            core: boolean;
-            created_at: string;
-            updated_at: string;
-        };
-        CreateCustomRoleDto: {
-            /** @description Machine-readable slug, unique per chapter */
-            key: string;
-            label: string;
-            /** @description Hierarchy order; lower ranks first */
-            rank?: number;
-            capabilities?: string[];
-        };
-        UpdateCustomRoleDto: {
-            label?: string;
-            rank?: number;
-            capabilities?: string[];
-        };
-        RemoveCustomRoleResponseDto: {
-            /** @example true */
-            success: boolean;
-        };
-        CustomFieldOptionsDto: {
-            /** @description Option list for select */
-            choices?: string[];
-            /** @description Max length for text fields */
-            max_length?: number;
-        };
-        CustomFieldDto: {
-            id: string;
-            chapter_id: string;
-            key: string;
-            label: string;
-            /** @enum {string} */
-            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
-            required: boolean;
-            /** @enum {string} */
-            visibility: "self" | "chapter" | "exec" | "president";
-            sensitive: boolean;
-            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
-            sort: number;
-            created_at: string;
-            updated_at: string;
-        };
-        CreateCustomFieldDto: {
-            /** @description Machine-readable slug, unique per chapter */
-            key: string;
-            label: string;
-            /** @enum {string} */
-            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
-            /** @default false */
-            required: boolean;
-            /**
-             * @default chapter
-             * @enum {string}
-             */
-            visibility: "self" | "chapter" | "exec" | "president";
-            /** @default false */
-            sensitive: boolean;
-            options?: components["schemas"]["CustomFieldOptionsDto"];
-            /** @description Display order; lower sorts first */
-            sort?: number;
-        };
-        UpdateCustomFieldDto: {
-            label?: string;
-            required?: boolean;
-            /** @enum {string} */
-            visibility?: "self" | "chapter" | "exec" | "president";
-            sensitive?: boolean;
-            options?: components["schemas"]["CustomFieldOptionsDto"] | null;
-            sort?: number;
-        };
-        RemoveCustomFieldResponseDto: {
-            /** @example true */
-            success: boolean;
         };
         IdentityResponseDto: {
             /** @description Pseudonymous analytics id (HMAC of the user id), or null when analytics is unconfigured. */
@@ -3040,6 +3052,264 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ChapterConfigController_getConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_patchConfig_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchChapterConfigDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterConfigController_recomputePalette_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"][];
+                };
+            };
+        };
+    };
+    CustomRoleController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomRoleDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+            /** @description A custom role with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
+                };
+            };
+            /** @description Core roles cannot be deleted */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomRoleController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomRoleDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoleDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"][];
+                };
+            };
+        };
+    };
+    CustomFieldController_create_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCustomFieldDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
+                };
+            };
+            /** @description A custom field with this key already exists in this chapter */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CustomFieldController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RemoveCustomFieldResponseDto"];
+                };
+            };
+        };
+    };
+    CustomFieldController_update_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCustomFieldDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomFieldDto"];
+                };
             };
         };
     };
@@ -5214,264 +5484,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-        };
-    };
-    ChapterConfigController_getConfig_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChapterConfigController_patchConfig_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PatchChapterConfigDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    ChapterConfigController_recomputePalette_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CustomRoleController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"][];
-                };
-            };
-        };
-    };
-    CustomRoleController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomRoleDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
-                };
-            };
-            /** @description A custom role with this key already exists in this chapter */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CustomRoleController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RemoveCustomRoleResponseDto"];
-                };
-            };
-            /** @description Core roles cannot be deleted */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CustomRoleController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCustomRoleDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomRoleDto"];
-                };
-            };
-        };
-    };
-    CustomFieldController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomFieldDto"][];
-                };
-            };
-        };
-    };
-    CustomFieldController_create_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateCustomFieldDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomFieldDto"];
-                };
-            };
-            /** @description A custom field with this key already exists in this chapter */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    CustomFieldController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["RemoveCustomFieldResponseDto"];
-                };
-            };
-        };
-    };
-    CustomFieldController_update_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateCustomFieldDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CustomFieldDto"];
-                };
             };
         };
     };

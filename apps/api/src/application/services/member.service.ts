@@ -14,6 +14,10 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { Member } from '../../domain/entities/member.entity';
 import { User } from '../../domain/entities/user.entity';
 import { SystemPermissions } from '../../domain/constants/permissions';
+import { CustomFieldService } from './custom-field.service';
+import { RbacService } from './rbac.service';
+import { allowedVisibilities } from './custom-field-visibility';
+import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
 
 export interface AlumniFilter {
   graduation_year?: number;
@@ -36,6 +40,12 @@ export interface MemberProfile {
   current_city: string | null;
   current_company: string | null;
   email: string;
+  /**
+   * Custom-field values, present only on single-member reads
+   * (`findProfileById`) and already filtered to the fields the requesting
+   * viewer may see. Omitted from list responses.
+   */
+  custom_fields?: MemberCustomFieldValue[];
 }
 
 export type MemberSummary = MemberProfile;
@@ -46,6 +56,8 @@ export class MemberService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
+    private readonly customFieldService: CustomFieldService,
+    private readonly rbacService: RbacService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<MemberSummary[]> {
@@ -144,15 +156,41 @@ export class MemberService {
   async findProfileById(
     memberId: string,
     chapterId: string,
+    viewerUserId: string,
   ): Promise<MemberProfile> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
     if (member.chapter_id !== chapterId) {
       throw new ForbiddenException('Member not in current chapter');
     }
-    const user = await this.userRepo.findById(member.user_id);
+
+    // The user fetch and the viewer's permission resolution are independent
+    // (the latter keys off the viewer, not the target member), so run them
+    // together rather than serially.
+    const [user, permissions] = await Promise.all([
+      this.userRepo.findById(member.user_id),
+      this.rbacService.getEffectivePermissions(chapterId, viewerUserId),
+    ]);
     if (!user) throw new NotFoundException('User not found');
-    return this.mergeMemberWithUser(member, user);
+
+    // Custom-field visibility is enforced server-side: resolve the viewer's
+    // allowed visibility tiers from their effective permissions + whether they
+    // are this member, then only those fields' values are fetched.
+    const allowed = allowedVisibilities(
+      permissions,
+      member.user_id === viewerUserId,
+    );
+    const customFields =
+      await this.customFieldService.findVisibleValuesForMember(
+        chapterId,
+        memberId,
+        allowed,
+      );
+
+    return {
+      ...this.mergeMemberWithUser(member, user),
+      custom_fields: customFields,
+    };
   }
 
   async searchByChapterAndName(

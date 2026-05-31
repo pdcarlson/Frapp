@@ -9,6 +9,13 @@ export function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+/** Up-to-two-letter avatar fallback for a display name (e.g. "Jane Smith" → "JS"). */
+export function initials(name: string | null | undefined): string {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "?";
+}
+
 /** Human-readable message for caught errors (e.g. toast descriptions). */
 export function getErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "message" in error) {

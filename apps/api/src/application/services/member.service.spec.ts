@@ -11,12 +11,16 @@ import { USER_REPOSITORY } from '../../domain/repositories/user.repository.inter
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { CustomFieldService } from './custom-field.service';
+import { RbacService } from './rbac.service';
 
 describe('MemberService', () => {
   let service: MemberService;
   let mockRepo: jest.Mocked<IMemberRepository>;
   let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
+  let mockCustomFieldService: { findVisibleValuesForMember: jest.Mock };
+  let mockRbacService: { getEffectivePermissions: jest.Mock };
 
   beforeEach(async () => {
     mockRepo = {
@@ -47,12 +51,21 @@ describe('MemberService', () => {
       delete: jest.fn(),
     };
 
+    mockCustomFieldService = {
+      findVisibleValuesForMember: jest.fn().mockResolvedValue([]),
+    };
+    mockRbacService = {
+      getEffectivePermissions: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MemberService,
         { provide: MEMBER_REPOSITORY, useValue: mockRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        { provide: CustomFieldService, useValue: mockCustomFieldService },
+        { provide: RbacService, useValue: mockRbacService },
       ],
     }).compile();
 
@@ -378,7 +391,11 @@ describe('MemberService', () => {
       mockRepo.findById.mockResolvedValue(member);
       mockUserRepo.findById.mockResolvedValue(user);
 
-      const result = await service.findProfileById('member-1', 'chapter-1');
+      const result = await service.findProfileById(
+        'member-1',
+        'chapter-1',
+        'viewer-1',
+      );
 
       expect(mockRepo.findById).toHaveBeenCalledWith('member-1');
       expect(mockUserRepo.findById).toHaveBeenCalledWith('user-1');
@@ -392,17 +409,78 @@ describe('MemberService', () => {
         graduation_year: 2024,
         current_city: 'NYC',
         current_company: 'Acme',
+        custom_fields: [],
       });
+    });
+
+    it('passes the viewer-allowed visibility set to the custom-field lookup', async () => {
+      const member = {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'chapter-1',
+        role_ids: ['role-1'],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      };
+      mockRepo.findById.mockResolvedValue(member);
+      mockUserRepo.findById.mockResolvedValue({
+        id: 'user-1',
+        supabase_auth_id: 'auth-1',
+        email: 'john@example.com',
+        display_name: 'John Doe',
+        avatar_url: null,
+        bio: null,
+        graduation_year: null,
+        current_city: null,
+        current_company: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      });
+
+      // A different viewer (not self) who is the president (wildcard).
+      mockRbacService.getEffectivePermissions.mockResolvedValue(['*']);
+      mockCustomFieldService.findVisibleValuesForMember.mockResolvedValue([
+        {
+          field_id: 'f1',
+          key: 'gpa',
+          label: 'GPA',
+          type: 'decimal',
+          visibility: 'president',
+          value: '3.9',
+        },
+      ]);
+
+      const result = await service.findProfileById(
+        'member-1',
+        'chapter-1',
+        'president-user',
+      );
+
+      expect(mockRbacService.getEffectivePermissions).toHaveBeenCalledWith(
+        'chapter-1',
+        'president-user',
+      );
+      const [, , allowed] =
+        mockCustomFieldService.findVisibleValuesForMember.mock.calls[0];
+      // President (wildcard), viewing someone else: chapter + exec + president,
+      // but NOT self.
+      expect(Array.from(allowed as Set<string>).sort()).toEqual([
+        'chapter',
+        'exec',
+        'president',
+      ]);
+      expect(result.custom_fields).toHaveLength(1);
     });
 
     it('should throw NotFoundException when member not found', async () => {
       mockRepo.findById.mockResolvedValue(null);
 
       await expect(
-        service.findProfileById('member-x', 'chapter-1'),
+        service.findProfileById('member-x', 'chapter-1', 'viewer-1'),
       ).rejects.toThrow(NotFoundException);
       await expect(
-        service.findProfileById('member-x', 'chapter-1'),
+        service.findProfileById('member-x', 'chapter-1', 'viewer-1'),
       ).rejects.toThrow('Member not found');
     });
 
@@ -418,10 +496,10 @@ describe('MemberService', () => {
       });
 
       await expect(
-        service.findProfileById('member-1', 'chapter-1'),
+        service.findProfileById('member-1', 'chapter-1', 'viewer-1'),
       ).rejects.toThrow(ForbiddenException);
       await expect(
-        service.findProfileById('member-1', 'chapter-1'),
+        service.findProfileById('member-1', 'chapter-1', 'viewer-1'),
       ).rejects.toThrow('Member not in current chapter');
     });
   });

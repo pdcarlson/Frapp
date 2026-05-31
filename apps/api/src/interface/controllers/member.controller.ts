@@ -24,6 +24,7 @@ import { FreeTier } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentMember,
+  CurrentUser,
 } from '../decorators/current-user.decorator';
 import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
 import { MemberProfileDto } from '../dtos/member-profile.dto';
@@ -59,8 +60,12 @@ export class MemberController {
   @Get(':id')
   @ApiOperation({ summary: 'Get member profile by ID' })
   @ApiOkResponse({ type: MemberProfileDto })
-  async getOne(@CurrentChapterId() chapterId: string, @Param('id') id: string) {
-    return this.memberService.findProfileById(id, chapterId);
+  async getOne(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') viewerUserId: string,
+    @Param('id') id: string,
+  ) {
+    return this.memberService.findProfileById(id, chapterId, viewerUserId);
   }
 
   @Patch(':id/roles')

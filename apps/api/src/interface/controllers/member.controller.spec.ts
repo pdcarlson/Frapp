@@ -95,11 +95,16 @@ describe('MemberController', () => {
       } as any;
       memberService.findProfileById.mockResolvedValue(profile);
 
-      const result = await controller.getOne('chapter-1', 'member-1');
+      const result = await controller.getOne(
+        'chapter-1',
+        'viewer-1',
+        'member-1',
+      );
 
       expect(memberService.findProfileById).toHaveBeenCalledWith(
         'member-1',
         'chapter-1',
+        'viewer-1',
       );
       expect(result).toEqual(profile);
     });

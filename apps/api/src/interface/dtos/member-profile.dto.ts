@@ -1,4 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { MemberCustomFieldValueDto } from './custom-field.dto';
 
 export class MemberProfileDto {
   @ApiProperty()
@@ -42,4 +43,13 @@ export class MemberProfileDto {
 
   @ApiProperty()
   email: string;
+
+  @ApiPropertyOptional({
+    type: MemberCustomFieldValueDto,
+    isArray: true,
+    description:
+      'Custom-field values, present only on single-member reads and ' +
+      'already filtered to the fields the requesting viewer may see.',
+  })
+  custom_fields?: MemberCustomFieldValueDto[];
 }

@@ -8,7 +8,11 @@ import {
 } from '@nestjs/common';
 import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import type { ChapterCustomField } from '../../domain/entities/chapter-custom-field.entity';
+import type {
+  ChapterCustomField,
+  CustomFieldVisibility,
+  MemberCustomFieldValue,
+} from '../../domain/entities/chapter-custom-field.entity';
 import type {
   CreateCustomFieldDto,
   UpdateCustomFieldDto,
@@ -26,6 +30,10 @@ type ListResponse = {
   data: ChapterCustomField[] | null;
   error: PostgrestError | null;
 };
+type ValuesResponse = {
+  data: { field_id: string; value: string | null }[] | null;
+  error: PostgrestError | null;
+};
 type MutateResponse = { error: PostgrestError | null };
 
 /**
@@ -33,8 +41,8 @@ type MutateResponse = { error: PostgrestError | null };
  * Fields). Part of the settings family: every mutation appends a
  * `chapter_audit_log` row (mirrored to `#chapter-audit` by the ChatBridgeWorker,
  * ADR-08) like every other settings save. The configured `visibility` /
- * `sensitive` flags are stored here; enforcing them when rendering the member
- * directory is a separate chunk.
+ * `sensitive` flags are stored here and enforced server-side by
+ * `findVisibleValuesForMember` when the member directory renders values.
  */
 @Injectable()
 export class CustomFieldService {
@@ -53,6 +61,59 @@ export class CustomFieldService {
       .order('created_at', { ascending: true });
     if (error) throw error;
     return data ?? [];
+  }
+
+  /**
+   * Return a member's custom-field values, restricted to the fields whose
+   * `visibility` is in `allowed` (Chunk 09 — the member directory renders these
+   * with server-side visibility enforcement). Starting from the (already
+   * visibility-filtered) definitions means out-of-tier and `sensitive` field
+   * values are never even looked up, so they cannot leak. Fields with no value
+   * set for this member are returned with `value: null` so the directory can
+   * render the full (visible) field set per chapter.
+   */
+  async findVisibleValuesForMember(
+    chapterId: string,
+    memberId: string,
+    allowed: Set<CustomFieldVisibility>,
+  ): Promise<MemberCustomFieldValue[]> {
+    if (allowed.size === 0) return [];
+
+    const { data: defs, error: defsError }: ListResponse = await this.supabase
+      .from('chapter_custom_fields')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .in('visibility', Array.from(allowed))
+      .order('sort', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (defsError) throw defsError;
+    if (!defs || defs.length === 0) return [];
+
+    // Restrict the value lookup to the already visibility-filtered field IDs so
+    // out-of-tier / `sensitive` values are never even selected server-side —
+    // not merely dropped after the fact (spec/behavior/members.md: values are
+    // queried against the allowed tiers, never post-fetch scrubbed).
+    const visibleFieldIds = defs.map((def) => def.id);
+    const { data: values, error: valuesError }: ValuesResponse =
+      await this.supabase
+        .from('member_custom_field_values')
+        .select('field_id, value')
+        .eq('member_id', memberId)
+        .in('field_id', visibleFieldIds);
+    if (valuesError) throw valuesError;
+
+    const valueByFieldId = new Map(
+      (values ?? []).map((row) => [row.field_id, row.value]),
+    );
+
+    return defs.map((def) => ({
+      field_id: def.id,
+      key: def.key,
+      label: def.label,
+      type: def.type,
+      visibility: def.visibility,
+      value: valueByFieldId.get(def.id) ?? null,
+    }));
   }
 
   async create(
