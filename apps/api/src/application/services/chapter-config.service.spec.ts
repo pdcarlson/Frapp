@@ -54,6 +54,7 @@ function makeSupabase(
     branding: {},
     theme_palette: {},
     beta_config: { enabled: true, style: 'sidebar_pill' },
+    analytics_opt_out: false,
   };
 
   const workflowUpsert = jest.fn().mockReturnValue({ error: null });
@@ -318,6 +319,56 @@ describe('ChapterConfigService — dues', () => {
       });
 
       expect(supabase.duesUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
+      expect(result.id).toBe(CHAPTER_ID);
+    });
+  });
+});
+
+describe('ChapterConfigService — analytics opt-out', () => {
+  describe('getConfig', () => {
+    it('returns the chapter analytics_opt_out flag (defaulting off)', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.analytics_opt_out).toBe(false);
+    });
+  });
+
+  describe('patchConfig', () => {
+    it('updates the chapters column and audits the change', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        analytics_opt_out: true,
+      });
+
+      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(1);
+      expect(supabase.chapterUpdate).toHaveBeenCalledWith({
+        analytics_opt_out: true,
+      });
+      expect(supabase.auditInsert).toHaveBeenCalledTimes(1);
+      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(auditRow.action).toBe('chapter_config_updated');
+      expect(auditRow.member_visible).toBe(true);
+      expect(auditRow.diff.analytics_opt_out).toEqual({
+        from: false,
+        to: true,
+      });
+    });
+
+    it('is a no-op when the flag already matches', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      const result = await service.patchConfig(CHAPTER_ID, 'user-1', {
+        analytics_opt_out: false,
+      });
+
+      expect(supabase.chapterUpdate).not.toHaveBeenCalled();
       expect(supabase.auditInsert).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
     });

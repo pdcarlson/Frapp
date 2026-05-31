@@ -18,7 +18,7 @@
 | Pseudonymous event pipeline (HMAC keying) | [#464](https://github.com/pdcarlson/Frapp/issues/464) | shipped | — | shared keying util + server pipeline + web/mobile emitters + PostHog provider (shipped; issue closed) |
 | Membership + opt-out enforcement on `POST /analytics/events` | [#551](https://github.com/pdcarlson/Frapp/issues/551) | open | #464 | enforce chapter membership + server-side opt-out on the events endpoint (tightens the #464 gate) |
 | Salt management (per-env, out-of-provider) | [#465](https://github.com/pdcarlson/Frapp/issues/465) | open | — | one salt/env in the Stripe/Supabase secret store; consumes `ANALYTICS_HMAC_SALT` (#464) |
-| Chapter opt-out toggle | [#466](https://github.com/pdcarlson/Frapp/issues/466) | open | #464 | gated by `chapter-config:manage`; writes `chapters.analytics_opt_out` (column + server check added by #464) |
+| Chapter opt-out toggle | [#466](https://github.com/pdcarlson/Frapp/issues/466) | shipped | #464 | Settings → **Privacy** tab toggle (gated by `chapter-config:manage`); writes `chapters.analytics_opt_out` via config PATCH (audit-logged). Client SDK suppresses events when opted out (server gate from #464 is the backstop). Onboarding disclosure added. Mobile still uncovered (no active-chapter context, #253). |
 
 ## Notes / decisions
 

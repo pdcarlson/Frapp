@@ -58,6 +58,9 @@
 - Solo project: an issue's open/closed state is its status; PRs close issues via `Closes #N`.
 - 07d (#540) follow-ups: [#547](https://github.com/pdcarlson/Frapp/issues/547) (live GET/PATCH dues verification — blocked this session by the sandbox Supabase stack), [#548](https://github.com/pdcarlson/Frapp/issues/548) (annual-cadence decision + provision `chapter_dues_config` at onboarding).
 - 07b (#538) decisions: `/roles` IA reconciled by **redirecting** the standalone page into Settings → Roles (live RBAC folded into a "Live roles" sub-tab); `chapter_custom_roles` got dedicated CRUD endpoints (rather than the config blob) since rows are individually addressable. Follow-up: [#555](https://github.com/pdcarlson/Frapp/issues/555) (wire `chapter_custom_roles` into permission enforcement + member assignment — presentation-only today). Also fixed in-PR: [#556](https://github.com/pdcarlson/Frapp/issues/556) (pre-existing `semester-rollover` spec date-math bug that was turning this PR's CI red).
+- 07c (#539, open) follow-up: [#572](https://github.com/pdcarlson/Frapp/issues/572) (provision
+  `CUSTOM_FIELDS_SEED` into `chapter_custom_fields` at onboarding — mirrors the 07d dues-provisioning
+  gap #548).
 - 10b (#439) follow-ups: [#559](https://github.com/pdcarlson/Frapp/issues/559) (cross-client realtime for task-card status — non-acting viewers refresh only on their own task-query refetch) and [#560](https://github.com/pdcarlson/Frapp/issues/560) (promote optimistic updates into the shared `use-tasks` hooks — also speeds the dashboard).
 - Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
   dispatch), #485/#486 (Chunk 06 follow-ups), #491 (Chunk 12 landing), #492 (ops-module nudges),

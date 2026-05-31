@@ -3,9 +3,10 @@
 Everything not owned by a [project](../projects/). Grouped by area. The backlog is the source of
 truth; `/triage` keeps these rows in sync with GitHub (repo wins).
 
-> **Completeness caveat (verified seed):** the GitHub API reports **242 open issues** (verified via
-> API search on 2026-05-31; the seed enumerated 255 and this triage run closed 15 — see the triage
-> summary below). All are enumerated here or accounted for as epics + their sub-issues (#426–#432
+> **Completeness caveat (verified seed):** the GitHub API reports **240 open issues** (verified via
+> API search on 2026-05-31; the seed enumerated 255, this triage run closed 15, and concurrent merges
+> closed #466 — see the triage summary below). All are enumerated here or accounted for as epics +
+> their sub-issues (#426–#432
 > epics + their sub-issues, which live in the epics/projects, not this file). The lowest-numbered open
 > issues (#232–#279) that the cursor paginator previously skipped have been recovered and bucketed.
 >

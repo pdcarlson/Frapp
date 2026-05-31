@@ -34,6 +34,8 @@ export interface OrgConfig {
   beta_config?: Record<string, unknown>;
   workflows?: OrgWorkflow[];
   dues?: OrgDues;
+  /** When true, this chapter has opted out of pseudonymous product analytics. */
+  analytics_opt_out?: boolean;
   [key: string]: unknown;
 }
 

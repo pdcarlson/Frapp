@@ -274,6 +274,8 @@ export const PatchChapterConfigSchema = z.object({
     .optional(),
   dues: ChapterDuesConfigSchema.optional(),
   workflows: z.array(ChapterWorkflowConfigSchema).optional(),
+  // Per-chapter analytics opt-out (data-retention.md #analytics-events-pseudonymous).
+  analytics_opt_out: z.boolean().optional(),
 });
 
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
