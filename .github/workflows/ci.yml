@@ -246,13 +246,16 @@ jobs:
         # No npm ci needed — these tests have no dependencies beyond node:test.
         run: npm run test:ci-scripts
 
-  # ── PGlite migration validator (ADR-11) ────────────────────────────────
+  # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
   # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
-  # and asserts structural landmarks (unique indexes, RLS policy DDL,
-  # generated columns). Covers what static `check:migration-safety` can't:
-  # the SQL actually runs and the schema lands. Out of reach: Realtime,
-  # Presence, GoTrue with real JWTs — those depend on a hosted Supabase
-  # and live in the NestJS Jest tier (see ADR-11 + AGENT_INFRA.md).
+  # and asserts structural landmarks (unique indexes, generated columns) plus
+  # an RLS smoke tier: every public table enables RLS (default-deny invariant)
+  # and the chat hot-path RLS posture holds (default-deny channels/messages;
+  # ownership-scoped reaction policies). Covers what static
+  # `check:migration-safety` can't: the SQL actually runs and the schema lands.
+  # Out of reach: Realtime, Presence, GoTrue with real JWTs, and RLS
+  # *enforcement* as the authenticated role (#423) — those live in the NestJS
+  # Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
   pglite-migrations:
     runs-on: ubuntu-latest
     permissions:
