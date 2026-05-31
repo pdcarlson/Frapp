@@ -66,6 +66,11 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback Chunk 09 member custom-field values
+* **Migration**: `20260531120000_member_custom_field_values.sql`
+* **Action**: Run `DROP TABLE IF EXISTS member_custom_field_values;` (its indexes and the `updated_at` trigger drop automatically with the table).
+* **Note**: Additive table; it holds per-member values for the `chapter_custom_fields` definitions. Dropping it loses any stored custom-field values but does not touch the definitions or any other table. There is no value-write API yet (deferred to #581), so in most environments the table is empty.
+
 ## Rollback Chunk 07d dues config alignment
 * **Migration**: `20260530193000_chapter_dues_config_align_spec.sql`
 * **Action (forward-fix)**: Drop the added column and restore the prior cadence CHECK/default:
