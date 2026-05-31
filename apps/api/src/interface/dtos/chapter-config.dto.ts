@@ -186,4 +186,12 @@ export class PatchChapterConfigDto {
   @ValidateNested({ each: true })
   @Type(() => WorkflowConfigDto)
   workflows?: WorkflowConfigDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  analytics_opt_out?: boolean;
 }

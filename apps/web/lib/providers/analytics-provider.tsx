@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useMemo } from "react";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { AnalyticsProperties } from "@repo/validation";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 
 /**
  * Pseudonymous analytics for the web app (issue #464).
@@ -23,9 +24,15 @@ const AnalyticsContext = createContext<TrackFn | null>(null);
 export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
+  // First gate, enforced at the SDK boundary: when the active chapter has opted
+  // out, emit zero events for its members. The API repeats this check as
+  // defense-in-depth (data-retention.md #analytics-events-pseudonymous), so the
+  // ~5min config staleTime window before this client refetches is acceptable.
+  const optedOut = useOrgConfig().data?.analytics_opt_out === true;
 
   const track = useCallback<TrackFn>(
     (name, properties) => {
+      if (optedOut) return;
       void client
         .POST("/v1/analytics/events", {
           body: {
@@ -38,7 +45,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
           // Best-effort: analytics must never surface an error to the user.
         });
     },
-    [client, chapterId],
+    [client, chapterId, optedOut],
   );
 
   const value = useMemo(() => track, [track]);
