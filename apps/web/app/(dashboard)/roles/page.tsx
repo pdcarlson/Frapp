@@ -1,9 +1,7 @@
-import { RolesAndPermissionsPage } from "@/components/roles/roles-page";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Roles & Permissions — Frapp",
-};
-
+// The standalone Roles & Permissions manager folded into Settings → Roles
+// (Chunk 07b, #538). The live RBAC UI now lives in the "Live roles" sub-tab.
 export default function RolesPage() {
-  return <RolesAndPermissionsPage />;
+  redirect("/settings?tab=roles");
 }

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AlertTriangle, CreditCard, Loader2, Trash2 } from "lucide-react";
 import {
   useCreatePortal,
   useCurrentChapter,
   useMyPermissions,
+  usePermissionsCatalog,
   useSemesterRollover,
   useSemesters,
   useUpdateChapter,
@@ -47,6 +49,7 @@ import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
 import { SettingsModulesTab } from "@/components/settings/settings-modules-tab";
 import { SettingsWorkflowsTab } from "@/components/settings/settings-workflows-tab";
 import { SettingsDuesTab } from "@/components/settings/settings-dues-tab";
+import { SettingsRolesTab } from "@/components/settings/settings-roles-tab";
 import { SettingsComingSoon } from "@/components/settings/settings-coming-soon";
 
 type SemesterArchive = {
@@ -65,6 +68,19 @@ type Branding = {
 };
 
 const RAIL_TRIGGER_CLASS = "flex-1 justify-start lg:w-full lg:flex-none";
+
+// Valid `?tab=` deep-link targets — mirrors the rail triggers below.
+const SETTINGS_TAB_VALUES: readonly string[] = [
+  "org",
+  "modules",
+  "roles",
+  "fields",
+  "workflows",
+  "dues",
+  "theme",
+  "beta",
+  "audit",
+];
 
 // Fallback shown before the config query resolves. Mirrors the API's
 // chapter_dues_config defaults for an unconfigured chapter.
@@ -89,13 +105,6 @@ const COMING_SOON_TABS: ReadonlyArray<{
   description: string;
   chunk: string;
 }> = [
-  {
-    value: "roles",
-    label: "Roles",
-    title: "Roles & permissions",
-    description: "Custom roles, permission catalog, and presidency transfer.",
-    chunk: "Chunk 07",
-  },
   {
     value: "fields",
     label: "Fields",
@@ -130,6 +139,7 @@ export function SettingsPage() {
   const { data: permissionsPayload } = useMyPermissions({
     enabled: !!activeChapterId,
   });
+  const catalogQuery = usePermissionsCatalog();
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
   const patchOrgConfig = usePatchOrgConfig();
@@ -137,6 +147,19 @@ export function SettingsPage() {
   const createPortal = useCreatePortal();
 
   const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
+
+  // Deep-link the active tab via `?tab=` so links (e.g. the redirect from the
+  // former standalone `/roles` page) can land directly on a tab.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState(
+    tabParam && SETTINGS_TAB_VALUES.includes(tabParam) ? tabParam : "org",
+  );
+  useEffect(() => {
+    if (tabParam && SETTINGS_TAB_VALUES.includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
 
   const [accentDraft, setAccentDraft] = useState("");
   const [semesterLabel, setSemesterLabel] = useState("");
@@ -217,6 +240,9 @@ export function SettingsPage() {
 
   const accent = resolveChapterAccentColor(accentDraft || undefined);
   const semesters = asArray<SemesterArchive>(semestersQuery.data);
+  const permissionsCatalog = asArray<{ key: string; permission: string }>(
+    catalogQuery.data,
+  );
 
   async function saveProfile(next: {
     name: string;
@@ -370,7 +396,8 @@ export function SettingsPage() {
       </header>
 
       <Tabs
-        defaultValue="org"
+        value={activeTab}
+        onValueChange={setActiveTab}
         className="flex flex-col gap-6 lg:flex-row lg:items-start"
       >
         <TabsList className="flex h-auto w-full flex-row flex-wrap justify-start gap-1 bg-muted/50 p-1 lg:w-56 lg:flex-col lg:flex-nowrap">
@@ -569,6 +596,16 @@ export function SettingsPage() {
                     enabled ? "Module enabled" : "Module disabled",
                   )
                 }
+              />,
+            )}
+          </TabsContent>
+
+          <TabsContent value="roles" className="mt-0">
+            {renderConfigGated(
+              <SettingsRolesTab
+                archetypeKey={archetypeKey}
+                canManage={canManage}
+                catalog={permissionsCatalog}
               />,
             )}
           </TabsContent>
