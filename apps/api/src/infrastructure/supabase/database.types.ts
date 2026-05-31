@@ -4,6 +4,7 @@ import type {
   BackworkProfessor,
   BackworkResource,
   Chapter,
+  ChapterCustomRole,
   ChapterDocument,
   ChannelReadReceipt,
   ChatChannel,
@@ -86,6 +87,7 @@ export interface Database {
       tasks: TableDefinition<Task>;
       chapter_documents: TableDefinition<ChapterDocument>;
       semester_archives: TableDefinition<SemesterArchive>;
+      chapter_custom_roles: TableDefinition<ChapterCustomRole>;
     };
     Views: Record<string, never>;
     Functions: {

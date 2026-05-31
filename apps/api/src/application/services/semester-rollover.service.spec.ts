@@ -60,8 +60,15 @@ describe('SemesterRolloverService', () => {
     });
 
     it('should create semester archive when last rollover was in previous month', async () => {
-      const lastMonth = new Date();
-      lastMonth.setMonth(lastMonth.getMonth() - 1);
+      // Anchor to the first of the previous month in UTC. Using
+      // `new Date().setMonth(m - 1)` overflows on month-end days (e.g. May 31
+      // → "April 31" rolls forward to May 1, still the current month), which
+      // made this assertion fail on those dates. The service compares months
+      // via getUTCMonth(), so construct the fixture the same way.
+      const now = new Date();
+      const lastMonth = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+      );
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
         created_at: lastMonth.toISOString(),
@@ -101,8 +108,13 @@ describe('SemesterRolloverService', () => {
     });
 
     it('should throw ConflictException when same calendar month', async () => {
+      // First of the current month in UTC, matching the service's getUTCMonth()
+      // comparison (a local-time construction can land in the prior month for
+      // negative-offset zones near a month boundary).
       const now = new Date();
-      const sameMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const sameMonth = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+      );
       mockArchiveRepo.findLatestByChapter.mockResolvedValue({
         ...baseArchive,
         created_at: sameMonth.toISOString(),
