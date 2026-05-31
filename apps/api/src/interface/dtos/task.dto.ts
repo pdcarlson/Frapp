@@ -35,6 +35,22 @@ export class CreateTaskDto {
   @IsInt()
   @Min(0)
   point_reward?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates.',
+  })
+  @IsOptional()
+  @IsUUID()
+  channel_id?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`.',
+  })
+  @IsOptional()
+  @IsUUID()
+  client_message_id?: string;
 }
 
 export class UpdateTaskStatusDto {

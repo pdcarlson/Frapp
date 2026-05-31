@@ -14,6 +14,7 @@ import {
   parseAnnounceArgs,
   parsePollArgs,
   parsePointsArgs,
+  parseTaskArgs,
   type AnnouncementPayload,
   type PollPayload,
   type SlashCommand,
@@ -92,6 +93,8 @@ export async function dispatchSlashCommand(
       return dispatchAnnounce(ctx, args, announcementsChannelId);
     case "points":
       return dispatchPoints(ctx, args, channelId, resolveMember);
+    case "task":
+      return dispatchTask(ctx, args, channelId, resolveMember);
     default:
       return {
         ok: false,
@@ -226,5 +229,70 @@ async function dispatchPoints(
 
   // Success: the server posts the `points` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow. Nothing to do.
+  return { ok: true };
+}
+
+/**
+ * Dispatch `/task "<title>" @assignee <YYYY-MM-DD> [points]`. Like `/points`,
+ * this is a "heavy" command: it creates a real task row, so the task card is
+ * server-originated (a client cannot post `kind:"task"` directly). We show an
+ * optimistic `loading` placeholder, call `POST /v1/tasks` (which creates the
+ * task and posts the card with the same `client_message_id`), and let Realtime
+ * reconcile the placeholder in place. On failure we drop the placeholder and
+ * surface the server's message.
+ */
+async function dispatchTask(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+  resolveMember: ResolveMember | undefined,
+): Promise<DispatchResult> {
+  const parsed = parseTaskArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  if (!resolveMember) {
+    return {
+      ok: false,
+      error: "Member directory is still loading — try again in a moment",
+    };
+  }
+  const member = resolveMember(parsed.value.assigneeToken);
+  if (!member) {
+    return {
+      ok: false,
+      error: `No member matches @${parsed.value.assigneeToken}`,
+    };
+  }
+
+  const clientMessageId = crypto.randomUUID();
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: `Creating task "${parsed.value.title}"…`,
+  });
+
+  try {
+    const { error } = await ctx.apiClient.POST("/v1/tasks", {
+      body: {
+        title: parsed.value.title,
+        assignee_id: member.user_id,
+        due_date: parsed.value.dueDate,
+        point_reward: parsed.value.pointReward ?? undefined,
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    if (error) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: false, error: apiErrorMessage(error, "Couldn't create task") };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the tasks service" };
+  }
+
+  // Success: the server posts the `task` card (same client_message_id); the
+  // Realtime echo reconciles the placeholder via mergeServerRow.
   return { ok: true };
 }

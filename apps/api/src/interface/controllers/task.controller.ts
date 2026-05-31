@@ -87,6 +87,8 @@ export class TaskController {
       created_by: createdBy,
       due_date: dto.due_date,
       point_reward: dto.point_reward ?? null,
+      channel_id: dto.channel_id,
+      client_message_id: dto.client_message_id,
     });
   }
 

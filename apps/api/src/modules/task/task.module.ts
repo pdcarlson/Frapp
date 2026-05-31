@@ -9,9 +9,13 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
+import { ChatModule } from '../chat/chat.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [RbacModule, NotificationModule],
+  // ChatModule → ChatService (posts the /task card); AuthModule → USER_REPOSITORY
+  // (resolves assigner/assignee display names embedded in the card payload).
+  imports: [RbacModule, NotificationModule, ChatModule, AuthModule],
   controllers: [TaskController],
   providers: [
     TaskService,

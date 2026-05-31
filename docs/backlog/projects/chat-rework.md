@@ -7,8 +7,8 @@
 
 > The chat-first rework of `apps/web` (with downstream `apps/mobile`, `apps/landing`): chat is the
 > product spine, ops modules are integrations on top of it. Delivered as numbered chunks. Chunks
-> 01–06 are shipped; 07 is in progress (07a/07b/07d shipped; 07c/07e queued); 08–12 are queued.
-> This file tracks delivery; the durable behavior these chunks
+> 01–06 are shipped; 07 is in progress (07a/07b/07d shipped; 07c/07e queued); 10b/10c shipped; the
+> rest of 08–12 are queued. This file tracks delivery; the durable behavior these chunks
 > implement now lives in the real `spec/` files linked above (no more chunk briefs in spec).
 
 ## Work units
@@ -34,7 +34,7 @@
 | 08 — Settings: Beta + Audit + ops-setup nudges | [#436](https://github.com/pdcarlson/Frapp/issues/436) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
 | 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | open | — | depends on 06. Canon → `spec/behavior/members.md`, `spec/ui/web-dashboard/` |
 | 10a — Ops: Events (slash + RSVP renderer + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | open | — | integration pattern → `spec/behavior/integrations.md`; module → `spec/behavior/events.md` |
-| 10b — Ops: Tasks (slash + assignment renderer) | [#439](https://github.com/pdcarlson/Frapp/issues/439) | open | — | → `spec/behavior/tasks.md` |
+| 10b — Ops: Tasks (slash + interactive assignment renderer) | [#439](https://github.com/pdcarlson/Frapp/issues/439) | shipped | this PR | `/task "<title>" @assignee <date> [points]` heavy command + server-originated interactive card (live status via task query; assignee Start/Complete, admin Confirm/Reject). No new migration. Canon → `spec/behavior/tasks.md` → Chat Integration, `spec/behavior/chat/integrations.md` |
 | 10c — Ops: Points (slash + ledger renderer) | [#440](https://github.com/pdcarlson/Frapp/issues/440) | shipped | PR #535 | `/points grant\|deduct`; server-originated card. Canon → `spec/behavior/points.md`, `spec/behavior/chat/integrations.md` |
 | 10d — Ops: Dues / Billing (slash + invoice renderer) | [#441](https://github.com/pdcarlson/Frapp/issues/441) | open | — | → `spec/behavior/billing.md` |
 | 10e — Ops: Rush / Recruitment / Intake (vocab-aware) | [#442](https://github.com/pdcarlson/Frapp/issues/442) | open | — | → new `spec/behavior/rush.md` |
@@ -58,6 +58,7 @@
 - Solo project: an issue's open/closed state is its status; PRs close issues via `Closes #N`.
 - 07d (#540) follow-ups: [#547](https://github.com/pdcarlson/Frapp/issues/547) (live GET/PATCH dues verification — blocked this session by the sandbox Supabase stack), [#548](https://github.com/pdcarlson/Frapp/issues/548) (annual-cadence decision + provision `chapter_dues_config` at onboarding).
 - 07b (#538) decisions: `/roles` IA reconciled by **redirecting** the standalone page into Settings → Roles (live RBAC folded into a "Live roles" sub-tab); `chapter_custom_roles` got dedicated CRUD endpoints (rather than the config blob) since rows are individually addressable. Follow-up: [#555](https://github.com/pdcarlson/Frapp/issues/555) (wire `chapter_custom_roles` into permission enforcement + member assignment — presentation-only today). Also fixed in-PR: [#556](https://github.com/pdcarlson/Frapp/issues/556) (pre-existing `semester-rollover` spec date-math bug that was turning this PR's CI red).
+- 10b (#439) follow-ups: cross-client realtime for task-card status (non-acting viewers refresh only on their own task-query refetch); promote optimistic updates into the shared `use-tasks` hooks (also speeds the dashboard). Filed as self-contained issues during the 10b PR.
 - Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
   dispatch), #485/#486 (Chunk 06 follow-ups), #491 (Chunk 12 landing), #492 (ops-module nudges),
   #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels). #490 (Chunk 07 tabs)

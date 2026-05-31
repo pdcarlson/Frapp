@@ -12,10 +12,13 @@ import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-tr
 import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import type { Task } from '../../domain/entities/task.entity';
 import { TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
+import { ChatService } from './chat.service';
 
 const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.TODO]: [TaskStatus.IN_PROGRESS],
@@ -48,6 +51,13 @@ export interface CreateTaskInput {
   created_by: string;
   due_date: string;
   point_reward?: number | null;
+  /**
+   * When set together with `client_message_id`, an interactive task card is
+   * posted to this chat channel after the row commits (the `/task` slash
+   * command). Omitted for dashboard creates.
+   */
+  channel_id?: string;
+  client_message_id?: string;
 }
 
 export interface UpdateTaskStatusInput {
@@ -63,7 +73,9 @@ export class TaskService {
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Task> {
@@ -137,7 +149,74 @@ export class TaskService {
       'assignment',
     );
 
+    // The `/task` slash command asks us to surface an interactive assignment
+    // card in chat. The card is server-originated (a client cannot forge
+    // `kind:"task"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
+    // task row is the source of truth, so a failed post is logged and never
+    // rolls the task back.
+    if (input.channel_id && input.client_message_id) {
+      try {
+        await this.postTaskCard(input, task);
+      } catch (error) {
+        this.logger.warn('Failed to post task card to chat', {
+          taskId: task.id,
+          channelId: input.channel_id,
+          chapterId: input.chapter_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     return task;
+  }
+
+  /**
+   * Post the `kind:"task"` assignment card for a committed task. Names are
+   * resolved here and embedded in the payload so the snapshot stays a correct
+   * record even if a member later leaves the chapter. The card carries the
+   * task id; the renderer reads live status back through the task query (the
+   * chat message row is never mutated). Posts as the admin (the creator) into
+   * the channel they ran the command from; channel access is re-checked by
+   * `ChatService.sendMessage`.
+   */
+  private async postTaskCard(
+    input: CreateTaskInput,
+    task: Task,
+  ): Promise<void> {
+    const users = await this.userRepo.findByIds([
+      input.created_by,
+      input.assignee_id,
+    ]);
+    const nameOf = (id: string): string =>
+      users.find((u) => u.id === id)?.display_name ?? 'Unknown member';
+    const assignerName = nameOf(input.created_by);
+    const assigneeName = nameOf(input.assignee_id);
+
+    const payload = {
+      task_id: task.id,
+      title: task.title,
+      assigner_user_id: input.created_by,
+      assigner_name: assignerName,
+      assignee_user_id: input.assignee_id,
+      assignee_name: assigneeName,
+      due_date: task.due_date,
+      status: 'TODO' as const,
+      point_reward: task.point_reward,
+      created_at: task.created_at,
+    };
+
+    const content = `Assigned "${task.title}" to ${assigneeName} (due ${task.due_date})`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: input.created_by,
+      content,
+      kind: 'task',
+      payload,
+      client_message_id: input.client_message_id,
+      system_originated: true,
+    });
   }
 
   async updateStatus(

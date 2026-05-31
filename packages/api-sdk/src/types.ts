@@ -2205,6 +2205,10 @@ export interface components {
             due_date: string;
             /** @description Points to award on completion */
             point_reward?: number;
+            /** @description When set with `client_message_id`, posts an interactive task card to this chat channel after the task is created (the `/task` slash command). Omit for dashboard creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         UpdateTaskStatusDto: {
             /** @enum {string} */

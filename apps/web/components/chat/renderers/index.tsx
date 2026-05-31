@@ -7,6 +7,7 @@ import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
 import { SystemAuditCard } from "./system-audit-card";
+import { TaskCard } from "./task-card";
 import { TextRenderer } from "./text-renderer";
 
 export interface MessageRendererProps {
@@ -61,8 +62,15 @@ export function MessageRenderer({
       return <LoadingCard message={message} />;
     case "points":
       return <PointsCard message={message} />;
-    case "event":
     case "task":
+      return (
+        <TaskCard
+          message={message}
+          viewerId={viewerId}
+          isConfirmed={isConfirmed}
+        />
+      );
+    case "event":
     case "dues":
     case "hours":
       return <ComingSoonCard message={message} />;
