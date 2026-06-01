@@ -17,6 +17,38 @@ concurrency:
 # ---------------------------------------------------------------------------
 
 jobs:
+  # Change detection: path-gates the non-required web/pglite jobs (Lever D).
+  # The filter runs only on pull_request; on push the gated jobs run
+  # unconditionally (full validation on protected branches), so a shallow
+  # checkout here can never fail the gate.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      pglite: ${{ steps.filter.outputs.pglite }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'package-lock.json'
+              - 'turbo.json'
+              - 'apps/web/playwright.config.ts'
+            pglite:
+              - 'supabase/migrations/**'
+              - 'scripts/check-pglite-migrations.mjs'
+              - 'packages/validation/**'
+
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
     runs-on: ubuntu-latest
@@ -128,7 +160,8 @@ jobs:
 
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -302,6 +335,8 @@ jobs:
   # *enforcement* as the authenticated role (#423) — those live in the NestJS
   # Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
   pglite-migrations:
+    needs: changes
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -325,7 +360,8 @@ jobs:
 
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
