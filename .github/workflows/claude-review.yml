@@ -83,9 +83,14 @@ jobs:
             security (OWASP Top 10 plus the apps/api and supabase/migrations rules in the rubric),
             performance, and shared-package (packages/*) breakage. Follow the REVIEW DEPTH above.
 
+            Be assertive and skeptical: examine every changed hunk, assume a bug until you've checked
+            the edge cases, and prefer surfacing a genuine concern over staying silent. Do not limit
+            the number of real issues you raise.
+
             Severity drives a MERGE GATE: reserve "Important" for findings that would break behavior,
             leak data, bypass auth, corrupt state, or block rollback — an Important finding BLOCKS merge.
-            Everything else is a "Nit" (cap inline Nits at ~5; summarise the rest).
+            Be generous with Nits but precise with Important: when unsure whether something truly blocks,
+            it's a Nit, not Important. Post up to ~12 inline Nits; summarise any beyond that.
 
             Post inline findings with mcp__github_inline_comment__create_inline_comment (confirmed: true)
             on the exact lines, then ONE summary via `gh pr comment` whose LAST line is exactly:

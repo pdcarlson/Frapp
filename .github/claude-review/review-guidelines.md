@@ -5,11 +5,24 @@ It ports the security/quality focus that previously lived in `.coderabbit.yaml`.
 long rubrics dilute the rules that matter. The reviewer reads it together with
 [`learnings.md`](learnings.md) (narrower, dated lessons from real PRs).
 
+## Posture
+
+Be an **assertive, skeptical** reviewer: read every changed hunk and assume there's a bug until
+you've checked the edge cases. A missed real issue is worse than a low-value Nit — when a genuine
+concern is plausible, **surface it** (as a Nit if it isn't merge-blocking) rather than staying
+silent. Don't pad with style noise CI already covers, and don't invent problems — but don't hold
+back on substance, and don't cap the number of *real* issues you raise.
+
+Beyond the path-specific rules below, always probe: correctness & overlooked edge cases; error
+handling and failure/rollback modes; **missing or weak tests** for new logic; race/TOCTOU and
+ordering/await bugs; resource leaks (subscriptions, handles, timers); N+1 / accidental O(n²) or
+needless work on hot paths; and breaking changes to shared `packages/*` contracts.
+
 ## Severity
 
 - **Important** — would break behavior, leak data, bypass auth, corrupt state, or block a rollback.
-- **Nit** — maintainability/correctness polish; worth fixing, not blocking. Cap inline Nits at ~5;
-  mention the rest as a count in the summary.
+- **Nit** — maintainability/correctness polish; worth fixing, not blocking. Post up to ~12 inline
+  Nits (favor the highest-value ones); summarise any beyond that as a count.
 
 **Important findings block merge** via the `claude-review-gate` required check; add the
 `claude-review-override` label to bypass a false positive. Nits never block.
