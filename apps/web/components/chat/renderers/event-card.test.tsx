@@ -158,4 +158,20 @@ describe("EventCard", () => {
       screen.getByRole("button", { name: /check in/i }),
     ).toBeInTheDocument();
   });
+
+  it("hides Check in before the event starts", () => {
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now + 60 * 60_000).toISOString(),
+          end_time: new Date(now + 2 * 60 * 60_000).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /check in/i }),
+    ).not.toBeInTheDocument();
+  });
 });

@@ -49,9 +49,13 @@ if { [ -f /etc/frapp-cloud-sandbox ] || [ "${FRAPP_CLOUD_SANDBOX:-}" = "1" ]; } 
       && ps -p "$prev_pid" -o args= 2>/dev/null | grep -q cloud-sandbox-up; then
       msg="${msg} CLOUD SANDBOX: stack bringup is still running (pid ${prev_pid}). Wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
     else
-      rm -rf "$LOCK" && mkdir "$LOCK" 2>/dev/null || true
-      launch_bringup
-      msg="${msg} CLOUD SANDBOX: cleared a stale bringup lock (a previous run died with no sentinel) and restarted the stack in the BACKGROUND.${STARTING_MSG}"
+      rm -rf "$LOCK"
+      if mkdir "$LOCK" 2>/dev/null; then
+        launch_bringup
+        msg="${msg} CLOUD SANDBOX: cleared a stale bringup lock (a previous run died with no sentinel) and restarted the stack in the BACKGROUND.${STARTING_MSG}"
+      else
+        msg="${msg} CLOUD SANDBOX: a concurrent session reclaimed the bringup lock; wait for ${ROOT}/.cloud-sandbox-up.done / .cloud-sandbox-up.failed; live log at /tmp/cloud-sandbox-up.log."
+      fi
     fi
   fi
 fi

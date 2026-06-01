@@ -120,6 +120,16 @@ export class EventService {
     // `kind:"event"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
     // event row is the source of truth, so a failed post is logged and never
     // rolls the event back.
+    //
+    // channel_id and client_message_id are paired (the optimistic placeholder
+    // is keyed on client_message_id). If only one is supplied the card is
+    // silently skipped and the client's placeholder would hang — surface that.
+    if (Boolean(input.channel_id) !== Boolean(input.client_message_id)) {
+      this.logger.warn(
+        'Event card not posted: channel_id and client_message_id must be supplied together',
+        { chapterId: input.chapter_id, eventId: parent.id },
+      );
+    }
     if (input.channel_id && input.client_message_id && input.created_by) {
       try {
         await this.postEventCard(input, parent);

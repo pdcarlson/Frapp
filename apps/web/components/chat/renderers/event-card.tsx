@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { CalendarDays, Check, MapPin } from "lucide-react";
 import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
 import type { ChatMessage } from "@/lib/chat/types";
@@ -86,6 +87,17 @@ function formatRange(startIso: string, endIso: string): string {
 }
 
 /**
+ * A check-in conflict (already on the attendance list) surfaces as HTTP 409.
+ * Prefer the typed status off the error body over string-matching the message,
+ * which is brittle if the wording or `getErrorMessage` format ever changes.
+ */
+function isAlreadyCheckedIn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { statusCode?: unknown; status?: unknown };
+  return e.statusCode === 409 || e.status === 409;
+}
+
+/**
  * Event card. The chat message is an immutable creation-time snapshot (name,
  * when, location, point value); the *live* checked-in count is read back from
  * the attendance query so the card reflects check-ins without ever mutating the
@@ -117,6 +129,26 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
     canViewAttendance ? eventId : "",
   );
 
+  // `Date.now()` is otherwise frozen at first render, so the Check-in button
+  // wouldn't appear/hide as the event's window opens or closes while the card
+  // stays mounted. Tick a re-render — but only while the window is still
+  // reachable (skip long-past events), and stop once it has fully closed. The
+  // server enforces the real window regardless; this is UX only.
+  const endTimeStr = payload?.end_time;
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (!endTimeStr) return;
+    const endMs = new Date(endTimeStr).getTime();
+    if (!Number.isFinite(endMs) || Date.now() > endMs + CHECK_IN_GRACE_MS) {
+      return;
+    }
+    const id = setInterval(() => {
+      tick((t) => t + 1);
+      if (Date.now() > endMs + CHECK_IN_GRACE_MS) clearInterval(id);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [endTimeStr]);
+
   if (!payload) {
     return (
       <div className="mt-1 whitespace-pre-wrap break-words text-sm">
@@ -146,8 +178,8 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           : undefined,
       });
     } catch (error) {
+      const alreadyIn = isAlreadyCheckedIn(error);
       const detail = getErrorMessage(error, "Couldn't check in.");
-      const alreadyIn = /409|already/i.test(detail);
       toast({
         title: alreadyIn ? "Already checked in" : "Couldn't check in",
         description: alreadyIn

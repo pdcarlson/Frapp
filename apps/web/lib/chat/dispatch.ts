@@ -321,6 +321,10 @@ function localDateTimeToIso(date: string, time: string): string | null {
     0,
     0,
   );
+  // `new Date(year, …)` remaps years 0–99 to 1900–1999; pin the full year so a
+  // four-digit year like 0099 isn't silently misdated (parseIsoDate validates
+  // the calendar date, but the remap would still slip through).
+  local.setFullYear(Number(dateMatch[1]));
   if (Number.isNaN(local.getTime())) return null;
   return local.toISOString();
 }
