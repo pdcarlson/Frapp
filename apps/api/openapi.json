@@ -1663,377 +1663,6 @@
         ]
       }
     },
-    "/v1/events/{eventId}/attendance/check-in": {
-      "post": {
-        "operationId": "AttendanceController_checkIn_v1",
-        "parameters": [
-          {
-            "name": "eventId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckInDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Self check-in to an event",
-        "tags": [
-          "Attendance"
-        ]
-      }
-    },
-    "/v1/events/{eventId}/attendance": {
-      "get": {
-        "operationId": "AttendanceController_list_v1",
-        "parameters": [
-          {
-            "name": "eventId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List attendance for an event",
-        "tags": [
-          "Attendance"
-        ]
-      }
-    },
-    "/v1/events/{eventId}/attendance/{userId}": {
-      "patch": {
-        "operationId": "AttendanceController_updateStatus_v1",
-        "parameters": [
-          {
-            "name": "eventId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "userId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateAttendanceDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Update attendance status for a member",
-        "tags": [
-          "Attendance"
-        ]
-      }
-    },
-    "/v1/events/{eventId}/attendance/auto-absent": {
-      "post": {
-        "operationId": "AttendanceController_markAutoAbsent_v1",
-        "parameters": [
-          {
-            "name": "eventId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Trigger auto-absent marking for an event",
-        "tags": [
-          "Attendance"
-        ]
-      }
-    },
-    "/v1/points/me": {
-      "get": {
-        "operationId": "PointsController_getMe_v1",
-        "parameters": [
-          {
-            "name": "window",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "default": "all",
-              "type": "string",
-              "enum": [
-                "all",
-                "semester",
-                "month"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get current user point summary",
-        "tags": [
-          "Points"
-        ]
-      }
-    },
-    "/v1/points/leaderboard": {
-      "get": {
-        "operationId": "PointsController_getLeaderboard_v1",
-        "parameters": [
-          {
-            "name": "window",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "default": "all",
-              "type": "string",
-              "enum": [
-                "all",
-                "semester",
-                "month"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get chapter leaderboard",
-        "tags": [
-          "Points"
-        ]
-      }
-    },
-    "/v1/points/transactions": {
-      "get": {
-        "description": "Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).",
-        "operationId": "PointsController_listTransactions_v1",
-        "parameters": [
-          {
-            "name": "user_id",
-            "required": false,
-            "in": "query",
-            "description": "Filter to a single member",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "category",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "ATTENDANCE",
-                "ACADEMIC",
-                "SERVICE",
-                "FINE",
-                "MANUAL",
-                "STUDY"
-              ]
-            }
-          },
-          {
-            "name": "flagged",
-            "required": false,
-            "in": "query",
-            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "true",
-                "false",
-                "1",
-                "0"
-              ]
-            }
-          },
-          {
-            "name": "before",
-            "required": false,
-            "in": "query",
-            "description": "ISO8601 cursor — return transactions created before this timestamp",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "description": "Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
-            "schema": {
-              "minimum": 1,
-              "maximum": 200,
-              "default": 50,
-              "example": 50,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "List chapter-wide point transactions",
-        "tags": [
-          "Points"
-        ]
-      }
-    },
-    "/v1/points/members/{userId}": {
-      "get": {
-        "operationId": "PointsController_getMember_v1",
-        "parameters": [
-          {
-            "name": "userId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "window",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "default": "all",
-              "type": "string",
-              "enum": [
-                "all",
-                "semester",
-                "month"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Get point summary for a member",
-        "tags": [
-          "Points"
-        ]
-      }
-    },
-    "/v1/points/adjust": {
-      "post": {
-        "operationId": "PointsController_adjust_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AdjustPointsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": ""
-          }
-        },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Manually adjust member points",
-        "tags": [
-          "Points"
-        ]
-      }
-    },
     "/v1/channels": {
       "get": {
         "operationId": "ChatController_listChannels_v1",
@@ -2764,6 +2393,377 @@
         "summary": "Mark channel as read",
         "tags": [
           "Chat"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in": {
+      "post": {
+        "operationId": "AttendanceController_checkIn_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance": {
+      "get": {
+        "operationId": "AttendanceController_list_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List attendance for an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/{userId}": {
+      "patch": {
+        "operationId": "AttendanceController_updateStatus_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAttendanceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Update attendance status for a member",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/auto-absent": {
+      "post": {
+        "operationId": "AttendanceController_markAutoAbsent_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Trigger auto-absent marking for an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/points/me": {
+      "get": {
+        "operationId": "PointsController_getMe_v1",
+        "parameters": [
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get current user point summary",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/leaderboard": {
+      "get": {
+        "operationId": "PointsController_getLeaderboard_v1",
+        "parameters": [
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get chapter leaderboard",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/transactions": {
+      "get": {
+        "description": "Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).",
+        "operationId": "PointsController_listTransactions_v1",
+        "parameters": [
+          {
+            "name": "user_id",
+            "required": false,
+            "in": "query",
+            "description": "Filter to a single member",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ATTENDANCE",
+                "ACADEMIC",
+                "SERVICE",
+                "FINE",
+                "MANUAL",
+                "STUDY"
+              ]
+            }
+          },
+          {
+            "name": "flagged",
+            "required": false,
+            "in": "query",
+            "description": "Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false",
+                "1",
+                "0"
+              ]
+            }
+          },
+          {
+            "name": "before",
+            "required": false,
+            "in": "query",
+            "description": "ISO8601 cursor — return transactions created before this timestamp",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50.",
+            "schema": {
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List chapter-wide point transactions",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/members/{userId}": {
+      "get": {
+        "operationId": "PointsController_getMember_v1",
+        "parameters": [
+          {
+            "name": "userId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "window",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "all",
+              "type": "string",
+              "enum": [
+                "all",
+                "semester",
+                "month"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get point summary for a member",
+        "tags": [
+          "Points"
+        ]
+      }
+    },
+    "/v1/points/adjust": {
+      "post": {
+        "operationId": "PointsController_adjust_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdjustPointsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Manually adjust member points",
+        "tags": [
+          "Points"
         ]
       }
     },
@@ -5564,6 +5564,14 @@
           },
           "notes": {
             "type": "string"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
           }
         },
         "required": [
@@ -5610,65 +5618,6 @@
             "type": "string"
           }
         }
-      },
-      "CheckInDto": {
-        "type": "object",
-        "properties": {}
-      },
-      "UpdateAttendanceDto": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "PRESENT",
-              "EXCUSED",
-              "ABSENT",
-              "LATE"
-            ]
-          },
-          "excuse_reason": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "status"
-        ]
-      },
-      "AdjustPointsDto": {
-        "type": "object",
-        "properties": {
-          "target_user_id": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number"
-          },
-          "category": {
-            "type": "string",
-            "enum": [
-              "MANUAL",
-              "FINE"
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "channel_id": {
-            "type": "string",
-            "description": "When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments."
-          },
-          "client_message_id": {
-            "type": "string",
-            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
-          }
-        },
-        "required": [
-          "target_user_id",
-          "amount",
-          "category",
-          "reason"
-        ]
       },
       "CreateChannelDto": {
         "type": "object",
@@ -5877,6 +5826,65 @@
         "required": [
           "filename",
           "content_type"
+        ]
+      },
+      "CheckInDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "UpdateAttendanceDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "PRESENT",
+              "EXCUSED",
+              "ABSENT",
+              "LATE"
+            ]
+          },
+          "excuse_reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "AdjustPointsDto": {
+        "type": "object",
+        "properties": {
+          "target_user_id": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MANUAL",
+              "FINE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "channel_id": {
+            "type": "string",
+            "description": "When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments."
+          },
+          "client_message_id": {
+            "type": "string",
+            "description": "Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`."
+          }
+        },
+        "required": [
+          "target_user_id",
+          "amount",
+          "category",
+          "reason"
         ]
       },
       "CreateCheckoutDto": {

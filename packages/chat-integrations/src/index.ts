@@ -48,10 +48,10 @@ export interface SlashCommand {
 export const SLASH_COMMANDS: readonly SlashCommand[] = Object.freeze([
   {
     name: "event",
-    description: "Create an event card with RSVP",
-    usage: "<title> <when>",
+    description: "Create an event with an interactive card",
+    usage: '"<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]',
     requiredModule: "events",
-    implemented: false,
+    implemented: true,
   },
   {
     name: "task",

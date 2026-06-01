@@ -45,6 +45,21 @@ export interface PointsArgs {
   category: "MANUAL" | "FINE";
 }
 
+/** Result of a successful parse for `/event`. */
+export interface EventArgs {
+  name: string;
+  /** Event date as `YYYY-MM-DD` (validated calendar date). */
+  date: string;
+  /** Start clock time as `H:MM`/`HH:MM` (24-hour). */
+  startTime: string;
+  /** End clock time as `H:MM`/`HH:MM` (24-hour); strictly after `startTime`, same day. */
+  endTime: string;
+  /** Free-text location, or `null` when omitted. */
+  location: string | null;
+  /** Point value awarded on check-in; `null` when omitted (server applies its default of 10). */
+  pointValue: number | null;
+}
+
 export type ParseResult<T> =
   | { ok: true; value: T }
   | { ok: false; error: string };
@@ -292,6 +307,122 @@ export function parseTaskArgs(args: string): ParseResult<TaskArgs> {
   return {
     ok: true,
     value: { title, assigneeToken, dueDate, pointReward },
+  };
+}
+
+const EVENT_MAX_NAME_LENGTH = 255;
+const EVENT_USAGE =
+  'Usage: /event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]';
+
+/**
+ * Validates an `H:MM`/`HH:MM` 24-hour clock token and returns minutes since
+ * midnight, or `null` for anything malformed (so the caller surfaces a precise
+ * error instead of propagating `NaN`).
+ */
+function parseClockMinutes(token: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(token.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 23 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/**
+ * Parse a `<HH:MM>-<HH:MM>` 24-hour range. Returns the two clock strings on
+ * success, or `null` when malformed or when end is not strictly after start.
+ * Same-day only — cross-midnight events go through the dashboard. The local
+ * date+time → ISO conversion happens at dispatch (the client knows the
+ * timezone), keeping this parser pure.
+ */
+function parseTimeRange(
+  token: string | undefined,
+): { startTime: string; endTime: string } | null {
+  if (!token) return null;
+  const parts = token.split("-");
+  if (parts.length !== 2) return null;
+  const startRaw = parts[0]!.trim();
+  const endRaw = parts[1]!.trim();
+  const startMinutes = parseClockMinutes(startRaw);
+  const endMinutes = parseClockMinutes(endRaw);
+  if (startMinutes === null || endMinutes === null) return null;
+  if (endMinutes <= startMinutes) return null;
+  return { startTime: startRaw, endTime: endRaw };
+}
+
+/**
+ * Parse `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]`.
+ * The name is quoted because event names routinely contain spaces (same
+ * rationale as `/poll`/`/task`). The date is validated as a real calendar date;
+ * the time range is a 24-hour `HH:MM-HH:MM` whose end must be after its start on
+ * the same day. Trailing tokens mirror `/poll`'s `closes=` idiom: a `points=<n>`
+ * token sets the point value (non-negative whole number; omitted → the backend
+ * default of 10), and every other trailing token joins as the free-text
+ * location. `is_mandatory`, recurrence, and role-targeting are dashboard-only —
+ * the slash command creates a single, simple event.
+ */
+export function parseEventArgs(args: string): ParseResult<EventArgs> {
+  const tokens = tokenizeQuotedArgs(args.trim());
+  if (tokens === null) {
+    return { ok: false, error: "Unterminated quote in /event arguments" };
+  }
+  if (tokens.length === 0) {
+    return { ok: false, error: EVENT_USAGE };
+  }
+
+  const name = tokens[0]!.trim();
+  if (name.length === 0) {
+    return { ok: false, error: "Event name cannot be empty" };
+  }
+  if (name.length > EVENT_MAX_NAME_LENGTH) {
+    return {
+      ok: false,
+      error: `Event name is too long (max ${EVENT_MAX_NAME_LENGTH} chars)`,
+    };
+  }
+
+  const date = parseIsoDate(tokens[1]);
+  if (date === null) {
+    return { ok: false, error: "Add an event date as YYYY-MM-DD" };
+  }
+
+  const range = parseTimeRange(tokens[2]);
+  if (range === null) {
+    return {
+      ok: false,
+      error: "Add a time range as HH:MM-HH:MM (end after start, same day)",
+    };
+  }
+
+  let pointValue: number | null = null;
+  const locationParts: string[] = [];
+  for (const token of tokens.slice(3)) {
+    if (token.toLowerCase().startsWith("points=")) {
+      const parsed = parseNumericArg(token.slice("points=".length));
+      if (parsed === null || !Number.isInteger(parsed) || parsed < 0) {
+        return {
+          ok: false,
+          error: "Point value must be a non-negative whole number",
+        };
+      }
+      pointValue = parsed;
+      continue;
+    }
+    const trimmed = token.trim();
+    if (trimmed.length > 0) locationParts.push(trimmed);
+  }
+  const location = locationParts.length > 0 ? locationParts.join(" ") : null;
+
+  return {
+    ok: true,
+    value: {
+      name,
+      date,
+      startTime: range.startTime,
+      endTime: range.endTime,
+      location,
+      pointValue,
+    },
   };
 }
 

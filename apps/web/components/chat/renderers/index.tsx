@@ -3,6 +3,7 @@
 import type { ChatMessage } from "@/lib/chat/types";
 import { AnnouncementCard } from "./announcement-card";
 import { ComingSoonCard } from "./coming-soon-card";
+import { EventCard } from "./event-card";
 import { LoadingCard } from "./loading-card";
 import { PointsCard } from "./points-card";
 import { PollCard } from "./poll-card";
@@ -71,6 +72,7 @@ export function MessageRenderer({
         />
       );
     case "event":
+      return <EventCard message={message} isConfirmed={isConfirmed} />;
     case "dues":
     case "hours":
       return <ComingSoonCard message={message} />;

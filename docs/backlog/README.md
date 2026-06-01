@@ -11,7 +11,7 @@ disagree, **the repo wins** and the issue is brought into line (run `/triage`).
 
 | Project | Status | Epic | Progress |
 | ------- | ------ | ---- | -------- |
-| [Chat rework](projects/chat-rework.md) | active | [#426](https://github.com/pdcarlson/Frapp/issues/426) | 6 of 12 chunks shipped (01–06); 07 in progress (07a/07b/07c/07d shipped; 07e queued); 09 + 10b/10c shipped; rest of 08–12 queued |
+| [Chat rework](projects/chat-rework.md) | active | [#426](https://github.com/pdcarlson/Frapp/issues/426) | 6 of 12 chunks shipped (01–06); 07 in progress (07a/07b/07c/07d shipped; 07e queued); 09 + 10a/10b/10c shipped; rest of 08–12 queued |
 | [Analytics](projects/analytics.md) | active | [#431](https://github.com/pdcarlson/Frapp/issues/431) | pipeline (#464) shipped; opt-out toggle (#466) shipped (Settings → Privacy); membership + opt-out enforcement (#551) shipped; salt mgmt (#465, ops provisioning) queued |
 | [Pricing & billing](projects/billing.md) | queued | [#429](https://github.com/pdcarlson/Frapp/issues/429) | 0 of 4 units (blocked on pricing analysis) |
 | [Agent infrastructure](projects/agent-infra.md) | active | [#401](https://github.com/pdcarlson/Frapp/issues/401) | research done (4 spikes closed); ADR-12 landed (#401 closed); PGlite RLS-smoke CI job shipped (#531, subsumes #356/#360); #532/#533 + #423 follow-up queued |

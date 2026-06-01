@@ -671,162 +671,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/events/{eventId}/attendance/check-in": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Self check-in to an event */
-        post: operations["AttendanceController_checkIn_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/events/{eventId}/attendance": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List attendance for an event */
-        get: operations["AttendanceController_list_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/events/{eventId}/attendance/{userId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update attendance status for a member */
-        patch: operations["AttendanceController_updateStatus_v1"];
-        trace?: never;
-    };
-    "/v1/events/{eventId}/attendance/auto-absent": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Trigger auto-absent marking for an event */
-        post: operations["AttendanceController_markAutoAbsent_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/points/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get current user point summary */
-        get: operations["PointsController_getMe_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/points/leaderboard": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get chapter leaderboard */
-        get: operations["PointsController_getLeaderboard_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/points/transactions": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * List chapter-wide point transactions
-         * @description Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
-         */
-        get: operations["PointsController_listTransactions_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/points/members/{userId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get point summary for a member */
-        get: operations["PointsController_getMember_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/points/adjust": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Manually adjust member points */
-        post: operations["PointsController_adjust_v1"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/channels": {
         parameters: {
             query?: never;
@@ -1084,6 +928,162 @@ export interface paths {
         put?: never;
         /** Mark channel as read */
         post: operations["ChatController_markRead_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Self check-in to an event */
+        post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List attendance for an event */
+        get: operations["AttendanceController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update attendance status for a member */
+        patch: operations["AttendanceController_updateStatus_v1"];
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/auto-absent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger auto-absent marking for an event */
+        post: operations["AttendanceController_markAutoAbsent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get current user point summary */
+        get: operations["PointsController_getMe_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get chapter leaderboard */
+        get: operations["PointsController_getLeaderboard_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List chapter-wide point transactions
+         * @description Backs the Points admin Audit tab. Filter by user, category, flagged state; paginate via a cursor (`before` ISO8601). Returns newest-first, capped at `limit` (default 50, max 200).
+         */
+        get: operations["PointsController_listTransactions_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/members/{userId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get point summary for a member */
+        get: operations["PointsController_getMember_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/points/adjust": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Manually adjust member points */
+        post: operations["PointsController_adjust_v1"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2188,6 +2188,10 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         UpdateEventDto: {
             name?: string;
@@ -2201,23 +2205,6 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
-        };
-        CheckInDto: Record<string, never>;
-        UpdateAttendanceDto: {
-            /** @enum {string} */
-            status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
-            excuse_reason?: string;
-        };
-        AdjustPointsDto: {
-            target_user_id: string;
-            amount: number;
-            /** @enum {string} */
-            category: "MANUAL" | "FINE";
-            reason: string;
-            /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
-            channel_id?: string;
-            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
-            client_message_id?: string;
         };
         CreateChannelDto: {
             name: string;
@@ -2280,6 +2267,23 @@ export interface components {
             filename: string;
             /** @description MIME content type (e.g. image/png) */
             content_type: string;
+        };
+        CheckInDto: Record<string, never>;
+        UpdateAttendanceDto: {
+            /** @enum {string} */
+            status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
+            excuse_reason?: string;
+        };
+        AdjustPointsDto: {
+            target_user_id: string;
+            amount: number;
+            /** @enum {string} */
+            category: "MANUAL" | "FINE";
+            reason: string;
+            /** @description When set with `client_message_id`, posts an append-only points card to this chat channel after the ledger write (the `/points` slash command). Omit for dashboard adjustments. */
+            channel_id?: string;
+            /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
+            client_message_id?: string;
         };
         CreateCheckoutDto: {
             /** @description Email for the checkout session */
@@ -3686,198 +3690,6 @@ export interface operations {
             };
         };
     };
-    AttendanceController_checkIn_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CheckInDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AttendanceController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AttendanceController_updateStatus_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateAttendanceDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AttendanceController_markAutoAbsent_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                eventId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PointsController_getMe_v1: {
-        parameters: {
-            query?: {
-                window?: "all" | "semester" | "month";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PointsController_getLeaderboard_v1: {
-        parameters: {
-            query?: {
-                window?: "all" | "semester" | "month";
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PointsController_listTransactions_v1: {
-        parameters: {
-            query?: {
-                /** @description Filter to a single member */
-                user_id?: string;
-                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
-                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
-                flagged?: "true" | "false" | "1" | "0";
-                /** @description ISO8601 cursor — return transactions created before this timestamp */
-                before?: string;
-                /** @description Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PointsController_getMember_v1: {
-        parameters: {
-            query?: {
-                window?: "all" | "semester" | "month";
-            };
-            header?: never;
-            path: {
-                userId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    PointsController_adjust_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AdjustPointsDto"];
-            };
-        };
-        responses: {
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ChatController_listChannels_v1: {
         parameters: {
             query?: never;
@@ -4344,6 +4156,198 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_checkIn_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckInDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_updateStatus_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAttendanceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_markAutoAbsent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_getMe_v1: {
+        parameters: {
+            query?: {
+                window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_getLeaderboard_v1: {
+        parameters: {
+            query?: {
+                window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_listTransactions_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter to a single member */
+                user_id?: string;
+                category?: "ATTENDANCE" | "ACADEMIC" | "SERVICE" | "FINE" | "MANUAL" | "STUDY";
+                /** @description Only return transactions flagged by the anomaly threshold. Boolean string: `true`, `false`, `1`, or `0`. */
+                flagged?: "true" | "false" | "1" | "0";
+                /** @description ISO8601 cursor — return transactions created before this timestamp */
+                before?: string;
+                /** @description Max transactions to return. Integers are clamped to 1–200 inclusive; omitted defaults to 50. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_getMember_v1: {
+        parameters: {
+            query?: {
+                window?: "all" | "semester" | "month";
+            };
+            header?: never;
+            path: {
+                userId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PointsController_adjust_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdjustPointsDto"];
+            };
+        };
         responses: {
             201: {
                 headers: {

@@ -1,13 +1,17 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
 
 export interface CreateEventInput {
   chapter_id: string;
@@ -21,6 +25,15 @@ export interface CreateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  /** Creator user id — used as the chat card sender when posting via `/event`. */
+  created_by?: string;
+  /**
+   * When set together with `client_message_id`, an interactive event card is
+   * posted to this chat channel after the row commits (the `/event` slash
+   * command). Omitted for dashboard creates.
+   */
+  channel_id?: string;
+  client_message_id?: string;
 }
 
 export interface UpdateEventInput {
@@ -38,9 +51,13 @@ export interface UpdateEventInput {
 
 @Injectable()
 export class EventService {
+  private readonly logger = new Logger(EventService.name);
+
   constructor(
     @Inject(EVENT_REPOSITORY) private readonly eventRepo: IEventRepository,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
+    private readonly chatService: ChatService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<Event> {
@@ -97,6 +114,24 @@ export class EventService {
         data: { target: { screen: 'events', eventId: parent.id } },
       });
     } catch {}
+
+    // The `/event` slash command asks us to surface an interactive event card
+    // in chat. The card is server-originated (a client cannot forge
+    // `kind:"event"` — see ChatService.SERVER_ONLY_KINDS) and best-effort: the
+    // event row is the source of truth, so a failed post is logged and never
+    // rolls the event back.
+    if (input.channel_id && input.client_message_id && input.created_by) {
+      try {
+        await this.postEventCard(input, parent);
+      } catch (error) {
+        this.logger.warn('Failed to post event card to chat', {
+          eventId: parent.id,
+          channelId: input.channel_id,
+          chapterId: input.chapter_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return parent;
   }
@@ -175,6 +210,54 @@ export class EventService {
     });
 
     await Promise.all(promises);
+  }
+
+  /**
+   * Post the `kind:"event"` card for a committed event. The creator's name is
+   * resolved here and the details embedded in the payload so the snapshot stays
+   * a correct record even if the event is later edited. The card carries the
+   * event id; the renderer reads the live attendance count back through the
+   * attendance query (the chat message row is never mutated). Posts as the
+   * creator into the channel they ran the command from; channel access is
+   * re-checked by `ChatService.sendMessage`.
+   */
+  private async postEventCard(
+    input: CreateEventInput,
+    event: Event,
+  ): Promise<void> {
+    const createdBy = input.created_by!;
+    const users = await this.userRepo.findByIds([createdBy]);
+    const creatorName =
+      users.find((u) => u.id === createdBy)?.display_name ?? 'Unknown member';
+
+    const payload = {
+      event_id: event.id,
+      name: event.name,
+      start_time: event.start_time,
+      end_time: event.end_time,
+      location: event.location ?? null,
+      point_value: event.point_value,
+      is_mandatory: event.is_mandatory,
+      created_at: event.created_at,
+    };
+
+    const startLabel = new Date(event.start_time).toLocaleString('en-US', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+    const locationSuffix = event.location ? ` at ${event.location}` : '';
+    const content = `${creatorName} scheduled "${event.name}" — ${startLabel}${locationSuffix}`;
+
+    await this.chatService.sendMessage({
+      chapter_id: input.chapter_id,
+      channel_id: input.channel_id!,
+      sender_id: createdBy,
+      content,
+      kind: 'event',
+      payload,
+      client_message_id: input.client_message_id,
+      system_originated: true,
+    });
   }
 
   async update(
