@@ -9,7 +9,7 @@ Operations, infrastructure, agent/CI reference, and design-system guidance. Grou
 | Area | Folder | Contents |
 | ---- | ------ | -------- |
 | Ops / runbooks | [`ops/`](ops/) | DB promotion/rollback, incident response, branch protection, alert routing, deploy |
-| CI / agent infra | [`ci-cd/`](ci-cd/) | docs-sync CI, agent infra, Cursor automations, CodeRabbit |
+| CI / agent infra | [`ci-cd/`](ci-cd/) | docs-sync CI, agent infra, Cursor automations, AI code review |
 | Design system | [`design-system/`](design-system/) | UI/UX system, typography, iconography, microcopy, brand assets, UX writing |
 | Mobile | [`mobile/`](mobile/) | mobile testing + smoke checklist |
 | Quality | [`quality/`](quality/) | accessibility protocol, PR review process |

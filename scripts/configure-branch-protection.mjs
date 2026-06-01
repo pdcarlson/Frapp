@@ -33,7 +33,16 @@ const DOCS_CHECKS = [
   "docs-spec-sync",
 ];
 
-const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
+const REVIEW_CHECKS = [
+  // Claude review gate (ADR-14): blocks merge only when the AI review reports an Important finding.
+  // It always reports a conclusion (so it never hangs "pending"); bypass a false positive with the
+  // `claude-review-override` PR label. See docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
+  // ROLLOUT: keep this list applied only AFTER the workflow is merged to the target branch and
+  // verified green — otherwise every PR blocks on a missing required check.
+  "claude-review-gate",
+];
+
+const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS, ...REVIEW_CHECKS];
 
 // ── CLI argument parsing ────────────────────────────────────────────────────
 

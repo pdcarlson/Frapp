@@ -610,6 +610,28 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - Metered Actions cost exceeds budget (drives the deferred CI-efficiency audit).
 - Additional human collaborators are added — reconsider real approval gates (and whether GitHub Enterprise's private-repo environment protection is worth a true production-deploy approval pause).
 
+### ADR-14: Code review — CodeRabbit → self-hosted Claude review GitHub Action (2026-06-01)
+
+**Decision:** Replace CodeRabbit with a self-hosted automated PR review that runs `anthropics/claude-code-action@v1` in a GitHub Actions workflow (`.github/workflows/claude-review.yml`), authenticated with a Claude Pro/Max **subscription OAuth token** (`CLAUDE_CODE_OAUTH_TOKEN`). It runs **two tiers** — an in-depth **Opus 4.8** pass on PR open/reopen/ready, and a lighter **Sonnet 4.6** pass on each push (`synchronize`) — doing a unified **security + general** review that posts inline comments plus a summary. A separate **`claude-review-gate`** job makes it a **required check that blocks merge only when the review reports an Important finding**; the `claude-review-override` label bypasses a false positive, and bot/draft/fork/no-token runs pass. Repo-specific lessons accumulate in `.github/claude-review/learnings.md` (read every run). CodeRabbit (`.coderabbit.yaml` + the GitHub App) is removed.
+
+**Rationale:** On private + Free, CodeRabbit posts summary/rate-limited reviews only; its assertive line-by-line config (apps/api auth-guard/permission coverage, migration RLS) needs paid Pro (~$24/dev/mo). Frapp already pays for Claude (Max), so an OAuth-token Action gives an Anthropic-native reviewer with **no new per-token bill** (it draws on existing subscription quota) and full control of the review rubric. The dedicated `claude-code-security-review` action is API-key-only, so the OAuth path uses the general `claude-code-action` with a custom security+general prompt. This reuses the same engine as the local `/code-review` skill the `next-task` flow already mandates pre-PR.
+
+**Consequences:**
+
+- Review usage consumes **metered GitHub Actions minutes** (ADR-13: 3,000/mo on Pro) on top of the existing heavy CI suite — reviewing **every push** (Sonnet) plus every open (Opus) makes the deferred CI-cost audit more pressing — and **Claude Max subscription quota** (Opus burns quota fastest; heavy PR bursts can throttle interactive Claude use). Mitigations: Sonnet (not Opus) on pushes, concurrency auto-cancel, scoped read-only + comment tools, and one-line knobs to drop `synchronize` or add a `paths:` filter.
+- Inline line-level comments are posted via the action's `github_inline_comment` MCP tool and work under OAuth auth.
+- **The gate decouples blocking from the action's flaky exit code.** The review emits a `--json-schema` `structured_output` (plus a `<!-- claude-review-verdict: important=N -->` marker as fallback); a separate `gate` job fails only when `important > 0`. The gate **always reports a conclusion** (so a required check never hangs "pending") and passes for bot/draft/fork/no-token/skipped runs — avoiding the action's known permanent-red-required-check failure mode (`claude-code-action#1299`) and spurious non-zero exits (`#846`). It becomes required via `scripts/configure-branch-protection.mjs`, applied **after** the workflow is merged and verified green.
+- **`enforce_admins: true`** means even the solo author cannot bypass a required check except via the `claude-review-override` label — so "Important" is reserved for genuinely merge-blocking issues, and the label is the deliberate, auditable escape hatch.
+- **Trusted-PRs-only:** the action runs with `pull-requests: write` and is not hardened against prompt injection, so the workflow skips draft and fork PRs. Revisit if external contributors are added (and enable Actions' "require approval for all external contributors").
+- Review rubric lives in `.github/claude-review/review-guidelines.md` (ports the old `.coderabbit.yaml` path instructions). Runbook: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md` (replaces `CODERABBIT_RUNBOOK.md`). Requires a one-time `CLAUDE_CODE_OAUTH_TOKEN` repo secret and uninstalling the CodeRabbit GitHub App.
+- Secret scanning / dependency audit remain uncovered — CodeRabbit never did these; tracked as a separate effort (gitleaks; per the ADR-13 mitigation).
+
+**Trigger to revisit:**
+
+- OAuth quota contention with interactive work, or unacceptable Actions-minute cost → switch the model to Sonnet, add a `paths:` filter, or move to the managed Code Review service if Frapp lands on a Team/Enterprise plan.
+- External human contributors are added → harden against prompt injection before reviewing untrusted PRs.
+- Anthropic's managed "Code Review" becomes available/worthwhile on the plan in use.
+
 ---
 
 ## 13. AI Corpus Architecture (v1)

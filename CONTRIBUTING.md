@@ -60,12 +60,12 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### AI review coverage
 
-- `main`: CodeRabbit auto-reviews PRs. Feedback is advisory.
-- `production`: same — CodeRabbit reviews are advisory. Promotions are gated by CI + approval + conversation resolution, not CodeRabbit.
+- `main`: Claude auto-reviews PRs (`.github/workflows/claude-review.yml`) — Opus 4.8 on open, Sonnet 4.6 on each push. The `claude-review-gate` required check blocks merge on **Important** findings only; Nits are advisory. Bypass a false positive with the `claude-review-override` label.
+- `production`: the same gate applies. Promotions are also gated by CI + approval + conversation resolution.
 
 ### PR review requirement policy
 
-- `main`: approving review is **not required** and CodeRabbit feedback remains advisory.
+- `main`: a human approving review is **not required**; the `claude-review-gate` blocks merge only on Important findings (`claude-review-override` label to bypass).
 - `main`: conversation resolution is **not required**.
 - `production`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
@@ -109,12 +109,12 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- CodeRabbit should review the PR automatically. If it does not, add a top-level `@coderabbitai review` comment. Never type `@cursor` or `@cursoragent` unless you explicitly want to spawn a paid Cursor background agent — see [`docs/internal/ci-cd/CODERABBIT_RUNBOOK.md`](docs/internal/ci-cd/CODERABBIT_RUNBOOK.md).
+- Claude reviews the PR automatically on open (`.github/workflows/claude-review.yml`); close and reopen the PR to re-run. Never type `@cursor` or `@cursoragent` unless you explicitly want to spawn a paid Cursor background agent — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### 4. Address feedback
 
 - Fix any CI failures.
-- Address CodeRabbit findings as needed and push follow-up commits for re-review.
+- Address Claude review findings as needed and push follow-up commits for re-review.
 - All required checks must pass before merging.
 
 ### 5. Merge via squash merge
