@@ -11,9 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------------------
-# Domain-specific parallel jobs. Each is an independent required status check.
-# The `packages-build` job runs first (shared dependency), then all others
-# run in parallel.
+# Domain-specific parallel jobs. `packages-build` runs first (shared
+# dependency). The eight required checks always run; web-tests,
+# web-visual-regression, and pglite-migrations are path-gated on PRs via the
+# `changes` job and run unconditionally on push.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -43,11 +44,11 @@ jobs:
               - 'packages/**'
               - 'package-lock.json'
               - 'turbo.json'
-              - 'apps/web/playwright.config.ts'
             pglite:
               - 'supabase/migrations/**'
               - 'scripts/check-pglite-migrations.mjs'
               - 'packages/validation/**'
+              - 'package-lock.json'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
