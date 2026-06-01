@@ -5,7 +5,7 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- CodeRabbit reviews PRs to `main` and `production` as an advisory signal
+- Claude reviews PRs to `main` and `production` as an advisory signal
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -120,9 +120,9 @@ Recipe to mark them required on `production` (do not run until the workflow has 
 
 Do **not** mark these required on `main` — staging deploys are allowed to fail without blocking `main` churn.
 
-### CodeRabbit review policy
+### AI review policy
 
-CodeRabbit reviews are advisory on both branches. There is no required CodeRabbit status check. See [`CODERABBIT_RUNBOOK.md`](../ci-cd/CODERABBIT_RUNBOOK.md) for how CodeRabbit is configured and triggered.
+Claude reviews are advisory on both branches. There is no required review status check. See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) for how the automated review is configured and triggered.
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

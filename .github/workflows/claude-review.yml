@@ -1,0 +1,81 @@
+# Automated PR review by Claude (replaces CodeRabbit — see ADR-14).
+#
+# Auth: a Claude Pro/Max subscription OAuth token, NOT a pay-per-token API key.
+#   Generate locally with `claude setup-token` and store it as the repo secret
+#   CLAUDE_CODE_OAUTH_TOKEN (Settings → Secrets and variables → Actions). Until the
+#   secret exists the job skips cleanly (green). Review usage draws on the subscription quota.
+# Model: Opus 4.8 (deepest pass; downgrade to claude-sonnet-4-6 below if quota/minutes bite).
+# Scope: unified security + general review, comment-only (never blocks merge).
+# Cost: consumes metered GitHub Actions minutes + subscription quota. Reviews once per
+#   PR-open by default (no `synchronize`) to bound cost — see the runbook to change this.
+# Runbook: docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md
+name: Claude Review
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+    # Add `synchronize` for a fresh review on every push (higher quota/minute cost), or
+    # re-trigger a single review by closing/reopening the PR.
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Trusted PRs only: skip drafts and fork PRs. The action runs with pull-requests:write and
+    # is not hardened against prompt injection, so only review self-authored (same-repo) PRs.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for review token
+        id: token
+        env:
+          OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          if [ -z "$OAUTH_TOKEN" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::CLAUDE_CODE_OAUTH_TOKEN is not set — skipping Claude review. Add the repo secret (\`claude setup-token\`) to enable it."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout PR
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Claude review
+        if: steps.token.outputs.present == 'true'
+        uses: anthropics/claude-code-action@v1 # first-party; pin to a release SHA for stricter supply-chain control
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Read `.github/claude-review/review-guidelines.md` first — it is the Frapp-specific
+            review rubric (apps/api auth-guard chain + permission decorators, supabase migration
+            RLS, per-path rules, and false-positive guidance). Apply it.
+
+            Review this PR's diff for:
+            - Correctness: bugs, broken edge cases, regressions, race/TOCTOU issues.
+            - Security: OWASP Top 10 plus the apps/api and supabase/migrations rules in the rubric.
+            - Performance and shared-package (packages/*) breakage.
+
+            Focus on the changed lines; raise pre-existing issues only when severe. Tag each finding
+            as Important or Nit, and cap inline Nits at ~5 (summarize the rest). Post inline findings
+            with mcp__github_inline_comment__create_inline_comment (confirmed: true) on the exact
+            lines, and a short overall summary with `gh pr comment`. Only post GitHub comments — do
+            not submit the review as chat messages. Do not modify any files.
+          claude_args: |
+            --model claude-opus-4-8
+            --max-turns 25
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Read,Grep,Glob"

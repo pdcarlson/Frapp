@@ -167,12 +167,12 @@ These checks are also required for merge:
 | ---------------- | -------------- | ----------------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
 
-**CodeRabbit** auto-reviews PRs to `main` and `production` via its native GitHub app integration.
+**Claude** auto-reviews PRs to `main` and `production` via the `claude-review.yml` GitHub Actions workflow.
 
-- CodeRabbit feedback is advisory on both branches. There is no required CodeRabbit status check.
-- On `main`, conversation resolution is not required, so unresolved CodeRabbit comment threads do not block merge.
-- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; CodeRabbit does not).
-- Manual trigger if auto-review misses a PR: post a top-level `@coderabbitai review` comment. Full runbook: [`docs/internal/CODERABBIT_RUNBOOK.md`](../../docs/internal/ci-cd/CODERABBIT_RUNBOOK.md).
+- Claude review feedback is advisory on both branches. There is no required review status check.
+- On `main`, conversation resolution is not required, so unresolved review comment threads do not block merge.
+- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; the review does not).
+- Re-run a missed review by closing and reopening the PR. Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions
 
