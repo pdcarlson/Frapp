@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       structured_output: ${{ steps.review.outputs.structured_output }}
+      token_present: ${{ steps.token.outputs.present }}
     steps:
       - name: Check for review token
         id: token
@@ -83,13 +84,19 @@ jobs:
             security (OWASP Top 10 plus the apps/api and supabase/migrations rules in the rubric),
             performance, and shared-package (packages/*) breakage. Follow the REVIEW DEPTH above.
 
+            Be assertive and skeptical: examine every changed hunk, assume a bug until you've checked
+            the edge cases, and prefer surfacing a genuine concern over staying silent. Do not limit
+            the number of real issues you raise.
+
             Severity drives a MERGE GATE: reserve "Important" for findings that would break behavior,
             leak data, bypass auth, corrupt state, or block rollback — an Important finding BLOCKS merge.
-            Everything else is a "Nit" (cap inline Nits at ~5; summarise the rest).
+            Be generous with Nits but precise with Important: when unsure whether something truly blocks,
+            it's a Nit, not Important. Post up to ~12 inline Nits; summarise any beyond that.
 
             Post inline findings with mcp__github_inline_comment__create_inline_comment (confirmed: true)
             on the exact lines, then ONE summary via `gh pr comment` whose LAST line is exactly:
-            <!-- claude-review-verdict: important=N --> (N = number of Important findings you posted).
+            <!-- claude-review-verdict: sha=${{ github.event.pull_request.head.sha }} important=N -->
+            (copy the sha exactly as shown; replace N with the count of Important findings you posted).
             Only post GitHub comments — do not modify any files.
           claude_args: |
             --model ${{ steps.model.outputs.model }}
@@ -105,38 +112,30 @@ jobs:
     if: ${{ always() && (github.event.action != 'labeled' || contains(github.event.pull_request.labels.*.name, 'claude-review-override')) }}
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
       - name: Evaluate review gate
+        # Decision logic + unit tests: scripts/ci/evaluate-review-gate.mjs (run by the ci-scripts-tests
+        # job). BLOCKS when a review was EXPECTED (token present; not draft/fork/bot) but produced no
+        # FRESH verdict for this head SHA — so a transient action/API failure can't leave a green
+        # required check with no review. PASSES for intentional skips (no token/draft/fork/bot/override)
+        # and for a fresh verdict (structured_output, or a sha-matched marker comment) with important=0.
+        # A fresh verdict is trusted even if the action exited non-zero (flaky exit, action #846).
         env:
-          REVIEW_RESULT: ${{ needs.review.result }}
-          STRUCTURED: ${{ needs.review.outputs.structured_output }}
           OVERRIDE: ${{ contains(github.event.pull_request.labels.*.name, 'claude-review-override') }}
+          REVIEW_RESULT: ${{ needs.review.result }}
+          TOKEN_PRESENT: ${{ needs.review.outputs.token_present }}
+          STRUCTURED: ${{ needs.review.outputs.structured_output }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if [ "$OVERRIDE" = "true" ]; then
-            echo "::notice::'claude-review-override' label present — gate passes."; exit 0
-          fi
-          if [ "$REVIEW_RESULT" != "success" ]; then
-            echo "::notice::Review job did not complete (result=$REVIEW_RESULT) — gate passes (advisory)."; exit 0
-          fi
-          # Primary signal: the action's structured output. Fallback: the verdict marker in the summary comment.
-          important=""
-          if [ -n "${STRUCTURED:-}" ]; then
-            important=$(printf '%s' "$STRUCTURED" | jq -r '.important_count // empty' 2>/dev/null || true)
-          fi
-          if [ -z "$important" ]; then
-            body=$(gh pr view "$PR" --repo "$REPO" --json comments \
-              --jq '[.comments[] | select(.body | contains("claude-review-verdict"))] | last | .body' 2>/dev/null || true)
-            important=$(printf '%s' "$body" | sed -n 's/.*claude-review-verdict: *important=\([0-9][0-9]*\).*/\1/p' | head -n1)
-          fi
-          if [ -z "$important" ]; then
-            echo "::notice::No review verdict found — gate passes (advisory)."; exit 0
-          fi
-          echo "Important findings reported: $important"
-          if [ "$important" -gt 0 ]; then
-            echo "::error::Claude review flagged $important Important finding(s) — blocking merge. Resolve them, or add the 'claude-review-override' label to bypass."
-            exit 1
-          fi
-          echo "::notice::No Important findings — gate passes."
+          COMMENTS_JSON=$(gh pr view "$PR" --repo "$REPO" --json comments \
+            --jq '[.comments[] | select(.body | contains("claude-review-verdict")) | .body]' 2>/dev/null || echo '[]')
+          export COMMENTS_JSON
+          node scripts/ci/evaluate-review-gate.mjs

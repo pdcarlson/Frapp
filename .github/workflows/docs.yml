@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, production]
 
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   docs-spec-sync:
     runs-on: ubuntu-latest

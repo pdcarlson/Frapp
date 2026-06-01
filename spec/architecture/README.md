@@ -625,12 +625,33 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - **Trusted-PRs-only:** the action runs with `pull-requests: write` and is not hardened against prompt injection, so the workflow skips draft and fork PRs. Revisit if external contributors are added (and enable Actions' "require approval for all external contributors").
 - Review rubric lives in `.github/claude-review/review-guidelines.md` (ports the old `.coderabbit.yaml` path instructions). Runbook: `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md` (replaces `CODERABBIT_RUNBOOK.md`). Requires a one-time `CLAUDE_CODE_OAUTH_TOKEN` repo secret and uninstalling the CodeRabbit GitHub App.
 - Secret scanning / dependency audit remain uncovered — CodeRabbit never did these; tracked as a separate effort (gitleaks; per the ADR-13 mitigation).
+- **Amendment (2026-06-01, #599) — the gate no longer fails open on an *incomplete* review.** A `claude-review` job that was *expected* to run (token present; not draft/fork/bot) but produced **no fresh verdict for the current head SHA** now **blocks** merge ("review didn't complete — re-run, or add `claude-review-override`"), closing the hole where a transient action/API failure left a green required check with no review actually performed. A *fresh* verdict still passes even if the action process exits non-zero (preserving the #846 decoupling): the verdict marker now carries `sha=<head_sha>` and the gate accepts only a SHA-matched marker (or the per-run `structured_output`), so a prior commit's verdict can't mask a failed run. Intentional skips (no token, draft, fork, bot, override) still pass. The decision logic moved from inline shell to the unit-tested `scripts/ci/evaluate-review-gate.mjs` (covered by the `ci-scripts-tests` job). **Trade-off:** a transient review failure now blocks merge until the review is re-run or the `claude-review-override` label is applied.
 
 **Trigger to revisit:**
 
 - OAuth quota contention with interactive work, or unacceptable Actions-minute cost → switch the model to Sonnet, add a `paths:` filter, or move to the managed Code Review service if Frapp lands on a Team/Enterprise plan.
 - External human contributors are added → harden against prompt injection before reviewing untrusted PRs.
 - Anthropic's managed "Code Review" becomes available/worthwhile on the plan in use.
+
+### ADR-15: CI cost — Actions-cache build dedup, Playwright/Docker caches, path-gating (2026-06-01)
+
+**Decision:** Cut metered CI minutes (ADR-13: 3,000/mo on Pro) across `.github/workflows/ci.yml` **without changing any required status-check job name or re-running branch protection**. Five levers: (A) cache Turbo's `.turbo` via `actions/cache` — `packages-build` writes it and the six downstream jobs restore it read-only, turning each redundant `turbo run build --filter='./packages/*'` into a cache hit; (B) cache `~/.cache/ms-playwright` keyed on the resolved Playwright version in `web-visual-regression` (OS deps still install every run); (C) Docker layer cache via `docker/build-push-action@v6` `type=gha` for `api-docker-build` (build-only); (D) a `changes` job (`dorny/paths-filter`) path-gates the three **non-required** jobs (`web-tests`, `web-visual-regression`, `pglite-migrations`) on PRs while always running them on push; (F) `cancel-in-progress` concurrency on `docs.yml`/`links.yml` and dropping `fetch-depth: 0` on the jobs that don't diff git history. Build dedup uses the **GitHub Actions cache**, not Turbo Cloud or a self-hosted remote cache. Deferred: caching `node_modules` and path-gating the *required* jobs (needs a skip→success wrapper).
+
+**Rationale:** The suite ran ~40 billable job-min/PR with ~7.5 min of pure redundant package rebuild across six jobs, and ADR-14's per-push review now also draws on the 3,000-min budget. The GitHub Actions cache keeps build artifacts in-house (no third-party egress, no new secret) — consistent with the ADR-13 protect-IP goal — at the cost of slightly more workflow YAML than Turbo Cloud. Keeping job names intact and not touching `scripts/configure-branch-protection.mjs` decouples this from the ADR-14 review-gate rollout (which stays un-required until verified green). Target: ~28 billable min/run, ~15 on scoped PRs.
+
+**Consequences:**
+
+- The three caches share the repo's ~10 GB Actions cache (LRU). `.turbo` is tiny and Playwright ~0.3 GB; the Docker `mode=max` cache (~1–3 GB) is the only real consumer — downgrade to `mode=min` if eviction is observed.
+- First run after merge is a cold miss everywhere (expected, one-time). Turbo's own input hashing remains the correctness arbiter, so a stale `.turbo` never replays wrong output — a miss simply rebuilds as before. No correctness risk.
+- `web-tests`, `web-visual-regression`, and `pglite-migrations` now **skip on out-of-scope PRs**; because they are not required checks, a skip cannot block merge, and every push to `main`/`production` still runs them in full. Filters are deliberately broad (`packages/**`, lockfile, `turbo.json`) to avoid missing a transitive dependency.
+- The required checks (the eight CI jobs + `docs-spec-sync`, plus `claude-review-gate` once required, and `branch-policy` on production) are never path-gated and keep reporting on every PR; branch protection is untouched.
+- Fork PRs get read-only tokens, so the Docker `cache-to` export is a no-op there (the build still passes).
+
+**Trigger to revisit:**
+
+- Docker GHA cache evicting the smaller caches → `cache-to: type=gha,mode=min` (or scope/prune).
+- Savings still insufficient → adopt a Turbo remote cache (reassessing the in-house-vs-Vercel privacy trade-off), path-gate the required jobs behind a skip→success wrapper, or cache `node_modules`.
+- A required job is renamed/added/removed → update `scripts/configure-branch-protection.mjs` and re-run it (note this also makes `claude-review-gate` required — only do so intentionally).
 
 ---
 

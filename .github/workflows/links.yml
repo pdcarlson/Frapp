@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, production]
 
+concurrency:
+  group: links-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   link-check:
     runs-on: ubuntu-latest

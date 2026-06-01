@@ -11,20 +11,51 @@ concurrency:
   cancel-in-progress: true
 
 # ---------------------------------------------------------------------------
-# Domain-specific parallel jobs. Each is an independent required status check.
-# The `packages-build` job runs first (shared dependency), then all others
-# run in parallel.
+# Domain-specific parallel jobs. `packages-build` runs first (shared
+# dependency). The eight required checks always run; web-tests,
+# web-visual-regression, and pglite-migrations are path-gated on PRs via the
+# `changes` job and run unconditionally on push.
 # ---------------------------------------------------------------------------
 
 jobs:
+  # Change detection: path-gates the non-required web/pglite jobs (Lever D).
+  # The filter runs only on pull_request; on push the gated jobs run
+  # unconditionally (full validation on protected branches), so a shallow
+  # checkout here can never fail the gate.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      web: ${{ steps.filter.outputs.web }}
+      pglite: ${{ steps.filter.outputs.pglite }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Detect changed paths
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'package-lock.json'
+              - 'turbo.json'
+            pglite:
+              - 'supabase/migrations/**'
+              - 'scripts/check-pglite-migrations.mjs'
+              - 'packages/validation/**'
+              - 'package-lock.json'
+
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,6 +65,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache turbo build outputs
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -58,6 +97,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -88,8 +135,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -99,6 +144,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -108,13 +161,12 @@ jobs:
 
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -124,6 +176,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -137,14 +197,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build API image (Dockerfile)
-        run: docker build -f apps/api/Dockerfile .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: false
+          load: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
   # ── API contract freshness check ────────────────────────────────────────
   api-contract-check:
@@ -164,6 +229,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -209,8 +282,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -220,6 +291,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -257,6 +336,8 @@ jobs:
   # *enforcement* as the authenticated role (#423) — those live in the NestJS
   # Jest tier (see ADR-11/ADR-12 + AGENT_INFRA.md).
   pglite-migrations:
+    needs: changes
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.pglite == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -264,7 +345,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Node
@@ -281,15 +361,14 @@ jobs:
 
   # ── Web visual regression snapshots ─────────────────────────────────────
   web-visual-regression:
-    needs: packages-build
+    needs: [packages-build, changes]
+    if: ${{ github.event_name == 'push' || needs.changes.outputs.web == 'true' }}
     permissions:
       contents: read
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -300,11 +379,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright OS deps
+        run: npx playwright install-deps chromium
+
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
       - name: Run dashboard visual regression suite
         run: npm run test:visual -w apps/web
