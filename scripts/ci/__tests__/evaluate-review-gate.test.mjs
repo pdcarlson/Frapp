@@ -43,6 +43,7 @@ test("BLOCKS a FAILED review with empty token_present and no verdict (not a clea
 test("the no-token advisory pass requires a SUCCESSFUL review job", () => {
   assert.equal(evaluateGate({ reviewResult: "success", tokenPresent: false, headSha: SHA }).block, false);
   assert.equal(evaluateGate({ reviewResult: "cancelled", tokenPresent: false, headSha: SHA }).block, true);
+  assert.equal(evaluateGate({ reviewResult: "failure", tokenPresent: false, headSha: SHA }).block, true);
 });
 
 // ── The hole this fix closes ────────────────────────────────────────────────
