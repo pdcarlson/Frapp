@@ -28,4 +28,18 @@ durable rule here so it doesn't recur. Keep entries short and sourced.
   `check-docs-impact`, `check:migration-safety`, `check:api-contract`, and the PGlite RLS-smoke job.
 - **Why:** These fail the PR on their own; duplicating them as review comments is noise.
 
+### Flag un-regenerated API contract artifacts — 2026-06-01 (PR #606)
+- **Lesson:** Refines "Don't restate what CI already enforces" for one case. When a diff changes the
+  API *surface* under `apps/api/src/` — a new/removed/renamed route, or an edited
+  `@ApiOperation`/`@ApiProperty`/DTO field or response type — but does **not** also update
+  `apps/api/openapi.json` **and** `packages/api-sdk/src/types.ts`, leave a **Nit** telling the author
+  to run `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk` and commit the
+  result. Do **not** flag contract-neutral edits (a request-scoped param decorator like
+  `@CurrentChapterId`, guard reordering, comment-only changes).
+- **Why:** `api-contract-check` still does the real blocking, but it's path-gated and spawns late in
+  the run, so a fast diff-shape nudge at review time catches the common "forgot to regenerate the
+  contract" miss (the cause of this PR's first red run) before the gate goes red. Keep it a **Nit** so
+  this fuzzy heuristic never blocks merge on its own — the gate stays the source of truth.
+
 <!-- Add new learnings above this line. Promote a learning into review-guidelines.md if it becomes a broad, stable rule. -->
+
