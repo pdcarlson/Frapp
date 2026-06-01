@@ -22,20 +22,29 @@ does a **unified security + general** pass in **two tiers**:
 
 ## Merge gate (blocking on Important only)
 
-The reviewer tags each finding **Important** or **Nit**. The `claude-review-gate` job blocks merge
-**only when there is ≥1 Important finding**:
+The reviewer tags each finding **Important** or **Nit**. The `claude-review-gate` job — decision logic
+in `scripts/ci/evaluate-review-gate.mjs`, **unit-tested** by the `ci-scripts-tests` job — **blocks
+merge** when *either* there is ≥1 **Important** finding **or** a review was *expected* but **did not
+complete** (no fresh verdict for the current head SHA):
 
-- It reads the review's `--json-schema` `structured_output` (`important_count`), falling back to the
-  `<!-- claude-review-verdict: important=N -->` marker in the summary comment.
-- It **always reports a conclusion**, so the required check never hangs "pending". It **passes** when:
-  the review was skipped (draft / fork / `claude[bot]` commit / missing secret), the review job
-  failed, no verdict was produced, or `important = 0`.
-- **Bypass a false positive:** add the **`claude-review-override`** label to the PR. The gate passes
-  immediately (works even with `enforce_admins: true`, which otherwise blocks admin bypass).
+- It reads the review's `--json-schema` `structured_output` (`important_count`), falling back to a
+  **SHA-scoped** `<!-- claude-review-verdict: sha=<head_sha> important=N -->` marker in the summary
+  comment. The SHA scoping means a *previous* commit's verdict can't satisfy the gate for a new commit.
+- It **always reports a conclusion** (never hangs "pending"). It **passes** when: the review was
+  intentionally skipped (draft / fork / `claude[bot]` commit / **missing token**); there is a fresh
+  verdict with `important = 0`; or the `claude-review-override` label is present. A fresh verdict is
+  trusted **even if the action process exits non-zero** (a completed-but-crashed review still counts).
+- It **blocks** when a review was expected (token present; not draft/fork/bot) but produced **no fresh
+  verdict** — the action errored, timed out, or hit the workflow-validation guard (see *Making the gate
+  required*). Deliberate (ADR-14 amendment): a required review must actually run. **Re-run it, or add
+  `claude-review-override`.**
+- **Bypass:** the **`claude-review-override`** label passes the gate immediately (works even with
+  `enforce_admins: true`).
 
-This decoupling avoids `claude-code-action`'s known failure modes — permanent-red required checks on
-bot-triggered runs ([#1299](https://github.com/anthropics/claude-code-action/issues/1299)) and
-spurious non-zero exits ([#846](https://github.com/anthropics/claude-code-action/issues/846)).
+The gate stays decoupled from `claude-code-action`'s exit code — avoiding its permanent-red required
+check on bot runs ([#1299](https://github.com/anthropics/claude-code-action/issues/1299)) and spurious
+non-zero exits ([#846](https://github.com/anthropics/claude-code-action/issues/846)) — but unlike the
+original fail-open design, a review that produces **nothing** now blocks rather than silently passing.
 
 ## One-time setup (required)
 
@@ -56,6 +65,13 @@ red blocks **all** merges. Roll out in this order:
 3. **Then** run `npm run configure:branch-protection` to add `claude-review-gate`
    (already listed in `scripts/configure-branch-protection.mjs`) as a required context.
 
+> **Caveat — a PR that edits `claude-review.yml` itself can't be reviewed.** `claude-code-action`'s
+> OIDC→app-token exchange requires the workflow file to be **identical to the version on the default
+> branch** (anti-tampering). A PR modifying `claude-review.yml` gets no token → no review → no fresh
+> verdict → **the gate blocks it** (fail-closed by design: changing the review process needs explicit
+> sign-off). Merge such changes with `claude-review-override`, or land them *before* the gate is
+> required. Edits to the rubric/learnings markdown are fine — they're read at runtime, not validated.
+
 ## Tuning what gets flagged
 
 - **Rubric:** `.github/claude-review/review-guidelines.md` — broad, stable rules (auth-guard chain,
@@ -71,7 +87,8 @@ red blocks **all** merges. Roll out in this order:
 
 - Runs automatically on open / reopen / ready-for-review (Opus) and each push (Sonnet).
 - Force a fresh full review: close and reopen the PR.
-- A failed/timed-out review run never blocks (the gate fails open); re-run from the Actions tab.
+- A review that fails **without producing a fresh verdict now blocks** (the gate requires a real
+  review for the current commit); re-run from the Actions tab, or add `claude-review-override`.
 
 ## Cost & quota notes
 
@@ -95,6 +112,9 @@ Cursor background agent. That is separate from this review workflow.
 1. Confirm **`CLAUDE_CODE_OAUTH_TOKEN`** exists and is valid (re-run `claude setup-token` if expired).
 2. Confirm the PR is **not a draft**, **not from a fork**, and the triggering commit isn't `claude[bot]`'s.
 3. Check the **Claude Review** workflow run in the Actions tab.
+4. If the PR **edits `.github/workflows/claude-review.yml`**, the action's anti-tampering check
+   ("Workflow validation failed … must be identical to the default branch") fails until the change is
+   on the default branch — expected; the gate blocks (override, or merge the workflow change first).
 
 ### The gate is blocking a false positive
 - Add the **`claude-review-override`** label (gate passes immediately), **and** add a rule to
