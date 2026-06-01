@@ -7,6 +7,8 @@ import {
 } from '../../domain/repositories/event.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
 import { NotificationService } from './notification.service';
+import { ChatService } from './chat.service';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 
 describe('EventService', () => {
   let service: EventService;
@@ -14,6 +16,8 @@ describe('EventService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockUserRepo: { findByIds: jest.Mock };
+  let mockChatService: { sendMessage: jest.Mock };
 
   beforeEach(async () => {
     mockEventRepo = {
@@ -29,11 +33,16 @@ describe('EventService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockUserRepo = { findByIds: jest.fn().mockResolvedValue([]) };
+    mockChatService = { sendMessage: jest.fn().mockResolvedValue(undefined) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EventService,
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
+        { provide: ChatService, useValue: mockChatService },
       ],
     }).compile();
 
@@ -396,6 +405,71 @@ describe('EventService', () => {
         start_time: baseEvent.start_time,
         end_time: baseEvent.end_time,
       });
+
+      expect(result).toEqual(baseEvent);
+    });
+  });
+
+  describe('event card (slash command)', () => {
+    const chatInput = {
+      chapter_id: 'ch-1',
+      name: 'Spring Formal',
+      start_time: baseEvent.start_time,
+      end_time: baseEvent.end_time,
+      created_by: 'user-1',
+      channel_id: 'chan-1',
+      client_message_id: 'cmid-1',
+    };
+
+    it('posts a server-originated event card when chat fields are present', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Alice' },
+      ]);
+
+      await service.create(chatInput);
+
+      expect(mockChatService.sendMessage).toHaveBeenCalledTimes(1);
+      const arg = mockChatService.sendMessage.mock.calls[0][0];
+      expect(arg).toMatchObject({
+        chapter_id: 'ch-1',
+        channel_id: 'chan-1',
+        sender_id: 'user-1',
+        kind: 'event',
+        client_message_id: 'cmid-1',
+        system_originated: true,
+      });
+      expect(arg.payload).toMatchObject({
+        event_id: 'evt-1',
+        name: 'Chapter Meeting',
+        point_value: 10,
+        location: null,
+        is_mandatory: false,
+      });
+      expect(arg.content).toContain('Chapter Meeting');
+    });
+
+    it('does not post a card for a dashboard create (no chat fields)', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+      });
+
+      expect(mockChatService.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('is best-effort: a failed card post still returns the event', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+      mockUserRepo.findByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Alice' },
+      ]);
+      mockChatService.sendMessage.mockRejectedValue(new Error('chat down'));
+
+      const result = await service.create(chatInput);
 
       expect(result).toEqual(baseEvent);
     });

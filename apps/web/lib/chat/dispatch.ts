@@ -12,6 +12,7 @@
 
 import {
   parseAnnounceArgs,
+  parseEventArgs,
   parsePollArgs,
   parsePointsArgs,
   parseTaskArgs,
@@ -95,6 +96,8 @@ export async function dispatchSlashCommand(
       return dispatchPoints(ctx, args, channelId, resolveMember);
     case "task":
       return dispatchTask(ctx, args, channelId, resolveMember);
+    case "event":
+      return dispatchEvent(ctx, args, channelId);
     default:
       return {
         ok: false,
@@ -293,6 +296,98 @@ async function dispatchTask(
   }
 
   // Success: the server posts the `task` card (same client_message_id); the
+  // Realtime echo reconciles the placeholder via mergeServerRow.
+  return { ok: true };
+}
+
+/**
+ * Combine a `YYYY-MM-DD` date and an `H:MM`/`HH:MM` clock time into an ISO-8601
+ * datetime, interpreting them in the browser's local timezone (the chapter
+ * admin's wall clock — the parser stays timezone-pure). Returns `null` for
+ * malformed input so the caller fails with a precise error rather than posting
+ * an invalid event. The conversion happens on the client (which knows the
+ * timezone), keeping the shared parser timezone-pure.
+ */
+function localDateTimeToIso(date: string, time: string): string | null {
+  const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{1,2}):(\d{2})$/.exec(time);
+  if (!dateMatch || !timeMatch) return null;
+  const local = new Date(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]),
+    Number(timeMatch[2]),
+    0,
+    0,
+  );
+  // `new Date(year, …)` remaps years 0–99 to 1900–1999; pin the full year so a
+  // four-digit year like 0099 isn't silently misdated (parseIsoDate validates
+  // the calendar date, but the remap would still slip through).
+  local.setFullYear(Number(dateMatch[1]));
+  if (Number.isNaN(local.getTime())) return null;
+  return local.toISOString();
+}
+
+/**
+ * Dispatch `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points=<n>]`.
+ * Like `/task`, a "heavy" command: it creates a real event row, so the event
+ * card is server-originated (a client cannot post `kind:"event"` directly). We
+ * show an optimistic `loading` placeholder, call `POST /v1/events` (which
+ * creates the event and posts the card with the same `client_message_id`), and
+ * let Realtime reconcile the placeholder in place. On failure we drop the
+ * placeholder and surface the server's message. No `@member` resolution — events
+ * have no assignee.
+ */
+async function dispatchEvent(
+  ctx: ChatActionContext,
+  args: string,
+  channelId: string,
+): Promise<DispatchResult> {
+  const parsed = parseEventArgs(args);
+  if (!parsed.ok) return { ok: false, error: parsed.error };
+
+  const startIso = localDateTimeToIso(parsed.value.date, parsed.value.startTime);
+  const endIso = localDateTimeToIso(parsed.value.date, parsed.value.endTime);
+  if (startIso === null || endIso === null) {
+    return { ok: false, error: "Couldn't read the event date or time" };
+  }
+
+  const clientMessageId = crypto.randomUUID();
+
+  insertLocalPlaceholder(ctx, {
+    channelId,
+    clientMessageId,
+    content: `Creating event "${parsed.value.name}"…`,
+  });
+
+  try {
+    const { error } = await ctx.apiClient.POST("/v1/events", {
+      body: {
+        name: parsed.value.name,
+        start_time: startIso,
+        end_time: endIso,
+        location: parsed.value.location ?? undefined,
+        // point_value and is_mandatory are required in the generated SDK type
+        // (their DTO `@default` makes them non-optional); send the spec defaults
+        // (10 points, not mandatory) when the command omits them — slash-created
+        // events are non-mandatory by design (mandatory is dashboard-only).
+        point_value: parsed.value.pointValue ?? 10,
+        is_mandatory: false,
+        channel_id: channelId,
+        client_message_id: clientMessageId,
+      },
+    });
+    if (error) {
+      removeLocalPlaceholder(ctx, channelId, clientMessageId);
+      return { ok: false, error: apiErrorMessage(error, "Couldn't create event") };
+    }
+  } catch {
+    removeLocalPlaceholder(ctx, channelId, clientMessageId);
+    return { ok: false, error: "Couldn't reach the events service" };
+  }
+
+  // Success: the server posts the `event` card (same client_message_id); the
   // Realtime echo reconciles the placeholder via mergeServerRow.
   return { ok: true };
 }

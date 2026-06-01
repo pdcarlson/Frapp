@@ -82,8 +82,11 @@ Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_ensure_docker_daemon`,
 ### Auto-bringup and how the agent waits
 
 `.claude/hooks/session-start.sh` launches `cloud-sandbox-up.sh` in the background when
-the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1` (a `/tmp`
-lock prevents relaunch on resume). The session is **never blocked** on the ~60-90s
+the `/etc/frapp-cloud-sandbox` marker exists **or** `FRAPP_CLOUD_SANDBOX=1`. A `/tmp`
+lock prevents a relaunch while a bringup is in flight, but the hook **reclaims a stale
+lock and relaunches** when a prior run was killed (e.g. the session was paused/reclaimed)
+and left the lock with no `.done`/`.failed` sentinel — so a resumed session never waits
+forever on a sentinel that can't arrive. The session is **never blocked** on the ~60-90s
 bringup. Before using the DB or booting the API, wait for one of:
 
 - `.cloud-sandbox-up.done` — success (timestamp). Stack is up and `apps/api/.env.local`
@@ -120,6 +123,7 @@ environment config the agent cannot fix from inside the session.
 | `supabase start` slow / re-pulling every session | Setup script not set, so images aren't cached | Set the **Setup script** field to `bash scripts/cloud-sandbox-setup.sh \|\| true` |
 | `failed to start docker container "supabase_edge_runtime_*": error setting rlimit type 7: operation not permitted` | Sandbox denies the ulimit (`RLIMIT_NOFILE`) the Deno edge-runtime container sets, which aborts the whole `supabase start` | Already handled — bringup excludes edge-runtime (`supabase start -x edge-runtime`) since the API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12). Set `FRAPP_SUPABASE_START_ARGS` to override if edge functions are genuinely needed |
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
+| Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.

@@ -3,12 +3,12 @@
 **Status:** active
 **Epic:** [#426 — Chat rework (chunks 5–12)](https://github.com/pdcarlson/Frapp/issues/426)
 **Spec:** canonical behavior lives in [`spec/behavior/chat/`](../../../spec/behavior/chat/), [`spec/behavior/settings/`](../../../spec/behavior/settings/), [`spec/ui/web-dashboard/`](../../../spec/ui/web-dashboard/), [`spec/architecture/`](../../../spec/architecture/), and the per-module behavior files. Architectural narrative + engineering principles: [`spec/architecture/`](../../../spec/architecture/) and [`spec/engineering.md`](../../../spec/engineering.md).
-**Updated:** 2026-05-31
+**Updated:** 2026-06-01
 
 > The chat-first rework of `apps/web` (with downstream `apps/mobile`, `apps/landing`): chat is the
 > product spine, ops modules are integrations on top of it. Delivered as numbered chunks. Chunks
-> 01–06 are shipped; 07 is in progress (07a/07b/07c/07d shipped; 07e queued); 10b/10c shipped; the
-> rest of 08–12 are queued. This file tracks delivery; the durable behavior these chunks
+> 01–06 are shipped; 07 is in progress (07a/07b/07c/07d shipped; 07e queued); 09 + 10a/10b/10c shipped;
+> the rest of 08–12 are queued. This file tracks delivery; the durable behavior these chunks
 > implement now lives in the real `spec/` files linked above (no more chunk briefs in spec).
 
 ## Work units
@@ -33,7 +33,7 @@
 | ↳ 07e — Settings: Theme dark color | [#541](https://github.com/pdcarlson/Frapp/issues/541) | open | — | UI-only (backend ready): add dark picker beside accent + WCAG + palette re-apply |
 | 08 — Settings: Beta + Audit + ops-setup nudges | [#436](https://github.com/pdcarlson/Frapp/issues/436) | open | — | depends on 06. Canon → `spec/behavior/settings/`, `spec/ui/web-dashboard/` |
 | 09 — Members directory + custom fields rendering | [#437](https://github.com/pdcarlson/Frapp/issues/437) | shipped | this PR | spec-compliant directory (role/cohort/status filters, table+card toggle, sortable, 25/page, points, wired bulk role assign) + **custom-field rendering** vertical slice: new `member_custom_field_values` store (migration `20260531120000`); `CustomFieldService.findVisibleValuesForMember` (added onto 07c's service) makes `GET /members/:id` return **server-side visibility-filtered** values; detail-sheet renders them. Field-definition CRUD/read is 07c's `/custom-fields` (#539, merged). Deferred → #579/#580/#581/#582. Canon → `spec/behavior/members.md`, `spec/behavior/rbac.md` (visibility tiers), `spec/ui/web-dashboard/` |
-| 10a — Ops: Events (slash + RSVP renderer + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | open | — | integration pattern → `spec/behavior/integrations.md`; module → `spec/behavior/events.md` |
+| 10a — Ops: Events (slash + event card + check-in) | [#438](https://github.com/pdcarlson/Frapp/issues/438) | shipped | this PR | `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points]` heavy command + server-originated interactive **event card** (immutable snapshot + live checked-in count + window-gated Check-in via the existing attendance endpoint). `event` added to `SERVER_ONLY_KINDS`. No new migration (reuses the events/attendance backend). Pre-event RSVP-intent deferred → [#609](https://github.com/pdcarlson/Frapp/issues/609). Canon → `spec/behavior/events.md` → Chat Integration, `spec/behavior/chat/integrations.md` |
 | 10b — Ops: Tasks (slash + interactive assignment renderer) | [#439](https://github.com/pdcarlson/Frapp/issues/439) | shipped | PR #558 | `/task "<title>" @assignee <date> [points]` heavy command + server-originated interactive card (live status via task query; assignee Start/Complete, admin Confirm/Reject). No new migration. Canon → `spec/behavior/tasks.md` → Chat Integration, `spec/behavior/chat/integrations.md` |
 | 10c — Ops: Points (slash + ledger renderer) | [#440](https://github.com/pdcarlson/Frapp/issues/440) | shipped | PR #535 | `/points grant\|deduct`; server-originated card. Canon → `spec/behavior/points.md`, `spec/behavior/chat/integrations.md` |
 | 10d — Ops: Dues / Billing (slash + invoice renderer) | [#441](https://github.com/pdcarlson/Frapp/issues/441) | open | — | → `spec/behavior/billing.md` |
@@ -61,6 +61,14 @@
 - 07c (#539) decisions: custom fields use **dedicated CRUD endpoints** (`/custom-fields`) like 07b roles (individually-addressable rows), not the config blob; `key`/`type` immutable on update; every field deletable (no `core`); a `select` field requires options; options deep-cloned per chapter (server `structuredClone`) — the spec invariant is also honored by `buildChapterConfigFromArchetype`'s existing seed clone. Follow-up: [#572](https://github.com/pdcarlson/Frapp/issues/572) (provision `CUSTOM_FIELDS_SEED` into `chapter_custom_fields` at onboarding — fresh chapters start with an empty Fields tab until then). Member-directory rendering of these fields stays with Chunk 09 (#437).
 - 10b (#439) follow-ups: [#559](https://github.com/pdcarlson/Frapp/issues/559) (cross-client realtime for task-card status — non-acting viewers refresh only on their own task-query refetch) and [#560](https://github.com/pdcarlson/Frapp/issues/560) (promote optimistic updates into the shared `use-tasks` hooks — also speeds the dashboard).
 - 09 (#437) decisions/follow-ups: shipped the coherent slice (directory UX + custom-field **rendering** with server-side visibility enforcement). Custom-field **values** live in a new `member_custom_field_values` table (definitions stay in `chapter_custom_fields`); visibility tiers (`self`/`chapter`/`exec`/`president`) are resolved from the viewer's effective permissions — `exec` keys off `roles:manage`/`members:remove` since the role pack has no dedicated exec permission (recorded in `spec/behavior/rbac.md`). Field definitions are owned by 07c's `/custom-fields` CRUD (#539, merged); this PR adds `findVisibleValuesForMember` onto that service for the directory render. Deferred, parented under #426: [#579](https://github.com/pdcarlson/Frapp/issues/579) (visibility-scoped custom-field search), [#580](https://github.com/pdcarlson/Frapp/issues/580) (bulk-CSV invite + batch links), [#581](https://github.com/pdcarlson/Frapp/issues/581) (custom-field value editing / write path), [#582](https://github.com/pdcarlson/Frapp/issues/582) (custom-role assignment dropdown in the detail slideout). The `members` directory list still loads the full roster client-side and paginates at 25/page — server-side paging is a noted scale follow-up, not yet filed.
+- 10a (#438) decisions/follow-ups: shipped the chat layer on the **existing** events backend — `/event`
+  heavy command + interactive event card (immutable snapshot + live checked-in count + a Check-in action
+  gated to the event window, reusing `POST /events/:id/attendance/check-in`). `event` added to
+  `SERVER_ONLY_KINDS` (anti-forgery; `EventService.create` is its sole writer). Web-only renderer (mobile
+  parity → Chunk 11 #446). Deferred, parented under #426: [#609](https://github.com/pdcarlson/Frapp/issues/609)
+  (pre-event RSVP intent — needs a new store + endpoint + migration). Add-to-calendar-in-chat also
+  deferred (the events dashboard already exposes `.ics`). The `/event` grammar was unspecified and is now
+  canon in `spec/behavior/chat/integrations.md` + `spec/behavior/events.md`.
 - Stragglers not yet parented under #426 (re-parent or fold during triage): #374 (Chunk 05 slash
   dispatch), #485/#486 (Chunk 06 follow-ups), #491 (Chunk 12 landing), #492 (ops-module nudges),
   #494 (Chunk 10e Rush), #510 (Chunk 08 Beta/Audit), #519 (chunk-NN labels). #490 (Chunk 07 tabs)

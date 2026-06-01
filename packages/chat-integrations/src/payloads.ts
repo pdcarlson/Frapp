@@ -96,5 +96,32 @@ export interface TaskPayload {
   created_at: string;
 }
 
+/**
+ * Payload for a `kind:"event"` card. Built server-side after
+ * `EventService.create` commits the row (the `/event` slash command), so the
+ * card can never assert an event that does not exist. Details are embedded at
+ * write time as an immutable creation-time snapshot; the renderer reads the
+ * *live* attendance count back through the attendance query keyed on `event_id`
+ * — the chat message row is never mutated. Server-originated: a client cannot
+ * forge `kind:"event"` (see `ChatService.SERVER_ONLY_KINDS`).
+ */
+export interface EventPayload {
+  /** `events.id` of the committed row — the renderer reads live attendance from this. */
+  event_id: string;
+  name: string;
+  /** Event start as an ISO-8601 datetime. */
+  start_time: string;
+  /** Event end as an ISO-8601 datetime. */
+  end_time: string;
+  /** Free-text location, or `null` when none was given. */
+  location: string | null;
+  /** Points awarded on check-in. */
+  point_value: number;
+  /** Whether attendance is mandatory (always `false` for slash-created events). */
+  is_mandatory: boolean;
+  /** `events.created_at`. */
+  created_at: string;
+}
+
 /** Action type used for poll votes. Shared between renderer + Edge Function. */
 export const POLL_VOTE_ACTION_TYPE = "vote";

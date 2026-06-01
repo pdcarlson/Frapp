@@ -36,4 +36,16 @@
 
 ## Chat Integration
 
-Chat integration (slash commands, rich renderers, system channel): see [`integrations.md`](integrations.md).
+The `/event "<name>" <YYYY-MM-DD> <HH:MM>-<HH:MM> [location] [points]` slash command creates an event
+(`events:create`, re-checked on `POST /v1/events`) and posts a server-originated **event card** to the
+current channel — an immutable snapshot (name, when, location, point value). Every member sees a
+**Check-in** action during the event window (start → end + grace), so the chat card is an *additional*
+self-service check-in surface alongside the mobile app; the server enforces the window, the role gate, and
+one-check-in-per-member regardless of surface. Viewers who can read attendance (`events:update`) also see a
+live checked-in count read back through the attendance query (members can self-check-in but can't read the
+roster, so the count is shown only to them). Recurrence, role-targeting, and the mandatory flag stay on the dashboard.
+
+Pre-event **RSVP intent** (going / maybe / not-going, ahead of the window) is not yet modelled — tracked as
+a follow-up. The shared slash-command catalog, dispatch path, renderer registry, and the
+server-originated-kind (anti-forgery) rules are canonical in [`integrations.md`](integrations.md) and the
+chat-specific [`chat/integrations.md`](chat/integrations.md).
