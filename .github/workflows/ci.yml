@@ -33,6 +33,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache turbo build outputs
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
@@ -56,6 +64,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -96,6 +112,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
@@ -118,6 +142,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -156,6 +188,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -210,6 +250,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
@@ -286,6 +334,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
 
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
