@@ -10,6 +10,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -51,6 +52,9 @@ export class AnalyticsController {
       'Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out.',
   })
   @ApiCreatedResponse({ type: TrackEventResponseDto })
+  @ApiForbiddenResponse({
+    description: 'Caller is not a member of the specified chapter',
+  })
   async track(
     @CurrentUser('id') userId: string,
     @Body() dto: TrackEventDto,

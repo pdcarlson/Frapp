@@ -373,7 +373,8 @@ describe('AnalyticsService', () => {
         });
       const eq = jest.fn().mockReturnValue({ maybeSingle });
       const select = jest.fn().mockReturnValue({ eq });
-      const client = { from: jest.fn().mockReturnValue({ select }) } as unknown;
+      const from = jest.fn().mockReturnValue({ select });
+      const client = { from } as unknown;
       const service = await buildService({
         salt: SALT,
         supabase: client,
@@ -384,6 +385,9 @@ describe('AnalyticsService', () => {
       await service.trackFromClient('opened-channel', USER_ID, {});
 
       expect(provider.capture).toHaveBeenCalledTimes(1);
+      // Pin the query target so a future shape change in isChapterAnalyticsEnabled
+      // (e.g. a renamed table) breaks this test instead of silently drifting.
+      expect(from).toHaveBeenCalledWith('chapters');
     });
 
     it('captures a chapter-less event when the caller has no memberships', async () => {
@@ -415,6 +419,28 @@ describe('AnalyticsService', () => {
 
       await expect(
         service.trackFromClient('opened-channel', USER_ID, {}),
+      ).resolves.toBeUndefined();
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('suppresses (fails closed) when the membership check errors on the chapter_id path', async () => {
+      // Same fail-closed posture as the omit path: an infra blip can't verify
+      // membership, so suppress rather than 500 the telemetry call (a clean
+      // non-member still 403s — see the rejection test above).
+      const members = makeMemberRepo();
+      members.findByUserAndChapter.mockRejectedValue(new Error('db down'));
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+        members,
+      });
+
+      await expect(
+        service.trackFromClient('opened-channel', USER_ID, {
+          chapterId: 'chapter-1',
+        }),
       ).resolves.toBeUndefined();
       expect(provider.capture).not.toHaveBeenCalled();
     });

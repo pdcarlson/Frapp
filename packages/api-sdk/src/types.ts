@@ -5549,6 +5549,13 @@ export interface operations {
                     "application/json": components["schemas"]["TrackEventResponseDto"];
                 };
             };
+            /** @description Caller is not a member of the specified chapter */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
 }

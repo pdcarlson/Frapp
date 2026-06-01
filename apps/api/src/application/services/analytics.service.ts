@@ -15,6 +15,7 @@ import {
   MEMBER_REPOSITORY,
   type IMemberRepository,
 } from '../../domain/repositories/member.repository.interface';
+import type { Member } from '../../domain/entities/member.entity';
 
 export interface TrackOptions {
   /**
@@ -153,13 +154,24 @@ export class AnalyticsService {
     });
 
     if (options.chapterId) {
-      // Clean "not a member" → 403. A DB error here is a genuine server fault,
-      // distinct from a telemetry blip, so it propagates (→ 500) rather than
-      // silently emitting for an unverifiable caller.
-      const member = await this.members.findByUserAndChapter(
-        userId,
-        options.chapterId,
-      );
+      // A clean "not a member" is an authorization denial → 403. A DB error
+      // means we *can't* verify membership, so fail closed and suppress — the
+      // same posture as the opt-out lookup and the omit path below — rather than
+      // 500-ing a fire-and-forget telemetry call. Either way an unverifiable
+      // caller never emits.
+      let member: Member | null;
+      try {
+        member = await this.members.findByUserAndChapter(
+          userId,
+          options.chapterId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          'analytics membership check failed; suppressing event',
+          error as Error,
+        );
+        return;
+      }
       if (!member) {
         throw new ForbiddenException('Not a member of this chapter');
       }

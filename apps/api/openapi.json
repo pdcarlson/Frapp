@@ -4590,6 +4590,9 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Caller is not a member of the specified chapter"
           }
         },
         "security": [
