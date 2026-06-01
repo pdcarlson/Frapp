@@ -1,9 +1,10 @@
 "use client";
 
 import { CalendarDays, Check, MapPin } from "lucide-react";
-import { useAttendance, useCheckIn } from "@repo/hooks";
+import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { EventPayload } from "@repo/chat-integrations";
+import { can } from "@/lib/auth/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -101,9 +102,20 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const { toast } = useToast();
   const checkIn = useCheckIn();
 
-  // Hooks must run before any early return; `useAttendance` no-ops on empty id.
+  // The checked-in count comes from the attendance roster, which is admin-gated
+  // (`events:update`). Members can still self-check-in (that endpoint is
+  // member-open), but they can't read the roster — so only fetch and show the
+  // count for viewers who can view attendance. Otherwise the request 403s and
+  // the card would show a misleading "0 checked in" to everyone else.
+  const { data: permData } = useMyPermissions();
+  const canViewAttendance = can("events:update", permData?.permissions ?? []);
+
+  // Hooks must run before any early return; `useAttendance` no-ops on an empty
+  // id, so a viewer without attendance access never fires the (403-ing) request.
   const eventId = payload?.event_id ?? "";
-  const { data: attendance } = useAttendance(eventId);
+  const { data: attendance } = useAttendance(
+    canViewAttendance ? eventId : "",
+  );
 
   if (!payload) {
     return (
@@ -172,9 +184,11 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
           <Badge variant="outline">+{payload.point_value} pts</Badge>
         ) : null}
       </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {checkedIn === 1 ? "1 checked in" : `${checkedIn} checked in`}
-      </p>
+      {canViewAttendance ? (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {checkedIn === 1 ? "1 checked in" : `${checkedIn} checked in`}
+        </p>
+      ) : null}
       {windowOpen ? (
         <div className="mt-2 flex flex-wrap gap-2">
           <Button

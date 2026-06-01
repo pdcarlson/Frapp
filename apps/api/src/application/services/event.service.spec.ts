@@ -442,7 +442,11 @@ describe('EventService', () => {
       expect(arg.payload).toMatchObject({
         event_id: 'evt-1',
         name: 'Chapter Meeting',
+        point_value: 10,
+        location: null,
+        is_mandatory: false,
       });
+      expect(arg.content).toContain('Chapter Meeting');
     });
 
     it('does not post a card for a dashboard create (no chat fields)', async () => {

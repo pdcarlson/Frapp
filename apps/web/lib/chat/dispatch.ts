@@ -305,7 +305,8 @@ async function dispatchTask(
  * datetime, interpreting them in the browser's local timezone (the chapter
  * admin's wall clock — the parser stays timezone-pure). Returns `null` for
  * malformed input so the caller fails with a precise error rather than posting
- * an invalid event. Same client-side date math `/poll` uses for `closes_at`.
+ * an invalid event. The conversion happens on the client (which knows the
+ * timezone), keeping the shared parser timezone-pure.
  */
 function localDateTimeToIso(date: string, time: string): string | null {
   const dateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);

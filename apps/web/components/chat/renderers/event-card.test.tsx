@@ -8,11 +8,13 @@ import type { ChatMessage } from "@/lib/chat/types";
 // and the toast to isolate the rendering + window gating.
 
 const mockUseAttendance = vi.fn();
+const mockUseMyPermissions = vi.fn();
 const checkIn = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@repo/hooks", () => ({
   useAttendance: (id: string) => mockUseAttendance(id),
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
+  useMyPermissions: () => mockUseMyPermissions(),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -47,6 +49,11 @@ describe("EventCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseAttendance.mockReturnValue({ data: [] });
+    // Default to an attendance-viewer (admin) so the count tests exercise the
+    // count path; the non-admin case is covered explicitly below.
+    mockUseMyPermissions.mockReturnValue({
+      data: { permissions: ["events:update"] },
+    });
   });
 
   it("renders the event snapshot (name, location, points)", () => {
@@ -112,5 +119,43 @@ describe("EventCard", () => {
     expect(
       screen.queryByRole("button", { name: /check in/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("hides the count and skips the attendance query for a non-admin, but keeps Check in", () => {
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now - 60_000).toISOString(),
+          end_time: new Date(now + 60_000).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    // No count line for a member who can't read the roster…
+    expect(screen.queryByText(/\d+ checked in/)).not.toBeInTheDocument();
+    // …the admin-only attendance query is never fired (empty id disables it)…
+    expect(mockUseAttendance).toHaveBeenCalledWith("");
+    // …but self check-in stays available during the window.
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps Check in available within the grace window after the event ends", () => {
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now - 60 * 60_000).toISOString(),
+          end_time: new Date(now - 5 * 60_000).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /check in/i }),
+    ).toBeInTheDocument();
   });
 });

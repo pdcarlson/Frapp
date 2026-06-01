@@ -241,12 +241,17 @@ export class EventService {
       created_at: event.created_at,
     };
 
+    // The server has no creator-timezone context, so render the snapshot time
+    // explicitly in UTC (labelled) rather than the API host's local zone. This
+    // string is only the fallback shown when the rich renderer can't read the
+    // payload; the event card itself localises start_time per viewer.
     const startLabel = new Date(event.start_time).toLocaleString('en-US', {
       dateStyle: 'medium',
       timeStyle: 'short',
+      timeZone: 'UTC',
     });
     const locationSuffix = event.location ? ` at ${event.location}` : '';
-    const content = `${creatorName} scheduled "${event.name}" — ${startLabel}${locationSuffix}`;
+    const content = `${creatorName} scheduled "${event.name}" — ${startLabel} UTC${locationSuffix}`;
 
     await this.chatService.sendMessage({
       chapter_id: input.chapter_id,
