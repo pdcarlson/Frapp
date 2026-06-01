@@ -353,8 +353,23 @@ jobs:
       - name: Build shared packages
         run: npx turbo run build --filter='./packages/*'
 
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright OS deps
+        run: npx playwright install-deps chromium
+
       - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install chromium
 
       - name: Run dashboard visual regression suite
         run: npm run test:visual -w apps/web
