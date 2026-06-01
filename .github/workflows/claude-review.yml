@@ -20,6 +20,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  id-token: write # claude-code-action mints its GitHub App token via OIDC (per Anthropic's auto-review reference)
 
 concurrency:
   group: claude-review-${{ github.event.pull_request.number }}
