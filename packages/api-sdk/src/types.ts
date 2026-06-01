@@ -1880,7 +1880,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out. */
+        /** Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out. */
         post: operations["AnalyticsController_track_v1"];
         delete?: never;
         options?: never;

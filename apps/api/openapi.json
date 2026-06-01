@@ -4597,7 +4597,7 @@
             "bearer": []
           }
         ],
-        "summary": "Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out.",
+        "summary": "Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out.",
         "tags": [
           "Analytics"
         ]
