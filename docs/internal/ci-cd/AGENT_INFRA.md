@@ -50,7 +50,7 @@ their open/closed state, closed on completion by `Closes #N` in the PR body. Rec
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
-| AI code review      | `.github/workflows/claude-review.yml` — advisory Claude PR review (OAuth subscription token); not a merge gate                                                                                |
+| AI code review      | `.github/workflows/claude-review.yml` — Claude PR review (Opus open / Sonnet push); `claude-review-gate` blocks merge on Important findings (`claude-review-override` label)                                                                                |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.

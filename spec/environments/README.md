@@ -166,12 +166,14 @@ These checks are also required for merge:
 | Check            | Provider       | What it validates                               |
 | ---------------- | -------------- | ----------------------------------------------- |
 | `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
+| `claude-review-gate` | GitHub Actions | Blocks merge on Important AI-review findings (override: `claude-review-override` label) |
 
-**Claude** auto-reviews PRs to `main` and `production` via the `claude-review.yml` GitHub Actions workflow.
+**Claude** auto-reviews PRs to `main` and `production` via the `claude-review.yml` GitHub Actions workflow (Opus 4.8 on open, Sonnet 4.6 on each push).
 
-- Claude review feedback is advisory on both branches. There is no required review status check.
-- On `main`, conversation resolution is not required, so unresolved review comment threads do not block merge.
-- On `production`, the promotion PR requires one approving review plus conversation resolution (CI + `branch-policy` still gate merges; the review does not).
+- The `claude-review-gate` check **blocks merge only when the review reports an Important finding**; Nit-level findings are advisory. Bypass a false positive with the `claude-review-override` label.
+- The gate always reports a conclusion (bot / draft / fork / no-token runs pass), so it is safe as a required check.
+- On `main`, conversation resolution is not required, so unresolved review threads do not block merge.
+- On `production`, the promotion PR also requires one approving review plus conversation resolution.
 - Re-run a missed review by closing and reopening the PR. Full runbook: [`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### Key Design Decisions

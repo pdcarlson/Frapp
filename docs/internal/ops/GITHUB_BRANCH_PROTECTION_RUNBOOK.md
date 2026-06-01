@@ -5,7 +5,7 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- Claude reviews PRs to `main` and `production` as an advisory signal
+- The `claude-review-gate` blocks merge on Important AI-review findings (`claude-review-override` label to bypass)
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -122,7 +122,7 @@ Do **not** mark these required on `main` — staging deploys are allowed to fail
 
 ### AI review policy
 
-Claude reviews are advisory on both branches. There is no required review status check. See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md) for how the automated review is configured and triggered.
+The `claude-review-gate` is a required check that blocks merge **only when the review reports an Important finding**; Nits are advisory. Bypass a false positive with the `claude-review-override` label. The gate always reports a conclusion (bot / draft / fork / no-token runs pass), so it is safe to require — but add it to the required contexts only **after** the workflow is merged and verified green (otherwise every PR blocks on a missing check). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

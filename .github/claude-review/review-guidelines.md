@@ -2,7 +2,8 @@
 
 The automated reviewer (`.github/workflows/claude-review.yml`, ADR-14) reads this file on every PR.
 It ports the security/quality focus that previously lived in `.coderabbit.yaml`. Keep it focused —
-long rubrics dilute the rules that matter.
+long rubrics dilute the rules that matter. The reviewer reads it together with
+[`learnings.md`](learnings.md) (narrower, dated lessons from real PRs).
 
 ## Severity
 
@@ -10,7 +11,8 @@ long rubrics dilute the rules that matter.
 - **Nit** — maintainability/correctness polish; worth fixing, not blocking. Cap inline Nits at ~5;
   mention the rest as a count in the summary.
 
-Review is **advisory** (comment-only): it never approves or blocks the PR.
+**Important findings block merge** via the `claude-review-gate` required check; add the
+`claude-review-override` label to bypass a false positive. Nits never block.
 
 ## apps/api (NestJS) — highest priority
 

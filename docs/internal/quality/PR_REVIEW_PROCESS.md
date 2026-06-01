@@ -33,7 +33,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Include a rollback note for infra changes.
 2. **Automation pass**
    - Required checks pass.
-   - Claude auto-reviews the PR (`.github/workflows/claude-review.yml`). Findings are advisory on both `main` and `production` — the review does not gate merges.
+   - Claude auto-reviews the PR (`.github/workflows/claude-review.yml`). The `claude-review-gate` blocks merge on **Important** findings only (override with the `claude-review-override` label); Nits are advisory.
 3. **Human review pass**
    - At least one approval from a write-access reviewer.
    - All review threads resolved.

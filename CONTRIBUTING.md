@@ -60,12 +60,12 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### AI review coverage
 
-- `main`: Claude auto-reviews PRs (`.github/workflows/claude-review.yml`). Feedback is advisory.
-- `production`: same — Claude reviews are advisory. Promotions are gated by CI + approval + conversation resolution, not the review.
+- `main`: Claude auto-reviews PRs (`.github/workflows/claude-review.yml`) — Opus 4.8 on open, Sonnet 4.6 on each push. The `claude-review-gate` required check blocks merge on **Important** findings only; Nits are advisory. Bypass a false positive with the `claude-review-override` label.
+- `production`: the same gate applies. Promotions are also gated by CI + approval + conversation resolution.
 
 ### PR review requirement policy
 
-- `main`: approving review is **not required** and Claude review feedback remains advisory.
+- `main`: a human approving review is **not required**; the `claude-review-gate` blocks merge only on Important findings (`claude-review-override` label to bypass).
 - `main`: conversation resolution is **not required**.
 - `production`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
