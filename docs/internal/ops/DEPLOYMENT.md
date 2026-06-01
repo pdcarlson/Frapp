@@ -455,7 +455,7 @@ All deployments are gated behind CI success. The flow is:
 3. **PR merged** → Push event triggers deploy pipeline (`workflow_run` waits for CI).
 4. **Deploy pipeline**: DB migration (dry-run → apply) → API deploy (Render) → Frontends auto-deploy (Vercel).
 
-Production deploys additionally require manual approval before the migration step.
+Production deploys run automatically after the `main` → `production` promotion PR merges and CI passes — there is no separate GitHub Actions environment-approval pause, because required-reviewer environment protection rules are GitHub Enterprise-only on private repositories. The control point for production is the promotion PR itself (branch protection: CI + an approving review + conversation resolution).
 
 ### Required Status Checks
 

@@ -4,7 +4,7 @@
 
 Migrations are now applied automatically in the deploy pipeline (see `.github/workflows/deploy-api.yml`):
 - **Staging:** Runs automatically on merge to `main` (no approval needed)
-- **Production:** Requires manual approval in GitHub Actions before applying
+- **Production:** Runs automatically after the `main` → `production` promotion PR merges and CI passes. (No GitHub Actions environment-approval pause — required-reviewer environment rules are GitHub Enterprise-only on private repos; the gate is the promotion PR itself: branch protection requires CI + an approving review + conversation resolution.)
 
 If an automated migration fails, the entire deploy pipeline halts — no API deploy happens. Check the GitHub Actions run for the error output.
 
