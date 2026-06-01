@@ -34,10 +34,10 @@ complete** (no fresh verdict for the current head SHA):
   intentionally skipped (draft / fork / `claude[bot]` commit / **missing token**); there is a fresh
   verdict with `important = 0`; or the `claude-review-override` label is present. A fresh verdict is
   trusted **even if the action process exits non-zero** (a completed-but-crashed review still counts).
-- It **blocks** when a review was expected (token present; not draft/fork/bot) but produced **no fresh
-  verdict** — the action errored, timed out, or hit the workflow-validation guard (see *Making the gate
-  required*). Deliberate (ADR-14 amendment): a required review must actually run. **Re-run it, or add
-  `claude-review-override`.**
+- It **blocks** when a review was expected (not an intentional skip / no-token) but produced **no fresh
+  verdict** — the action errored, timed out, **was cancelled** (e.g. concurrency superseded it), or hit
+  the workflow-validation guard (see *Making the gate required*). Deliberate (ADR-14 amendment): a
+  required review must actually run. **Re-run it, or add `claude-review-override`.**
 - **Bypass:** the **`claude-review-override`** label passes the gate immediately (works even with
   `enforce_admins: true`).
 

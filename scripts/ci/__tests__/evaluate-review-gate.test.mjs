@@ -28,6 +28,23 @@ test("no token configured passes (advisory)", () => {
   assert.equal(r.block, false);
 });
 
+test("BLOCKS a CANCELLED review even though token_present is empty (concurrency superseded it)", () => {
+  // The bug: a cancelled/early-failed review leaves token_present empty; the old `!tokenPresent`
+  // check mistook that for "no token configured" and greenlit an incomplete review.
+  const r = evaluateGate({ reviewResult: "cancelled", tokenPresent: false, structuredOutput: "", comments: [], headSha: SHA });
+  assert.equal(r.block, true);
+});
+
+test("BLOCKS a FAILED review with empty token_present and no verdict (not a clean no-token skip)", () => {
+  const r = evaluateGate({ reviewResult: "failure", tokenPresent: false, structuredOutput: "", comments: [], headSha: SHA });
+  assert.equal(r.block, true);
+});
+
+test("the no-token advisory pass requires a SUCCESSFUL review job", () => {
+  assert.equal(evaluateGate({ reviewResult: "success", tokenPresent: false, headSha: SHA }).block, false);
+  assert.equal(evaluateGate({ reviewResult: "cancelled", tokenPresent: false, headSha: SHA }).block, true);
+});
+
 // ── The hole this fix closes ────────────────────────────────────────────────
 
 test("BLOCKS when review failed and produced no verdict (the 29s transient case)", () => {
