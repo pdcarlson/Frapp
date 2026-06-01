@@ -84,6 +84,17 @@ The President role is a system role that always carries the `*` wildcard permiss
 
 Two role models coexist. The live `roles` table described above is the **enforcement** source — the permission-check algorithm reads it, and the Settings → Roles "Live roles" sub-tab edits it. The separate `chapter_custom_roles` table (label, rank, capabilities, `core`) backs the Settings → Roles "Custom" sub-tab and its dedicated CRUD endpoints (see [`settings/customization.md`](settings/customization.md) → Roles Tab). `chapter_custom_roles` is presentation-only today; wiring it into the permission-check algorithm and member assignment is tracked as a follow-up and is **not** consulted by the enforcement path until then.
 
+## Custom-field visibility tiers
+
+Custom member fields declare a `visibility` of `self` / `chapter` / `exec` / `president` (see [`members.md`](members.md#custom-fields)). When a member profile is read, the server resolves the viewer's **allowed visibility set** from their effective permissions plus whether they are the member, and only fields in that set are queried:
+
+- `chapter` → any viewer who can see the directory (holds `members:view`).
+- `self` → only the member themselves (the owner). The president does **not** override `self`, so privately-scoped fields stay private.
+- `exec` → viewers with member/role management authority. Since the default role pack has no dedicated "exec" permission, exec tier is keyed off holding `roles:manage` **or** `members:remove` (or the wildcard). A chapter that grants those manage permissions to additional officer roles widens the exec tier accordingly.
+- `president` → only the wildcard (`*`) holder.
+
+`sensitive` fields follow the same gate: a field outside the allowed set is never selected, so its value never enters the response (enforcement is server-side, never client-only).
+
 ## Edge Cases
 
 - If a role is deleted while members still hold it, those members lose the permissions from that role on their next request (no stale cached permissions).

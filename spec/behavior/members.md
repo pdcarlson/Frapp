@@ -19,7 +19,13 @@ The `members` module is always-on (free tier). Every chapter has a searchable me
 ## Custom Fields
 
 - Custom fields (defined in the settings Fields tab) render per chapter on the member detail view, each respecting its configured visibility (`self` / `chapter` / `exec` / `president`).
-- **Visibility is enforced server-side.** The query that returns custom-field values applies the visibility check; a sensitive field is never returned to a viewer who lacks access. Client-side filtering alone is never trusted for `sensitive` fields.
+- Field **definitions** live in `chapter_custom_fields`; a member's **values** live in `member_custom_field_values` (one row per member+field), so the visibility check is applied as a query predicate against the definition rather than a post-fetch scrub.
+- **Visibility is enforced server-side.** `GET /members/:id` resolves the viewer's allowed visibility tiers and only fields in that set are queried, so a sensitive field is never returned to a viewer who lacks access. Client-side filtering alone is never trusted for `sensitive` fields. The allowed-tier rule is defined in [`rbac.md`](rbac.md#custom-field-visibility-tiers):
+  - `chapter` → any viewer who can see the directory (`members:view`).
+  - `self` → only the member themselves (the owner). Not overridden by the president — private fields stay private.
+  - `exec` → viewers with member/role management authority (`roles:manage` or `members:remove`) or the wildcard.
+  - `president` → only the wildcard (`*`) holder.
+- The read-only `GET /custom-fields` endpoint lists a chapter's full field-definition set for the **settings Fields tab** (gated by `chapter-config:view`, matching the custom-roles read); definition write CRUD also belongs to that tab. The member directory does not call it — it renders each member's values from the tier-filtered `GET /members/:id`, so the existence of higher-tier/sensitive fields is never exposed to baseline members.
 
 ## Custom Role Assignment
 

@@ -180,3 +180,28 @@ export class RemoveCustomFieldResponseDto {
   @ApiProperty({ example: true })
   success: boolean;
 }
+
+/**
+ * A member's value for a custom field on `GET /members/:id`, already filtered
+ * server-side to the fields the requesting viewer may see (Chunk 09). `value` is
+ * null when the member has no value set for an (otherwise visible) field.
+ */
+export class MemberCustomFieldValueDto {
+  @ApiProperty()
+  field_id: string;
+
+  @ApiProperty()
+  key: string;
+
+  @ApiProperty()
+  label: string;
+
+  @ApiProperty({ enum: FIELD_TYPES })
+  type: (typeof FIELD_TYPES)[number];
+
+  @ApiProperty({ enum: FIELD_VISIBILITIES })
+  visibility: (typeof FIELD_VISIBILITIES)[number];
+
+  @ApiProperty({ type: String, nullable: true })
+  value: string | null;
+}
