@@ -12,7 +12,10 @@ cs_log() {
 # Uses sudo only when we are not already root (web-UI setup runs as root; the
 # per-session agent shell may not). Returns non-zero if the daemon never comes up.
 cs_ensure_docker_daemon() {
-  if docker info >/dev/null 2>&1; then
+  # Probe with a timeout: a wedged docker socket can make `docker info` block
+  # indefinitely, which would otherwise hang the whole bringup past its budget
+  # (and leave callers waiting on a sentinel that never lands).
+  if timeout 10 docker info >/dev/null 2>&1; then
     cs_log "Docker daemon already running."
     return 0
   fi
@@ -24,12 +27,22 @@ cs_ensure_docker_daemon() {
 
   cs_log "Starting Docker daemon (${runner:-root})..."
   $runner dockerd >/tmp/dockerd.log 2>&1 &
+  local dockerd_pid=$!
 
   local tries=0
-  until docker info >/dev/null 2>&1; do
+  until timeout 5 docker info >/dev/null 2>&1; do
+    # Fail fast if dockerd died (e.g. missing privileges in the sandbox) rather
+    # than waiting out the full window, and surface the daemon log so the
+    # failure is actionable instead of a silent timeout.
+    if ! kill -0 "$dockerd_pid" 2>/dev/null; then
+      cs_log "ERROR: dockerd exited during startup (see /tmp/dockerd.log):"
+      tail -n 5 /tmp/dockerd.log 2>/dev/null | sed 's/^/[cloud-sandbox]   /' >&2
+      return 1
+    fi
     tries=$((tries + 1))
     if [ "$tries" -ge 60 ]; then
       cs_log "ERROR: Docker daemon did not become ready after 60s (see /tmp/dockerd.log)."
+      tail -n 5 /tmp/dockerd.log 2>/dev/null | sed 's/^/[cloud-sandbox]   /' >&2
       return 1
     fi
     sleep 1
