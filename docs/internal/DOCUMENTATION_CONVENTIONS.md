@@ -57,8 +57,14 @@ them. Pick the **relevant** canonical home above:
 Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
 `docs/` or `spec/` change in the same PR when edited.
 
+> **PM transition (ADR-16):** Frapp is adopting **Linear** as the canonical PM system and will retire
+> the in-repo backlog. Rules #4 (work-status lives in `docs/backlog/`) and the backlog rows below stay in
+> force **until the cut-over**; the integration design + runbook live in
+> [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md).
+
 ## See also
 
 - Folder map: [`docs/README.md`](../README.md)
 - Docs gate behavior: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)
 - Backlog rules: [`../backlog/_meta/conventions.md`](../backlog/_meta/conventions.md)
+- PM transition to Linear: [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)

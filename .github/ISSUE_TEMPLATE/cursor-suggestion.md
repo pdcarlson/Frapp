@@ -10,7 +10,7 @@ assignees: ""
 <one-sentence description>
 
 ### Category
-`area:<web|api|db|deps|security|ci|docs>` · `severity:<critical|high|medium|low>`
+`area:<web|api|db|deps|security|ci|docs|product|ux|research>` · `type:<gap|improvement|idea>` · `severity:<critical|high|medium|low>`
 
 ### Location
 `path/to/file.ext:line`

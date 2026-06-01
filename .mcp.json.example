@@ -1,0 +1,9 @@
+{
+  "_README": "Example MCP config for adopting Linear as the canonical PM system — see ADR-16 (spec/architecture/README.md) and docs/internal/ci-cd/LINEAR_PM.md. This file is NOT loaded by any tool (it is a .example) and provisioning is a user action (OAuth). Claude Code: run `claude mcp add --transport http linear-server https://mcp.linear.app/mcp` then `/mcp` to authenticate, or place the mcpServers.linear block below into a project .mcp.json. Claude Code on the web: add the same server in the web environment's MCP config so cloud sessions inherit it. Cursor: copy the mcpServers.linear block into .cursor/mcp.json (project) or ~/.cursor/mcp.json (global); if your Cursor build cannot use a remote URL directly, use the stdio form {\"command\":\"npx\",\"args\":[\"-y\",\"mcp-remote\",\"https://mcp.linear.app/mcp\"]} instead.",
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    }
+  }
+}

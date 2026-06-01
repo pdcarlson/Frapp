@@ -653,6 +653,26 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - Savings still insufficient → adopt a Turbo remote cache (reassessing the in-house-vs-Vercel privacy trade-off), path-gate the required jobs behind a skip→success wrapper, or cache `node_modules`.
 - A required job is renamed/added/removed → update `scripts/configure-branch-protection.mjs` and re-run it (note this also makes `claude-review-gate` required — only do so intentionally).
 
+### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
+
+**Decision:** Adopt **Linear** as Frapp's canonical project-management system and **retire the in-repo markdown backlog** (`docs/backlog/`) and its "GitHub issues mirror the backlog; repo wins" doctrine. Linear becomes the source of truth for planning and work status; **GitHub issues remain the executable layer**, linked two-way to Linear via Linear's GitHub integration (PRs/branches link by issue ID; `Closes`/`Fixes`/`Resolves ABC-123` auto-transitions the Linear issue on merge; comments/status/assignee sync both ways). All three actors reach it: **Claude Code and Cursor via Linear's hosted MCP server** (`https://mcp.linear.app/mcp`, OAuth 2.1), **GitHub via the native integration**, and **automations via Linear's GraphQL API** (`https://api.linear.app/graphql`). This **reverses** the decision recorded in `docs/backlog/_meta/conventions.md` ("no GitHub Projects board; the backlog is the single source of truth"). The integration design, state/label mapping, ownership boundary, and provisioning runbook live in [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md).
+
+**Rationale:** The flat-file backlog is diff-able and agent-readable but a poor *human* PM surface — no board, no prioritization UI, manual `/triage` reconciliation, and it goes stale as fast as the code. GitHub Projects was rejected before and is **unreachable from the cloud agent** (no Projects MCP tool; no `gh` CLI in the web sandbox). Linear is the one option **all three actors can natively use**: an official remote MCP server usable by both Claude and Cursor, best-in-class two-way GitHub sync, and first-class AI-agent support. It gives the human a real board without cutting agents off from status.
+
+**Consequences:**
+
+- **Staged, not flip-the-switch.** This decision ships as *rails only* (this ADR + `LINEAR_PM.md` + the Cursor-automation maintenance evolution + config scaffolding). **The in-repo backlog stays operational and authoritative until the cut-over** — retiring it before Linear is live would strand the project with no tracker. The cut-over (provision Linear, install the GitHub app, OAuth the MCP into Claude + Cursor, import issues, repoint `/triage` `/status` `/next-task`, freeze/delete `docs/backlog/`) is a tracked follow-up issue, driven by the user because it needs external accounts/OAuth a sandbox can't perform.
+- **MCP-availability risk, mitigated.** Making Linear canonical means agents depend on the Linear MCP, which (like any MCP server) can drop mid-session. Mitigation: **GitHub issues stay the synced, always-available read/execute surface** — when Linear MCP is down, agents fall back to GitHub issues (kept in sync by the integration) and PRs still close work via `Closes #N`.
+- **Cursor's suggestion automation is unchanged for now** — it keeps filing/maintaining GitHub `suggestion` issues (its intake surface), which Linear ingests via sync. Its ownership boundary (only touch `suggestion`-labeled issues) is reaffirmed and carries into the Linear world. Whether Cursor should file directly into Linear post-cut-over is a separate follow-up.
+- **Tooling churn at cut-over.** `/triage`, `/status`, `/next-task`, the SessionStart hook, and the `docs/backlog/` doctrine in `AGENTS.md` / `DOCUMENTATION_CONVENTIONS.md` all change when Linear becomes canonical; that work lands in the cut-over PR, not here.
+- **Cost.** Linear is paid SaaS (a free tier exists); a workspace + the GitHub integration + one API key for automation are required. Provisioning steps are in `LINEAR_PM.md`.
+
+**Trigger to revisit:**
+
+- Linear's MCP/API reliability proves too flaky for agent workflows → reconsider keeping a generated in-repo snapshot as the agent-facing read surface, or revert to the flat-file backlog.
+- Cost or team changes make a different tool (or self-hosted Plane) preferable.
+- The cut-over follow-up surfaces a blocker (e.g. GitHub↔Linear sync can't preserve the `suggestion`/`area`/`severity` taxonomy) that makes full retirement unwise → keep the hybrid (Linear for humans, GitHub/backlog for agents) instead of retiring.
+
 ---
 
 ## 13. AI Corpus Architecture (v1)

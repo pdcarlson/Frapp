@@ -38,6 +38,8 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 Work is organized as **Frapp → projects → work units → GitHub issues**, tracked in the in-repo backlog at [`docs/backlog/`](docs/backlog/README.md) — the **single source of truth** for status. GitHub issues mirror the backlog; when they disagree, the repo wins and the issue is brought into line (run `/triage`; it also runs at session start). To start work, read [`docs/backlog/README.md`](docs/backlog/README.md) and pick the next unblocked unit from a project, or run `/next-task`. Use `/status` for a read-only progress dashboard. Add a new project by copying [`docs/backlog/_meta/_TEMPLATE.md`](docs/backlog/_meta/_TEMPLATE.md). Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); the backlog links out to it and never duplicates it.
 
+> **Transition in progress (ADR-16):** Frapp is adopting **Linear** as the canonical PM system and will retire this in-repo backlog — see [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md). Until the cut-over (tracked as a follow-up issue), **this backlog stays the source of truth** — keep using it as above.
+
 ## GitHub issues (the durable backlog between sessions)
 
 Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file an issue** and add it to the backlog. Issues are completed by AI agents, so write each one to be executed cold by a fresh agent.
@@ -60,7 +62,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Closes #N`, criteria met, CI green."
 
-**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `agent-ready` (fully specified, safe to hand to an agent). The Cursor "Suggestion Triage" automation files issues with `suggestion` + one `area:<x>` + one `severity:<x>` (deduped by a hidden fingerprint) — see [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `agent-ready` (fully specified, safe to hand to an agent). The Cursor "Suggestion Triage" automation files **and maintains** issues labeled `suggestion` (+ one `area:<x>` + one `severity:<x>`, deduped by a hidden fingerprint; aging ones it can't prove resolved get `stale`). It **only ever modifies `suggestion`-labeled issues it owns** — your own / internal issues are off-limits to it. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
 
 **Lifecycle.** File → add to the backlog → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. List a unit's blocking issues in its backlog project row so it can't be started until they're resolved.
 

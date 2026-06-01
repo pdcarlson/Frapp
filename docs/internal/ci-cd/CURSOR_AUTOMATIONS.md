@@ -13,8 +13,10 @@ the dashboard prompt is intentionally thin and defers to that skill.
 ## Why Cursor Automations
 
 Cursor Automations reuse infra Frapp already has (`.cursor/` rules + skills): a cloud agent
-runs on a schedule/event, audits the repo in a fresh sandbox, and files GitHub issues —
-**no GitHub Actions, no `gh` script** required.
+runs on a schedule/event, audits the repo in a fresh sandbox, **maintains the existing
+`suggestion` issues** (closes resolved, links duplicates, refreshes drift, marks stale) and
+**files new ones** — **no GitHub Actions, no `gh` script** required. It only ever modifies issues
+it owns (`label:suggestion`); everything else is read-only.
 
 ---
 
@@ -35,27 +37,34 @@ The prompt is deliberately thin and defers to the skill, so future tuning happen
 version-controlled `.cursor/skills/suggestion-triage.md` without re-pasting the dashboard.
 
 ```text
-You are the Suggestion Triage agent for the Frapp repository. On each run, perform a BROAD,
-repo-wide product and engineering review and file the findings as deduplicated GitHub issues.
-Do not modify code or open pull requests.
+You are the Suggestion Triage agent for the Frapp repository. Each run does two jobs IN ORDER, then
+stops — you never modify code or open pull requests:
 
-This is NOT a review of the most recent PR. If a merged PR triggered you, treat it as just one
-small signal — look across the whole codebase, the product spec (spec/), and the user
-experience. Cover three lenses: (1) engineering gaps, (2) product & behavior gaps grounded in
-spec/product/ and spec/behavior/, and (3) creative next steps & research. Be generalized
-and inventive, not narrow.
+(1) MAINTAIN the existing suggestion backlog. Go through the open issues labeled `suggestion` and, for
+each, close it if the code/spec proves it's resolved or obsolete, mark+link it if it duplicates another
+suggestion, refresh its body if its file/line refs have drifted, or add a `stale` label + comment if
+it's aging but you can't prove it's done. ONLY ever modify issues that carry the `suggestion` label —
+every other issue (backlog work units, epics, anything a human filed) is READ-ONLY; never edit or close
+it. Run the pre-write label gate before every write.
 
-Follow .cursor/skills/suggestion-triage.md EXACTLY — it defines the lenses, the balance rules
-(at most ~2 findings from recently-changed files; spread genuine findings across areas rather
-than clustering), the labels, the issue template, the dedup rule, and how to create/search
-issues with the gh CLI (run `export GH_TOKEN="$GITHUB_PAT"` first).
+(2) DISCOVER new high-value work. This is NOT a review of the most recent PR — treat a triggering merge
+as one small signal and look across the whole codebase, the product spec (spec/), and the user
+experience, through three lenses: engineering gaps, product & behavior gaps grounded in spec/, and
+creative next steps & research. Be generalized and inventive, not narrow.
 
-There is NO target number of findings. File an issue only when it is genuinely worth a
-maintainer's time to act on — do not pad a run to hit a count, and do not manufacture findings
-to broaden coverage. A run that files ZERO issues is a valid, expected outcome.
+Run MAINTENANCE FIRST and let it bound discovery: prefer refreshing a near-match over filing new, cap
+net-new suggestions per run (tighter when the open `suggestion` backlog is already large), keep at most
+~2 findings from recently-changed files, and treat a run that closes/merges more than it opens as a
+success. There is NO target number — filing ZERO new issues is valid and expected; never pad a run or
+manufacture findings.
 
-Before filing, skim existing open `suggestion` issues to avoid duplicates. Report findings
-grouped by severity. If nothing clears the bar, take no action and report "no new suggestions".
+Follow .cursor/skills/suggestion-triage.md EXACTLY — it defines the ownership boundary and pre-write
+label gate, the maintenance decision rules and comment templates, the lenses and net-growth budget, the
+labels, the issue template, the dedup fingerprint, and the gh CLI commands (run `export
+GH_TOKEN="$GITHUB_PAT"` first).
+
+Report what you changed grouped by action (closed / merged / refreshed / marked-stale / filed). If
+nothing clears the bar in either phase, take no action and report "no changes".
 ```
 
 
@@ -90,6 +99,7 @@ Create these once (the agent will create any missing label on first run; colors 
 | `area:product` / `area:ux` / `area:research` | `#a371f7` | Product gaps, behavior/UX gaps, and forward-looking research/next-steps. |
 | `severity:critical` / `severity:high` / `severity:medium` / `severity:low` | `#d1242f → #d4a72c` | Priority / impact (also used to rank `type:idea` items). |
 | `agent-ready` | `#1a7f37` | Fully specified, safe to hand to an agent (existing label, see `AGENTS.md`). |
+| `stale` | `#9e6a03` | Maintenance: an aging suggestion that no longer cleanly matches code/spec but can't be *proven* resolved — left open for a human / `/triage` to confirm or close. |
 
 ---
 
@@ -135,7 +145,7 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
       "memory": true,
       "secrets": { "GITHUB_PAT": "fine-grained PAT, Issues:read+write on pdcarlson/Frapp" },
       "issueCreation": "gh CLI (export GH_TOKEN=$GITHUB_PAT) — repo convention, no MCP",
-      "promptRef": "docs/internal/CURSOR_AUTOMATIONS.md#the-prompt-paste-into-the-automations-agent-instructions",
+      "promptRef": "docs/internal/ci-cd/CURSOR_AUTOMATIONS.md#the-prompt-paste-into-the-automations-agent-instructions",
       "behaviorRef": ".cursor/skills/suggestion-triage.md"
     }
   ]
@@ -159,6 +169,7 @@ or programmatic creation via the Cursor agents API. Keep it consistent with the 
 
 - Click **Run**. Confirm it opens issues titled `[suggestion] …` with `suggestion` + `area:*` + `severity:*` labels and the body template incl. the hidden `fp=` marker.
 - **Run it again.** Confirm it creates **no duplicates** (dedup works).
+- **Maintenance pass:** on a repo with existing `suggestion` issues, confirm a run closes/merges/refreshes or marks `stale` the ones that no longer match code/spec — and that it leaves **every non-`suggestion` issue untouched** (the ownership gate holds).
 - Confirm the schedule trigger shows a next-run time.
 
 ## Maintenance
