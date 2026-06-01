@@ -3,7 +3,7 @@
 How the in-repo backlog works. The backlog lives at [`docs/backlog/`](../README.md) and is the
 **single source of truth** for work status across Frapp.
 
-> **⚠️ Superseded by Linear (ADR-16), pending cut-over.** These conventions stay in force until the
+> **⚠️ Being replaced by Linear (ADR-16) — cut-over pending.** These conventions stay in force until the
 > cut-over retires this backlog; design + runbook:
 > [`docs/internal/ci-cd/LINEAR_PM.md`](../../internal/ci-cd/LINEAR_PM.md).
 

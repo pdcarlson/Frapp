@@ -101,6 +101,8 @@ Create these once (the agent will create any missing label on first run; colors 
 | `agent-ready` | `#1a7f37` | Fully specified, safe to hand to an agent (existing label, see `AGENTS.md`). |
 | `stale` | `#9e6a03` | Maintenance: an aging suggestion that no longer cleanly matches code/spec but can't be *proven* resolved — left open for a human / `/triage` to confirm or close. |
 
+> `type:<gap|improvement|idea>` is body metadata (the issue's Category line), **not** a label — don't create `type:*` labels.
+
 ---
 
 ## Deduplication
@@ -118,7 +120,8 @@ It's embedded in every issue body as a hidden marker:
 ```
 
 Before creating an issue the agent searches **open and closed** `label:suggestion` issues for the
-`fp=` string and skips on any match — so re-runs (and the merge-vs-weekly overlap) never duplicate.
+`fp=` string and skips on any match (or **refreshes** the existing issue if it's open and inaccurate —
+see the skill's maintenance pass) — so re-runs (and the merge-vs-weekly overlap) never duplicate.
 Full rules: [`.cursor/skills/suggestion-triage.md`](../../../.cursor/skills/suggestion-triage.md).
 
 ---

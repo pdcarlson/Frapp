@@ -119,7 +119,7 @@ When steps 1–6 are done, start the **cut-over** (next section).
 
 ## Cut-over (the follow-up — do NOT do it in the rails PR)
 
-Tracked as a dedicated follow-up issue. Checklist the follow-up must cover:
+Tracked as a dedicated follow-up issue (**#611**). Checklist the follow-up must cover:
 
 - Import the open GitHub issues into Linear (Linear's GitHub-issue import / the integration), preserving
   the `suggestion`/`area`/`severity`/`agent-ready`/`stale` taxonomy as Linear labels.

@@ -1,6 +1,6 @@
 ---
 name: Codebase suggestion
-about: A code-improvement suggestion (testing, code-health, performance, security, deps, DB, CI). Mirrors what the Cursor "Suggestion Triage" automation files automatically.
+about: A product or engineering suggestion (testing, code-health, performance, security, deps, DB, CI, product, UX, research). Mirrors what the Cursor "Suggestion Triage" automation files and maintains automatically.
 title: "[suggestion] "
 labels: suggestion
 assignees: ""

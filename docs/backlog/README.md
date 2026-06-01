@@ -7,7 +7,7 @@ disagree, **the repo wins** and the issue is brought into line (run `/triage`).
 > Status model (solo project): an issue's **open/closed state is its status** — no "In Review" stage,
 > no GitHub Projects board. PRs close their issue with `Closes #N`.
 
-> **⚠️ Superseded by Linear (ADR-16) — pending cut-over.** Frapp is adopting **Linear** as the canonical
+> **⚠️ Being replaced by Linear (ADR-16) — cut-over pending.** Frapp is adopting **Linear** as the canonical
 > PM system and will retire this in-repo backlog; design + runbook:
 > [`docs/internal/ci-cd/LINEAR_PM.md`](../internal/ci-cd/LINEAR_PM.md). Until the cut-over (tracked as a
 > follow-up issue), **this backlog remains the source of truth** — keep using it as described below.

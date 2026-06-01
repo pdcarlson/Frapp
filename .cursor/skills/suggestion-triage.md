@@ -35,12 +35,16 @@ re-label, comment on, re-body, mark-duplicate, or split **only those**.
   labels and confirm `suggestion` is present:
 
   ```bash
+  # Gate EVERY write on ownership — the write runs ONLY in the `&&` branch (label present):
   gh issue view <N> --repo pdcarlson/Frapp --json labels -q '.labels[].name' | grep -qx suggestion \
-    || { echo "issue #<N> is not Cursor-owned (no suggestion label) — SKIP, do not write"; }
+    && <the close / edit / comment-to-close command for #N> \
+    || { echo "SKIP #<N>: not Cursor-owned (no suggestion label) — do not write" >&2; }
   ```
 
-  No `suggestion` label ⇒ **do not write**. This is non-negotiable; it is what protects the user's own
-  project management from automated edits.
+  If the gate takes the `||` branch (prints `SKIP`), **do not run any write / close / relabel command for
+  that issue** — skip it and move on. Keep the write inside the `&&` branch so it cannot fire on a
+  non-owned issue. This is non-negotiable; it is what protects the user's own project management from
+  automated edits.
 - **Duplicate across the boundary.** If a suggestion duplicates a human/internal (non-`suggestion`)
   issue, close **your suggestion** as a duplicate of the internal one — **never touch the internal
   issue** (at most one back-reference comment on it is allowed; nothing else).
@@ -95,10 +99,10 @@ gh issue close <N> --repo pdcarlson/Frapp --reason completed \
 gh issue close <N> --repo pdcarlson/Frapp --reason "not planned" \
   --comment "Obsolete: <what changed> means this no longer applies. Closing."
 
-# Duplicate — prefer GitHub's NATIVE duplicate so the issues are formally linked:
-gh api -X PATCH repos/pdcarlson/Frapp/issues/<dupe> -f state=closed -f state_reason=duplicate >/dev/null \
+# Duplicate — use GitHub's NATIVE duplicate (supported via REST since 2024-12) so the issues are formally linked:
+gh api -X PATCH repos/pdcarlson/Frapp/issues/<dupe> -f state=closed -f state_reason=duplicate \
   && gh issue comment <dupe> --repo pdcarlson/Frapp --body "Duplicate of #<canonical> — consolidating there."
-# If this build's API rejects state_reason=duplicate, fall back to a linked not-planned close:
+# Fallback only for older GitHub Enterprise Server that predates that feature — a linked not-planned close:
 #   gh issue close <dupe> --repo pdcarlson/Frapp --reason "not planned" \
 #     --comment "Duplicate of #<canonical> — <one-line why>. Consolidating there."
 
@@ -202,7 +206,7 @@ Beyond fixing what's broken, propose where to go next — inventive but concrete
 - **Research & experiments:** metrics/instrumentation worth adding, questions to validate, A/B or
   prototype ideas, competitive/UX investigations.
 - Frame each as an **actionable first step** (a spike, a short design doc, a prototype, a metric to add)
-  — never a vague "consider improving X". Mark `type:idea` so they're easy to filter from must-fix work.
+  — never a vague "consider improving X". Label ideas `area:research` and note `type:idea` in the Category line so they're easy to filter from must-fix work.
 
 ---
 
@@ -243,6 +247,9 @@ Every issue this flow **creates** gets:
 - `area:<x>` — exactly one (table above).
 - `severity:<critical|high|medium|low>` — exactly one (priority/impact).
 - `agent-ready` — add when fully specified and safe to hand to an agent (see `AGENTS.md`).
+
+> `type:<gap|improvement|idea>` is recorded in the **body** (the Category line) — it is **not** a GitHub
+> label, so don't create `type:*` labels. To filter ideas, use the `area:research` label.
 
 Lifecycle labels this flow **applies** during maintenance:
 
@@ -372,8 +379,9 @@ issue is resolved.
 
 ## Updating this skill
 
-- Keep the area table and label list in sync with [`audit.md`](audit.md) and the labels section of
-  `AGENTS.md` / [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+- Keep the area table and label list in sync with the **authoritative label lists** — the labels
+  sections of `AGENTS.md` and [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+  (`audit.md` holds the engineering checks, not the label list.)
 - If the fingerprint scheme changes, bump the `v1` marker version so old issues aren't mistaken for new.
 - The dashboard prompt is thin and defers here; only re-paste it if the prompt block itself changes.
 </content>
