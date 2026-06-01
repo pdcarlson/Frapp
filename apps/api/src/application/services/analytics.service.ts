@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
@@ -11,6 +11,11 @@ import {
   ANALYTICS_PROVIDER,
   type IAnalyticsProvider,
 } from '../../domain/adapters/analytics.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '../../domain/repositories/member.repository.interface';
+import type { Member } from '../../domain/entities/member.entity';
 
 export interface TrackOptions {
   /**
@@ -44,6 +49,7 @@ export class AnalyticsService {
     private readonly config: ConfigService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
     @Inject(ANALYTICS_PROVIDER) private readonly provider: IAnalyticsProvider,
+    @Inject(MEMBER_REPOSITORY) private readonly members: IMemberRepository,
   ) {
     // Optional: when unset, the keying salt is empty and tracking is disabled
     // (the no-op provider is wired in that case too). getOrThrow is avoided so
@@ -100,6 +106,105 @@ export class AnalyticsService {
         error as Error,
       );
     }
+  }
+
+  /**
+   * HTTP-boundary entry for client-originated events (`POST /v1/analytics/events`).
+   * `track` is the lower-level primitive for trusted, server-originated callers
+   * (which must not be gated by membership); this method adds the authorization an
+   * untrusted client needs before delegating to it. The payload is validated first,
+   * so a content/PII event is a 400 regardless of the membership/opt-out outcome
+   * (consistent with the DTO `ValidationPipe`, which 400s before this runs).
+   *
+   *  - **With a `chapterId`:** the caller must be a member of that chapter, else
+   *    403. Stops a member of chapter A from attributing events to chapter B.
+   *    The per-chapter opt-out is then applied by `track` as usual.
+   *  - **Without a `chapterId`:** the opt-out can't be keyed directly, so resolve
+   *    the caller's memberships and suppress when they belong to chapters and
+   *    *every* one has opted out — closing the "omit `chapter_id` to bypass the
+   *    opt-out" hole. A caller with no memberships still emits (no chapter to opt
+   *    out of). This path never 403s: a chapter-less event is legitimate (e.g. the
+   *    web client before an active chapter is selected).
+   *
+   * Not a `ChapterGuard`: that guard keys off the `x-chapter-id` header and also
+   * enforces a subscription gate — neither fits this body-carried,
+   * subscription-exempt endpoint.
+   *
+   * Spec: `spec/behavior/data-retention.md` (#analytics-events-pseudonymous) — the
+   * client SDK is the first gate; this server check is defense in depth.
+   */
+  async trackFromClient(
+    eventName: string,
+    userId: string,
+    options: TrackOptions = {},
+  ): Promise<void> {
+    // Analytics off (no salt): nothing will be captured, so skip the membership
+    // work and DB hit entirely — mirrors `track`'s own guard.
+    const distinctId = this.getDistinctId(userId);
+    if (!distinctId) return;
+
+    // Validate the payload up front so a content/PII event is always rejected
+    // with a 400 — the payload being malformed is a caller error independent of
+    // whether membership/opt-out later suppresses delivery. (`track` re-validates
+    // for its own server-originated callers; the assertion is pure and cheap.)
+    assertContentFreeProperties({
+      name: eventName,
+      distinctId,
+      properties: options.properties,
+    });
+
+    if (options.chapterId) {
+      // A clean "not a member" is an authorization denial → 403. A DB error
+      // means we *can't* verify membership, so fail closed and suppress — the
+      // same posture as the opt-out lookup and the omit path below — rather than
+      // 500-ing a fire-and-forget telemetry call. Either way an unverifiable
+      // caller never emits.
+      let member: Member | null;
+      try {
+        member = await this.members.findByUserAndChapter(
+          userId,
+          options.chapterId,
+        );
+      } catch (error) {
+        this.logger.warn(
+          'analytics membership check failed; suppressing event',
+          error as Error,
+        );
+        return;
+      }
+      if (!member) {
+        throw new ForbiddenException('Not a member of this chapter');
+      }
+      await this.track(eventName, userId, options);
+      return;
+    }
+
+    // No chapter context: enforce the opt-out across the caller's memberships so
+    // it can't be sidestepped by omitting `chapter_id`. Users are typically in a
+    // single chapter (see spec/behavior/multi-tenancy.md), so this fan-out is
+    // normally one read; batching into a single query is a latent optimization.
+    try {
+      const memberships = await this.members.findByUser(userId);
+      if (memberships.length > 0) {
+        const enabled = await Promise.all(
+          memberships.map((m) => this.isChapterAnalyticsEnabled(m.chapter_id)),
+        );
+        if (enabled.every((isEnabled) => !isEnabled)) {
+          return; // every chapter the caller belongs to has opted out
+        }
+      }
+    } catch (error) {
+      // Membership resolution is best-effort like the rest of the cold path: a
+      // DB blip suppresses (fail closed) rather than 500-ing a fire-and-forget
+      // telemetry call.
+      this.logger.warn(
+        'analytics membership resolution failed; suppressing event',
+        error as Error,
+      );
+      return;
+    }
+
+    await this.track(eventName, userId, options);
   }
 
   /**

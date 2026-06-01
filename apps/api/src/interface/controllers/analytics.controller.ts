@@ -10,6 +10,7 @@ import {
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
+  ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -48,20 +49,25 @@ export class AnalyticsController {
   @Post('events')
   @ApiOperation({
     summary:
-      'Record a behavioral event. The server keys it pseudonymously and enforces the per-chapter opt-out.',
+      'Record a behavioral event. The server verifies chapter membership, keys it pseudonymously, and enforces the per-chapter opt-out.',
   })
   @ApiCreatedResponse({ type: TrackEventResponseDto })
+  @ApiForbiddenResponse({
+    description: 'Caller is not a member of the specified chapter',
+  })
   async track(
     @CurrentUser('id') userId: string,
     @Body() dto: TrackEventDto,
   ): Promise<TrackEventResponseDto> {
     try {
-      await this.analytics.track(dto.name, userId, {
+      await this.analytics.trackFromClient(dto.name, userId, {
         chapterId: dto.chapter_id,
         properties: dto.properties,
       });
     } catch (error) {
-      // Only a content/PII payload is a caller error → 400. Anything else is an
+      // Only a content/PII payload is a caller error → 400. A non-member
+      // attributing to a foreign chapter raises ForbiddenException, which (being
+      // an HttpException) propagates untouched → 403. Anything else is an
       // unexpected server fault; rethrow so Nest maps it to 500 rather than
       // masking it as a client mistake.
       if (error instanceof ContentFreePropertyError) {

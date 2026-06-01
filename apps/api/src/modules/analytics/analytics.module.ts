@@ -7,9 +7,12 @@ import { ANALYTICS_PROVIDER } from '../../domain/adapters/analytics.interface';
 import { NoopAnalyticsProvider } from '../../infrastructure/analytics/noop-analytics.provider';
 import { PosthogAnalyticsProvider } from '../../infrastructure/analytics/posthog-analytics.provider';
 import { AuthModule } from '../auth/auth.module';
+import { ChapterModule } from '../chapter/chapter.module';
 
 @Module({
-  imports: [AuthModule],
+  // ChapterModule exports MEMBER_REPOSITORY, which AnalyticsService uses to
+  // enforce chapter membership on POST /v1/analytics/events.
+  imports: [AuthModule, ChapterModule],
   controllers: [AnalyticsController],
   providers: [
     AuthSyncInterceptor,
