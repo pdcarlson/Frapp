@@ -62,7 +62,13 @@ export function evaluateGate({
   if (reviewResult === "skipped") {
     return { block: false, reason: "review job skipped (draft/fork/bot) — gate passes." };
   }
-  if (!tokenPresent) {
+  // Advisory pass for "no token configured" applies ONLY when the review job completed cleanly
+  // (`success`). A non-`success` result (cancelled by concurrency, or failed before the token step)
+  // ALSO leaves `token_present` empty — but that's an INCOMPLETE review, not a missing token, so it
+  // must fall through and be blocked unless a fresh verdict exists.
+  if (reviewResult === "success" && !tokenPresent) {
+    // Safe to return before the verdict check below: with no token the review step is skipped, so no
+    // structured_output or SHA-matched verdict comment can exist for this run.
     return { block: false, reason: "no review token configured — gate passes (advisory)." };
   }
 
