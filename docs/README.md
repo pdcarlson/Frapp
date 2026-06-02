@@ -1,12 +1,11 @@
 # Documentation index
 
-Developer guides, operator runbooks, and work tracking. Product and architecture truth lives in **[`spec/`](../spec/README.md)**.
+Developer guides and operator runbooks. Product and architecture truth lives in **[`spec/`](../spec/README.md)**; work tracking lives in **Linear** (team Frapp Live — see [`internal/ci-cd/LINEAR_PM.md`](internal/ci-cd/LINEAR_PM.md)).
 
 ## Folders
 
 | Area | Path | Use for |
 | ---- | ---- | ------- |
-| **Backlog** | [`backlog/`](backlog/README.md) | Work tracking and project status — the source of truth for what is shipped vs. queued (mirrored by GitHub issues) |
 | **Guides** | [`guides/`](guides/README.md) | Contributor docs: getting started, testing, API/database overview, env config, Docker, deployment |
 | **Internal** | [`internal/`](internal/README.md) | Operations, CI/CD, design system, mobile, quality, environment, security, services, and the design reference |
 | **Performance** | [`performance/`](performance/README.md) | Ad-hoc performance investigations and optimization notes |

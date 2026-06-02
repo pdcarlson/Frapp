@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `suggestion-triage.md`).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `linear-curator.md`, `linear-triage.md`).
 
 ## Optional agent credentials (automation / cloud sessions)
 
@@ -36,13 +36,16 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 ## Work tracking
 
-Work is organized as **Frapp → projects → work units → GitHub issues**, tracked in the in-repo backlog at [`docs/backlog/`](docs/backlog/README.md) — the **single source of truth** for status. GitHub issues mirror the backlog; when they disagree, the repo wins and the issue is brought into line (run `/triage`; it also runs at session start). To start work, read [`docs/backlog/README.md`](docs/backlog/README.md) and pick the next unblocked unit from a project, or run `/next-task`. Use `/status` for a read-only progress dashboard. Add a new project by copying [`docs/backlog/_meta/_TEMPLATE.md`](docs/backlog/_meta/_TEMPLATE.md). Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); the backlog links out to it and never duplicates it.
+Work lives in **Linear** (team **Frapp Live**, prefix **FRA-**, identifiers like `FRA-123`) — the **single source of truth** for what to work on and its status.
 
-> **Transition in progress (ADR-16):** Frapp is adopting **Linear** as the canonical PM system and will retire this in-repo backlog — see [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md). Until the cut-over (tracked as a follow-up issue), **this backlog stays the source of truth** — keep using it as above.
+> **Hard rule (non-negotiable):** **All issues are opened in Linear** (the **Triage** inbox). **Never open a GitHub issue** — not by hand, not from an automation.
+> **Closing** is most often done by the **PR that does the work** (`Fixes FRA-N`, plus `Closes #N` for a GitHub twin) — that's the common path. But agents may also **close an issue directly** when it's a duplicate, stale, or obsolete (update it or close it). Prefer closing on the **GitHub** side for any issue that has a GitHub presence so the integration syncs it back cleanly; close Linear-native issues (no GitHub twin) in Linear (Done/Canceled). Either way the two stay in sync.
 
-## GitHub issues (the durable backlog between sessions)
+How each actor reaches Linear: **Claude Code (web)** uses the **native Linear MCP** injected by the web environment (the path `/next` uses). **Cursor automations run headless with no Linear MCP**, so they use a **`LINEAR_API_KEY`** against Linear's GraphQL API (see [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md)). Epics are Linear **Projects**; new work lands in **Triage** before it's accepted into the Backlog. To start work, run `/next` — it pulls the top-priority unblocked Backlog issue, completes it, and keeps Linear in sync. Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); Linear issues link out to it and never duplicate it. Design + policy: [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md); the decision is ADR-16 in [`spec/architecture/README.md`](spec/architecture/README.md).
 
-Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file an issue** and add it to the backlog. Issues are completed by AI agents, so write each one to be executed cold by a fresh agent.
+## Filing follow-up work (in Linear)
+
+Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file it as a Linear issue** (`save_issue` into **Triage**, team Frapp Live). Issues are completed by AI agents, so write each one to be executed cold by a fresh agent.
 
 **When to file:**
 
@@ -52,19 +55,19 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - A bug or security hole found outside the current scope.
 - Cross-cutting prerequisites or blockers.
 
-**Don't file** for trivial nits you can fix in the current PR (just fix them), or duplicates — search open issues first (`list_issues` / search) before creating.
+**Don't file** for trivial nits you can fix in the current PR (just fix them), or duplicates — search Linear first (`list_issues` / search) before creating.
 
 **How to write one (so an agent can execute it):**
 
-- **Meta block:** priority (P0–P2), what it blocks, originating PR/chunk, suggested labels.
+- **Meta block:** Linear **Priority** (Urgent/High/Medium/Low), what it blocks, originating PR, suggested `area:<x>` label / Project.
 - **Problem/context:** what's wrong and why it matters, with exact file paths + line refs.
 - **Acceptance criteria:** an objectively verifiable checkbox list.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
-- **Definition of done:** "PR linked with `Closes #N`, criteria met, CI green."
+- **Definition of done:** "PR linked with `Fixes FRA-N`, criteria met, CI green."
 
-**Labels.** Existing: `bug`, `enhancement`, `data`, `good first issue`. Create and use as the project grows: `security` (P0 cross-tenant / auth), `ci`, `blocked`, `agent-ready` (fully specified, safe to hand to an agent). The Cursor "Suggestion Triage" automation files **and maintains** issues labeled `suggestion` (+ one `area:<x>` + one `severity:<x>`, deduped by a hidden fingerprint; aging ones it can't prove resolved get `stale`). It **only ever modifies `suggestion`-labeled issues it owns** — your own / internal issues are off-limits to it. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+**Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two Cursor automations maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
 
-**Lifecycle.** File → add to the backlog → an agent picks it up → branch (`claude/issue-NN-<slug>`) → PR with `Closes #NN` → merge closes the issue. List a unit's blocking issues in its backlog project row so it can't be started until they're resolved.
+**Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
 
 ## Services and ports
 
@@ -120,7 +123,8 @@ CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testi
 | Web / landing / UI      | `.cursor/skills/ui-development.md`          |
 | Tests / verification    | `.cursor/skills/testing.md`                 |
 | Audits / quality        | `.cursor/skills/audit.md`                   |
-| Suggestion triage       | `.cursor/skills/suggestion-triage.md`       |
+| Linear issue curator (Cursor) | `.cursor/skills/linear-curator.md`    |
+| Linear triage (Cursor)  | `.cursor/skills/linear-triage.md`           |
 | Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
 
 Cursor rules under `.cursor/rules/` point at these same skill files.

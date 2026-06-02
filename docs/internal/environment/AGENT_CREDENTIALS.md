@@ -24,6 +24,7 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 | `RENDER_API_KEY` | Render API |
 | `VERCEL_API_KEY` | Vercel API |
 | `SUPABASE_API_KEY` | Supabase Management API |
+| `LINEAR_API_KEY` | Linear personal API key — used by the **Cursor** issue automations (curator + triage) to read/write Linear via the GraphQL API, since the Cursor headless environment has no Linear MCP. Header `Authorization: <key>` (**no** `Bearer`). Stored as a Cursor cloud-agent secret; also usable by non-MCP scripts. Claude-web reaches Linear via its injected MCP, not this key. See [`../ci-cd/CURSOR_AUTOMATIONS.md`](../ci-cd/CURSOR_AUTOMATIONS.md). |
 
 > **Canonical names & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT` — **not**
 > `GITHUB_TOKEN` (the GitHub Actions runtime token, which lacks branch-administration

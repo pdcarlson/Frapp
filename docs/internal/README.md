@@ -18,5 +18,5 @@ Operations, infrastructure, agent/CI reference, and design-system guidance. Grou
 | Services | [`services/`](services/) | per-service performance notes |
 | Design reference | [`design-reference/`](design-reference/) | visual prototype bundle (palette, JSX, screenshots) |
 
-Work status is tracked in the in-repo backlog at [`../backlog/`](../backlog/README.md), not here.
+Work status is tracked in **Linear** (team Frapp Live — see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md)), not here.
 Developer-facing guides live in [`../guides/`](../guides/README.md).

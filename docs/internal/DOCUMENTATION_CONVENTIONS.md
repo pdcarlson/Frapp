@@ -13,10 +13,10 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
    *right* one.
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
-   removed. Durable facts go in the canonical doc; ephemeral work goes in a GitHub issue / the backlog.
-4. **Work status is not a doc.** It lives in the in-repo backlog at [`../backlog/`](../backlog/README.md).
-   A new initiative → copy [`../backlog/_meta/_TEMPLATE.md`](../backlog/_meta/_TEMPLATE.md) into
-   `docs/backlog/projects/`. Don't track status in `spec/`.
+   removed. Durable facts go in the canonical doc; ephemeral work goes into **Linear** (file a Triage issue).
+4. **Work status is not a doc.** It lives in **Linear** (team **Frapp Live**), reached via the native
+   Linear MCP — see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md). A new initiative → a Linear **Project**.
+   Don't track status in `docs/` or `spec/`.
 5. **One canonical place per fact.** Elsewhere, link to it (path + heading). If two docs must
    summarize, one paragraph max, then link out.
 
@@ -40,7 +40,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Visual prototype reference | `docs/internal/design-reference/` |
 | Per-service performance notes | `docs/internal/services/` |
-| Work status / backlog | `docs/backlog/` |
+| Work status / planning | **Linear** (team Frapp Live) — not a doc; see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) |
 
 ## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
@@ -57,14 +57,8 @@ them. Pick the **relevant** canonical home above:
 Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`spec/` and still need a
 `docs/` or `spec/` change in the same PR when edited.
 
-> **PM transition (ADR-16):** Frapp is adopting **Linear** as the canonical PM system and will retire
-> the in-repo backlog. Rules #4 (work-status lives in `docs/backlog/`) and the backlog rows below stay in
-> force **until the cut-over**; the integration design + runbook live in
-> [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md).
-
 ## See also
 
 - Folder map: [`docs/README.md`](../README.md)
 - Docs gate behavior: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)
-- Backlog rules: [`../backlog/_meta/conventions.md`](../backlog/_meta/conventions.md)
-- PM transition to Linear: [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)
+- Work tracking (Linear): [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)

@@ -1,0 +1,18 @@
+---
+description: Triaging the Linear inbox — set priority, bucket into Projects, dedup, promote to Backlog (the Cursor "Linear Triage" automation, or doing it by hand)
+globs:
+  - ".cursor/skills/linear-triage.md"
+  - "docs/internal/ci-cd/CURSOR_AUTOMATIONS.md"
+alwaysApply: false
+---
+
+# Linear Triage (automation 2 of 2)
+
+Read `.cursor/skills/linear-triage.md` before running. Runs ~1h after the curator pass and keeps the Linear board healthy — all **in Linear**, via the `LINEAR_API_KEY` (auth/helper/IDs in `docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`).
+
+Key points:
+- **Main job — process the Triage inbox:** for each Triage item, dedup, set **Project**, set **Priority** (required to leave Triage), optionally set an estimate, add relations, then **promote** clearly-actionable work to **Backlog** so `/next` sees it.
+- **Organize broadly, destroy narrowly:** setting project/priority/estimate/relations on any Triage item is fine; but Cancel / mark-duplicate / re-body only `suggestion`-owned issues (run the pre-write label gate). Never cancel or re-body a human-filed issue — leave it in Triage with a comment instead.
+- **Don't auto-promote a real human decision** — surface it for a human; only auto-promote suggestion-owned or clearly well-formed items.
+- **Backlog grooming (Pass B) — a real job, not a token sweep:** most work lives in Backlog, not Triage, so each run **projectify + prioritize** a batch (~25) of projectless/unprioritized `suggestion`-owned Backlog issues, chipping away at the pile; flag obvious `stale`. On human/planning issues, only fill an *absent* project/priority. Never restructure epics/Projects.
+- **Read-only on code** — never edit files, open PRs, or create GitHub issues.

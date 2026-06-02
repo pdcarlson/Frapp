@@ -14,4 +14,4 @@ Frapp is a multi-tenant SaaS platform that replaces the disjointed tools fratern
 | Core domains and module catalog                      | [`modules.md`](modules.md)                 |
 | Chapter creation, lifecycle, invites                 | [`onboarding.md`](onboarding.md)           |
 
-Chat-rework delivery (chunk status) is tracked in the backlog at [`docs/backlog/projects/chat-rework.md`](../../docs/backlog/projects/chat-rework.md), not in this spec.
+Chat-rework delivery (what's shipped vs. queued) is tracked in **Linear** (team Frapp Live — see [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)), not in this spec.
