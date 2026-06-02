@@ -7,6 +7,11 @@ disagree, **the repo wins** and the issue is brought into line (run `/triage`).
 > Status model (solo project): an issue's **open/closed state is its status** — no "In Review" stage,
 > no GitHub Projects board. PRs close their issue with `Closes #N`.
 
+> **⚠️ Being replaced by Linear (ADR-16) — cut-over pending.** Frapp is adopting **Linear** as the canonical
+> PM system and will retire this in-repo backlog; design + runbook:
+> [`docs/internal/ci-cd/LINEAR_PM.md`](../internal/ci-cd/LINEAR_PM.md). Until the cut-over (tracked as a
+> follow-up issue), **this backlog remains the source of truth** — keep using it as described below.
+
 ## Projects
 
 | Project | Status | Epic | Progress |
@@ -15,6 +20,7 @@ disagree, **the repo wins** and the issue is brought into line (run `/triage`).
 | [Analytics](projects/analytics.md) | active | [#431](https://github.com/pdcarlson/Frapp/issues/431) | pipeline (#464) shipped; opt-out toggle (#466) shipped (Settings → Privacy); membership + opt-out enforcement (#551) shipped; salt mgmt (#465, ops provisioning) queued |
 | [Pricing & billing](projects/billing.md) | queued | [#429](https://github.com/pdcarlson/Frapp/issues/429) | 0 of 4 units (blocked on pricing analysis) |
 | [Agent infrastructure](projects/agent-infra.md) | active | [#401](https://github.com/pdcarlson/Frapp/issues/401) | research done (4 spikes closed); ADR-12 landed (#401 closed); PGlite RLS-smoke CI job shipped (#531, subsumes #356/#360); #532/#533 + #423 follow-up queued |
+| [PM → Linear](projects/pm-linear.md) | active | — (ADR-16) | Cursor-triage maintenance + Linear rails (#610) in progress; cut-over (#611) + Cursor-intake decision (#612) queued |
 
 Un-projected work lives in [`_meta/general.md`](_meta/general.md) — includes the AI (#427), Vault
 (#428), Save/Pin+Bookmark (#430), and Spec-maintenance (#432) feature epics plus the general backlog.

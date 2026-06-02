@@ -3,6 +3,10 @@
 How the in-repo backlog works. The backlog lives at [`docs/backlog/`](../README.md) and is the
 **single source of truth** for work status across Frapp.
 
+> **⚠️ Being replaced by Linear (ADR-16) — cut-over pending.** These conventions stay in force until the
+> cut-over retires this backlog; design + runbook:
+> [`docs/internal/ci-cd/LINEAR_PM.md`](../../internal/ci-cd/LINEAR_PM.md).
+
 ## Model
 
 **Frapp → projects → work units → GitHub issues.**
@@ -21,7 +25,8 @@ issue to match the backlog. The `/triage` command (and the SessionStart hook) re
 direction automatically.
 
 Status model (solo project): an issue's **open/closed state is its status**. There is no "In Review"
-stage and no GitHub Projects board. PRs close their issue with `Closes #N`.
+stage and no GitHub Projects board. PRs close their issue with `Closes #N`. *(Being reversed by ADR-16 —
+Linear becomes the canonical board; this rule holds until the cut-over. See `LINEAR_PM.md`.)*
 
 ## Adding a new project
 
