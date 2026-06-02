@@ -94,6 +94,11 @@ After any rollback event:
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
 * **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. The server reads it defensively and treats a missing/false value as "analytics enabled".
 
+## Rollback `confirm_task_completion` RPC
+* **Migration**: `20260602210000_add_confirm_task_completion_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS confirm_task_completion(uuid, uuid);`
+* **Note**: Additive function only — dropping it removes the atomic confirm path but loses no data. The API calls it from `SupabaseTaskRepository.confirmCompletionAtomic`, so a forward-fix (rather than a bare drop) is required to keep task confirmation working: deploy an API revision that reverts to the prior two-write path before dropping the function.
+
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`
