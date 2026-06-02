@@ -3,10 +3,10 @@
 > Use when running the Cursor **"Linear Triage"** automation (or by hand). It runs **after** the
 > [`linear-curator.md`](linear-curator.md) creation pass (≈1h later) and keeps the Linear board healthy.
 > Triage is **not only the Triage inbox** — most work lives in the **Backlog**, so this automation does
-> two jobs: **(A) process the Triage inbox**, and **(B) groom the existing Backlog** (projectify and
-> prioritize what's already there). Both feed [`/next`](../../.claude/commands/next.md) clean, ranked,
-> bucketed work. **Read-only on code** — this automation only organizes Linear; it never writes code,
-> opens PRs, or creates GitHub issues.
+> two jobs: **(A) process the Triage inbox**, and **(B) groom the existing Backlog** — get priorities
+> right, and projectify only the suggestions that *clearly* fit a Project. Both feed
+> [`/next`](../../.claude/commands/next.md) clean, ranked work. **Read-only on code** — this automation
+> only organizes Linear; it never writes code, opens PRs, or creates GitHub issues.
 
 All reads/writes go to **Linear** via the `LINEAR_API_KEY` — see
 [Linear API access](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md#linear-api-access-shared-by-both-automations)
@@ -49,25 +49,31 @@ Pull everything in the **Triage** state for team Frapp Live. For each:
 
 ---
 
-## Pass B — Backlog grooming (a real job, not a token sweep)
+## Pass B — Backlog grooming (priority first; projects only when they fit)
 
-Most work lives in the **Backlog**, and much of it (especially the AI-filed `suggestion` backlog) lands
-**projectless and unprioritized**. Each run, groom a meaningful batch so the projectless pile steadily
-shrinks and `/next` always has clean, ranked, bucketed work:
+Most work lives in the **Backlog**, and much of the AI-filed `suggestion` backlog lands unprioritized.
+`/next` ranks the Backlog **purely by Priority and ignores projects**, so the most valuable backlog job is
+**getting priorities right** — that's what keeps genuine work from being buried under suggestions.
+Projects are for *board cleanliness*, so assign them **sparingly**. Each run, groom a batch (~25 issues):
 
-- **Projectify (the main backlog job):** for `suggestion`-owned Backlog issues with **no Project**, read
-  the issue and assign the right **Project** (Chat rework / AI features / Pricing & billing / Analytics /
-  Platform / Security) from its topic. Keep chipping away at the projectless pile every run.
-- **Prioritize:** set a **Priority** on any `suggestion`-owned Backlog issue missing one.
-- **Estimate:** add a Fibonacci estimate when scope is clear (optional).
+- **Prioritize (the main job):** set a sensible **Priority** on any `suggestion`-owned Backlog issue
+  missing one, and fix obviously-wrong ones. **Don't inflate** — a routine suggestion is Medium/Low; High
+  is for genuine high-impact (security, data-loss, broken core flows). Correct priority is what protects
+  real work in `/next`.
+- **Projectify ONLY clear fits:** assign a **Project** to a suggestion **only when it unambiguously
+  belongs** to an active project's scope (e.g. a chat-rework gap → Chat rework). **Leave general,
+  cross-cutting, infra, or speculative suggestions projectless — most suggestions stay projectless, and
+  that's correct.** Never force-bucket to "clear the pile." For a `suggestion`-owned issue already sitting
+  in a project it doesn't fit, you may **clear** that project.
+- **Estimate:** optional Fibonacci estimate when scope is clear.
 - **Stale / dups:** add `stale` to obvious aging `suggestion`s the curator missed; cancel/dedup only
   `suggestion`-owned issues, and only with proof.
-- **Batch budget:** process up to ~**25** Backlog issues per run so the pile shrinks steadily without one
-  giant run — Memory lets the next run continue where this one left off.
-- **Ownership:** on human/planning issues, at most fill an *absent* project/priority — never re-bucket,
-  re-prioritize, cancel, or re-body them. Don't restructure epics/Projects.
+- **Batch budget:** ~**25** Backlog issues reviewed per run; Memory lets the next run continue.
+- **Ownership:** on human/planning issues, only fill an *absent* priority — never re-bucket, re-prioritize,
+  cancel, or re-body them. Don't restructure epics/Projects.
 
-Goal: over a handful of runs, the projectless `suggestion` backlog gets fully bucketed and ranked.
+Goal: a Backlog where every item has a **sane Priority**, and **only genuinely-scoped** suggestions sit in
+Projects (the rest stay projectless by design).
 
 ---
 

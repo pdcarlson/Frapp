@@ -108,6 +108,8 @@ Every issue this flow **creates**:
 - State = **Triage** (intake; the triage automation prioritizes and buckets it).
 - Labels: **`suggestion`** (always — the ownership/dedup/lifecycle anchor) + exactly one **`area:<x>`**.
 - **Priority** set (1 Urgent…4 Low) from impact — Linear requires a priority to leave Triage, so set it now.
+  **Don't inflate:** a routine suggestion is Medium/Low; reserve High/Urgent for genuine high-impact
+  (security, data-loss, broken core flows). `/next` ranks by Priority, so inflated suggestions bury real work.
 - Optional `projectId` when the idea clearly belongs to an existing Project (Lens 3).
 - Description in the template below, ending with the hidden `fp=` dedup marker.
 
