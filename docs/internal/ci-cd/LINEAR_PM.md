@@ -53,8 +53,11 @@ committed file would double-register it. The Cursor automations don't use it (th
 
 ## Opening and closing work (Linear ↔ GitHub)
 
-Issues are **opened in Linear** and **closed via GitHub PRs**; Linear's GitHub integration (the GitHub App
-on `pdcarlson/Frapp`) keeps linked issues/PRs in sync (status, branch, comments, assignee).
+Issues are **opened in Linear** (never GitHub). The **common** close path is the **PR that does the work**;
+Linear's GitHub integration (the GitHub App on `pdcarlson/Frapp`) keeps linked issues/PRs in sync (status,
+branch, comments, assignee). Agents may also **close an issue directly** — as a duplicate, stale, or
+obsolete — without a PR; prefer closing on the **GitHub** side when the issue has a GitHub presence (sync
+carries it to Linear), and close Linear-native issues in Linear (Done/Canceled).
 
 - A **Linear-native** issue is closed by a PR with the magic word **`Fixes FRA-N`** (also
   `Closes`/`Resolves FRA-N`) in the PR title/body — on merge, Linear transitions `FRA-N` to **Done**.
