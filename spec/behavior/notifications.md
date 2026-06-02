@@ -53,6 +53,7 @@ Tapping the notification opens the app directly to the relevant content. If the 
 
 - The mobile preferences screen (`apps/mobile/app/(tabs)/preferences.tsx`) hydrates from AsyncStorage immediately for offline reads, then reconciles with the server via `useUserSettings` and `useNotificationPreferences` (from `@repo/hooks`) once an auth token is present in `expo-secure-store`.
 - DM-alerts toggle maps to category `chat`; event-reminders toggle maps to category `events` (`PATCH /v1/notifications/preferences`).
+- Notification preferences are chapter-scoped per the multi-tenancy invariant: reading (`GET /v1/notifications/preferences`) or writing (`PATCH /v1/notifications/preferences`) preferences for a `chapter_id` the caller is not an active member of returns `403 Forbidden`. The chapter here is supplied by the request (query/body), so membership is verified explicitly in the service rather than relying on the resolved active chapter.
 - Quiet-hours toggle ON `PATCH`es `/v1/settings` with the device timezone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) and the 22:00/08:00 default window; toggle OFF `PATCH`es `null` for all three quiet-hour fields.
 - When no auth token is present, all toggles persist locally only and sync state surfaces as "cached" so the UI doesn't claim server enforcement.
 

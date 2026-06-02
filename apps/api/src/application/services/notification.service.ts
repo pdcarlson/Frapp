@@ -1,4 +1,10 @@
-import { Inject, Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { NOTIFICATION_REPOSITORY } from '../../domain/repositories/notification.repository.interface';
 import type { INotificationRepository } from '../../domain/repositories/notification.repository.interface';
 import { PUSH_TOKEN_REPOSITORY } from '../../domain/repositories/notification.repository.interface';
@@ -193,6 +199,7 @@ export class NotificationService {
     userId: string,
     chapterId: string,
   ): Promise<NotificationPreference[]> {
+    await this.assertChapterMembership(userId, chapterId);
     return this.preferenceRepo.findByUserAndChapter(userId, chapterId);
   }
 
@@ -202,12 +209,32 @@ export class NotificationService {
     category: string,
     isEnabled: boolean,
   ): Promise<NotificationPreference> {
+    await this.assertChapterMembership(userId, chapterId);
     return this.preferenceRepo.upsert({
       user_id: userId,
       chapter_id: chapterId,
       category,
       is_enabled: isEnabled,
     });
+  }
+
+  /**
+   * Enforce the multi-tenancy invariant on chapter-scoped preference access:
+   * a user may only read or write notification preferences for a chapter they
+   * are an active member of. The chapter here comes from the request query/body
+   * rather than the resolved active chapter, so it must be verified explicitly.
+   */
+  private async assertChapterMembership(
+    userId: string,
+    chapterId: string,
+  ): Promise<void> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!member) {
+      throw new ForbiddenException('You are not a member of this chapter');
+    }
   }
 
   async getSettings(userId: string): Promise<UserSettings | null> {

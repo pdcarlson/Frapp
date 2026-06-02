@@ -146,7 +146,7 @@ describe('RbacService', () => {
     mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
     mockRoleRepo.update.mockResolvedValue(updated);
 
-    const result = await service.update('role-1', {
+    const result = await service.update('role-1', 'ch-1', {
       name: 'Custom Updated',
       permissions: ['members:view', 'members:invite'],
     });
@@ -156,6 +156,28 @@ describe('RbacService', () => {
       permissions: ['members:view', 'members:invite'],
     });
     expect(result).toEqual(updated);
+  });
+
+  it('should reject updating a role from another chapter', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-other',
+      name: 'Custom',
+      permissions: ['members:view'],
+      is_system: false,
+      display_order: 10,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(role);
+
+    await expect(
+      service.update('role-1', 'ch-1', { name: 'Hijacked' }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      service.update('role-1', 'ch-1', { name: 'Hijacked' }),
+    ).rejects.toThrow('Role not in current chapter');
+    expect(mockRoleRepo.update).not.toHaveBeenCalled();
   });
 
   it('should reject rename to existing name', async () => {
@@ -182,12 +204,12 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.findByChapterAndName.mockResolvedValue(existingOther);
 
-    await expect(service.update('role-1', { name: 'Other' })).rejects.toThrow(
-      ConflictException,
-    );
-    await expect(service.update('role-1', { name: 'Other' })).rejects.toThrow(
-      'Role name already exists in this chapter',
-    );
+    await expect(
+      service.update('role-1', 'ch-1', { name: 'Other' }),
+    ).rejects.toThrow(ConflictException);
+    await expect(
+      service.update('role-1', 'ch-1', { name: 'Other' }),
+    ).rejects.toThrow('Role name already exists in this chapter');
   });
 
   it('should delete custom role', async () => {
@@ -204,9 +226,31 @@ describe('RbacService', () => {
     mockRoleRepo.findById.mockResolvedValue(role);
     mockRoleRepo.delete.mockResolvedValue(undefined);
 
-    await service.delete('role-1');
+    await service.delete('role-1', 'ch-1');
 
     expect(mockRoleRepo.delete).toHaveBeenCalledWith('role-1');
+  });
+
+  it('should reject deleting a role from another chapter', async () => {
+    const role: Role = {
+      id: 'role-1',
+      chapter_id: 'ch-other',
+      name: 'Custom',
+      permissions: [],
+      is_system: false,
+      display_order: 0,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(role);
+
+    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+      'Role not in current chapter',
+    );
+    expect(mockRoleRepo.delete).not.toHaveBeenCalled();
   });
 
   it('should prevent deletion of system roles', async () => {
@@ -222,8 +266,10 @@ describe('RbacService', () => {
     };
     mockRoleRepo.findById.mockResolvedValue(role);
 
-    await expect(service.delete('role-1')).rejects.toThrow(ForbiddenException);
-    await expect(service.delete('role-1')).rejects.toThrow(
+    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+    await expect(service.delete('role-1', 'ch-1')).rejects.toThrow(
       'Cannot delete system roles',
     );
     expect(mockRoleRepo.delete).not.toHaveBeenCalled();
