@@ -51,9 +51,10 @@ committed file would double-register it. The Cursor automations don't use it (th
 
 ---
 
-## Sync direction and closing work (GitHub → Linear)
+## Opening and closing work (Linear ↔ GitHub)
 
-Sync is **unidirectional: GitHub → Linear** (the GitHub App is installed on `pdcarlson/Frapp`).
+Issues are **opened in Linear** and **closed via GitHub PRs**; Linear's GitHub integration (the GitHub App
+on `pdcarlson/Frapp`) keeps linked issues/PRs in sync (status, branch, comments, assignee).
 
 - A **Linear-native** issue is closed by a PR with the magic word **`Fixes FRA-N`** (also
   `Closes`/`Resolves FRA-N`) in the PR title/body — on merge, Linear transitions `FRA-N` to **Done**.
