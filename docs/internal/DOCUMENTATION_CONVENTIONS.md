@@ -13,7 +13,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
    *right* one.
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
-   removed. Durable facts go in the canonical doc; ephemeral work goes in a GitHub issue / the backlog.
+   removed. Durable facts go in the canonical doc; ephemeral work goes into **Linear** (file a Triage issue).
 4. **Work status is not a doc.** It lives in **Linear** (team **Frapp Live**), reached via the native
    Linear MCP — see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md). A new initiative → a Linear **Project**.
    Don't track status in `docs/` or `spec/`.

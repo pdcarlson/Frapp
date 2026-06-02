@@ -28,7 +28,7 @@ Per **ADR-16** ([`LINEAR_PM.md`](LINEAR_PM.md)), Linear is the canonical tracker
 confirmed that a Cursor **headless background** agent has **no Linear MCP server** and gets no Linear access
 for free — so these automations authenticate with a **`LINEAR_API_KEY`** (added to Cursor's cloud-agent
 secrets) and talk to Linear's **GraphQL API** directly. (If a future Cursor build exposes a Linear MCP to
-background agents with that key, the skills are transport-agnostic and can use it — what matters is the
+background agents, the skills are transport-agnostic and can use it instead — what matters is the
 write lands in Linear.)
 
 ---

@@ -11,7 +11,7 @@ alwaysApply: false
 Read `.cursor/skills/linear-curator.md` before running. Each run **maintains** the existing `suggestion` issues, then **discovers** new ones — all **in Linear**, never GitHub.
 
 Key points:
-- **Issues live in Linear. Never create a GitHub issue.** Create/update via the `LINEAR_API_KEY` against the Linear GraphQL API (auth, helper, ID cache in `docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`). Transport-agnostic — a Linear MCP with the key is fine too.
+- **Issues live in Linear. Never create a GitHub issue.** Create/update via the `LINEAR_API_KEY` against the Linear GraphQL API (auth, helper, ID cache in `docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`). Transport-agnostic — if a Linear MCP is available in your environment, use it instead of the GraphQL API; the write just needs to land in Linear.
 - **Ownership boundary (hard rule):** only ever cancel / relabel / re-body / comment / set-priority on issues carrying the `suggestion` label. Every other issue (epics, Projects, human-filed) is READ-ONLY. Run the pre-write label gate (read the issue's labels) before any write.
 - **Maintenance first:** set **Done** for suggestions the code/spec *proves* resolved, **Canceled** for obsolete/duplicate (with a `duplicate` relation), refresh drifted descriptions, add `stale` (don't close) when you can't prove resolution. Close only what you can cite.
 - **Read-only on code** — issues only. Never edit files, push branches, or open PRs.

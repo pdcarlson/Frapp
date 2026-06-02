@@ -53,6 +53,9 @@ fi
 
 # Emit as SessionStart additionalContext so the agent sees it at session start.
 # Only emit when there's something to say (e.g. the cloud-sandbox bringup status).
+# NOTE: msg starts "" and the only contributor below is STARTING_MSG, which is deliberately
+# space-prefixed; ${msg# } strips that single leading space. If you add a branch that sets msg
+# to a non-space-prefixed value, drop the `# ` or you'll lose a real first character.
 if [ -n "$msg" ]; then
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' \
     "$(printf '%s' "${msg# }" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')"

@@ -26,9 +26,9 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
    pre-split when it's genuinely two unrelated efforts; if an issue turns out bigger mid-flight, ship
    the coherent slice you can verify and **file self-contained follow-ups** into **Triage**
    (`save_issue` with state Triage, and set a **Priority** — Linear requires one to leave Triage) for the rest.
-4. Verify the chosen issue against current code and the canonical spec; research best practices. Fix
-   only if valid. If already resolved, set it **Done** (and Cancel duplicates via `save_issue`
-   state→Canceled, `duplicateOf` the canonical). If issue and spec conflict, the spec wins. Use
+4. Verify the chosen issue against current code and the canonical spec; research best practices. Fix only if valid. If already resolved, set it **Done** — if it has a GitHub twin, close that twin on
+   GitHub so the integration syncs the closure (Linear→GitHub close-sync is less reliable than the reverse).
+   Cancel duplicates via `save_issue` state→Canceled, `duplicateOf` the canonical. If issue and spec conflict, the spec wins. Use
    AskUserQuestion for real decisions. **Delegate** independent research and self-contained
    implementation chunks to sub-agents.
 5. Keep Linear in sync as you go (there is no backlog file anymore):

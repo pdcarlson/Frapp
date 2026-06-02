@@ -41,7 +41,7 @@ Linear (canonical: planning, status, board, Triage intake)
 | Actor | Reaches Linear via | Notes |
 | --- | --- | --- |
 | **Claude Code** (web) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
-| **Cursor automations** (headless) | **`LINEAR_API_KEY` → Linear GraphQL API** | A probe proved the Cursor *background* environment has **no Linear MCP** and no Linear creds, so the two automations authenticate with a `LINEAR_API_KEY` (a Cursor cloud-agent secret) against `https://api.linear.app/graphql`. Transport-agnostic — if a Cursor build later exposes a Linear MCP to background agents with that key, the skills can use it. See [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md). |
+| **Cursor automations** (headless) | **`LINEAR_API_KEY` → Linear GraphQL API** | A probe proved the Cursor *background* environment has **no Linear MCP** and no Linear creds, so the two automations authenticate with a `LINEAR_API_KEY` (a Cursor cloud-agent secret) against `https://api.linear.app/graphql`. Transport-agnostic — if a Cursor build later exposes a Linear MCP to background agents, the skills can use it instead. See [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md). |
 | **Cursor** (interactive IDE) | Cursor's native Linear integration / MCP | For a human in the IDE; not the automation path. |
 | **GitHub** | Linear's **native GitHub integration** (the GitHub App) | PR/branch/status sync; PRs close issues via `Fixes FRA-N` / `Closes #N`. |
 
