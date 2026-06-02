@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   parsePollArgs,
   parseAnnounceArgs,
+  parseEventArgs,
   parsePointsArgs,
   parseTaskArgs,
   tokenizeQuotedArgs,
@@ -245,6 +246,88 @@ describe("parseTaskArgs", () => {
 
   it("returns an error on an unterminated quote", () => {
     const r = parseTaskArgs('"Task @alice 2026-06-15');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/quote/i);
+  });
+});
+
+describe("parseEventArgs", () => {
+  it("parses name, date, time range, location, and points", () => {
+    const r = parseEventArgs(
+      '"Spring Formal" 2026-06-12 20:00-22:00 Chapter House points=15',
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toEqual({
+      name: "Spring Formal",
+      date: "2026-06-12",
+      startTime: "20:00",
+      endTime: "22:00",
+      location: "Chapter House",
+      pointValue: 15,
+    });
+  });
+
+  it("treats location and points as optional", () => {
+    const r = parseEventArgs('"Meeting" 2026-06-12 18:00-19:00');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.location).toBeNull();
+    expect(r.value.pointValue).toBeNull();
+  });
+
+  it("accepts points= anywhere in the tail and joins the rest as location", () => {
+    const r = parseEventArgs('"Mixer" 2026-06-12 20:00-22:00 points=5 The Quad');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.pointValue).toBe(5);
+    expect(r.value.location).toBe("The Quad");
+  });
+
+  it("accepts a single-digit hour", () => {
+    const r = parseEventArgs('"Breakfast" 2026-06-12 8:00-9:30');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.startTime).toBe("8:00");
+    expect(r.value.endTime).toBe("9:30");
+  });
+
+  it("rejects an empty name", () => {
+    expect(parseEventArgs('"" 2026-06-12 20:00-22:00').ok).toBe(false);
+  });
+
+  it("rejects a missing or malformed date", () => {
+    expect(parseEventArgs('"E" 20:00-22:00').ok).toBe(false);
+    expect(parseEventArgs('"E" 06/12/2026 20:00-22:00').ok).toBe(false);
+    expect(parseEventArgs('"E" 2026-02-30 20:00-22:00').ok).toBe(false);
+  });
+
+  it("rejects a missing or malformed time range", () => {
+    expect(parseEventArgs('"E" 2026-06-12').ok).toBe(false);
+    expect(parseEventArgs('"E" 2026-06-12 2000-2200').ok).toBe(false);
+    expect(parseEventArgs('"E" 2026-06-12 25:00-26:00').ok).toBe(false);
+  });
+
+  it("rejects an end at or before the start", () => {
+    expect(parseEventArgs('"E" 2026-06-12 22:00-20:00').ok).toBe(false);
+    expect(parseEventArgs('"E" 2026-06-12 20:00-20:00').ok).toBe(false);
+  });
+
+  it("rejects a negative or non-integer points value", () => {
+    expect(parseEventArgs('"E" 2026-06-12 20:00-22:00 points=-1').ok).toBe(
+      false,
+    );
+    expect(parseEventArgs('"E" 2026-06-12 20:00-22:00 points=2.5').ok).toBe(
+      false,
+    );
+    expect(parseEventArgs('"E" 2026-06-12 20:00-22:00 points=abc').ok).toBe(
+      false,
+    );
+  });
+
+  it("returns an error on an unterminated quote", () => {
+    const r = parseEventArgs('"Formal 2026-06-12 20:00-22:00');
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toMatch(/quote/i);

@@ -115,13 +115,14 @@ export interface SendMessageInput {
 }
 
 /**
- * Kinds that assert a server-side side effect (a ledger write, a created task,
- * an audit row). A client must never post these directly — only a trusted
- * server caller may, via `SendMessageInput.system_originated`. `loading` stays
- * client-postable: it is the optimistic placeholder for the heavy-command
+ * Kinds that assert a server-side side effect (a ledger write, a created task
+ * or event, an audit row). A client must never post these directly — only a
+ * trusted server caller may, via `SendMessageInput.system_originated`. `loading`
+ * stays client-postable: it is the optimistic placeholder for the heavy-command
  * pattern.
  */
 const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
+  'event',
   'points',
   'task',
   'system_audit',

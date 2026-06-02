@@ -21,7 +21,10 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { CurrentChapterId } from '../decorators/current-user.decorator';
+import {
+  CurrentChapterId,
+  CurrentUser,
+} from '../decorators/current-user.decorator';
 import { CreateEventDto, UpdateEventDto } from '../dtos/event.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -50,10 +53,12 @@ export class EventController {
   @ApiOperation({ summary: 'Create an event' })
   async create(
     @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') createdBy: string,
     @Body() dto: CreateEventDto,
   ) {
     return this.eventService.create({
       chapter_id: chapterId,
+      created_by: createdBy,
       ...dto,
     });
   }
