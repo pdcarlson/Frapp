@@ -8,8 +8,6 @@ import {
 } from '@nestjs/common';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
@@ -70,8 +68,6 @@ export class TaskService {
 
   constructor(
     @Inject(TASK_REPOSITORY) private readonly taskRepo: ITaskRepository,
-    @Inject(POINT_TRANSACTION_REPOSITORY)
-    private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     private readonly notificationService: NotificationService,
@@ -281,25 +277,18 @@ export class TaskService {
       );
     }
 
-    const updateData: Partial<Task> = {
-      confirmed_at: new Date().toISOString(),
-      points_awarded: true,
-    };
-
-    if (task.point_reward != null && task.point_reward > 0) {
-      await this.pointTxnRepo.create({
-        chapter_id: task.chapter_id,
-        user_id: task.assignee_id,
-        amount: task.point_reward,
-        category: 'MANUAL',
-        description: `Task completed: ${task.title}`,
-        metadata: { task_id: task.id },
-      });
-    } else {
-      updateData.points_awarded = true;
+    // Confirm the task and award its point reward atomically: a single DB
+    // transaction (compare-and-set on `points_awarded`) so a partial failure
+    // can't leave points without a confirmation, and concurrent confirms can't
+    // double-award. The guards above are a friendly fast path; the RPC's
+    // conditional update is the authoritative concurrency guard. Returns null
+    // when nothing was updated (e.g. a concurrent confirm won the race).
+    const updated = await this.taskRepo.confirmCompletionAtomic(id, chapterId);
+    if (!updated) {
+      throw new BadRequestException(
+        'Points have already been awarded for this task',
+      );
     }
-
-    const updated = await this.taskRepo.update(id, chapterId, updateData);
 
     await this.safeNotifyUser(
       task.assignee_id,

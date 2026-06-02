@@ -7,22 +7,18 @@ import {
 import { TaskService } from './task.service';
 import { TASK_REPOSITORY } from '../../domain/repositories/task.repository.interface';
 import type { ITaskRepository } from '../../domain/repositories/task.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Task, TaskStatus } from '../../domain/entities/task.entity';
 import type { Member } from '../../domain/entities/member.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 
 describe('TaskService', () => {
   let service: TaskService;
   let mockTaskRepo: jest.Mocked<ITaskRepository>;
-  let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
   let mockUserRepo: jest.Mocked<Pick<IUserRepository, 'findByIds'>>;
   let mockNotificationService: jest.Mocked<
@@ -56,17 +52,6 @@ describe('TaskService', () => {
     updated_at: '2026-02-01T00:00:00.000Z',
   };
 
-  const basePointTxn: PointTransaction = {
-    id: 'pt-1',
-    chapter_id: 'ch-1',
-    user_id: 'user-1',
-    amount: 10,
-    category: 'MANUAL',
-    description: 'Task completed: Test Task',
-    metadata: { task_id: 'task-1' },
-    created_at: '2026-02-26T18:30:00.000Z',
-  };
-
   beforeEach(async () => {
     mockTaskRepo = {
       findById: jest.fn(),
@@ -74,15 +59,8 @@ describe('TaskService', () => {
       findByAssignee: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      confirmCompletionAtomic: jest.fn(),
       delete: jest.fn(),
-    };
-
-    mockPointTxnRepo = {
-      create: jest.fn(),
-      findByUser: jest.fn(),
-      findByChapter: jest.fn(),
-      findByChapterFiltered: jest.fn(),
-      countRecentAdjustments: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -114,7 +92,6 @@ describe('TaskService', () => {
       providers: [
         TaskService,
         { provide: TASK_REPOSITORY, useValue: mockTaskRepo },
-        { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: NotificationService, useValue: mockNotificationService },
@@ -415,7 +392,7 @@ describe('TaskService', () => {
   });
 
   describe('confirmCompletion', () => {
-    it('should confirm completion with points', async () => {
+    it('should confirm completion with points via the atomic RPC', async () => {
       const completed: Task = {
         ...baseTask,
         status: TaskStatus.COMPLETED,
@@ -427,27 +404,17 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       const result = await service.confirmCompletion('task-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith({
-        chapter_id: 'ch-1',
-        user_id: 'user-1',
-        amount: 10,
-        category: 'MANUAL',
-        description: 'Task completed: Test Task',
-        metadata: { task_id: 'task-1' },
-      });
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+      // The confirm + ledger insert now happen in one DB transaction, so the
+      // service delegates to the RPC and never issues separate writes.
+      expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.objectContaining({
-          confirmed_at: expect.any(String),
-          points_awarded: true,
-        }),
       );
+      expect(mockTaskRepo.update).not.toHaveBeenCalled();
       expect(result.points_awarded).toBe(true);
     });
 
@@ -464,23 +431,18 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       const result = await service.confirmCompletion('task-1', 'ch-1');
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).toHaveBeenCalledWith(
+      expect(mockTaskRepo.confirmCompletionAtomic).toHaveBeenCalledWith(
         'task-1',
         'ch-1',
-        expect.objectContaining({
-          confirmed_at: expect.any(String),
-          points_awarded: true,
-        }),
       );
       expect(result.points_awarded).toBe(true);
     });
 
-    it('should prevent double point award', async () => {
+    it('should prevent double point award (fast-path guard)', async () => {
       const alreadyConfirmed: Task = {
         ...baseTask,
         status: TaskStatus.COMPLETED,
@@ -497,8 +459,23 @@ describe('TaskService', () => {
         'Points have already been awarded for this task',
       );
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
+    });
+
+    it('should reject when the atomic confirm awards nothing (lost race)', async () => {
+      // findById sees an un-awarded task, but a concurrent confirm flips
+      // points_awarded first, so the compare-and-set updates 0 rows (null).
+      const completed: Task = {
+        ...baseTask,
+        status: TaskStatus.COMPLETED,
+        completed_at: '2026-02-26T18:30:00.000Z',
+      };
+      mockTaskRepo.findById.mockResolvedValue(completed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(null);
+
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        'Points have already been awarded for this task',
+      );
     });
 
     it('should reject confirmation when task not COMPLETED', async () => {
@@ -511,8 +488,7 @@ describe('TaskService', () => {
         'Task must be marked COMPLETED by assignee before confirmation',
       );
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockTaskRepo.update).not.toHaveBeenCalled();
+      expect(mockTaskRepo.confirmCompletionAtomic).not.toHaveBeenCalled();
     });
   });
 
@@ -725,8 +701,7 @@ describe('TaskService', () => {
         points_awarded: true,
       };
       mockTaskRepo.findById.mockResolvedValue(completed);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockTaskRepo.update.mockResolvedValue(confirmed);
+      mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(confirmed);
 
       await service.confirmCompletion('task-1', 'ch-1');
 
