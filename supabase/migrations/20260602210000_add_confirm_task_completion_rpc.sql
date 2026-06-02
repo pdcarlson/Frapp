@@ -10,6 +10,12 @@
 -- one of N concurrent callers flips the flag and inserts the ledger row; the
 -- rest update zero rows (`not found`) and return empty. Mirrors the
 -- "Atomic Point Awarding" invariant in spec/behavior/points.md.
+--
+-- `security invoker` (matching the existing read RPCs, e.g. get_points_report):
+-- the API always calls this via the service-role SUPABASE_CLIENT, which
+-- bypasses RLS. If a caller is ever routed through a user/anon client, the
+-- INSERT into the RLS-protected point_transactions would be denied — switch to
+-- `security definer` + `set search_path = public` before doing so.
 
 create or replace function confirm_task_completion(
   p_task_id uuid,
