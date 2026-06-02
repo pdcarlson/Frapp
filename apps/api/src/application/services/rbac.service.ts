@@ -39,9 +39,15 @@ export class RbacService {
     });
   }
 
-  async update(roleId: string, data: Partial<Role>): Promise<Role> {
+  async update(
+    roleId: string,
+    chapterId: string,
+    data: Partial<Role>,
+  ): Promise<Role> {
     const role = await this.roleRepo.findById(roleId);
     if (!role) throw new NotFoundException('Role not found');
+    if (role.chapter_id !== chapterId)
+      throw new ForbiddenException('Role not in current chapter');
 
     if (data.name && data.name !== role.name) {
       const existing = await this.roleRepo.findByChapterAndName(
@@ -55,9 +61,11 @@ export class RbacService {
     return this.roleRepo.update(roleId, data);
   }
 
-  async delete(roleId: string): Promise<void> {
+  async delete(roleId: string, chapterId: string): Promise<void> {
     const role = await this.roleRepo.findById(roleId);
     if (!role) throw new NotFoundException('Role not found');
+    if (role.chapter_id !== chapterId)
+      throw new ForbiddenException('Role not in current chapter');
     if (role.is_system)
       throw new ForbiddenException('Cannot delete system roles');
 

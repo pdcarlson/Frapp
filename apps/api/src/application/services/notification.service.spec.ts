@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import {
   NOTIFICATION_REPOSITORY,
@@ -381,13 +381,28 @@ describe('NotificationService', () => {
   });
 
   describe('notification preferences', () => {
+    const baseMember = {
+      id: 'm-1',
+      user_id: 'u-1',
+      chapter_id: 'ch-1',
+      role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '',
+      updated_at: '',
+    };
+
     it('should get preferences for user and chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockPreferenceRepo.findByUserAndChapter.mockResolvedValue([
         basePreference,
       ]);
 
       const result = await service.getPreferences('u-1', 'ch-1');
 
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+      );
       expect(mockPreferenceRepo.findByUserAndChapter).toHaveBeenCalledWith(
         'u-1',
         'ch-1',
@@ -396,6 +411,7 @@ describe('NotificationService', () => {
     });
 
     it('should update preference', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(baseMember);
       mockPreferenceRepo.upsert.mockResolvedValue({
         ...basePreference,
         is_enabled: false,
@@ -408,6 +424,10 @@ describe('NotificationService', () => {
         false,
       );
 
+      expect(mockMemberRepo.findByUserAndChapter).toHaveBeenCalledWith(
+        'u-1',
+        'ch-1',
+      );
       expect(mockPreferenceRepo.upsert).toHaveBeenCalledWith({
         user_id: 'u-1',
         chapter_id: 'ch-1',
@@ -415,6 +435,24 @@ describe('NotificationService', () => {
         is_enabled: false,
       });
       expect(result.is_enabled).toBe(false);
+    });
+
+    it('should reject reading preferences for a chapter the user is not in', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(service.getPreferences('u-1', 'ch-other')).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(mockPreferenceRepo.findByUserAndChapter).not.toHaveBeenCalled();
+    });
+
+    it('should reject updating preferences for a chapter the user is not in', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.updatePreference('u-1', 'ch-other', 'chat', false),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockPreferenceRepo.upsert).not.toHaveBeenCalled();
     });
   });
 

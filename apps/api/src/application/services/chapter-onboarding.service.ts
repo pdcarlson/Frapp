@@ -48,6 +48,10 @@ export class ChapterOnboardingService {
     const config: Partial<Chapter> = {
       org_archetype: seed.archetype,
       enabled_modules: seed.modules,
+      // `vocabulary`/`theme_palette` are stored as loose jsonb
+      // (Record<string, unknown>) but sourced from fixed-key interfaces
+      // (VocabularyDefaults/ChapterPalette) that carry no index signature, so
+      // widen through `unknown` to keep the assignment type-check deterministic.
       vocabulary: seed.vocabulary as unknown as Record<string, unknown>,
       branding,
       directory_id: dto.directory_id ?? null,
