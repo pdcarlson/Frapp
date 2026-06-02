@@ -142,9 +142,10 @@ Full config + the shared Linear API primitives: [`CURSOR_AUTOMATIONS.md`](CURSOR
    one `area:<x>`, and a dedup fingerprint. Ideates against existing **Projects** as well as codebase gaps.
 2. **Linear Triage** ([`.cursor/skills/linear-triage.md`](../../../.cursor/skills/linear-triage.md))
    — ~1h later. Two jobs: **(A)** process the **Triage** inbox (dedup, set Project + Priority, promote to
-   Backlog), and **(B)** groom the existing **Backlog** — projectify + prioritize the projectless
-   `suggestion` pile in ~25-issue batches per run (most work lives in Backlog, not Triage). Organizes
-   broadly; cancels/dedups only `suggestion`-owned issues; surfaces human-filed items rather than deciding them.
+   Backlog), and **(B)** groom the existing **Backlog** in ~25-issue batches — set a sane **Priority**
+   (the main job, since `/next` ranks by Priority and ignores projects) and assign a **Project** only when
+   a suggestion *clearly* fits one (most suggestions stay projectless by design — no force-bucketing).
+   Organizes broadly; cancels/dedups only `suggestion`-owned issues; surfaces human-filed items rather than deciding them.
 
 **Ownership** (both): destructive actions only on `suggestion`-labeled issues; human/planning issues are
 read-only. **Never create GitHub issues; never touch code.** Issues are born in Linear.
