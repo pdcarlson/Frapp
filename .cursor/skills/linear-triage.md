@@ -1,11 +1,12 @@
 # Skill: Linear Triage (automation 2 of 2)
 
 > Use when running the Cursor **"Linear Triage"** automation (or by hand). It runs **after** the
-> [`linear-curator.md`](linear-curator.md) creation pass (≈1h later) and keeps the Linear board healthy:
-> process the **Triage inbox**, set **Priority**, bucket issues into the right **Project**, dedup, and
-> promote clearly-actionable work into **Backlog** so [`/next`](../../.claude/commands/next.md) can pick it
-> up. **Read-only on code** — this automation only organizes Linear; it never writes code, opens PRs, or
-> creates GitHub issues.
+> [`linear-curator.md`](linear-curator.md) creation pass (≈1h later) and keeps the Linear board healthy.
+> Triage is **not only the Triage inbox** — most work lives in the **Backlog**, so this automation does
+> two jobs: **(A) process the Triage inbox**, and **(B) groom the existing Backlog** (projectify and
+> prioritize what's already there). Both feed [`/next`](../../.claude/commands/next.md) clean, ranked,
+> bucketed work. **Read-only on code** — this automation only organizes Linear; it never writes code,
+> opens PRs, or creates GitHub issues.
 
 All reads/writes go to **Linear** via the `LINEAR_API_KEY` — see
 [Linear API access](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md#linear-api-access-shared-by-both-automations)
@@ -48,17 +49,25 @@ Pull everything in the **Triage** state for team Frapp Live. For each:
 
 ---
 
-## Pass B — Light board hygiene (Backlog)
+## Pass B — Backlog grooming (a real job, not a token sweep)
 
-A quick, conservative sweep of the **Backlog** to keep `/next` fed with clean, ranked work:
+Most work lives in the **Backlog**, and much of it (especially the AI-filed `suggestion` backlog) lands
+**projectless and unprioritized**. Each run, groom a meaningful batch so the projectless pile steadily
+shrinks and `/next` always has clean, ranked, bucketed work:
 
-- **Missing Priority** on a `suggestion`-owned Backlog issue → set it. (Leave human issues' priority alone
-  unless clearly absent and obvious.)
-- **Wrong/empty Project** on a `suggestion`-owned issue → re-bucket.
-- **Obvious stale `suggestion`** the curator missed → add `stale` (don't cancel without proof).
-- Do **not** restructure epics/Projects or touch human planning items beyond setting an absent project/priority.
+- **Projectify (the main backlog job):** for `suggestion`-owned Backlog issues with **no Project**, read
+  the issue and assign the right **Project** (Chat rework / AI features / Pricing & billing / Analytics /
+  Platform / Security) from its topic. Keep chipping away at the projectless pile every run.
+- **Prioritize:** set a **Priority** on any `suggestion`-owned Backlog issue missing one.
+- **Estimate:** add a Fibonacci estimate when scope is clear (optional).
+- **Stale / dups:** add `stale` to obvious aging `suggestion`s the curator missed; cancel/dedup only
+  `suggestion`-owned issues, and only with proof.
+- **Batch budget:** process up to ~**25** Backlog issues per run so the pile shrinks steadily without one
+  giant run — Memory lets the next run continue where this one left off.
+- **Ownership:** on human/planning issues, at most fill an *absent* project/priority — never re-bucket,
+  re-prioritize, cancel, or re-body them. Don't restructure epics/Projects.
 
-Keep this pass small — it's hygiene, not a re-plan.
+Goal: over a handful of runs, the projectless `suggestion` backlog gets fully bucketed and ranked.
 
 ---
 

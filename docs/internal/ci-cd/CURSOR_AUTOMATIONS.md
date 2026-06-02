@@ -12,9 +12,11 @@ There are **two** automations, staggered daily, both writing to **Linear** (neve
 | 2 | **Linear Triage** | [`.cursor/skills/linear-triage.md`](../../../.cursor/skills/linear-triage.md) | daily, ~1h after #1 (e.g. 09:00 ET) |
 
 The curator **creates and maintains** `suggestion` issues in Linear's **Triage** inbox. An hour later the
-triage automation **prioritizes, buckets into Projects, dedups, and promotes** clearly-actionable work into
-**Backlog**, which [`/next`](../../../.claude/commands/next.md) then consumes. The dashboard prompts are
-thin — the real rules live in the two skill files.
+triage automation works **both** the **Triage inbox** (prioritize, bucket into Projects, dedup, promote to
+Backlog) **and the existing Backlog** (projectify + prioritize the projectless `suggestion` pile in
+batches) — because most work lives in Backlog, not Triage — feeding clean, ranked work to
+[`/next`](../../../.claude/commands/next.md). The dashboard prompts are thin — the real rules live in the
+two skill files.
 
 > **Hard rule (see `AGENTS.md`):** all issues are **opened in Linear**, never GitHub. Work is **closed via
 > GitHub PRs** (`Fixes FRA-N`); the Linear–GitHub integration keeps the two in sync. These automations

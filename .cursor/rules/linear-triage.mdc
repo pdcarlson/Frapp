@@ -14,5 +14,5 @@ Key points:
 - **Main job — process the Triage inbox:** for each Triage item, dedup, set **Project**, set **Priority** (required to leave Triage), optionally set an estimate, add relations, then **promote** clearly-actionable work to **Backlog** so `/next` sees it.
 - **Organize broadly, destroy narrowly:** setting project/priority/estimate/relations on any Triage item is fine; but Cancel / mark-duplicate / re-body only `suggestion`-owned issues (run the pre-write label gate). Never cancel or re-body a human-filed issue — leave it in Triage with a comment instead.
 - **Don't auto-promote a real human decision** — surface it for a human; only auto-promote suggestion-owned or clearly well-formed items.
-- **Light Backlog hygiene** (Pass B): fill missing priority / wrong project on `suggestion`-owned issues; flag obvious `stale`. Keep it small — hygiene, not a re-plan. Never restructure epics/Projects.
+- **Backlog grooming (Pass B) — a real job, not a token sweep:** most work lives in Backlog, not Triage, so each run **projectify + prioritize** a batch (~25) of projectless/unprioritized `suggestion`-owned Backlog issues, chipping away at the pile; flag obvious `stale`. On human/planning issues, only fill an *absent* project/priority. Never restructure epics/Projects.
 - **Read-only on code** — never edit files, open PRs, or create GitHub issues.
