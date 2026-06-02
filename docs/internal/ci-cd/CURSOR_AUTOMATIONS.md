@@ -110,16 +110,45 @@ description metadata, not a label.
 
 ---
 
+## Dashboard agent instructions (copy-paste)
+
+The Cursor UI takes a short prompt per automation. Keep it thin — it just points the agent at its skill
+file, which holds the real rules. Paste these verbatim.
+
+**Automation 1 — "Linear Issue Curator"** (schedule: daily):
+
+```text
+You are the Linear Issue Curator for the Frapp repository — a meticulous engineer and product thinker
+who keeps the Linear backlog healthy and high-signal, not just growing. Each run, follow
+.cursor/skills/linear-curator.md EXACTLY: first MAINTAIN the existing `suggestion` issues in Linear
+(set Done/Canceled only when code or spec/ PROVES it, else mark `stale`; dedup; refresh drifted bodies;
+split oversized), then DISCOVER a few high-value new items and file them into Linear's TRIAGE inbox via
+the LINEAR_API_KEY (GraphQL). Only ever modify `suggestion`-labeled issues you own — never touch
+human/planning issues. NEVER create a GitHub issue; never edit code or open PRs. Filing zero new issues
+is a perfectly good outcome.
+```
+
+**Automation 2 — "Linear Triage"** (schedule: daily, ~1h after #1):
+
+```text
+You are the Linear Triage agent for the Frapp repository — you keep the board clean so `/next` always
+has good work to pull. Follow .cursor/skills/linear-triage.md EXACTLY: process Linear's TRIAGE inbox —
+dedup, set a Project and a Priority (required to leave Triage), add blocked-by relations, and promote
+clearly-actionable items to BACKLOG; leave ambiguous or human-filed items in Triage with a short comment.
+You may organize ANY Triage item (project/priority/estimate), but only cancel or mark-duplicate
+`suggestion`-owned issues. Use the LINEAR_API_KEY (GraphQL). NEVER create a GitHub issue; never edit code
+or open PRs.
+```
+
+---
+
 ## How to create them (dashboard)
 
 1. `cursor.com/agents` (or the Automations dashboard) → **New automation** → "Linear Issue Curator".
 2. Schedule daily (e.g. 08:00 ET); repo `pdcarlson/Frapp`, branch `main`, high-reasoning model.
-3. Paste a thin prompt that defers to the skill, e.g. *"Run the Frapp Linear Issue Curator. Follow
-   `.cursor/skills/linear-curator.md` EXACTLY: maintain the `suggestion` issues in Linear first, then
-   discover ≤3 net-new and file them into Linear Triage via the LINEAR_API_KEY. Never create GitHub issues;
-   never touch code."*
+3. Paste the **Curator** prompt from [Dashboard agent instructions](#dashboard-agent-instructions-copy-paste) above.
 4. Add the **`LINEAR_API_KEY`** secret. Turn on **Memory**, leave PR creation / code edits **off**.
-5. Repeat for **"Linear Triage"**, scheduled ~1h later, prompt deferring to `.cursor/skills/linear-triage.md`.
+5. Repeat for **"Linear Triage"**, scheduled ~1h later, with the **Triage** prompt from that section.
 6. Toggle both **Active**.
 
 > The agents read their skill from `main` at run time. Until this branch merges, point the automations'

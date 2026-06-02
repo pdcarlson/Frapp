@@ -8,9 +8,9 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 > `docs/backlog/` tree has been **retired** (git history is the archive); agents start work with `/next`,
 > which reads Linear directly. Provisioning is done: 6 Projects created, the 7 `[Epic]` parents assigned,
 > `severity:*` migrated to **Priority**, and dead suggestions closed for auto-archive. **One thing is not
-> keyless:** the Cursor *background* suggestion automation has **no Linear MCP in its headless
-> environment** (proven by probe), so it still files GitHub `suggestion` issues (which sync in) until its
-> Linear MCP is set up — see [Cursor automation](#cursor-automation-current--target).
+> keyless:** the Cursor *background* automations have **no Linear MCP in their headless environment**
+> (proven by probe), so they write to Linear with a **`LINEAR_API_KEY`** via the GraphQL API — see
+> [Cursor automations](#cursor-automations-two-linear-native-via-the-api-key).
 
 ---
 
