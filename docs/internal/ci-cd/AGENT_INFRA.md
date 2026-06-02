@@ -34,10 +34,10 @@ If only a legacy GitHub token alias is exposed in an older VM, copy it into `GIT
 
 ### Work status
 
-There is **no GitHub Projects board** in this workflow. Work status lives in the in-repo backlog at
-[`docs/backlog/`](../../backlog/README.md) (the single source of truth); GitHub issues mirror it via
-their open/closed state, closed on completion by `Closes #N` in the PR body. Reconcile drift with
-`/triage`.
+There is **no GitHub Projects board** in this workflow. Work status lives in **Linear** (team
+**Frapp Live**, prefix `FRA-`), reached via the native Linear MCP — the single source of truth. PRs
+transition the linked Linear issue with `Fixes FRA-N` on merge (and `Closes #N` for a GitHub twin,
+whose closure syncs GitHub→Linear). Design + policy: [`LINEAR_PM.md`](LINEAR_PM.md).
 
 
 ## CI/CD summary
@@ -125,7 +125,7 @@ Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](.
 
 ## Agent dev stack (cloud sessions)
 
-Decision is recorded in [**ADR-12** (`spec/architecture/README.md`)](../../../spec/architecture/README.md) (extending ADR-11): PGlite-backed NestJS tests are the **default substrate** (Paths C+D), a per-session Supabase branch is the **opt-in escape hatch** (Path A), and a rootless in-sandbox stack (Path B) is rejected. Track program-level state in the backlog ([`docs/backlog/projects/agent-infra.md`](../../backlog/projects/agent-infra.md)). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
+Decision is recorded in [**ADR-12** (`spec/architecture/README.md`)](../../../spec/architecture/README.md) (extending ADR-11): PGlite-backed NestJS tests are the **default substrate** (Paths C+D), a per-session Supabase branch is the **opt-in escape hatch** (Path A), and a rootless in-sandbox stack (Path B) is rejected. Track program-level state in **Linear** (the **Agent infrastructure** Project, team Frapp Live). This section is the operating doc — what's in the stack today, how to bring it up, what's still blocked.
 
 ### What the stack is
 

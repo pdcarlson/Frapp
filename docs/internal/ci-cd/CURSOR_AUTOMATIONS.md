@@ -10,6 +10,44 @@ the dashboard prompt is intentionally thin and defers to that skill.
 
 ---
 
+## PENDING: native Linear MCP migration — capability probe
+
+> **Status: the automation below is the CURRENT (interim) design.** It still files **GitHub**
+> `suggestion` issues via `gh`, which sync into Linear. Under the Linear cut-over (ADR-16 amendment,
+> [`LINEAR_PM.md`](LINEAR_PM.md)), **all issues should be born in Linear**, and this automation is
+> slated to be rebuilt into a **two-automation system** that writes to Linear via the **native Linear
+> MCP** (no API key): (1) a daily *creation/ideation* pass — conservative net-new budget, files into
+> the Linear **Triage** inbox, and does light ideation toward existing Linear **Projects** as well as
+> codebase-at-large gaps; (2) a *triage* pass ~1h later that re-buckets Triage into Projects, sets
+> **Priority**, and feeds the Backlog that `/next` consumes.
+>
+> **This rebuild is GATED on a capability probe** — we do not yet know what a Cursor *background
+> automation* (headless, no human in the IDE) can actually do against Linear, and we will **not** paper
+> over a gap with an API key. Before rebuilding, run the probe below in a Cursor background agent and
+> report the verified capability matrix back. If writes are blocked, that's a hard blocker to surface
+> and solve, not work around.
+>
+> **Interim recommendation:** pause this automation in the Cursor dashboard until the probe + rebuild
+> land — it currently opens GitHub issues (against the "all issues via Linear" directive) and is the
+> main source of the Linear free-tier cap pressure.
+>
+> **Probe prompt (paste into a Cursor background agent):**
+>
+> > You're running as a Frapp **background automation** (headless — no human in an IDE). Report your
+> > **real, verified** capabilities against our Linear workspace; do not guess or assume.
+> > 1. Is a **Linear MCP server** available in this environment? List the exact Linear tools/functions
+> >    you can call.
+> > 2. **Read test:** list teams, projects, issues, and labels for team **"Frapp Live"**. Actually run
+> >    it and report what came back.
+> > 3. **Write test:** create a throwaway issue in **Triage**, set its priority, assign it to a
+> >    project, then cancel it. Attempt each step and report exactly which **succeeded/failed**, with
+> >    the verbatim error for any failure.
+> > 4. Confirm whether these work in a **scheduled/triggered** run with no human present, or only in
+> >    interactive sessions.
+> > Return a plain capability matrix; quote exact errors for anything blocked.
+
+---
+
 ## Why Cursor Automations
 
 Cursor Automations reuse infra Frapp already has (`.cursor/` rules + skills): a cloud agent
@@ -99,7 +137,7 @@ Create these once (the agent will create any missing label on first run; colors 
 | `area:product` / `area:ux` / `area:research` | `#a371f7` | Product gaps, behavior/UX gaps, and forward-looking research/next-steps. |
 | `severity:critical` / `severity:high` / `severity:medium` / `severity:low` | `#d1242f → #d4a72c` | Priority / impact (also used to rank `type:idea` items). |
 | `agent-ready` | `#1a7f37` | Fully specified, safe to hand to an agent (existing label, see `AGENTS.md`). |
-| `stale` | `#9e6a03` | Maintenance: an aging suggestion that no longer cleanly matches code/spec but can't be *proven* resolved — left open for a human / `/triage` to confirm or close. |
+| `stale` | `#9e6a03` | Maintenance: an aging suggestion that no longer cleanly matches code/spec but can't be *proven* resolved — left open for a human to confirm or close. |
 
 > `type:<gap|improvement|idea>` is body metadata (the issue's Category line), **not** a label — don't create `type:*` labels.
 

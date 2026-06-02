@@ -1,10 +1,10 @@
 # Specification index
 
 **`spec/`** is the normative source for product behavior, architecture, environments, and UI
-expectations. It is purely topical and canonical — work tracking and delivery sequencing live in the
-backlog at [`docs/backlog/`](../docs/backlog/README.md), not here. Developer workflows and runbooks
-live under **`docs/`** — start at [`docs/README.md`](../docs/README.md) and
-[`docs/guides/README.md`](../docs/guides/README.md).
+expectations. It is purely topical and canonical — work tracking and delivery sequencing live in
+**Linear** (team Frapp Live — see [`docs/internal/ci-cd/LINEAR_PM.md`](../docs/internal/ci-cd/LINEAR_PM.md)),
+not here. Developer workflows and runbooks live under **`docs/`** — start at
+[`docs/README.md`](../docs/README.md) and [`docs/guides/README.md`](../docs/guides/README.md).
 
 ## Core
 
@@ -29,11 +29,8 @@ Documentation-placement conventions: [`docs/internal/DOCUMENTATION_CONVENTIONS.m
 
 ## Active work
 
-Initiatives that build on this spec — currently the **chat-rework** project (the chat-first product,
-delivered as chunks) plus Analytics, Billing, and Agent-infra — are tracked in the in-repo backlog:
-
-- [`docs/backlog/projects/chat-rework.md`](../docs/backlog/projects/chat-rework.md) — chunk delivery + status
-- [`docs/backlog/README.md`](../docs/backlog/README.md) — all projects + overall progress
-
-Status (shipped / queued) lives in the backlog, mirrored by GitHub issue open/closed state. This index
+Initiatives that build on this spec — currently the **chat-rework** project plus Analytics, Pricing &
+billing, and Agent-infrastructure — are tracked in **Linear** as Projects (team **Frapp Live**), not
+here. See [`docs/internal/ci-cd/LINEAR_PM.md`](../docs/internal/ci-cd/LINEAR_PM.md) for the model and
+how agents reach it (native Linear MCP). Status (shipped / queued) lives in Linear; this index
 intentionally carries no status table.

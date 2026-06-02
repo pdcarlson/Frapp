@@ -81,7 +81,7 @@ still matches the **current code and `spec/`**:
 | The code/spec **moved on** so the suggestion is **moot / no longer applies** (feature cut, file deleted, approach superseded) | **Close** `not planned` + comment explaining why it's obsolete |
 | **Duplicate** of another `suggestion` issue (same intent) | **Close the newer / worse-specified one** as a duplicate, linking the canonical (see below). Never edit the canonical beyond an optional back-link comment |
 | Intent **still valid**, but file/line refs, snippet, or context have **drifted** | **Refresh the body** (fix paths, refresh the snippet/spec quote); keep the `fp=` marker. Leave open |
-| **Aging / uncertain** — you **cannot prove** it's resolved, duplicate, or obsolete | **Add `stale` label + a short comment** ("no longer matches X as of <date>; confirm or close"). **Leave it open** for a human / `/triage` to decide |
+| **Aging / uncertain** — you **cannot prove** it's resolved, duplicate, or obsolete | **Add `stale` label + a short comment** ("no longer matches X as of <date>; confirm or close"). **Leave it open** for a human to decide |
 | Still accurate and active | **Skip** — leave untouched |
 
 **The bar for closing is "provable."** Only close as resolved/obsolete when you can point at the code or
@@ -254,7 +254,7 @@ Every issue this flow **creates** gets:
 Lifecycle labels this flow **applies** during maintenance:
 
 - `stale` — an aging suggestion that no longer cleanly matches the code/spec but **can't be proven**
-  resolved/obsolete; left open for a human / `/triage` to confirm or close.
+  resolved/obsolete; left open for a human to confirm or close.
 
 If a label doesn't exist yet, create it (one-time). Colors:
 [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).

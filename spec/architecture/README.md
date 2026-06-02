@@ -673,6 +673,33 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 - Cost or team changes make a different tool (or self-hosted Plane) preferable.
 - The cut-over follow-up surfaces a blocker (e.g. GitHub↔Linear sync can't preserve the `suggestion`/`area`/`severity` taxonomy) that makes full retirement unwise → keep the hybrid (Linear for humans, GitHub/backlog for agents) instead of retiring.
 
+#### ADR-16 amendment — cut-over executed (2026-06-02)
+
+The cut-over (originally tracked as the rails-only follow-up) has shipped. This amendment records the
+choices made; the original decision above stands. Details + policy:
+[`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md).
+
+- **Access model corrected to native MCP only.** Both Claude Code and Cursor reach Linear through the
+  **native Linear MCP** (the web environment injects it for cloud Claude; Cursor is natively integrated).
+  **No Linear API key** is minted, used, or committed — the original ADR's "automations via the GraphQL
+  API key" path is **dropped**. If a background automation can't reach the MCP, that is a hard blocker to
+  surface and solve, not to work around with a key.
+- **No GitHub read-fallback.** The original "GitHub issues are the always-available fallback read surface"
+  hedge is **retired**: `/next` stops when the MCP is down rather than reading a stale tracker. Sync is
+  **unidirectional GitHub→Linear** (the GitHub App is installed); new issues are born in Linear.
+- **Model chosen:** epics = Linear **Projects**; imported `[Epic]` parents stay as parent issues with
+  sub-issues; **Triage inbox ON** as intake; **no Initiatives, no Cycles**.
+- **Lean taxonomy:** `severity:*` → native **Priority**; `area:*` stays a label group; keep `suggestion`
+  + `stale`; **drop** `agent-ready`; `blocked` → blocked-by **relations**; `enhancement` → `Improvement`.
+- **Deleted:** the `docs/backlog/` tree and the `/triage` `/status` `/next-task` commands (replaced by
+  `/next`); the SessionStart hook no longer summarizes a backlog. Git history is the archive.
+- **Free-tier cap policy:** active issues are capped at 250; only **auto-archive** (a Team Setting)
+  reclaims slots; cap remediation is confirm-then-act and reversible.
+- **Cursor automation migration is gated on a capability probe.** The suggestion automation keeps filing
+  GitHub `suggestion` issues (which sync in) until a probe verifies what a Cursor **background** automation
+  can do against Linear; the target is a **two-automation** (creation + triage) system writing via native
+  MCP. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+
 ---
 
 ## 13. AI Corpus Architecture (v1)
