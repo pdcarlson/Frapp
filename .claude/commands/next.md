@@ -14,7 +14,8 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
 2. Select the work from Linear (MCP). Pull the Backlog ranked by **priority**
    (Urgent→High→Med→Low; None last), tie-break by lower FRA- number:
    - `list_issues(team:"Frapp Live", state:"Backlog")` (also "Todo" if present); read relations/links
-     with `get_issue` where the list is thin.
+     with `get_issue` where the list is thin. Surface each candidate's **estimate** (Fibonacci) as sizing
+     context in the shortlist — it informs the pick but is not a filter.
    - **Filter to genuinely unblocked:** drop anything with an open *blocked-by* relation; confirm any
      dependency is actually shipped (check merged PRs/code via a sub-agent, not just the Linear state).
    - Don't auto-start **Triage** items — surface them for human accept first.
@@ -24,7 +25,7 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
    **Don't shy away from larger, high-impact issues** — prefer the most valuable viable work. Only
    pre-split when it's genuinely two unrelated efforts; if an issue turns out bigger mid-flight, ship
    the coherent slice you can verify and **file self-contained follow-ups** into **Triage**
-   (`save_issue` with state Triage) for the rest.
+   (`save_issue` with state Triage, and set a **Priority** — Linear requires one to leave Triage) for the rest.
 4. Verify the chosen issue against current code and the canonical spec; research best practices. Fix
    only if valid. If already resolved, set it **Done** (and Cancel duplicates via `save_issue`
    state→Canceled, `duplicateOf` the canonical). If issue and spec conflict, the spec wins. Use

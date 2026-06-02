@@ -4,14 +4,13 @@ Canonical, version-controlled design + policy for Frapp's project management on 
 **ADR-16** and its cut-over amendment (`spec/architecture/README.md`). Linear is the source of truth for
 planning and work status; GitHub issues are an executable layer that **syncs one-way into Linear**.
 
-> **Status: repo cut-over complete; Linear-side provisioning finishing.** Work tracking lives in
-> **Linear** (team **Frapp Live**, prefix **FRA-**), reached via the **native Linear MCP**. The in-repo
-> `docs/backlog/` tree has been **retired** (git history is the archive) and agents start work with
-> `/next`, which reads Linear directly. Two things are deliberately still in progress: (a) Linear-side
-> **structural provisioning** — creating Projects, mapping `severity:*`→Priority, and cap remediation —
-> see [Maintainer actions](#maintainer-actions-provisioning--activation); (b) the Cursor suggestion
-> automation still files GitHub `suggestion` issues (which sync in), its migration to native-MCP Linear
-> writes gated on a capability probe (see [Cursor automation](#cursor-automation-current--target)).
+> **Status: live.** Work tracking lives in **Linear** (team **Frapp Live**, prefix **FRA-**). The in-repo
+> `docs/backlog/` tree has been **retired** (git history is the archive); agents start work with `/next`,
+> which reads Linear directly. Provisioning is done: 6 Projects created, the 7 `[Epic]` parents assigned,
+> `severity:*` migrated to **Priority**, and dead suggestions closed for auto-archive. **One thing is not
+> keyless:** the Cursor *background* suggestion automation has **no Linear MCP in its headless
+> environment** (proven by probe), so it still files GitHub `suggestion` issues (which sync in) until its
+> Linear MCP is set up — see [Cursor automation](#cursor-automation-current--target).
 
 ---
 
@@ -19,13 +18,16 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 
 ```
 Linear (canonical: planning, status, board, Triage intake)
-   ▲ Claude Code + Cursor via the NATIVE Linear MCP (OAuth; no API key, no committed config)
-   ▲ GitHub issues sync ONE-WAY into Linear via the native GitHub App
+   ▲ Claude Code (web) via the injected NATIVE Linear MCP — the path /next uses
+   ▲ Cursor automations (headless) via LINEAR_API_KEY → Linear GraphQL API (no MCP in that env)
+   ▲ GitHub PRs close work (Fixes FRA-N); the Linear–GitHub integration keeps issues in sync
 ```
 
-- **Linear is canonical** for what to work on and its status. Humans plan on the board; agents read/write
+- **Linear is canonical** for what to work on and its status. Humans plan on the board; Claude reads/writes
   Linear through the native MCP. There is **no GitHub read-fallback** — if the MCP is down, `/next`
   stops rather than reading a stale tracker.
+- **All issues are opened in Linear; never GitHub.** Work is closed via GitHub PRs (`Fixes FRA-N`, plus
+  `Closes #N` for a legacy GitHub twin); the integration syncs the two.
 - **Epics are Linear Projects.** The imported `[Epic]` parents (FRA-154…FRA-160) stay as parent issues
   with sub-issues, assigned to the relevant Project. **No Initiatives, no Cycles.**
 - **Triage is the intake.** New work — whether a human files it, `/next` files a follow-up, or the Cursor
@@ -34,17 +36,18 @@ Linear (canonical: planning, status, board, Triage intake)
 - **Issues are born in Linear.** Opening work directly as a GitHub issue is **not** the path; file in
   Linear (`save_issue` into Triage).
 
-### How agents reach Linear (native MCP — no API key)
+### How agents reach Linear
 
 | Actor | Reaches Linear via | Notes |
 | --- | --- | --- |
-| **Claude Code** (cloud agent) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
-| **Cursor** (interactive + background) | **Native Linear MCP** (Cursor is natively integrated with Linear) | Background-automation write capability is **unverified** — gated on the probe in [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md#pending-native-linear-mcp-migration--capability-probe). No API key is used or committed anywhere. |
-| **GitHub** | Linear's **native GitHub integration** (the GitHub App) | One-way: GitHub issue/PR state syncs **into** Linear. |
+| **Claude Code** (web) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
+| **Cursor automations** (headless) | **`LINEAR_API_KEY` → Linear GraphQL API** | A probe proved the Cursor *background* environment has **no Linear MCP** and no Linear creds, so the two automations authenticate with a `LINEAR_API_KEY` (a Cursor cloud-agent secret) against `https://api.linear.app/graphql`. Transport-agnostic — if a Cursor build later exposes a Linear MCP to background agents with that key, the skills can use it. See [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md). |
+| **Cursor** (interactive IDE) | Cursor's native Linear integration / MCP | For a human in the IDE; not the automation path. |
+| **GitHub** | Linear's **native GitHub integration** (the GitHub App) | PR/branch/status sync; PRs close issues via `Fixes FRA-N` / `Closes #N`. |
 
-`.mcp.json.example` is a local-reference block only (plain OAuth URL, no token). **Do not** commit a root
-`.mcp.json` — the web environment already injects the Linear MCP and a committed file would
-double-register it.
+`.mcp.json.example` is a local-reference block only (plain OAuth URL, no token) for the **Claude** side.
+**Do not** commit a root `.mcp.json` — the web environment already injects the Linear MCP for Claude and a
+committed file would double-register it. The Cursor automations don't use it (they use the API key).
 
 ---
 
@@ -83,7 +86,7 @@ Sync is **unidirectional: GitHub → Linear** (the GitHub App is installed on `p
 
 ## Ownership boundary (carries over)
 
-Cursor (and any suggestion-triage run) may only modify issues it owns — those carrying the
+The Cursor automations (curator + triage) may only modify issues they own — those carrying the
 **`suggestion`** label. Everything else — human-filed work, epics, Projects, planning items — is
 **read-only** to the automation, on both GitHub and Linear. A pre-write label gate (`get_issue` →
 confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
@@ -92,20 +95,27 @@ confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
 
 ## Free-tier cap and auto-archive
 
-Linear's Free plan caps **active** (non-Done/Canceled/Duplicate) issues at **250**. The workspace is at
-or over that cap (the imported suggestion backlog is the bulk of it), so **new-issue creation is blocked
-until slots are reclaimed.**
+Linear's Free plan caps **active** (non-archived) issues at **250**; **archived issues are unlimited and
+don't count.** The imported suggestion backlog put the workspace near the cap.
 
-- **Only archiving** frees slots — closing to Done/Canceled does **not** (those still count until
-  archived). Archiving is **automatic-only**: the maintainer enables **auto-archive** in Team Settings;
-  there is no manual archive in the MCP/UI.
-- **Cap remediation** (mass-triaging provably dead/duplicate/obsolete `suggestion` issues to
-  Done/Canceled so auto-archive reclaims them) is **confirm-then-act** and **reversible** — never
-  hard-delete; Cancel is recoverable and Linear keeps a 30-day restore.
-- Going forward, the rebuilt Cursor automation keeps a **conservative net-new budget** and a cap guard
-  so the backlog doesn't blow past the limit again.
+- **Auto-archive is automatic and free** — Linear archives **Done after ~28 days** and **Canceled after
+  ~7 days** by default (tunable under *Team Settings → Issue statuses & automations*). So **closing
+  reclaims a slot on that schedule, with no toggle to flip.** Archived issues stay searchable.
+- **Cap remediation** = close provably dead/duplicate/obsolete `suggestion` issues to **Done/Canceled**;
+  they auto-archive and free slots (e.g. a Canceled issue in ~7 days). Reversible — never hard-delete.
+- The **curator** automation keeps a **conservative net-new budget** plus a **cap guard** (file nothing
+  when near 250, consolidate instead) so the backlog doesn't blow past the limit again.
 
 ---
+
+## Estimates & Triage intake
+
+- The team uses **Fibonacci estimates** (0,1,2,3,5,8,13,21). Estimates are optional context for sizing —
+  `/next` surfaces an issue's estimate when shortlisting; they are **not** a filter or a gate.
+- **Triage is on**, and the team **requires an explicit Priority to move an issue out of Triage.** So
+  anything promoting Triage → Backlog (the Cursor triage automation, or a human/`/next`) **must set a
+  Priority** first. The curator sets a Priority on every issue it files; the triage automation sets
+  Priority (and may set an estimate) as it buckets and promotes.
 
 ## `/next` (the work-selection command)
 
@@ -117,23 +127,22 @@ PR link) and opens the PR with `Fixes FRA-N`.
 
 ---
 
-## Cursor automation (current → target)
+## Cursor automations (two, Linear-native via the API key)
 
-- **Current (interim):** the single "Suggestion Triage" automation still files/maintains **GitHub**
-  `suggestion` issues via `gh` (they sync into Linear). Behavior + config:
-  [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md) and
-  [`.cursor/skills/suggestion-triage.md`](../../../.cursor/skills/suggestion-triage.md). **Recommended to
-  pause** during the interim (it opens GitHub-born issues and drives the cap).
-- **Target (pending the capability probe):** a **two-automation** system writing to Linear via the
-  **native MCP** —
-  1. a **daily creation/ideation** pass: conservative net-new budget, files into **Triage**, and ideates
-     toward existing Linear **Projects** as well as codebase-at-large engineering/security gaps;
-  2. a **triage** pass ~1h later: re-buckets Triage into Projects, sets **Priority**, dedups, and feeds
-     the Backlog `/next` consumes.
+Two staggered daily automations, both writing to **Linear** via the **`LINEAR_API_KEY`** (Linear GraphQL).
+Full config + the shared Linear API primitives: [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md).
 
-  This rebuild is **blocked on the probe** in
-  [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md#pending-native-linear-mcp-migration--capability-probe).
-  **No API key** — native MCP, or escalate the blocker.
+1. **Linear Issue Curator** ([`.cursor/skills/linear-curator.md`](../../../.cursor/skills/linear-curator.md))
+   — daily. Maintains `suggestion` issues (Done/Cancel provable, else `stale`; dedup; refresh; split), then
+   discovers ≤3 net-new (conservative budget + cap guard) and files them into **Triage** with a Priority,
+   one `area:<x>`, and a dedup fingerprint. Ideates against existing **Projects** as well as codebase gaps.
+2. **Linear Triage** ([`.cursor/skills/linear-triage.md`](../../../.cursor/skills/linear-triage.md))
+   — ~1h later. Processes the **Triage** inbox: dedup, set **Project** + **Priority**, add relations, and
+   promote clearly-actionable work to **Backlog** for `/next`. Organizes broadly; cancels/dedups only
+   `suggestion`-owned issues; surfaces human-filed items rather than auto-deciding them.
+
+**Ownership** (both): destructive actions only on `suggestion`-labeled issues; human/planning issues are
+read-only. **Never create GitHub issues; never touch code.** Issues are born in Linear.
 
 ---
 
@@ -141,15 +150,17 @@ PR link) and opens the PR with `Fixes FRA-N`.
 
 These need a human (account/UI access the cloud sandbox doesn't have):
 
-1. **Linear MCP into the web environment** — so cloud Claude sessions inherit it (already done; this
-   session reaches it natively).
-2. **Linear MCP into Cursor** — Settings → MCP → Linear one-click (native integration). No `.cursor/mcp.json`.
-3. **GitHub App** installed on `pdcarlson/Frapp` (done) — one-way GitHub→Linear sync.
-4. **Team Settings:** enable **Triage** and **auto-archive** (keep **Cycles OFF**).
-5. **Run the Cursor probe** (in [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md#pending-native-linear-mcp-migration--capability-probe))
-   and report the matrix back → unblocks the Cursor rebuild.
-6. **Delete orphaned labels** in the Linear UI once empty (`agent-ready`, `severity:*`, `blocked`) — the
-   MCP can't delete labels.
+1. **Linear MCP into the web environment** — so cloud Claude sessions inherit it (done; `/next` uses it).
+2. **`LINEAR_API_KEY` into Cursor cloud agents** — a Linear personal API key as a Cursor secret, for the
+   two automations (done). Stand up the **Linear Issue Curator** and **Linear Triage** automations per
+   [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md) and run each once to verify they create/organize issues
+   in Linear unattended (no GitHub issues created).
+3. **GitHub App** installed on `pdcarlson/Frapp` (done) — keeps issues/PRs in sync; PRs close work.
+4. **Team Settings:** **Triage** on with *require explicit prioritization* (done); **Estimates** =
+   Fibonacci (done); **Cycles OFF**. Auto-archive runs by default (28d Done / 7d Canceled) under *Issue
+   statuses & automations* — tune if desired.
+5. **Delete orphaned labels** in the Linear UI once empty (`enhancement` after the fold, plus already-done
+   `agent-ready` / `severity:*` / `blocked`) — the MCP/API can't delete labels.
 
 ---
 

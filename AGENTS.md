@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `suggestion-triage.md`).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `linear-curator.md`, `linear-triage.md`).
 
 ## Optional agent credentials (automation / cloud sessions)
 
@@ -36,7 +36,11 @@ For **every** non-doc code change (tests, refactors, tooling, CI, config), updat
 
 ## Work tracking
 
-Work lives in **Linear** (team **Frapp Live**, prefix **FRA-**, identifiers like `FRA-123`) — the **single source of truth** for what to work on and its status. Agents reach it through the **native Linear MCP** (Claude Code and Cursor are both natively integrated — no API key, no committed MCP config). Epics are Linear **Projects**; new work is born in Linear and lands in the **Triage** inbox before it's accepted into the Backlog. To start work, run `/next` — it pulls the top-priority unblocked Backlog issue, completes it, and keeps Linear in sync. Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); Linear issues link out to it and never duplicate it. Design + policy: [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md); the decision is ADR-16 in [`spec/architecture/README.md`](spec/architecture/README.md).
+Work lives in **Linear** (team **Frapp Live**, prefix **FRA-**, identifiers like `FRA-123`) — the **single source of truth** for what to work on and its status.
+
+> **Hard rule (non-negotiable):** **All issues are opened in Linear** (the **Triage** inbox). **Never open a GitHub issue** — not by hand, not from an automation. Work is **closed via GitHub PRs** (`Fixes FRA-N`, plus `Closes #N` for a legacy GitHub twin); the Linear–GitHub integration keeps the two in sync.
+
+How each actor reaches Linear: **Claude Code (web)** uses the **native Linear MCP** injected by the web environment (the path `/next` uses). **Cursor automations run headless with no Linear MCP**, so they use a **`LINEAR_API_KEY`** against Linear's GraphQL API (see [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md)). Epics are Linear **Projects**; new work lands in **Triage** before it's accepted into the Backlog. To start work, run `/next` — it pulls the top-priority unblocked Backlog issue, completes it, and keeps Linear in sync. Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); Linear issues link out to it and never duplicate it. Design + policy: [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md); the decision is ADR-16 in [`spec/architecture/README.md`](spec/architecture/README.md).
 
 ## Filing follow-up work (in Linear)
 
@@ -60,7 +64,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes FRA-N`, criteria met, CI green."
 
-**Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. The Cursor suggestion automation files **and maintains** issues labeled `suggestion`, and **only ever modifies `suggestion`-labeled issues it owns** — human-filed and planning issues are off-limits to it. See [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
+**Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two Cursor automations maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
 
 **Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
 
@@ -118,7 +122,8 @@ CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testi
 | Web / landing / UI      | `.cursor/skills/ui-development.md`          |
 | Tests / verification    | `.cursor/skills/testing.md`                 |
 | Audits / quality        | `.cursor/skills/audit.md`                   |
-| Suggestion triage       | `.cursor/skills/suggestion-triage.md`       |
+| Linear issue curator (Cursor) | `.cursor/skills/linear-curator.md`    |
+| Linear triage (Cursor)  | `.cursor/skills/linear-triage.md`           |
 | Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
 
 Cursor rules under `.cursor/rules/` point at these same skill files.

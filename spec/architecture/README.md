@@ -700,6 +700,28 @@ choices made; the original decision above stands. Details + policy:
   can do against Linear; the target is a **two-automation** (creation + triage) system writing via native
   MCP. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
 
+#### ADR-16 amendment 2 — probe results; Cursor is key-led; cap/sync corrections (2026-06-02)
+
+The capability probe (amendment 1) has run and corrects three things in amendment 1:
+
+- **Cursor automations are NOT keyless.** The probe proved a Cursor **headless background** agent has **no
+  Linear MCP and no Linear credentials**. So amendment 1's "native MCP only / no API key" is wrong for
+  Cursor: the two automations authenticate with a **`LINEAR_API_KEY`** (a Cursor cloud-agent secret)
+  against Linear's **GraphQL API**. (Claude-web still uses its injected native MCP; that part of amendment
+  1 stands.) The original ADR's "automations via the GraphQL API key" path is **reinstated** for Cursor.
+- **Cursor migration is no longer "gated on a probe" — it is built.** Two **Linear-native** automations
+  replace the single GitHub `gh` flow: a **curator** (creates + maintains `suggestion` issues in Linear)
+  and a **triage** pass (prioritize/bucket/promote). **Hard rule: all issues are opened in Linear, never
+  GitHub; work is closed via GitHub PRs and the integration syncs.**
+- **Cap policy corrected:** auto-archive is **automatic and free by default** (Done ~28d, Canceled ~7d;
+  tunable under *Team Settings → Issue statuses & automations*), and **archived issues don't count toward
+  the 250**. Amendment 1's "only auto-archive, a Team Setting the maintainer must enable" overstated it.
+- **Sync:** treat Linear↔GitHub as kept in sync by the integration (issues open in Linear, close via PRs);
+  the "strictly unidirectional" framing in amendment 1 is relaxed to that workflow description.
+- **Estimates/Triage:** team uses Fibonacci estimates and **requires an explicit Priority to leave Triage**
+  (promotions set Priority). See [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
+  and [`CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+
 ---
 
 ## 13. AI Corpus Architecture (v1)
