@@ -6,6 +6,7 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 import {
   SUBSCRIPTION_EXEMPT_KEY,
   SUBSCRIPTION_FREE_TIER_KEY,
+  SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
@@ -43,7 +44,10 @@ describe('ChapterGuard', () => {
   }: {
     appUser?: { id: string } | null;
     member?: { id: string; role_ids: string[] } | null;
-    chapter?: { subscription_status: SubscriptionStatus } | null;
+    chapter?: {
+      subscription_status: SubscriptionStatus;
+      past_due_since?: string | null;
+    } | null;
   }) => {
     let callCount = 0;
     mockFrom.mockImplementation((table: string) => {
@@ -147,6 +151,37 @@ describe('ChapterGuard', () => {
         member: { id: 'member-1', role_ids: ['role-1'] },
         chapter: { subscription_status: status },
       });
+
+    // Pin "now" and stage a past_due chapter that lapsed `daysAgo` days ago so
+    // grace-window boundaries are deterministic (no real clocks).
+    const NOW = Date.parse('2026-06-02T12:00:00.000Z');
+    const withPastDue = (daysAgo: number) => {
+      jest
+        .spyOn(guard as unknown as { currentTime: () => number }, 'currentTime')
+        .mockReturnValue(NOW);
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: ['role-1'] },
+        chapter: {
+          subscription_status: 'past_due',
+          past_due_since: new Date(
+            NOW - daysAgo * 24 * 60 * 60 * 1000,
+          ).toISOString(),
+        },
+      });
+    };
+    const asFreeTier = () =>
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation((key) => key === SUBSCRIPTION_FREE_TIER_KEY);
+    const asGraceBlockedFreeTier = () =>
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation(
+          (key) =>
+            key === SUBSCRIPTION_FREE_TIER_KEY ||
+            key === SUBSCRIPTION_GRACE_BLOCKED_KEY,
+        );
 
     it.each<SubscriptionStatus>([
       'active',
@@ -254,6 +289,106 @@ describe('ChapterGuard', () => {
       await expect(
         guard.canActivate(mockExecutionContext(request)),
       ).resolves.toBe(true);
+    });
+
+    describe('past_due grace window (FRA-109)', () => {
+      it('allows free-tier writes during grace (0 days)', async () => {
+        withPastDue(0);
+        asFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).resolves.toBe(true);
+      });
+
+      it('blocks grace-blocked invite writes during grace with invite_blocked', async () => {
+        withPastDue(2);
+        asGraceBlockedFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).rejects.toMatchObject({
+          response: { code: 'chapter.subscription.invite_blocked' },
+        });
+      });
+
+      it('still within grace at exactly 3 days: invite blocked, free-tier allowed', async () => {
+        withPastDue(3);
+        asGraceBlockedFreeTier();
+        await expect(
+          guard.canActivate(
+            mockExecutionContext(buildRequest({ method: 'POST' })),
+          ),
+        ).rejects.toMatchObject({
+          response: { code: 'chapter.subscription.invite_blocked' },
+        });
+
+        withPastDue(3);
+        asFreeTier();
+        await expect(
+          guard.canActivate(
+            mockExecutionContext(buildRequest({ method: 'POST' })),
+          ),
+        ).resolves.toBe(true);
+      });
+
+      it('hard-locks free-tier writes after grace (4 days) with write_locked', async () => {
+        withPastDue(4);
+        asFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).rejects.toMatchObject({
+          response: { code: 'chapter.subscription.write_locked' },
+        });
+      });
+
+      it('blocks paid-ops writes during grace with write_locked', async () => {
+        withPastDue(1);
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).rejects.toMatchObject({
+          response: { code: 'chapter.subscription.write_locked' },
+        });
+      });
+
+      it('treats null past_due_since as within grace (free-tier allowed)', async () => {
+        mockSupabaseChain({
+          appUser: { id: 'user-1' },
+          member: { id: 'member-1', role_ids: ['role-1'] },
+          chapter: { subscription_status: 'past_due', past_due_since: null },
+        });
+        asFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).resolves.toBe(true);
+      });
+
+      it('blocks @GraceBlocked invite when past_due_since is null (treated as within grace)', async () => {
+        mockSupabaseChain({
+          appUser: { id: 'user-1' },
+          member: { id: 'member-1', role_ids: ['role-1'] },
+          chapter: { subscription_status: 'past_due', past_due_since: null },
+        });
+        asGraceBlockedFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).rejects.toMatchObject({
+          response: { code: 'chapter.subscription.invite_blocked' },
+        });
+      });
+
+      it('ignores grace-blocked marker when incomplete (free wedge preserved)', async () => {
+        withStatus('incomplete');
+        asGraceBlockedFreeTier();
+        const request = buildRequest({ method: 'POST' });
+        await expect(
+          guard.canActivate(mockExecutionContext(request)),
+        ).resolves.toBe(true);
+      });
     });
   });
 });

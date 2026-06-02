@@ -66,6 +66,12 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback past_due grace clock
+
+* **Migration**: `20260602120000_chapter_past_due_since.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS past_due_since;`
+* **Note**: The column only feeds `ChapterGuard`'s 3-day `past_due` grace window. Dropping it reverts to the prior behavior where any `past_due` write is hard-blocked immediately (no grace) — strictly more restrictive, so it is safe and causes no data loss beyond the per-chapter grace timestamps. After dropping, redeploy the API at the pre-FRA-109 revision (the post-FRA-109 guard `select`s the column and will error if it is gone). No data backfill needed on re-apply; the migration re-stamps existing `past_due` rows.
+
 ## Rollback Chunk 09 member custom-field values
 
 * **Migration**: `20260531120000_member_custom_field_values.sql`

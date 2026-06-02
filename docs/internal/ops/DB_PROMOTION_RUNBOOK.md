@@ -64,6 +64,17 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-06-02: past_due grace clock on `chapters` (FRA-109)
+
+One additive migration that adds a nullable column and backfills existing `past_due` rows.
+
+### 20260602120000_chapter_past_due_since.sql
+* **Purpose**: Adds `chapters.past_due_since timestamptz` (nullable) so `ChapterGuard` can enforce the spec's 3-day `past_due` grace window (`spec/behavior/billing.md`). The Stripe webhook (`BillingService`) stamps it on the into-`past_due` transition and clears it on recovery/exit.
+* **Safety**: `ADD COLUMN IF NOT EXISTS` (nullable, no default) is non-lock-heavy and backward-compatible — older API code simply ignores the column. The backfill (`update chapters set past_due_since = now() where subscription_status = 'past_due' and past_due_since is null`) only touches rows already in `past_due` and starts their grace clock at promotion time, so an existing lapsed chapter is not instantly hard-locked. Idempotent.
+* **Checks**: `select column_name from information_schema.columns where table_name = 'chapters' and column_name = 'past_due_since';` — should return 1 row. `select count(*) from chapters where subscription_status = 'past_due' and past_due_since is null;` — should return 0 after apply.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback past_due grace clock.
+
 ## 2026-05-30: Chunk 07d — Dues config schema alignment (#540)
 
 One migration that modifies an existing (but empty) table to match the spec.

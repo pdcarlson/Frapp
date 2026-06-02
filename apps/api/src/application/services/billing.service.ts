@@ -219,9 +219,21 @@ export class BillingService {
       return;
     }
 
-    await this.chapterRepo.update(chapter.id, {
-      subscription_status: newStatus,
-    });
+    // FRA-109: maintain the past_due grace clock. Start it only on the
+    // into-past_due transition (idempotent across repeated past_due events);
+    // clear it whenever the chapter leaves past_due. Anchor the timestamp to
+    // the Stripe event creation time (Unix seconds), not processing time, so a
+    // delayed/retried webhook delivery can't extend the 3-day grace window.
+    const update: Partial<Chapter> = { subscription_status: newStatus };
+    if (newStatus === 'past_due') {
+      if (chapter.subscription_status !== 'past_due') {
+        update.past_due_since = new Date(event.created * 1000).toISOString();
+      }
+    } else {
+      update.past_due_since = null;
+    }
+
+    await this.chapterRepo.update(chapter.id, update);
 
     await this.notifyChapterPresident(chapter.id, newStatus);
 
@@ -243,6 +255,7 @@ export class BillingService {
 
     await this.chapterRepo.update(chapter.id, {
       subscription_status: 'canceled',
+      past_due_since: null,
     });
 
     await this.notifyChapterPresident(chapter.id, 'canceled');
@@ -261,6 +274,7 @@ export class BillingService {
     if (chapter.subscription_status === 'past_due') {
       await this.chapterRepo.update(chapter.id, {
         subscription_status: 'active',
+        past_due_since: null,
       });
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
