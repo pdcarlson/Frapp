@@ -100,13 +100,13 @@ The directory is built around the always-on `members` module. Custom fields rend
 
 **Two views:** List view (default) and Calendar view (toggle).
 
-**List view** groups Upcoming / Past / Recurring and renders each event as a card with location, time, point value, mandatory/recurrence chips, and a check-in count.
+**List view** groups Upcoming / Past / Recurring and renders each event as a card with location, time, point value, mandatory/recurrence chips, a **"Targeted"** chip when the event restricts attendance to specific roles, and a check-in count.
 
-**Event detail** (expand or navigate) shows full event info plus a **live** attendance roster: member name, status (PRESENT / ABSENT / EXCUSED / LATE), and check-in time. Admin actions per row: Mark Excused / Absent / Late. An "Auto-Mark Absent" button calls the auto-absent endpoint after the grace period. Meeting minutes render as a Markdown editor below attendance; a "Download .ics" button exports the event.
+**Event detail** (expand or navigate) shows full event info plus a **live** attendance roster: member name, status (PRESENT / ABSENT / EXCUSED / LATE), and check-in time. Admin actions per row: Mark Excused / Absent / Late. An "Auto-Mark Absent" button calls the auto-absent endpoint after the grace period. Meeting minutes render as a Markdown editor below attendance; a "Download .ics" button exports the event. Under the attendance policy, a role-targeted event lists its required role names (resolved from `GET /v1/roles`); an untargeted event shows "All members".
 
 The roster is live: the web client subscribes to Supabase Realtime Postgres changes on `event_attendance` filtered by `event_id` and invalidates the corresponding TanStack query on every INSERT/UPDATE, so admins watching one tab see self check-ins from other devices without refreshing. The shared realtime primitive (`useRealtimeTable` in `apps/web/lib/realtime/use-realtime-table.ts`) also backs the events list itself (new events propagate immediately), and a single shared browser Supabase client multiplexes every subscription over one websocket (`apps/web/lib/realtime/supabase-realtime.ts`).
 
-**Create / edit event** form (modal or full page): name, description, location; start/end date-time pickers; point value (number, default 10); mandatory toggle; recurrence (None | Weekly | Biweekly | Monthly); optional required-roles multi-select. Inline validation.
+**Create / edit event** form (modal or full page): name, description, location; start/end date-time pickers; point value (number, default 10); mandatory toggle; recurrence (None | Weekly | Biweekly | Monthly); and a **required-roles multi-select** — a checkbox list of the chapter's RBAC roles (`GET /v1/roles`, the roles that populate `member.role_ids`). Leaving every role unchecked targets **all members** (omits `required_role_ids` on create; sends an empty array on edit to clear); checking one or more roles restricts check-in eligibility and auto-absent to members holding any selected role, per `spec/behavior/events.md` §Event Creation. Inline validation.
 
 **Calendar view:** monthly grid with events as colored bars; click a day to list its events, click an event to navigate to detail; month / week / day toggle.
 

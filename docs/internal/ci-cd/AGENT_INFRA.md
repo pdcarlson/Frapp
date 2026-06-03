@@ -44,13 +44,13 @@ whose closure syncs GitHub→Linear). Design + policy: [`LINEAR_PM.md`](LINEAR_P
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing unit tests; `api-tests` runs `apps/api` Jest; `web-tests` runs `apps/web` Vitest; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
-| AI code review      | `.github/workflows/claude-review.yml` — Claude PR review (Opus open / Sonnet push); `claude-review-gate` blocks merge on Important findings (`claude-review-override` label)                                                                                |
+| AI code review      | `.github/workflows/claude-review.yml` — Claude PR review (Opus; once on open + on-demand `@claude review`, not on push); `claude-review-gate` commit status blocks merge on Important findings (`claude-review-override` label)                              |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.

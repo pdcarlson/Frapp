@@ -39,8 +39,11 @@ const DOCS_CHECKS = [
 
 const REVIEW_CHECKS = [
   // Claude review gate (ADR-14): blocks merge only when the AI review reports an Important finding.
-  // It always reports a conclusion (so it never hangs "pending"); bypass a false positive with the
-  // `claude-review-override` PR label. See docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
+  // NOTE: `claude-review-gate` is satisfied by an explicit COMMIT STATUS posted to the PR head SHA by
+  // claude-review.yml (NOT a check-run) — the gate job is deliberately named `claude-review-gate-runner`
+  // so its implicit check-run does not collide with this context (a same-named check + status would make
+  // GitHub require BOTH). Bypass a false positive with the `claude-review-override` PR label.
+  // See docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
   // ROLLOUT: keep this list applied only AFTER the workflow is merged to the target branch and
   // verified green — otherwise every PR blocks on a missing required check.
   "claude-review-gate",

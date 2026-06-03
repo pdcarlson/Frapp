@@ -20,6 +20,12 @@ Jest is configured in `apps/api/package.json` with scripts:
 - `npm run test:watch` — watch mode
 - `npm run test:e2e` — E2E tests (uses `test/jest-e2e.json`)
 
+Both the unit and E2E suites run in CI in the **`api-tests`** job (`.github/workflows/ci.yml`) — it
+runs `npm run test -w apps/api` followed by `npm run test:e2e -w apps/api`. `api-tests` is a
+merge-blocking required check (see `scripts/configure-branch-protection.mjs`), so the E2E suite gates
+PRs to `main`/`production` without a separate status. The E2E specs override the Supabase client with
+mocks (see §6), so the job is deterministic and needs no live database or secrets.
+
 The typical Nest testing pattern:
 
 ```ts
@@ -79,6 +85,8 @@ Interceptors:
 
 The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and (on pull requests) **`scripts/check-docs-impact.mjs`** so non-doc code changes must include related `docs/` or `spec/` updates in the same PR.
 
+The **`api-tests`** job runs **both** the unit suite (`npm run test -w apps/api`) and the E2E suite (`npm run test:e2e -w apps/api`) after building shared packages. Because the E2E specs mock Supabase (§6), the job stays deterministic in GitHub Actions and requires no external services.
+
 ## 5a. Chat hot-path tests (ADR-11 / #416)
 
 The chat hot path (send + react) moved from Supabase Edge Functions into the NestJS `ChatController` in #416 (per ADR-11). The Deno test harness under `supabase/functions/_tests/` and the `edge-fn-tests` CI job retired with it; the same coverage now lives in the standard API Jest tier:
@@ -99,10 +107,39 @@ E2E config file: `apps/api/test/jest-e2e.json`:
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
+  },
+  "moduleNameMapper": {
+    "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
+    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts"
   }
 }
 ```
+
+**Why the `commonjs` transform + `moduleNameMapper`:** booting the full `AppModule` in an E2E spec
+pulls in the `@repo/org-archetypes` and `@repo/chapter-theme` workspace packages, which are
+`"type": "module"`. Their `require` export condition points at ESM `dist/index.js`, which the
+CommonJS Jest runtime can't load (`Unexpected token 'export'`). The mapper resolves them to their
+TypeScript source and the `module: commonjs` ts-jest override compiles every transformed file —
+including those package sources — to CommonJS. All three `tsconfig` keys are load-bearing: ts-jest
+shallow-merges over `apps/api/tsconfig.json` (which sets `module`/`moduleResolution: nodenext` and
+`resolvePackageJsonExports: true`), so `moduleResolution: node` and `resolvePackageJsonExports: false`
+must be set together with `module: commonjs` or TypeScript errors with `TS5098`. The unit suite
+(`package.json` `jest` config) doesn't need this because the specs that touch these two packages
+`jest.mock()` them directly (they're pure helper functions) rather than transforming their ESM `dist`.
+
+E2E specs build the Nest app from `AppModule` but **mock external dependencies** rather than hitting a
+live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provider token (see
+`apps/api/test/helpers/supabase-mock.factory.ts` / `createSupabaseMock()`), and auth/chapter/permission
+guards are replaced with stubs. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
+fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.
+
+Because `AppModule`'s `ConfigModule.forRoot` runs `validateEnv` (`src/config/env.validation.ts`) at
+import time, the suite needs the required env vars (`SUPABASE_URL`, `STRIPE_SECRET_KEY`, …) present or
+every spec throws `Missing required environment variables` on boot. `test/setup-e2e.ts` (wired via
+`setupFiles`) sets non-empty dummy defaults — only when unset, so a real local `.env.local` still
+wins — keeping the suite hermetic in CI with no secrets or live services. The values are never used
+(Supabase + Stripe are mocked per spec).
 
 Basic example (`apps/api/test/app.e2e-spec.ts`):
 
@@ -114,7 +151,8 @@ describe("Health (e2e)", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    // create Nest application against real Supabase (local or staging)
+    // create the Nest app from AppModule with a mocked SUPABASE_CLIENT provider
+    // (see createSupabaseMock) and stubbed guards — no live Supabase needed
   });
 
   it("/health (GET)", async () => {

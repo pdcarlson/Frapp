@@ -10,20 +10,16 @@ import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repo
 import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { Event } from '../../domain/entities/event.entity';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import type { Member } from '../../domain/entities/member.entity';
 
 describe('AttendanceService', () => {
   let service: AttendanceService;
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
-  let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
 
   const baseEvent: Event = {
@@ -54,17 +50,6 @@ describe('AttendanceService', () => {
     created_at: '2026-02-26T18:30:00.000Z',
   };
 
-  const basePointTxn: PointTransaction = {
-    id: 'pt-1',
-    chapter_id: 'ch-1',
-    user_id: 'user-1',
-    amount: 10,
-    category: 'ATTENDANCE',
-    description: 'Attendance for event: Chapter Meeting',
-    metadata: { event_id: 'evt-1' },
-    created_at: '2026-02-26T18:30:00.000Z',
-  };
-
   beforeEach(async () => {
     mockAttendanceRepo = {
       findById: jest.fn(),
@@ -74,6 +59,7 @@ describe('AttendanceService', () => {
       createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      checkInAtomic: jest.fn(),
     };
 
     mockEventRepo = {
@@ -82,14 +68,6 @@ describe('AttendanceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
-    };
-
-    mockPointTxnRepo = {
-      create: jest.fn(),
-      findByUser: jest.fn(),
-      findByChapter: jest.fn(),
-      findByChapterFiltered: jest.fn(),
-      countRecentAdjustments: jest.fn(),
     };
 
     mockMemberRepo = {
@@ -106,7 +84,6 @@ describe('AttendanceService', () => {
         AttendanceService,
         { provide: ATTENDANCE_REPOSITORY, useValue: mockAttendanceRepo },
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
-        { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
       ],
     }).compile();
@@ -115,15 +92,14 @@ describe('AttendanceService', () => {
   });
 
   describe('checkIn', () => {
-    it('should create attendance and point transaction when within event window', async () => {
+    it('should atomically create attendance and award points within the event window', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');
       jest.useFakeTimers();
       jest.setSystemTime(duringEvent);
 
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
 
       const result = await service.checkIn('evt-1', 'user-1', 'ch-1');
 
@@ -132,23 +108,16 @@ describe('AttendanceService', () => {
         'evt-1',
         'user-1',
       );
-      expect(mockAttendanceRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          event_id: 'evt-1',
-          user_id: 'user-1',
-          status: 'PRESENT',
-          excuse_reason: null,
-          marked_by: null,
-        }),
+      // Attendance insert + point award happen in a single atomic RPC call.
+      expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalledWith(
+        'evt-1',
+        'user-1',
+        'ch-1',
+        duringEvent.toISOString(),
+        10,
+        'Chapter Meeting',
       );
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith({
-        chapter_id: 'ch-1',
-        user_id: 'user-1',
-        amount: 10,
-        category: 'ATTENDANCE',
-        description: 'Attendance for event: Chapter Meeting',
-        metadata: { event_id: 'evt-1' },
-      });
+      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
       expect(result).toEqual(baseAttendance);
 
       jest.useRealTimers();
@@ -161,8 +130,7 @@ describe('AttendanceService', () => {
 
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
 
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
         baseAttendance,
@@ -194,27 +162,48 @@ describe('AttendanceService', () => {
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
         ForbiddenException,
       );
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
       jest.useRealTimers();
     });
 
-    it('should rollback attendance row when points creation fails', async () => {
+    it('should return 409 Conflict when the atomic check-in inserts nothing (lost race)', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      // Fast-path read sees no row, but a concurrent check-in wins the race, so
+      // the RPC's `on conflict do nothing` inserts nothing and returns null.
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(null);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        'Already checked in for this event',
+      );
+      jest.useRealTimers();
+    });
+
+    it('should propagate atomic check-in failures without partial writes', async () => {
       const duringEvent = new Date('2026-02-26T18:30:00.000Z');
       jest.useFakeTimers();
       jest.setSystemTime(duringEvent);
 
       mockEventRepo.findById.mockResolvedValue(baseEvent);
       mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
-      mockAttendanceRepo.create.mockResolvedValue(baseAttendance);
-      mockPointTxnRepo.create.mockRejectedValue(
-        new Error('points write failed'),
+      mockAttendanceRepo.checkInAtomic.mockRejectedValue(
+        new Error('db transaction failed'),
       );
 
+      // The RPC is one transaction: on failure nothing commits, so there is no
+      // attendance row to delete and no separate point write to undo.
       await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
-        'points write failed',
+        'db transaction failed',
       );
-      expect(mockAttendanceRepo.delete).toHaveBeenCalledWith('att-1');
+      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.delete).not.toHaveBeenCalled();
       jest.useRealTimers();
     });
 
@@ -228,8 +217,7 @@ describe('AttendanceService', () => {
         'Event not found',
       );
 
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when outside event time window', async () => {
@@ -248,8 +236,7 @@ describe('AttendanceService', () => {
         'Check-in is only allowed during the event time window',
       );
 
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
 
     it('should throw ConflictException when already checked in', async () => {
@@ -265,8 +252,7 @@ describe('AttendanceService', () => {
         ConflictException,
       );
 
-      expect(mockAttendanceRepo.create).not.toHaveBeenCalled();
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
     });
   });
 

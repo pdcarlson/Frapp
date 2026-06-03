@@ -110,6 +110,11 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS approve_service_entry(uuid, uuid, uuid, text, integer);`
 * **Note**: Additive function only — dropping it removes the atomic service-hour approval path but loses no data. The API calls it from `SupabaseServiceEntryRepository.approveAtomic`, so a forward-fix (rather than a bare drop) is required to keep service-hour approval working: deploy an API revision that reverts to the prior two-write path (point insert + entry update) before dropping the function.
 
+## Rollback `check_in_event` RPC
+* **Migration**: `20260603140000_add_check_in_event_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS check_in_event(uuid, uuid, uuid, timestamptz, integer, text);`
+* **Note**: Additive function only — dropping it removes the atomic event check-in path but loses no data. The API calls it from `SupabaseAttendanceRepository.checkInAtomic`, so a forward-fix (rather than a bare drop) is required to keep event check-in working: deploy an API revision that reverts to the prior two-write path (attendance insert + point insert) before dropping the function.
+
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`
