@@ -694,7 +694,8 @@ choices made; the original decision above stands. Details + policy:
 - **Deleted:** the `docs/backlog/` tree and the `/triage` `/status` `/next-task` commands (replaced by
   `/next`); the SessionStart hook no longer summarizes a backlog. Git history is the archive.
 - **Free-tier cap policy:** active issues are capped at 250; only **auto-archive** (a Team Setting)
-  reclaims slots; cap remediation is confirm-then-act and reversible.
+  reclaims slots; cap remediation is confirm-then-act and reversible. *(Superseded by amendment 3: the 250
+  cap is on **active = Started+Unstarted**, not non-archived/Backlog — so Backlog growth never trips it.)*
 - **Cursor automation migration is gated on a capability probe.** The suggestion automation keeps filing
   GitHub `suggestion` issues (which sync in) until a probe verifies what a Cursor **background** automation
   can do against Linear; the target is a **two-automation** (creation + triage) system writing via native

@@ -99,11 +99,11 @@ confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
 
 ## Free-tier cap and auto-archive
 
-Linear's Free plan caps **active** issues at **250** — and **"active" has a precise meaning**: issues in
-the **Started + Unstarted** status categories (here, **In Progress** + **Todo**). Per Linear's own
-definition, Active = *"issues under Unstarted or Started categories … but **not Backlog, Completed, or
-Canceled**"* ([Default team pages](https://linear.app/docs/default-team-pages)). So **Backlog and archived
-issues do *not* count toward the 250** — the Backlog is effectively unbounded for our purposes.
+Linear's Free plan caps **active** issues at **250** — and **"active" is a precise Linear term**: per
+Linear's docs ([Default team pages](https://linear.app/docs/default-team-pages)), Active means the
+**Started + Unstarted** status categories (here **In Progress** + **Todo**), and **explicitly not Backlog,
+Completed, or Canceled**. So **Backlog and archived issues do *not* count toward the 250** — the Backlog is
+effectively unbounded for our purposes.
 
 > **Measured 2026-06-03 (this workspace, Free plan):** 276 *non-archived* issues — **260 Backlog**, ~2
 > active (Started+Unstarted), 1 Triage, 10 Done, 3 Canceled — and **new-issue creation still succeeds**
