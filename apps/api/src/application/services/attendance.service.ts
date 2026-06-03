@@ -10,8 +10,6 @@ import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repo
 import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
 import type { IEventRepository } from '../../domain/repositories/event.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
@@ -25,8 +23,6 @@ export class AttendanceService {
     private readonly attendanceRepo: IAttendanceRepository,
     @Inject(EVENT_REPOSITORY)
     private readonly eventRepo: IEventRepository,
-    @Inject(POINT_TRANSACTION_REPOSITORY)
-    private readonly pointTxnRepo: IPointTransactionRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
   ) {}
@@ -88,40 +84,27 @@ export class AttendanceService {
 
     const checkInTime = now.toISOString();
 
-    let attendance: EventAttendance | null = null;
-    try {
-      attendance = await this.attendanceRepo.create({
-        event_id: eventId,
-        user_id: userId,
-        status: 'PRESENT',
-        check_in_time: checkInTime,
-        excuse_reason: null,
-        marked_by: null,
-      });
-
-      await this.pointTxnRepo.create({
-        chapter_id: event.chapter_id,
-        user_id: userId,
-        amount: event.point_value,
-        category: 'ATTENDANCE',
-        description: `Attendance for event: ${event.name}`,
-        metadata: {
-          event_id: event.id,
-        },
-      });
-
-      return attendance;
-    } catch (error) {
-      // Best-effort rollback of attendance if points creation fails.
-      if (attendance) {
-        try {
-          await this.attendanceRepo.delete(attendance.id);
-        } catch {
-          // swallow rollback error
-        }
-      }
-      throw error;
+    // Insert the attendance row and award the event's ATTENDANCE points
+    // atomically in one DB transaction, so a partial failure can't leave points
+    // without attendance (or attendance without points). The unique
+    // (event_id, user_id) index -- enforced inside the RPC via
+    // `on conflict do nothing` -- is the authoritative guard against a concurrent
+    // double check-in; the duplicate read above is only a friendly fast path. A
+    // lost race (the row already exists) returns null, which maps to the same
+    // 409 as the fast-path guard.
+    const attendance = await this.attendanceRepo.checkInAtomic(
+      eventId,
+      userId,
+      event.chapter_id,
+      checkInTime,
+      event.point_value,
+      event.name,
+    );
+    if (!attendance) {
+      throw new ConflictException('Already checked in for this event');
     }
+
+    return attendance;
   }
 
   async getAttendance(

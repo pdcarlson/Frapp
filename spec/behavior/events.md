@@ -10,9 +10,9 @@
 ## Check-In
 
 - Members check in via the mobile app (self-service).
-- Check-in atomically creates an attendance record AND awards the event's point value (same database transaction).
+- Check-in atomically creates an attendance record AND awards the event's point value (same database transaction), via the `check_in_event` RPC.
 - Check-in is only available during the event's time window (between start_time and end_time, with a configurable grace period after end_time, default 15 minutes).
-- Unique constraint: one attendance record per (event, user). Double check-in returns 409 Conflict.
+- Unique constraint: one attendance record per (event, user) — enforced inside `check_in_event` via `on conflict do nothing`, so a concurrent double check-in inserts nothing and returns 409 Conflict without a double award. See [points.md](points.md) for the atomicity invariant.
 - For role-targeted events, only members with matching roles can check in. Members without the required role who attempt to check in receive a 403 Forbidden.
 
 ## Attendance Management
