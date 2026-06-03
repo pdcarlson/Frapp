@@ -67,6 +67,7 @@ Permissions are never cached across requests. Each request freshly resolves the 
   - **Alumni:** `members:view`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
 - Chapter admins with `roles:manage` can create unlimited **custom roles**.
+- Role **create, update, and delete** are scoped to the caller's active chapter (per the multi-tenancy invariant): update/delete load the target role and verify its `chapter_id` matches the active chapter, returning `403 Forbidden` when a role ID from another chapter is supplied.
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color** (hex string, for chat name colors like Discord).
 - A user with no assigned roles has zero permissions (fail-safe closed).
 
