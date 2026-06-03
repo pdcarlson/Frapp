@@ -61,44 +61,63 @@ export class PointsService {
   private filterByWindow(
     transactions: PointTransaction[],
     window: PointsWindow = 'all',
-    semesterRange?: { start: Date; end: Date },
+    semesterRange?: { after: Date },
   ): PointTransaction[] {
     if (window === 'all') return transactions;
 
     const now = new Date();
-    let from: Date;
-    let to: Date = now;
 
     if (window === 'month') {
-      from = new Date(now);
+      const from = new Date(now);
       from.setMonth(from.getMonth() - 1);
-    } else if (semesterRange) {
-      from = semesterRange.start;
-      to = semesterRange.end;
-    } else {
-      return transactions;
+      return transactions.filter((txn) => {
+        const createdAt = new Date(txn.created_at);
+        return (
+          !Number.isNaN(createdAt.getTime()) &&
+          createdAt >= from &&
+          createdAt <= now
+        );
+      });
     }
 
+    // window === 'semester': the active period is everything created after the
+    // END of the latest archive's end_date calendar day, through now. The
+    // archived range covers whole days [start_date, end_date], so a transaction
+    // recorded anytime on the end_date day belongs to the archive and is
+    // excluded here. No archive (semesterRange undefined) falls back to all-time.
+    if (!semesterRange) return transactions;
+    const { after } = semesterRange;
     return transactions.filter((txn) => {
       const createdAt = new Date(txn.created_at);
       return (
         !Number.isNaN(createdAt.getTime()) &&
-        createdAt >= from &&
-        createdAt <= to
+        createdAt > after &&
+        createdAt <= now
       );
     });
   }
 
+  /**
+   * Lower bound (exclusive) for the active "this semester" window. The archived
+   * period covers whole calendar days `[start_date, end_date]` (both are SQL
+   * `date` values, e.g. '2026-06-15'), so the active period begins after the
+   * END of the latest archive's end_date day. A transaction recorded anytime on
+   * the end_date day belongs to the archived period (see
+   * spec/behavior/semester-rollover.md). Returns undefined when no — or an
+   * unparseable — archive exists, so the caller falls back to all-time.
+   */
   private async getSemesterRange(
     chapterId: string,
-  ): Promise<{ start: Date; end: Date } | undefined> {
+  ): Promise<{ after: Date } | undefined> {
     const archive =
       await this.semesterArchiveRepo.findLatestByChapter(chapterId);
     if (!archive) return undefined;
-    return {
-      start: new Date(archive.start_date),
-      end: new Date(archive.end_date),
-    };
+    // Treat end_date as a calendar day ending at 23:59:59.999Z — mirrors the
+    // inclusive end-of-day convention in report.service.ts. `slice(0, 10)`
+    // tolerates either a bare 'YYYY-MM-DD' or a full ISO timestamp.
+    const after = new Date(`${archive.end_date.slice(0, 10)}T23:59:59.999Z`);
+    if (Number.isNaN(after.getTime())) return undefined;
+    return { after };
   }
 
   async getUserSummary(

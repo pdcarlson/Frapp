@@ -167,6 +167,42 @@ describe('PointsService', () => {
         result.transactions.reduce((s, t) => s + t.amount, 0),
       );
     });
+
+    it('should filter to the active semester window after a rollover', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2027-01-10T00:00:00.000Z'));
+      try {
+        mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
+          id: 'sa-1',
+          chapter_id: 'ch-1',
+          label: 'Spring 2026',
+          start_date: '2026-01-15',
+          end_date: '2026-06-15',
+          created_at: '2026-06-15T12:00:00.000Z',
+        });
+
+        const active: PointTransaction = {
+          ...txn1, // amount 10 — day after end_date → active
+          created_at: '2026-06-16T00:00:00.000Z',
+        };
+        const onEndDateDay: PointTransaction = {
+          ...txn1b, // amount 5 — later on end_date day → archived, excluded
+          created_at: '2026-06-15T18:00:00.000Z',
+        };
+        mockPointTxnRepo.findByUser.mockResolvedValue([active, onEndDateDay]);
+
+        const result = await service.getUserSummary(
+          'ch-1',
+          'user-1',
+          'semester',
+        );
+
+        expect(result.transactions).toHaveLength(1);
+        expect(result.transactions[0].id).toBe('pt-1');
+        expect(result.balance).toBe(10);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   describe('getLeaderboard', () => {
@@ -544,37 +580,93 @@ describe('PointsService', () => {
     });
   });
 
-  describe('semester-aware leaderboard', () => {
-    it('should use semester archive dates when available', async () => {
-      const archiveStart = '2026-01-15T00:00:00.000Z';
-      const archiveEnd = '2026-06-15T00:00:00.000Z';
+  describe('semester-aware leaderboard (active period)', () => {
+    // The active "this semester" window is everything created after the END of
+    // the latest archive's end_date calendar day, through now. Pin "now" so the
+    // upper bound (<= now) is deterministic regardless of when the suite runs.
+    const NOW = new Date('2027-01-10T00:00:00.000Z');
+
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(NOW);
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('counts only transactions after the end_date day, through now', async () => {
+      // end_date is a SQL `date` (bare 'YYYY-MM-DD'); the archived period covers
+      // the whole of 2026-06-15.
       mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
         id: 'sa-1',
         chapter_id: 'ch-1',
         label: 'Spring 2026',
-        start_date: archiveStart,
-        end_date: archiveEnd,
-        created_at: '2026-01-15T00:00:00.000Z',
+        start_date: '2026-01-15',
+        end_date: '2026-06-15',
+        created_at: '2026-06-15T12:00:00.000Z',
       });
 
-      const inRange: PointTransaction = {
-        ...txn1,
+      const active: PointTransaction = {
+        ...txn1, // user-1, amount 10 — day after end_date → active
+        created_at: '2026-06-16T09:00:00.000Z',
+      };
+      const onEndDateDay: PointTransaction = {
+        ...txn3, // user-2, amount 20 — later on end_date day → archived, excluded
+        created_at: '2026-06-15T23:00:00.000Z',
+      };
+      const beforeEnd: PointTransaction = {
+        ...txn2, // user-2, amount 5 — inside archived range, excluded
         created_at: '2026-02-01T00:00:00.000Z',
       };
-      const outOfRange: PointTransaction = {
-        ...txn3,
-        created_at: '2025-12-01T00:00:00.000Z',
+      const future: PointTransaction = {
+        ...txn1b, // user-1, amount 5 — after `now`, excluded by the upper bound
+        created_at: '2027-06-01T00:00:00.000Z',
       };
-      mockPointTxnRepo.findByChapter.mockResolvedValue([inRange, outOfRange]);
+      mockPointTxnRepo.findByChapter.mockResolvedValue([
+        active,
+        onEndDateDay,
+        beforeEnd,
+        future,
+      ]);
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
       expect(mockSemesterArchiveRepo.findLatestByChapter).toHaveBeenCalledWith(
         'ch-1',
       );
+      // Only `active` qualifies: onEndDateDay and beforeEnd are archived, and
+      // `future` is beyond `now`.
       expect(result).toHaveLength(1);
       expect(result[0].user_id).toBe('user-1');
       expect(result[0].total).toBe(10);
+    });
+
+    it('treats the entire end_date day as archived (day boundary)', async () => {
+      mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
+        id: 'sa-2',
+        chapter_id: 'ch-1',
+        label: 'Fall 2026',
+        start_date: '2026-08-01',
+        end_date: '2026-12-31',
+        created_at: '2026-12-31T12:00:00.000Z',
+      });
+
+      const lastInstantOfEndDay: PointTransaction = {
+        ...txn3, // user-2 — 23:59:59.999 on end_date → archived, excluded
+        created_at: '2026-12-31T23:59:59.999Z',
+      };
+      const firstInstantOfNextDay: PointTransaction = {
+        ...txn1, // user-1 — 00:00 next day → active, included
+        created_at: '2027-01-01T00:00:00.000Z',
+      };
+      mockPointTxnRepo.findByChapter.mockResolvedValue([
+        lastInstantOfEndDay,
+        firstInstantOfNextDay,
+      ]);
+
+      const result = await service.getLeaderboard('ch-1', 'semester');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].user_id).toBe('user-1');
     });
 
     it('should fall back to all-time when no archive exists', async () => {
