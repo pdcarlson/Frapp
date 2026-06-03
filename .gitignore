@@ -58,4 +58,4 @@ lychee-*.tar.gz
 lychee-*/
 
 # Tooling binary cache (gitleaks via scripts/install-gitleaks.sh; never committed)
-.cache/
+.cache/gitleaks/

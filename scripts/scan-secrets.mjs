@@ -95,7 +95,9 @@ function resolveBinary() {
   const install = spawnSync("bash", [INSTALL_SCRIPT], { stdio: ["ignore", "ignore", "inherit"] });
   if (install.status === 0 && existsSync(CACHED_BIN)) return CACHED_BIN;
 
-  // Installer couldn't run (e.g. offline, no bash): fall back to a COMPATIBLE gitleaks on PATH.
+  // Installer exited non-zero — offline, no bash, or a checksum error (see its stderr). Fall back to a
+  // COMPATIBLE gitleaks on PATH so an offline dev isn't hard-blocked. In CI there's no gitleaks on PATH,
+  // so this returns null below and the scan hard-fails — a failed pinned install never silently passes.
   const probe = spawnSync("gitleaks", ["version"], { encoding: "utf8" });
   if (!probe.error && probe.status === 0 && isCompatibleGitleaks(probe.stdout)) {
     return "gitleaks";
@@ -158,7 +160,9 @@ function main() {
         "  If it's a false positive: add a tight entry to .gitleaks.toml [allowlist]\n" +
         "  or an inline `gitleaks:allow` comment. See docs/internal/ci-cd/SECRET_SCANNING.md.",
     );
-    process.exit(result.status);
+    // result.status is null when gitleaks was signal-killed (OOM/SIGTERM); treat that as a
+    // failure, never a pass (process.exit(null) would coerce to 0 and falsely report clean).
+    process.exit(result.status ?? 1);
   }
   console.log("✅ gitleaks: no secrets found.");
 }
