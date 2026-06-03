@@ -39,6 +39,7 @@ function makeChapter(): Chapter {
     stripe_customer_id: null,
     subscription_status: 'incomplete',
     subscription_id: null,
+    past_due_since: null,
     accent_color: null,
     logo_path: null,
     donation_url: null,
