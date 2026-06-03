@@ -98,13 +98,14 @@ describe('RbacController', () => {
   describe('update', () => {
     it('should update a role', async () => {
       const roleId = 'role-1';
+      const chapterId = 'chapter-1';
       const dto: UpdateRoleDto = { name: 'Updated Role' };
       const expectedRole = { id: roleId, ...dto } as any;
       rbacService.update.mockResolvedValue(expectedRole);
 
-      const result = await controller.update(roleId, dto);
+      const result = await controller.update(roleId, chapterId, dto);
 
-      expect(rbacService.update).toHaveBeenCalledWith(roleId, dto);
+      expect(rbacService.update).toHaveBeenCalledWith(roleId, chapterId, dto);
       expect(result).toEqual(expectedRole);
     });
 
@@ -120,11 +121,12 @@ describe('RbacController', () => {
   describe('delete', () => {
     it('should delete a custom role', async () => {
       const roleId = 'role-1';
+      const chapterId = 'chapter-1';
       rbacService.delete.mockResolvedValue(undefined);
 
-      const result = await controller.delete(roleId);
+      const result = await controller.delete(roleId, chapterId);
 
-      expect(rbacService.delete).toHaveBeenCalledWith(roleId);
+      expect(rbacService.delete).toHaveBeenCalledWith(roleId, chapterId);
       expect(result).toEqual({ success: true });
     });
 

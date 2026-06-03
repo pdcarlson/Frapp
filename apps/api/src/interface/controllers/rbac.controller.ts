@@ -60,15 +60,19 @@ export class RbacController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update a role' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
-  async update(@Param('id') id: string, @Body() dto: UpdateRoleDto) {
-    return this.rbacService.update(id, dto);
+  async update(
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: UpdateRoleDto,
+  ) {
+    return this.rbacService.update(id, chapterId, dto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a custom role' })
   @RequirePermissions(SystemPermissions.ROLES_MANAGE)
-  async delete(@Param('id') id: string) {
-    await this.rbacService.delete(id);
+  async delete(@Param('id') id: string, @CurrentChapterId() chapterId: string) {
+    await this.rbacService.delete(id, chapterId);
     return { success: true };
   }
 
