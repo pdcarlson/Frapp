@@ -168,9 +168,15 @@ describe('PointsService', () => {
       );
     });
 
-    it('should filter to the active semester window after a rollover', async () => {
-      jest.useFakeTimers().setSystemTime(new Date('2027-01-10T00:00:00.000Z'));
-      try {
+    describe('active semester window', () => {
+      beforeEach(() => {
+        jest.useFakeTimers().setSystemTime(new Date('2027-01-10T00:00:00.000Z'));
+      });
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('filters to transactions after the latest archive end_date day', async () => {
         mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
           id: 'sa-1',
           chapter_id: 'ch-1',
@@ -199,9 +205,7 @@ describe('PointsService', () => {
         expect(result.transactions).toHaveLength(1);
         expect(result.transactions[0].id).toBe('pt-1');
         expect(result.balance).toBe(10);
-      } finally {
-        jest.useRealTimers();
-      }
+      });
     });
   });
 
@@ -675,6 +679,25 @@ describe('PointsService', () => {
 
       const result = await service.getLeaderboard('ch-1', 'semester');
 
+      expect(result).toHaveLength(2);
+      expect(result[0].user_id).toBe('user-2');
+      expect(result[0].total).toBe(25);
+    });
+
+    it('falls back to all-time when the archive end_date is unparseable', async () => {
+      mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
+        id: 'sa-bad',
+        chapter_id: 'ch-1',
+        label: 'Bad',
+        start_date: '2026-01-01',
+        end_date: 'not-a-date',
+        created_at: '2026-01-01T00:00:00.000Z',
+      });
+      mockPointTxnRepo.findByChapter.mockResolvedValue([txn1, txn2, txn3]);
+
+      const result = await service.getLeaderboard('ch-1', 'semester');
+
+      // Unparseable end_date → getSemesterRange returns undefined → all-time.
       expect(result).toHaveLength(2);
       expect(result[0].user_id).toBe('user-2');
       expect(result[0].total).toBe(25);
