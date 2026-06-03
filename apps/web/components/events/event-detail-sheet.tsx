@@ -22,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AttendancePanel } from "@/components/events/attendance-panel";
+import { normalizeRoleOptions } from "@/lib/roles";
 
 type EventRecord = Record<string, unknown>;
 
@@ -89,20 +90,13 @@ export function EventDetailSheet({
   const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
     ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
     : [];
-  const roleNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    const rolesData = rolesQuery.data as unknown;
-    if (Array.isArray(rolesData)) {
-      for (const role of rolesData) {
-        if (!role || typeof role !== "object") continue;
-        const candidate = role as Record<string, unknown>;
-        if (typeof candidate.id === "string" && typeof candidate.name === "string") {
-          map.set(candidate.id, candidate.name);
-        }
-      }
-    }
-    return map;
-  }, [rolesQuery.data]);
+  const roleNameById = useMemo(
+    () =>
+      new Map(
+        normalizeRoleOptions(rolesQuery.data).map((role) => [role.id, role.name]),
+      ),
+    [rolesQuery.data],
+  );
 
   async function handleDelete() {
     if (!eventId) return;

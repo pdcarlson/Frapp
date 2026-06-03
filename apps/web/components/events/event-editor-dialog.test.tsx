@@ -151,4 +151,42 @@ describe("EventEditorDialog role targeting", () => {
       }),
     );
   });
+
+  it("renders a seeded role missing from the loaded list as removable", async () => {
+    render(
+      <EventEditorDialog
+        open
+        mode="edit"
+        event={{
+          id: "e3",
+          name: "Legacy Targeted",
+          start_time: "2026-07-01T18:00:00.000Z",
+          end_time: "2026-07-01T19:00:00.000Z",
+          required_role_ids: ["r1", "legacyrole99"],
+        }}
+        usingPreviewData={false}
+        onOpenChange={() => {}}
+        onSaved={async () => {}}
+      />,
+    );
+
+    // The seeded id not returned by useRoles still renders as a checked,
+    // removable row (stub label) so the admin can clear it instead of it
+    // silently persisting into the saved payload.
+    const execCheckbox = screen.getByLabelText("Exec");
+    const phantomCheckbox = screen.getByLabelText("Role legacyro");
+    expect(execCheckbox).toBeChecked();
+    expect(phantomCheckbox).toBeChecked();
+
+    fireEvent.click(execCheckbox);
+    fireEvent.click(phantomCheckbox);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+    expect(updateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ required_role_ids: [] }),
+      }),
+    );
+  });
 });

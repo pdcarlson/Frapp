@@ -18,6 +18,7 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import { normalizeRoleOptions } from "@/lib/roles";
 
 type EventRecord = Record<string, unknown>;
 
@@ -77,20 +78,25 @@ export function EventEditorDialog({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const isSubmitting = createEventMutation.isPending || updateEventMutation.isPending;
 
-  const roleOptions = useMemo(() => {
-    const rolesData = rolesQuery.data as unknown;
-    if (!Array.isArray(rolesData)) return [];
-    return rolesData
-      .flatMap((role: unknown) => {
-        if (!role || typeof role !== "object") return [];
-        const candidate = role as Record<string, unknown>;
-        if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
-          return [];
-        }
-        return [{ id: candidate.id, name: candidate.name }];
-      })
-      .sort((first, second) => first.name.localeCompare(second.name));
-  }, [rolesQuery.data]);
+  const roleOptions = useMemo(
+    () =>
+      normalizeRoleOptions(rolesQuery.data).sort((first, second) =>
+        first.name.localeCompare(second.name),
+      ),
+    [rolesQuery.data],
+  );
+
+  // Always render every selected role as a removable checkbox — including ids
+  // not in the loaded role list (a since-deleted role, or any role while
+  // useRoles is still loading/errored). Otherwise an invisible seeded id would
+  // be unremovable yet still submitted, silently re-targeting the event.
+  const displayedRoles = useMemo(() => {
+    const known = new Set(roleOptions.map((role) => role.id));
+    const extras = requiredRoleIds
+      .filter((id) => !known.has(id))
+      .map((id) => ({ id, name: `Role ${id.slice(0, 8)}` }));
+    return [...roleOptions, ...extras];
+  }, [roleOptions, requiredRoleIds]);
 
   useEffect(() => {
     if (!open) return;
@@ -193,6 +199,9 @@ export function EventEditorDialog({
 
     try {
       if (mode === "create") {
+        // Omit required_role_ids when empty so a new event defaults to all
+        // members; on update (below) we always send it, so an empty array
+        // clears targeting. See spec/ui/web-dashboard/screens.md §Events.
         await createEventMutation.mutateAsync(
           requiredRoleIds.length > 0
             ? { ...payload, required_role_ids: requiredRoleIds }
@@ -340,13 +349,22 @@ export function EventEditorDialog({
               Leave all unchecked to require every member. Select roles to limit attendance and
               auto-absent to members holding any selected role.
             </p>
-            {roleOptions.length === 0 ? (
+            {rolesQuery.isError ? (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                Couldn&apos;t load chapter roles, so the list below may be incomplete.
+              </div>
+            ) : null}
+            {displayedRoles.length === 0 ? (
               <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-                No roles are available for this chapter yet.
+                {rolesQuery.isLoading
+                  ? "Loading roles…"
+                  : rolesQuery.isError
+                    ? "Role targeting is unavailable right now."
+                    : "No roles are available for this chapter yet."}
               </div>
             ) : (
               <div className="space-y-2">
-                {roleOptions.map((role) => (
+                {displayedRoles.map((role) => (
                   <label
                     key={role.id}
                     className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-muted/40"
