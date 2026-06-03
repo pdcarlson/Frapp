@@ -1,10 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   evaluateGate,
   parseImportantFromComments,
   parseStructuredImportant,
 } from "../evaluate-review-gate.mjs";
+
+const SCRIPT = fileURLToPath(new URL("../evaluate-review-gate.mjs", import.meta.url));
+
+// Run the CLI entry point with the given env and capture stdout. Asserts it always exits 0
+// (the workflow relies on the printed `gate_state`, not the exit code, to post the commit status).
+function runMain(env) {
+  return execFileSync("node", [SCRIPT], {
+    env: { ...process.env, ...env },
+    encoding: "utf8",
+  });
+}
 
 const SHA = "abc1234def5678abc1234def5678abc1234def56"; // 40-char hex (current head)
 const OTHER_SHA = "deadbeef9999deadbeef9999deadbeef9999dead"; // a different commit
@@ -18,8 +31,20 @@ test("override label always passes (even on a failed review)", () => {
   assert.equal(r.block, false);
 });
 
-test("skipped review job (draft/fork/bot) passes", () => {
+test("skipped review job (non-fork: labeled/no-op) passes", () => {
   const r = evaluateGate({ reviewResult: "skipped", tokenPresent: false, headSha: SHA });
+  assert.equal(r.block, false);
+});
+
+test("BLOCKS a fork PR whose review was skipped (no fail-open via on-demand @claude review)", () => {
+  // A fork reaches the gate only via an `@claude review` comment; the review job skips forks, so a
+  // skipped+fork verdict means nothing was reviewed — must not post a green required status.
+  const r = evaluateGate({ reviewResult: "skipped", isFork: true, headSha: SHA });
+  assert.equal(r.block, true);
+});
+
+test("a fork PR with the override label still passes (trusted-fork escape hatch)", () => {
+  const r = evaluateGate({ override: true, reviewResult: "skipped", isFork: true, headSha: SHA });
   assert.equal(r.block, false);
 });
 
@@ -139,4 +164,44 @@ test("parseStructuredImportant handles malformed/empty JSON", () => {
   assert.equal(parseStructuredImportant("not json"), null);
   assert.equal(parseStructuredImportant(""), null);
   assert.equal(parseStructuredImportant(JSON.stringify({ important_count: 4 })), 4);
+});
+
+// ── main() output contract (the workflow posts this as the commit status; exit code is NOT used) ──
+
+test("main() prints gate_state=success and exits 0 on a fresh important=0 verdict", () => {
+  const out = runMain({
+    REVIEW_RESULT: "success",
+    TOKEN_PRESENT: "true",
+    STRUCTURED: JSON.stringify({ important_count: 0, summary: "ok" }),
+    HEAD_SHA: SHA,
+    COMMENTS_JSON: "[]",
+    OVERRIDE: "false",
+  });
+  assert.match(out, /^gate_state=success$/m);
+  assert.match(out, /^gate_desc=/m);
+});
+
+test("main() prints gate_state=failure and STILL exits 0 when the gate blocks", () => {
+  // A blocking verdict must not throw (execFileSync would throw on a non-zero exit) — the workflow
+  // needs the printed state to post a `failure` commit status.
+  const out = runMain({
+    REVIEW_RESULT: "failure",
+    TOKEN_PRESENT: "true",
+    STRUCTURED: "",
+    HEAD_SHA: SHA,
+    COMMENTS_JSON: "[]",
+    OVERRIDE: "false",
+  });
+  assert.match(out, /^gate_state=failure$/m);
+});
+
+test("main() honours the override env (sourced from the context job's gh pr view, not the PR event)", () => {
+  const out = runMain({
+    REVIEW_RESULT: "skipped",
+    TOKEN_PRESENT: "false",
+    HEAD_SHA: SHA,
+    COMMENTS_JSON: "[]",
+    OVERRIDE: "true",
+  });
+  assert.match(out, /^gate_state=success$/m);
 });
