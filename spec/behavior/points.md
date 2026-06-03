@@ -15,6 +15,8 @@ When a user checks into an event:
    b. Insert `point_transactions` with amount = event.point_value, category = ATTENDANCE.
 4. If either insert fails, the entire transaction rolls back.
 
+**This invariant governs every path that auto-awards points**, not just event check-in: the state change that earns the points and the `point_transactions` insert always commit or roll back together, in one transaction. Where a row carries a `points_awarded` flag (task confirmation → MANUAL, service-hour approval → SERVICE), the transaction is a **compare-and-set**: it updates the row only while it is still eligible (`points_awarded = false`), so concurrent or retried awards can't double-insert — exactly one caller wins and the rest are no-ops. A guard read in the service layer is only a friendly fast path; the conditional write is the authoritative concurrency guard.
+
 ## Admin Adjustments
 
 - Only users with the `points:adjust` permission can manually add or remove points.

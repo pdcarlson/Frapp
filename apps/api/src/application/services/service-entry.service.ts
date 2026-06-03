@@ -7,8 +7,6 @@ import {
 } from '@nestjs/common';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
 import { NotificationService } from './notification.service';
 
@@ -34,8 +32,6 @@ export class ServiceEntryService {
   constructor(
     @Inject(SERVICE_ENTRY_REPOSITORY)
     private readonly serviceEntryRepo: IServiceEntryRepository,
-    @Inject(POINT_TRANSACTION_REPOSITORY)
-    private readonly pointTransactionRepo: IPointTransactionRepository,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -115,23 +111,26 @@ export class ServiceEntryService {
       entry.duration_minutes / DEFAULT_MINUTES_PER_POINT,
     );
 
-    if (pointsToAward > 0) {
-      await this.pointTransactionRepo.create({
-        chapter_id: chapterId,
-        user_id: entry.user_id,
-        amount: pointsToAward,
-        category: 'SERVICE',
-        description: `Service hours approved: ${entry.description}`,
-        metadata: { service_entry_id: entry.id },
-      });
+    // Approve the entry and award its SERVICE points atomically: a single DB
+    // transaction (compare-and-set on status/points_awarded) so a partial
+    // failure can't award points while leaving the entry PENDING, and concurrent
+    // approvals can't double-insert the ledger row. The guards above are a
+    // friendly fast path; the RPC's conditional update is the authoritative
+    // concurrency guard. Returns null when nothing was updated: the entry is no
+    // longer PENDING or points were already awarded (race lost) between the
+    // fast-path read and the RPC.
+    const updated = await this.serviceEntryRepo.approveAtomic(
+      id,
+      chapterId,
+      reviewerId,
+      reviewComment ?? null,
+      pointsToAward,
+    );
+    if (!updated) {
+      throw new BadRequestException(
+        'Service entry approval failed — entry is no longer eligible or points were already awarded',
+      );
     }
-
-    const updated = await this.serviceEntryRepo.update(id, chapterId, {
-      status: 'APPROVED',
-      reviewed_by: reviewerId,
-      review_comment: reviewComment ?? null,
-      points_awarded: pointsToAward > 0,
-    });
 
     try {
       await this.notificationService.notifyUser(entry.user_id, chapterId, {
