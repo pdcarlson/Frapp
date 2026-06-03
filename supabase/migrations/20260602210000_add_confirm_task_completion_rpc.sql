@@ -69,5 +69,21 @@ $$;
 -- EXECUTE to PUBLIC by default, and Supabase's default privileges additionally
 -- grant it straight to anon/authenticated — so all three must be revoked, not
 -- just PUBLIC.
-revoke execute on function confirm_task_completion(uuid, uuid) from public, anon, authenticated;
-grant execute on function confirm_task_completion(uuid, uuid) to service_role;
+revoke execute on function confirm_task_completion(uuid, uuid) from public;
+
+-- anon/authenticated/service_role are Supabase-managed roles, absent in bare
+-- Postgres substrates (e.g. PGlite in CI), so guard each on role existence to
+-- keep the migration portable.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function confirm_task_completion(uuid, uuid) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function confirm_task_completion(uuid, uuid) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function confirm_task_completion(uuid, uuid) to service_role;
+  end if;
+end
+$$;
