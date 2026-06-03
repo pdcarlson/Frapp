@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Plus, Search } from "lucide-react";
+import { CalendarDays, Plus, Search, Shield } from "lucide-react";
 import { useEvents } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -344,6 +344,11 @@ export function EventsPage() {
                     typeof event.is_mandatory === "boolean" ? event.is_mandatory : false;
                   const recurrenceRule =
                     typeof event.recurrence_rule === "string" ? event.recurrence_rule : "";
+                  const requiredRoleIds = Array.isArray(event.required_role_ids)
+                    ? event.required_role_ids.filter(
+                        (id): id is string => typeof id === "string",
+                      )
+                    : [];
                   return (
                     <TableRow key={eventId}>
                       <TableCell className="w-10">
@@ -368,6 +373,12 @@ export function EventsPage() {
                             <Badge variant="outline" className="gap-1">
                               <CalendarDays className="h-3 w-3" />
                               {recurrenceRule}
+                            </Badge>
+                          ) : null}
+                          {requiredRoleIds.length > 0 ? (
+                            <Badge variant="outline" className="gap-1">
+                              <Shield className="h-3 w-3" />
+                              Targeted
                             </Badge>
                           ) : null}
                         </div>

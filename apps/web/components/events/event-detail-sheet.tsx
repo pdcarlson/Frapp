@@ -7,9 +7,10 @@ import {
   Clock3,
   Loader2,
   MapPin,
+  Shield,
   Trash2,
 } from "lucide-react";
-import { useDeleteEvent, useEvent } from "@repo/hooks";
+import { useDeleteEvent, useEvent, useRoles } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { AttendancePanel } from "@/components/events/attendance-panel";
+import { normalizeRoleOptions } from "@/lib/roles";
 
 type EventRecord = Record<string, unknown>;
 
@@ -58,6 +60,7 @@ export function EventDetailSheet({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
+  const rolesQuery = useRoles();
   const { toast } = useToast();
 
   const resolvedEvent = useMemo(() => {
@@ -83,6 +86,17 @@ export function EventDetailSheet({
   const description =
     typeof resolvedEvent?.description === "string" ? resolvedEvent.description : "";
   const notes = typeof resolvedEvent?.notes === "string" ? resolvedEvent.notes : "";
+  const rawRequiredRoleIds = resolvedEvent?.required_role_ids;
+  const requiredRoleIds = Array.isArray(rawRequiredRoleIds)
+    ? rawRequiredRoleIds.filter((id): id is string => typeof id === "string")
+    : [];
+  const roleNameById = useMemo(
+    () =>
+      new Map(
+        normalizeRoleOptions(rolesQuery.data).map((role) => [role.id, role.name]),
+      ),
+    [rolesQuery.data],
+  );
 
   async function handleDelete() {
     if (!eventId) return;
@@ -176,6 +190,23 @@ export function EventDetailSheet({
                 {isMandatory ? "Mandatory" : "Optional"}
               </Badge>
               <Badge variant="outline">{recurrenceRule}</Badge>
+            </div>
+            <div className="mt-3">
+              <p className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">
+                <Shield className="h-3 w-3" />
+                Required roles
+              </p>
+              {requiredRoleIds.length === 0 ? (
+                <p className="text-sm text-muted-foreground">All members</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {requiredRoleIds.map((id) => (
+                    <Badge key={id} variant="outline">
+                      {roleNameById.get(id) ?? `Role ${id.slice(0, 8)}`}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
