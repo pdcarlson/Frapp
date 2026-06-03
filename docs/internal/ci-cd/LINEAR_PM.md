@@ -99,16 +99,29 @@ confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
 
 ## Free-tier cap and auto-archive
 
-Linear's Free plan caps **active** (non-archived) issues at **250**; **archived issues are unlimited and
-don't count.** The imported suggestion backlog put the workspace near the cap.
+Linear's Free plan caps **active** issues at **250** — and **"active" is a precise Linear term**: per
+Linear's docs ([Default team pages](https://linear.app/docs/default-team-pages)), Active means the
+**Started + Unstarted** status categories (here **In Progress** + **Todo**), and **explicitly not Backlog,
+Completed, or Canceled**. So **Backlog and archived issues do *not* count toward the 250** — the Backlog is
+effectively unbounded for our purposes.
 
+> **Measured 2026-06-03 (this workspace, Free plan):** 276 *non-archived* issues — **260 Backlog**, ~2
+> active (Started+Unstarted), 1 Triage, 10 Done, 3 Canceled — and **new-issue creation still succeeds**
+> (FRA-280 was filed at 276 non-archived). Being well over 250 non-archived with creation working *proves*
+> the cap binds on **active**, not on total / non-archived / Backlog. (Linear's billing copy says "250
+> issues" unqualified, but their Active-vs-Backlog definition and our live workspace both show Backlog is
+> exempt.)
+
+- **The binding number is *active*, and `/next` keeps it tiny** — it moves one issue `In Progress → Done`
+  at a time, so active rarely exceeds a handful. There is no realistic risk of hitting 250 active.
+- **Backlog stays lean by *choice*, not platform limit** — a high-signal, groomable Backlog is a
+  *quality* goal (so `/next` ranks real work first), not cap avoidance. See the curator's net-new budget below.
 - **Auto-archive is automatic and free** — Linear archives **Done after ~28 days** and **Canceled after
-  ~7 days** by default (tunable under *Team Settings → Issue statuses & automations*). So **closing
-  reclaims a slot on that schedule, with no toggle to flip.** Archived issues stay searchable.
-- **Cap remediation** = close provably dead/duplicate/obsolete `suggestion` issues to **Done/Canceled**;
-  they auto-archive and free slots (e.g. a Canceled issue in ~7 days). Reversible — never hard-delete.
-- The **curator** automation keeps a **conservative net-new budget** plus a **cap guard** (file nothing
-  when near 250, consolidate instead) so the backlog doesn't blow past the limit again.
+  ~7 days** by default (tunable under *Team Settings → Issue statuses & automations*); archived issues stay
+  searchable. This keeps the *board* tidy; it is **not** load-bearing for the cap (active is already far below 250).
+- The **curator** automation keeps a **conservative net-new budget** plus a **cap guard that counts
+  *active* (Started+Unstarted)** — not the Backlog or the open-`suggestion` set — so it never throttles
+  filing just because the Backlog is large.
 
 ---
 

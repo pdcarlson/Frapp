@@ -76,9 +76,13 @@ the run, treat it as one small signal and look across the whole codebase, the sp
 - **Conservative net-new cap.** File at most **~3** net-new suggestions per run; when there are **> 40 open
   `suggestion` issues**, cap at **~2** and spend the run consolidating. A run that **nets negative** is a
   great outcome.
-- **Cap guard.** Linear Free allows **250 active** issues. Before creating, check the active count; if near
-  the cap, **file nothing** and consolidate instead (closed issues auto-archive — Done after 28d, Canceled
-  after 7d — and free slots automatically).
+- **Cap guard (rarely binds).** Linear Free caps **active** issues at **250**, where **active = Started +
+  Unstarted** (In Progress + Todo) — **Backlog and archived do *not* count** (Linear's own definition; and
+  this workspace runs fine at 260+ Backlog / ~2 active). So the number to check is **active**, via
+  `state:{type:{in:["started","unstarted"]}}` — **not** the open-`suggestion` set (that includes Backlog
+  and reads ~250+ even with near-zero active). In practice active is a handful, so this guard almost never
+  fires; if it ever does (active near 250), file nothing and consolidate. **The real throttle is the
+  conservative net-new budget above** — it keeps the Backlog lean for signal quality, by choice, not platform limit.
 - **No quota, quality gate only.** Filing **zero** is valid and common. Never pad a run.
 
 ### Lens 1 — Engineering gaps

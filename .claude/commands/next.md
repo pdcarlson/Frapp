@@ -10,7 +10,8 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
 
 1. Start in plan mode. **Lean heavily on sub-agents:** launch Explore/Plan sub-agents in parallel to
    survey candidate issues and related code/specs, keeping heavy reading out of your own context. Read
-   AGENTS.md and the real spec files an issue links to.
+   AGENTS.md and the real spec files an issue links to. **Your plan must include the required pre-PR
+   `/code-review` gate (step 7) as an explicit step.**
 2. Select the work from Linear (MCP). Pull the Backlog ranked by **priority**
    (Urgent→High→Med→Low; None last), tie-break by lower FRA- number:
    - `list_issues(team:"Frapp Live", state:"Backlog")` (also "Todo" if present); read relations/links
@@ -39,8 +40,14 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
    PR (doc-sync requires it; put files in their canonical home per
    [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md) —
    never drop a stray file to satisfy the gate). Verify end-to-end (run tests/app) — never claim a step
-   you didn't run. Run `/code-review` and address findings before opening the PR.
-7. Open the PR with **`Fixes FRA-N`** in the title/body (add `Closes #<github>` if the issue has a
+   you didn't run.
+7. **Run `/code-review` before opening the PR — required, every run.** Its review sub-agents run on
+   **Sonnet 4.6** (pinned by `CLAUDE_CODE_SUBAGENT_MODEL` in [`.claude/settings.json`](../settings.json)).
+   Address every finding — fix it, or file a self-contained Triage follow-up with a reason. This local
+   gate is distinct from the CI review Action
+   ([`AI_CODE_REVIEW_RUNBOOK.md`](../../docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md), Opus-on-open /
+   Sonnet-on-push) — both run.
+8. Open the PR with **`Fixes FRA-N`** in the title/body (add `Closes #<github>` if the issue has a
    GitHub twin). On merge, Linear auto-transitions FRA-N to **Done**; if it didn't fire, set
    `save_issue(id:"FRA-N", state:"Done")`. Babysit to merge-ready (per AGENTS.md). Solo project: the
    issue's state is the status — no manual board moves.
