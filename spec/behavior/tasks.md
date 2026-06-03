@@ -18,6 +18,12 @@ A lightweight task management system for chapter operations.
 - The admin reviews and confirms completion. On confirmation:
   - If a point reward is attached, a point transaction (category: MANUAL, with task ID in metadata) is created for the assignee.
   - The `confirmed_at` timestamp is set.
+- **Atomicity.** Setting `confirmed_at` / `points_awarded` and inserting the point transaction happen
+  in a single database transaction (the `confirm_task_completion` RPC), consistent with the
+  "Atomic Point Awarding" invariant in [`points.md`](points.md): if either write fails, neither
+  persists. The transaction confirms only when the task is still COMPLETED and `points_awarded` is
+  `false` (a compare-and-set), so concurrent confirmations cannot award points twice — at most one
+  succeeds and the rest are rejected as already awarded.
 - The admin can reject the completion (revert to IN_PROGRESS) with an optional comment.
 
 ## Notifications

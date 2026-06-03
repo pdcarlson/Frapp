@@ -32,6 +32,12 @@ This drops and recreates the database, applies all migrations, and reruns `seed.
 - Timestamps: `created_at TIMESTAMPTZ DEFAULT now()`
 - Tenant scoping: nearly every table includes `chapter_id`
 - Row-Level Security (RLS): policies scope by `chapter_id` and authenticated user
+- **Atomic multi-row writes:** operations that must be all-or-nothing across tables live in a
+  `plpgsql` function migration and are invoked via `supabase.rpc(...)` from a repository (a function
+  body runs in a single implicit transaction). Example: `confirm_task_completion` (migration
+  `20260602210000_add_confirm_task_completion_rpc.sql`) confirms a task and inserts its point-ledger
+  row together, with a `WHERE points_awarded = false` compare-and-set so concurrent confirms cannot
+  double-award. See also the read-side `get_points_report`. Canonical behavior: `spec/behavior/points.md`.
 
 Examples:
 
