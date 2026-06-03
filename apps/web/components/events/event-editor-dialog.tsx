@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CalendarPlus2, Loader2, Save } from "lucide-react";
-import { useCreateEvent, useUpdateEvent } from "@repo/hooks";
+import { AlertTriangle, CalendarPlus2, Loader2, Save, Shield } from "lucide-react";
+import { useCreateEvent, useRoles, useUpdateEvent } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,7 +14,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import {
+  dashboardFilterSelectClassName,
+  dashboardTableCheckboxClassName,
+} from "@/components/shared/table-controls";
 
 type EventRecord = Record<string, unknown>;
 
@@ -68,9 +71,26 @@ export function EventEditorDialog({
   const [isMandatory, setIsMandatory] = useState(true);
   const [recurrenceRule, setRecurrenceRule] = useState("NONE");
   const [notes, setNotes] = useState("");
+  const [requiredRoleIds, setRequiredRoleIds] = useState<string[]>([]);
+  const rolesQuery = useRoles();
 
   const eventId = typeof event?.id === "string" ? event.id : "";
   const isSubmitting = createEventMutation.isPending || updateEventMutation.isPending;
+
+  const roleOptions = useMemo(() => {
+    const rolesData = rolesQuery.data as unknown;
+    if (!Array.isArray(rolesData)) return [];
+    return rolesData
+      .flatMap((role: unknown) => {
+        if (!role || typeof role !== "object") return [];
+        const candidate = role as Record<string, unknown>;
+        if (typeof candidate.id !== "string" || typeof candidate.name !== "string") {
+          return [];
+        }
+        return [{ id: candidate.id, name: candidate.name }];
+      })
+      .sort((first, second) => first.name.localeCompare(second.name));
+  }, [rolesQuery.data]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,6 +108,13 @@ export function EventEditorDialog({
           : "NONE",
       );
       setNotes(typeof event.notes === "string" ? event.notes : "");
+      setRequiredRoleIds(
+        Array.isArray(event.required_role_ids)
+          ? event.required_role_ids.filter(
+              (id): id is string => typeof id === "string",
+            )
+          : [],
+      );
       return;
     }
 
@@ -100,6 +127,7 @@ export function EventEditorDialog({
     setIsMandatory(true);
     setRecurrenceRule("NONE");
     setNotes("");
+    setRequiredRoleIds([]);
   }, [event, mode, open]);
 
   const submitLabel = useMemo(() => {
@@ -114,6 +142,14 @@ export function EventEditorDialog({
     if (Number.isNaN(parsed)) return;
     setPointValue(Math.max(0, parsed));
   };
+
+  function handleRequiredRoleChange(roleId: string, isChecked: boolean) {
+    if (isChecked) {
+      setRequiredRoleIds((previous) => [...new Set([...previous, roleId])]);
+      return;
+    }
+    setRequiredRoleIds((previous) => previous.filter((id) => id !== roleId));
+  }
 
   async function handleSubmit() {
     if (!name.trim()) {
@@ -157,7 +193,11 @@ export function EventEditorDialog({
 
     try {
       if (mode === "create") {
-        await createEventMutation.mutateAsync(payload);
+        await createEventMutation.mutateAsync(
+          requiredRoleIds.length > 0
+            ? { ...payload, required_role_ids: requiredRoleIds }
+            : payload,
+        );
         toast({
           title: "Event created",
           description: `${payload.name} was added to the chapter calendar.`,
@@ -166,7 +206,7 @@ export function EventEditorDialog({
         if (!eventId) return;
         await updateEventMutation.mutateAsync({
           id: eventId,
-          body: payload,
+          body: { ...payload, required_role_ids: requiredRoleIds },
         });
         toast({
           title: "Event updated",
@@ -289,6 +329,42 @@ export function EventEditorDialog({
                 <option value="MONTHLY">Monthly</option>
               </select>
             </label>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <span className="text-muted-foreground">Required roles</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Leave all unchecked to require every member. Select roles to limit attendance and
+              auto-absent to members holding any selected role.
+            </p>
+            {roleOptions.length === 0 ? (
+              <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+                No roles are available for this chapter yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {roleOptions.map((role) => (
+                  <label
+                    key={role.id}
+                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-muted/40"
+                  >
+                    <span className="font-medium">{role.name}</span>
+                    <input
+                      type="checkbox"
+                      className={dashboardTableCheckboxClassName}
+                      checked={requiredRoleIds.includes(role.id)}
+                      disabled={usingPreviewData}
+                      onChange={(eventValue) =>
+                        handleRequiredRoleChange(role.id, eventValue.target.checked)
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
 
           <label className="space-y-1 text-sm">
