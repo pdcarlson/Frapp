@@ -103,8 +103,11 @@ export class PointsService {
    * `date` values, e.g. '2026-06-15'), so the active period begins after the
    * END of the latest archive's end_date day. A transaction recorded anytime on
    * the end_date day belongs to the archived period (see
-   * spec/behavior/semester-rollover.md). Returns undefined when no — or an
-   * unparseable — archive exists, so the caller falls back to all-time.
+   * spec/behavior/semester-rollover.md). Uses the most-recently-created archive
+   * (`findLatestByChapter`), which assumes `end_date` increases with
+   * `created_at` — true for the normal sequential rollover flow. Returns
+   * undefined when no — or an unparseable — archive exists, so the caller falls
+   * back to all-time.
    */
   private async getSemesterRange(
     chapterId: string,
