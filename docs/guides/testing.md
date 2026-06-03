@@ -134,6 +134,13 @@ live backend: the Supabase client is overridden via the `SUPABASE_CLIENT` provid
 guards are replaced with stubs. UUID-typed DTO fields (`@IsUUID()`) must use RFC-4122-valid UUIDs in
 fixtures (correct version/variant nibbles) or the `ValidationPipe` rejects the request with `400`.
 
+Because `AppModule`'s `ConfigModule.forRoot` runs `validateEnv` (`src/config/env.validation.ts`) at
+import time, the suite needs the required env vars (`SUPABASE_URL`, `STRIPE_SECRET_KEY`, …) present or
+every spec throws `Missing required environment variables` on boot. `test/setup-e2e.ts` (wired via
+`setupFiles`) sets non-empty dummy defaults — only when unset, so a real local `.env.local` still
+wins — keeping the suite hermetic in CI with no secrets or live services. The values are never used
+(Supabase + Stripe are mocked per spec).
+
 Basic example (`apps/api/test/app.e2e-spec.ts`):
 
 ```ts
