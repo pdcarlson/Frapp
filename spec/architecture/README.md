@@ -614,7 +614,7 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 **Decision:** Replace CodeRabbit with a self-hosted automated PR review that runs `anthropics/claude-code-action@v1` in a GitHub Actions workflow (`.github/workflows/claude-review.yml`), authenticated with a Claude Pro/Max **subscription OAuth token** (`CLAUDE_CODE_OAUTH_TOKEN`). It runs **two tiers** — an in-depth **Opus 4.8** pass on PR open/reopen/ready, and a lighter **Sonnet 4.6** pass on each push (`synchronize`) — doing a unified **security + general** review that posts inline comments plus a summary. A separate **`claude-review-gate`** job makes it a **required check that blocks merge only when the review reports an Important finding**; the `claude-review-override` label bypasses a false positive, and bot/draft/fork/no-token runs pass. Repo-specific lessons accumulate in `.github/claude-review/learnings.md` (read every run). CodeRabbit (`.coderabbit.yaml` + the GitHub App) is removed.
 
-**Rationale:** On private + Free, CodeRabbit posts summary/rate-limited reviews only; its assertive line-by-line config (apps/api auth-guard/permission coverage, migration RLS) needs paid Pro (~$24/dev/mo). Frapp already pays for Claude (Max), so an OAuth-token Action gives an Anthropic-native reviewer with **no new per-token bill** (it draws on existing subscription quota) and full control of the review rubric. The dedicated `claude-code-security-review` action is API-key-only, so the OAuth path uses the general `claude-code-action` with a custom security+general prompt. This reuses the same engine as the local `/code-review` skill the `next-task` flow already mandates pre-PR.
+**Rationale:** On private + Free, CodeRabbit posts summary/rate-limited reviews only; its assertive line-by-line config (apps/api auth-guard/permission coverage, migration RLS) needs paid Pro (~$24/dev/mo). Frapp already pays for Claude (Max), so an OAuth-token Action gives an Anthropic-native reviewer with **no new per-token bill** (it draws on existing subscription quota) and full control of the review rubric. The dedicated `claude-code-security-review` action is API-key-only, so the OAuth path uses the general `claude-code-action` with a custom security+general prompt. This reuses the same engine as the local `/code-review` skill the `/next` flow already mandates pre-PR.
 
 **Consequences:**
 
@@ -721,6 +721,24 @@ The capability probe (amendment 1) has run and corrects three things in amendmen
 - **Estimates/Triage:** team uses Fibonacci estimates and **requires an explicit Priority to leave Triage**
   (promotions set Priority). See [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
   and [`CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+
+#### ADR-16 amendment 3 — the 250 cap binds on *active* (Started+Unstarted), not Backlog (2026-06-03)
+
+Corrects the loose use of "active" in amendments 1–2 (which read it as "non-archived"). Linear's Free
+plan caps **active** issues at **250**, and Linear defines **active = Started + Unstarted** (In Progress +
+Todo) — explicitly **not Backlog, Completed, or Canceled**
+([Default team pages](https://linear.app/docs/default-team-pages)). So **Backlog and archived issues do
+*not* count toward the 250.**
+
+- **Verified empirically (`/next`, 2026-06-03):** this workspace holds **276 non-archived** issues — **260
+  Backlog**, ~2 active — and **new-issue creation still succeeds** (FRA-280 was filed at 276). Being well
+  over 250 non-archived with creation working proves the cap is **active**-scoped, not total/Backlog.
+- **Impact on the curator:** its cap-guard must count **active** (`state:{type:{in:["started","unstarted"]}}`),
+  **not** the open-`suggestion` set (which includes Backlog and reads ~250+ even when active is ~2) — else
+  it needlessly refuses to file. The Backlog stays lean by **choice** (signal quality for `/next`), not by
+  platform limit. Auto-archive (am. 2) still tidies the board but is **not** load-bearing for the cap.
+- Policy + the corrected guard: [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
+  → *Free-tier cap and auto-archive*.
 
 ---
 
