@@ -61,3 +61,13 @@ begin
   return next v_task;
 end;
 $$;
+
+-- This RPC writes to the point-ledger and the `tasks:manage` authorization check
+-- lives in the NestJS guard chain (not in table RLS). Lock EXECUTE to the
+-- service role the API uses so it can't be called directly via PostgREST by an
+-- `anon`/`authenticated` user, bypassing the permission check. Postgres grants
+-- EXECUTE to PUBLIC by default, and Supabase's default privileges additionally
+-- grant it straight to anon/authenticated — so all three must be revoked, not
+-- just PUBLIC.
+revoke execute on function confirm_task_completion(uuid, uuid) from public, anon, authenticated;
+grant execute on function confirm_task_completion(uuid, uuid) to service_role;
