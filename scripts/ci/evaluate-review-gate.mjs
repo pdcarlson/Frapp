@@ -12,6 +12,13 @@
 //
 // Pure core (`evaluateGate`) + thin `main()` so the logic is unit-tested by
 // scripts/ci/__tests__/ (the `ci-scripts-tests` job). No npm dependencies.
+//
+// OUTPUT CONTRACT: `main()` prints `gate_state=success|failure` and `gate_desc=<reason>` on their own
+// lines and ALWAYS exits 0. The required signal is NOT this process's exit code but an explicit
+// `claude-review-gate` COMMIT STATUS that the workflow posts to the PR head SHA using these lines.
+// (Why a commit status: an `@claude review` comment fires an `issue_comment` event whose implicit
+// check-run attaches to the default-branch head, not the PR head; posting an explicit status keyed to
+// the resolved head SHA is what branch protection sees on the right commit — see claude-review.yml.)
 
 import { fileURLToPath } from "node:url";
 
@@ -54,13 +61,26 @@ export function evaluateGate({
   structuredOutput = "",
   comments = [],
   headSha = "",
+  isFork = false,
 } = {}) {
   if (override) {
     return { block: false, reason: "'claude-review-override' label present — gate passes." };
   }
-  // Intentional non-reviews are not failures.
+  // Intentional non-reviews are not failures — EXCEPT a fork: the review job skips fork PRs, so a fork
+  // reaching the gate (only via an on-demand `@claude review` comment — the pull_request path never
+  // starts on a fork) was never actually reviewed. Block it rather than fail open (add
+  // `claude-review-override` to merge a trusted fork). Drafts/bot/non-token never reach the gate (the
+  // context job's `if` filters them), so the remaining skip is the benign labeled/no-op case.
   if (reviewResult === "skipped") {
-    return { block: false, reason: "review job skipped (draft/fork/bot) — gate passes." };
+    if (isFork) {
+      return {
+        block: true,
+        reason:
+          "review was skipped on a fork PR (forks are not auto-reviewed) — add the " +
+          "'claude-review-override' label to merge a trusted fork.",
+      };
+    }
+    return { block: false, reason: "review job skipped — gate passes." };
   }
   // Advisory pass for "no token configured" applies ONLY when the review job completed cleanly
   // (`success`). A non-`success` result (cancelled by concurrency, or failed before the token step)
@@ -118,12 +138,18 @@ function main() {
     structuredOutput: process.env.STRUCTURED || "",
     comments,
     headSha: process.env.HEAD_SHA || "",
+    isFork: boolEnv(process.env.IS_FORK),
   });
+  // Emit the machine-readable verdict the workflow posts as a commit status to the PR head SHA.
+  // ALWAYS exit 0: the explicit status (not this exit code) is the required signal.
+  const state = result.block ? "failure" : "success";
+  console.log(`gate_state=${state}`);
+  console.log(`gate_desc=${result.reason}`);
   if (result.block) {
     console.log(`::error::Claude review gate — ${result.reason}`);
-    process.exit(1);
+  } else {
+    console.log(`::notice::Claude review gate — ${result.reason}`);
   }
-  console.log(`::notice::Claude review gate — ${result.reason}`);
 }
 
 // Execute only as the CLI entry point (not when imported by tests).
