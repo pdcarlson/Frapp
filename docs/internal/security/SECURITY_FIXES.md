@@ -61,6 +61,19 @@ To fix this, strict whitelists were implemented using JavaScript `Set`s for `ALL
 ### Prevention
 Always enforce strict content-type and extension allowlists when generating signed storage URLs for user-uploaded content.
 
+## Security Fix: Upload-confirm storage path validation
+
+### Overview
+A high-severity tenant-isolation gap was fixed in `apps/api/src/application/services/backwork.service.ts` and `apps/api/src/application/services/chapter-document.service.ts`.
+
+### Details
+The upload-URL methods generate chapter-scoped storage paths (`chapters/{chapter_id}/backwork/{resource_id}/…` and `chapters/{chapter_id}/documents/{document_id}/…`) server-side, but `confirmUpload` persisted whatever `storage_path` the client submitted without validation. Later download flows mint signed download URLs from that persisted path, so a malicious or buggy client could register metadata pointing outside its own chapter folder and expose another object's signed download URL through a legitimate chapter-scoped resource.
+
+Both `confirmUpload` methods now reject any `storage_path` that does not start with the caller's chapter prefix (`chapters/${chapter_id}/backwork/` and `chapters/${chapter_id}/documents/` respectively), throwing `BadRequestException` before any persistence. This mirrors the existing `ChapterService.confirmLogoUpload` branding-path validation. Download issuance was already scoped by `(id, chapter_id)`, so it remains correct.
+
+### Prevention
+When a client echoes back a server-generated storage path on a confirm step, always validate it against the expected chapter-scoped prefix before persisting metadata that later mints signed URLs.
+
 ## Security Fix: Chapter subscription read/write lock enforcement
 
 ### Overview

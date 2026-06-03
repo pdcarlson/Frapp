@@ -229,6 +229,31 @@ describe('BackworkService', () => {
       ).rejects.toThrow(ConflictException);
     });
 
+    it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/other-ch/backwork/res-1/leak.pdf',
+          file_hash: 'newhash',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockResourceRepo.findByFileHash).not.toHaveBeenCalled();
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a storage_path from another module (wrong-module)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          uploader_id: 'user-1',
+          storage_path: 'chapters/ch-1/documents/doc-1/leak.pdf',
+          file_hash: 'newhash',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockResourceRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should auto-vivify a new department', async () => {
       mockResourceRepo.findByFileHash.mockResolvedValue(null);
       mockDepartmentRepo.findByCode.mockResolvedValue(null);
@@ -302,7 +327,7 @@ describe('BackworkService', () => {
       await service.confirmUpload({
         chapter_id: 'ch-1',
         uploader_id: 'user-1',
-        storage_path: 'path',
+        storage_path: 'chapters/ch-1/backwork/res-3/file.pdf',
         file_hash: 'uniquehash3',
         department_code: 'CS',
       });

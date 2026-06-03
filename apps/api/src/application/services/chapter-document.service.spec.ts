@@ -137,6 +137,30 @@ describe('ChapterDocumentService', () => {
         }),
       );
     });
+
+    it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Leak',
+          storage_path: 'chapters/other-ch/documents/doc-1/leak.pdf',
+          uploaded_by: 'user-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a storage_path from another module (wrong-module)', async () => {
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Leak',
+          storage_path: 'chapters/ch-1/backwork/res-1/leak.pdf',
+          uploaded_by: 'user-1',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('findByChapter', () => {

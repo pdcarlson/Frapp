@@ -103,6 +103,14 @@ export class ChapterDocumentService {
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<ChapterDocument> {
+    if (
+      !input.storage_path.startsWith(`chapters/${input.chapter_id}/documents/`)
+    ) {
+      throw new BadRequestException(
+        'storage_path must be within the chapter documents folder',
+      );
+    }
+
     return this.documentRepo.create({
       chapter_id: input.chapter_id,
       title: input.title,
