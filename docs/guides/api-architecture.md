@@ -54,6 +54,20 @@ Every protected endpoint runs through a consistent guard chain:
 2. **ChapterGuard** — verifies the `x-chapter-id` header and membership in that chapter.
 3. **PermissionsGuard** — checks permission metadata against the user's roles. When both the controller class and the route handler declare `@RequirePermissions(...)`, the guard **merges** them: the union of both lists must be satisfied (AND semantics across every listed permission). `@RequireAnyOfPermissions` on handler and class is evaluated as **two separate OR-groups** when both are present (the caller must match at least one permission in each group).
 
+### Subscription enforcement (ChapterGuard)
+
+`ChapterGuard` also gates writes on the chapter's `subscription_status`, implementing the billing lifecycle in [`spec/behavior/billing.md`](../../spec/behavior/billing.md) and [`spec/product/onboarding.md`](../../spec/product/onboarding.md). Reads (`GET`/`HEAD`/`OPTIONS`) are always allowed; the write rules are:
+
+- **`active`** — all writes allowed.
+- **`incomplete`** — only `@FreeTier()` routes (the chat / members / **invites** free wedge) may write; other writes return `chapter.subscription.required` (403).
+- **`past_due`** — a **3-day grace window** keyed off the `chapters.past_due_since` timestamp:
+  - **Within grace:** reads and non-invite `@FreeTier()` writes continue; **invite/create** routes marked `@GraceBlocked()` return `chapter.subscription.invite_blocked` (403); paid-ops writes return `chapter.subscription.write_locked` (403).
+  - **After grace:** hard read-only lock — **all** writes (including `@FreeTier()`) return `chapter.subscription.write_locked` (403).
+  - A null `past_due_since` is treated as within grace (safe default; the billing webhook re-establishes the clock).
+- **`canceled`** — hard read-only lock for every write (`chapter.subscription.canceled`, 403), even `@FreeTier()`.
+
+Route markers live in `src/interface/decorators/subscription.decorator.ts`: `@FreeTier()` (free wedge), `@GraceBlocked()` (free-tier route that must still be blocked during `past_due`, e.g. invite create), and `@SubscriptionExempt()` (bypass entirely, e.g. billing recovery endpoints). The `past_due_since` clock is set/cleared on Stripe webhook transitions in `BillingService` (set only on the into-`past_due` transition, so repeated events don't reset it; cleared on recovery).
+
 Interceptors:
 
 - **RequestIdInterceptor** — attaches/propagates `x-request-id`.

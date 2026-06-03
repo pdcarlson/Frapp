@@ -2,6 +2,7 @@ import { SetMetadata } from '@nestjs/common';
 
 export const SUBSCRIPTION_FREE_TIER_KEY = 'subscription_free_tier';
 export const SUBSCRIPTION_EXEMPT_KEY = 'subscription_exempt';
+export const SUBSCRIPTION_GRACE_BLOCKED_KEY = 'subscription_grace_blocked';
 
 /**
  * Marks a controller or route as free-tier (chat / members / invites wedge).
@@ -16,3 +17,13 @@ export const FreeTier = () => SetMetadata(SUBSCRIPTION_FREE_TIER_KEY, true);
  */
 export const SubscriptionExempt = () =>
   SetMetadata(SUBSCRIPTION_EXEMPT_KEY, true);
+
+/**
+ * Marks a free-tier route (e.g. invite/create) that must STILL be blocked
+ * during the `past_due` grace window. Per spec, invites are part of the free
+ * wedge while `incomplete` but are blocked once a paying chapter lapses to
+ * `past_due`. Has no effect outside the `past_due` grace branch, so the
+ * `incomplete` wedge keeps working. After grace the hard lock blocks it anyway.
+ */
+export const GraceBlocked = () =>
+  SetMetadata(SUBSCRIPTION_GRACE_BLOCKED_KEY, true);

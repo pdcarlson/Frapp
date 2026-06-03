@@ -15,7 +15,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
-import { FreeTier } from '../decorators/subscription.decorator';
+import { FreeTier, GraceBlocked } from '../decorators/subscription.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -39,6 +39,7 @@ export class InviteController {
   @Post()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
   @ApiOperation({ summary: 'Generate an invite token' })
   async create(
     @CurrentChapterId() chapterId: string,
@@ -51,6 +52,7 @@ export class InviteController {
   @Post('batch')
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
+  @GraceBlocked()
   @ApiOperation({ summary: 'Generate multiple invite tokens' })
   async createBatch(
     @CurrentChapterId() chapterId: string,

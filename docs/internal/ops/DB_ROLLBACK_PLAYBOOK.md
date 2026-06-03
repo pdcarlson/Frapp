@@ -66,6 +66,12 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback past_due grace clock
+
+* **Migration**: `20260602120000_chapter_past_due_since.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS past_due_since;`
+* **Note**: The column only feeds `ChapterGuard`'s 3-day `past_due` grace window. Dropping it reverts to the prior behavior where any `past_due` write is hard-blocked immediately (no grace) — strictly more restrictive, so it is safe and causes no data loss beyond the per-chapter grace timestamps. After dropping, redeploy the API at the pre-FRA-109 revision (the post-FRA-109 guard `select`s the column and will error if it is gone). No data backfill needed on re-apply; the migration re-stamps existing `past_due` rows.
+
 ## Rollback Chunk 09 member custom-field values
 
 * **Migration**: `20260531120000_member_custom_field_values.sql`
@@ -93,6 +99,11 @@ After any rollback event:
 * **Migration**: `20260530180000_chapter_analytics_opt_out.sql`
 * **Action**: Run `ALTER TABLE chapters DROP COLUMN IF EXISTS analytics_opt_out;`
 * **Note**: Additive boolean with a default; dropping it loses only each chapter's opt-out preference. The server reads it defensively and treats a missing/false value as "analytics enabled".
+
+## Rollback `confirm_task_completion` RPC
+* **Migration**: `20260602210000_add_confirm_task_completion_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS confirm_task_completion(uuid, uuid);`
+* **Note**: Additive function only — dropping it removes the atomic confirm path but loses no data. The API calls it from `SupabaseTaskRepository.confirmCompletionAtomic`, so a forward-fix (rather than a bare drop) is required to keep task confirmation working: deploy an API revision that reverts to the prior two-write path before dropping the function.
 
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
