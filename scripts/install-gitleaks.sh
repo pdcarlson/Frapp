@@ -58,19 +58,21 @@ curl -fsSL --retry 3 --max-time 120 -o "$tmp/$asset" "$base_url/$asset"
 # file itself can't be fetched (HTTPS already protects the primary download).
 if curl -fsSL --retry 3 --max-time 60 -o "$tmp/checksums.txt" \
   "$base_url/gitleaks_${GITLEAKS_VERSION}_checksums.txt" 2> /dev/null; then
-  expected="$(grep " ${asset}\$" "$tmp/checksums.txt" | awk '{print $1}' || true)"
-  if [ -n "$expected" ]; then
-    if command -v sha256sum > /dev/null 2>&1; then
-      actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
-    else
-      actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
-    fi
-    if [ "$expected" != "$actual" ]; then
-      echo "Checksum mismatch for $asset (expected $expected, got $actual)" >&2
-      exit 1
-    fi
-    echo "Checksum verified."
+  expected="$(awk -v f="$asset" '$2 == f {print $1}' "$tmp/checksums.txt")"
+  if [ -z "$expected" ]; then
+    echo "No checksum entry for $asset in checksums.txt (asset-name/format drift?); refusing to install unverified." >&2
+    exit 1
   fi
+  if command -v sha256sum > /dev/null 2>&1; then
+    actual="$(sha256sum "$tmp/$asset" | awk '{print $1}')"
+  else
+    actual="$(shasum -a 256 "$tmp/$asset" | awk '{print $1}')"
+  fi
+  if [ "$expected" != "$actual" ]; then
+    echo "Checksum mismatch for $asset (expected $expected, got $actual)" >&2
+    exit 1
+  fi
+  echo "Checksum verified."
 else
   echo "Warning: could not fetch checksums.txt; proceeding on HTTPS integrity only." >&2
 fi

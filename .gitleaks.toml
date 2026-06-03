@@ -7,10 +7,8 @@ title = "Frapp gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Frapp-wide false-positive allowlist"
+description = "Frapp-wide false-positive allowlist (kept tight — broad file globs can hide real leaks)"
 paths = [
-  # npm lockfile: integrity hashes / registry metadata, never real secrets.
-  '''(^|/)package-lock\.json$''',
-  # the gitleaks config file itself.
+  # the gitleaks config file itself (its allowlist regexes can look secret-ish).
   '''(^|/)\.gitleaks\.toml$''',
 ]
