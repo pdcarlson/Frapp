@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IAttendanceRepository } from '../../../domain/repositories/attendance.repository.interface';
@@ -82,6 +83,32 @@ export class SupabaseAttendanceRepository implements IAttendanceRepository {
 
     if (error) throw error;
     return updated;
+  }
+
+  async checkInAtomic(
+    eventId: string,
+    userId: string,
+    chapterId: string,
+    checkInTime: string,
+    pointValue: number,
+    eventName: string,
+  ): Promise<EventAttendance | null> {
+    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
+    // generated table Row types do not satisfy PostgREST's schema constraint.
+    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
+      'check_in_event',
+      {
+        p_event_id: eventId,
+        p_user_id: userId,
+        p_chapter_id: chapterId,
+        p_check_in_time: checkInTime,
+        p_point_value: pointValue,
+        p_event_name: eventName,
+      },
+    )) as PostgrestResponse<EventAttendance>;
+    if (error) throw error;
+    const rows = data ?? [];
+    return rows.length > 0 ? rows[0] : null;
   }
 
   async delete(id: string): Promise<void> {
