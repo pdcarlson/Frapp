@@ -56,3 +56,6 @@ supabase/.branches/
 /lychee
 lychee-*.tar.gz
 lychee-*/
+
+# Tooling binary cache (gitleaks via scripts/install-gitleaks.sh; never committed)
+.cache/

@@ -27,6 +27,10 @@ const CI_CHECKS = [
   "migration-safety",
   "mobile-validate",
   "ci-scripts-tests",
+  // Secret scanning (gitleaks; ADR-13 push-protection replacement). ROLLOUT: this is
+  // required only once the secret-scan job exists on the target branch and has run
+  // green — otherwise every PR blocks on a missing required check.
+  "secret-scan",
 ];
 
 const DOCS_CHECKS = [

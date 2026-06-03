@@ -1,0 +1,16 @@
+title = "Frapp gitleaks config"
+
+# Inherit gitleaks' maintained default ruleset; add only Frapp-specific allowlists
+# below. Keep the allowlist tight — prefer an inline `gitleaks:allow` comment for a
+# one-off false positive over broad path globs. See docs/internal/ci-cd/SECRET_SCANNING.md.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Frapp-wide false-positive allowlist"
+paths = [
+  # npm lockfile: integrity hashes / registry metadata, never real secrets.
+  '''(^|/)package-lock\.json$''',
+  # the gitleaks config file itself.
+  '''(^|/)\.gitleaks\.toml$''',
+]

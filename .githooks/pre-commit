@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Frapp pre-commit secret scan (gitleaks) — blocks commits that introduce secrets.
+#
+# Installed automatically by the root package.json "prepare" script, which points
+# git at this directory via `core.hooksPath` (scripts/setup-git-hooks.mjs).
+#
+# Emergency bypass: `git commit --no-verify` (the CI `secret-scan` job still enforces it).
+# Docs: docs/internal/ci-cd/SECRET_SCANNING.md
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+exec node "$ROOT/scripts/scan-secrets.mjs" --staged --soft-missing
