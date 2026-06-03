@@ -105,6 +105,11 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS confirm_task_completion(uuid, uuid);`
 * **Note**: Additive function only — dropping it removes the atomic confirm path but loses no data. The API calls it from `SupabaseTaskRepository.confirmCompletionAtomic`, so a forward-fix (rather than a bare drop) is required to keep task confirmation working: deploy an API revision that reverts to the prior two-write path before dropping the function.
 
+## Rollback `approve_service_entry` RPC
+* **Migration**: `20260603120000_add_approve_service_entry_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS approve_service_entry(uuid, uuid, uuid, text, integer);`
+* **Note**: Additive function only — dropping it removes the atomic service-hour approval path but loses no data. The API calls it from `SupabaseServiceEntryRepository.approveAtomic`, so a forward-fix (rather than a bare drop) is required to keep service-hour approval working: deploy an API revision that reverts to the prior two-write path (point insert + entry update) before dropping the function.
+
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`

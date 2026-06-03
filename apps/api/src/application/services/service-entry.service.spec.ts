@@ -7,16 +7,12 @@ import {
 import { ServiceEntryService } from './service-entry.service';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
-import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
-import type { IPointTransactionRepository } from '../../domain/repositories/point-transaction.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
-import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 import { NotificationService } from './notification.service';
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
   let mockServiceEntryRepo: jest.Mocked<IServiceEntryRepository>;
-  let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
@@ -36,17 +32,6 @@ describe('ServiceEntryService', () => {
     created_at: '2026-02-26T10:00:00.000Z',
   };
 
-  const basePointTxn: PointTransaction = {
-    id: 'pt-1',
-    chapter_id: 'ch-1',
-    user_id: 'user-1',
-    amount: 1,
-    category: 'SERVICE',
-    description: 'Service hours approved: Community cleanup',
-    metadata: { service_entry_id: 'se-1' },
-    created_at: '2026-02-26T10:00:00.000Z',
-  };
-
   beforeEach(async () => {
     mockServiceEntryRepo = {
       findById: jest.fn(),
@@ -54,15 +39,8 @@ describe('ServiceEntryService', () => {
       findByUser: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      approveAtomic: jest.fn(),
       delete: jest.fn(),
-    };
-
-    mockPointTxnRepo = {
-      create: jest.fn(),
-      findByUser: jest.fn(),
-      findByChapter: jest.fn(),
-      findByChapterFiltered: jest.fn(),
-      countRecentAdjustments: jest.fn(),
     };
 
     mockNotificationService = {
@@ -74,10 +52,6 @@ describe('ServiceEntryService', () => {
       providers: [
         ServiceEntryService,
         { provide: SERVICE_ENTRY_REPOSITORY, useValue: mockServiceEntryRepo },
-        {
-          provide: POINT_TRANSACTION_REPOSITORY,
-          useValue: mockPointTxnRepo,
-        },
         { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
@@ -253,7 +227,7 @@ describe('ServiceEntryService', () => {
   });
 
   describe('approve', () => {
-    it('should approve entry and create point transaction', async () => {
+    it('should approve entry and award points in a single atomic call', async () => {
       const approved = {
         ...baseEntry,
         status: 'APPROVED' as const,
@@ -262,32 +236,24 @@ describe('ServiceEntryService', () => {
         points_awarded: true,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockServiceEntryRepo.update.mockResolvedValue(approved);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
 
       const result = await service.approve('se-1', 'ch-1', 'admin-1', null);
 
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith({
-        chapter_id: 'ch-1',
-        user_id: 'user-1',
-        amount: 1,
-        category: 'SERVICE',
-        description: 'Service hours approved: Community cleanup',
-        metadata: { service_entry_id: 'se-1' },
-      });
-      expect(mockServiceEntryRepo.update).toHaveBeenCalledWith(
+      // Approval + ledger insert happen together inside the RPC (1 point for
+      // 60 minutes); the service must not perform a separate non-atomic update.
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
         'se-1',
         'ch-1',
-        expect.objectContaining({
-          status: 'APPROVED',
-          reviewed_by: 'admin-1',
-          points_awarded: true,
-        }),
+        'admin-1',
+        null,
+        1,
       );
+      expect(mockServiceEntryRepo.update).not.toHaveBeenCalled();
       expect(result).toEqual(approved);
     });
 
-    it('should award multiple points for longer duration', async () => {
+    it('should pass the computed multi-point award for longer duration', async () => {
       const longEntry = { ...baseEntry, duration_minutes: 120 };
       const approved = {
         ...longEntry,
@@ -296,20 +262,20 @@ describe('ServiceEntryService', () => {
         points_awarded: true,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(longEntry);
-      mockPointTxnRepo.create.mockResolvedValue({
-        ...basePointTxn,
-        amount: 2,
-      });
-      mockServiceEntryRepo.update.mockResolvedValue(approved);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
 
       await service.approve('se-1', 'ch-1', 'admin-1', null);
 
-      expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ amount: 2 }),
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        null,
+        2,
       );
     });
 
-    it('should not create point transaction when duration yields zero points', async () => {
+    it('should approve with zero points when duration is below the rate', async () => {
       const shortEntry = { ...baseEntry, duration_minutes: 30 };
       const approved = {
         ...shortEntry,
@@ -318,15 +284,44 @@ describe('ServiceEntryService', () => {
         points_awarded: false,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(shortEntry);
-      mockServiceEntryRepo.update.mockResolvedValue(approved);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
 
-      await service.approve('se-1', 'ch-1', 'admin-1', null);
+      const result = await service.approve('se-1', 'ch-1', 'admin-1', null);
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
-      expect(mockServiceEntryRepo.update).toHaveBeenCalledWith(
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
         'se-1',
         'ch-1',
-        expect.objectContaining({ points_awarded: false }),
+        'admin-1',
+        null,
+        0,
+      );
+      expect(result).toEqual(approved);
+    });
+
+    it('should forward the review comment to the atomic approval', async () => {
+      const approved = {
+        ...baseEntry,
+        status: 'APPROVED' as const,
+        reviewed_by: 'admin-1',
+        review_comment: 'Verified at the shelter',
+        points_awarded: true,
+      };
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
+
+      await service.approve(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        'Verified at the shelter',
+      );
+
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        'Verified at the shelter',
+        1,
       );
     });
 
@@ -340,7 +335,7 @@ describe('ServiceEntryService', () => {
       await expect(
         service.approve('se-1', 'ch-1', 'admin-1', null),
       ).rejects.toThrow('Only PENDING entries can be approved');
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
     });
 
     it('should throw BadRequestException when points already awarded (data consistency)', async () => {
@@ -357,7 +352,40 @@ describe('ServiceEntryService', () => {
       await expect(
         service.approve('se-1', 'ch-1', 'admin-1', null),
       ).rejects.toThrow('Points already awarded for this entry');
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when a concurrent approval won the race (RPC no-op)', async () => {
+      // Fast-path guards pass on a stale read, but the compare-and-set RPC
+      // updates zero rows because another approval already flipped the entry —
+      // the at-most-once guarantee. No notification is sent for the loser.
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(null);
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'admin-1', null),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.approve('se-1', 'ch-1', 'admin-1', null),
+      ).rejects.toThrow(
+        'Service entry approval failed — entry is no longer eligible or points were already awarded',
+      );
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('should propagate atomic-approval failures without notifying (transaction rolled back)', async () => {
+      // The point award and status flip commit or roll back together inside the
+      // RPC; if it errors, the service surfaces the failure rather than reporting
+      // a partial success.
+      mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
+      mockServiceEntryRepo.approveAtomic.mockRejectedValue(
+        new Error('db transaction failed'),
+      );
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'admin-1', null),
+      ).rejects.toThrow('db transaction failed');
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
     });
   });
 
@@ -379,7 +407,7 @@ describe('ServiceEntryService', () => {
         'Insufficient proof',
       );
 
-      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
       expect(mockServiceEntryRepo.update).toHaveBeenCalledWith('se-1', 'ch-1', {
         status: 'REJECTED',
         reviewed_by: 'admin-1',
@@ -453,8 +481,7 @@ describe('ServiceEntryService', () => {
         points_awarded: true,
       };
       mockServiceEntryRepo.findById.mockResolvedValue(baseEntry);
-      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
-      mockServiceEntryRepo.update.mockResolvedValue(approved);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approved);
 
       await service.approve('se-1', 'ch-1', 'admin-1', null);
 

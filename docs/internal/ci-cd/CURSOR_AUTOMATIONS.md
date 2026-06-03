@@ -66,6 +66,12 @@ issue **UUID** `id`, not the `FRA-N` identifier):
                    state:{type:{nin:["completed","canceled"]}} }, first: 250)
   { nodes { id identifier title priority state{name} project{name} labels{nodes{name}} description } } }
 
+# Cap-guard count = ACTIVE only (Started + Unstarted) — count the nodes, compare against 250.
+# NOT the open-suggestion set above: that includes Backlog and reads ~250+ even when active is ~2.
+# Backlog & archived don't count toward Linear Free's 250 cap (see LINEAR_PM.md → Free-tier cap).
+{ issues(filter: { team:{id:{eq:"<team>"}}, state:{type:{in:["started","unstarted"]}} }, first: 250)
+  { nodes { id } } }
+
 # Create a suggestion in Triage with a priority + area label
 mutation { issueCreate(input:{ teamId:"<team>", title:"[suggestion] …", description:"…\n<!-- cursor-suggestion: v1 fp=area/slug file=path -->",
   stateId:"<Triage>", priority:2, labelIds:["<suggestion>","<area>"] }) { success issue{ identifier url } } }
