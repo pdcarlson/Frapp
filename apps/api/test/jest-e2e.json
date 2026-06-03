@@ -4,6 +4,10 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "module": "commonjs", "moduleResolution": "node", "resolvePackageJsonExports": false } }]
+  },
+  "moduleNameMapper": {
+    "^@repo/org-archetypes$": "<rootDir>/../../../packages/org-archetypes/src/index.ts",
+    "^@repo/chapter-theme$": "<rootDir>/../../../packages/chapter-theme/src/index.ts"
   }
 }
