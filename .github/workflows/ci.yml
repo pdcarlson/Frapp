@@ -128,7 +128,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
-  # ── API unit tests ──────────────────────────────────────────────────────
+  # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
     needs: packages-build
     runs-on: ubuntu-latest
@@ -158,6 +158,9 @@ jobs:
 
       - name: Run API tests
         run: npm run test -w apps/api
+
+      - name: Run API E2E tests
+        run: npm run test:e2e -w apps/api
 
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
