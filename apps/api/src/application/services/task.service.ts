@@ -282,11 +282,13 @@ export class TaskService {
     // can't leave points without a confirmation, and concurrent confirms can't
     // double-award. The guards above are a friendly fast path; the RPC's
     // conditional update is the authoritative concurrency guard. Returns null
-    // when nothing was updated (e.g. a concurrent confirm won the race).
+    // when nothing was updated: points already awarded, or the task is no longer
+    // COMPLETED (e.g. a concurrent admin rejection reverted it) between the
+    // fast-path guard and the RPC — so keep the message broad enough for both.
     const updated = await this.taskRepo.confirmCompletionAtomic(id, chapterId);
     if (!updated) {
       throw new BadRequestException(
-        'Points have already been awarded for this task',
+        'Task confirmation failed — task is no longer eligible or points were already awarded',
       );
     }
 

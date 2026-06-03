@@ -474,7 +474,10 @@ describe('TaskService', () => {
       mockTaskRepo.confirmCompletionAtomic.mockResolvedValue(null);
 
       await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
-        'Points have already been awarded for this task',
+        BadRequestException,
+      );
+      await expect(service.confirmCompletion('task-1', 'ch-1')).rejects.toThrow(
+        'no longer eligible or points were already awarded',
       );
     });
 
