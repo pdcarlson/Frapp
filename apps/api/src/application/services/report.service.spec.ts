@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReportService } from './report.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 describe('ReportService', () => {
   let service: ReportService;
   let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from' | 'rpc'>>;
+  let mockSemesterArchiveRepo: { findLatestByChapter: jest.Mock };
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
     const chain: Record<string, unknown> = {};
@@ -33,12 +35,20 @@ describe('ReportService', () => {
         .mockImplementation(() => makeChain({ data: [], error: null })),
     };
 
+    mockSemesterArchiveRepo = {
+      findLatestByChapter: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ReportService,
         {
           provide: SUPABASE_CLIENT,
           useValue: mockSupabase,
+        },
+        {
+          provide: SEMESTER_ARCHIVE_REPOSITORY,
+          useValue: mockSemesterArchiveRepo,
         },
       ],
     }).compile();
@@ -135,6 +145,71 @@ describe('ReportService', () => {
       const result = await service.getPointsReport('ch-1', {});
 
       expect(result).toEqual([]);
+    });
+
+    it('passes p_since=null for the default (all-time) window', async () => {
+      await service.getPointsReport('ch-1', {});
+
+      expect(
+        (mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since,
+      ).toBeNull();
+      expect(
+        mockSemesterArchiveRepo.findLatestByChapter,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('passes p_since=null for an explicit all-time window', async () => {
+      await service.getPointsReport('ch-1', { window: 'all' });
+
+      expect(
+        (mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since,
+      ).toBeNull();
+    });
+
+    it('passes a trailing-month p_since for the month window', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-06-15T12:00:00.000Z'));
+      try {
+        await service.getPointsReport('ch-1', { window: 'month' });
+      } finally {
+        jest.useRealTimers();
+      }
+
+      expect((mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since).toBe(
+        '2026-05-15T12:00:00.000Z',
+      );
+      expect(
+        mockSemesterArchiveRepo.findLatestByChapter,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('passes the archive end-of-day p_since for the semester window', async () => {
+      mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue({
+        id: 'arch-1',
+        chapter_id: 'ch-1',
+        label: 'Spring 2026',
+        start_date: '2026-01-01',
+        end_date: '2026-05-15',
+        created_at: '2026-05-16T00:00:00.000Z',
+      });
+
+      await service.getPointsReport('ch-1', { window: 'semester' });
+
+      expect(mockSemesterArchiveRepo.findLatestByChapter).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      expect((mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since).toBe(
+        '2026-05-15T23:59:59.999Z',
+      );
+    });
+
+    it('passes p_since=null for the semester window when no archive exists', async () => {
+      mockSemesterArchiveRepo.findLatestByChapter.mockResolvedValue(null);
+
+      await service.getPointsReport('ch-1', { window: 'semester' });
+
+      expect(
+        (mockSupabase.rpc as jest.Mock).mock.calls[0][1].p_since,
+      ).toBeNull();
     });
   });
 

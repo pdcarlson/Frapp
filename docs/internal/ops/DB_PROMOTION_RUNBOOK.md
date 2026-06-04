@@ -100,6 +100,12 @@ One additive migration. Adds a single boolean column with a default — fully ba
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Purpose**: Creates an RPC for faster points report aggregation.
 * **Checks**: Verify the RPC exists using `select has_function_privilege('get_points_report(uuid, uuid, text)', 'execute');`.
+* **Superseded by**: `20260604120000_get_points_report_window_filter.sql` (2026-06-04) — replaces the `text` overload with `p_since timestamptz`.
+
+## 2026-06-04: Points report window filter (`get_points_report` → `p_since`)
+* **Migration**: `20260604120000_get_points_report_window_filter.sql`
+* **Purpose**: FRA-31 — drops the old `get_points_report(uuid, uuid, text)` overload and recreates it with `p_since timestamptz`, so semester/month points reports filter `point_transactions.created_at` (the API resolves the window's lower bound, matching the points leaderboard) instead of silently returning all-time totals.
+* **Checks**: After `db push`, confirm the new signature exists and the old one is gone: `select has_function_privilege('get_points_report(uuid, uuid, timestamptz)', 'execute');` returns `t`, and `select to_regprocedure('get_points_report(uuid, uuid, text)') is null;` returns `t`. Rollback: `DB_ROLLBACK_PLAYBOOK.md` § Rollback `get_points_report` RPC.
 
 ## 2026-04-17: Poll list vote aggregation RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`

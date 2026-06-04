@@ -12,6 +12,10 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsBooleanQueryString } from '../decorators/is-boolean-query-string.decorator';
 import type { BooleanStringQueryValue } from '../utils/query-boolean';
+import {
+  POINTS_WINDOWS,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
 export class AdjustPointsDto {
   @ApiProperty()
@@ -50,10 +54,10 @@ export class AdjustPointsDto {
 }
 
 export class PointsWindowQueryDto {
-  @ApiPropertyOptional({ enum: ['all', 'semester', 'month'], default: 'all' })
+  @ApiPropertyOptional({ enum: [...POINTS_WINDOWS], default: 'all' })
   @IsOptional()
-  @IsEnum(['all', 'semester', 'month'])
-  window?: 'all' | 'semester' | 'month';
+  @IsEnum(POINTS_WINDOWS)
+  window?: PointsWindow;
 }
 
 const TRANSACTION_CATEGORIES = [

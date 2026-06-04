@@ -1,5 +1,9 @@
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  POINTS_WINDOWS,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
 export class AttendanceReportDto {
   @ApiPropertyOptional({ description: 'Filter by event ID' })
@@ -27,11 +31,14 @@ export class PointsReportDto {
   user_id?: string;
 
   @ApiPropertyOptional({
-    description: 'Time window (e.g. semester identifier)',
+    description:
+      'Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.',
+    enum: [...POINTS_WINDOWS],
+    default: 'all',
   })
   @IsOptional()
-  @IsString()
-  window?: string;
+  @IsEnum(POINTS_WINDOWS)
+  window?: PointsWindow;
 }
 
 export class ServiceReportDto {

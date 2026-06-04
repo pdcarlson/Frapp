@@ -1,6 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
+import type { ISemesterArchiveRepository } from '../../domain/repositories/semester-archive.repository.interface';
+import {
+  resolveWindowSince,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
 export interface AttendanceReportRow {
   member_name: string;
@@ -40,7 +46,7 @@ export interface AttendanceReportInput {
 
 export interface PointsReportInput {
   user_id?: string;
-  window?: string;
+  window?: PointsWindow;
 }
 
 export interface ServiceReportInput {
@@ -117,6 +123,8 @@ function throwIfError(error: QueryError | null): void {
 export class ReportService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SEMESTER_ARCHIVE_REPOSITORY)
+    private readonly semesterArchiveRepo: ISemesterArchiveRepository,
   ) {}
 
   async getAttendanceReport(
@@ -190,10 +198,25 @@ export class ReportService {
     chapterId: string,
     input: PointsReportInput,
   ): Promise<PointsReportRow[]> {
+    const window: PointsWindow = input.window ?? 'all';
+    // Resolve the window's lower bound with the same helper the leaderboard uses
+    // (points.service.ts) so report totals match the leaderboard for the same
+    // window. Only the semester window needs the latest archive.
+    let latestArchiveEndDate: string | null = null;
+    if (window === 'semester') {
+      const archive =
+        await this.semesterArchiveRepo.findLatestByChapter(chapterId);
+      latestArchiveEndDate = archive?.end_date ?? null;
+    }
+    const since = resolveWindowSince(window, {
+      now: new Date(),
+      latestArchiveEndDate,
+    });
+
     const query = this.supabase.rpc('get_points_report', {
       p_chapter_id: chapterId,
       p_user_id: input.user_id || null,
-      p_window: input.window || null,
+      p_since: since ? since.toISOString() : null,
     });
 
     const { data, error } = (await query) as QueryResult<PointsReportRpcRow>;

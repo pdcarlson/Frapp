@@ -24,8 +24,14 @@ import {
   LIST_QUERY_LIMIT_MAX,
   LIST_QUERY_LIMIT_MIN,
 } from '../../domain/constants/list-query-limits';
+import {
+  resolveWindowSince,
+  type PointsWindow,
+} from '../../domain/utils/points-window';
 
-export type PointsWindow = 'all' | 'semester' | 'month';
+// Re-exported so existing importers (points.controller, etc.) keep their path;
+// the canonical definition now lives in domain/utils/points-window.
+export type { PointsWindow };
 
 interface AdjustPointsInput {
   chapterId: string;
@@ -67,31 +73,23 @@ export class PointsService {
 
     const now = new Date();
 
-    if (window === 'month') {
-      const from = new Date(now);
-      from.setMonth(from.getMonth() - 1);
-      return transactions.filter((txn) => {
-        const createdAt = new Date(txn.created_at);
-        return (
-          !Number.isNaN(createdAt.getTime()) &&
-          createdAt >= from &&
-          createdAt <= now
-        );
-      });
-    }
+    // Exclusive lower bound for the active window, matching the
+    // get_points_report RPC (created_at > p_since) so the leaderboard and the
+    // points report agree for the same window. Month: now − 1 calendar month.
+    // Semester: end of the latest archive's end_date day (a transaction recorded
+    // on the end_date day belongs to the archived period, hence exclusive); no
+    // archive → all-time.
+    const since =
+      window === 'month'
+        ? resolveWindowSince('month', { now })
+        : (semesterRange?.after ?? null);
+    if (!since) return transactions;
 
-    // window === 'semester': the active period is everything created after the
-    // END of the latest archive's end_date calendar day, through now. The
-    // archived range covers whole days [start_date, end_date], so a transaction
-    // recorded anytime on the end_date day belongs to the archive and is
-    // excluded here. No archive (semesterRange undefined) falls back to all-time.
-    if (!semesterRange) return transactions;
-    const { after } = semesterRange;
     return transactions.filter((txn) => {
       const createdAt = new Date(txn.created_at);
       return (
         !Number.isNaN(createdAt.getTime()) &&
-        createdAt > after &&
+        createdAt > since &&
         createdAt <= now
       );
     });
@@ -115,12 +113,13 @@ export class PointsService {
     const archive =
       await this.semesterArchiveRepo.findLatestByChapter(chapterId);
     if (!archive) return undefined;
-    // Treat end_date as a calendar day ending at 23:59:59.999Z — mirrors the
-    // inclusive end-of-day convention in report.service.ts. `slice(0, 10)`
-    // tolerates either a bare 'YYYY-MM-DD' or a full ISO timestamp.
-    const after = new Date(`${archive.end_date.slice(0, 10)}T23:59:59.999Z`);
-    if (Number.isNaN(after.getTime())) return undefined;
-    return { after };
+    // Boundary math is centralized in resolveWindowSince so the leaderboard and
+    // the points report (report.service.ts) share one definition of "semester".
+    const after = resolveWindowSince('semester', {
+      now: new Date(),
+      latestArchiveEndDate: archive.end_date,
+    });
+    return after ? { after } : undefined;
   }
 
   async getUserSummary(
