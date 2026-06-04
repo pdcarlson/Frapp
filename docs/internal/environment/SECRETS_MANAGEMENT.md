@@ -6,6 +6,8 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 
 > **For the complete variable list per app per environment, see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md).**
 > This document covers the Infisical setup, sync configuration, and operational procedures.
+>
+> **Keeping secrets out of git:** a `gitleaks` pre-commit + CI gate scans for accidentally committed secrets — see [`../ci-cd/SECRET_SCANNING.md`](../ci-cd/SECRET_SCANNING.md).
 
 ## Key Design Principles
 

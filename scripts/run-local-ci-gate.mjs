@@ -41,13 +41,19 @@ function resolveDocsSyncBase(baseRef) {
   }
 }
 
-function runDocsSyncCheck(baseRef) {
-  const baseSha = resolveDocsSyncBase(baseRef);
-  const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-
+function runDocsSyncCheck(baseSha, headSha) {
   runCommand(
     `node scripts/check-docs-impact.mjs --base "${baseSha}" --head "${headSha}"`,
     "Run docs/spec sync check",
+  );
+}
+
+function runSecretScan(baseSha, headSha) {
+  // gitleaks over the branch's commit range (ADR-13 push-protection mitigation).
+  // --soft-missing keeps an offline dev unblocked; the CI secret-scan job is the hard gate.
+  runCommand(
+    `node scripts/scan-secrets.mjs --base "${baseSha}" --head "${headSha}" --soft-missing`,
+    "Run secret scan (gitleaks)",
   );
 }
 
@@ -57,7 +63,11 @@ function runLocalGate() {
 
   console.log("Running local CI gate...");
   console.log(`Base ref: ${baseRef}`);
-  runDocsSyncCheck(baseRef);
+
+  const baseSha = resolveDocsSyncBase(baseRef);
+  const headSha = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
+  runDocsSyncCheck(baseSha, headSha);
+  runSecretScan(baseSha, headSha);
 
   const gateChecks = [
     ["npm run lint", "Run monorepo lint"],
