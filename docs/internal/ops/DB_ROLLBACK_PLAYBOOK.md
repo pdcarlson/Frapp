@@ -133,7 +133,7 @@ After any rollback event:
 * **Note**: Additive function only — dropping it removes the atomic presidency-transfer path but loses no data. The API calls it from `SupabaseMemberRepository.transferPresidencyAtomic`, so a forward-fix (rather than a bare drop) is required to keep presidency transfer working: deploy an API revision that reverts to the prior two-write path (remove the wildcard role from the current President, add it to the target) before dropping the function.
 
 ## Rollback `get_points_report` RPC
-* **Migration**: `20260604130000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
+* **Migration**: `20260604140000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
 * **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: deploy an API revision that reverts to the prior all-time call and re-creates the original `(uuid, uuid, text)` body before dropping the `timestamptz` overload.
 
