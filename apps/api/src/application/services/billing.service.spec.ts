@@ -1184,6 +1184,33 @@ describe('BillingService', () => {
           last_stripe_webhook_at: NEW_ISO,
         });
       });
+
+      it('ignores a checkout.session.completed older than the high-water mark', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'past_due' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: NEW_ISO,
+        };
+        mockChapterRepo.findById.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_stale',
+          type: 'checkout.session.completed',
+          created: T_OLD,
+          data: {
+            object: {
+              metadata: { chapter_id: 'ch-1' },
+              subscription: 'sub_123',
+              customer: 'cus_123',
+            },
+          },
+        });
+
+        // A redelivered/late checkout must not re-activate a chapter Stripe has
+        // since moved past — the drop path of the checkout guard.
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
     });
 
     it('should handle unknown event types gracefully', async () => {
