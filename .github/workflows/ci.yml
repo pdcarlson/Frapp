@@ -12,7 +12,7 @@ concurrency:
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). The eight required checks always run; web-tests,
+# dependency). The nine required checks always run; web-tests,
 # web-visual-regression, and pglite-migrations are path-gated on PRs via the
 # `changes` job and run unconditionally on push.
 # ---------------------------------------------------------------------------
@@ -327,6 +327,35 @@ jobs:
       - name: Run deploy-gate script tests
         # No npm ci needed — these tests have no dependencies beyond node:test.
         run: npm run test:ci-scripts
+
+  # ── Secret scanning (gitleaks; ADR-13 push-protection replacement) ──────
+  # Fast, standalone gate: no `npm ci` (gitleaks is a single pinned binary). Scans
+  # only the PR/push commit range against .gitleaks.toml. The pre-commit hook is the
+  # local primary; this is the enforced server-side net that replaces the secret
+  # push-protection lost when the repo went private. See docs/internal/ci-cd/SECRET_SCANNING.md.
+  secret-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # scan-secrets.mjs fetches the pinned gitleaks binary on first run (no npm ci needed).
+      - name: Scan PR commit range for secrets
+        if: github.event_name == 'pull_request'
+        run: node scripts/scan-secrets.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      - name: Scan pushed commit range for secrets
+        if: github.event_name == 'push'
+        run: node scripts/scan-secrets.mjs --base "${{ github.event.before }}" --head "${{ github.sha }}"
 
   # ── PGlite migration + RLS smoke validator (ADR-11 / ADR-12) ────────────
   # Applies every `supabase/migrations/*.sql` to a fresh Postgres-in-WASM
