@@ -7,9 +7,19 @@ Admins with `reports:export` permission can generate and download reports from t
 | Report            | Scope                      | Columns                                                                                     |
 | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
 | **Attendance**    | Per event or date range    | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
-| **Points**        | Per member or chapter-wide | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
+| **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
 | **Member roster** | Current members            | Name, email, role(s), join date, point balance                                              |
 | **Service hours** | Per member or chapter-wide | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
+
+## Points report time window
+
+The **Points** report accepts an optional `window`, defined identically to the [points leaderboard](points.md#leaderboard):
+
+- `all` (default) — all-time totals.
+- `semester` — the active period only: transactions created **after the end of** the most recent semester archive's `end_date` day (see [`semester-rollover.md`](semester-rollover.md)). When no archive exists yet, this is equivalent to all-time.
+- `month` — the trailing calendar month.
+
+Totals and per-category breakdowns for a given window **equal the leaderboard** for the same window — the boundary is resolved once and shared, so the two never disagree. An unsupported `window` value is rejected with `400` rather than silently falling back to all-time.
 
 ## Export Flow
 

@@ -170,7 +170,9 @@ describe('PointsService', () => {
 
     describe('active semester window', () => {
       beforeEach(() => {
-        jest.useFakeTimers().setSystemTime(new Date('2027-01-10T00:00:00.000Z'));
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2027-01-10T00:00:00.000Z'));
       });
       afterEach(() => {
         jest.useRealTimers();

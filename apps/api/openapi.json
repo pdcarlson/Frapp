@@ -6461,7 +6461,12 @@
           },
           "window": {
             "type": "string",
-            "description": "Time window (e.g. semester identifier)"
+            "description": "Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.",
+            "enum": [
+              "all",
+              "semester",
+              "month"
+            ]
           }
         }
       },
