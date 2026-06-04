@@ -21,6 +21,7 @@ jest.mock('@repo/org-archetypes', () => ({
 jest.mock('@repo/chapter-theme', () => ({
   derivePalette: jest.fn(() => ({ palette: { '--side-bg': '#1F1A15' } })),
 }));
+jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterOnboardingService } from './chapter-onboarding.service';
@@ -95,6 +96,7 @@ describe('ChapterOnboardingService', () => {
   const directoryDto: ChapterOnboardingDto = {
     name: 'Sigma Phi Epsilon',
     university: 'UCLA',
+    accept_terms_privacy: true,
     org_archetype: 'nphc',
     directory_id: '11111111-1111-1111-1111-111111111111',
     branding: {
@@ -130,6 +132,20 @@ describe('ChapterOnboardingService', () => {
     expect(payload.config.theme_palette).toBeDefined();
   });
 
+  it('stamps Terms/Privacy acceptance from the session actor + server clock', async () => {
+    const before = Date.now();
+    await service.onboard('user-1', directoryDto);
+
+    const [, payload] = chapterService.create.mock.calls[0];
+    expect(payload.config.legal_accepted_by).toBe('user-1');
+    expect(payload.config.legal_policy_version).toBe('test-version');
+    expect(typeof payload.config.legal_accepted_at).toBe('string');
+    // Stamped from the server clock, never supplied by the client.
+    const acceptedAt = new Date(payload.config.legal_accepted_at).getTime();
+    expect(acceptedAt).toBeGreaterThanOrEqual(before);
+    expect(acceptedAt).toBeLessThanOrEqual(Date.now());
+  });
+
   it('posts a welcome system_audit message into #general', async () => {
     await service.onboard('user-1', directoryDto);
 
@@ -150,6 +166,7 @@ describe('ChapterOnboardingService', () => {
     const manualDto: ChapterOnboardingDto = {
       name: 'Made Up Chapter Name',
       university: 'Nowhere State',
+      accept_terms_privacy: true,
       org_archetype: 'ifc',
       branding: { greek_letters: 'ΑΒΓ', designation: 'Test', founded_at: 2020 },
     };
@@ -173,6 +190,7 @@ describe('ChapterOnboardingService', () => {
     const manualDto: ChapterOnboardingDto = {
       name: 'No Archetype Chapter',
       university: 'Somewhere',
+      accept_terms_privacy: true,
     };
 
     await service.onboard('user-1', manualDto);

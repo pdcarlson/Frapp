@@ -24,3 +24,13 @@
   - The landing site footer.
   - The web app and mobile app settings/about screen.
   - The chapter creation onboarding flow (ToS and Privacy Policy acceptance).
+
+## Acceptance record (implementation)
+
+Acceptance captured during chapter creation is persisted on the `chapters` row —
+`legal_accepted_at` (timestamp), `legal_policy_version` (the `LEGAL_POLICY_VERSION`
+constant from `@repo/validation`), and `legal_accepted_by` (the accepting admin) —
+stamped server-side by `ChapterOnboardingService` from the authenticated session,
+never from the client payload. The onboarding wizard blocks "Create chapter" until
+the required checkbox is ticked, and the API enforces the same rule server-side
+(`accept_terms_privacy` must be `true`).

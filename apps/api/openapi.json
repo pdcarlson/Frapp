@@ -4756,11 +4756,16 @@
           },
           "branding": {
             "$ref": "#/components/schemas/BrandingDto"
+          },
+          "accept_terms_privacy": {
+            "type": "boolean",
+            "description": "The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload."
           }
         },
         "required": [
           "name",
-          "university"
+          "university",
+          "accept_terms_privacy"
         ]
       },
       "UpdateChapterDto": {

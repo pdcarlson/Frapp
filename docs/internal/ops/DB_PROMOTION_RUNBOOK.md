@@ -64,6 +64,22 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-06-04: Terms/Privacy acceptance on `chapters` (FRA-17) + migration-version collision fix (FRA-288)
+
+One additive migration, plus a remediation rename of an already-merged migration.
+
+### 20260604130000_chapter_legal_acceptance.sql
+* **Purpose**: Adds `chapters.legal_accepted_at timestamptz`, `legal_policy_version text`, and `legal_accepted_by uuid references users(id) on delete set null` (all nullable). `ChapterOnboardingService` stamps them from the authenticated session actor + server clock at chapter creation, recording the admin's Terms of Service / Privacy Policy acceptance (`spec/behavior/legal.md`, `spec/product/onboarding.md`).
+* **Safety**: `ADD COLUMN IF NOT EXISTS` (nullable, no default) — backward-compatible and not lock-heavy. No backfill: chapters created before this shipped keep `NULL` (no explicit consent was captured for them; we don't fabricate one). The FK uses `on delete set null` (matching `audit_log.actor_user_id`), so deleting the accepting user never blocks.
+* **Checks**: After `db push`, `select column_name from information_schema.columns where table_name='chapters' and column_name like 'legal_%';` returns 3 rows (`legal_accepted_at`, `legal_accepted_by`, `legal_policy_version`).
+
+### Remediation: `chapter_last_stripe_webhook_at` migration version `20260604120000` → `20260604121000` (FRA-288)
+* **Why**: PRs #634 (`20260604120000_add_transfer_presidency_rpc.sql`) and #635 (`20260604120000_chapter_last_stripe_webhook_at.sql`) merged with the **same** version `20260604120000`. Supabase keys `schema_migrations` by version, so applying the second violates `schema_migrations_pkey` — breaking `supabase start` / `db reset` on any fresh DB. #635's file is renamed to a unique later version; #634 keeps `120000`.
+* **On-call note**: On a DB that **already applied** the old `20260604120000_chapter_last_stripe_webhook_at.sql`, `supabase db push` sees `20260604121000` as pending and re-runs it. The body is `ADD COLUMN IF NOT EXISTS last_stripe_webhook_at` — a safe no-op — but `supabase migration list` may show the superseded `120000` stripe entry; run `supabase migration repair` only if the CLI reports drift. `frapp-staging` / `frapp-prod` were paused during the collision window (migrations not applied), so they take the corrected sequence cleanly on the next push.
+* **Guardrail**: `scripts/check-migration-safety.mjs` now fails on duplicate 14-digit version prefixes (not just duplicate filenames), so this collision class is caught in CI going forward.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback Terms/Privacy acceptance columns.
+
 ## 2026-06-04: Add `transfer_presidency` RPC (FRA-39)
 * **Migration**: `20260604120000_add_transfer_presidency_rpc.sql`
 * **Purpose**: Atomic presidency transfer — removes the wildcard (`*`) President role from the current President and adds it to the target member inside one transaction, replacing the two independent `members` updates in `RbacService.transferPresidency` that could leave a chapter with zero or two Presidents on a partial failure (`spec/behavior/rbac.md` → Presidency Transfer). EXECUTE is locked to `service_role`; the API calls it via `SupabaseMemberRepository.transferPresidencyAtomic`.
