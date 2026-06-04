@@ -91,6 +91,8 @@ export interface OnboardChapterInput {
     founded_at?: number;
     colors?: { dark?: string; accent?: string };
   };
+  /** FRA-17: admin accepted the Terms of Service + Privacy Policy. Must be true. */
+  accept_terms_privacy: boolean;
 }
 
 /**

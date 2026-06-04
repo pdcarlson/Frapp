@@ -34,4 +34,11 @@ export interface Chapter {
   theme_palette?: Record<string, unknown>;
   directory_id?: string | null;
   beta_config?: Record<string, unknown>;
+  // FRA-17: Terms/Privacy acceptance captured at chapter creation
+  // (spec/behavior/legal.md), stamped server-side from the session actor at
+  // onboard time. Optional like the other onboarding-written columns — base
+  // list/detail projections don't select them.
+  legal_accepted_at?: string | null;
+  legal_policy_version?: string | null;
+  legal_accepted_by?: string | null;
 }

@@ -139,6 +139,7 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
+| `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
 
 ### apps/landing (Next.js — Vercel)

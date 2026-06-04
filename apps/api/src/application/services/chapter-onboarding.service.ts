@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { derivePalette } from '@repo/chapter-theme';
+import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ChapterService } from './chapter.service';
 import type { Chapter } from '../../domain/entities/chapter.entity';
@@ -55,6 +56,13 @@ export class ChapterOnboardingService {
       vocabulary: seed.vocabulary as unknown as Record<string, unknown>,
       branding,
       directory_id: dto.directory_id ?? null,
+      // FRA-17: stamp Terms/Privacy acceptance from the session actor + server
+      // clock. The DTO's @Equals(true) guarantees the admin accepted before we
+      // reach here, so we set it unconditionally; we never trust a
+      // client-supplied timestamp or policy version.
+      legal_accepted_at: new Date().toISOString(),
+      legal_policy_version: LEGAL_POLICY_VERSION,
+      legal_accepted_by: userId,
       ...(themePalette
         ? {
             theme_palette: themePalette as unknown as Record<string, unknown>,

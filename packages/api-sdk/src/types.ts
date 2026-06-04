@@ -1941,6 +1941,8 @@ export interface components {
             /** @description chapter_directory row id when the chapter was matched */
             directory_id?: string;
             branding?: components["schemas"]["BrandingDto"];
+            /** @description The admin accepted the Terms of Service and Privacy Policy. Must be true (spec/behavior/legal.md). The acceptance timestamp and policy version are recorded server-side from the session — never from this payload. */
+            accept_terms_privacy: boolean;
         };
         UpdateChapterDto: {
             name?: string;

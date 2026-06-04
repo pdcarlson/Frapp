@@ -30,6 +30,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command,
   CommandInput,
@@ -41,6 +42,11 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 
 const CHAT_LANDING_PATH = "/chat?channel=general";
+// Legal pages (Terms / Privacy / FERPA) live on the marketing site and are linked
+// from the onboarding consent step (spec/behavior/legal.md). Override per-env with
+// NEXT_PUBLIC_LANDING_URL; default to production so the links always resolve.
+const LEGAL_BASE_URL =
+  process.env.NEXT_PUBLIC_LANDING_URL ?? "https://frapp.live";
 const DEFAULT_DARK = "#1F1A15";
 const DEFAULT_ACCENT = "#7A5A2F";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
@@ -143,6 +149,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const [identity, setIdentity] = useState<IdentityForm>(EMPTY_IDENTITY);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [acceptedLegal, setAcceptedLegal] = useState(false);
 
   const searchQuery = useChapterDirectorySearch(debouncedQuery, {
     enabled: step === "find",
@@ -186,15 +193,20 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
 
   const identityValid =
     identity.name.trim().length >= 3 && identity.university.trim().length >= 2;
+  // Gate "Create chapter" on the required Terms/Privacy acceptance as well as a
+  // valid identity (spec/behavior/legal.md). The API enforces the same rule
+  // server-side (ChapterOnboardingDto.accept_terms_privacy must be true).
+  const canSubmit = identityValid && acceptedLegal;
 
   async function submitChapter() {
-    if (!identityValid) return;
+    if (!canSubmit) return;
     try {
       const chapter = await onboardChapter.mutateAsync({
         name: identity.name.trim(),
         university: identity.university.trim(),
         org_archetype: archetype,
         directory_id: directoryId ?? undefined,
+        accept_terms_privacy: true,
         branding: {
           greek_letters: identity.greekLetters.trim() || undefined,
           designation: identity.designation.trim() || undefined,
@@ -320,6 +332,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
                   identity={identity}
                   onChange={setIdentity}
                   isManual={directoryId === null}
+                  accepted={acceptedLegal}
+                  onAcceptedChange={setAcceptedLegal}
                 />
               ) : null}
 
@@ -352,7 +366,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
               ) : null}
 
               {step === "identity" ? (
-                <Button onClick={submitChapter} disabled={!identityValid || onboardChapter.isPending}>
+                <Button onClick={submitChapter} disabled={!canSubmit || onboardChapter.isPending}>
                   {onboardChapter.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
@@ -567,10 +581,14 @@ function IdentityStep({
   identity,
   onChange,
   isManual,
+  accepted,
+  onAcceptedChange,
 }: {
   identity: IdentityForm;
   onChange: (next: IdentityForm) => void;
   isManual: boolean;
+  accepted: boolean;
+  onAcceptedChange: (next: boolean) => void;
 }) {
   function set<K extends keyof IdentityForm>(key: K, value: IdentityForm[K]) {
     onChange({ ...identity, [key]: value });
@@ -677,6 +695,48 @@ function IdentityStep({
             </span>
           </div>
         </div>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-lg border border-border p-3">
+        <Checkbox
+          id="wiz-accept-legal"
+          checked={accepted}
+          onCheckedChange={onAcceptedChange}
+          className="mt-0.5"
+        />
+        <Label
+          htmlFor="wiz-accept-legal"
+          className="text-sm font-normal leading-snug text-muted-foreground"
+        >
+          I agree to the{" "}
+          <a
+            href={`${LEGAL_BASE_URL}/terms`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-2"
+          >
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a
+            href={`${LEGAL_BASE_URL}/privacy`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-2"
+          >
+            Privacy Policy
+          </a>
+          . Member-uploaded Backwork is shared voluntarily — see our{" "}
+          <a
+            href={`${LEGAL_BASE_URL}/ferpa`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground underline underline-offset-2"
+          >
+            FERPA notice
+          </a>
+          .
+        </Label>
       </div>
     </div>
   );
