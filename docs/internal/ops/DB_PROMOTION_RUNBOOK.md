@@ -64,6 +64,14 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-06-04: Add `transfer_presidency` RPC (FRA-39)
+* **Migration**: `20260604120000_add_transfer_presidency_rpc.sql`
+* **Purpose**: Atomic presidency transfer — removes the wildcard (`*`) President role from the current President and adds it to the target member inside one transaction, replacing the two independent `members` updates in `RbacService.transferPresidency` that could leave a chapter with zero or two Presidents on a partial failure (`spec/behavior/rbac.md` → Presidency Transfer). EXECUTE is locked to `service_role`; the API calls it via `SupabaseMemberRepository.transferPresidencyAtomic`.
+* **Safety**: Additive — creates one function, no schema or data changes. `create or replace function` is idempotent; the revoke/grant block guards each Supabase role on existence so it also applies on bare Postgres / PGlite.
+* **Checks**: After `db push`, `select proname from pg_proc where proname = 'transfer_presidency';` returns 1 row; `select has_function_privilege('service_role', 'transfer_presidency(uuid, uuid, uuid, text)', 'execute');` returns `true`.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback `transfer_presidency` RPC.
+
 ## 2026-06-02: past_due grace clock on `chapters` (FRA-109)
 
 One additive migration that adds a nullable column and backfills existing `past_due` rows.

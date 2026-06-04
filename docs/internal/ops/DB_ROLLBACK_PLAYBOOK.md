@@ -72,6 +72,12 @@ After any rollback event:
 * **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS past_due_since;`
 * **Note**: The column only feeds `ChapterGuard`'s 3-day `past_due` grace window. Dropping it reverts to the prior behavior where any `past_due` write is hard-blocked immediately (no grace) — strictly more restrictive, so it is safe and causes no data loss beyond the per-chapter grace timestamps. After dropping, redeploy the API at the pre-FRA-109 revision (the post-FRA-109 guard `select`s the column and will error if it is gone). No data backfill needed on re-apply; the migration re-stamps existing `past_due` rows.
 
+## Rollback Stripe webhook ordering mark
+
+* **Migration**: `20260604120000_chapter_last_stripe_webhook_at.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS last_stripe_webhook_at;`
+* **Note**: Additive nullable column only — it records the `event.created` of the most recently applied Stripe subscription webhook so `BillingService` can drop out-of-order/retried deliveries (FRA-242, `spec/behavior/billing.md`). Dropping it reverts to last-writer-wins, where a delayed webhook can overwrite a newer status — strictly less safe but no data loss. The post-FRA-242 `BillingService` both `select`s and writes this column, so a forward-fix (redeploy the pre-FRA-242 API revision) is required before dropping it. No backfill on re-apply; the next webhook per chapter re-stamps the mark.
+
 ## Rollback Chunk 09 member custom-field values
 
 * **Migration**: `20260531120000_member_custom_field_values.sql`
@@ -114,6 +120,11 @@ After any rollback event:
 * **Migration**: `20260603140000_add_check_in_event_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS check_in_event(uuid, uuid, uuid, timestamptz, integer, text);`
 * **Note**: Additive function only — dropping it removes the atomic event check-in path but loses no data. The API calls it from `SupabaseAttendanceRepository.checkInAtomic`, so a forward-fix (rather than a bare drop) is required to keep event check-in working: deploy an API revision that reverts to the prior two-write path (attendance insert + point insert) before dropping the function.
+
+## Rollback `transfer_presidency` RPC
+* **Migration**: `20260604120000_add_transfer_presidency_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS transfer_presidency(uuid, uuid, uuid, text);`
+* **Note**: Additive function only — dropping it removes the atomic presidency-transfer path but loses no data. The API calls it from `SupabaseMemberRepository.transferPresidencyAtomic`, so a forward-fix (rather than a bare drop) is required to keep presidency transfer working: deploy an API revision that reverts to the prior two-write path (remove the wildcard role from the current President, add it to the target) before dropping the function.
 
 ## Rollback `get_points_report` RPC
 * **Migration**: `20260604120000_get_points_report_window_filter.sql` (supersedes `20250226120000_add_get_points_report_rpc.sql`)
