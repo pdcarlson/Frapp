@@ -1211,6 +1211,41 @@ describe('BillingService', () => {
         // since moved past — the drop path of the checkout guard.
         expect(mockChapterRepo.update).not.toHaveBeenCalled();
       });
+
+      it('drops a later-delivered, earlier-created dunning event after a renewal advanced the mark', async () => {
+        const activeChapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+        // The renewal payment advances the mark to T_NEW; the next lookup sees it.
+        const afterRenewal = {
+          ...activeChapter,
+          last_stripe_webhook_at: NEW_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId
+          .mockResolvedValueOnce(activeChapter)
+          .mockResolvedValueOnce(afterRenewal);
+        mockChapterRepo.update.mockResolvedValue(activeChapter);
+
+        // 1) renewal invoice.paid at T_NEW advances the mark without changing status.
+        await service.handleWebhookEvent({
+          id: 'evt_inv_renewal',
+          type: 'invoice.paid',
+          created: T_NEW,
+          data: { object: { subscription: 'sub_123' } },
+        });
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          last_stripe_webhook_at: NEW_ISO,
+        });
+
+        // 2) a past_due event CREATED before the payment but delivered after it
+        //    must be dropped — this is the guarantee the renewal mark-advance buys.
+        mockChapterRepo.update.mockClear();
+        await service.handleWebhookEvent(subUpdated('past_due', T_OLD));
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
     });
 
     it('should handle unknown event types gracefully', async () => {
