@@ -19,7 +19,7 @@ Each document has: a system-generated `id` (UUID, primary key — this is the `{
 
 ## Storage
 
-Files are stored in Supabase Storage under `chapters/{chapter_id}/documents/{document_id}/{filename}`.
+Files are stored in Supabase Storage under `chapters/{chapter_id}/documents/{document_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/documents/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for documents already scoped to the active chapter.
 
 ## Edge Cases
 

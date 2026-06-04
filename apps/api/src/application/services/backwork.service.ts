@@ -130,6 +130,14 @@ export class BackworkService {
   }
 
   async confirmUpload(input: ConfirmUploadInput): Promise<BackworkResource> {
+    if (
+      !input.storage_path.startsWith(`chapters/${input.chapter_id}/backwork/`)
+    ) {
+      throw new BadRequestException(
+        'storage_path must be within the chapter backwork folder',
+      );
+    }
+
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
       input.file_hash,

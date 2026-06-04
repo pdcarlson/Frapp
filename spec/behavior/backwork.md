@@ -29,6 +29,10 @@ When a member provides a department or professor name that does not exist in the
 
 Unique constraint on (chapter_id, file_hash). If the exact same file (by hash) has already been uploaded to the chapter, the API returns 409 Conflict with a reference to the existing resource.
 
+## Storage
+
+Files are stored in Supabase Storage under `chapters/{chapter_id}/backwork/{resource_id}/{filename}`. The upload-URL step generates this chapter-scoped path server-side. On confirm, the API rejects any `storage_path` that does not start with `chapters/{chapter_id}/backwork/` (the caller's active chapter) so a client cannot register metadata that points outside its own chapter folder. Signed download URLs are only issued for resources already scoped to the active chapter.
+
 ## Browsing and Search
 
 - Resources are browsable by department, course, professor, semester/year, assignment type, and tags.
