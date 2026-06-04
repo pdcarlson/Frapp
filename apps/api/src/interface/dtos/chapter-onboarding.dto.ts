@@ -1,4 +1,6 @@
 import {
+  Equals,
+  IsBoolean,
   IsOptional,
   IsString,
   IsUUID,
@@ -46,4 +48,16 @@ export class ChapterOnboardingDto {
   @ValidateNested()
   @Type(() => BrandingDto)
   branding?: BrandingDto;
+
+  @ApiProperty({
+    description:
+      'The admin accepted the Terms of Service and Privacy Policy. Must be ' +
+      'true (spec/behavior/legal.md). The acceptance timestamp and policy ' +
+      'version are recorded server-side from the session — never from this payload.',
+  })
+  @IsBoolean()
+  @Equals(true, {
+    message: 'Terms of Service and Privacy Policy must be accepted',
+  })
+  accept_terms_privacy: boolean;
 }

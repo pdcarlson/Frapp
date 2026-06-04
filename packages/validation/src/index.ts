@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+// ── Legal / compliance ───────────────────────────────────────────────────────
+/**
+ * Version stamp recorded when a chapter admin accepts the Terms of Service and
+ * Privacy Policy during onboarding (FRA-17, spec/behavior/legal.md). Bump this
+ * whenever the Terms/Privacy materially change; it mirrors the landing pages'
+ * "last updated" (frapp.live/terms, /privacy — currently "March 2026"). The
+ * onboarding service stamps it onto the chapter row server-side; the web wizard
+ * imports it so client and server agree on a single value.
+ */
+export const LEGAL_POLICY_VERSION = "2026-03";
+
 export const ChapterSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(3).max(100),
