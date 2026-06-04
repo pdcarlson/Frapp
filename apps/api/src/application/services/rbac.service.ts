@@ -77,6 +77,14 @@ export class RbacService {
     currentMemberId: string,
     targetMemberId: string,
   ): Promise<void> {
+    if (currentMemberId === targetMemberId) {
+      // A self-transfer would strip then re-add the wildcard role on the same
+      // row — a no-op the RPC would otherwise report as success.
+      throw new BadRequestException(
+        'Cannot transfer presidency to the current President',
+      );
+    }
+
     const currentMember = await this.memberRepo.findById(currentMemberId);
     const targetMember = await this.memberRepo.findById(targetMemberId);
 
@@ -106,17 +114,25 @@ export class RbacService {
       );
     }
 
-    const newCurrentRoles = currentMember.role_ids.filter(
-      (id) => id !== presidentRole.id,
+    // Persist the removal from the current President and the addition to the
+    // target in a single DB transaction (the `transfer_presidency` RPC), so a
+    // partial failure can never leave the chapter with zero or two Presidents.
+    const transferred = await this.memberRepo.transferPresidencyAtomic(
+      chapterId,
+      currentMember.id,
+      targetMember.id,
+      presidentRole.id,
     );
-    const newTargetRoles = [
-      ...new Set([...targetMember.role_ids, presidentRole.id]),
-    ];
 
-    await this.memberRepo.update(currentMember.id, {
-      role_ids: newCurrentRoles,
-    });
-    await this.memberRepo.update(targetMember.id, { role_ids: newTargetRoles });
+    // `false` => the current President no longer holds the wildcard role in the
+    // chapter (a concurrent transfer already moved it, or the membership was
+    // stale between the read above and this write). Same outcome as the
+    // in-memory guard: only the current President can transfer presidency.
+    if (!transferred) {
+      throw new ForbiddenException(
+        'Only the current President can transfer presidency',
+      );
+    }
   }
 
   getPermissionsCatalog() {

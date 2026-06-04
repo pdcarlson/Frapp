@@ -115,6 +115,11 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS check_in_event(uuid, uuid, uuid, timestamptz, integer, text);`
 * **Note**: Additive function only — dropping it removes the atomic event check-in path but loses no data. The API calls it from `SupabaseAttendanceRepository.checkInAtomic`, so a forward-fix (rather than a bare drop) is required to keep event check-in working: deploy an API revision that reverts to the prior two-write path (attendance insert + point insert) before dropping the function.
 
+## Rollback `transfer_presidency` RPC
+* **Migration**: `20260604120000_add_transfer_presidency_rpc.sql`
+* **Action**: Run `DROP FUNCTION IF EXISTS transfer_presidency(uuid, uuid, uuid, text);`
+* **Note**: Additive function only — dropping it removes the atomic presidency-transfer path but loses no data. The API calls it from `SupabaseMemberRepository.transferPresidencyAtomic`, so a forward-fix (rather than a bare drop) is required to keep presidency transfer working: deploy an API revision that reverts to the prior two-write path (remove the wildcard role from the current President, add it to the target) before dropping the function.
+
 ## Rollback `get_points_report` RPC
 * **Migration**: `20250226120000_add_get_points_report_rpc.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, text);`
