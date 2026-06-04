@@ -37,6 +37,7 @@ describe('RbacService', () => {
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -275,7 +276,7 @@ describe('RbacService', () => {
     expect(mockRoleRepo.delete).not.toHaveBeenCalled();
   });
 
-  it('should transfer presidency atomically', async () => {
+  describe('transferPresidency', () => {
     const presidentRole: Role = {
       id: 'role-president',
       chapter_id: 'ch-1',
@@ -286,87 +287,183 @@ describe('RbacService', () => {
       color: '#FFD700',
       created_at: '2024-01-01',
     };
-    const currentMember: Member = {
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
-      role_ids: [presidentRole.id],
-      has_completed_onboarding: true,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    const targetMember: Member = {
-      id: 'member-2',
-      user_id: 'user-2',
-      chapter_id: 'ch-1',
-      role_ids: ['role-member'],
-      has_completed_onboarding: true,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    mockMemberRepo.findById
-      .mockResolvedValueOnce(currentMember)
-      .mockResolvedValueOnce(targetMember);
-    mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
-    mockMemberRepo.update.mockResolvedValue({} as Member);
 
-    await service.transferPresidency('ch-1', 'member-1', 'member-2');
-
-    expect(mockMemberRepo.update).toHaveBeenCalledWith('member-1', {
-      role_ids: [],
-    });
-    expect(mockMemberRepo.update).toHaveBeenCalledWith('member-2', {
-      role_ids: ['role-member', presidentRole.id],
-    });
-  });
-
-  it('should reject transfer from non-president', async () => {
-    const presidentRole: Role = {
-      id: 'role-president',
-      chapter_id: 'ch-1',
-      name: 'President',
-      permissions: [SystemPermissions.WILDCARD],
-      is_system: true,
-      display_order: 1,
-      color: '#FFD700',
-      created_at: '2024-01-01',
-    };
-    const currentMember: Member = {
-      id: 'member-1',
-      user_id: 'user-1',
-      chapter_id: 'ch-1',
-      role_ids: ['role-member'],
-      has_completed_onboarding: true,
-      created_at: '2024-01-01',
-      updated_at: '2024-01-01',
-    };
-    const targetMember: Member = {
-      id: 'member-2',
-      user_id: 'user-2',
+    const makeMember = (overrides: Partial<Member>): Member => ({
+      id: 'member-x',
+      user_id: 'user-x',
       chapter_id: 'ch-1',
       role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
-    };
-    mockMemberRepo.findById.mockImplementation((id) =>
-      Promise.resolve(
-        id === 'member-1'
-          ? currentMember
-          : id === 'member-2'
-            ? targetMember
-            : null,
-      ),
-    );
-    mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      ...overrides,
+    });
 
-    await expect(
-      service.transferPresidency('ch-1', 'member-1', 'member-2'),
-    ).rejects.toThrow(ForbiddenException);
-    await expect(
-      service.transferPresidency('ch-1', 'member-1', 'member-2'),
-    ).rejects.toThrow('Only the current President can transfer presidency');
-    expect(mockMemberRepo.update).not.toHaveBeenCalled();
+    it('moves the wildcard role to the target in a single atomic RPC call', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: [presidentRole.id],
+      });
+      const targetMember = makeMember({
+        id: 'member-2',
+        user_id: 'user-2',
+        role_ids: ['role-member'],
+      });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(targetMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockResolvedValue(true);
+
+      await service.transferPresidency('ch-1', 'member-1', 'member-2');
+
+      // One atomic call replaces the previous two independent member updates.
+      expect(mockMemberRepo.transferPresidencyAtomic).toHaveBeenCalledTimes(1);
+      expect(mockMemberRepo.transferPresidencyAtomic).toHaveBeenCalledWith(
+        'ch-1',
+        'member-1',
+        'member-2',
+        presidentRole.id,
+      );
+      expect(mockMemberRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a self-transfer (current === target) as a bad request', async () => {
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-1'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockMemberRepo.findById).not.toHaveBeenCalled();
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
+    it('rejects a transfer initiated by a non-president without touching the DB', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: ['role-member'],
+      });
+      const targetMember = makeMember({ id: 'member-2', user_id: 'user-2' });
+      mockMemberRepo.findById.mockImplementation((id) =>
+        Promise.resolve(
+          id === 'member-1'
+            ? currentMember
+            : id === 'member-2'
+              ? targetMember
+              : null,
+        ),
+      );
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('Only the current President can transfer presidency');
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFound when the target member does not exist', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: [presidentRole.id],
+      });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(null);
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'missing'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
+    it('throws BadRequest when the target is in a different chapter', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: [presidentRole.id],
+      });
+      const targetMember = makeMember({
+        id: 'member-2',
+        user_id: 'user-2',
+        chapter_id: 'ch-2',
+      });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(targetMember);
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFound when the chapter has no President role', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: ['role-member'],
+      });
+      const targetMember = makeMember({ id: 'member-2', user_id: 'user-2' });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(targetMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([]);
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('President role not found');
+      expect(mockMemberRepo.transferPresidencyAtomic).not.toHaveBeenCalled();
+    });
+
+    it('maps a false RPC result (stale/concurrent transfer) to Forbidden', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: [presidentRole.id],
+      });
+      const targetMember = makeMember({
+        id: 'member-2',
+        user_id: 'user-2',
+        role_ids: ['role-member'],
+      });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(targetMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockResolvedValue(false);
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('Only the current President can transfer presidency');
+    });
+
+    it('propagates a repository/transaction failure (rollback handled in the DB)', async () => {
+      const currentMember = makeMember({
+        id: 'member-1',
+        user_id: 'user-1',
+        role_ids: [presidentRole.id],
+      });
+      const targetMember = makeMember({
+        id: 'member-2',
+        user_id: 'user-2',
+        role_ids: ['role-member'],
+      });
+      mockMemberRepo.findById
+        .mockResolvedValueOnce(currentMember)
+        .mockResolvedValueOnce(targetMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole]);
+      mockMemberRepo.transferPresidencyAtomic.mockRejectedValue(
+        new Error('db boom'),
+      );
+
+      await expect(
+        service.transferPresidency('ch-1', 'member-1', 'member-2'),
+      ).rejects.toThrow('db boom');
+    });
   });
 
   it('should return permissions catalog', () => {
