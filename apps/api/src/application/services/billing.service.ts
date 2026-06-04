@@ -323,6 +323,8 @@ export class BillingService {
     await this.chapterRepo.update(chapter.id, update);
 
     if (update.subscription_status === 'active') {
+      // Reactivation via payment is expected and intentionally silent — president
+      // status-change alerts are limited to the subscription updated/deleted paths.
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
   }
