@@ -184,14 +184,18 @@ export class BillingService {
       return;
     }
 
+    // FRA-242: ignore a redelivered/late checkout that predates a newer event
+    // (e.g. Stripe retries an old checkout after the API restart cleared the
+    // in-memory idempotency set, when the subscription has since moved on).
+    if (this.isStaleWebhook(chapter, event, 'checkout.session.completed')) {
+      return;
+    }
+
     await this.chapterRepo.update(chapterId, {
       subscription_status: 'active',
       subscription_id: subscriptionId ?? chapter.subscription_id,
       stripe_customer_id: session.customer ?? chapter.stripe_customer_id,
-      // Genesis activation: always applies, but advance the ordering mark so an
-      // immediately-following stale subscription.updated is compared against
-      // checkout time rather than a null mark (FRA-242).
-      last_stripe_webhook_at: this.nextWebhookMark(chapter, event),
+      last_stripe_webhook_at: this.eventCreatedAt(event),
     });
 
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
@@ -224,13 +228,7 @@ export class BillingService {
     }
 
     // FRA-242: an older/retried delivery must not overwrite a newer status.
-    if (this.isOutOfOrderWebhook(chapter, event)) {
-      this.logger.warn(
-        `Ignoring out-of-order customer.subscription.updated ${event.id} for ` +
-          `chapter ${chapter.id} (event ${new Date(
-            event.created * 1000,
-          ).toISOString()} older than last applied ${chapter.last_stripe_webhook_at})`,
-      );
+    if (this.isStaleWebhook(chapter, event, 'customer.subscription.updated')) {
       return;
     }
 
@@ -243,11 +241,11 @@ export class BillingService {
     // delayed/retried webhook delivery can't extend the 3-day grace window.
     const update: Partial<Chapter> = {
       subscription_status: newStatus,
-      last_stripe_webhook_at: this.nextWebhookMark(chapter, event),
+      last_stripe_webhook_at: this.eventCreatedAt(event),
     };
     if (newStatus === 'past_due') {
       if (chapter.subscription_status !== 'past_due') {
-        update.past_due_since = new Date(event.created * 1000).toISOString();
+        update.past_due_since = this.eventCreatedAt(event);
       }
     } else {
       update.past_due_since = null;
@@ -277,11 +275,7 @@ export class BillingService {
     if (!chapter) return;
 
     // FRA-242: an older/retried delivery must not overwrite a newer status.
-    if (this.isOutOfOrderWebhook(chapter, event)) {
-      this.logger.warn(
-        `Ignoring out-of-order customer.subscription.deleted ${event.id} for ` +
-          `chapter ${chapter.id}`,
-      );
+    if (this.isStaleWebhook(chapter, event, 'customer.subscription.deleted')) {
       return;
     }
 
@@ -290,7 +284,7 @@ export class BillingService {
     await this.chapterRepo.update(chapter.id, {
       subscription_status: 'canceled',
       past_due_since: null,
-      last_stripe_webhook_at: this.nextWebhookMark(chapter, event),
+      last_stripe_webhook_at: this.eventCreatedAt(event),
     });
 
     // AC #4: only notify the president when the status actually changes.
@@ -311,19 +305,24 @@ export class BillingService {
 
     // FRA-242: a stale invoice payment must not reactivate a chapter whose
     // subscription has since moved to a newer past_due/canceled state.
-    if (this.isOutOfOrderWebhook(chapter, event)) {
-      this.logger.warn(
-        `Ignoring out-of-order invoice.paid ${event.id} for chapter ${chapter.id}`,
-      );
+    if (this.isStaleWebhook(chapter, event, 'invoice.paid')) {
       return;
     }
 
+    // Advance the ordering mark on every non-stale payment — even a renewal that
+    // doesn't change status — so a later out-of-order dunning event that
+    // predates this payment can't downgrade the chapter (FRA-242).
+    const update: Partial<Chapter> = {
+      last_stripe_webhook_at: this.eventCreatedAt(event),
+    };
     if (chapter.subscription_status === 'past_due') {
-      await this.chapterRepo.update(chapter.id, {
-        subscription_status: 'active',
-        past_due_since: null,
-        last_stripe_webhook_at: this.nextWebhookMark(chapter, event),
-      });
+      update.subscription_status = 'active';
+      update.past_due_since = null;
+    }
+
+    await this.chapterRepo.update(chapter.id, update);
+
+    if (update.subscription_status === 'active') {
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
   }
@@ -367,28 +366,35 @@ export class BillingService {
     }
   }
 
-  /**
-   * Timestamp-aware webhook ordering (spec/behavior/billing.md, FRA-242). True
-   * when this event predates the last subscription webhook we applied, so the
-   * caller must ignore it. Stripe `event.created` is Unix *seconds*.
-   */
-  private isOutOfOrderWebhook(chapter: Chapter, event: WebhookEvent): boolean {
-    const last = chapter.last_stripe_webhook_at;
-    if (!last) return false;
-    return event.created * 1000 < new Date(last).getTime();
+  /** Stripe `event.created` (Unix seconds) as an ISO timestamp. */
+  private eventCreatedAt(event: WebhookEvent): string {
+    return new Date(event.created * 1000).toISOString();
   }
 
   /**
-   * The high-water mark to persist alongside a status write: the newer of the
-   * chapter's existing mark and this event's creation time, so an unconditional
-   * writer (e.g. checkout) can never move the mark backwards.
+   * Timestamp-aware ordering (spec/behavior/billing.md, FRA-242): returns true —
+   * and logs — when this event predates the last subscription webhook applied to
+   * the chapter, so the caller must ignore it. Every applied subscription webhook
+   * stamps `last_stripe_webhook_at` with its `event.created`, so the mark is the
+   * newest applied event's time. Two events sharing the same Stripe second are
+   * treated as not-stale (applied in delivery order) since sub-second order is
+   * unknowable.
    */
-  private nextWebhookMark(chapter: Chapter, event: WebhookEvent): string {
-    const eventMs = event.created * 1000;
-    const lastMs = chapter.last_stripe_webhook_at
-      ? new Date(chapter.last_stripe_webhook_at).getTime()
-      : 0;
-    return new Date(Math.max(eventMs, lastMs)).toISOString();
+  private isStaleWebhook(
+    chapter: Chapter,
+    event: WebhookEvent,
+    eventType: string,
+  ): boolean {
+    const last = chapter.last_stripe_webhook_at;
+    if (last && event.created * 1000 < new Date(last).getTime()) {
+      this.logger.warn(
+        `Ignoring out-of-order ${eventType} ${event.id} for chapter ` +
+          `${chapter.id} (event ${this.eventCreatedAt(event)} older than ` +
+          `last applied ${last})`,
+      );
+      return true;
+    }
+    return false;
   }
 
   private mapStripeStatus(stripeStatus: string): SubscriptionStatus | null {

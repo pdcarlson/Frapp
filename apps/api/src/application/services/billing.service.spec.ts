@@ -895,7 +895,7 @@ describe('BillingService', () => {
       });
     });
 
-    it('should not update active chapter on invoice.paid', async () => {
+    it('advances the mark without changing status on invoice.paid for an active chapter', async () => {
       const event: WebhookEvent = {
         id: 'evt_invoice_paid_active',
         type: 'invoice.paid',
@@ -913,10 +913,14 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue(activeChapter);
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      // FRA-242: a renewal payment advances the ordering mark but leaves status.
+      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
+      });
     });
 
     describe('past_due grace clock (FRA-109)', () => {
@@ -1100,6 +1104,10 @@ describe('BillingService', () => {
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
         mockChapterRepo.update.mockResolvedValue(chapter);
+        // Mock a reachable president so the no-notify assertion below actually
+        // exercises the statusChanged gate (not just a missing-role early return).
+        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
 
