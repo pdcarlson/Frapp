@@ -14,6 +14,11 @@ export interface Chapter {
   // Timestamp the chapter entered `past_due` (null otherwise). Drives the
   // 3-day grace window in ChapterGuard (FRA-109, spec/behavior/billing.md).
   past_due_since: string | null;
+  // High-water mark: the Stripe `event.created` of the most recently applied
+  // subscription webhook (null until the first one lands). Enforces
+  // timestamp-aware ordering so a stale/retried event can't overwrite a newer
+  // subscription status (FRA-242, spec/behavior/billing.md).
+  last_stripe_webhook_at: string | null;
   accent_color: string | null;
   logo_path: string | null;
   donation_url: string | null;

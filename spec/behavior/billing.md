@@ -4,7 +4,7 @@
 
 - Stripe webhooks are the **source of truth** for subscription status changes.
 - Every webhook event is checked for idempotency using the Stripe event ID (never process the same event twice).
-- Timestamp-aware: an older webhook event must not overwrite a newer subscription status.
+- Timestamp-aware: an older webhook event must not overwrite a newer subscription status. The chapter row carries a `last_stripe_webhook_at` high-water mark — the `event.created` of the most recently applied webhook. Every subscription webhook (`checkout.session.completed`, `customer.subscription.updated`/`deleted`, `invoice.paid`) ignores any event older than the mark and stamps the mark with its own `event.created` when it applies — including a renewal `invoice.paid` that doesn't change status, so a later out-of-order dunning event that predates the payment can't downgrade the chapter. On a `customer.subscription.updated`/`deleted` event the president is notified only when the mapped status actually changes — no duplicate alert for a repeated `past_due` or an already-`canceled` chapter.
 
 ## Edge Cases
 

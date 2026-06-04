@@ -40,6 +40,7 @@ function makeChapter(): Chapter {
     subscription_status: 'incomplete',
     subscription_id: null,
     past_due_since: null,
+    last_stripe_webhook_at: null,
     accent_color: null,
     logo_path: null,
     donation_url: null,
