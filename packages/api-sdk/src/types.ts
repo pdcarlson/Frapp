@@ -2499,8 +2499,11 @@ export interface components {
         PointsReportDto: {
             /** @description Filter by user ID (omit for chapter-wide) */
             user_id?: string;
-            /** @description Time window (e.g. semester identifier) */
-            window?: string;
+            /**
+             * @description Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.
+             * @enum {string}
+             */
+            window?: "all" | "semester" | "month";
         };
         ServiceReportDto: {
             /** @description Filter by user ID (omit for chapter-wide) */

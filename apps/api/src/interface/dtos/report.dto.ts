@@ -34,7 +34,6 @@ export class PointsReportDto {
     description:
       'Time window for totals (defaults to all-time). Defined identically to the points leaderboard: semester excludes the latest archive period; month is the trailing calendar month.',
     enum: [...POINTS_WINDOWS],
-    default: 'all',
   })
   @IsOptional()
   @IsEnum(POINTS_WINDOWS)

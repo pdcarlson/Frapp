@@ -35,7 +35,7 @@ export function usePointsReport() {
       body,
     }: {
       format?: string;
-      body: { user_id?: string; window?: string };
+      body: { user_id?: string; window?: "all" | "semester" | "month" };
     }) => {
       const { data, error } = await client.POST("/v1/reports/points", {
         params: { query: { format } },
