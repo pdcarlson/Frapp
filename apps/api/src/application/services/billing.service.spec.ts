@@ -41,6 +41,7 @@ describe('BillingService', () => {
     subscription_status: 'incomplete',
     subscription_id: null,
     past_due_since: null,
+    last_stripe_webhook_at: null,
     accent_color: '#2563EB',
     logo_path: null,
     donation_url: null,
@@ -386,6 +387,7 @@ describe('BillingService', () => {
       expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
         subscription_status: 'incomplete',
         past_due_since: null,
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -418,6 +420,7 @@ describe('BillingService', () => {
       expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
         subscription_status: 'canceled',
         past_due_since: null,
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -452,6 +455,7 @@ describe('BillingService', () => {
         expect.objectContaining({
           subscription_status: 'past_due',
           past_due_since: expect.any(String),
+          last_stripe_webhook_at: expect.any(String),
         }),
       );
     });
@@ -582,6 +586,7 @@ describe('BillingService', () => {
         subscription_status: 'active',
         subscription_id: 'sub_existing',
         stripe_customer_id: 'cus_existing',
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -742,6 +747,7 @@ describe('BillingService', () => {
         subscription_status: 'active',
         subscription_id: 'sub_123',
         stripe_customer_id: 'cus_123',
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -820,6 +826,7 @@ describe('BillingService', () => {
         expect.objectContaining({
           subscription_status: 'past_due',
           past_due_since: expect.any(String),
+          last_stripe_webhook_at: expect.any(String),
         }),
       );
     });
@@ -852,6 +859,7 @@ describe('BillingService', () => {
       expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
         subscription_status: 'canceled',
         past_due_since: null,
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -883,6 +891,7 @@ describe('BillingService', () => {
       expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
         subscription_status: 'active',
         past_due_since: null,
+        last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
     });
 
@@ -937,6 +946,9 @@ describe('BillingService', () => {
           subscription_status: 'past_due',
           // Anchored to event.created (seconds), not processing time.
           past_due_since: new Date(CREATED_SECONDS * 1000).toISOString(),
+          last_stripe_webhook_at: new Date(
+            CREATED_SECONDS * 1000,
+          ).toISOString(),
         });
       });
 
@@ -952,9 +964,13 @@ describe('BillingService', () => {
 
         await service.handleWebhookEvent(pastDueEvent('evt_pd_repeat'));
 
-        // No past_due_since key in the payload -> the grace clock is untouched.
+        // No past_due_since key in the payload -> the grace clock is untouched,
+        // but the ordering high-water mark still advances (FRA-242).
         expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
           subscription_status: 'past_due',
+          last_stripe_webhook_at: new Date(
+            CREATED_SECONDS * 1000,
+          ).toISOString(),
         });
       });
 
@@ -979,6 +995,185 @@ describe('BillingService', () => {
         expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
           subscription_status: 'active',
           past_due_since: null,
+          last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
+        });
+      });
+    });
+
+    describe('timestamp-aware webhook ordering (FRA-242)', () => {
+      // Stripe event.created is Unix *seconds*; T_OLD precedes T_NEW.
+      const T_OLD = Math.floor(Date.parse('2026-06-01T12:00:00.000Z') / 1000);
+      const T_NEW = Math.floor(Date.parse('2026-06-02T12:00:00.000Z') / 1000);
+      const OLD_ISO = new Date(T_OLD * 1000).toISOString();
+      const NEW_ISO = new Date(T_NEW * 1000).toISOString();
+
+      const subUpdated = (status: string, created: number): WebhookEvent => ({
+        id: `evt_upd_${status}_${created}`,
+        type: 'customer.subscription.updated',
+        created,
+        data: { object: { id: 'sub_123', status } },
+      });
+
+      const presidentRole = {
+        id: 'role-pres',
+        chapter_id: 'ch-1',
+        name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
+      };
+      const presidentMember = {
+        id: 'member-pres',
+        user_id: 'user-pres',
+        chapter_id: 'ch-1',
+        role_ids: ['role-pres'],
+        has_completed_onboarding: true,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      };
+
+      it('ignores a customer.subscription.updated older than the high-water mark', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: NEW_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent(subUpdated('canceled', T_OLD));
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('applies a newer customer.subscription.updated and advances the mark', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: OLD_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+        mockChapterRepo.update.mockResolvedValue(chapter);
+        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
+
+        await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
+
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          subscription_status: 'past_due',
+          past_due_since: NEW_ISO,
+          last_stripe_webhook_at: NEW_ISO,
+        });
+        expect(mockNotificationService.notifyUser).toHaveBeenCalledTimes(1);
+      });
+
+      it('applies the first subscription webhook when no mark is set yet', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: null,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+        mockChapterRepo.update.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent(subUpdated('canceled', T_NEW));
+
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          subscription_status: 'canceled',
+          past_due_since: null,
+          last_stripe_webhook_at: NEW_ISO,
+        });
+      });
+
+      it('advances the mark but does not notify when status is unchanged (AC #4)', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'past_due' as const,
+          subscription_id: 'sub_123',
+          past_due_since: OLD_ISO,
+          last_stripe_webhook_at: OLD_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+        mockChapterRepo.update.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
+
+        // Still past_due: the grace clock is untouched and the president is not
+        // re-notified — only the ordering mark moves forward.
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          subscription_status: 'past_due',
+          last_stripe_webhook_at: NEW_ISO,
+        });
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('ignores a customer.subscription.deleted older than the high-water mark', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'active' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: NEW_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent({
+          id: 'evt_del_stale',
+          type: 'customer.subscription.deleted',
+          created: T_OLD,
+          data: { object: { id: 'sub_123' } },
+        });
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+        expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+      });
+
+      it('ignores a stale invoice.paid so it cannot reactivate a newer state', async () => {
+        const chapter = {
+          ...baseChapter,
+          subscription_status: 'past_due' as const,
+          subscription_id: 'sub_123',
+          last_stripe_webhook_at: NEW_ISO,
+        };
+        mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent({
+          id: 'evt_inv_stale',
+          type: 'invoice.paid',
+          created: T_OLD,
+          data: { object: { subscription: 'sub_123' } },
+        });
+
+        expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      });
+
+      it('advances the high-water mark on checkout.session.completed', async () => {
+        const chapter = { ...baseChapter, last_stripe_webhook_at: null };
+        mockChapterRepo.findById.mockResolvedValue(chapter);
+        mockChapterRepo.update.mockResolvedValue(chapter);
+
+        await service.handleWebhookEvent({
+          id: 'evt_checkout_mark',
+          type: 'checkout.session.completed',
+          created: T_NEW,
+          data: {
+            object: {
+              metadata: { chapter_id: 'ch-1' },
+              subscription: 'sub_123',
+              customer: 'cus_123',
+            },
+          },
+        });
+
+        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+          subscription_status: 'active',
+          subscription_id: 'sub_123',
+          stripe_customer_id: 'cus_123',
+          last_stripe_webhook_at: NEW_ISO,
         });
       });
     });
