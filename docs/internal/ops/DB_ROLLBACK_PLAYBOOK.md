@@ -74,9 +74,15 @@ After any rollback event:
 
 ## Rollback Stripe webhook ordering mark
 
-* **Migration**: `20260604120000_chapter_last_stripe_webhook_at.sql`
+* **Migration**: `20260604121000_chapter_last_stripe_webhook_at.sql` (renamed from `20260604120000_…` to resolve a version collision — FRA-288)
 * **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS last_stripe_webhook_at;`
 * **Note**: Additive nullable column only — it records the `event.created` of the most recently applied Stripe subscription webhook so `BillingService` can drop out-of-order/retried deliveries (FRA-242, `spec/behavior/billing.md`). Dropping it reverts to last-writer-wins, where a delayed webhook can overwrite a newer status — strictly less safe but no data loss. The post-FRA-242 `BillingService` both `select`s and writes this column, so a forward-fix (redeploy the pre-FRA-242 API revision) is required before dropping it. No backfill on re-apply; the next webhook per chapter re-stamps the mark.
+
+## Rollback Terms/Privacy acceptance columns
+
+* **Migration**: `20260604130000_chapter_legal_acceptance.sql`
+* **Action**: `ALTER TABLE chapters DROP COLUMN IF EXISTS legal_accepted_at, DROP COLUMN IF EXISTS legal_policy_version, DROP COLUMN IF EXISTS legal_accepted_by;`
+* **Note**: Additive nullable columns recording the chapter admin's Terms/Privacy acceptance at onboarding (FRA-17, `spec/behavior/legal.md`). The post-FRA-17 `ChapterOnboardingService` **writes** these on chapter creation, so redeploy the pre-FRA-17 API revision (which omits them) before dropping, or new-chapter onboarding inserts will fail on the missing columns. Reads use `select('*')` and tolerate their absence. Dropping loses the per-chapter acceptance audit (timestamp, policy version, accepting user) but no operational data; no backfill on re-apply (legacy rows stay `NULL`).
 
 ## Rollback Chunk 09 member custom-field values
 

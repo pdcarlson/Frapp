@@ -83,14 +83,32 @@ function validateMigrationFiles() {
     process.exit(1);
   }
 
-  const duplicates = migrationFiles.filter(
-    (file, index) => migrationFiles.indexOf(file) !== index,
-  );
-  if (duplicates.length > 0) {
-    console.error("Migration safety check failed: duplicate migration filenames.");
-    for (const file of duplicates) {
-      console.error(`- ${file}`);
+  // Two migrations sharing the same 14-digit version prefix collide in
+  // Supabase's `schema_migrations` (its primary key is the version): applying
+  // the second raises a duplicate-key error, breaking `supabase start` /
+  // `db reset` on a fresh DB and skipping the second file on an
+  // already-migrated DB. Dedupe on the version prefix, not the full filename
+  // (filenames are unique on disk, so the old filename check could never fire).
+  // This is exactly the #634/#635 collision (FRA-288).
+  const versions = migrationFiles.map((file) => file.slice(0, 14));
+  const duplicateVersions = [
+    ...new Set(
+      versions.filter((version, index) => versions.indexOf(version) !== index),
+    ),
+  ];
+  if (duplicateVersions.length > 0) {
+    console.error(
+      "Migration safety check failed: duplicate migration version prefix(es).",
+    );
+    for (const version of duplicateVersions) {
+      const colliders = migrationFiles.filter((file) =>
+        file.startsWith(`${version}_`),
+      );
+      console.error(`- ${version}: ${colliders.join(", ")}`);
     }
+    console.error(
+      "Each migration needs a unique 14-digit version prefix; Supabase keys schema_migrations by it.",
+    );
     process.exit(1);
   }
 }

@@ -30,13 +30,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command,
   CommandInput,
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
@@ -172,6 +172,8 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       colorDark: normalizeHex(row.default_colors?.dark, DEFAULT_DARK),
       colorAccent: normalizeHex(row.default_colors?.accent, DEFAULT_ACCENT),
     });
+    // A different chapter identity invalidates any prior consent — re-affirm.
+    setAcceptedLegal(false);
     setStep("archetype");
   }
 
@@ -183,6 +185,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
       // Seed the chapter name from whatever the officer was searching for.
       name: rawQuery.trim(),
     });
+    setAcceptedLegal(false);
     setStep("archetype");
   }
 
@@ -698,11 +701,12 @@ function IdentityStep({
       </div>
 
       <div className="flex items-start gap-3 rounded-lg border border-border p-3">
-        <Checkbox
+        <input
+          type="checkbox"
           id="wiz-accept-legal"
           checked={accepted}
-          onCheckedChange={onAcceptedChange}
-          className="mt-0.5"
+          onChange={(e) => onAcceptedChange(e.target.checked)}
+          className={cn(dashboardTableCheckboxClassName, "mt-0.5")}
         />
         <Label
           htmlFor="wiz-accept-legal"
