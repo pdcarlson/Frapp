@@ -44,6 +44,5 @@ Full context, network policy, and troubleshooting: [`CLOUD_SANDBOX.md`](./CLOUD_
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_PRICE_ID` | Test-mode Stripe keys; if absent the bringup writes non-empty placeholders so the API still boots |
 | `FRAPP_CLOUD_SANDBOX` | **Optional.** Forces SessionStart auto-bringup. Normally unnecessary — the setup script writes `/etc/frapp-cloud-sandbox`, which the hook auto-detects |
 
-> `CLAUDE_CODE_SUBAGENT_MODEL` is **not** a web-UI env var — it's a repo setting in
-> [`.claude/settings.json`](../../../.claude/settings.json) (`env` block) pinning all
-> subagents to `claude-sonnet-4-6`. Accepts a model id/alias or `inherit`.
+> Sub-agents are **not** pinned to a model — `.claude/settings.json` no longer sets
+> `CLAUDE_CODE_SUBAGENT_MODEL`, so sub-agents inherit the session model (Opus in a normal session).

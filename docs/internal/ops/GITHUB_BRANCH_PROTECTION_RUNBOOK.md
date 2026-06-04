@@ -5,7 +5,6 @@
 Configure merge-blocking branch protections for `main` and `production`. This ensures:
 
 - All required CI checks pass before merge
-- The `claude-review-gate` blocks merge on Important AI-review findings (`claude-review-override` label to bypass)
 - PRs to `production` must come from `main`
 - No force pushes, no direct commits, no bypasses (even for admins)
 
@@ -20,6 +19,12 @@ Configure merge-blocking branch protections for `main` and `production`. This en
 export GITHUB_PAT=<token>
 export GH_TOKEN="$GITHUB_PAT"   # gh/git read GH_TOKEN, not GITHUB_PAT
 ```
+
+> **Which env var the script reads.** `scripts/configure-branch-protection.mjs` resolves the token from,
+> in order: `GITHUB_PAT` → `GITHUB_TOKEN` → `GH_PAT` → `GH_TOKEN` (or `--token-env <NAME>` to name a
+> custom var). `GITHUB_PAT` is the canonical name and is what the Claude Code hosted environment injects,
+> so `npm run configure:branch-protection` works there without extra setup. The repo slug comes from
+> `--repo owner/repo`, `GITHUB_REPOSITORY`, or the `origin` remote.
 
 ## Step 1: Dry Run (Review Before Applying)
 
@@ -122,7 +127,10 @@ Do **not** mark these required on `main` — staging deploys are allowed to fail
 
 ### AI review policy
 
-The `claude-review-gate` is a required check that blocks merge **only when the review reports an Important finding**; Nits are advisory. Bypass a false positive with the `claude-review-override` label. The gate always reports a conclusion (bot / draft / fork / no-token runs pass), so it is safe to require — but add it to the required contexts only **after** the workflow is merged and verified green (otherwise every PR blocks on a missing check). See [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
+There is **no AI-review required check.** Code review is a **local pre-push gate**
+(`.claude/hooks/pre-push-review-gate.sh` runs `/code-review` before the branch is pushed) — the former
+`claude-review-gate` CI check was removed (2026-06-04, ADR-14 amendment). See
+[`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ## Troubleshooting: checks stuck on "Expected — Waiting for status to be reported"
 

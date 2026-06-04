@@ -289,4 +289,3 @@ Reference existing audit docs in `docs/archive/audits/` for format precedent.
 
 - Document new security patterns (e.g., CSRF, CSP headers) in the security section as they land.
 - Update the CI/CD audit table whenever new CI checks are added.
-- When the automated review rubric changes (`.github/claude-review/review-guidelines.md`), update this skill and any related audit rule globs to keep review guidance aligned.

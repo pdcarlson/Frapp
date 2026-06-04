@@ -14,7 +14,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 - Read context before asking; handle what you can without the user.
 - Confirm before external/public actions; be proactive on internal/repo work.
 - If agent operating files change, say so in the response.
-- **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained implementation chunks to sub-agents (Explore/Plan/general-purpose), launching independent ones in parallel in a single message. Keep heavy reading out of your own context and stay focused on integration and review. Sub-agents run on Sonnet 4.6 by default (`CLAUDE_CODE_SUBAGENT_MODEL` in [`.claude/settings.json`](.claude/settings.json)).
+- **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained implementation chunks to sub-agents (Explore/Plan/general-purpose), launching independent ones in parallel in a single message. Keep heavy reading out of your own context and stay focused on integration and review. Sub-agents inherit the session model (so they run on Opus in a normal session) — there is no pinned sub-agent model.
 - **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the Claude Code web environment (network policy, env var, setup script), then wait. These are environment config you cannot fix from inside the session; env/network changes apply to new sessions only. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails").
 
 ## Project overview
@@ -67,7 +67,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 
 **Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two Cursor automations maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
 
-**Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → **`/code-review`** (Sonnet review agents) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
+**Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → push (the local **pre-push review-gate hook** requires one **`/code-review`** pass on the diff — the single pre-PR review gate; review sub-agents inherit the session model) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
 
 ## Services and ports
 
