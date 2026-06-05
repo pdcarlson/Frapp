@@ -96,3 +96,26 @@ New chapter-scoped controllers default to paid-ops (fail-closed): writes are blo
 
 ### Known follow-up
 ~~The Supabase Edge Functions on the chat hot path (`supabase/functions/chat-send`, `supabase/functions/chat-react`) bypass the NestJS guard and currently have no subscription check, so a canceled chapter can still post chat via the edge path. Tracked separately as issue #305.~~ **Closed by ADR-11 / #416:** the chat hot path now runs inside `ChatController` and inherits `@FreeTier()` + `SubscriptionGuard` like every other NestJS chat route. The bypass surface is gone.
+
+## Security Fix: Cross-tenant chat reaction read leak (`chat_message_actions` RLS)
+
+### Overview
+A high-severity multi-tenant isolation gap was fixed in the Row-Level Security for `chat_message_actions` (per-user reactions / poll votes). The gap was introduced by `supabase/migrations/20260523150000_chat_hotpath.sql` and corrected in `supabase/migrations/20260604150000_chat_message_actions_membership_rls.sql` (FRA-38 / #279).
+
+### Details
+The table's `SELECT` policy was `using (auth.role() = 'authenticated')`, so **any** authenticated Supabase user could read **every** action row across all chapters, private/DM channels, and role-gated channels. This was not purely theoretical: the web client reads `chat_message_actions` **directly under the user's JWT** (RLS-enforced) — an initial reaction backfill (`apps/web/lib/chat/use-chat-channel.ts`) and a *global* Supabase Realtime `postgres_changes` subscription (`apps/web/lib/chat/realtime-manager.ts`), the latter with **no** application-layer channel filter, so RLS was the only gate. A user in chapter A could observe reaction/vote rows for messages in chapter B (and in private/DM/role-gated channels they could not otherwise see) — confirmed by reproducing the read as the `authenticated` role against a local database before the fix (a chapter-B user counted a chapter-A action row; 0 after the fix).
+
+The fix keeps the table readable by the web client but scopes the `SELECT` policy to channel visibility, mirroring the canonical `canAccessChannel` predicate (`@repo/validation`):
+
+```sql
+using (auth.role() = 'authenticated' and public.can_read_chat_message(message_id))
+```
+
+Because the referenced tables (`chat_messages`, `chat_channels`, `members`, `roles`) are default-deny under the invoking `authenticated` role, a plain sub-select in the policy would return nothing and deny all reads; the membership lookup therefore runs inside a `SECURITY DEFINER` helper `public.can_read_chat_message(uuid)` (with `set search_path = public`; `execute` revoked from `public`/`anon`, granted only to `authenticated`/`service_role`). The helper enforces chapter membership plus the per-type rule (`PUBLIC` → any member; `PRIVATE`/`DM`/`GROUP_DM` → `member_ids`; `ROLE_GATED` → `*` or a matching `required_permissions`). The INSERT/DELETE policies (own-row scoped) and the service-role write path are unchanged, so hot-path writes are unaffected.
+
+Because Supabase Realtime evaluates the SELECT policy against the *old* row image to decide **DELETE**-event delivery, and the default replica identity exposes only the primary key, the migration also sets `chat_message_actions` to `REPLICA IDENTITY FULL` so `message_id` is present for that check. Without it, a now-`message_id`-dependent policy would evaluate `can_read_chat_message(NULL)` → deny and silently drop un-reaction / vote-removal events for every subscriber (the web client removes reactions solely from those DELETE events). The rows are tiny, so the extra WAL volume is negligible. The change touches no table columns and adds only an internal RLS-only function, so the curated `apps/api/src/infrastructure/supabase/database.types.ts` (which tracks table shapes and app-invoked RPCs, not internal helpers) needs no edit.
+
+Regression coverage lives in `scripts/check-pglite-migrations.mjs`: the SELECT-policy shape assertion now requires the membership predicate (and asserts the helper is `SECURITY DEFINER` with a pinned `search_path`), and a seeded functional tier exercises `can_read_chat_message` across own-chapter / cross-chapter / private / DM / role-gated / empty-requirement / anon scenarios.
+
+### Prevention
+For any table a browser/mobile Supabase client reads **directly** — especially over a Realtime subscription, where RLS is the sole gate — the RLS `SELECT` policy must encode the full tenant + channel-visibility rule; do not rely on "the app layer filters it." When such a policy must read default-deny tables, wrap the lookup in a `SECURITY DEFINER` helper with a pinned `search_path` and least-privilege `execute` grants, and mirror the single shared access predicate (`canAccessChannel`) rather than duplicating ad-hoc logic.
