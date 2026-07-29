@@ -35,7 +35,7 @@ cs_docker_login_if_creds
 # Bring the stack up once purely to pull+cache images, then stop it. Only the pulled
 # images persist on disk (and into the environment cache); the containers do not.
 cs_log "Pre-pulling Supabase images (one-time; cached for fast per-session startup)..."
-npx supabase start || cs_log "WARN: 'supabase start' failed during pre-pull; images may pull at session time."
-npx supabase stop || true
+cs_supabase start || cs_log "WARN: 'supabase start' failed during pre-pull; images may pull at session time."
+cs_supabase stop || true
 
 cs_log "Setup complete."

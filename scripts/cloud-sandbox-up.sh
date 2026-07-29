@@ -37,14 +37,14 @@ write_env_local() {
   local supa
 
   # Preferred: map Supabase's status output straight onto the API's variable names.
-  supa=$(npx supabase status -o env \
+  supa=$(cs_supabase status -o env \
     --override-name api.url=SUPABASE_URL \
     --override-name auth.anon_key=SUPABASE_ANON_KEY \
     --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY 2>/dev/null)
 
   # Fallback for CLI versions that don't support --override-name: remap default names.
   if ! printf '%s' "$supa" | grep -q '^SUPABASE_URL='; then
-    supa=$(npx supabase status -o env 2>/dev/null) || return 1
+    supa=$(cs_supabase status -o env 2>/dev/null) || return 1
     supa=$(printf '%s\n' "$supa" \
       | sed -e 's/^API_URL=/SUPABASE_URL=/' \
             -e 's/^ANON_KEY=/SUPABASE_ANON_KEY=/' \
@@ -82,10 +82,10 @@ cs_log "Starting Supabase (images cached)..."
 # if a session genuinely needs them.
 SUPABASE_START_ARGS="${FRAPP_SUPABASE_START_ARGS:--x edge-runtime}"
 # shellcheck disable=SC2086
-npx supabase start $SUPABASE_START_ARGS || fail "'supabase start' failed."
+cs_supabase start $SUPABASE_START_ARGS || fail "'supabase start' failed."
 
 cs_log "Applying local migrations..."
-npx supabase db push --local || fail "'supabase db push --local' failed."
+cs_supabase db push --local || fail "'supabase db push --local' failed."
 
 cs_log "Writing apps/api/.env.local..."
 write_env_local || fail "Could not write apps/api/.env.local from 'supabase status'."
