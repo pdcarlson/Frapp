@@ -770,23 +770,38 @@ Todo) — explicitly **not Backlog, Completed, or Canceled**
 
 The AI corpus (Q&A, summarization) reads from authoritative surfaces only. Casual chat is not indexed — see [`behavior/ai.md`](../behavior/ai.md) for the product rules.
 
-| Source           | Table / location                                     | Indexer                                       |
+| Source           | Table / location                                     | Access path                                   |
 | ---------------- | ---------------------------------------------------- | --------------------------------------------- |
 | Meeting minutes  | `meeting_recordings`, `meeting_summaries`            | Indexed on insert; re-indexed on summary edit. |
 | Chapter documents | `chapter_documents` + Supabase Storage `documents/` | Indexed on upload; OCR/extraction at index time for PDFs. |
-| Structured data  | `chapters`, `members`, `events`, `dues_*`, `roles`   | Materialized via a thin "facts" view; refreshed on write. |
 | Announcements    | `chat_messages` where channel is `#announcements`    | Indexed on insert; deleted/edited mirrored.    |
+| Structured data  | `chapters`, `members`, `events`, `dues_*`, `roles`   | **Not indexed.** Read at answer time via tool calls against the guarded API. |
+
+The structured-data row previously specified a materialized "facts" view refreshed on write. That is
+withdrawn: an embedded copy of a mutable row is only correct as of the last refresh and cannot answer
+aggregate questions. Structured data is now a **tool surface**, not corpus — see
+[`behavior/ai.md`](../behavior/ai.md) for the product-level rationale.
 
 ### Retrieval
 
-- Vector index per chapter (pgvector or equivalent), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors.
+- Vector index per chapter (pgvector), keyed by chapter ID. Cross-chapter retrieval is impossible by construction — no chapter sees another chapter's vectors. pgvector remains the right call at this scale: a per-chapter corpus is orders of magnitude below the ~5–10M-vector point where a dedicated vector service starts to pay for itself, and it avoids operating a second datastore.
+- **Retrieval is hybrid, not vector-only:** a dense vector search for semantic similarity, a sparse keyword search for exact terms (a bylaw article number, a dollar amount, a member's name), and a reranking pass over the merged candidate set. Dense-only retrieval reliably misses exact-match queries, which are common in this corpus.
+  - **The sparse half is new work — it does not exist yet.** `apps/api/src/application/services/search.service.ts` (global search) is four parallel `ILIKE '%q%'` scans with no ranking or scoring, and the repo's only `tsvector`/GIN index is on `chapter_directory` (the global onboarding autocomplete), not on chapter content. A content-side `tsvector` is part of the corpus work.
+  - What **is** reusable from that service is the more valuable part: its authorization-filtered retrieval pattern — candidate rows are filtered through `canAccessChannel` before returning, and role lookups are re-scoped by `chapter_id` so a stray cross-chapter `role_id` cannot leak permissions. Corpus retrieval must follow the same shape.
 - Retrieval returns source rows with provenance metadata (source type, author or document title, timestamp, internal ID). The LLM prompt template injects this metadata so the model can cite it back.
 - Recency decay is applied at retrieval time so newer authoritative content outranks older content on time-sensitive questions ("when is the meeting"); decay is off for time-invariant content (policies, bylaws).
 
 ### Citation protocol
 
-- The LLM prompt mandates inline citations on every answer. The post-processor parses citation tokens out of the model output and renders them as links to the source surface.
-- Answers without resolvable citations are rejected and re-prompted; if the second attempt fails, the user sees a "couldn't find a confident answer" response rather than an uncited synthesis.
+- Citations use the model provider's **native citation support** — documents are passed as document content blocks with citations enabled, and the API returns each cited claim as structured data: the quoted source text, the document title, and a character or page location. The UI renders those directly as links to the source surface.
+- This replaces an earlier design that had the prompt emit citation tokens and a post-processor parse them back out, rejecting and re-prompting uncited answers. Native citations make the grounding structural rather than something recovered from free text, and delete the post-processor and its retry path.
+- **Design constraint:** native citations are mutually exclusive with the provider's structured-output/JSON-schema mode — requesting both is rejected. The citing Q&A path therefore returns prose plus a structured citation list, not a JSON envelope. Any surface that needs strictly-shaped JSON must be a separate, non-citing call.
+- The "couldn't find a confident answer" response is retained, but it is now driven by retrieval returning nothing above the relevance threshold rather than by a failed citation parse.
+
+### Prerequisites (decide before the corpus work starts)
+
+- **pgvector vs. the PGlite migration gate.** `scripts/check-pglite-migrations.mjs` is a CI gate requiring every migration to replay under PGlite. A `create extension vector` is unlikely to work there unmodified, so the strategy — conditional extension, a gate carve-out, or a PGlite-side shim — must be settled before the migration is written, not discovered mid-PR.
+- **`chapter_documents` metadata is too thin for the retrieval design above.** It carries only `title`, `description`, `folder`, `storage_path`, `uploaded_by`, and `created_at` — no mime type, size, page count, document type, or effective date. Recency decay keyed on `created_at` measures *upload* time, not document currency, so a bylaw uploaded yesterday would outrank the amendment that superseded it. A metadata migration is a prerequisite; `backwork_resources` (year, semester, assignment type, variant, `file_hash`, `tags`) is the better shape to copy.
 
 ### Evals
 
