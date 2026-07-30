@@ -128,7 +128,7 @@ Do **not** mark these required on `main` — staging deploys are allowed to fail
 ### AI review policy
 
 There is **no AI-review required check.** Code review is a **local pre-push gate**
-(`.claude/hooks/pre-push-review-gate.sh` runs `/code-review` before the branch is pushed) — the former
+(`.claude/hooks/pre-push-review-gate.sh` requires `/diff-review` or `/code-review` before the branch is pushed) — the former
 `claude-review-gate` CI check was removed (2026-06-04, ADR-14 amendment). See
 [`AI_CODE_REVIEW_RUNBOOK.md`](../ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 

@@ -50,7 +50,7 @@ whose closure syncs GitHub→Linear). Design + policy: [`LINEAR_PM.md`](LINEAR_P
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
-| AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks the first `git push` of each HEAD and requires one `/code-review` pass on the diff (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
+| AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks the first `git push` of each HEAD and requires one review pass on the diff — `/diff-review` (agent-invocable) or `/code-review` (human only; author-locked against model invocation) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
