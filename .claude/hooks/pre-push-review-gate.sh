@@ -50,7 +50,7 @@ except Exception:
     d = {}
 cmd = (d.get("tool_input", {}) or {}).get("command", "") or ""
 tp = d.get("transcript_path", "") or ""
-sys.stdout.write(cmd.replace("\t", " ").replace("\n", " ") + "\t" + tp)
+sys.stdout.write(cmd.replace("\t", " ").replace("\r", "\n").replace("\n", ";") + "\t" + tp)
 ' 2>/dev/null || printf '\t')"
 command="${fields%%$'\t'*}"
 transcript_path="${fields#*$'\t'}"
@@ -67,12 +67,18 @@ json_escape() {
 #      phrase (`grep "git push" f`, `bash test.sh` echoing it) was gated. That was tolerable
 #      when the gate burned a one-shot sentinel; now that a denial is a hard block, a false
 #      positive stops unrelated read-only work.
-#   2. Global options may sit between `git` and the subcommand — `-C <dir>` above all, the
-#      idiom this very hook uses at the rev-parse below.
+#   2. Only git's own GLOBAL OPTIONS may sit between `git` and the subcommand — `-C <dir>`
+#      above all, the idiom this very hook uses at the rev-parse below. An earlier version
+#      allowed arbitrary text here, which matched any git command containing a later
+#      `push` token: `git commit -m "wire up push notifications"` was blocked, and every
+#      such false positive burned the livelock budget until a real unreviewed push was
+#      auto-allowed. Options only, so a subcommand that isn't `push` can never match.
 #   3. Word boundary after `push`, so `git pushdeploy` / `git push-all` don't match.
+# Newlines were normalised to ";" above, so multi-line commands are separated, not merged.
 # Tradeoff: an env-prefixed invocation (`env FOO=1 git push`) is not matched. Accepted —
-# under-matching costs one unreviewed push, over-matching wedges the session.
-push_re='(^|[;&|][[:space:]]*)[[:space:]]*git[[:space:]]+([^|;&]*[[:space:]]+)?push([^[:alnum:]_-]|$)'
+# a missed push costs one unreviewed branch; over-matching burns the budget and then
+# auto-allows a real one, which is strictly worse.
+push_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*git([[:space:]]+-[^[:space:];&|]*([[:space:]]+[^-][^[:space:];&|]*)?)*[[:space:]]+push([^[:alnum:]_-]|$)'
 if ! [[ "$command" =~ $push_re ]]; then
   exit 0
 fi
@@ -87,7 +93,18 @@ case "$command" in
 esac
 
 # ── Content key = branch HEAD SHA, so a new HEAD re-gates ────────────────────────────
-head_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo nohead)"
+# No `|| echo nohead` fallback: a constant key would collapse every branch and commit onto
+# one marker that no new commit ever invalidates — a permanent, gitignored, repo-wide
+# bypass. If HEAD is unknowable we cannot key evidence to anything, so fail CLOSED and say
+# why. FRAPP_SKIP_REVIEW_GATE remains the escape.
+if ! head_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || [ -z "$head_sha" ]; then
+  if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ]; then
+    exit 0
+  fi
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
+    "$(json_escape "Review gate: cannot resolve HEAD in $ROOT, so the review marker cannot be checked. Set FRAPP_SKIP_REVIEW_GATE=1 to override.")"
+  exit 0
+fi
 
 # ── Evidence that a review actually ran: /diff-review writes this on completion ──────
 # Keyed on HEAD, so committing fixes invalidates it and the new HEAD must be reviewed.
@@ -122,8 +139,21 @@ if [ "$attempts" -ge 4 ]; then
     "$head_sha" "$attempts" >&2
   exit 0
 fi
-mkdir -p "$sentinel_dir" 2>/dev/null || true
-printf '%s' "$((attempts + 1))" >"$sentinel_file" 2>/dev/null || true
+# If the counter cannot be persisted the livelock guard can never fire, which turns this
+# gate into a permanent wedge. Fall back to a temp dir; if even that fails, allow through
+# with a warning rather than blocking forever — a stuck session is worse than one logged
+# unreviewed push, and FRAPP_SKIP_REVIEW_GATE is not discoverable mid-block.
+if ! { mkdir -p "$sentinel_dir" 2>/dev/null \
+  && printf '%s' "$((attempts + 1))" >"$sentinel_file" 2>/dev/null; }; then
+  sentinel_dir="${TMPDIR:-/tmp}/frapp-push-gate-$(id -u)"
+  sentinel_file="${sentinel_dir}/${head_sha}"
+  if ! { mkdir -p "$sentinel_dir" 2>/dev/null \
+    && printf '%s' "$((attempts + 1))" >"$sentinel_file" 2>/dev/null; }; then
+    printf 'pre-push-review-gate: WARNING — cannot persist the attempt counter, so the livelock guard is inoperative. Allowing push of %s. This diff is UNREVIEWED.\n' \
+      "$head_sha" >&2
+    exit 0
+  fi
+fi
 
 # ── No review evidence for this HEAD: DENY with guidance ────────────────────────────
 reason="Local review gate: run /diff-review before pushing this branch."

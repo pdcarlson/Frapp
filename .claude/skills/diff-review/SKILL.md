@@ -5,7 +5,7 @@ description: >
   pushing. Use before any git push, when the pre-push review gate blocks a push, and whenever
   asked to review uncommitted or unpushed work on this branch.
 argument-hint: "[medium|high|xhigh] [<target>]"
-allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(npm run check:*)
+allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(npm run check:*), Bash(mkdir *), Bash(touch *)
 ---
 
 # Review this branch's diff
@@ -140,9 +140,15 @@ forward in your summary and the PR body rather than dropping it.
 Write a marker so the pre-push gate can tell a real review from a retried push:
 
 ```sh
-mkdir -p .cache/diff-review && git rev-parse HEAD > /dev/null \
-  && touch ".cache/diff-review/$(git rev-parse HEAD)"
+mkdir -p "$(git rev-parse --show-toplevel)/.cache/diff-review" \
+  && touch "$(git rev-parse --show-toplevel)/.cache/diff-review/$(git rev-parse HEAD)"
 ```
+
+**Use the absolute repo-root path, as above — not a `.cache/…` path relative to the cwd.** The hook
+reads `<repo-root>/.cache/diff-review/<SHA>`, so a marker written from `apps/api` lands somewhere the
+hook never looks. `.gitignore` matches `.cache/diff-review/` at any depth, so a stray copy is
+invisible in `git status` and the mismatch would be silent — you'd just get denied until the livelock
+guard released the push labelled UNREVIEWED.
 
 Only do this **after** reporting and acting on findings. The gate keys on the HEAD SHA, so committing
 fixes invalidates the marker by design — re-run this skill on the new HEAD, and the review always
