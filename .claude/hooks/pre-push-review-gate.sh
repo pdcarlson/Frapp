@@ -1,18 +1,23 @@
 #!/bin/bash
-# PreToolUse hook: gate `git push` on a local /code-review pass for the current branch
+# PreToolUse hook: gate `git push` on a local /diff-review pass for the current branch
 # HEAD, run in the same chat session. This is Frapp's SINGLE pre-PR review gate — it
 # replaces the removed CI Claude review (ADR-14 reversal): review now happens locally,
 # in-chat, right before the branch leaves the machine.
 #
-# Loop-safety contract: a PreToolUse hook cannot observe whether /code-review actually
-# ran (it only sees Bash tool calls) and cannot invoke a skill itself. So it uses a
+# Which skill: /diff-review (.claude/skills/diff-review/SKILL.md) is the one an AGENT can
+# run — the bundled /code-review is author-locked against model invocation, so only a
+# human typing it can run that one. See docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
+#
+# Loop-safety contract: a PreToolUse hook cannot observe whether the review actually ran
+# (it only sees Bash tool calls) and cannot invoke a skill itself. So it uses a
 # deny-once-then-allow sentinel keyed on the branch HEAD SHA and scoped to the session
 # via transcript_path. The FIRST push attempt for a given HEAD is DENIED with
-# additionalContext telling Claude to run /code-review; the sentinel is written *after*
-# the deny is emitted, so the NEXT push of the same HEAD proceeds. A new HEAD (e.g. after
-# committing fixes) re-gates, so the review covers the code being pushed. Once a HEAD is
-# gated, the hook steps aside silently (exit 0) and the normal permission flow applies —
-# it does not force-approve the push.
+# additionalContext telling Claude to run /diff-review; the sentinel is written *after*
+# the deny is emitted, so the NEXT push of the same HEAD proceeds. Because the agent can
+# invoke /diff-review itself, this is a forcing function rather than a human handoff.
+# A new HEAD (e.g. after committing fixes) re-gates, so the review covers the code being
+# pushed. Once a HEAD is gated, the hook steps aside silently (exit 0) and the normal
+# permission flow applies — it does not force-approve the push.
 #
 # The `git push` match is a word-boundary heuristic (a free-form shell command can only be
 # matched heuristically): it skips `git pushdeploy` and `--dry-run`, but an exotic command
@@ -76,8 +81,8 @@ if [ -f "$sentinel_file" ]; then
 fi
 
 # ── First attempt for this HEAD: DENY with guidance, then record that we've prompted ─
-reason="Local review gate: run /code-review before pushing this branch."
-context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Before pushing, run the built-in /code-review skill in THIS chat session on the current diff, then address its findings (fix them, or file a tracked follow-up with a reason). Its review sub-agents run on the current session model (Opus) — CLAUDE_CODE_SUBAGENT_MODEL is no longer pinned. After /code-review has run and findings are handled, re-issue the same git push command; it will proceed (the gate allows the next push of this HEAD). If you commit fixes after the review, the new HEAD re-gates so the review always covers what you push."
+reason="Local review gate: run /diff-review before pushing this branch."
+context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Before pushing, run the project's /diff-review skill in THIS chat session on the current diff, then address its findings (fix them, or file a tracked follow-up with a reason). An agent can invoke /diff-review itself — no human keystroke is needed, so do not stop and wait for one. (The bundled /code-review is author-locked against model invocation, so only a human typing it can run that one; it stays the richer option for humans, with cloud ultra mode, --fix and --comment.) Review sub-agents run on the current session model (Opus) — CLAUDE_CODE_SUBAGENT_MODEL is no longer pinned. After the review has run and findings are handled, re-issue the same git push command; it will proceed (the gate allows the next push of this HEAD). If you commit fixes after the review, the new HEAD re-gates so the review always covers what you push."
 
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s,"additionalContext":%s}}\n' \
   "$(json_escape "$reason")" \
