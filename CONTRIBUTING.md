@@ -60,15 +60,19 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ### AI review coverage
 
-- Code review is a **local pre-push gate**, not CI: `.claude/hooks/pre-push-review-gate.sh` blocks the
-  first `git push` of each branch HEAD and requires one `/code-review` pass on the diff before the branch
-  is pushed (review sub-agents inherit the session model, Opus). The CI Claude review and the
+- Code review is a **local pre-push gate**, not CI: `.claude/hooks/pre-push-review-gate.sh` blocks
+  `git push` for a branch HEAD until that HEAD has been reviewed (review sub-agents inherit the
+  session model, Opus). Agents run **`/diff-review`**, which writes the marker the gate looks for;
+  humans can use the richer bundled **`/code-review`**, which is author-locked against model
+  invocation so only a human can run it — it does not write the marker, so pair it with
+  `FRAPP_SKIP_REVIEW_GATE=1`. The CI Claude review and the
   `claude-review-gate` required check were removed (2026-06-04, ADR-14 amendment). See
   [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### PR review requirement policy
 
-- `main`: a human approving review is **not required**; review is the local pre-push `/code-review` gate.
+- `main`: a human approving review is **not required**; review is the local pre-push gate
+  (`/diff-review` for agents, `/code-review` for humans).
 - `main`: conversation resolution is **not required**.
 - `production`: **1 approving review required** and conversation resolution remains enabled (promotion/control gate).
 
@@ -112,8 +116,8 @@ type(scope): description
 - Fill out the PR template completely.
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
-- Code review runs **locally before you push** (the pre-push review-gate hook requires a `/code-review`
-  pass), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). Never type `@cursor` or `@cursoragent` in a PR comment unless you explicitly want to spawn a paid Cursor background agent.
+- Code review runs **locally before you push** (the pre-push review-gate hook requires a
+  `/diff-review` pass — or `/code-review` plus `FRAPP_SKIP_REVIEW_GATE=1`), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). Never type `@cursor` or `@cursoragent` in a PR comment unless you explicitly want to spawn a paid Cursor background agent.
 
 ### 4. Address feedback
 

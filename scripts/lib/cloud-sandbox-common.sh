@@ -24,6 +24,16 @@ cs_log() {
 # which needs staging verification and belongs in its own change. Tracked as a follow-up.
 CS_SUPABASE_CLI_VERSION="${FRAPP_SUPABASE_CLI_VERSION:-2.110.0}"
 
+# Default `supabase start` arguments, shared by per-session bringup and the setup pre-pull.
+# The Deno edge-runtime container sets an rlimit (RLIMIT_NOFILE) the cloud sandbox denies
+# ("error setting rlimit type 7: operation not permitted"), and that aborts the WHOLE
+# `supabase start` — so every caller must exclude it, not just bringup. The setup pre-pull
+# previously omitted it and therefore aborted partway through, never caching the images
+# ordered after edge-runtime (pg-meta, studio, supavisor) — defeating its own purpose.
+# The API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12),
+# so edge functions are not needed here. Override with FRAPP_SUPABASE_START_ARGS.
+CS_SUPABASE_START_ARGS="${FRAPP_SUPABASE_START_ARGS:--x edge-runtime}"
+
 # Resolve (installing on first use) and invoke the pinned Supabase CLI.
 #
 # Mirrors the pinned-tooling pattern already used for gitleaks
@@ -46,19 +56,44 @@ CS_SUPABASE_CLI_VERSION="${FRAPP_SUPABASE_CLI_VERSION:-2.110.0}"
 # for its presence, because the launcher script exists and is executable even when the
 # platform binary behind it is missing — the exact case above.
 cs_supabase() {
-  local root cache bin
+  local root cache bin log have needs_install
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   cache="$root/.cache/supabase-cli"
   bin="$cache/node_modules/.bin/supabase"
+  log="$cache/install.log"
 
-  if [ "$("$bin" --version 2>/dev/null)" != "$CS_SUPABASE_CLI_VERSION" ]; then
+  # Probe by RUNNING the binary — the launcher exists and is executable even when the
+  # platform binary behind it was skipped, so a presence test would pass a broken tree.
+  have="$("$bin" --version 2>/dev/null || true)"
+  needs_install=1
+  if [ -n "$have" ]; then
+    case "$CS_SUPABASE_CLI_VERSION" in
+      # A non-exact spec (latest, ^2.110.0, v2.110.0) can't be string-compared against the
+      # bare version the CLI prints — comparing anyway made the probe mismatch forever and
+      # reinstall before every single call. For those, any working binary is accepted.
+      *[!0-9.]*) needs_install=0 ;;
+      *) [ "$have" = "$CS_SUPABASE_CLI_VERSION" ] && needs_install=0 ;;
+    esac
+  fi
+
+  if [ "$needs_install" -eq 1 ]; then
     cs_log "Installing Supabase CLI ${CS_SUPABASE_CLI_VERSION} into .cache/supabase-cli..."
     mkdir -p "$cache"
     [ -f "$cache/package.json" ] \
       || printf '{"name":"frapp-supabase-cli","private":true}\n' >"$cache/package.json"
+    # Keep npm's output: it is the only place the real cause appears (a 404 on a typo'd
+    # version reads identically to a blocked registry once discarded).
     if ! npm install --prefix "$cache" "supabase@${CS_SUPABASE_CLI_VERSION}" \
-      --no-audit --no-fund --silent >/dev/null 2>&1; then
-      cs_log "ERROR: could not install supabase@${CS_SUPABASE_CLI_VERSION} (network policy? registry unreachable?)."
+      --no-audit --no-fund >"$log" 2>&1; then
+      cs_log "ERROR: installing supabase@${CS_SUPABASE_CLI_VERSION} failed — full output in $log:"
+      tail -n 5 "$log" 2>/dev/null | sed 's/^/[cloud-sandbox]   /' >&2
+      return 127
+    fi
+    # npm exits 0 even when a platform-specific optionalDependency is skipped — which is
+    # exactly the failure this helper exists to prevent — so re-probe instead of trusting
+    # the exit code.
+    if ! "$bin" --version >/dev/null 2>&1; then
+      cs_log "ERROR: supabase installed but its platform binary is missing (@supabase/cli-<platform> skipped) — see $log"
       return 127
     fi
   fi

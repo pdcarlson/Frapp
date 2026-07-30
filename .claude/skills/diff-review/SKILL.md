@@ -5,7 +5,7 @@ description: >
   pushing. Use before any git push, when the pre-push review gate blocks a push, and whenever
   asked to review uncommitted or unpushed work on this branch.
 argument-hint: "[medium|high|xhigh] [<target>]"
-allowed-tools: Agent, Read, Grep, Glob, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *)
+allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(git diff *), Bash(git show *), Bash(git log *), Bash(git status *), Bash(git rev-parse *), Bash(git merge-base *), Bash(npm run check:*)
 ---
 
 # Review this branch's diff
@@ -34,8 +34,15 @@ explicit `<target>` argument is given (a path, a ref, or a range), it overrides 
 State the resolved scope in one line — base, head, file count — before reviewing. If the diff is
 empty, say so and stop; do not invent findings.
 
-Effort levels: `medium` = 3 finder angles, ≤6 findings. `high` (default) = 5 angles, ≤10.
-`xhigh` = all angles plus a gap-sweep pass, ≤15.
+Effort controls the **generic** angle count and the findings cap. The Frapp-specific angles are
+always included at every level — they are cheap, targeted greps, and several may be bundled into one
+subagent. Never drop them to fit a budget.
+
+| Level | Generic angles | Findings cap | Gap sweep |
+|---|---|---|---|
+| `medium` | 3 | 6 | no |
+| `high` (default) | 5 | 10 | no |
+| `xhigh` | 5 | 15 | yes |
 
 ## Phase 1 — Find
 
@@ -106,16 +113,37 @@ share one root cause into a single entry. Cap at the effort level's limit.
 
 Report with **one `ReportFindings` call**, most severe first, setting `level` to the effort used and
 `verdict` on each finding. Pass an empty array when nothing survived — that is a valid, useful
-result. **Do not also print the findings as prose**; the host UI renders them.
+result. When you use the tool, don't *also* restate each finding as prose; the host UI renders them.
 
-Then, for each finding, do one of exactly two things and say which:
+**If `ReportFindings` is unavailable** (it is gated — absent at `low` effort, under
+`--output-format text|json`, and behind a feature flag), fall back to a numbered prose list with the
+same fields per finding: file, line, verdict, summary, failure scenario. Never finish a review having
+emitted nothing — silence is indistinguishable from a clean diff, which is the one outcome you must
+not fake.
+
+Then act on every finding. Do one of exactly two things per finding:
 
 1. **Fix it** in the working tree, or
 2. **File a self-contained follow-up** in Linear (`save_issue`, state Triage, with a Priority set)
    with an explicit reason for deferring.
 
+Record the disposition where it is auditable: after acting, re-call `ReportFindings` with `outcome`
+set per finding (`fixed` / `skipped` / `no_change_needed`) — that is what the field is for. A short
+prose line mapping each finding to its disposition is also fine and is *not* what the "don't restate
+as prose" rule above is about; that rule is only to avoid duplicating the rendered findings list.
+
 Never silently leave a finding unaddressed. If Linear is unreachable, say so and carry the finding
 forward in your summary and the PR body rather than dropping it.
 
-Committing fixes changes HEAD, which re-arms the pre-push gate — so re-run this skill on the new
-HEAD. That is intended: the review always covers exactly what gets pushed.
+## Phase 4 — Record that the review ran
+
+Write a marker so the pre-push gate can tell a real review from a retried push:
+
+```sh
+mkdir -p .cache/diff-review && git rev-parse HEAD > /dev/null \
+  && touch ".cache/diff-review/$(git rev-parse HEAD)"
+```
+
+Only do this **after** reporting and acting on findings. The gate keys on the HEAD SHA, so committing
+fixes invalidates the marker by design — re-run this skill on the new HEAD, and the review always
+covers exactly what gets pushed.

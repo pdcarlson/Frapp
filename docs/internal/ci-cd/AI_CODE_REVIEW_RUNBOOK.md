@@ -11,9 +11,9 @@ Review is a **local pre-push gate**, not a CI job:
 - A Claude Code **PreToolUse hook** — [`.claude/hooks/pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh),
   wired under `hooks.PreToolUse` in [`.claude/settings.json`](../../../.claude/settings.json) — intercepts
   `git push`.
-- The **first push of each branch HEAD** is blocked with guidance to run a review skill in the same chat
-  session on the current diff. Address every finding (fix it, or file a tracked Triage follow-up with a
-  reason), then re-push.
+- A push is **blocked until the current branch HEAD has actually been reviewed**, with guidance to run a
+  review skill in the same chat session on the current diff. Address every finding (fix it, or file a
+  tracked Triage follow-up with a reason), then re-push.
 - Review **sub-agents inherit the session model** (Opus in a normal session) — `CLAUDE_CODE_SUBAGENT_MODEL`
   is no longer pinned.
 
@@ -45,17 +45,30 @@ permission decorators, the PGlite migration gate, the doc-sync mandate, Linear-n
 verification honesty. The per-candidate verifier pass is what makes an agent-run review trustworthy
 rather than the agent agreeing with its own work — do not weaken it.
 
-## How the gate avoids loops
+## How the gate enforces (and avoids livelock)
 
-A PreToolUse hook can't observe whether the review actually ran and can't invoke a skill itself, so it
-uses **deny-once-then-allow**. Because an agent *can* invoke `/diff-review`, the sentinel is a forcing
-function rather than a human handoff:
+A PreToolUse hook can't observe a skill invocation directly, so the gate keys on **evidence, not
+attempts**: `/diff-review` writes `.cache/diff-review/<HEAD_SHA>` (gitignored) once it has reported and
+acted on findings, and the hook allows the push only when that marker exists for the current HEAD.
+**Retrying a denied push does not satisfy the gate.**
 
-- The sentinel is keyed on the branch **HEAD SHA** and scoped to the session (under the transcript
-  directory, with a `${TMPDIR:-/tmp}` fallback).
-- First push for a HEAD → `permissionDecision: "deny"` + `additionalContext`; the sentinel is written on
-  that deny, so the **next** push of the same HEAD is allowed.
-- Committing fixes changes HEAD → the new HEAD re-gates, so the review always covers what you push.
+> **Why not deny-once-then-allow?** That was the previous design, and it guaranteed nothing the moment
+> the review became agent-invocable — two consecutive pushes cleared it with no review in between. It
+> was only ever load-bearing because the required skill was human-only, so the keystroke *was* the
+> enforcement. Verified by executing the hook: attempt 1 denied, attempt 2 allowed, review never ran.
+
+- Committing fixes changes HEAD → the marker no longer matches, so the review always covers exactly what
+  you push.
+- **Livelock guard:** a hook must never wedge a session permanently. After **4** blocked attempts for the
+  same HEAD (counter under the transcript directory, `${TMPDIR:-/tmp}` fallback), the push is allowed
+  through with a loud `WARNING … This diff is UNREVIEWED` on stderr. Four, not two, so a reflexive
+  immediate retry — the old passing behaviour — no longer gets through.
+- **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1`. This is also the path after a human runs
+  `/code-review`, which does not write the marker.
+- The `git push` match is a heuristic over a free-form shell string. It now also catches
+  `git -C <dir> push`, and refuses to exempt a compound command that merely contains `--dry-run` —
+  both previously pushed **completely ungated**. The cost is that a non-push command that merely
+  *mentions* `git push` can be blocked; re-run it, or use the bypass.
 
 The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
 does not touch `--no-verify`, and does not interfere with the git-level
