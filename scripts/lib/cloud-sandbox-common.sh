@@ -65,15 +65,17 @@ cs_supabase() {
   # Probe by RUNNING the binary — the launcher exists and is executable even when the
   # platform binary behind it was skipped, so a presence test would pass a broken tree.
   have="$("$bin" --version 2>/dev/null || true)"
+  # Key the cache on the REQUESTED SPEC, not the printed version. Comparing the spec to the
+  # printed version only works for exact pins: a non-exact spec (latest, ^2.110.0) never
+  # equals "2.112.0", so string-comparing reinstalled before every call, while treating
+  # non-exact as "accept anything cached" silently ignored the upgrade the override exists
+  # to test — and swallowed typos like 2.110.O whenever any cache existed. Recording the
+  # spec handles both: a working binary installed for this exact spec string is reused, and
+  # changing the spec at all forces a reinstall.
   needs_install=1
-  if [ -n "$have" ]; then
-    case "$CS_SUPABASE_CLI_VERSION" in
-      # A non-exact spec (latest, ^2.110.0, v2.110.0) can't be string-compared against the
-      # bare version the CLI prints — comparing anyway made the probe mismatch forever and
-      # reinstall before every single call. For those, any working binary is accepted.
-      *[!0-9.]*) needs_install=0 ;;
-      *) [ "$have" = "$CS_SUPABASE_CLI_VERSION" ] && needs_install=0 ;;
-    esac
+  if [ -n "$have" ] \
+    && [ "$(cat "$cache/.spec" 2>/dev/null || true)" = "$CS_SUPABASE_CLI_VERSION" ]; then
+    needs_install=0
   fi
 
   if [ "$needs_install" -eq 1 ]; then
@@ -96,6 +98,9 @@ cs_supabase() {
       cs_log "ERROR: supabase installed but its platform binary is missing (@supabase/cli-<platform> skipped) — see $log"
       return 127
     fi
+    # Record the spec only after the binary is proven to run, so a half-installed tree is
+    # never cached as satisfying the spec.
+    printf '%s' "$CS_SUPABASE_CLI_VERSION" >"$cache/.spec" 2>/dev/null || true
   fi
 
   "$bin" "$@"

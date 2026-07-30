@@ -75,7 +75,15 @@ write_env_local() {
     echo "STRIPE_PRICE_ID=${STRIPE_PRICE_ID:-price_placeholder_cloud_sandbox}"
     echo "PORT=3001"
     echo "NODE_ENV=development"
-  } >"$envfile"
+  } >"$envfile" || {
+    # Without this the redirect's failure is swallowed and the trailing `if` below resets
+    # $?, so the function returns 0 — landing the .cloud-sandbox-up.done success sentinel
+    # over a missing or stale env file. That is the same silent-success failure this
+    # function's key validation above exists to prevent. Reachable when $envfile is not
+    # writable, e.g. root-owned from a root-run bringup followed by a non-root session.
+    cs_log "ERROR: could not write $envfile (permissions?)."
+    return 1
+  }
 
   if [ -z "${STRIPE_SECRET_KEY:-}" ]; then
     cs_log "NOTE: no STRIPE_SECRET_KEY in env — wrote Stripe placeholders. Billing endpoints will not work."

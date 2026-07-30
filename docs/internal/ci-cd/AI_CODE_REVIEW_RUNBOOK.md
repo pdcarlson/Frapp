@@ -65,10 +65,15 @@ acted on findings, and the hook allows the push only when that marker exists for
   immediate retry — the old passing behaviour — no longer gets through.
 - **Deliberate bypass:** `FRAPP_SKIP_REVIEW_GATE=1`. This is also the path after a human runs
   `/code-review`, which does not write the marker.
-- The `git push` match is a heuristic over a free-form shell string. It now also catches
-  `git -C <dir> push`, and refuses to exempt a compound command that merely contains `--dry-run` —
-  both previously pushed **completely ungated**. The cost is that a non-push command that merely
-  *mentions* `git push` can be blocked; re-run it, or use the bypass.
+- The `git push` match is a heuristic over a free-form shell string, but a deliberately narrow one:
+  `git` must be in **command position** (start of string, or after `;` `&&` `||` `|` or a newline —
+  newlines are normalised to `;` before matching), and only git's own **global options**
+  (`-C <dir>`, `-c k=v`, `--git-dir=…`) may sit between `git` and the subcommand. So
+  `grep "git push" f`, `echo "git push"`, and `git commit -m "wire up push notifications"` do **not**
+  match, while `git -C <dir> push`, `cd x && git push`, a multi-line `cd x` ⏎ `git push`, and
+  `git push --dry-run … && git push …` all do. The accepted gap is an env-prefixed invocation
+  (`env FOO=1 git push`): a missed push costs one unreviewed branch, whereas over-matching burns the
+  livelock budget and then auto-allows a real one, which is strictly worse.
 
 The hook is a tool-level Claude Code hook and is **independent of git's own hooks**: it does not run git,
 does not touch `--no-verify`, and does not interfere with the git-level
@@ -76,14 +81,21 @@ does not touch `--no-verify`, and does not interfere with the git-level
 
 ## Troubleshooting
 
-- **Push wasn't blocked / no review prompt:** the hook only acts on commands containing `git push`. If
-  `git push` ran without a prompt, a sentinel for this HEAD already exists this session (review already
-  gated it) — that's expected. Hooks load at session start; if you edited the hook mid-session, start a
-  fresh session (or run `/diff-review` before pushing).
-- **Stuck in a re-prompt loop:** shouldn't happen (sentinel is written on the deny). If it does, check
-  that the sentinel directory is writable and that `git rev-parse HEAD` succeeds in the repo.
-- **Need to bypass for an emergency push:** run `/diff-review`, or re-issue the push (the second attempt
-  for the same HEAD is allowed). There is no server-side merge gate to satisfy.
+- **Push wasn't blocked / no review prompt:** most likely a marker already exists for this HEAD
+  (`.cache/diff-review/<SHA>` — review already ran), or the command form wasn't matched (see the
+  command-position rules above; an env-prefixed push is the known gap). Hooks load at session start,
+  so if you edited the hook mid-session, start a fresh session.
+- **Denied repeatedly:** that is the design — the gate wants evidence, and **re-issuing the push does
+  not provide it**. Run `/diff-review`; it writes the marker as its last step. If it ran but the push
+  is still denied, check the marker actually landed at **repo-root** `.cache/diff-review/<HEAD_SHA>`
+  (a marker written relative to a subdirectory cwd is invisible to the hook, and gitignored so it
+  won't show in `git status`), and that `git rev-parse HEAD` succeeds.
+- **Push allowed with a `WARNING … UNREVIEWED` line:** the livelock guard fired after 4 blocked
+  attempts, or the attempt counter could not be persisted. The diff really was not reviewed — treat
+  the warning as a finding, not noise.
+- **Need to bypass for an emergency push:** `FRAPP_SKIP_REVIEW_GATE=1`. Do **not** simply retry the
+  push — retrying no longer satisfies the gate, and four retries burn the livelock budget so the
+  fifth is released as UNREVIEWED. There is no server-side merge gate to satisfy.
 - **`/diff-review` isn't offered as a skill:** its frontmatter regressed — `disable-model-invocation`
   must be absent from `.claude/skills/diff-review/SKILL.md`. Skills load at session start, so a fresh
   session is needed after adding or editing one.
