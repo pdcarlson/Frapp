@@ -129,6 +129,19 @@ CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testi
 
 Cursor rules under `.cursor/rules/` point at these same skill files.
 
+**Claude Code skills** live under [`.claude/skills/`](.claude/skills/) and are invocable by an agent
+(unlike the `.cursor/` files above, which Claude Code does not load):
+
+| Skill | Use |
+| ----- | --- |
+| [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate. Satisfies the hook by writing `.cache/diff-review/<HEAD_SHA>`. The bundled `/code-review` is richer but author-locked against model invocation, so only a human can run it — see [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
+| [`/handoff`](.claude/skills/handoff/SKILL.md) | Draft a copy-pasteable prompt handing work to a fresh session — when context is filling up, a task is finishing, or a parallel track should run in its own chat. Offer it proactively. |
+
+**Long sessions degrade.** Context fills with dead ends and superseded plans, and a fresh session on
+the same task is often more capable because its read of the codebase is uncontaminated. Treat
+`/handoff` as a normal part of the workflow rather than a last resort, and write orientation for the
+next session — not instructions, which would just transplant a stale plan.
+
 ## Gotchas
 
 - API loads `.env.local` then `.env`; prefer `npm run dev:api` with Infisical.
