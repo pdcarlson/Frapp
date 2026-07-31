@@ -134,7 +134,7 @@ Cursor rules under `.cursor/rules/` point at these same skill files.
 
 | Skill | Use |
 | ----- | --- |
-| [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate. Satisfies the hook by writing `.cache/diff-review/<HEAD_SHA>`. The bundled `/code-review` is richer but author-locked against model invocation, so only a human can run it — see [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
+| [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate (see the lifecycle above). Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
 | [`/handoff`](.claude/skills/handoff/SKILL.md) | Draft a copy-pasteable prompt handing work to a fresh session — when context is filling up, a task is finishing, or a parallel track should run in its own chat. Offer it proactively. |
 
 **Long sessions degrade.** Context fills with dead ends and superseded plans, and a fresh session on

@@ -68,14 +68,20 @@ git log --oneline origin/main..HEAD
 git rev-parse HEAD
 ```
 
-Also check, where relevant: the PR number and its CI state, the Linear issue and its status, and
-whether the working tree is clean. If you can't verify something, say so in the prompt rather than
-asserting it.
+PR number and CI state, and the Linear issue and its status, are worth including too — but those need
+GitHub/Linear tools this skill does not itself request, and they are often unavailable (a
+disconnected MCP server, an unauthorised connector). Include them **only** if you can read them live
+in this session. If you can't, say "unverified" rather than reaching for what you remember; a stale
+CI verdict is worse than none, because the new session will act on it.
 
 ## Emit exactly one fenced block
 
 The user copies this whole thing into a new chat, so nothing outside the fence gets carried over.
 Put no commentary inside it that isn't meant for the new session.
+
+**Fence it with four backticks.** The block will usually contain command snippets or file excerpts
+that are themselves fenced with three, and a three-backtick outer fence terminates at the first inner
+one — silently truncating the handoff at exactly the point where the useful detail starts.
 
 Structure:
 
@@ -88,14 +94,20 @@ Structure:
    the specific spec/doc the work touches.
 5. **Traps and known-open items** — things that cost this session time, each with the evidence that
    makes it checkable. Include anything filed to Triage that's relevant.
-6. **Don't redo** — work already verified, with how it was verified, so the new session doesn't burn
-   context re-proving it.
+6. **Already verified, and how** — not "don't redo this". State the claim and the evidence
+   (*"952 tests pass — `npm run test -w apps/api`, run at HEAD abc123"*) and let the new session
+   decide whether to re-check. Phrased as a prohibition this section becomes the most dangerous part
+   of the handoff: it is the one place where a stale claim is armour-plated against the fresh
+   context that would otherwise catch it. Anything you cannot name the evidence for does not belong
+   here at all.
 7. **A closing instruction to verify independently**, in the new session's own words — something
    like: *"Treat all of the above as a starting point that may be stale. Verify it against the repo
    before relying on it, and if your own reading disagrees, trust your reading and say so."*
 
-Keep it scannable — roughly 40–70 lines. If it's longer than that you're summarising instead of
-pointing.
+Aim for scannable — very roughly 40–70 lines. Treat that as a signal, not a budget: if sections 5 and
+6 need more room to keep each item's evidence attached, take it. Compressing evidence away to hit a
+line count produces exactly the unfalsifiable assertions this skill is trying to avoid. If it runs
+long, cut *scope* — hand off less — rather than cutting the evidence.
 
 ## Honesty rules
 
