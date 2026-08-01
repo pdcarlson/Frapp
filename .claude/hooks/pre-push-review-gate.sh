@@ -48,17 +48,25 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo 
 payload="$(cat)"
 
 json_escape() {
-  # Always yields valid JSON (a quoted string), even if python3 is unavailable.
+  # Always yields valid JSON (a quoted string), even with no interpreter available.
   printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))' 2>/dev/null \
-    || printf '""'
+    && return 0
+  printf '%s' "$1" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.stringify(s)+"\n"))' 2>/dev/null \
+    && return 0
+  printf '""'
 }
 
-# Parse must FAIL CLOSED. This previously ended in `|| printf '\t'`, so an unparseable payload
-# — or simply a machine without python3 — yielded an empty command, matched no push, and exited
-# 0. That silently disabled the only pre-PR review gate for the entire session, with no
-# diagnostic: the one failure mode a gate must not have. `sys.exit(1)` on a bad parse, and a
-# missing interpreter exits 127, so both land in the branch below.
-if ! fields="$(printf '%s' "$payload" | python3 -c '
+# Parse must FAIL CLOSED. This previously ended in `|| printf '\t'`, so an unparseable payload —
+# or simply a machine without python3 — yielded an empty command, matched no push, and exited 0.
+# That silently disabled the only pre-PR review gate for the entire session with no diagnostic:
+# the one failure mode a gate must not have.
+#
+# Two interpreters are tried before giving up. node is the meaningful one: this is a Node
+# monorepo, so a machine that can run the project can parse the payload. Falling back to the
+# blunt heuristic below therefore takes BOTH interpreters being absent, which is close to
+# hypothetical — worth handling, not worth optimising.
+parse_payload() {
+  printf '%s' "$payload" | python3 -c '
 import json, sys
 try:
     d = json.load(sys.stdin)
@@ -67,18 +75,61 @@ except Exception:
 cmd = (d.get("tool_input", {}) or {}).get("command", "") or ""
 tp = d.get("transcript_path", "") or ""
 sys.stdout.write(cmd.replace("\t", " ").replace("\r", "\n").replace("\n", ";") + "\t" + tp)
-' 2>/dev/null)"; then
-  # Deny only when the raw payload plausibly concerns a push — otherwise an unparseable payload
-  # would block every unrelated Bash call and wedge the session. The reason string is a literal
-  # because json_escape itself needs python3, which is exactly what may be missing here.
-  if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ] || ! printf '%s' "$payload" | grep -q 'push'; then
+' 2>/dev/null && return 0
+  printf '%s' "$payload" | node -e '
+let s = "";
+process.stdin.on("data", (d) => (s += d)).on("end", () => {
+  let d;
+  try { d = JSON.parse(s); } catch { process.exit(1); }
+  const cmd = ((d.tool_input || {}).command || "");
+  const tp = d.transcript_path || "";
+  process.stdout.write(cmd.replace(/\t/g, " ").replace(/\r/g, "\n").replace(/\n/g, ";") + "\t" + tp);
+});
+' 2>/dev/null && return 0
+  return 1
+}
+
+parse_failed=0
+if fields="$(parse_payload)"; then
+  command="${fields%%$'\t'*}"
+  transcript_path="${fields#*$'\t'}"
+else
+  # No interpreter and/or a malformed payload. Deny, but ONLY for payloads that plausibly
+  # concern a push, and — critically — fall through into the normal marker / bypass / livelock
+  # machinery below rather than exiting here. An earlier revision of this branch returned
+  # immediately, which meant a machine without python3 denied every push forever with no
+  # working escape: a permanent session wedge, which this hook's contract forbids outright.
+  # Only grep exit status 1 means a clean "no match". `! grep -q` would also swallow status 2
+  # (I/O or regex error) and 127 (grep absent), silently allowing a real push in exactly the
+  # broken-tooling environment this branch exists to handle — the same fail-open shape as the
+  # bug above. Treat anything that is not a definite no-match as a reason to gate.
+  set +e
+  printf '%s' "$payload" | grep -qE 'git[^"]{0,40}push'
+  grep_rc=$?
+  set -e
+  if [ "$grep_rc" -eq 1 ]; then
     exit 0
   fi
-  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Review gate: the hook payload could not be parsed (is python3 available?), so this push cannot be verified as reviewed. The gate fails closed rather than letting an unreviewed push through. Fix the interpreter, or set FRAPP_SKIP_REVIEW_GATE=1 to override."}}'
-  exit 0
+  parse_failed=1
+  command="git push"   # synthetic: routes this payload down the push path below
+  transcript_path=""
 fi
-command="${fields%%$'\t'*}"
-transcript_path="${fields#*$'\t'}"
+
+# The deliberate bypass may arrive two ways, and both must work. The hook's own environment
+# carries it when the session exports it; but an agent told to "set FRAPP_SKIP_REVIEW_GATE=1 on
+# the push" naturally writes it as a command prefix, which the hook does NOT inherit — it only
+# ever sees the command text. Checking both is what makes the documented escape actually work.
+# Previously only the env form was read, and `FRAPP_SKIP_REVIEW_GATE=1 git push` appeared to
+# work solely because push_re declines to match an env-prefixed command — the sanctioned bypass
+# depending on a documented matcher gap, while `export FRAPP_SKIP_REVIEW_GATE=1 && git push`
+# was denied.
+# NB: the pattern lives in a variable — an unquoted `;` / `&` / `|` inside [[ =~ ]] is a syntax
+# error, same reason push_re below is a variable.
+skip_re='FRAPP_SKIP_REVIEW_GATE=[^[:space:]]'
+skip_gate=0
+if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ] || [[ "$command" =~ $skip_re ]]; then
+  skip_gate=1
+fi
 
 # Gate only real `git push` invocations. Three things matter here:
 #   1. `git` must be in COMMAND POSITION — start of the string, or right after a shell
@@ -117,7 +168,7 @@ esac
 # bypass. If HEAD is unknowable we cannot key evidence to anything, so fail CLOSED and say
 # why. FRAPP_SKIP_REVIEW_GATE remains the escape.
 if ! head_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || [ -z "$head_sha" ]; then
-  if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ]; then
+  if [ "$skip_gate" -eq 1 ]; then
     exit 0
   fi
   printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
@@ -133,7 +184,7 @@ if [ -f "$review_marker" ]; then
 fi
 
 # ── Emergency bypass (documented in AI_CODE_REVIEW_RUNBOOK.md) ───────────────────────
-if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ]; then
+if [ "$skip_gate" -eq 1 ]; then
   exit 0
 fi
 
@@ -175,8 +226,15 @@ if ! { mkdir -p "$sentinel_dir" 2>/dev/null \
 fi
 
 # ── No review evidence for this HEAD: DENY with guidance ────────────────────────────
-reason="Local review gate: run /diff-review before pushing this branch."
-context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Run a review in THIS chat session, then address its findings (fix them, or file a tracked follow-up with a reason). PREFER the bundled /code-review: try Skill(skill: \"code-review\") FIRST — it is richer (per-model-tuned effort, and a workflow-backed verifier pass at high/xhigh/max). It succeeds whenever this turn's prompt happens to contain the bare token /code-review; if it is refused with 'disable-model-invocation', that condition simply is not met — that is expected, not an error, and NOT a reason to stop and wait for a human. Fall back immediately to the project's own /diff-review skill, which an agent can always invoke. NOTE: /code-review does NOT write the marker below, so after using it set FRAPP_SKIP_REVIEW_GATE=1 on the push or write the marker by hand; /diff-review writes it automatically. Review sub-agents run on the current session model. RETRYING THIS PUSH WILL NOT SATISFY THE GATE: it is keyed on evidence, not attempts — the marker is .cache/diff-review/<HEAD_SHA>, and only that (or FRAPP_SKIP_REVIEW_GATE=1) allows the push. Committing fixes changes HEAD and invalidates the marker by design, so the review always covers exactly what you push."
+if [ "$parse_failed" -eq 1 ]; then
+  # No interpreter was available to parse the payload, so json_escape cannot be trusted either:
+  # emit a pre-escaped literal. The livelock counter above still applies, so this cannot wedge.
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Review gate: the hook payload could not be parsed — it was malformed, or neither python3 nor node was available to read it — so this push cannot be verified as reviewed. The gate fails closed rather than allow an unreviewed push. Prefix the command with FRAPP_SKIP_REVIEW_GATE=1 to override. This deny still counts toward the 4-attempt livelock release, so it cannot wedge the session."}}'
+  exit 0
+fi
+
+reason="Local review gate: review this diff before pushing (see additionalContext for how)."
+context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Run a review in THIS chat session, then address every finding (fix it, or file a tracked Triage follow-up with a reason). WHICH REVIEW: try Skill(skill: \"code-review\") first — it is the richer harness. It succeeds only when this turn's prompt contains the bare token /code-review; if it returns 'disable-model-invocation' that condition is not met, which is EXPECTED and NOT an error, and NOT a reason to stop and wait for a human. Note it can never succeed under /next, whose slash-command expansion hides the token. Fall back immediately to the project's own /diff-review skill, which an agent can always invoke. RECORDING EVIDENCE: /diff-review writes the marker itself as its last step. /code-review does NOT — if you used it, record the evidence yourself with: mkdir -p \"\$(git rev-parse --show-toplevel)/.cache/diff-review\" && touch \"\$(git rev-parse --show-toplevel)/.cache/diff-review/\$(git rev-parse HEAD)\" — do NOT reach for FRAPP_SKIP_REVIEW_GATE to get around a review you actually did, because that leaves a push indistinguishable from one that skipped review entirely; it is for emergencies only. RETRYING THIS PUSH WILL NOT SATISFY THE GATE: it is keyed on evidence, not attempts — only the marker .cache/diff-review/<HEAD_SHA> allows the push. Committing fixes changes HEAD and invalidates the marker by design, so the review always covers exactly what you push."
 
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s,"additionalContext":%s}}\n' \
   "$(json_escape "$reason")" \

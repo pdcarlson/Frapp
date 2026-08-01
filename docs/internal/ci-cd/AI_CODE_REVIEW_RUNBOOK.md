@@ -29,7 +29,17 @@ Two skills satisfy this gate, and the difference matters:
 | [**`/diff-review`**](../../../.claude/skills/diff-review/SKILL.md) | **agent or human, always** | The project's own skill. An agent runs it unprompted when the gate fires. |
 | **`/code-review`** | human always; **agent only when the turn's prompt contains the token `/code-review`** | The bundled command. Richer — per-model-tuned effort cells, a workflow-backed path at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`. |
 
-### The `/code-review` invocation rule (measured, not inferred)
+### The `/code-review` invocation rule
+
+> **Provenance.** Established against Claude Code **2.1.220** (`AI_AGENT=claude-code_2-1-220_agent`),
+> 2026-08-01. Two things were *executed*: with the token present the Skill tool ran a full forked
+> review; with it absent the same call returned
+> `Skill code-review cannot be used with Skill tool due to disable-model-invocation`. Everything
+> more specific below — the exact regex, the sub-agent short-circuit, the `<command-message>` skip,
+> the `isMeta` rule for hooks, and the check ordering vs `skillOverrides` — was **read out of the
+> 2.1.220 bundle**. That is strong evidence, but it is static reading of a minified build, not
+> measurement, and it is pinned to that build. Re-verify against the running version before relying
+> on any of it for a design decision; `claude --version` tells you what you are on.
 
 `/code-review` is registered with `disableModelInvocation: true`, but that flag is **not** a
 human-keystroke requirement. The runtime check is `disableModelInvocation && !userTypedThisTurn`, and
@@ -54,8 +64,9 @@ full forked review; with it absent the same call returned
 > **Do not** add a `skillOverrides` entry for `code-review` — verified no-op. `disableModelInvocation`
 > is checked and returns *before* the `skillOverrides` branch is ever reached, so no setting can
 > loosen it. Version-pinning is also a dead end: the command did not exist at all in 2.1.42 (that
-> build's `pluginCommand: "code-review"` registers `/review`, a different command), and 2.1.220 is
-> the latest published release.
+> build's `pluginCommand: "code-review"` registers `/review`, a different command), and 2.1.220 was
+> the latest published release as of 2026-08-01 — re-check with `npm view @anthropic-ai/claude-code
+> version` rather than trusting that date.
 
 **Why `/diff-review` still exists.** Not because `/code-review` is unreachable — because it is only
 *conditionally* reachable, and the gate fires in exactly the autonomous sessions where the condition
@@ -135,10 +146,16 @@ does not touch `--no-verify`, and does not interfere with the git-level
 
 ## Testing the gate
 
-`bash scripts/test-review-gate.sh` — 18 cases covering command-position matching, the `--dry-run`
-compound case, marker present/absent, `FRAPP_SKIP_REVIEW_GATE`, and the fail-closed paths for an
-unparseable payload and a missing `python3`. Run it after any edit to the hook; it needs no network
-and no running stack.
+`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`) — 25 cases
+covering command-position matching, the `--dry-run` compound case, marker present / absent / stale,
+both forms of `FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a
+malformed payload, a missing interpreter, and a broken `grep`. Needs no network and no running stack.
+
+It lives under `scripts/ci/__tests__/` **so that something actually runs it** — the `test:ci-scripts`
+glob picks it up and the `ci-scripts-tests` CI job runs it on every PR. An earlier revision shipped
+this as a standalone `scripts/test-review-gate.sh` wired to nothing, which is how the fail-open parse
+bug it now guards against went unnoticed. Each case runs against a throwaway git repo, so the suite
+never reads or writes the live `.cache/diff-review/` marker.
 
 ## Rationale & history
 
