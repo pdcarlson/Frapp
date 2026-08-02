@@ -189,9 +189,86 @@ function makeStub(keep) {
 test("node parses the payload when python3 is absent", () => {
   clearMarker();
   const stub = makeStub(STUB_BINS.filter((b) => b !== "python3"));
+
+  // These two assertions alone would be VACUOUS: deleting the node branch entirely leaves them
+  // green, because the parse-failure grep heuristic produces the same allow/deny verdicts.
   assertDeny(runHook("git push", { pathOverride: stub }), "no python3, push");
   assertAllow(runHook("ls -la", { pathOverride: stub }), "no python3, non-push");
+
+  // So assert something only a real parse can produce. The rich deny carries additionalContext;
+  // the fail-closed heuristic path emits a bare reason with none.
+  const rich = JSON.parse(runHook("git push", { pathOverride: stub }).stdout);
+  assert.ok(
+    typeof rich.hookSpecificOutput.additionalContext === "string" &&
+      rich.hookSpecificOutput.additionalContext.includes(".cache/diff-review"),
+    "node must have actually parsed the payload, not fallen through to the heuristic",
+  );
+
+  // And a case the fallback heuristic gets WRONG in the other direction: the heuristic matches the
+  // bare word "push" anywhere in the raw payload, so it denies this; only a real parse runs push_re
+  // and correctly allows it. Deleting the node branch flips this assertion.
+  assertAllow(
+    runHook('git commit -m "wire up push notifications"', { pathOverride: stub }),
+    "no python3, commit mentioning push",
+  );
+
   rmSync(stub, { recursive: true, force: true });
+});
+
+// ── Bypass must not fire on a mere mention of the flag ──────────────────────
+// This repo documents FRAPP_SKIP_REVIEW_GATE by name in CONTRIBUTING.md and the runbook, so an
+// unanchored substring test let ordinary work silently skip the gate — with no warning, unlike a
+// livelock release. Strictly worse than the fail-open it was introduced alongside.
+for (const cmd of [
+  'git commit -m "docs: explain FRAPP_SKIP_REVIEW_GATE=1 escape hatch" && git push',
+  "grep -rn FRAPP_SKIP_REVIEW_GATE=1 docs/ && git push",
+  'echo "set FRAPP_SKIP_REVIEW_GATE=1" >> README.md && git push',
+  'git push -o ci.variable="FRAPP_SKIP_REVIEW_GATE=1"',
+  "git push origin main # FRAPP_SKIP_REVIEW_GATE=1 would skip review",
+]) {
+  test(`mentioning the flag does not bypass: ${JSON.stringify(cmd)}`, () => {
+    clearMarker();
+    assertDeny(runHook(cmd), cmd);
+  });
+}
+
+// ── Dry runs must not consume the gate ──────────────────────────────────────
+
+for (const cmd of ["git push -n", "git push -n origin main"]) {
+  test(`dry run is exempt: ${JSON.stringify(cmd)}`, () => {
+    clearMarker();
+    assertAllow(runHook(cmd), cmd);
+  });
+}
+
+test("--no-verify is not mistaken for the -n dry-run flag", () => {
+  clearMarker();
+  assertDeny(runHook("git push --no-verify"), "--no-verify");
+});
+
+// ── Unresolvable HEAD: deny, with a real reason, and never wedge ────────────
+
+test("an empty repository denies with a diagnostic and still releases via livelock", () => {
+  const empty = mkdtempSync(path.join(tmpdir(), "review-gate-empty-"));
+  execFileSync("git", ["-C", empty, "init", "-q"]);
+  const tmp = mkdtempSync(path.join(tmpdir(), "rg-nohead-"));
+  const run = () =>
+    spawnSync("bash", [HOOK], {
+      input: JSON.stringify({ tool_input: { command: "git push" }, transcript_path: "" }),
+      encoding: "utf8",
+      env: { ...process.env, TMPDIR: tmp, CLAUDE_PROJECT_DIR: empty },
+    });
+  const first = run();
+  assertDeny(first, "no HEAD");
+  assert.match(
+    JSON.parse(first.stdout).hookSpecificOutput.permissionDecisionReason,
+    /cannot resolve HEAD/,
+    "deny must carry a diagnostic, not an empty reason",
+  );
+  for (let i = 2; i <= 4; i++) assertDeny(run(), `no HEAD attempt ${i}`);
+  assert.equal(run().stdout.trim(), "", "unresolvable HEAD must not wedge the session");
+  rmSync(tmp, { recursive: true, force: true });
+  rmSync(empty, { recursive: true, force: true });
 });
 
 test("with no interpreter at all, a push is denied and an unrelated command is not", () => {

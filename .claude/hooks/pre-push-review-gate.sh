@@ -103,8 +103,14 @@ else
   # (I/O or regex error) and 127 (grep absent), silently allowing a real push in exactly the
   # broken-tooling environment this branch exists to handle — the same fail-open shape as the
   # bug above. Treat anything that is not a definite no-match as a reason to gate.
+  #
+  # The pattern is deliberately the bare word, not something shaped like `git…push`: this is a
+  # RAW JSON payload, so the command's own quotes are present as `"` bytes and any character
+  # class excluding them refuses to cross `git -C "$HOME/repo" push` — which released real
+  # pushes completely ungated, precisely inverting this branch's purpose. Over-matching here is
+  # cheap (a false deny self-heals via the livelock guard below); under-matching is not.
   set +e
-  printf '%s' "$payload" | grep -qE 'git[^"]{0,40}push'
+  printf '%s' "$payload" | grep -q 'push'
   grep_rc=$?
   set -e
   if [ "$grep_rc" -eq 1 ]; then
@@ -123,9 +129,16 @@ fi
 # work solely because push_re declines to match an env-prefixed command — the sanctioned bypass
 # depending on a documented matcher gap, while `export FRAPP_SKIP_REVIEW_GATE=1 && git push`
 # was denied.
+# The assignment must be in COMMAND POSITION (start of string, or after a shell separator),
+# optionally behind `export`. A bare substring test was strictly worse than the bug it replaced:
+# this repo documents the flag by name in CONTRIBUTING.md and the runbook, so
+#   git commit -m "docs: explain FRAPP_SKIP_REVIEW_GATE=1 escape hatch" && git push
+#   grep -rn FRAPP_SKIP_REVIEW_GATE=1 docs/ && git push
+#   git push origin main   # FRAPP_SKIP_REVIEW_GATE=1 would skip review
+# each silently disabled the only pre-PR review gate — with no warning, unlike a livelock release.
 # NB: the pattern lives in a variable — an unquoted `;` / `&` / `|` inside [[ =~ ]] is a syntax
 # error, same reason push_re below is a variable.
-skip_re='FRAPP_SKIP_REVIEW_GATE=[^[:space:]]'
+skip_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*(export[[:space:]]+)?FRAPP_SKIP_REVIEW_GATE=[^[:space:];&|]+'
 skip_gate=0
 if [ -n "${FRAPP_SKIP_REVIEW_GATE:-}" ] || [[ "$command" =~ $skip_re ]]; then
   skip_gate=1
@@ -145,9 +158,11 @@ fi
 #      auto-allowed. Options only, so a subcommand that isn't `push` can never match.
 #   3. Word boundary after `push`, so `git pushdeploy` / `git push-all` don't match.
 # Newlines were normalised to ";" above, so multi-line commands are separated, not merged.
-# Tradeoff: an env-prefixed invocation (`env FOO=1 git push`) is not matched. Accepted —
-# a missed push costs one unreviewed branch; over-matching burns the budget and then
-# auto-allows a real one, which is strictly worse.
+# Tradeoff: an env-prefixed invocation (`env FOO=1 git push`) is not matched, and neither is a
+# global option whose value contains a space inside quotes (`git -C "/a/b c" push`) or a push
+# inside a compound statement (`if true; then git push; fi`). All accepted, all the same
+# direction — a missed push costs one unreviewed branch; over-matching burns the livelock budget
+# and then auto-allows a real one, which is strictly worse.
 push_re='(^|[;&|(){}][[:space:]]*)[[:space:]]*git([[:space:]]+-[^[:space:];&|]*([[:space:]]+[^-][^[:space:];&|]*)?)*[[:space:]]+push([^[:alnum:]_-]|$)'
 if ! [[ "$command" =~ $push_re ]]; then
   exit 0
@@ -159,7 +174,10 @@ fi
 # Any shell operator means we cannot reason about what else runs: gate it.
 case "$command" in
   *'&&'* | *';'* | *'|'*) : ;;      # compound — never exempt
-  *--dry-run*) exit 0 ;;
+  # `-n` is git's documented short form of --dry-run. Matching it too keeps a no-op command from
+  # burning livelock budget, which would otherwise count toward auto-allowing a real push.
+  # Matched as a whole word so `--no-verify` (space, dash, dash) cannot trip it.
+  *--dry-run* | *' -n '* | *' -n') exit 0 ;;
 esac
 
 # ── Content key = branch HEAD SHA, so a new HEAD re-gates ────────────────────────────
@@ -167,20 +185,24 @@ esac
 # one marker that no new commit ever invalidates — a permanent, gitignored, repo-wide
 # bypass. If HEAD is unknowable we cannot key evidence to anything, so fail CLOSED and say
 # why. FRAPP_SKIP_REVIEW_GATE remains the escape.
+no_head=0
 if ! head_sha="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null)" || [ -z "$head_sha" ]; then
-  if [ "$skip_gate" -eq 1 ]; then
-    exit 0
-  fi
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s}}\n' \
-    "$(json_escape "Review gate: cannot resolve HEAD in $ROOT, so the review marker cannot be checked. Set FRAPP_SKIP_REVIEW_GATE=1 to override.")"
-  exit 0
+  # Deny, but fall through to the livelock counter rather than returning here. Returning was a
+  # permanent wedge — the same shape removed from the parse-failure branch above — and with no
+  # interpreter json_escape degrades to `""`, so the deny carried an empty reason: no diagnostic
+  # and no discoverable escape. `nohead` is a counter key ONLY; the marker check is skipped
+  # entirely below, so unlike a constant *marker* key it can never satisfy the gate.
+  no_head=1
+  head_sha="nohead"
 fi
 
 # ── Evidence that a review actually ran: /diff-review writes this on completion ──────
 # Keyed on HEAD, so committing fixes invalidates it and the new HEAD must be reviewed.
-review_marker="$ROOT/.cache/diff-review/${head_sha}"
-if [ -f "$review_marker" ]; then
-  exit 0
+if [ "$no_head" -eq 0 ]; then
+  review_marker="$ROOT/.cache/diff-review/${head_sha}"
+  if [ -f "$review_marker" ]; then
+    exit 0
+  fi
 fi
 
 # ── Emergency bypass (documented in AI_CODE_REVIEW_RUNBOOK.md) ───────────────────────
@@ -226,10 +248,19 @@ if ! { mkdir -p "$sentinel_dir" 2>/dev/null \
 fi
 
 # ── No review evidence for this HEAD: DENY with guidance ────────────────────────────
-if [ "$parse_failed" -eq 1 ]; then
-  # No interpreter was available to parse the payload, so json_escape cannot be trusted either:
-  # emit a pre-escaped literal. The livelock counter above still applies, so this cannot wedge.
-  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Review gate: the hook payload could not be parsed — it was malformed, or neither python3 nor node was available to read it — so this push cannot be verified as reviewed. The gate fails closed rather than allow an unreviewed push. Prefix the command with FRAPP_SKIP_REVIEW_GATE=1 to override. This deny still counts toward the 4-attempt livelock release, so it cannot wedge the session."}}'
+if [ "$parse_failed" -eq 1 ] || [ "$no_head" -eq 1 ]; then
+  # Pre-escaped literals: on the parse-failure path there may be no interpreter, so json_escape
+  # degrades to `""` and would emit a deny with no reason at all. The livelock counter above
+  # applies to both branches, so neither can wedge the session.
+  #
+  # Note the escape advertised here is the ENVIRONMENT form only. On the parse-failure path the
+  # real command text was never recovered — `command` is the synthetic "git push" — so the
+  # command-prefix form the normal deny suggests cannot possibly be detected here.
+  if [ "$parse_failed" -eq 1 ]; then
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Review gate: the hook payload could not be parsed — it was malformed, or neither python3 nor node was available to read it — so this push cannot be verified as reviewed. The gate fails closed rather than allow an unreviewed push. On this path the command text is unavailable, so a FRAPP_SKIP_REVIEW_GATE=1 command prefix will NOT be seen: export it into the session environment instead. This deny counts toward the 4-attempt livelock release, so it cannot wedge the session."}}'
+  else
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Review gate: cannot resolve HEAD (is this an empty repository, or an orphan branch with no commits?), so the review marker cannot be keyed to anything and the push cannot be verified as reviewed. Commit something, or set FRAPP_SKIP_REVIEW_GATE=1. This deny counts toward the 4-attempt livelock release, so it cannot wedge the session."}}'
+  fi
   exit 0
 fi
 
