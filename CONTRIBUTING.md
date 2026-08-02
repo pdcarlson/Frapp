@@ -64,7 +64,8 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
   `git push` for a branch HEAD until that HEAD has been reviewed (review sub-agents inherit the
   session model, Opus). Agents run **`/diff-review`**, which writes the marker the gate looks for;
   the richer bundled **`/code-review`** is also available, but is model-invocable only when the
-  turn's prompt contains the bare token `/code-review` (never in a sub-agent, never under `/next`)
+  turn's prompt carries `/code-review` whitespace-delimited on both sides — backticks or trailing
+  punctuation defeat it (never in a sub-agent, never under `/next`)
   — and it does not write the marker, so after using it record the evidence by hand rather than
   reaching for `FRAPP_SKIP_REVIEW_GATE=1`, which is for emergencies and leaves a reviewed push
   indistinguishable from an unreviewed one. The CI Claude review and the

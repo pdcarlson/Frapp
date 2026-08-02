@@ -46,7 +46,7 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
    push of each HEAD and requires one review pass on the diff. Run **`/diff-review`** — you can always
    invoke it, so do not stop and wait for a human. **In this flow, use `/diff-review` and do not
    bother trying `/code-review`:** it is waived for model invocation only when the turn's prompt
-   contains the bare token `/code-review`, and a `/next` turn is a slash-command expansion, which the
+   carries `/code-review` whitespace-delimited on both sides, and a `/next` turn is a slash-command expansion, which the
    scan skips — so it is refused 100% of the time here, even if you typed the token as an argument to
    `/next`. (`/diff-review` also writes the gate marker; `/code-review` does not.) Then address every
    finding — fix it, or file a

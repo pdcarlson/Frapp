@@ -44,7 +44,8 @@ Two skills satisfy this gate, and the difference matters:
 `/code-review` is registered with `disableModelInvocation: true`, but that flag is **not** a
 human-keystroke requirement. The runtime check is `disableModelInvocation && !userTypedThisTurn`, and
 `userTypedThisTurn` resolves by scanning the **current turn** for a message that is `type: "user"`,
-**not** `isMeta`, and matches the bare token `/code-review` (regex `(?<!\S)/code-review(?=$|\s)`).
+**not** `isMeta`, and matches `/code-review` **whitespace-delimited on both sides** (regex
+`(?<!\S)/code-review(?=$|\s)`).
 
 So an agent **can** call `Skill(skill: "code-review")` when the user's prompt for that turn carries
 the token **whitespace-delimited on both sides** — `"work FRA-123, run /code-review before pushing"`
@@ -163,7 +164,7 @@ does not touch `--no-verify`, and does not interfere with the git-level
   must be absent from `.claude/skills/diff-review/SKILL.md`. Skills load at session start, so a fresh
   session is needed after adding or editing one.
 - **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected whenever this turn's
-  prompt does not contain the bare token `/code-review` (see the invocation rule above). Not a
+  prompt does not carry `/code-review` whitespace-delimited (see the invocation rule above). Not a
   misconfiguration — fall back to `/diff-review`.
 
 ## Testing the gate

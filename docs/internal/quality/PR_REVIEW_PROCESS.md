@@ -36,7 +36,8 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
    - Code review happens **before the push**, locally: the pre-push review-gate hook
      (`.claude/hooks/pre-push-review-gate.sh`) requires one review pass on the diff before the branch
      is pushed — `/diff-review` (always agent-invocable) or `/code-review` (richer; model-invocable
-     only when the turn's prompt contains the bare token `/code-review`). There is no CI Claude
+     only when the turn's prompt carries `/code-review` whitespace-delimited on both sides).
+     There is no CI Claude
      review or `claude-review-gate` check (removed 2026-06-04;
      see `docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`).
 3. **Human review pass**
