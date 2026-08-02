@@ -18,6 +18,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ChatService } from '../../application/services/chat.service';
+import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -50,7 +51,10 @@ import type { ChannelType } from '../../domain/entities/chat.entity';
 @FreeTier()
 @Controller('channels')
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly rbacService: RbacService,
+  ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
 
@@ -160,16 +164,20 @@ export class ChatController {
   @ApiOperation({ summary: 'Update a channel category' })
   async updateCategory(
     @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
     @Body() dto: UpdateCategoryDto,
   ) {
-    return this.chatService.updateCategory(id, dto);
+    return this.chatService.updateCategory(id, chapterId, dto);
   }
 
   @Delete('categories/:id')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Delete a channel category' })
-  async deleteCategory(@Param('id') id: string) {
-    await this.chatService.deleteCategory(id);
+  async deleteCategory(
+    @Param('id') id: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    await this.chatService.deleteCategory(id, chapterId);
     return { success: true };
   }
 
@@ -243,19 +251,46 @@ export class ChatController {
   @ApiOperation({ summary: 'Edit a message (own only)' })
   async editMessage(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
     @Body() dto: EditMessageDto,
   ) {
-    return this.chatService.editMessage(messageId, userId, dto.content);
+    return this.chatService.editMessage(
+      messageId,
+      chapterId,
+      userId,
+      dto.content,
+    );
   }
 
   @Delete('messages/:messageId')
-  @ApiOperation({ summary: 'Delete a message (soft delete)' })
+  @ApiOperation({
+    summary:
+      'Delete a message (soft delete; own message, or any in an accessible channel with channels:manage)',
+  })
   async deleteMessage(
     @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.deleteMessage(messageId, userId, false);
+    // spec/behavior/chat/README.md lets a `channels:manage` holder moderate
+    // other members' messages. This route previously hardcoded `false`, so that
+    // path could never fire. Resolving the permission here (rather than via
+    // @RequirePermissions) keeps the endpoint open to authors deleting their
+    // own messages; the service still re-checks channel access in the active
+    // chapter before honouring either path.
+    const hasManagePermission = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.CHANNELS_MANAGE],
+    );
+
+    return this.chatService.deleteMessage(
+      messageId,
+      chapterId,
+      userId,
+      hasManagePermission,
+    );
   }
 
   // ── Pins ─────────────────────────────────────────────────────────────
@@ -273,15 +308,23 @@ export class ChatController {
   @Post('messages/:messageId/pin')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Pin a message' })
-  async pinMessage(@Param('messageId') messageId: string) {
-    return this.chatService.pinMessage(messageId);
+  async pinMessage(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.pinMessage(messageId, chapterId, userId);
   }
 
   @Delete('messages/:messageId/pin')
   @RequirePermissions(SystemPermissions.CHANNELS_MANAGE)
   @ApiOperation({ summary: 'Unpin a message' })
-  async unpinMessage(@Param('messageId') messageId: string) {
-    return this.chatService.unpinMessage(messageId);
+  async unpinMessage(
+    @Param('messageId') messageId: string,
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.unpinMessage(messageId, chapterId, userId);
   }
 
   // ── Actions (chat_message_actions hot-path: reactions / votes / RSVPs) ──

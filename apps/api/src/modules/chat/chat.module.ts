@@ -19,9 +19,12 @@ import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { NotificationModule } from '../notification/notification.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
+import { RbacModule } from '../rbac/rbac.module';
 
 @Module({
-  imports: [NotificationModule, ChannelAccessModule],
+  // RbacModule → RbacService, which the delete-message route uses to resolve
+  // `channels:manage` for the spec'd moderation path.
+  imports: [NotificationModule, ChannelAccessModule, RbacModule],
   controllers: [ChatController],
   providers: [
     ChatService,
