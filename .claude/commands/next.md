@@ -43,9 +43,13 @@ Pick up and complete the next viable piece of work, then leave the tracker clean
    you didn't run.
 7. **Review happens at push — the single gate.** When you `git push`, the local pre-push review-gate
    hook ([`.claude/hooks/pre-push-review-gate.sh`](../hooks/pre-push-review-gate.sh)) blocks the first
-   push of each HEAD and requires one review pass on the diff. Run **`/diff-review`** — you can invoke
-   it yourself, so do not stop and wait for a human (the bundled `/code-review` is author-locked against
-   model invocation and only a human can run it). Then address every finding — fix it, or file a
+   push of each HEAD and requires one review pass on the diff. Run **`/diff-review`** — you can always
+   invoke it, so do not stop and wait for a human. **In this flow, use `/diff-review` and do not
+   bother trying `/code-review`:** it is waived for model invocation only when the turn's prompt
+   carries `/code-review` whitespace-delimited on both sides, and a `/next` turn is a slash-command expansion, which the
+   scan skips — so it is refused 100% of the time here, even if you typed the token as an argument to
+   `/next`. (`/diff-review` also writes the gate marker; `/code-review` does not.) Then address every
+   finding — fix it, or file a
    self-contained Triage follow-up with a reason — and re-push (committing fixes changes HEAD, which
    re-gates so the review always covers what you push). Its review sub-agents inherit the session model
    (Opus). There is no separate CI review and no duplicate step — this hook is the only pre-PR review

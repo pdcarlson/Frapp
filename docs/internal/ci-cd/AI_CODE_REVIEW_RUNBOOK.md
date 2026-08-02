@@ -26,17 +26,81 @@ Two skills satisfy this gate, and the difference matters:
 
 | Skill | Who can run it | Notes |
 |---|---|---|
-| [**`/diff-review`**](../../../.claude/skills/diff-review/SKILL.md) | **agent or human** | The project's own skill. An agent runs it unprompted when the gate fires. |
-| **`/code-review`** | **human only** | The bundled command. Richer — cloud `ultra` mode, `--fix`, `--comment`. |
+| [**`/diff-review`**](../../../.claude/skills/diff-review/SKILL.md) | **agent or human, always** | The project's own skill. An agent runs it unprompted when the gate fires. |
+| **`/code-review`** | human always; **agent only when the turn's prompt contains the token `/code-review`** | The bundled command. Richer — per-model-tuned effort cells, a workflow-backed path at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`. |
 
-`/code-review` is **author-locked against model invocation**: `disableModelInvocation` is hardcoded at
-its registration site inside the Claude Code binary (it has no file on disk), and that lock resolves
-*before* user settings, clamping the skill to `user-invocable-only` at best. Only a human typing
-`/code-review` can run it — the runtime `userTypedThisTurn` condition is the sole escape hatch.
+### The `/code-review` invocation rule
 
-> **That lock is the entire reason `/diff-review` exists.** Do not try to "simplify" this by adding a
-> `skillOverrides` entry for `code-review` — it is a verified no-op, and removing `/diff-review` would
-> leave every agent session stalled at the gate waiting for a human keystroke.
+> **Provenance.** Established against Claude Code **2.1.220** (`AI_AGENT=claude-code_2-1-220_agent`),
+> 2026-08-01. Two things were *executed*: with the token present the Skill tool ran a full forked
+> review; with it absent the same call returned
+> `Skill code-review cannot be used with Skill tool due to disable-model-invocation`. Everything
+> more specific below — the exact regex, the sub-agent short-circuit, the `<command-message>` skip,
+> the `isMeta` rule for hooks, and the check ordering vs `skillOverrides` — was **read out of the
+> 2.1.220 bundle**. That is strong evidence, but it is static reading of a minified build, not
+> measurement, and it is pinned to that build. Re-verify against the running version before relying
+> on any of it for a design decision; `claude --version` tells you what you are on.
+
+`/code-review` is registered with `disableModelInvocation: true`, but that flag is **not** a
+human-keystroke requirement. The runtime check is `disableModelInvocation && !userTypedThisTurn`, and
+`userTypedThisTurn` resolves by scanning the **current turn** for a message that is `type: "user"`,
+**not** `isMeta`, and matches `/code-review` **whitespace-delimited on both sides** (regex
+`(?<!\S)/code-review(?=$|\s)`).
+
+So an agent **can** call `Skill(skill: "code-review")` when the user's prompt for that turn carries
+the token **whitespace-delimited on both sides** — `"work FRA-123, run /code-review before pushing"`
+is enough.
+
+> **The delimiter is strict, and ordinary prose usually fails it.** Read the regex literally:
+> `(?<!\S)` rejects any non-whitespace *before* the slash, and `(?=$|\s)` requires whitespace or
+> end-of-string *after* `review`. So every one of these is a **non-match**:
+>
+> | Written as | Matches? | Why |
+> | --- | --- | --- |
+> | `run /code-review now` | ✅ | space both sides |
+> | ``run `/code-review` now`` | ❌ | backticks are non-whitespace, both lookarounds fail |
+> | `run /code-review.` | ❌ | trailing `.` fails the lookahead |
+> | `run /code-review, then push` | ❌ | trailing `,` fails the lookahead |
+> | `run **/code-review** now` | ❌ | `*` fails both lookarounds |
+> | `"/code-review"` | ❌ | quotes fail both lookarounds |
+>
+> This repo's own house style — and Markdown convention generally — writes commands in backticks, so
+> a prompt that *reads* as though it asks for `/code-review` normally does **not** satisfy the scan.
+> **Measured 2026-08-02** against the running 2.1.220 build: a session whose prompt referenced
+> `/code-review` eight times, every occurrence backticked, had `Skill(skill: "code-review")` refused
+> with `disable-model-invocation`. Treat reachability as the exception, not the rule, and never
+> assume a mention in prose enables it.
+
+It **cannot** when:
+
+- the token is absent, or present only in a form the delimiter rule rejects (the common case);
+- it is running as a **sub-agent** (`agentId` set → the check short-circuits to false);
+- the only occurrence is inside a **slash-command expansion** (`/next` and friends expand to a string
+  containing `<command-message>`, which the scan explicitly skips);
+- the only occurrence came from a **hook** — every hook's `additionalContext`, for every event, is
+  rendered as `isMeta: true`, which the scan skips. A hook cannot invoke a skill *or* enable one.
+
+Both directions were verified empirically in one session: with the token present the Skill tool ran a
+full forked review; with it absent the same call returned
+`Skill code-review cannot be used with Skill tool due to disable-model-invocation`.
+
+> **Do not** add a `skillOverrides` entry for `code-review` — verified no-op. `disableModelInvocation`
+> is checked and returns *before* the `skillOverrides` branch is ever reached, so no setting can
+> loosen it. Version-pinning is also a dead end: the command did not exist at all in 2.1.42 (that
+> build's `pluginCommand: "code-review"` registers `/review`, a different command), and 2.1.220 was
+> the latest published release as of 2026-08-01 — re-check with `npm view @anthropic-ai/claude-code
+> version` rather than trusting that date.
+
+**Why `/diff-review` still exists.** Not because `/code-review` is unreachable — because it is only
+*conditionally* reachable, and the gate fires in exactly the autonomous sessions where the condition
+usually does not hold. It also carries Frapp-specific review angles the bundled command has no
+knowledge of.
+
+**Prefer `/code-review` when it is available.** If the turn's prompt carries the token, run it instead
+— it ships per-model-tuned effort cells and, at `high`/`xhigh`/`max` with dynamic workflows enabled
+(including under the **Ultracode** session setting, which pins xhigh), a workflow-backed path with an
+independent verifier per distinct `file:line`. It does **not** write the gate marker, so follow it
+with `FRAPP_SKIP_REVIEW_GATE=1` on the push, or write the marker by hand.
 
 `/diff-review` reproduces the bundled workflow (scope → parallel finder subagents per angle → one
 independent verifier subagent per candidate → a single `ReportFindings` call) and additionally encodes
@@ -99,6 +163,22 @@ does not touch `--no-verify`, and does not interfere with the git-level
 - **`/diff-review` isn't offered as a skill:** its frontmatter regressed — `disable-model-invocation`
   must be absent from `.claude/skills/diff-review/SKILL.md`. Skills load at session start, so a fresh
   session is needed after adding or editing one.
+- **`Skill(skill: "code-review")` returns `disable-model-invocation`:** expected whenever this turn's
+  prompt does not carry `/code-review` whitespace-delimited (see the invocation rule above). Not a
+  misconfiguration — fall back to `/diff-review`.
+
+## Testing the gate
+
+`npm run test:ci-scripts` (or `node --test scripts/ci/__tests__/review-gate.test.mjs`) — 25 cases
+covering command-position matching, the `--dry-run` compound case, marker present / absent / stale,
+both forms of `FRAPP_SKIP_REVIEW_GATE`, the livelock release, and the fail-closed paths for a
+malformed payload, a missing interpreter, and a broken `grep`. Needs no network and no running stack.
+
+It lives under `scripts/ci/__tests__/` **so that something actually runs it** — the `test:ci-scripts`
+glob picks it up and the `ci-scripts-tests` CI job runs it on every PR. An earlier revision shipped
+this as a standalone `scripts/test-review-gate.sh` wired to nothing, which is how the fail-open parse
+bug it now guards against went unnoticed. Each case runs against a throwaway git repo, so the suite
+never reads or writes the live `.cache/diff-review/` marker.
 
 ## Rationale & history
 
