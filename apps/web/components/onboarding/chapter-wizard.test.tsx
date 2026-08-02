@@ -3,9 +3,18 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Capture the onboard mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
-const { onboardMutate, createInviteMutate } = vi.hoisted(() => ({
-  onboardMutate: vi.fn(),
-  createInviteMutate: vi.fn(),
+const { onboardMutate, createInviteMutate, activateMutate, refreshSession } =
+  vi.hoisted(() => ({
+    onboardMutate: vi.fn(),
+    createInviteMutate: vi.fn(),
+    activateMutate: vi.fn(),
+    refreshSession: vi.fn(),
+  }));
+
+// useSelectChapter refreshes the Supabase session so the new chapter's
+// active_chapter_id claim is issued before the next API call.
+vi.mock("@/lib/supabase/client", () => ({
+  createSupabaseBrowserClient: () => ({ auth: { refreshSession } }),
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -19,6 +28,9 @@ vi.mock("@repo/hooks", () => ({
   }),
   useCreateInvite: () => ({ mutateAsync: createInviteMutate, isPending: false }),
   useOnboardChapter: () => ({ mutateAsync: onboardMutate, isPending: false }),
+  // Consumed by useSelectChapter, which the wizard calls after creating the
+  // chapter so the active_chapter_id claim is issued for the new chapter.
+  useActivateChapter: () => ({ mutateAsync: activateMutate, isPending: false }),
 }));
 
 vi.mock("@repo/org-archetypes", () => ({

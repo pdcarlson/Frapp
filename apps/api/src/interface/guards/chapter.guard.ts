@@ -52,7 +52,7 @@ export class ChapterGuard implements CanActivate {
       .from('users')
       .select('id')
       .eq('supabase_auth_id', supabaseUser.id)
-      .single();
+      .single<{ id: string }>();
 
     if (!appUser) {
       throw new ForbiddenException('User profile not found');
@@ -63,7 +63,8 @@ export class ChapterGuard implements CanActivate {
 
     // The auto-resolve path already read the membership row it selected the
     // chapter from; only an explicitly supplied chapter needs verifying.
-    const member = resolved.member ?? (await this.findMembership(appUser.id, chapterId));
+    const member =
+      resolved.member ?? (await this.findMembership(appUser.id, chapterId));
 
     if (!member) {
       throw new ForbiddenException({
@@ -161,7 +162,7 @@ export class ChapterGuard implements CanActivate {
       .eq('chapter_id', chapterId)
       .single();
 
-    return (data as MemberContext | null) ?? null;
+    return data ?? null;
   }
 
   /** Overridable seam so tests can pin "now" without real clocks. */

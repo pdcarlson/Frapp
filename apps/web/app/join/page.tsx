@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { getSessionUser } from "@/lib/auth/session";
-import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useSelectChapter } from "@/lib/auth/select-chapter";
 
 function getErrorMessage(error: unknown) {
   if (error && typeof error === "object" && "message" in error) {
@@ -29,7 +29,7 @@ function JoinPageContent() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const redeemInviteMutation = useRedeemInvite();
-  const setActiveChapterId = useChapterStore((state) => state.setActiveChapterId);
+  const selectChapter = useSelectChapter();
   const initialToken = useMemo(() => searchParams.get("token") ?? "", [searchParams]);
   const [token, setToken] = useState(initialToken);
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -76,7 +76,9 @@ function JoinPageContent() {
           : null;
 
       if (chapterId) {
-        setActiveChapterId(chapterId);
+        // Persists the selection, refreshes the session so the new
+        // active_chapter_id claim is issued, then updates local state.
+        await selectChapter(chapterId);
       }
 
       toast({

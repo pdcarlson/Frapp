@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Param,
   Patch,
   Post,
   UseGuards,
@@ -74,6 +75,24 @@ export class ChapterController {
   @ApiOperation({ summary: 'List chapters for current user' })
   async listForCurrentUser(@CurrentUser('id') userId: string) {
     return this.chapterService.listForUser(userId);
+  }
+
+  @Post(':id/activate')
+  @UseGuards(SupabaseAuthGuard)
+  @UseInterceptors(AuthSyncInterceptor)
+  @ApiOperation({
+    summary:
+      'Set the active chapter for the current user (embedded in subsequent access tokens)',
+  })
+  async activate(
+    @CurrentUser('id') userId: string,
+    @Param('id') chapterId: string,
+  ) {
+    await this.chapterService.setActiveChapter(userId, chapterId);
+    // The claim is only refreshed when a token is issued, so the client must
+    // call supabase.auth.refreshSession() before its next request for the new
+    // chapter to take effect ahead of the current token's expiry.
+    return { success: true, requires_session_refresh: true };
   }
 
   @Get('current')

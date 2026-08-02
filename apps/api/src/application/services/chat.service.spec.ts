@@ -763,7 +763,12 @@ describe('ChatService', () => {
         edited_at: '2026-01-01T13:00:00.000Z',
       });
 
-      const result = await service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated');
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
       expect(result.content).toBe('Updated');
       expect(result.edited_at).toBeTruthy();
     });
@@ -797,7 +802,12 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      const result = await service.deleteMessage('msg-1', 'ch-1', 'user-1', false);
+      const result = await service.deleteMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        false,
+      );
       expect(result.is_deleted).toBe(true);
       expect(result.content).toBe('[message deleted]');
     });
@@ -843,18 +853,18 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      await expect(service.pinMessage('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject pinning when at 50 limit', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.countPinnedByChannel.mockResolvedValue(50);
 
-      await expect(service.pinMessage('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -876,9 +886,9 @@ describe('ChatService', () => {
     it('should reject unpinning non-pinned message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
-      await expect(service.unpinMessage('msg-1', 'ch-1', 'user-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.unpinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

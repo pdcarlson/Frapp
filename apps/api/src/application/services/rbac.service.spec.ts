@@ -480,6 +480,35 @@ describe('RbacService', () => {
     ).toBe(true);
   });
 
+  describe('memberHasAnyPermission', () => {
+    const member: Member = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids: ['role-foreign'],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    it('resolves roles within the chapter, so a foreign role id grants nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      // The chapter-scoped lookup drops the cross-chapter id, even though the
+      // role it points at carries the wildcard in its own chapter.
+      mockRoleRepo.findByIds.mockResolvedValue([]);
+
+      const result = await service.memberHasAnyPermission('ch-1', 'user-1', [
+        SystemPermissions.ROLES_MANAGE,
+      ]);
+
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
+        ['role-foreign'],
+        'ch-1',
+      );
+      expect(result).toBe(false);
+    });
+  });
+
   describe('getEffectivePermissions', () => {
     const buildMember = (role_ids: string[]): Member => ({
       id: 'member-1',
@@ -544,7 +573,27 @@ describe('RbacService', () => {
           SystemPermissions.MEMBERS_VIEW,
         ].sort(),
       );
-      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(['role-a', 'role-b']);
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
+        ['role-a', 'role-b'],
+        'ch-1',
+      );
+    });
+
+    it('scopes role resolution to the chapter so a foreign role id resolves to nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember(['role-foreign']),
+      );
+      // A stale or cross-chapter id survives on `members.role_ids`; the
+      // chapter-scoped lookup matches no row, so no permissions leak through.
+      mockRoleRepo.findByIds.mockResolvedValue([]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(mockRoleRepo.findByIds).toHaveBeenCalledWith(
+        ['role-foreign'],
+        'ch-1',
+      );
+      expect(result).toEqual([]);
     });
 
     it('includes wildcard for President-style roles', async () => {

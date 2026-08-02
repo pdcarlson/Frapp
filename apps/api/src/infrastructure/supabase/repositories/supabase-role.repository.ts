@@ -31,11 +31,17 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data || [];
   }
 
-  async findByIds(ids: string[]): Promise<Role[]> {
-    const { data, error } = await this.supabase
-      .from('roles')
-      .select('*')
-      .in('id', ids);
+  async findByIds(ids: string[], chapterId?: string): Promise<Role[]> {
+    let query = this.supabase.from('roles').select('*').in('id', ids);
+
+    // Callers resolving a member's permissions pass their active chapter, so an
+    // id that no longer belongs to it (stale membership, cross-chapter id)
+    // drops out here instead of contributing another chapter's permissions.
+    if (chapterId) {
+      query = query.eq('chapter_id', chapterId);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
     return data || [];
   }

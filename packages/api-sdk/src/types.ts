@@ -111,6 +111,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/chapters/{id}/activate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set the active chapter for the current user (embedded in subsequent access tokens) */
+        post: operations["ChapterController_activate_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/chapters/current": {
         parameters: {
             query?: never;
@@ -822,7 +839,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete a message (soft delete) */
+        /** Delete a message (soft delete; own message, or any in an accessible channel with channels:manage) */
         delete: operations["ChatController_deleteMessage_v1"];
         options?: never;
         head?: never;
@@ -2691,6 +2708,25 @@ export interface operations {
                 "application/json": components["schemas"]["ChapterOnboardingDto"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterController_activate_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             201: {
                 headers: {

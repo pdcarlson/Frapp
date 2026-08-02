@@ -117,6 +117,33 @@ export function useOnboardChapter() {
   });
 }
 
+/**
+ * Persists the caller's active chapter server-side so it lands in the
+ * `active_chapter_id` claim of subsequently issued access tokens
+ * (spec/behavior/multi-tenancy.md).
+ *
+ * The claim only changes when a token is issued, so callers MUST refresh the
+ * Supabase session afterwards — otherwise the previous claim stands until the
+ * current token expires. `apps/web/lib/auth/select-chapter.ts` wraps this hook
+ * with that refresh; prefer it over calling this directly.
+ */
+export function useActivateChapter() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (chapterId: string) => {
+      const { data, error } = await client.POST("/v1/chapters/{id}/activate", {
+        params: { path: { id: chapterId } },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: chapterQueryKey() });
+    },
+  });
+}
+
 export function useUpdateChapter() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

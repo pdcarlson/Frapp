@@ -24,6 +24,7 @@ When a member provides a department or professor name that does not exist in the
 - Lookup is scoped to the chapter. "CS" in Chapter A is independent of "CS" in Chapter B.
 - Auto-vivification is atomic with the resource creation (same transaction).
 - Department records store the short code (e.g. "CS") and an optional full name (e.g. "Computer Science") that admins can fill in later.
+- Filling in that name (`PATCH /v1/backwork/departments/:id`, requires `backwork:admin`) is scoped to the caller's active chapter: a department ID belonging to another chapter matches no row and returns **404 Not Found** instead of being renamed.
 
 ## Duplicate Prevention
 

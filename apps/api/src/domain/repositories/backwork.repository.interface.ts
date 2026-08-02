@@ -40,10 +40,12 @@ export interface IBackworkDepartmentRepository {
     code: string,
   ): Promise<BackworkDepartment | null>;
   create(data: Partial<BackworkDepartment>): Promise<BackworkDepartment>;
+  /** Chapter-scoped; resolves to `null` when no department in `chapterId` has `id`. */
   update(
     id: string,
+    chapterId: string,
     data: Partial<BackworkDepartment>,
-  ): Promise<BackworkDepartment>;
+  ): Promise<BackworkDepartment | null>;
 }
 
 export interface IBackworkProfessorRepository {

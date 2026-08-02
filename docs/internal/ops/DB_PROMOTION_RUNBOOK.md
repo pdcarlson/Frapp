@@ -64,6 +64,15 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-08-02: Active-chapter JWT claim — `custom_access_token_hook` (FRA-303)
+* **Migration**: `20260802120000_active_chapter_jwt_claim.sql`
+* **Purpose**: Adds `users.active_chapter_id uuid references chapters(id) on delete set null` and the `public.custom_access_token_hook(event jsonb)` auth hook that stamps it into every issued access token as the top-level `active_chapter_id` claim. This is the authoritative chapter context `ChapterGuard` reconciles against per `spec/behavior/multi-tenancy.md`; before it, the client-supplied `x-chapter-id` header was the only source.
+* **Safety**: Additive — one nullable column (`ADD COLUMN IF NOT EXISTS`, no default, no backfill) plus `create or replace function`. The hook body is wrapped in `exception when others then return event`, so a failure degrades to an unmodified token rather than blocking sign-in. Role grants are guarded on `pg_roles` existence, so the file also applies on bare Postgres / PGlite. Two SELECT policies scoped **to `supabase_auth_admin` only** are added on `users` and `members` (both have RLS enabled with no policies); the API uses the service-role key and bypasses RLS, so no other caller's visibility changes.
+* **⚠️ Required manual step per hosted environment**: applying the migration does **not** enable the hook. Enable it in the Supabase dashboard (**Authentication → Hooks** → Custom Access Token → `public.custom_access_token_hook`), or via the Management API `PATCH /v1/projects/{ref}/config/auth` with `hook_custom_access_token_enabled: true` and `hook_custom_access_token_uri: "pg-functions://postgres/public/custom_access_token_hook"`. Local is already wired through `[auth.hook.custom_access_token]` in `supabase/config.toml`. **Order does not matter**: until the hook is enabled the claim is simply absent and the `x-chapter-id` fallback carries context, so the migration is safe to promote ahead of the toggle.
+* **Checks**: After `db push`, `select proname from pg_proc where proname = 'custom_access_token_hook';` returns 1 row; `select has_function_privilege('supabase_auth_admin', 'public.custom_access_token_hook(jsonb)', 'execute');` returns `true` and the same for `anon`/`authenticated` returns `false`. After enabling the hook, sign in as a single-chapter user and decode the access token — `active_chapter_id` must be present. If sign-in breaks, disable the hook in the dashboard first (instant mitigation, no deploy needed), then investigate.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback active-chapter JWT claim.
+
 ## 2026-06-04: Terms/Privacy acceptance on `chapters` (FRA-17) + migration-version collision fix (FRA-288)
 
 One additive migration, plus a remediation rename of an already-merged migration.

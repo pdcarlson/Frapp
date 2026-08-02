@@ -160,14 +160,15 @@ describe('BackworkController', () => {
 
   describe('updateDepartment', () => {
     it('should call backworkService.updateDepartment with correct parameters', async () => {
+      const chapterId = 'chapter-123';
       const id = 'dept-1';
       const dto: UpdateDepartmentDto = { name: 'Computer Science' };
       const expectedResult = { id: 'dept-1', name: 'Computer Science' };
       mockBackworkService.updateDepartment.mockResolvedValue(expectedResult);
 
-      const result = await controller.updateDepartment(id, dto);
+      const result = await controller.updateDepartment(chapterId, id, dto);
 
-      expect(service.updateDepartment).toHaveBeenCalledWith(id, dto);
+      expect(service.updateDepartment).toHaveBeenCalledWith(id, chapterId, dto);
       expect(result).toEqual(expectedResult);
     });
   });

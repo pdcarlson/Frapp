@@ -66,7 +66,7 @@ export const ACTIVE_CHAPTER_CLAIM = 'active_chapter_id';
 export function getActiveChapterClaim(
   claims: JwtPayload | undefined,
 ): string | undefined {
-  const value = claims?.[ACTIVE_CHAPTER_CLAIM];
+  const value: unknown = claims?.[ACTIVE_CHAPTER_CLAIM];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
