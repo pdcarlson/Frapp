@@ -59,3 +59,7 @@ lychee-*/
 
 # Tooling binary cache (gitleaks via scripts/install-gitleaks.sh; never committed)
 .cache/gitleaks/
+# Pinned Supabase CLI for the cloud sandbox (scripts/lib/cloud-sandbox-common.sh)
+.cache/supabase-cli/
+# Per-HEAD review markers written by /diff-review, read by the pre-push review gate
+.cache/diff-review/

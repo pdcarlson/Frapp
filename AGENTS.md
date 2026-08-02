@@ -67,7 +67,7 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 
 **Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two Cursor automations maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
 
-**Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → push (the local **pre-push review-gate hook** requires one **`/code-review`** pass on the diff — the single pre-PR review gate; review sub-agents inherit the session model) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
+**Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → push (the local **pre-push review-gate hook** requires one review pass on the diff — the single pre-PR review gate. Agents run **`/diff-review`**; the bundled `/code-review` is author-locked against model invocation so only a human can run it. Review sub-agents inherit the session model) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
 
 ## Services and ports
 
@@ -128,6 +128,19 @@ CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testi
 | Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
 
 Cursor rules under `.cursor/rules/` point at these same skill files.
+
+**Claude Code skills** live under [`.claude/skills/`](.claude/skills/) and are invocable by an agent
+(unlike the `.cursor/` files above, which Claude Code does not load):
+
+| Skill | Use |
+| ----- | --- |
+| [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate (see the lifecycle above). Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
+| [`/handoff`](.claude/skills/handoff/SKILL.md) | Draft a copy-pasteable prompt handing work to a fresh session — when context is filling up, a task is finishing, or a parallel track should run in its own chat. Offer it proactively. |
+
+**Long sessions degrade.** Context fills with dead ends and superseded plans, and a fresh session on
+the same task is often more capable because its read of the codebase is uncontaminated. Treat
+`/handoff` as a normal part of the workflow rather than a last resort, and write orientation for the
+next session — not instructions, which would just transplant a stale plan.
 
 ## Gotchas
 

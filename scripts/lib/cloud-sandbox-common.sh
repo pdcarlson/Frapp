@@ -8,6 +8,104 @@ cs_log() {
   printf '[cloud-sandbox] %s\n' "$*" >&2
 }
 
+# Pinned Supabase CLI version for the cloud sandbox. Single source of truth; override
+# with FRAPP_SUPABASE_CLI_VERSION to test an upgrade.
+#
+# ⚠️ This is intentionally NOT the version CI uses to apply migrations:
+# .github/workflows/deploy-api.yml pins supabase/setup-cli to 2.77.0 for both the
+# staging and production migration steps. The skew is not introduced here — before this
+# helper existed the scripts ran unpinned `npx supabase`, i.e. whatever "latest" was that
+# day (2.110.0 at time of writing), so the same gap existed and drifted silently. Pinning
+# makes it an explicit, reviewable constant.
+#
+# The sandbox cannot simply match 2.77.0: it fails to start here because the realtime
+# container aborts with `:listen_error, :eafnosupport` (it tries to bind IPv6, which this
+# sandbox does not support). Closing the gap therefore means moving *deploy* forward,
+# which needs staging verification and belongs in its own change. Tracked as a follow-up.
+CS_SUPABASE_CLI_VERSION="${FRAPP_SUPABASE_CLI_VERSION:-2.110.0}"
+
+# Default `supabase start` arguments, shared by per-session bringup and the setup pre-pull.
+# The Deno edge-runtime container sets an rlimit (RLIMIT_NOFILE) the cloud sandbox denies
+# ("error setting rlimit type 7: operation not permitted"), and that aborts the WHOLE
+# `supabase start` — so every caller must exclude it, not just bringup. The setup pre-pull
+# previously omitted it and therefore aborted partway through, never caching the images
+# ordered after edge-runtime (pg-meta, studio, supavisor) — defeating its own purpose.
+# The API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12),
+# so edge functions are not needed here. Override with FRAPP_SUPABASE_START_ARGS.
+CS_SUPABASE_START_ARGS="${FRAPP_SUPABASE_START_ARGS:--x edge-runtime}"
+
+# Resolve (installing on first use) and invoke the pinned Supabase CLI.
+#
+# Mirrors the pinned-tooling pattern already used for gitleaks
+# (scripts/install-gitleaks.sh → .cache/gitleaks/): the binary lives in a gitignored
+# .cache/supabase-cli/ rather than in the repo's dependency tree. That matters because the
+# v2 CLI's platform binary is ~200 MB; as a root devDependency it would be downloaded by
+# every `npm ci` in CI and pulled into the API image's dev-deps build stage, for a tool
+# only these two sandbox scripts ever call (cf. ADR-15 on CI cost).
+#
+# Deliberately NOT bare `npx supabase`, which caused the failure this replaces: it
+# re-resolves "latest" every session, and the v2 CLI ships its executable as a
+# platform-specific optionalDependency. When that optional install is skipped the
+# launcher throws "No matching Supabase CLI binary package found for <platform>" and
+# aborts the whole bringup — and npx caches the broken tree under ~/.npm/_npx, so it stays
+# broken for the rest of the session.
+#
+# Self-healing by design: the cache is a build artifact, not a checked-in file, so an
+# expired sandbox filesystem cache or a failed `npm ci` just triggers a reinstall here
+# instead of failing the bringup. The readiness probe runs the binary rather than testing
+# for its presence, because the launcher script exists and is executable even when the
+# platform binary behind it is missing — the exact case above.
+cs_supabase() {
+  local root cache bin log have needs_install
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+  cache="$root/.cache/supabase-cli"
+  bin="$cache/node_modules/.bin/supabase"
+  log="$cache/install.log"
+
+  # Probe by RUNNING the binary — the launcher exists and is executable even when the
+  # platform binary behind it was skipped, so a presence test would pass a broken tree.
+  have="$("$bin" --version 2>/dev/null || true)"
+  # Key the cache on the REQUESTED SPEC, not the printed version. Comparing the spec to the
+  # printed version only works for exact pins: a non-exact spec (latest, ^2.110.0) never
+  # equals "2.112.0", so string-comparing reinstalled before every call, while treating
+  # non-exact as "accept anything cached" silently ignored the upgrade the override exists
+  # to test — and swallowed typos like 2.110.O whenever any cache existed. Recording the
+  # spec handles both: a working binary installed for this exact spec string is reused, and
+  # changing the spec at all forces a reinstall.
+  needs_install=1
+  if [ -n "$have" ] \
+    && [ "$(cat "$cache/.spec" 2>/dev/null || true)" = "$CS_SUPABASE_CLI_VERSION" ]; then
+    needs_install=0
+  fi
+
+  if [ "$needs_install" -eq 1 ]; then
+    cs_log "Installing Supabase CLI ${CS_SUPABASE_CLI_VERSION} into .cache/supabase-cli..."
+    mkdir -p "$cache"
+    [ -f "$cache/package.json" ] \
+      || printf '{"name":"frapp-supabase-cli","private":true}\n' >"$cache/package.json"
+    # Keep npm's output: it is the only place the real cause appears (a 404 on a typo'd
+    # version reads identically to a blocked registry once discarded).
+    if ! npm install --prefix "$cache" "supabase@${CS_SUPABASE_CLI_VERSION}" \
+      --no-audit --no-fund >"$log" 2>&1; then
+      cs_log "ERROR: installing supabase@${CS_SUPABASE_CLI_VERSION} failed — full output in $log:"
+      tail -n 5 "$log" 2>/dev/null | sed 's/^/[cloud-sandbox]   /' >&2
+      return 127
+    fi
+    # npm exits 0 even when a platform-specific optionalDependency is skipped — which is
+    # exactly the failure this helper exists to prevent — so re-probe instead of trusting
+    # the exit code.
+    if ! "$bin" --version >/dev/null 2>&1; then
+      cs_log "ERROR: supabase installed but its platform binary is missing (@supabase/cli-<platform> skipped) — see $log"
+      return 127
+    fi
+    # Record the spec only after the binary is proven to run, so a half-installed tree is
+    # never cached as satisfying the spec.
+    printf '%s' "$CS_SUPABASE_CLI_VERSION" >"$cache/.spec" 2>/dev/null || true
+  fi
+
+  "$bin" "$@"
+}
+
 # Start the Docker daemon if it is not already responsive, then wait for it.
 # Uses sudo only when we are not already root (web-UI setup runs as root; the
 # per-session agent shell may not). Returns non-zero if the daemon never comes up.

@@ -76,8 +76,25 @@ The filesystem is cached but running processes are not, so work is split:
 | Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
 | Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; write `apps/api/.env.local` |
 
-Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_ensure_docker_daemon`,
-`cs_docker_login_if_creds`).
+Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
+`cs_docker_login_if_creds`, `cs_supabase`).
+
+`cs_supabase` is how both scripts invoke the Supabase CLI — never bare `npx supabase`. It
+resolves a **pinned** CLI (`CS_SUPABASE_CLI_VERSION`, override with
+`FRAPP_SUPABASE_CLI_VERSION`) from a gitignored `.cache/supabase-cli/`, installing it on
+first use. Same pinned-tooling pattern as gitleaks (`scripts/install-gitleaks.sh` →
+`.cache/gitleaks/`), and kept out of the repo's dependency tree deliberately: the v2 CLI's
+platform binary is ~200 MB, so as a root devDependency every `npm ci` in CI and the API
+image's dev-deps stage would download it for a tool only these two scripts call.
+
+> **Known version skew:** the sandbox pin is **not** the CLI version that applies
+> migrations in CI — [`deploy-api.yml`](../../../.github/workflows/deploy-api.yml) pins
+> `supabase/setup-cli` to **2.77.0** for the staging and production migration steps. The
+> gap predates the pin (the scripts previously ran unpinned `npx supabase`, i.e. whatever
+> `latest` was that day), and the sandbox cannot simply match 2.77.0 — it fails to start
+> here because the realtime container aborts with `:listen_error, :eafnosupport` (IPv6
+> bind, unsupported in this sandbox). Closing the gap means moving *deploy* forward, which
+> needs staging verification and its own change.
 
 ### Auto-bringup and how the agent waits
 
@@ -124,9 +141,16 @@ environment config the agent cannot fix from inside the session.
 | `failed to start docker container "supabase_edge_runtime_*": error setting rlimit type 7: operation not permitted` | Sandbox denies the ulimit (`RLIMIT_NOFILE`) the Deno edge-runtime container sets, which aborts the whole `supabase start` | Already handled — bringup excludes edge-runtime (`supabase start -x edge-runtime`) since the API talks to Postgres directly and hot-path logic moved into NestJS (ADR-11/ADR-12). Set `FRAPP_SUPABASE_START_ARGS` to override if edge functions are genuinely needed |
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
+| `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then `'supabase start' failed` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.
+
+**One exception to "stop and report":** the last row above is a *repo* fix rather than
+environment config — every other row needs the user to change a setting in the Claude Code
+web environment, but a missing Supabase CLI binary is fixed in-tree. Prefer the pinned CLI
+(`cs_supabase`) over `npx supabase` in any new script for exactly this reason: unpinned npx
+re-resolves `latest` every session, so the toolchain can change under you between runs.
 
 ## Manual / fallback bringup
 
@@ -137,8 +161,11 @@ bash scripts/cloud-sandbox-up.sh
 ```
 
 Or step through it: start the daemon (`sudo dockerd &>/tmp/dockerd.log &`, wait for
-`/var/run/docker.sock`), `npx supabase start`, `npx supabase db push --local`, then build
-`apps/api/.env.local` from `npx supabase status -o env` + the Stripe vars. For migration
+`/var/run/docker.sock`), then use the pinned CLI —
+`.cache/supabase-cli/node_modules/.bin/supabase start`, then `… db push --local` — and build
+`apps/api/.env.local` from `… status -o env` + the Stripe vars. (Source
+`scripts/lib/cloud-sandbox-common.sh` and call `cs_supabase` to get the install-on-first-use
+behaviour instead of managing that path by hand.) For migration
 validation without Docker at all, use the PGlite harness (`npm run check:pglite-migrations`).
 
 ## Still out of scope
