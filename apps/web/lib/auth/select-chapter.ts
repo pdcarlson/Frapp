@@ -27,13 +27,29 @@ export function useSelectChapter() {
   const setActiveChapterId = useChapterStore((s) => s.setActiveChapterId);
 
   return useCallback(
-    async (chapterId: string) => {
-      await activateChapter.mutateAsync(chapterId);
+    async (chapterId: string): Promise<boolean> => {
+      try {
+        await activateChapter.mutateAsync(chapterId);
 
-      const supabase = createSupabaseBrowserClient();
-      await supabase.auth.refreshSession();
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.refreshSession();
+      } catch {
+        // Best-effort by design. Callers reach here *after* the action that
+        // matters has already succeeded (invite redeemed, chapter created), so
+        // throwing would roll back a success in the UI only — the user would be
+        // told their invite failed and would retry into "already used".
+        //
+        // The local store is deliberately left untouched on failure. Writing it
+        // here would point `x-chapter-id` at a chapter the un-refreshed token
+        // still disagrees with, and ChapterGuard rejects that disagreement with
+        // chapter.context.mismatch on *every* subsequent request — a far worse
+        // outcome than no selection. The next token issuance re-resolves it
+        // (single-chapter users auto-resolve server-side).
+        return false;
+      }
 
       setActiveChapterId(chapterId);
+      return true;
     },
     [activateChapter, setActiveChapterId],
   );
