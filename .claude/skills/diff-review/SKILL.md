@@ -14,10 +14,12 @@ Frapp's pre-PR review gate — the review an agent can **always** run.
 
 **Try `/code-review` first.** The bundled command is richer (per-model-tuned effort cells, a
 workflow-backed verifier pass at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`), and
-it is *conditionally* model-invocable: `Skill(skill: "code-review")` succeeds whenever the current
-turn's prompt contains the bare token `/code-review`. If it returns
-`cannot be used with Skill tool due to disable-model-invocation`, that condition simply is not met —
-expected, not an error — so fall through to this skill. It is also always refused inside a sub-agent.
+it is *conditionally* model-invocable: `Skill(skill: "code-review")` succeeds only when the current
+turn's prompt carries the token `/code-review` **whitespace-delimited on both sides** (regex
+`(?<!\S)/code-review(?=$|\s)`). Backticks, quotes, `**bold**`, and a trailing `.` or `,` all defeat
+it — so **expect refusal by default**, including on prompts that plainly read as asking for a review.
+If it returns `cannot be used with Skill tool due to disable-model-invocation`, that condition simply
+is not met — expected, not an error — so fall through to this skill. It is also always refused inside a sub-agent.
 Note that `/code-review` does **not** write the gate marker (Phase 4 below); this skill does.
 
 Use this skill when `/code-review` is refused, and for the Frapp-specific angles below, which the

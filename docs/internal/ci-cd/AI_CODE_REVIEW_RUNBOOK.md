@@ -46,11 +46,33 @@ human-keystroke requirement. The runtime check is `disableModelInvocation && !us
 `userTypedThisTurn` resolves by scanning the **current turn** for a message that is `type: "user"`,
 **not** `isMeta`, and matches the bare token `/code-review` (regex `(?<!\S)/code-review(?=$|\s)`).
 
-So an agent **can** call `Skill(skill: "code-review")` whenever the user's prompt for that turn
-mentions the token anywhere in prose — `"work FRA-123, run /code-review before pushing"` is enough.
+So an agent **can** call `Skill(skill: "code-review")` when the user's prompt for that turn carries
+the token **whitespace-delimited on both sides** — `"work FRA-123, run /code-review before pushing"`
+is enough.
+
+> **The delimiter is strict, and ordinary prose usually fails it.** Read the regex literally:
+> `(?<!\S)` rejects any non-whitespace *before* the slash, and `(?=$|\s)` requires whitespace or
+> end-of-string *after* `review`. So every one of these is a **non-match**:
+>
+> | Written as | Matches? | Why |
+> | --- | --- | --- |
+> | `run /code-review now` | ✅ | space both sides |
+> | ``run `/code-review` now`` | ❌ | backticks are non-whitespace, both lookarounds fail |
+> | `run /code-review.` | ❌ | trailing `.` fails the lookahead |
+> | `run /code-review, then push` | ❌ | trailing `,` fails the lookahead |
+> | `run **/code-review** now` | ❌ | `*` fails both lookarounds |
+> | `"/code-review"` | ❌ | quotes fail both lookarounds |
+>
+> This repo's own house style — and Markdown convention generally — writes commands in backticks, so
+> a prompt that *reads* as though it asks for `/code-review` normally does **not** satisfy the scan.
+> **Measured 2026-08-02** against the running 2.1.220 build: a session whose prompt referenced
+> `/code-review` eight times, every occurrence backticked, had `Skill(skill: "code-review")` refused
+> with `disable-model-invocation`. Treat reachability as the exception, not the rule, and never
+> assume a mention in prose enables it.
+
 It **cannot** when:
 
-- the token is absent from the turn (the common autonomous case);
+- the token is absent, or present only in a form the delimiter rule rejects (the common case);
 - it is running as a **sub-agent** (`agentId` set → the check short-circuits to false);
 - the only occurrence is inside a **slash-command expansion** (`/next` and friends expand to a string
   containing `<command-message>`, which the scan explicitly skips);

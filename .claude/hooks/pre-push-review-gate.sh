@@ -7,10 +7,13 @@
 # Which skill: /diff-review (.claude/skills/diff-review/SKILL.md) is the one an AGENT can
 # ALWAYS run. The bundled /code-review is richer and should be preferred WHEN AVAILABLE,
 # but it is only conditionally model-invocable: its disableModelInvocation flag is waived
-# only when the current turn contains a non-meta user message carrying the bare token
-# "/code-review". Absent that — and in every sub-agent — the Skill tool refuses it. A hook
-# cannot supply the token either (hook additionalContext renders as isMeta, which the
-# scan skips). Full rule: docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
+# only when the current turn contains a non-meta user message carrying the token
+# "/code-review" WHITESPACE-DELIMITED ON BOTH SIDES (regex `(?<!\S)/code-review(?=$|\s)`).
+# That is stricter than "mentioned in prose": backticks, quotes, **bold**, and a trailing
+# "." or "," all defeat it, and backticking commands is this repo's house style — so in
+# practice the waiver almost never holds. Absent it — and in every sub-agent — the Skill
+# tool refuses. A hook cannot supply the token either (hook additionalContext renders as
+# isMeta, which the scan skips). Full rule: docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md.
 #
 # Enforcement contract: the gate keys on EVIDENCE, not attempts. /diff-review writes
 # .cache/diff-review/<HEAD_SHA> (gitignored) when it finishes reporting and acting on
@@ -265,7 +268,7 @@ if [ "$parse_failed" -eq 1 ] || [ "$no_head" -eq 1 ]; then
 fi
 
 reason="Local review gate: review this diff before pushing (see additionalContext for how)."
-context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Run a review in THIS chat session, then address every finding (fix it, or file a tracked Triage follow-up with a reason). WHICH REVIEW: try Skill(skill: \"code-review\") first — it is the richer harness. It succeeds only when this turn's prompt contains the bare token /code-review; if it returns 'disable-model-invocation' that condition is not met, which is EXPECTED and NOT an error, and NOT a reason to stop and wait for a human. Note it can never succeed under /next, whose slash-command expansion hides the token. Fall back immediately to the project's own /diff-review skill, which an agent can always invoke. RECORDING EVIDENCE: /diff-review writes the marker itself as its last step. /code-review does NOT — if you used it, record the evidence yourself with: mkdir -p \"\$(git rev-parse --show-toplevel)/.cache/diff-review\" && touch \"\$(git rev-parse --show-toplevel)/.cache/diff-review/\$(git rev-parse HEAD)\" — do NOT reach for FRAPP_SKIP_REVIEW_GATE to get around a review you actually did, because that leaves a push indistinguishable from one that skipped review entirely; it is for emergencies only. RETRYING THIS PUSH WILL NOT SATISFY THE GATE: it is keyed on evidence, not attempts — only the marker .cache/diff-review/<HEAD_SHA> allows the push. Committing fixes changes HEAD and invalidates the marker by design, so the review always covers exactly what you push."
+context="This push was blocked by the local pre-push review gate (Frapp's single pre-PR review gate; the CI Claude review has been removed). Run a review in THIS chat session, then address every finding (fix it, or file a tracked Triage follow-up with a reason). WHICH REVIEW: try Skill(skill: \"code-review\") first — it is the richer harness. It succeeds only when this turn's prompt carries the token /code-review whitespace-delimited on BOTH sides; backticks, quotes, bold, or a trailing '.' or ',' all defeat it, so a prompt that merely reads as asking for it usually does NOT qualify. Expect refusal by default: if it returns 'disable-model-invocation' that condition is not met, which is EXPECTED and NOT an error, and NOT a reason to stop and wait for a human. Note it can never succeed under /next, whose slash-command expansion hides the token. Fall back immediately to the project's own /diff-review skill, which an agent can always invoke. RECORDING EVIDENCE: /diff-review writes the marker itself as its last step. /code-review does NOT — if you used it, record the evidence yourself with: mkdir -p \"\$(git rev-parse --show-toplevel)/.cache/diff-review\" && touch \"\$(git rev-parse --show-toplevel)/.cache/diff-review/\$(git rev-parse HEAD)\" — do NOT reach for FRAPP_SKIP_REVIEW_GATE to get around a review you actually did, because that leaves a push indistinguishable from one that skipped review entirely; it is for emergencies only. RETRYING THIS PUSH WILL NOT SATISFY THE GATE: it is keyed on evidence, not attempts — only the marker .cache/diff-review/<HEAD_SHA> allows the push. Committing fixes changes HEAD and invalidates the marker by design, so the review always covers exactly what you push."
 
 printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":%s,"additionalContext":%s}}\n' \
   "$(json_escape "$reason")" \
