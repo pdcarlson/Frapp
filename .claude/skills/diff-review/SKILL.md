@@ -10,11 +10,21 @@ allowed-tools: Agent, Task, Read, Grep, Glob, Edit, Write, ReportFindings, Bash(
 
 # Review this branch's diff
 
-Frapp's pre-PR review gate, runnable by an agent. The bundled `/code-review` command is
-author-locked against model invocation (`disableModelInvocation` is hardcoded in the Claude Code
-binary, and `skillOverrides` cannot loosen an author lock), so an agent can never call it — only a
-human typing `/code-review` can. This skill is the agent-invocable equivalent. Humans should keep
-using `/code-review`, which is richer (cloud `ultra` mode, `--fix`, `--comment`).
+Frapp's pre-PR review gate — the review an agent can **always** run.
+
+**Try `/code-review` first.** The bundled command is richer (per-model-tuned effort cells, a
+workflow-backed verifier pass at `high`/`xhigh`/`max`, cloud `ultra` mode, `--fix`, `--comment`), and
+it is *conditionally* model-invocable: `Skill(skill: "code-review")` succeeds only when the current
+turn's prompt carries the token `/code-review` **whitespace-delimited on both sides** (regex
+`(?<!\S)/code-review(?=$|\s)`). Backticks, quotes, `**bold**`, and a trailing `.` or `,` all defeat
+it — so **expect refusal by default**, including on prompts that plainly read as asking for a review.
+If it returns `cannot be used with Skill tool due to disable-model-invocation`, that condition simply
+is not met — expected, not an error — so fall through to this skill. It is also always refused inside a sub-agent.
+Note that `/code-review` does **not** write the gate marker (Phase 4 below); this skill does.
+
+Use this skill when `/code-review` is refused, and for the Frapp-specific angles below, which the
+bundled command has no knowledge of. Full invocation rule:
+`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`.
 
 **Do not weaken this into a rubber stamp.** You are usually reviewing your own work, so the
 independent verification pass in Phase 2 is what makes the result trustworthy. Skipping it turns

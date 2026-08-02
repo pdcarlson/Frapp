@@ -169,8 +169,10 @@ These checks are also required for merge:
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires
-one review pass on the diff before the branch is pushed — **`/diff-review`** for agents, or the bundled
-`/code-review` for humans (it is author-locked against model invocation). Review sub-agents inherit the
+one review pass on the diff before the branch is pushed — **`/diff-review`**, which any agent can always
+invoke, or the richer bundled `/code-review`, which is model-invocable only when the turn's prompt carries
+`/code-review` whitespace-delimited on both sides (backticks and trailing punctuation defeat it) and
+does not write the gate marker. Review sub-agents inherit the
 session model (Opus). There is no `claude-review-gate` required check, no `claude-review.yml` workflow, and no
 `CLAUDE_CODE_OAUTH_TOKEN` secret.
 
