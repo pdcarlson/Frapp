@@ -1,13 +1,22 @@
 import {
+  ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
 import type { IFinancialInvoiceRepository } from '../../domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
 import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
+import {
+  BILLING_PROVIDER,
+  type IBillingProvider,
+  type PaymentIntentResult,
+} from '../../domain/adapters/billing.interface';
 import type {
   FinancialInvoice,
   InvoiceStatus,
@@ -37,13 +46,38 @@ const VALID_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   VOID: [],
 };
 
+// A stored PaymentIntent in any of these states can still be confirmed by the
+// member, so the pay endpoint returns it instead of minting a new one.
+const REUSABLE_INTENT_STATUSES = new Set([
+  'requires_payment_method',
+  'requires_confirmation',
+  'requires_action',
+  'processing',
+]);
+
+export interface InvoicePaymentIntent {
+  client_secret: string | null;
+  payment_intent_id: string;
+}
+
+export interface ApplyStripePaymentInput {
+  invoiceId: string;
+  chapterId: string;
+  paymentIntentId: string;
+  chargeId: string | null;
+}
+
 @Injectable()
 export class FinancialInvoiceService {
+  private readonly logger = new Logger(FinancialInvoiceService.name);
+
   constructor(
     @Inject(FINANCIAL_INVOICE_REPOSITORY)
     private readonly invoiceRepo: IFinancialInvoiceRepository,
     @Inject(FINANCIAL_TRANSACTION_REPOSITORY)
     private readonly transactionRepo: IFinancialTransactionRepository,
+    @Inject(BILLING_PROVIDER)
+    private readonly billingProvider: IBillingProvider,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -166,6 +200,128 @@ export class FinancialInvoiceService {
     }
 
     return updated;
+  }
+
+  /**
+   * Member-initiated payment: create (or reuse) a Stripe PaymentIntent for the
+   * caller's own OPEN invoice and return the client secret for confirmation.
+   * The invoice is marked PAID only by the payment_intent.succeeded webhook —
+   * never here.
+   */
+  async createPaymentIntent(
+    invoiceId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<InvoicePaymentIntent> {
+    const invoice = await this.findById(invoiceId, chapterId);
+
+    if (invoice.user_id !== userId) {
+      throw new ForbiddenException('You can only pay your own invoices');
+    }
+    if (invoice.status !== 'OPEN') {
+      throw new BadRequestException(
+        `Only OPEN invoices can be paid (current status: ${invoice.status})`,
+      );
+    }
+
+    let intent: PaymentIntentResult | null = null;
+    try {
+      if (invoice.stripe_payment_intent_id) {
+        const existing = await this.billingProvider.getPaymentIntent(
+          invoice.stripe_payment_intent_id,
+        );
+        if (existing.status === 'succeeded') {
+          // Money already moved; the webhook will (or did) flip the invoice.
+          throw new ConflictException(
+            'Payment already completed; confirmation is being processed',
+          );
+        }
+        if (REUSABLE_INTENT_STATUSES.has(existing.status)) {
+          intent = existing;
+        }
+        // canceled (or any other terminal state) falls through to a fresh
+        // intent that overwrites the stored id.
+      }
+
+      if (!intent) {
+        intent = await this.billingProvider.createPaymentIntent({
+          amount: invoice.amount,
+          currency: 'usd',
+          metadata: {
+            invoice_id: invoice.id,
+            chapter_id: chapterId,
+            user_id: invoice.user_id,
+          },
+        });
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      this.logger.error(
+        `Stripe PaymentIntent request failed for invoice ${invoiceId}: ${error instanceof Error ? error.message : error}`,
+      );
+      throw new ServiceUnavailableException(
+        'Payment provider is unavailable. Please try again.',
+      );
+    }
+
+    if (intent.id !== invoice.stripe_payment_intent_id) {
+      // Persist via the repo directly: service-level update() is DRAFT-only by
+      // design, and this write must land on an OPEN invoice.
+      await this.invoiceRepo.update(invoiceId, chapterId, {
+        stripe_payment_intent_id: intent.id,
+      });
+    }
+
+    return {
+      client_secret: intent.clientSecret,
+      payment_intent_id: intent.id,
+    };
+  }
+
+  /**
+   * Webhook-confirmed payment. Delegates to the apply_invoice_payment RPC,
+   * which compare-and-sets OPEN → PAID and inserts the ledger row (with the
+   * Stripe charge id) in one transaction — so duplicate deliveries and races
+   * with a manual admin PAID transition are idempotent no-ops here.
+   */
+  async applyStripePaymentSuccess(
+    input: ApplyStripePaymentInput,
+  ): Promise<void> {
+    const { invoiceId, chapterId, paymentIntentId, chargeId } = input;
+
+    const paid = await this.invoiceRepo.applyPayment(
+      invoiceId,
+      chapterId,
+      paymentIntentId,
+      chargeId,
+    );
+
+    if (!paid) {
+      // Missing, already PAID, or VOID. VOID is the loud case: the member
+      // completed a payment for an invoice an admin voided — real money with
+      // no ledger row, needs manual reconciliation.
+      const current = await this.invoiceRepo.findById(invoiceId, chapterId);
+      if (current?.status === 'VOID') {
+        this.logger.warn(
+          `payment_intent.succeeded for VOID invoice ${invoiceId} (chapter ${chapterId}, intent ${paymentIntentId}, charge ${chargeId ?? 'unknown'}) — payment captured with no ledger row; reconcile manually`,
+        );
+      } else {
+        this.logger.log(
+          `payment_intent.succeeded for invoice ${invoiceId} skipped (status: ${current?.status ?? 'missing'}) — duplicate delivery or already settled`,
+        );
+      }
+      return;
+    }
+
+    try {
+      await this.notificationService.notifyUser(paid.user_id, chapterId, {
+        title: 'Payment received',
+        body: `Your payment for "${paid.title}" was received.`,
+        priority: 'NORMAL',
+        category: 'billing',
+        data: { target: { screen: 'billing' } },
+      });
+    } catch {}
   }
 
   async getTransactions(chapterId: string) {

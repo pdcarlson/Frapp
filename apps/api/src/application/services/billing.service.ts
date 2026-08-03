@@ -13,7 +13,9 @@ import {
   type CheckoutSessionWebhookObject,
   type SubscriptionWebhookObject,
   type InvoiceWebhookObject,
+  type PaymentIntentWebhookObject,
 } from '../../domain/adapters/billing.interface';
+import { FinancialInvoiceService } from './financial-invoice.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import type {
@@ -53,6 +55,7 @@ export class BillingService {
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
     private readonly notificationService: NotificationService,
+    private readonly financialInvoiceService: FinancialInvoiceService,
   ) {}
 
   async getChapterBillingStatus(chapterId: string) {
@@ -156,6 +159,9 @@ export class BillingService {
         break;
       case 'invoice.paid':
         await this.handleInvoicePaid(event);
+        break;
+      case 'payment_intent.succeeded':
+        await this.handlePaymentIntentSucceeded(event);
         break;
       default:
         this.logger.debug(`Unhandled webhook event type: ${event.type}`);
@@ -327,6 +333,43 @@ export class BillingService {
       // status-change alerts are limited to the subscription updated/deleted paths.
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
+  }
+
+  /**
+   * Member dues payment confirmed (FRA-15). The PaymentIntent's metadata is
+   * written only by our pay endpoint and arrives inside a signature-verified
+   * event, so it is the authoritative invoice reference. Idempotency lives in
+   * the apply_invoice_payment CAS, not the chapter-level staleness mark —
+   * that mark orders *subscription* state and would misorder unrelated
+   * member payments.
+   */
+  private async handlePaymentIntentSucceeded(
+    event: WebhookEvent,
+  ): Promise<void> {
+    const intent = event.data.object as PaymentIntentWebhookObject;
+    const invoiceId = intent.metadata?.invoice_id;
+    const chapterId = intent.metadata?.chapter_id;
+
+    if (!invoiceId || !chapterId) {
+      // Not a member-invoice intent (e.g. a subscription checkout's intent).
+      this.logger.debug(
+        `payment_intent.succeeded without invoice metadata: ${event.id}`,
+      );
+      return;
+    }
+
+    const latestCharge = intent.latest_charge;
+    const chargeId =
+      typeof latestCharge === 'string'
+        ? latestCharge
+        : (latestCharge?.id ?? null);
+
+    await this.financialInvoiceService.applyStripePaymentSuccess({
+      invoiceId,
+      chapterId,
+      paymentIntentId: intent.id,
+      chargeId,
+    });
   }
 
   private async findChapterBySubscription(
