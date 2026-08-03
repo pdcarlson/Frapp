@@ -1,10 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
@@ -58,7 +60,25 @@ export class StudyService {
     private readonly sessionRepo: IStudySessionRepository,
     @Inject(POINT_TRANSACTION_REPOSITORY)
     private readonly pointTxnRepo: IPointTransactionRepository,
+    private readonly rbac: RbacService,
   ) {}
+
+  /**
+   * Alumni do not accrue study hours (`spec/behavior/alumni.md`). The study
+   * controller only requires `members:view`, which the Alumni role holds, so
+   * the lifecycle rule is enforced here at the service boundary — covering
+   * every session mutation rather than a single route.
+   */
+  private async assertNotAlumni(
+    chapterId: string,
+    userId: string,
+  ): Promise<void> {
+    if (await this.rbac.isAlumni(chapterId, userId)) {
+      throw new ForbiddenException(
+        'Alumni members cannot record study hours in this chapter',
+      );
+    }
+  }
 
   async listGeofences(chapterId: string): Promise<StudyGeofence[]> {
     return this.geofenceRepo.findByChapter(chapterId);
@@ -130,6 +150,8 @@ export class StudyService {
     lat: number,
     lng: number,
   ): Promise<StudySession> {
+    await this.assertNotAlumni(chapterId, userId);
+
     const geofence = await this.geofenceRepo.findById(geofenceId, chapterId);
     if (!geofence) {
       throw new NotFoundException('Geofence not found');
@@ -173,6 +195,8 @@ export class StudyService {
     lat: number,
     lng: number,
   ): Promise<StudySession> {
+    await this.assertNotAlumni(chapterId, userId);
+
     const session = await this.sessionRepo.findActiveByUserAndChapter(
       userId,
       chapterId,
@@ -219,6 +243,14 @@ export class StudyService {
   }
 
   async stopSession(userId: string, chapterId: string): Promise<StudySession> {
+    // Deliberately NOT gated by assertNotAlumni. Nothing else transitions a
+    // session out of ACTIVE — expiry is computed lazily inside heartbeat/stop,
+    // there is no sweeper — so 403-ing the stop would strand a session forever
+    // for anyone granted the Alumni role mid-session (graduation, semester
+    // rollover), and leave them unable to ever start another one. Alumni can
+    // always close a session; the award below is what's withheld.
+    const isAlumni = await this.rbac.isAlumni(chapterId, userId);
+
     const session = await this.sessionRepo.findActiveByUserAndChapter(
       userId,
       chapterId,
@@ -252,6 +284,7 @@ export class StudyService {
 
     let points = 0;
     if (
+      !isAlumni &&
       totalMinutes >= geofence.min_session_minutes &&
       !session.points_awarded
     ) {

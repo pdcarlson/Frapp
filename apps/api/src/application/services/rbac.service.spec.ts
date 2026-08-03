@@ -10,7 +10,10 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import {
+  ALUMNI_ROLE_NAME,
+  SystemPermissions,
+} from '../../domain/constants/permissions';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 
@@ -623,6 +626,89 @@ describe('RbacService', () => {
       const result = await service.getEffectivePermissions('ch-1', 'user-1');
 
       expect(result).toEqual([]);
+    });
+  });
+
+  // The Alumni role is a lifecycle marker, not a permission level: study hours,
+  // event check-in, and most chat posting are denied by holding it.
+  // See spec/behavior/alumni.md.
+  describe('isAlumni / hasAlumniRole', () => {
+    const alumniRole: Role = {
+      id: 'role-alumni',
+      chapter_id: 'ch-1',
+      name: ALUMNI_ROLE_NAME,
+      permissions: [SystemPermissions.MEMBERS_VIEW],
+      is_system: true,
+      display_order: 7,
+      color: '#6B7280',
+      created_at: '2024-01-01',
+    };
+
+    const memberWithRoles = (role_ids: string[]): Member => ({
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids,
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    it('returns true when the member holds the Alumni role', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        memberWithRoles(['role-alumni']),
+      );
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(true);
+      expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledWith(
+        'ch-1',
+        ALUMNI_ROLE_NAME,
+      );
+    });
+
+    it('returns false for an active member holding other roles', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        memberWithRoles(['role-member']),
+      );
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
+    });
+
+    it('returns false when the caller is not a member of the chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
+      // No role lookup needed when there is no membership.
+      expect(mockRoleRepo.findByChapterAndName).not.toHaveBeenCalled();
+    });
+
+    it('fails open to normal permissions when the chapter has no Alumni role', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        memberWithRoles(['role-alumni']),
+      );
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
+    });
+
+    it('hasAlumniRole resolves from caller-supplied role ids without a member lookup', async () => {
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+
+      await expect(
+        service.hasAlumniRole('ch-1', ['role-alumni']),
+      ).resolves.toBe(true);
+      expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+    });
+
+    it('hasAlumniRole short-circuits on empty or missing role ids', async () => {
+      await expect(service.hasAlumniRole('ch-1', [])).resolves.toBe(false);
+      await expect(service.hasAlumniRole('ch-1', null)).resolves.toBe(false);
+      await expect(service.hasAlumniRole('ch-1', undefined)).resolves.toBe(
+        false,
+      );
+      expect(mockRoleRepo.findByChapterAndName).not.toHaveBeenCalled();
     });
   });
 });

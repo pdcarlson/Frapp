@@ -27,7 +27,10 @@ describe('PollService', () => {
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockRbac: { getEffectivePermissions: jest.Mock };
+  let mockRbac: {
+    getEffectivePermissions: jest.Mock;
+    hasAlumniRole: jest.Mock;
+  };
   let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
@@ -116,7 +119,12 @@ describe('PollService', () => {
       delete: jest.fn(),
     };
 
-    mockRbac = { getEffectivePermissions: jest.fn() };
+    mockRbac = {
+      getEffectivePermissions: jest.fn(),
+      // Active (non-alumni) member by default; alumni posting is covered in
+      // channel-access.service.spec.ts.
+      hasAlumniRole: jest.fn().mockResolvedValue(false),
+    };
 
     // Default: caller is a chapter member with no extra permissions, and the
     // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).
@@ -734,6 +742,60 @@ describe('PollService', () => {
       const result = await service.listPolls('ch-1', { userId: 'ghost' });
 
       expect(result).toEqual([]);
+    });
+  });
+
+  // Alumni are restricted from *posting*, not from participating. Creating a
+  // poll authors a message into the channel; voting does not. These run through
+  // the real ChannelAccessService, so they cover the PollService → predicate
+  // wiring end to end. See spec/behavior/alumni.md.
+  describe('Alumni lifecycle', () => {
+    beforeEach(() => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'm-1',
+        role_ids: ['role-alumni'],
+      } as Member);
+      mockRbac.hasAlumniRole.mockResolvedValue(true);
+    });
+
+    it('denies an alumni member creating a poll in a PUBLIC channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+      await expect(
+        service.createPoll({
+          channelId: 'channel-1',
+          chapterId: 'ch-1',
+          senderId: 'user-2',
+          question: 'Pick one',
+          options: ['a', 'b'],
+        }),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockMessageRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('still lets an alumni member vote in a poll they can read', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
+      mockVoteRepo.create.mockResolvedValue(baseVote);
+
+      await service.vote('msg-1', 'user-2', 'ch-1', [1]);
+
+      expect(mockVoteRepo.create).toHaveBeenCalled();
+    });
+
+    it('still lets an alumni member retract a vote', async () => {
+      mockMessageRepo.findById.mockResolvedValue(basePollMessage);
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockVoteRepo.deleteByMessageAndUser.mockResolvedValue();
+
+      await service.removeVote('msg-1', 'user-2', 'ch-1');
+
+      expect(mockVoteRepo.deleteByMessageAndUser).toHaveBeenCalledWith(
+        'msg-1',
+        'user-2',
+      );
     });
   });
 });

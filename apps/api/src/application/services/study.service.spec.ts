@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { StudyService, pointInPolygon } from './study.service';
+import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
@@ -58,6 +60,7 @@ describe('StudyService', () => {
   let mockGeofenceRepo: jest.Mocked<IStudyGeofenceRepository>;
   let mockSessionRepo: jest.Mocked<IStudySessionRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
+  let mockRbac: { isAlumni: jest.Mock };
 
   const baseGeofence: StudyGeofence = {
     id: 'geo-1',
@@ -126,16 +129,107 @@ describe('StudyService', () => {
       countRecentAdjustments: jest.fn(),
     };
 
+    // Default to an active (non-alumni) member so existing cases are unaffected.
+    mockRbac = { isAlumni: jest.fn().mockResolvedValue(false) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudyService,
         { provide: STUDY_GEOFENCE_REPOSITORY, useValue: mockGeofenceRepo },
         { provide: STUDY_SESSION_REPOSITORY, useValue: mockSessionRepo },
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
     service = module.get(StudyService);
+  });
+
+  // Alumni accrue no study hours (spec/behavior/alumni.md). The study controller
+  // only requires members:view — which the Alumni role holds — so the denial has
+  // to happen in the service, on every session mutation.
+  describe('Alumni lifecycle restrictions', () => {
+    beforeEach(() => {
+      mockRbac.isAlumni.mockResolvedValue(true);
+    });
+
+    it('denies startSession for an alumni member', async () => {
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockRbac.isAlumni).toHaveBeenCalledWith('ch-1', 'user-1');
+      // Denied before any session is created.
+      expect(mockSessionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('denies heartbeat for an alumni member', async () => {
+      await expect(service.heartbeat('user-1', 'ch-1', 5, 5)).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(mockSessionRepo.update).not.toHaveBeenCalled();
+    });
+
+    // stopSession is deliberately NOT denied: nothing else moves a session out
+    // of ACTIVE, so 403-ing the stop would strand a session forever for anyone
+    // granted the Alumni role mid-session. They can close it, but earn nothing.
+    it('lets an alumni member close an in-flight session without awarding points', async () => {
+      const longSession: StudySession = {
+        ...baseSession,
+        total_foreground_minutes: 120,
+        last_heartbeat_at: new Date().toISOString(),
+      };
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(longSession);
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.update.mockResolvedValue({
+        ...longSession,
+        status: 'COMPLETED',
+      });
+
+      const result = await service.stopSession('user-1', 'ch-1');
+
+      // Session is closed out...
+      expect(mockSessionRepo.update).toHaveBeenCalledWith(
+        longSession.id,
+        expect.objectContaining({ status: 'COMPLETED', points_awarded: false }),
+      );
+      expect(result.status).toBe('COMPLETED');
+      // ...but the STUDY award is withheld, despite clearing min_session_minutes.
+      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('still awards points when an active member stops the same session', async () => {
+      mockRbac.isAlumni.mockResolvedValue(false);
+      const longSession: StudySession = {
+        ...baseSession,
+        total_foreground_minutes: 120,
+        last_heartbeat_at: new Date().toISOString(),
+      };
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(longSession);
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.update.mockResolvedValue(longSession);
+      mockPointTxnRepo.create.mockResolvedValue(basePointTxn);
+
+      await service.stopSession('user-1', 'ch-1');
+
+      expect(mockPointTxnRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ category: 'STUDY' }),
+      );
+    });
+
+    it('still allows an active member to start a session', async () => {
+      mockRbac.isAlumni.mockResolvedValue(false);
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
+      mockSessionRepo.create.mockResolvedValue(baseSession);
+
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).resolves.toEqual(baseSession);
+
+      expect(mockSessionRepo.create).toHaveBeenCalled();
+    });
   });
 
   describe('listGeofences', () => {

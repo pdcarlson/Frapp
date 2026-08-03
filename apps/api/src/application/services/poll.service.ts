@@ -103,13 +103,15 @@ export class PollService {
       throw new NotFoundException('Poll not found');
     }
 
-    // Voting writes into the poll's channel — authorize as a "post" before
-    // revealing anything about the poll (type, expiry, options).
+    // Voting writes into the poll's channel — authorize before revealing
+    // anything about the poll (type, expiry, options). "vote" clears the same
+    // read-only gate as posting but is exempt from the Alumni lifecycle rule:
+    // participating in a poll they can read is not posting.
     await this.channelAccess.assertChannelAccess(
       message.channel_id,
       chapterId,
       userId,
-      'post',
+      'vote',
     );
 
     if (message.type !== 'POLL') {
@@ -167,12 +169,14 @@ export class PollService {
       throw new NotFoundException('Poll not found');
     }
 
-    // Removing a vote mutates the poll's channel — authorize as a "post".
+    // Removing a vote mutates the poll's channel — authorize as a "vote"
+    // (same gates as posting, minus the Alumni lifecycle rule) so a vote that
+    // was allowed can always be retracted.
     await this.channelAccess.assertChannelAccess(
       message.channel_id,
       chapterId,
       userId,
-      'post',
+      'vote',
     );
 
     if (message.type !== 'POLL') {

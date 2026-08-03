@@ -53,6 +53,20 @@ export const SystemPermissions = {
 export type SystemPermission =
   (typeof SystemPermissions)[keyof typeof SystemPermissions];
 
+/**
+ * Name of the seeded Alumni system role.
+ *
+ * Alumni are a read-mostly lifecycle state rather than a permission level, so
+ * the restrictions the spec places on them (no points, no event check-in, no
+ * study hours, no posting outside `#alumni` / DMs) are resolved by role
+ * identity rather than by a permission string. See `spec/behavior/alumni.md`.
+ *
+ * NOTE: system roles can currently be renamed (`RbacService.update` only blocks
+ * *deleting* them), so this lookup is by convention. Tracked as a follow-up to
+ * give system roles a stable, rename-proof key.
+ */
+export const ALUMNI_ROLE_NAME = 'Alumni';
+
 export const DEFAULT_SYSTEM_ROLES = [
   {
     name: 'President',
@@ -121,7 +135,10 @@ export const DEFAULT_SYSTEM_ROLES = [
     color: null,
   },
   {
-    name: 'Alumni',
+    // Uses the shared constant so the seeded name and the lifecycle lookup in
+    // `RbacService` can never drift apart — a rename here would otherwise
+    // silently disable every Alumni restriction for new chapters.
+    name: ALUMNI_ROLE_NAME,
     permissions: [SystemPermissions.MEMBERS_VIEW],
     is_system: true,
     display_order: 7,

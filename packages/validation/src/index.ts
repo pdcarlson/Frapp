@@ -458,8 +458,15 @@ export interface ChannelAccessRecord {
   is_read_only?: boolean | null;
 }
 
-/** Operation the predicate is being consulted for. Defaults to "read". */
-export type ChannelOperation = "read" | "post";
+/**
+ * Operation the predicate is being consulted for. Defaults to "read".
+ *
+ * `"vote"` is a write that does not author channel content (poll votes). It
+ * clears the same read-only / `announcements:post` gate as `"post"`, but is
+ * deliberately **not** subject to the Alumni lifecycle rule — alumni are
+ * restricted from posting, not from participating in a poll they can read.
+ */
+export type ChannelOperation = "read" | "post" | "vote";
 
 /** Permission key that grants posting into a read-only channel (e.g. `#announcements`). */
 export const ANNOUNCEMENTS_POST_PERMISSION = "announcements:post";
@@ -481,7 +488,24 @@ export interface ChannelAccessInput {
    * `"post"` additionally enforces the read-only / announcements:post gate.
    */
   operation?: ChannelOperation;
+  /**
+   * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
+   * they keep full read access but may only post in the ROLE_GATED `#alumni`
+   * channel and in direct conversations. Only consulted when
+   * `operation === "post"`; omit (or `false`) for active members.
+   */
+  isAlumni?: boolean;
 }
+
+/**
+ * Channel types an Alumni-role member may post into. Alumni keep read access
+ * everywhere they can see, but writing is limited to the alumni channel
+ * (ROLE_GATED) and direct conversations. See `spec/behavior/alumni.md`.
+ */
+// Typed on construction so a typo is a compile error, but exposed as a
+// ReadonlySet<string> because `ChannelAccessRecord.type` is widened to string.
+export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
+  new Set<ChatChannelType>(["ROLE_GATED", "DM", "GROUP_DM"]);
 
 /**
  * Decide whether `userId` may access (read / participate in) `channel`.
@@ -493,10 +517,16 @@ export interface ChannelAccessInput {
  *   empty/absent requirement list means any chapter member may access it.
  * - Unknown channel type: denied (guarded default — never falls open).
  *
- * When `operation === "post"`, the read check above must pass AND the
- * channel must either not be read-only, or the caller must hold `"*"` or
- * `"announcements:post"`. Existing callers default to `"read"`, so the
+ * When `operation` is a write (`"post"` or `"vote"`), the read check above must
+ * pass AND the channel must either not be read-only, or the caller must hold
+ * `"*"` or `"announcements:post"`. Existing callers default to `"read"`, so the
  * predicate stays backward-compatible.
+ *
+ * When `operation === "post"` and `isAlumni` is set, the caller is additionally
+ * limited to the alumni channel and direct conversations — alumni read
+ * everywhere they can see but do not author content in operational channels.
+ * `"*"` (President) still bypasses, so a chapter cannot lock itself out.
+ * `"vote"` is exempt: participating in a poll is not posting.
  */
 export function canAccessChannel(input: ChannelAccessInput): boolean {
   const { channel, userId, isChapterMember, permissions } = input;
@@ -529,9 +559,24 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   if (!canRead) return false;
   if (operation === "read") return true;
 
+  const isPresident = permissions.includes("*");
+
+  // Alumni lifecycle: read-mostly. They may only write in the alumni channel
+  // and direct conversations, never in operational PUBLIC/PRIVATE channels.
+  // Only authored content ("post") is restricted — "vote" is participation in
+  // something they can already read, so it stays open.
+  if (
+    operation === "post" &&
+    input.isAlumni &&
+    !isPresident &&
+    !ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type)
+  ) {
+    return false;
+  }
+
   // operation === "post": gate read-only channels behind announcements:post / *.
   if (!channel.is_read_only) return true;
-  if (permissions.includes("*")) return true;
+  if (isPresident) return true;
   return permissions.includes(ANNOUNCEMENTS_POST_PERMISSION);
 }
 

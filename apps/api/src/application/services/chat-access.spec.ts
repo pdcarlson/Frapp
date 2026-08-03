@@ -219,4 +219,110 @@ describe('canAccessChannel', () => {
       expect(canAccessChannel({ ...base, channel: readOnly })).toBe(true);
     });
   });
+
+  // Alumni keep read access everywhere they can see, but may only write in the
+  // alumni channel and direct conversations. See spec/behavior/alumni.md.
+  describe('isAlumni posting restrictions', () => {
+    const alumni = { ...base, isAlumni: true };
+
+    it.each(['PUBLIC', 'PRIVATE'] as const)(
+      'denies an alumni post in an operational %s channel',
+      (type) => {
+        expect(
+          canAccessChannel({
+            ...alumni,
+            channel: {
+              type,
+              member_ids: ['user-1'],
+              required_permissions: null,
+              is_read_only: false,
+            },
+            operation: 'post',
+          }),
+        ).toBe(false);
+      },
+    );
+
+    it.each(['PUBLIC', 'PRIVATE'] as const)(
+      'still allows an alumni member to read a %s channel',
+      (type) => {
+        expect(
+          canAccessChannel({
+            ...alumni,
+            channel: {
+              type,
+              member_ids: ['user-1'],
+              required_permissions: null,
+              is_read_only: false,
+            },
+            operation: 'read',
+          }),
+        ).toBe(true);
+      },
+    );
+
+    it.each(['ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
+      'allows an alumni post in a %s channel',
+      (type) => {
+        expect(
+          canAccessChannel({
+            ...alumni,
+            channel: {
+              type,
+              member_ids: ['user-1'],
+              required_permissions: null,
+              is_read_only: false,
+            },
+            operation: 'post',
+          }),
+        ).toBe(true);
+      },
+    );
+
+    it('still applies the read-only gate inside an alumni-postable channel', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: null,
+            is_read_only: true,
+          },
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('lets a wildcard holder bypass the alumni restriction', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          permissions: ['*'],
+          channel: {
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+            is_read_only: false,
+          },
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+
+    it('does not affect active members (isAlumni omitted)', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          channel: {
+            type: 'PUBLIC',
+            member_ids: null,
+            required_permissions: null,
+            is_read_only: false,
+          },
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+  });
 });
