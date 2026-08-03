@@ -64,6 +64,15 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-08-03: Invoice payment RPC + idempotency indexes (FRA-15)
+* **Migration**: `20260803120000_invoice_payment_rpc_and_indexes.sql`
+* **Purpose**: Adds `apply_invoice_payment(uuid, uuid, text, text)` — a compare-and-set that moves an `OPEN` invoice to `PAID` and inserts its `PAYMENT` ledger row (with the Stripe charge id) in one transaction — plus two partial unique indexes on `financial_invoices.stripe_payment_intent_id` and `financial_transactions.stripe_charge_id` (PAYMENT rows). Both the Stripe webhook and the admin manual-PAID path call the function, which is what makes their race safe in both directions per `spec/behavior/billing.md`.
+* **Safety**: Additive — one `create or replace function` and two `create unique index if not exists`. No columns, no data changes, no destructive DDL. Both indexed columns were never written before this change set, so the indexes cannot conflict with existing rows. `security invoker`, with EXECUTE revoked from `public`/`anon`/`authenticated` and granted to `service_role`; the role statements are guarded on `pg_roles` existence, so the file also applies on bare Postgres / PGlite.
+* **Order**: Apply **before** deploying the API build that contains FRA-15 — the new code calls the function on the webhook path, and a missing function surfaces as a 500 that Stripe retries for up to ~72h. The migration is harmless ahead of the deploy (nothing calls it yet).
+* **Checks**: After `db push`, `select proname from pg_proc where proname = 'apply_invoice_payment';` returns 1 row; `select has_function_privilege('service_role', 'public.apply_invoice_payment(uuid, uuid, text, text)', 'execute');` returns `true` and the same for `anon`/`authenticated` returns `false`; `select indexname from pg_indexes where indexname in ('idx_financial_invoices_payment_intent','idx_financial_transactions_payment_charge');` returns both. Post-deploy, a member dues payment should move the invoice to `PAID` and leave exactly one `financial_transactions` row with a non-null `stripe_charge_id`; a webhook redelivery must not add a second.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the invoice payment RPC + indexes.
+
 ## 2026-08-02: Active-chapter JWT claim — `custom_access_token_hook` (FRA-303)
 * **Migration**: `20260802120000_active_chapter_jwt_claim.sql`
 * **Purpose**: Adds `users.active_chapter_id uuid references chapters(id) on delete set null` and the `public.custom_access_token_hook(event jsonb)` auth hook that stamps it into every issued access token as the top-level `active_chapter_id` claim. This is the authoritative chapter context `ChapterGuard` reconciles against per `spec/behavior/multi-tenancy.md`; before it, the client-supplied `x-chapter-id` header was the only source.
