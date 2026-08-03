@@ -9,7 +9,11 @@ import type { IChatChannelRepository } from '../../domain/repositories/chat.repo
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
-import { canAccessChannel } from '@repo/validation';
+import {
+  ALUMNI_POSTABLE_CHANNEL_TYPES,
+  canAccessChannel,
+} from '@repo/validation';
+import type { ChannelOperation } from '@repo/validation';
 import { RbacService } from './rbac.service';
 
 /**
@@ -42,7 +46,7 @@ export class ChannelAccessService {
     channelId: string,
     chapterId: string,
     userId: string,
-    operation: 'read' | 'post' = 'read',
+    operation: ChannelOperation = 'read',
   ): Promise<ChatChannel> {
     const channel = await this.channelRepo.findById(channelId, chapterId);
     if (!channel) {
@@ -56,21 +60,28 @@ export class ChannelAccessService {
     const isChapterMember = Boolean(member);
 
     // Alumni are read-mostly (`spec/behavior/alumni.md`): resolve the lifecycle
-    // flag only for writes, so reads stay a single membership lookup. Reuses
-    // the member row already fetched above rather than re-querying it.
-    const isAlumni =
-      operation === 'post'
-        ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
-        : false;
+    // flag only when it can change the outcome — an authored post into a
+    // channel type alumni are not allowed to write in. Reads, votes, and posts
+    // into always-postable types (DMs, the alumni channel) skip the lookup, so
+    // the chat hot path adds no query for them. Reuses the member row already
+    // fetched above rather than re-querying it.
+    const alumniRuleCouldApply =
+      isChapterMember &&
+      operation === 'post' &&
+      !ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type);
+    const isAlumni = alumniRuleCouldApply
+      ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
+      : false;
 
-    // For "post" against a read-only channel (#announcements, #chapter-audit)
+    // For a write against a read-only channel (#announcements, #chapter-audit)
     // we need to evaluate the caller's permissions even on a PUBLIC channel
-    // so the announcements:post gate can fire. Alumni writes need them too, so
+    // so the announcements:post gate can fire. Alumni posts need them too, so
     // a President who also carries the Alumni role still bypasses (wildcard).
     const needsPermissions =
       isChapterMember &&
       (channel.type === 'ROLE_GATED' ||
-        (operation === 'post' && (channel.is_read_only === true || isAlumni)));
+        (operation !== 'read' && channel.is_read_only === true) ||
+        isAlumni);
     const permissions = needsPermissions
       ? await this.rbac.getEffectivePermissions(chapterId, userId)
       : [];

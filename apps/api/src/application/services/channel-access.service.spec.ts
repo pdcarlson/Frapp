@@ -51,7 +51,9 @@ describe('ChannelAccessService', () => {
     is_read_only: true,
   };
 
-  const member = { id: 'm-1' } as Member;
+  // Carries real role_ids: the alumni lookup is fed from this row, and a test
+  // that leaves them undefined cannot tell a correct call from a garbage one.
+  const member = { id: 'm-1', role_ids: ['role-alumni'] } as Member;
 
   beforeEach(async () => {
     mockChannelRepo = {
@@ -274,6 +276,53 @@ describe('ChannelAccessService', () => {
       );
 
       expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+    });
+
+    // Regression guard: without asserting the ARGUMENTS, the lookup can be
+    // silently mis-wired (wrong chapter, wrong role ids) so every alumni
+    // resolves to "not alumni" — disabling the whole restriction while the
+    // suite stays green. Mutation-tested: this is the test that catches it.
+    it("resolves the alumni role against the caller's own chapter and roles", async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'post'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockRbac.hasAlumniRole).toHaveBeenCalledWith(
+        'chap-1',
+        member.role_ids,
+      );
+    });
+
+    it('skips the alumni lookup for always-postable channel types', async () => {
+      mockChannelRepo.findById.mockResolvedValue(dmChannel);
+
+      await service.assertChannelAccess('ch-dm', 'chap-1', 'user-1', 'post');
+
+      // A DM is postable by alumni regardless, so the extra round trip on the
+      // chat hot path is not worth paying.
+      expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+    });
+
+    // "vote" is a write, but participating in a poll is not posting.
+    it('does not apply the alumni restriction to votes', async () => {
+      mockChannelRepo.findById.mockResolvedValue(publicChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-public', 'chap-1', 'user-1', 'vote'),
+      ).resolves.toBe(publicChannel);
+
+      expect(mockRbac.hasAlumniRole).not.toHaveBeenCalled();
+    });
+
+    it('still enforces the read-only gate on a vote', async () => {
+      mockChannelRepo.findById.mockResolvedValue(readOnlyChannel);
+      mockRbac.getEffectivePermissions.mockResolvedValue([]);
+
+      await expect(
+        service.assertChannelAccess('ch-announce', 'chap-1', 'user-1', 'vote'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 

@@ -56,6 +56,12 @@ Permissions are never cached across requests. Each request freshly resolves the 
 
 The same resolution backs `GET /v1/users/me/permissions` (the effective-permission set clients use to render permission-aware UI), so the chapter filter applies there too.
 
+### Lifecycle rules are separate from permissions
+
+A permission answers "may this member do X?"; a **lifecycle rule** answers "is this member still an active participant?". The two are enforced independently, and passing the permission check above does not imply a lifecycle rule allows the action.
+
+The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.md)), which blocks study-hour accrual, event check-in, and posting outside `#alumni` / DMs. It is deliberately not modelled as a permission: the seeded Alumni permission set is `members:view`, exactly what active members hold, so widening or narrowing permissions could not express it — and the study controller's `members:view` requirement is satisfied by alumni, which is why the rule is enforced in the domain services rather than in `PermissionsGuard`. Holding the role is what restricts, so a member who still needs to act operationally should not carry it.
+
 ## Role Lifecycle
 
 - On chapter creation, **default system roles** are seeded: President (`*`), Treasurer, Vice President, Secretary, Member, New Member, Alumni. Each has a sensible default permission set.
@@ -68,6 +74,7 @@ The same resolution backs `GET /v1/users/me/permissions` (the effective-permissi
   - **New Member:** `members:view`, `backwork:upload`.
   - **Alumni:** `members:view`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
+  - **Caveat — the Alumni role is resolved by name.** The Alumni lifecycle restrictions (see [`alumni.md`](alumni.md)) are *not* permission-based: they key on whether a member holds the role literally named `Alumni`. Renaming that role therefore silently disables those restrictions chapter-wide — alumni regain study-hour accrual, event check-in, and posting in every channel — and reattaching the freed name to another role would restrict its holders instead. Giving system roles a stable, rename-proof key is tracked as follow-up work; until then, do not rename the Alumni role.
 - Chapter admins with `roles:manage` can create unlimited **custom roles**.
 - Role **create, update, and delete** are scoped to the caller's active chapter (per the multi-tenancy invariant): update/delete load the target role and verify its `chapter_id` matches the active chapter, returning `403 Forbidden` when a role ID from another chapter is supplied.
 - Roles have a **display_order** (integer, for UI sorting) and an optional **color** (hex string, for chat name colors like Discord).

@@ -14,7 +14,7 @@
 - Check-in is only available during the event's time window (between start_time and end_time, with a configurable grace period after end_time, default 15 minutes).
 - Unique constraint: one attendance record per (event, user) — enforced inside `check_in_event` via `on conflict do nothing`, so a concurrent double check-in inserts nothing and returns 409 Conflict without a double award. See [points.md](points.md) for the atomicity invariant.
 - For role-targeted events, only members with matching roles can check in. Members without the required role who attempt to check in receive a 403 Forbidden.
-- Alumni-role members cannot check in to events and receive a 403 Forbidden, checked before the attendance + points write. See [alumni.md](alumni.md).
+- Alumni-role members cannot check in and receive a 403 Forbidden, checked before the attendance + points write — **unless** the event names roles in `required_role_ids` and the alumnus matches, which is an explicit decision to include them (e.g. an alumni homecoming). See [alumni.md](alumni.md).
 
 ## Attendance Management
 
@@ -22,7 +22,7 @@
 - **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason string. Members cannot self-submit excuses. Excused members are not penalized for mandatory events and do not appear as ABSENT in reports.
 - Admins can also manually mark members as ABSENT or LATE after the event.
 - Marking a member ABSENT who previously checked in (PRESENT) does NOT reverse the points already awarded. The admin must separately create a point adjustment if needed.
-- **Auto-absent:** For mandatory or role-targeted events, members who are required to attend but did not check in and were not marked EXCUSED are auto-marked ABSENT after the grace period ends.
+- **Auto-absent:** For mandatory or role-targeted events, members who are required to attend but did not check in and were not marked EXCUSED are auto-marked ABSENT after the grace period ends. Alumni-role members are excluded on non-targeted events — they can neither check in nor self-excuse, so marking them would guarantee an ABSENT record they have no way to avoid. A role-targeted event keeps whoever it names, alumni included.
 
 ## Edge Cases
 

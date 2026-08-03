@@ -135,7 +135,10 @@ export const DEFAULT_SYSTEM_ROLES = [
     color: null,
   },
   {
-    name: 'Alumni',
+    // Uses the shared constant so the seeded name and the lifecycle lookup in
+    // `RbacService` can never drift apart — a rename here would otherwise
+    // silently disable every Alumni restriction for new chapters.
+    name: ALUMNI_ROLE_NAME,
     permissions: [SystemPermissions.MEMBERS_VIEW],
     is_system: true,
     display_order: 7,

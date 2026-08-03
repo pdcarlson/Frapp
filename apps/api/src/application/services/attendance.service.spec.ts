@@ -22,7 +22,7 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockRbac: { isAlumni: jest.Mock };
+  let mockRbac: { isAlumni: jest.Mock; getAlumniRoleId: jest.Mock };
 
   const baseEvent: Event = {
     id: 'evt-1',
@@ -82,7 +82,10 @@ describe('AttendanceService', () => {
     };
 
     // Default to an active (non-alumni) member so existing cases are unaffected.
-    mockRbac = { isAlumni: jest.fn().mockResolvedValue(false) };
+    mockRbac = {
+      isAlumni: jest.fn().mockResolvedValue(false),
+      getAlumniRoleId: jest.fn().mockResolvedValue(null),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -119,6 +122,87 @@ describe('AttendanceService', () => {
       expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
 
       jest.useRealTimers();
+    });
+
+    // An event that names roles is an explicit decision about who attends, so
+    // an alumni-facing event (homecoming) must stay reachable by alumni.
+    it('allows alumni check-in to an event that explicitly targets their role', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      const alumniEvent: Event = {
+        ...baseEvent,
+        required_role_ids: ['role-alumni'],
+      };
+      const alumniMember: Member = {
+        id: 'member-1',
+        user_id: 'user-1',
+        chapter_id: 'ch-1',
+        role_ids: ['role-alumni'],
+        has_completed_onboarding: true,
+        created_at: '2026-02-01T00:00:00.000Z',
+        updated_at: '2026-02-01T00:00:00.000Z',
+      };
+
+      mockRbac.isAlumni.mockResolvedValue(true);
+      mockEventRepo.findById.mockResolvedValue(alumniEvent);
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(alumniMember);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+      expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
+
+    // Alumni can neither check in nor self-excuse, so auto-absent must not hand
+    // them a guaranteed ABSENT record on every mandatory event.
+    it('excludes alumni from auto-absent marking on a non-targeted event', async () => {
+      const mandatoryEvent: Event = {
+        ...baseEvent,
+        is_mandatory: true,
+        required_role_ids: null,
+      };
+      const activeMember: Member = {
+        id: 'member-1',
+        user_id: 'user-active',
+        chapter_id: 'ch-1',
+        role_ids: ['role-member'],
+        has_completed_onboarding: true,
+        created_at: '2026-02-01T00:00:00.000Z',
+        updated_at: '2026-02-01T00:00:00.000Z',
+      };
+      const alumniMember: Member = {
+        ...activeMember,
+        id: 'member-2',
+        user_id: 'user-alumni',
+        role_ids: ['role-alumni'],
+      };
+
+      mockEventRepo.findById.mockResolvedValue(mandatoryEvent);
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        activeMember,
+        alumniMember,
+      ]);
+      mockAttendanceRepo.findByEvent.mockResolvedValue([]);
+      mockRbac.getAlumniRoleId.mockResolvedValue('role-alumni');
+      mockAttendanceRepo.createMany.mockImplementation(
+        async (rows: unknown[]) => rows,
+      );
+
+      const result = await service.markAutoAbsent('evt-1', 'ch-1');
+
+      expect(mockRbac.getAlumniRoleId).toHaveBeenCalledWith('ch-1');
+      expect(result).toEqual({ marked: 1 });
+      const rows = mockAttendanceRepo.createMany.mock.calls[0][0];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toEqual(
+        expect.objectContaining({ user_id: 'user-active', status: 'ABSENT' }),
+      );
     });
   });
 

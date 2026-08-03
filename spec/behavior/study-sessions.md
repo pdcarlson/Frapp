@@ -41,4 +41,4 @@ While a study session is active, the app displays a dedicated study mode screen:
 - If the app is force-killed or the device loses power, the heartbeat stops and the session expires after the stale-heartbeat timeout (10 minutes). The user is notified and can start a new session.
 - If the user's GPS is spoofed or unreliable (accuracy > 100m), the heartbeat is rejected and the session is flagged. After 2 consecutive rejected heartbeats, the session is expired with status `LOCATION_INVALID`.
 - A user can only have one active study session at a time. Starting a new session while one is active returns 409 Conflict.
-- Alumni-role members cannot record study hours. Start, heartbeat, and stop all return 403 Forbidden, so no STUDY points are awarded. See [alumni.md](alumni.md).
+- Alumni-role members cannot record study hours: start and heartbeat return 403 Forbidden, so no minutes accrue and no STUDY points are awarded. Stopping is still permitted — nothing else transitions a session out of ACTIVE, so denying it would strand a session forever for someone granted the Alumni role mid-session. Their stop completes the session with zero points. See [alumni.md](alumni.md).

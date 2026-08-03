@@ -243,7 +243,13 @@ export class StudyService {
   }
 
   async stopSession(userId: string, chapterId: string): Promise<StudySession> {
-    await this.assertNotAlumni(chapterId, userId);
+    // Deliberately NOT gated by assertNotAlumni. Nothing else transitions a
+    // session out of ACTIVE — expiry is computed lazily inside heartbeat/stop,
+    // there is no sweeper — so 403-ing the stop would strand a session forever
+    // for anyone granted the Alumni role mid-session (graduation, semester
+    // rollover), and leave them unable to ever start another one. Alumni can
+    // always close a session; the award below is what's withheld.
+    const isAlumni = await this.rbac.isAlumni(chapterId, userId);
 
     const session = await this.sessionRepo.findActiveByUserAndChapter(
       userId,
@@ -278,6 +284,7 @@ export class StudyService {
 
     let points = 0;
     if (
+      !isAlumni &&
       totalMinutes >= geofence.min_session_minutes &&
       !session.points_awarded
     ) {

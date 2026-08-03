@@ -162,17 +162,6 @@ export class RbacService {
   }
 
   /**
-   * Resolve a caller's effective permission set for a chapter.
-   *
-   * Mirrors the flattening logic in `PermissionsGuard` so web and mobile
-   * clients can render permission-aware UI (hide nav items, disable actions,
-   * route users to `/no-access`) without making one request per role or
-   * duplicating RBAC rules in client code. Wildcard `*` passes through so the
-   * caller can short-circuit rendering for Presidents. Role ids resolve within
-   * `chapterId`, as in the guard, so what the client renders can never be
-   * widened by a role id belonging to another chapter.
-   */
-  /**
    * Whether `userId` holds the chapter's Alumni system role.
    *
    * Alumni are read-mostly: the spec excludes them from points accumulation,
@@ -197,7 +186,9 @@ export class RbacService {
   /**
    * {@link isAlumni} for callers that already hold the member's role ids —
    * notably the chat hot path, which looks the member up to decide channel
-   * access and must not pay for a second round trip on every message.
+   * access and must not re-fetch it on every message. Still costs the role
+   * lookup itself, so callers should only reach for it when the answer can
+   * change the outcome.
    */
   async hasAlumniRole(
     chapterId: string,
@@ -205,15 +196,37 @@ export class RbacService {
   ): Promise<boolean> {
     if (!roleIds?.length) return false;
 
+    const alumniRoleId = await this.getAlumniRoleId(chapterId);
+    if (!alumniRoleId) return false;
+
+    return roleIds.includes(alumniRoleId);
+  }
+
+  /**
+   * Id of the chapter's Alumni role, or `null` when it has none (renamed or
+   * deleted). Exposed for callers that classify a batch of members rather than
+   * asking about one — e.g. excluding alumni from auto-absent marking — so they
+   * resolve the role once instead of per member.
+   */
+  async getAlumniRoleId(chapterId: string): Promise<string | null> {
     const alumniRole = await this.roleRepo.findByChapterAndName(
       chapterId,
       ALUMNI_ROLE_NAME,
     );
-    if (!alumniRole) return false;
-
-    return roleIds.includes(alumniRole.id);
+    return alumniRole?.id ?? null;
   }
 
+  /**
+   * Resolve a caller's effective permission set for a chapter.
+   *
+   * Mirrors the flattening logic in `PermissionsGuard` so web and mobile
+   * clients can render permission-aware UI (hide nav items, disable actions,
+   * route users to `/no-access`) without making one request per role or
+   * duplicating RBAC rules in client code. Wildcard `*` passes through so the
+   * caller can short-circuit rendering for Presidents. Role ids resolve within
+   * `chapterId`, as in the guard, so what the client renders can never be
+   * widened by a role id belonging to another chapter.
+   */
   async getEffectivePermissions(
     chapterId: string,
     userId: string,

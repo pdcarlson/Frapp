@@ -797,6 +797,21 @@ describe('ChatService', () => {
         service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated'),
       ).rejects.toThrow(BadRequestException);
     });
+
+    // An edit writes new member-authored content into the channel, so it must
+    // clear the same post-side gates as sending. Otherwise the alumni rule and
+    // the read-only gate are both bypassable by editing an older message
+    // instead of sending a new one.
+    it('blocks an alumni member from rewriting their own message in an operational channel', async () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockRbac.hasAlumniRole.mockResolvedValue(true);
+
+      await expect(
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Rewritten'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('deleteMessage', () => {

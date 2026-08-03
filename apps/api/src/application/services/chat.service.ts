@@ -502,16 +502,28 @@ export class ChatService {
    * Authorize a caller for a message by resolving message → channel → chapter,
    * then delegating to {@link assertChannelAccess}. A message in a channel the
    * caller cannot see (or in another chapter) is rejected.
+   *
+   * `operation` defaults to `'read'`, which is right for actions that don't
+   * author channel content (delete, pin, react, vote). Pass `'post'` for
+   * anything that writes member-authored content into the channel — otherwise
+   * the post-side gates (read-only channels, the Alumni lifecycle rule) are
+   * bypassed by editing an existing message instead of sending a new one.
    */
   private async assertMessageAccess(
     messageId: string,
     chapterId: string,
     userId: string,
+    operation: 'read' | 'post' = 'read',
   ): Promise<ChatMessage> {
     const message = await this.messageRepo.findById(messageId);
     if (!message) throw new NotFoundException('Message not found');
     try {
-      await this.assertChannelAccess(message.channel_id, chapterId, userId);
+      await this.assertChannelAccess(
+        message.channel_id,
+        chapterId,
+        userId,
+        operation,
+      );
     } catch (error) {
       // A message whose channel is in another chapter surfaces as a
       // channel-level 404 — normalize it so callers cannot distinguish
@@ -532,10 +544,15 @@ export class ChatService {
   ): Promise<ChatMessage> {
     // Ownership alone is not enough: a member removed from another chapter
     // would still pass the sender check on their historical messages there.
+    // Authorized as a "post" — an edit writes new member-authored content into
+    // the channel, so it must clear the same gates as sending. Otherwise an
+    // alumnus (or a member in a read-only channel) could rewrite an older
+    // message of theirs to arbitrary text and broadcast it.
     const message = await this.assertMessageAccess(
       messageId,
       chapterId,
       senderId,
+      'post',
     );
 
     if (message.sender_id !== senderId) {

@@ -34,15 +34,6 @@ export class AttendanceService {
     userId: string,
     chapterId: string,
   ): Promise<EventAttendance> {
-    // Alumni do not check in to events or accrue attendance points
-    // (`spec/behavior/alumni.md`). The check-in route carries no permission
-    // requirement, so the lifecycle rule is enforced here.
-    if (await this.rbac.isAlumni(chapterId, userId)) {
-      throw new ForbiddenException(
-        'Alumni members cannot check in to chapter events',
-      );
-    }
-
     const event = await this.eventRepo.findById(eventId, chapterId);
     if (!event) {
       throw new NotFoundException('Event not found');
@@ -66,7 +57,8 @@ export class AttendanceService {
     }
 
     // If the event targets specific roles, only members with matching roles can check in.
-    if (event.required_role_ids && event.required_role_ids.length > 0) {
+    const isRoleTargeted = Boolean(event.required_role_ids?.length);
+    if (isRoleTargeted) {
       const member = await this.memberRepo.findByUserAndChapter(
         userId,
         chapterId,
@@ -75,7 +67,7 @@ export class AttendanceService {
         throw new ForbiddenException('You are not a member of this chapter');
       }
 
-      const hasRequiredRole = event.required_role_ids.some((roleId) =>
+      const hasRequiredRole = event.required_role_ids!.some((roleId) =>
         member.role_ids.includes(roleId),
       );
       if (!hasRequiredRole) {
@@ -83,6 +75,19 @@ export class AttendanceService {
           'You are not eligible to check in for this event',
         );
       }
+    }
+
+    // Alumni do not check in to events or accrue attendance points
+    // (`spec/behavior/alumni.md`), and the route carries no permission
+    // requirement, so the lifecycle rule is enforced here. A role-targeted
+    // event is an explicit chapter decision about who attends — an
+    // alumni-facing event (homecoming) lists the Alumni role in
+    // `required_role_ids`, and the check above already proved the caller
+    // matches — so the lifecycle rule does not override it.
+    if (!isRoleTargeted && (await this.rbac.isAlumni(chapterId, userId))) {
+      throw new ForbiddenException(
+        'Alumni members cannot check in to chapter events',
+      );
     }
 
     const existing = await this.attendanceRepo.findByEventAndUser(
@@ -193,7 +198,14 @@ export class AttendanceService {
         m.role_ids.some((roleId) => requiredRoleIdSet.has(roleId)),
       );
     } else {
-      requiredMembers = allMembers;
+      // Alumni cannot check in to a non-targeted event and cannot self-excuse,
+      // so including them here would hand every alumnus a guaranteed ABSENT
+      // record on every mandatory event. A role-targeted event is filtered
+      // above and keeps whoever it names, alumni included.
+      const alumniRoleId = await this.rbac.getAlumniRoleId(chapterId);
+      requiredMembers = alumniRoleId
+        ? allMembers.filter((m) => !m.role_ids.includes(alumniRoleId))
+        : allMembers;
     }
 
     const existingRecords = await this.attendanceRepo.findByEvent(eventId);
