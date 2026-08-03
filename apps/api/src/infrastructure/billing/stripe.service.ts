@@ -72,7 +72,9 @@ export class StripeBillingService implements IBillingProvider {
     return this.toPaymentIntentResult(intent);
   }
 
-  async getPaymentIntent(paymentIntentId: string): Promise<PaymentIntentResult> {
+  async getPaymentIntent(
+    paymentIntentId: string,
+  ): Promise<PaymentIntentResult> {
     const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
     return this.toPaymentIntentResult(intent);
   }
@@ -84,7 +86,9 @@ export class StripeBillingService implements IBillingProvider {
     // depending on payload expansion.
     const latestCharge = intent.latest_charge;
     const latestChargeId =
-      typeof latestCharge === 'string' ? latestCharge : (latestCharge?.id ?? null);
+      typeof latestCharge === 'string'
+        ? latestCharge
+        : (latestCharge?.id ?? null);
     return {
       id: intent.id,
       status: intent.status,
