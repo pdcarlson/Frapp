@@ -11,7 +11,10 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { Role } from '../../domain/entities/role.entity';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import {
+  ALUMNI_ROLE_NAME,
+  SystemPermissions,
+} from '../../domain/constants/permissions';
 
 @Injectable()
 export class RbacService {
@@ -169,6 +172,48 @@ export class RbacService {
    * `chapterId`, as in the guard, so what the client renders can never be
    * widened by a role id belonging to another chapter.
    */
+  /**
+   * Whether `userId` holds the chapter's Alumni system role.
+   *
+   * Alumni are read-mostly: the spec excludes them from points accumulation,
+   * event check-in, and study hours, and limits their chat posting to
+   * `#alumni` and direct conversations (`spec/behavior/alumni.md`). This is a
+   * lifecycle check, not a permission check — holding the role is what
+   * restricts, so a member who still needs to act operationally should not
+   * carry it.
+   *
+   * Returns `false` when the chapter has no Alumni role or the caller is not a
+   * member, so callers fail open to their normal permission checks rather than
+   * locking everyone out of a chapter whose Alumni role was renamed/removed.
+   */
+  async isAlumni(chapterId: string, userId: string): Promise<boolean> {
+    const member = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    return this.hasAlumniRole(chapterId, member?.role_ids);
+  }
+
+  /**
+   * {@link isAlumni} for callers that already hold the member's role ids —
+   * notably the chat hot path, which looks the member up to decide channel
+   * access and must not pay for a second round trip on every message.
+   */
+  async hasAlumniRole(
+    chapterId: string,
+    roleIds: string[] | null | undefined,
+  ): Promise<boolean> {
+    if (!roleIds?.length) return false;
+
+    const alumniRole = await this.roleRepo.findByChapterAndName(
+      chapterId,
+      ALUMNI_ROLE_NAME,
+    );
+    if (!alumniRole) return false;
+
+    return roleIds.includes(alumniRole.id);
+  }
+
   async getEffectivePermissions(
     chapterId: string,
     userId: string,

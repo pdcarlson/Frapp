@@ -51,7 +51,10 @@ describe('ChatService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockMemberRepo: { findByUserAndChapter: jest.Mock };
-  let mockRbac: { getEffectivePermissions: jest.Mock };
+  let mockRbac: {
+    getEffectivePermissions: jest.Mock;
+    hasAlumniRole: jest.Mock;
+  };
   /**
    * The Realtime broadcast goes through `SUPABASE_CLIENT.channel(topic)` →
    * `channel.send({ ... })` and is best-effort. Wire a fake that records
@@ -168,6 +171,9 @@ describe('ChatService', () => {
 
     mockRbac = {
       getEffectivePermissions: jest.fn(),
+      // Active (non-alumni) member by default; alumni posting is covered in
+      // channel-access.service.spec.ts.
+      hasAlumniRole: jest.fn().mockResolvedValue(false),
     };
 
     broadcasts = [];

@@ -481,7 +481,25 @@ export interface ChannelAccessInput {
    * `"post"` additionally enforces the read-only / announcements:post gate.
    */
   operation?: ChannelOperation;
+  /**
+   * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
+   * they keep full read access but may only post in the ROLE_GATED `#alumni`
+   * channel and in direct conversations. Only consulted when
+   * `operation === "post"`; omit (or `false`) for active members.
+   */
+  isAlumni?: boolean;
 }
+
+/**
+ * Channel types an Alumni-role member may post into. Alumni keep read access
+ * everywhere they can see, but writing is limited to the alumni channel
+ * (ROLE_GATED) and direct conversations. See `spec/behavior/alumni.md`.
+ */
+const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> = new Set([
+  "ROLE_GATED",
+  "DM",
+  "GROUP_DM",
+]);
 
 /**
  * Decide whether `userId` may access (read / participate in) `channel`.
@@ -497,6 +515,11 @@ export interface ChannelAccessInput {
  * channel must either not be read-only, or the caller must hold `"*"` or
  * `"announcements:post"`. Existing callers default to `"read"`, so the
  * predicate stays backward-compatible.
+ *
+ * When `operation === "post"` and `isAlumni` is set, the caller is additionally
+ * limited to the alumni channel and direct conversations — alumni read
+ * everywhere they can see but do not participate in operational channels.
+ * `"*"` (President) still bypasses, so a chapter cannot lock itself out.
  */
 export function canAccessChannel(input: ChannelAccessInput): boolean {
   const { channel, userId, isChapterMember, permissions } = input;
@@ -529,9 +552,21 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
   if (!canRead) return false;
   if (operation === "read") return true;
 
+  const isPresident = permissions.includes("*");
+
+  // Alumni lifecycle: read-mostly. They may only write in the alumni channel
+  // and direct conversations, never in operational PUBLIC/PRIVATE channels.
+  if (
+    input.isAlumni &&
+    !isPresident &&
+    !ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type)
+  ) {
+    return false;
+  }
+
   // operation === "post": gate read-only channels behind announcements:post / *.
   if (!channel.is_read_only) return true;
-  if (permissions.includes("*")) return true;
+  if (isPresident) return true;
   return permissions.includes(ANNOUNCEMENTS_POST_PERMISSION);
 }
 

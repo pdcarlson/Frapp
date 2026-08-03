@@ -7,8 +7,12 @@ import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.int
 import { SupabaseEventRepository } from '../../infrastructure/supabase/repositories/supabase-event.repository';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
+import { RbacModule } from '../rbac/rbac.module';
 
+// Imports `RbacModule` so `AttendanceService` can resolve the Alumni lifecycle
+// role and deny event check-in (`spec/behavior/alumni.md`).
 @Module({
+  imports: [RbacModule],
   controllers: [AttendanceController],
   providers: [
     AttendanceService,

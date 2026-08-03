@@ -27,7 +27,10 @@ describe('PollService', () => {
   let mockChannelRepo: jest.Mocked<IChatChannelRepository>;
   let mockVoteRepo: jest.Mocked<IPollVoteRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
-  let mockRbac: { getEffectivePermissions: jest.Mock };
+  let mockRbac: {
+    getEffectivePermissions: jest.Mock;
+    hasAlumniRole: jest.Mock;
+  };
   let loggerErrorSpy: jest.SpyInstance;
 
   const baseChannel: ChatChannel = {
@@ -116,7 +119,12 @@ describe('PollService', () => {
       delete: jest.fn(),
     };
 
-    mockRbac = { getEffectivePermissions: jest.fn() };
+    mockRbac = {
+      getEffectivePermissions: jest.fn(),
+      // Active (non-alumni) member by default; alumni posting is covered in
+      // channel-access.service.spec.ts.
+      hasAlumniRole: jest.fn().mockResolvedValue(false),
+    };
 
     // Default: caller is a chapter member with no extra permissions, and the
     // chapter's channels are PUBLIC (channel-1 hosts the listPolls fixtures).

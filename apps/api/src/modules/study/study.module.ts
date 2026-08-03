@@ -8,8 +8,12 @@ import { SupabasePointTransactionRepository } from '../../infrastructure/supabas
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import { POINT_TRANSACTION_REPOSITORY } from '../../domain/repositories/point-transaction.repository.interface';
+import { RbacModule } from '../rbac/rbac.module';
 
+// Imports `RbacModule` so `StudyService` can resolve the Alumni lifecycle role
+// and deny study-hour accrual (`spec/behavior/alumni.md`).
 @Module({
+  imports: [RbacModule],
   controllers: [StudyGeofenceController, StudySessionController],
   providers: [
     StudyService,

@@ -14,6 +14,7 @@
 - Check-in is only available during the event's time window (between start_time and end_time, with a configurable grace period after end_time, default 15 minutes).
 - Unique constraint: one attendance record per (event, user) — enforced inside `check_in_event` via `on conflict do nothing`, so a concurrent double check-in inserts nothing and returns 409 Conflict without a double award. See [points.md](points.md) for the atomicity invariant.
 - For role-targeted events, only members with matching roles can check in. Members without the required role who attempt to check in receive a 403 Forbidden.
+- Alumni-role members cannot check in to events and receive a 403 Forbidden, checked before the attendance + points write. See [alumni.md](alumni.md).
 
 ## Attendance Management
 

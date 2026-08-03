@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
+import { RbacService } from './rbac.service';
 import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
 import { EVENT_REPOSITORY } from '../../domain/repositories/event.repository.interface';
@@ -21,6 +22,7 @@ describe('AttendanceService', () => {
   let mockAttendanceRepo: jest.Mocked<IAttendanceRepository>;
   let mockEventRepo: jest.Mocked<IEventRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockRbac: { isAlumni: jest.Mock };
 
   const baseEvent: Event = {
     id: 'evt-1',
@@ -79,16 +81,45 @@ describe('AttendanceService', () => {
       delete: jest.fn(),
     };
 
+    // Default to an active (non-alumni) member so existing cases are unaffected.
+    mockRbac = { isAlumni: jest.fn().mockResolvedValue(false) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendanceService,
         { provide: ATTENDANCE_REPOSITORY, useValue: mockAttendanceRepo },
         { provide: EVENT_REPOSITORY, useValue: mockEventRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
     service = module.get(AttendanceService);
+  });
+
+  // Alumni do not check in to events or accrue attendance points
+  // (spec/behavior/alumni.md). POST check-in carries no permission requirement,
+  // so the denial has to happen in the service.
+  describe('Alumni lifecycle restrictions', () => {
+    it('denies check-in for an alumni member and awards no points', async () => {
+      const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockRbac.isAlumni.mockResolvedValue(true);
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(mockRbac.isAlumni).toHaveBeenCalledWith('ch-1', 'user-1');
+      // Denied before the atomic attendance + points write.
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+
+      jest.useRealTimers();
+    });
   });
 
   describe('checkIn', () => {

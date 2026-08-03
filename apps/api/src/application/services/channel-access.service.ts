@@ -55,13 +55,22 @@ export class ChannelAccessService {
     );
     const isChapterMember = Boolean(member);
 
+    // Alumni are read-mostly (`spec/behavior/alumni.md`): resolve the lifecycle
+    // flag only for writes, so reads stay a single membership lookup. Reuses
+    // the member row already fetched above rather than re-querying it.
+    const isAlumni =
+      operation === 'post'
+        ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
+        : false;
+
     // For "post" against a read-only channel (#announcements, #chapter-audit)
     // we need to evaluate the caller's permissions even on a PUBLIC channel
-    // so the announcements:post gate can fire.
+    // so the announcements:post gate can fire. Alumni writes need them too, so
+    // a President who also carries the Alumni role still bypasses (wildcard).
     const needsPermissions =
       isChapterMember &&
       (channel.type === 'ROLE_GATED' ||
-        (operation === 'post' && channel.is_read_only === true));
+        (operation === 'post' && (channel.is_read_only === true || isAlumni)));
     const permissions = needsPermissions
       ? await this.rbac.getEffectivePermissions(chapterId, userId)
       : [];
@@ -77,6 +86,7 @@ export class ChannelAccessService {
       isChapterMember,
       permissions,
       operation,
+      isAlumni,
     });
 
     if (!allowed) {

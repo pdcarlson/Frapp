@@ -13,6 +13,7 @@ import type { IEventRepository } from '../../domain/repositories/event.repositor
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
+import { RbacService } from './rbac.service';
 
 const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
 
@@ -25,6 +26,7 @@ export class AttendanceService {
     private readonly eventRepo: IEventRepository,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
+    private readonly rbac: RbacService,
   ) {}
 
   async checkIn(
@@ -32,6 +34,15 @@ export class AttendanceService {
     userId: string,
     chapterId: string,
   ): Promise<EventAttendance> {
+    // Alumni do not check in to events or accrue attendance points
+    // (`spec/behavior/alumni.md`). The check-in route carries no permission
+    // requirement, so the lifecycle rule is enforced here.
+    if (await this.rbac.isAlumni(chapterId, userId)) {
+      throw new ForbiddenException(
+        'Alumni members cannot check in to chapter events',
+      );
+    }
+
     const event = await this.eventRepo.findById(eventId, chapterId);
     if (!event) {
       throw new NotFoundException('Event not found');

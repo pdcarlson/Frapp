@@ -13,7 +13,10 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Member } from '../../domain/entities/member.entity';
 import { User } from '../../domain/entities/user.entity';
-import { SystemPermissions } from '../../domain/constants/permissions';
+import {
+  ALUMNI_ROLE_NAME,
+  SystemPermissions,
+} from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { RbacService } from './rbac.service';
 import { allowedVisibilities } from './custom-field-visibility';
@@ -227,7 +230,7 @@ export class MemberService {
   ): Promise<MemberProfile[]> {
     const alumniRole = await this.roleRepo.findByChapterAndName(
       chapterId,
-      'Alumni',
+      ALUMNI_ROLE_NAME,
     );
     if (!alumniRole) return [];
 

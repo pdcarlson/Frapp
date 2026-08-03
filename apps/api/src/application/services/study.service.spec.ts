@@ -2,9 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { StudyService, pointInPolygon } from './study.service';
+import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
 import { STUDY_SESSION_REPOSITORY } from '../../domain/repositories/study.repository.interface';
@@ -58,6 +60,7 @@ describe('StudyService', () => {
   let mockGeofenceRepo: jest.Mocked<IStudyGeofenceRepository>;
   let mockSessionRepo: jest.Mocked<IStudySessionRepository>;
   let mockPointTxnRepo: jest.Mocked<IPointTransactionRepository>;
+  let mockRbac: { isAlumni: jest.Mock };
 
   const baseGeofence: StudyGeofence = {
     id: 'geo-1',
@@ -126,16 +129,69 @@ describe('StudyService', () => {
       countRecentAdjustments: jest.fn(),
     };
 
+    // Default to an active (non-alumni) member so existing cases are unaffected.
+    mockRbac = { isAlumni: jest.fn().mockResolvedValue(false) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StudyService,
         { provide: STUDY_GEOFENCE_REPOSITORY, useValue: mockGeofenceRepo },
         { provide: STUDY_SESSION_REPOSITORY, useValue: mockSessionRepo },
         { provide: POINT_TRANSACTION_REPOSITORY, useValue: mockPointTxnRepo },
+        { provide: RbacService, useValue: mockRbac },
       ],
     }).compile();
 
     service = module.get(StudyService);
+  });
+
+  // Alumni accrue no study hours (spec/behavior/alumni.md). The study controller
+  // only requires members:view — which the Alumni role holds — so the denial has
+  // to happen in the service, on every session mutation.
+  describe('Alumni lifecycle restrictions', () => {
+    beforeEach(() => {
+      mockRbac.isAlumni.mockResolvedValue(true);
+    });
+
+    it('denies startSession for an alumni member', async () => {
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockRbac.isAlumni).toHaveBeenCalledWith('ch-1', 'user-1');
+      // Denied before any session is created.
+      expect(mockSessionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('denies heartbeat for an alumni member', async () => {
+      await expect(service.heartbeat('user-1', 'ch-1', 5, 5)).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(mockSessionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('denies stopSession for an alumni member, awarding no points', async () => {
+      await expect(service.stopSession('user-1', 'ch-1')).rejects.toThrow(
+        ForbiddenException,
+      );
+
+      expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      expect(mockSessionRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('still allows an active member to start a session', async () => {
+      mockRbac.isAlumni.mockResolvedValue(false);
+      mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+      mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(null);
+      mockSessionRepo.create.mockResolvedValue(baseSession);
+
+      await expect(
+        service.startSession('user-1', 'ch-1', 'geo-1', 5, 5),
+      ).resolves.toEqual(baseSession);
+
+      expect(mockSessionRepo.create).toHaveBeenCalled();
+    });
   });
 
   describe('listGeofences', () => {
