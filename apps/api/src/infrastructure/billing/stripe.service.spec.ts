@@ -141,6 +141,116 @@ describe('StripeBillingService', () => {
     });
   });
 
+  describe('createPaymentIntent', () => {
+    it('should create a payment intent with automatic payment methods and map the result', async () => {
+      const params = {
+        amount: 5000,
+        currency: 'usd',
+        metadata: {
+          invoice_id: 'inv_123',
+          chapter_id: 'chap_123',
+          user_id: 'user_123',
+        },
+      };
+
+      stripeMock.paymentIntents = {
+        create: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: null,
+        }),
+        retrieve: jest.fn(),
+      } as any;
+
+      const result = await service.createPaymentIntent(params);
+
+      expect(stripeMock.paymentIntents.create).toHaveBeenCalledWith({
+        amount: params.amount,
+        currency: params.currency,
+        metadata: params.metadata,
+        automatic_payment_methods: { enabled: true },
+      });
+      expect(result).toEqual({
+        id: 'pi_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_123_secret_abc',
+        latestChargeId: null,
+      });
+    });
+  });
+
+  describe('getPaymentIntent', () => {
+    it('should retrieve a payment intent and keep a string latest_charge as-is', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'succeeded',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: 'ch_123',
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(stripeMock.paymentIntents.retrieve).toHaveBeenCalledWith('pi_123');
+      expect(result).toEqual({
+        id: 'pi_123',
+        status: 'succeeded',
+        clientSecret: 'pi_123_secret_abc',
+        latestChargeId: 'ch_123',
+      });
+    });
+
+    it('should map an expanded latest_charge object to its id', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'succeeded',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: { id: 'ch_456' },
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result.latestChargeId).toBe('ch_456');
+    });
+
+    it('should map a null latest_charge to null', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: null,
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result.latestChargeId).toBeNull();
+    });
+
+    it('should map a missing latest_charge to null', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result.latestChargeId).toBeNull();
+    });
+  });
+
   describe('constructWebhookEvent', () => {
     it('should construct and map a webhook event', () => {
       const payload = Buffer.from('test_payload');
