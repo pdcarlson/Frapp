@@ -5,9 +5,10 @@ import { SupabaseServiceEntryRepository } from '../../infrastructure/supabase/re
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
+import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
-  imports: [RbacModule, NotificationModule],
+  imports: [RbacModule, NotificationModule, ChapterConfigModule],
   controllers: [ServiceEntryController],
   providers: [
     ServiceEntryService,

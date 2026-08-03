@@ -9,6 +9,10 @@ import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entr
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
 import { NotificationService } from './notification.service';
+import {
+  ChapterWorkflowsService,
+  WORKFLOW_HOURS_RECEIPT,
+} from './chapter-workflows.service';
 
 /** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
 const DEFAULT_MINUTES_PER_POINT = 60;
@@ -33,6 +37,7 @@ export class ServiceEntryService {
     @Inject(SERVICE_ENTRY_REPOSITORY)
     private readonly serviceEntryRepo: IServiceEntryRepository,
     private readonly notificationService: NotificationService,
+    private readonly chapterWorkflows: ChapterWorkflowsService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry> {
@@ -75,6 +80,19 @@ export class ServiceEntryService {
       !description.trim()
     ) {
       throw new BadRequestException('description is required');
+    }
+
+    // Chapter policy (Settings → Workflows): wf_hours_receipt makes proof
+    // mandatory at submission. Legacy proof-less entries stay approvable at
+    // the reviewer's discretion.
+    const receiptPolicy = await this.chapterWorkflows.getWorkflow(
+      input.chapter_id,
+      WORKFLOW_HOURS_RECEIPT,
+    );
+    if (receiptPolicy.enabled && !input.proof_path) {
+      throw new BadRequestException(
+        'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
+      );
     }
 
     return this.serviceEntryRepo.create({

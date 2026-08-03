@@ -15,6 +15,7 @@ import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import type { IBillingProvider } from '../../domain/adapters/billing.interface';
 import type { FinancialInvoice } from '../../domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
+import { ChapterWorkflowsService } from './chapter-workflows.service';
 
 describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
@@ -23,6 +24,9 @@ describe('FinancialInvoiceService', () => {
   let mockBillingProvider: jest.Mocked<IBillingProvider>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
+  let mockChapterWorkflows: jest.Mocked<
+    Pick<ChapterWorkflowsService, 'getDuesGraceDays'>
   >;
 
   const baseInvoice: FinancialInvoice = {
@@ -74,6 +78,10 @@ describe('FinancialInvoiceService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockChapterWorkflows = {
+      getDuesGraceDays: jest.fn().mockResolvedValue(0),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         FinancialInvoiceService,
@@ -87,6 +95,7 @@ describe('FinancialInvoiceService', () => {
         },
         { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ChapterWorkflowsService, useValue: mockChapterWorkflows },
       ],
     }).compile();
 
@@ -1240,9 +1249,30 @@ describe('FinancialInvoiceService', () => {
 
       const result = await service.findOverdue('ch-1');
 
-      expect(mockInvoiceRepo.findOverdue).toHaveBeenCalledWith('ch-1');
+      expect(mockInvoiceRepo.findOverdue).toHaveBeenCalledWith('ch-1', 0);
       expect(result).toHaveLength(1);
       expect(result[0].status).toBe('OPEN');
+    });
+
+    it('should pass the chapter dues grace period to the repository (wf_dues_grace enabled)', async () => {
+      mockChapterWorkflows.getDuesGraceDays.mockResolvedValue(7);
+      mockInvoiceRepo.findOverdue.mockResolvedValue([]);
+
+      await service.findOverdue('ch-1');
+
+      expect(mockChapterWorkflows.getDuesGraceDays).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      expect(mockInvoiceRepo.findOverdue).toHaveBeenCalledWith('ch-1', 7);
+    });
+
+    it('should apply no grace when wf_dues_grace is disabled', async () => {
+      mockChapterWorkflows.getDuesGraceDays.mockResolvedValue(0);
+      mockInvoiceRepo.findOverdue.mockResolvedValue([]);
+
+      await service.findOverdue('ch-1');
+
+      expect(mockInvoiceRepo.findOverdue).toHaveBeenCalledWith('ch-1', 0);
     });
 
     it('should exclude PAID and VOID invoices (handled by repository)', async () => {

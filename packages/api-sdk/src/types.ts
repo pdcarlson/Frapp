@@ -1238,7 +1238,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List overdue invoices (OPEN past due_date) */
+        /** List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled) */
         get: operations["FinancialInvoiceController_listOverdue_v1"];
         put?: never;
         post?: never;

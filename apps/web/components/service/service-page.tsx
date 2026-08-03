@@ -38,6 +38,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -91,6 +92,14 @@ export function ServiceHoursPage() {
   const createEntry = useCreateServiceEntry();
   const reviewEntry = useReviewServiceEntry();
   const deleteEntry = useDeleteServiceEntry();
+  const orgConfig = useOrgConfig();
+
+  // Chapter policy (Settings → Workflows): when wf_hours_receipt is enabled
+  // the API rejects proof-less submissions, so require the field up front.
+  // While config is still loading, stay permissive — the server enforces.
+  const receiptRequired =
+    orgConfig.data?.workflows?.find((wf) => wf.key === "wf_hours_receipt")
+      ?.enabled ?? false;
 
   const entries = useMemo(
     () => asArray<ServiceEntry>(entriesQuery.data),
@@ -355,7 +364,11 @@ export function ServiceHoursPage() {
                   />
                 </div>
                 <div className="grid gap-1">
-                  <Label htmlFor="service-proof">Proof link or storage path (optional)</Label>
+                  <Label htmlFor="service-proof">
+                    {receiptRequired
+                      ? "Proof link or storage path (required by chapter policy)"
+                      : "Proof link or storage path (optional)"}
+                  </Label>
                   <Input
                     id="service-proof"
                     value={draft.proof_path}
@@ -366,6 +379,7 @@ export function ServiceHoursPage() {
                       }))
                     }
                     placeholder="https://... or chapters/{id}/service/{entry}/proof.pdf"
+                    required={receiptRequired}
                   />
                 </div>
               </form>
