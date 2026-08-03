@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -14,6 +15,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
+import { AccountDeletionService } from '../../application/services/account-deletion.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -38,6 +40,7 @@ import {
 export class UserController {
   constructor(
     private readonly userService: UserService,
+    private readonly accountDeletionService: AccountDeletionService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -73,6 +76,17 @@ export class UserController {
     @Body() dto: UpdateUserDto,
   ) {
     return this.userService.update(userId, dto);
+  }
+
+  @Delete('me')
+  @ApiOperation({
+    summary: 'Delete current account (irreversible)',
+    description:
+      'Individual account deletion per spec/behavior/data-retention.md: profile media is purged first, PII is scrubbed to a "Deleted User" tombstone, historical records stay preserved anonymized, the analytics forget is confirmed, and the Supabase Auth account is deleted last. A 502 means the flow did not finish — depending on the failing step the account may already be anonymized (sign-in still works until the final step succeeds) — and every step is idempotent, so simply retry until it returns success.',
+  })
+  async deleteMe(@CurrentUser('id') userId: string) {
+    await this.accountDeletionService.deleteAccount(userId);
+    return { success: true };
   }
 
   @Post('me/avatar-url')

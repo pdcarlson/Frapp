@@ -116,6 +116,13 @@ const LANDMARKS = [
     ok: (rows) =>
       rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
   },
+  {
+    name: "anonymize_user RPC present, security invoker (FRA-40)",
+    sql: `select prosecdef from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'anonymize_user'`,
+    ok: (rows) => rows.length === 1 && rows[0].prosecdef === false,
+  },
 ];
 
 // ─── RLS smoke (ADR-12) ─────────────────────────────────────────────────────
@@ -260,6 +267,166 @@ console.log("\n=== RLS smoke ===");
   }
 }
 for (const lm of RLS_SMOKE) await runOne(lm);
+
+// ─── Functional smoke: anonymize_user (FRA-40) ──────────────────────────────
+//
+// The account-deletion contract (spec/behavior/data-retention.md "Individual
+// Account Deletion") is a *data* invariant — "history preserved, PII gone" —
+// so shape assertions alone can't pin it. This tier seeds a user with
+// preserved history (point transaction, chat messages, task card) plus
+// current-state rows (membership, settings, push token), runs the RPC twice
+// (the second call proves idempotent retry), asserts the tombstone contract,
+// and rolls the whole thing back so the validated schema stays untouched.
+
+console.log("\n=== Functional smoke: anonymize_user ===");
+{
+  const U = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // doomed user
+  const C = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // chapter
+  const CH = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // channel
+  const CARD = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // task-card message
+  const EVCARD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"; // event-card message
+  const PCARD = "ffffffff-ffff-ffff-ffff-ffffffffffff"; // punctuation-name card
+  const LATECARD = "99999999-9999-9999-9999-999999999999"; // card racing the scrub
+
+  let seeded = false;
+  try {
+    await db.exec(`
+      begin;
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy');
+      insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
+      insert into members (user_id, chapter_id) values ('${U}', '${C}');
+      insert into point_transactions (chapter_id, user_id, amount, category, description)
+      values ('${C}', '${U}', 5, 'SERVICE', 'helped');
+      insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
+      insert into chat_messages (channel_id, sender_id, content) values ('${CH}', '${U}', 'hi, Doomed User here');
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${CARD}', '${CH}', '${U}',
+              'Assigned "T" to Doomed User (due tomorrow) cc Doomed Userling', 'task',
+              '{"assigner_user_id":"someone-else","assigner_name":"Someone Else","assignee_user_id":"${U}","assignee_name":"Doomed User"}'::jsonb);
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${EVCARD}', '${CH}', '${U}',
+              'Doomed User scheduled "BBQ" — Aug 9, 6:00 PM UTC', 'event',
+              '{"event_id":"ev1","name":"BBQ"}'::jsonb);
+      -- Punctuation-bounded snapshot: word boundaries can never match it, so
+      -- the helper must fall back to exact-substring replacement.
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${PCARD}', '${CH}', '${U}',
+              'Granted 5 points to (DU) Doomed: nice work', 'points',
+              '{"actor_user_id":"someone-else","actor_name":"Someone Else","recipient_user_id":"${U}","recipient_name":"(DU) Doomed"}'::jsonb);
+      insert into user_settings (user_id) values ('${U}');
+      insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
+      -- Rename before deletion: the content rewrite must key on the card's own
+      -- payload snapshot ('Doomed User'), not the live display name.
+      update users set display_name = 'D' where id = '${U}';
+      select anonymize_user('${U}');
+      -- Simulate the retry window: the tombstone gets PII written back onto it
+      -- (PATCH /users/me is possible while the auth account still exists). The
+      -- second call must RE-scrub the users row — no tombstone early-return —
+      -- while skipping the card scan (retries stay cheap).
+      update users set display_name = 'Sneaky Comeback', bio = 'still here' where id = '${U}';
+      select anonymize_user('${U}');
+      -- Simulate a card writer that raced the first scrub: its snapshot lands
+      -- after the one gated card scan. The convergence call (rescan=true) must
+      -- repair it.
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${LATECARD}', '${CH}', '${U}',
+              'Assigned "Z" to Doomed User (due later)', 'task',
+              '{"assigner_user_id":"someone-else","assigner_name":"Someone Else","assignee_user_id":"${U}","assignee_name":"Doomed User"}'::jsonb);
+      select anonymize_user('${U}', true);
+    `);
+    seeded = true;
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   anonymize_user functional seed\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
+
+  if (seeded) {
+    const FUNCTIONAL = [
+      {
+        name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
+        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
+                     (deleted_at is not null) as tombstoned
+                from users where id = '${U}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].display_name === "Deleted User" &&
+          rows[0].email === `deleted+${U}@anonymized.invalid` &&
+          rows[0].bio === null &&
+          rows[0].avatar_url === null &&
+          rows[0].graduation_year === null &&
+          rows[0].current_city === null &&
+          rows[0].tombstoned === true,
+      },
+      {
+        name: "history preserved: point transaction + chat messages keep their user FKs",
+        sql: `select (select count(*)::int from point_transactions where user_id = '${U}') as points,
+                     (select count(*)::int from chat_messages where sender_id = '${U}') as messages`,
+        ok: (rows) =>
+          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 5,
+      },
+      {
+        name: "current-state purged: membership, settings, push token",
+        sql: `select (select count(*)::int from members where user_id = '${U}')
+                   + (select count(*)::int from user_settings where user_id = '${U}')
+                   + (select count(*)::int from push_tokens where user_id = '${U}') as leftovers`,
+        ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        name: "task card rewritten in payload AND content via payload snapshot (rename-proof, word-boundary safe)",
+        sql: `select payload->>'assigner_name' as assigner, payload->>'assignee_name' as assignee,
+                     content
+                from chat_messages where id = '${CARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].assigner === "Someone Else" &&
+          rows[0].assignee === "Deleted User" &&
+          // 'Doomed Userling' must survive — word boundaries prevent the
+          // substring collision the raw replace() had.
+          rows[0].content ===
+            'Assigned "T" to Deleted User (due tomorrow) cc Doomed Userling',
+      },
+      {
+        name: "event card creator prefix rewritten in content (no payload name to rewrite)",
+        sql: `select content, payload->>'name' as event_name
+                from chat_messages where id = '${EVCARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].content === 'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
+          rows[0].event_name === "BBQ",
+      },
+      {
+        name: "punctuation-bounded snapshot rewritten via exact-substring fallback",
+        sql: `select payload->>'recipient_name' as recipient, content
+                from chat_messages where id = '${PCARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].recipient === "Deleted User" &&
+          rows[0].content === "Granted 5 points to Deleted User: nice work",
+      },
+      {
+        name: "card that raced the first scrub is repaired by the rescan (convergence) call",
+        sql: `select payload->>'assignee_name' as assignee, content
+                from chat_messages where id = '${LATECARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].assignee === "Deleted User" &&
+          rows[0].content === 'Assigned "Z" to Deleted User (due later)',
+      },
+      {
+        name: "member-typed free text is NOT rewritten (only system-generated cards)",
+        sql: `select content from chat_messages
+               where sender_id = '${U}' and kind = 'text'`,
+        ok: (rows) => rows.length === 1 && rows[0].content === "hi, Doomed User here",
+      },
+    ];
+    for (const lm of FUNCTIONAL) await runOne(lm);
+  }
+
+  await db.exec("rollback;");
+}
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

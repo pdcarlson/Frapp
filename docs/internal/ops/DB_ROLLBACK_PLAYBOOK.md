@@ -269,3 +269,31 @@ SELECT stripe_charge_id, count(*) FROM financial_transactions
 
 Resolve any duplicates (they indicate a double-recorded payment worth
 reconciling in Stripe regardless) before re-applying.
+
+## Rollback account deletion (20260803140000)
+
+Additive DDL: one nullable column and one function (FRA-40). Rolling the
+*schema* back loses nothing that existed before the migration:
+
+```sql
+DROP FUNCTION IF EXISTS anonymize_user(uuid, boolean);
+DROP FUNCTION IF EXISTS anonymize_card_content(text, text);
+ALTER TABLE users DROP COLUMN IF EXISTS deleted_at;
+```
+
+**Order matters for the function**: drop it only alongside (or after) deploying
+an API build without FRA-40 — `AccountDeletionService.deleteAccount` calls it on
+`DELETE /v1/users/me`, and a missing function surfaces as a 500 on every
+account-deletion request while the current build is serving.
+
+**Data caveat — anonymization itself is irreversible by design.** Rows already
+processed by `anonymize_user` stay tombstoned after rollback: PII columns are
+overwritten (not recoverable), current-state rows (memberships, settings, push
+tokens, notifications, read receipts, study sessions) are deleted, and the
+Supabase Auth account is removed by the API flow. `spec/behavior/data-retention.md`
+documents deletion as irreversible, so this is the contract, not collateral —
+there is nothing to restore. Dropping `deleted_at` also drops the tombstone
+*marker*; if the migration is later re-applied, previously deleted users show
+`deleted_at = null` while keeping their scrubbed "Deleted User" fields. That is
+safe: the function re-runs its full scrub on every call by design (no tombstone
+early-return), so re-running it on such a row simply re-stamps the marker.

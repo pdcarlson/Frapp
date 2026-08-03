@@ -210,15 +210,21 @@ export class AnalyticsService {
   /**
    * Account-deletion propagation: add the user's pseudonym to the provider's
    * "deleted users" list so all their events are purged. Called from the
-   * account-deletion flow (#281). No-op when analytics is unconfigured.
+   * account-deletion flow (#281), which gates the irreversible Supabase Auth
+   * deletion on the returned boolean — once the auth account is gone the user
+   * can never re-trigger this, so a silently lost forget would retain their
+   * events forever. Returns true when the provider acknowledged the forget or
+   * there is nothing to forget (analytics unconfigured: no events were ever
+   * keyed for this environment).
    */
-  async forgetUser(userId: string): Promise<void> {
+  async forgetUser(userId: string): Promise<boolean> {
     const distinctId = this.getDistinctId(userId);
-    if (!distinctId) return;
+    if (!distinctId) return true;
     try {
-      await this.provider.forget(distinctId);
+      return await this.provider.forget(distinctId);
     } catch (error) {
       this.logger.warn('Failed to forget analytics user', error as Error);
+      return false;
     }
   }
 

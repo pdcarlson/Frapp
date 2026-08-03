@@ -14,6 +14,14 @@ export interface User {
    * the user has exactly one membership" (see spec/behavior/multi-tenancy.md).
    */
   active_chapter_id: string | null;
+  /**
+   * Tombstone marker set by the `anonymize_user` RPC. A non-null value means
+   * the account was deleted: PII columns hold the "Deleted User"
+   * representation and the Supabase Auth account is gone (or about to be —
+   * auth deletion runs last and retries against this same row). See
+   * spec/behavior/data-retention.md "Individual Account Deletion".
+   */
+  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }

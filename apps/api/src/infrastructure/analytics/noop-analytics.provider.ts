@@ -19,9 +19,11 @@ export class NoopAnalyticsProvider implements IAnalyticsProvider {
     return Promise.resolve();
   }
 
-  forget(distinctId: string): Promise<void> {
+  forget(distinctId: string): Promise<boolean> {
     void distinctId; // intentionally not logged — see capture()
     this.logger.debug('analytics(noop) forget <redacted>');
-    return Promise.resolve();
+    // Nothing was ever shipped off-box, so there is nothing to forget —
+    // report success so account deletion is never blocked by the noop.
+    return Promise.resolve(true);
   }
 }
