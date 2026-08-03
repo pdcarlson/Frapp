@@ -248,9 +248,7 @@ describe('ServiceEntryService', () => {
           description: 'Test',
           proof_path: 'chapters/ch-1/service/proof-1/proof.pdf',
         }),
-      ).rejects.toThrow(
-        'proof_path does not reference an uploaded proof file',
-      );
+      ).rejects.toThrow('proof_path does not reference an uploaded proof file');
       expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
     });
 

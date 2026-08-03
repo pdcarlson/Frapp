@@ -3618,6 +3618,65 @@
         ]
       }
     },
+    "/v1/service-entries/proof-upload-url": {
+      "post": {
+        "operationId": "ServiceEntryController_requestProofUploadUrl_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestProofUploadUrlDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed upload URL for a service proof file",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/{id}/proof-url": {
+      "get": {
+        "operationId": "ServiceEntryController_getProofUrl_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Get signed proof download URL (own entry or admins)",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
     "/v1/service-entries/{id}/review": {
       "patch": {
         "operationId": "ServiceEntryController_review_v1",
@@ -6237,6 +6296,23 @@
             "description": "Full department name"
           }
         }
+      },
+      "RequestProofUploadUrlDto": {
+        "type": "object",
+        "properties": {
+          "filename": {
+            "type": "string",
+            "description": "Original filename (image or PDF)"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "MIME content type (e.g. application/pdf)"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type"
+        ]
       },
       "CreateServiceEntryDto": {
         "type": "object",
