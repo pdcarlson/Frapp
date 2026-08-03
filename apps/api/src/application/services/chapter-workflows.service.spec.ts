@@ -7,9 +7,9 @@ import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider
 
 const CHAPTER_ID = 'ch-1';
 
-// Deterministic stand-in for WORKFLOWS_SEED (injected via ORG_WORKFLOWS_SEED —
-// the real catalog is covered by the org-archetypes package itself). We
-// exercise the seed ⊕ override merge and the dues-grace precedence only.
+// Deterministic stand-in for WORKFLOWS_SEED, injected via ORG_WORKFLOWS_SEED.
+// We exercise the seed ⊕ override merge and the dues-grace rules only; the
+// real catalog lives in @repo/org-archetypes.
 const TEST_SEED = [
   {
     key: 'wf_dues_grace',
@@ -25,21 +25,20 @@ const TEST_SEED = [
 type WorkflowRow = { enabled: boolean; threshold: number | null } | null;
 
 /**
- * Supabase stub: `chapter_workflows` resolves `workflowRow` and
- * `chapter_dues_config` resolves `duesRow` through `maybeSingle()`.
+ * Supabase stub: `chapter_workflows` resolves `workflowRow` through
+ * `maybeSingle()`. Pass an `error` to exercise the read-failure fallback.
  */
 function makeSupabase(
   workflowRow: WorkflowRow,
-  duesRow: { grace_days: number | null } | null = null,
+  error: { message: string } | null = null,
 ) {
-  const from = jest.fn((table: string) => {
-    const row = table === 'chapter_workflows' ? workflowRow : duesRow;
+  const from = jest.fn(() => {
     const builder: Record<string, jest.Mock> = {};
     builder.select = jest.fn().mockReturnValue(builder);
     builder.eq = jest.fn().mockReturnValue(builder);
     builder.maybeSingle = jest.fn().mockResolvedValue({
-      data: row,
-      error: null,
+      data: error ? null : workflowRow,
+      error,
     });
     return builder;
   });
@@ -68,7 +67,6 @@ describe('ChapterWorkflowsService', () => {
         key: 'wf_dues_grace',
         enabled: true,
         threshold: 7,
-        thresholdOverridden: false,
       });
     });
 
@@ -83,7 +81,6 @@ describe('ChapterWorkflowsService', () => {
         key: 'wf_dues_grace',
         enabled: false,
         threshold: 10,
-        thresholdOverridden: true,
       });
     });
 
@@ -98,7 +95,6 @@ describe('ChapterWorkflowsService', () => {
         key: 'wf_dues_grace',
         enabled: true,
         threshold: 7,
-        thresholdOverridden: false,
       });
     });
 
@@ -111,40 +107,78 @@ describe('ChapterWorkflowsService', () => {
         key: 'wf_unknown',
         enabled: false,
         threshold: null,
-        thresholdOverridden: false,
       });
+    });
+
+    it('falls back to seed defaults and logs when the read errors', async () => {
+      const service = await buildService(
+        makeSupabase(
+          { enabled: false, threshold: null },
+          {
+            message: 'connection reset',
+          },
+        ),
+      );
+      const warn = jest
+        .spyOn(
+          (service as unknown as { logger: { warn: (msg: string) => void } })
+            .logger,
+          'warn',
+        )
+        .mockImplementation(() => undefined);
+
+      const result = await service.getWorkflow(CHAPTER_ID, 'wf_hours_receipt');
+
+      // The chapter's explicit disable is unreadable during the outage; the
+      // seed default applies and the substitution is logged.
+      expect(result).toEqual({
+        key: 'wf_hours_receipt',
+        enabled: true,
+        threshold: null,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('chapter_workflows read failed'),
+      );
     });
   });
 
   describe('getDuesGraceDays', () => {
     it('returns 0 when wf_dues_grace is disabled for the chapter', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: false, threshold: 10 }, { grace_days: 5 }),
+        makeSupabase({ enabled: false, threshold: 10 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(0);
     });
 
-    it('prefers the chapter workflow threshold when explicitly set', async () => {
+    it('returns the chapter workflow threshold when set', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: 10 }, { grace_days: 5 }),
+        makeSupabase({ enabled: true, threshold: 10 }),
       );
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(10);
     });
 
-    it('falls back to chapter_dues_config.grace_days without a threshold override', async () => {
+    it('honors an explicit zero-day grace', async () => {
       const service = await buildService(
-        makeSupabase({ enabled: true, threshold: null }, { grace_days: 5 }),
+        makeSupabase({ enabled: true, threshold: 0 }),
       );
 
-      await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(5);
+      await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(0);
     });
 
-    it('falls back to the seed threshold when neither knob is configured', async () => {
-      const service = await buildService(makeSupabase(null, null));
+    it('falls back to the seed threshold when unconfigured', async () => {
+      const service = await buildService(makeSupabase(null));
 
       await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(7);
+    });
+
+    it('clamps an absurd threshold instead of overflowing date arithmetic', async () => {
+      const service = await buildService(
+        makeSupabase({ enabled: true, threshold: 999_999_999_999 }),
+      );
+
+      await expect(service.getDuesGraceDays(CHAPTER_ID)).resolves.toBe(365);
     });
   });
 });

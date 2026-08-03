@@ -28,7 +28,6 @@ describe('ServiceEntryService', () => {
     key: WORKFLOW_HOURS_RECEIPT,
     enabled,
     threshold: null,
-    thresholdOverridden: false,
   });
 
   const baseEntry: ServiceEntry = {
@@ -267,6 +266,44 @@ describe('ServiceEntryService', () => {
         duration_minutes: 60,
         description: 'Community cleanup',
         proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+        }),
+      );
+      // Proof satisfies the policy regardless of the toggle, so the lookup
+      // is skipped entirely on this path.
+      expect(mockChapterWorkflows.getWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('should reject whitespace-only proof when wf_hours_receipt is enabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+          proof_path: '   ',
+        }),
+      ).rejects.toThrow(/requires a receipt/);
+      expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should store trimmed proof and normalize whitespace-only proof to null', async () => {
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: '  chapters/ch-1/service/se-1/proof.pdf  ',
       });
 
       expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { WorkflowEntry } from '@repo/org-archetypes';
@@ -16,13 +16,18 @@ export const ORG_WORKFLOWS_SEED = 'ORG_WORKFLOWS_SEED';
 export const WORKFLOW_HOURS_RECEIPT = 'wf_hours_receipt';
 export const WORKFLOW_DUES_GRACE = 'wf_dues_grace';
 
+/**
+ * Upper bound on the dues grace period. The zod/DTO validation only requires
+ * a nonnegative integer, and an absurd threshold would otherwise overflow the
+ * date arithmetic in the overdue query (Invalid Date → 500s).
+ */
+const MAX_GRACE_DAYS = 365;
+
 export interface EffectiveWorkflow {
   key: string;
   enabled: boolean;
   /** Chapter override when set, else the seed default (null when neither sets one). */
   threshold: number | null;
-  /** True when the chapter row supplied the threshold (vs the seed default). */
-  thresholdOverridden: boolean;
 }
 
 /**
@@ -33,9 +38,16 @@ export interface EffectiveWorkflow {
  * `chapter_workflows` row overrides `enabled`/`threshold` per chapter. Domain
  * services consult this so an enabled toggle actually changes behavior
  * (spec/behavior/settings/customization.md → Workflows Tab).
+ *
+ * NOTE: the seed lookup is archetype-agnostic. That is correct for the keys
+ * wired today, but `wf_budget_approval`'s threshold varies per archetype
+ * (`buildChapterConfigFromArchetype` rewrites it) — wiring that key requires
+ * an archetype-aware default, not this flat seed.
  */
 @Injectable()
 export class ChapterWorkflowsService {
+  private readonly logger = new Logger(ChapterWorkflowsService.name);
+
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
     @Inject(ORG_WORKFLOWS_SEED)
@@ -47,29 +59,32 @@ export class ChapterWorkflowsService {
     key: string,
   ): Promise<EffectiveWorkflow> {
     const seed = this.workflowsSeed.find((wf) => wf.key === key);
-    // A read error behaves like "no override" (seed defaults), the same
-    // posture as the config endpoint — chapter policy still applies during a
-    // transient DB hiccup.
-    const { data } = await this.supabase
+    const { data, error } = await this.supabase
       .from('chapter_workflows')
       .select('enabled, threshold')
       .eq('chapter_id', chapterId)
       .eq('key', key)
       .maybeSingle();
+    if (error) {
+      // Fall back to the seed default, matching the config endpoint's read
+      // posture — but say so: for a chapter whose explicit setting differs
+      // from the seed, this substitutes the wrong policy until reads recover.
+      this.logger.warn(
+        `chapter_workflows read failed for chapter ${chapterId} key ${key}; applying seed default (enabled=${seed?.enabled ?? false}): ${error.message}`,
+      );
+    }
     const row = data;
     if (!row) {
       return {
         key,
         enabled: seed?.enabled ?? false,
         threshold: seed?.threshold ?? null,
-        thresholdOverridden: false,
       };
     }
     return {
       key,
       enabled: row.enabled,
       threshold: row.threshold ?? seed?.threshold ?? null,
-      thresholdOverridden: row.threshold != null,
     };
   }
 
@@ -77,23 +92,19 @@ export class ChapterWorkflowsService {
    * Effective dues grace period in days for overdue computations.
    *
    * `wf_dues_grace` disabled → 0 (an OPEN invoice is overdue the day after
-   * `due_date`). Enabled → the workflow `threshold` when the chapter set one
-   * (Settings → Workflows), else `chapter_dues_config.grace_days` (Settings →
-   * Dues), else the seed default. Precedence is documented in
-   * spec/behavior/settings/customization.md.
+   * `due_date`). Enabled → the workflow's merged threshold (Settings →
+   * Workflows; seed default 7), clamped to [0, MAX_GRACE_DAYS].
+   *
+   * `chapter_dues_config.grace_days` (Settings → Dues) is deliberately NOT
+   * consulted: the config PATCH materializes the workflow threshold into the
+   * row on any Workflows-tab save, so a grace-days fallback would be
+   * unreachable in practice while implying precedence that doesn't exist.
+   * Reconciling the two knobs is tracked separately (FRA-256 / FRA-227).
    */
   async getDuesGraceDays(chapterId: string): Promise<number> {
     const workflow = await this.getWorkflow(chapterId, WORKFLOW_DUES_GRACE);
     if (!workflow.enabled) return 0;
-    if (workflow.thresholdOverridden && workflow.threshold != null) {
-      return workflow.threshold;
-    }
-    const { data } = await this.supabase
-      .from('chapter_dues_config')
-      .select('grace_days')
-      .eq('chapter_id', chapterId)
-      .maybeSingle();
-    const graceDays = data?.grace_days;
-    return graceDays ?? workflow.threshold ?? 0;
+    const days = workflow.threshold ?? 0;
+    return Math.min(Math.max(days, 0), MAX_GRACE_DAYS);
   }
 }

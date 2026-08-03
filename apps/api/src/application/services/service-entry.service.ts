@@ -82,17 +82,24 @@ export class ServiceEntryService {
       throw new BadRequestException('description is required');
     }
 
+    // Whitespace-only proof must not satisfy the receipt policy below (or be
+    // stored as a "proof" the review queue can't render).
+    const proofPath = input.proof_path?.trim() || null;
+
     // Chapter policy (Settings → Workflows): wf_hours_receipt makes proof
     // mandatory at submission. Legacy proof-less entries stay approvable at
-    // the reviewer's discretion.
-    const receiptPolicy = await this.chapterWorkflows.getWorkflow(
-      input.chapter_id,
-      WORKFLOW_HOURS_RECEIPT,
-    );
-    if (receiptPolicy.enabled && !input.proof_path) {
-      throw new BadRequestException(
-        'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
+    // the reviewer's discretion. Only consulted when proof is absent — a
+    // submission with proof satisfies the policy either way.
+    if (!proofPath) {
+      const receiptPolicy = await this.chapterWorkflows.getWorkflow(
+        input.chapter_id,
+        WORKFLOW_HOURS_RECEIPT,
       );
+      if (receiptPolicy.enabled) {
+        throw new BadRequestException(
+          'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
+        );
+      }
     }
 
     return this.serviceEntryRepo.create({
@@ -101,7 +108,7 @@ export class ServiceEntryService {
       date: input.date,
       duration_minutes,
       description: description.trim(),
-      proof_path: input.proof_path ?? null,
+      proof_path: proofPath,
       status: 'PENDING',
       reviewed_by: null,
       review_comment: null,
