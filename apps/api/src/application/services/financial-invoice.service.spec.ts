@@ -1,10 +1,18 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { FinancialInvoiceService } from './financial-invoice.service';
 import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
 import type { IFinancialInvoiceRepository } from '../../domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
 import type { IFinancialTransactionRepository } from '../../domain/repositories/financial-transaction.repository.interface';
+import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
+import type { IBillingProvider } from '../../domain/adapters/billing.interface';
 import type { FinancialInvoice } from '../../domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
 
@@ -12,6 +20,7 @@ describe('FinancialInvoiceService', () => {
   let service: FinancialInvoiceService;
   let mockInvoiceRepo: jest.Mocked<IFinancialInvoiceRepository>;
   let mockTransactionRepo: jest.Mocked<IFinancialTransactionRepository>;
+  let mockBillingProvider: jest.Mocked<IBillingProvider>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
@@ -38,12 +47,24 @@ describe('FinancialInvoiceService', () => {
       findOverdue: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      applyPayment: jest.fn(),
     };
 
     mockTransactionRepo = {
       findByChapter: jest.fn(),
       findByInvoice: jest.fn(),
       create: jest.fn(),
+    };
+
+    mockBillingProvider = {
+      createCustomer: jest.fn(),
+      createCheckoutSession: jest.fn(),
+      createCustomerPortalSession: jest.fn(),
+      getSubscriptionStatus: jest.fn(),
+      cancelSubscription: jest.fn(),
+      createPaymentIntent: jest.fn(),
+      getPaymentIntent: jest.fn(),
+      constructWebhookEvent: jest.fn(),
     };
 
     mockNotificationService = {
@@ -62,6 +83,7 @@ describe('FinancialInvoiceService', () => {
           provide: FINANCIAL_TRANSACTION_REPOSITORY,
           useValue: mockTransactionRepo,
         },
+        { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
         { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();
@@ -242,6 +264,9 @@ describe('FinancialInvoiceService', () => {
         amount: 15000,
         type: 'PAYMENT',
       });
+      // AC3: manual PAID transitions never attach a Stripe charge id.
+      const createArg = mockTransactionRepo.create.mock.calls[0][0];
+      expect(createArg.stripe_charge_id).toBeUndefined();
     });
 
     it('should transition OPEN to VOID', async () => {
@@ -285,6 +310,281 @@ describe('FinancialInvoiceService', () => {
       await expect(
         service.transitionStatus('inv-1', 'ch-1', 'PAID'),
       ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('createPaymentIntent', () => {
+    const openInvoice: FinancialInvoice = {
+      ...baseInvoice,
+      status: 'OPEN',
+    };
+
+    it('should create a new PaymentIntent for an OPEN invoice owned by the caller', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_new_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_new_123_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_new_123',
+      });
+
+      const result = await service.createPaymentIntent(
+        'inv-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockBillingProvider.createPaymentIntent).toHaveBeenCalledWith({
+        amount: 15000,
+        currency: 'usd',
+        metadata: {
+          invoice_id: 'inv-1',
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+        },
+      });
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith('inv-1', 'ch-1', {
+        stripe_payment_intent_id: 'pi_new_123',
+      });
+      expect(result).toEqual({
+        client_secret: 'pi_new_123_secret',
+        payment_intent_id: 'pi_new_123',
+      });
+    });
+
+    it('should reject payment attempts by a non-owner without touching the provider', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-other'),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+      expect(mockBillingProvider.getPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should throw NotFoundException when the invoice is not in the chapter', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should reject DRAFT invoices', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(baseInvoice);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should reject PAID invoices', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...baseInvoice,
+        status: 'PAID',
+        paid_at: '2026-09-10T00:00:00.000Z',
+      });
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should reuse a stored PaymentIntent that is still confirmable', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_stored_1',
+      });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_stored_1',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_stored_1_secret',
+        latestChargeId: null,
+      });
+
+      const result = await service.createPaymentIntent(
+        'inv-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockBillingProvider.getPaymentIntent).toHaveBeenCalledWith(
+        'pi_stored_1',
+      );
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        client_secret: 'pi_stored_1_secret',
+        payment_intent_id: 'pi_stored_1',
+      });
+    });
+
+    it('should throw ConflictException when the stored PaymentIntent already succeeded', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_done_1',
+      });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_done_1',
+        status: 'succeeded',
+        clientSecret: 'pi_done_1_secret',
+        latestChargeId: 'ch_1',
+      });
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ConflictException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should mint a fresh PaymentIntent when the stored one was canceled', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_canceled_1',
+      });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_canceled_1',
+        status: 'canceled',
+        clientSecret: null,
+        latestChargeId: null,
+      });
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_fresh_2',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_fresh_2_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_fresh_2',
+      });
+
+      const result = await service.createPaymentIntent(
+        'inv-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockBillingProvider.createPaymentIntent).toHaveBeenCalledTimes(1);
+      expect(mockInvoiceRepo.update).toHaveBeenCalledWith('inv-1', 'ch-1', {
+        stripe_payment_intent_id: 'pi_fresh_2',
+      });
+      expect(result).toEqual({
+        client_secret: 'pi_fresh_2_secret',
+        payment_intent_id: 'pi_fresh_2',
+      });
+    });
+
+    it('should throw ServiceUnavailableException when the provider fails', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockBillingProvider.createPaymentIntent.mockRejectedValue(
+        new Error('stripe is down'),
+      );
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('applyStripePaymentSuccess', () => {
+    const paidInvoice: FinancialInvoice = {
+      ...baseInvoice,
+      status: 'PAID',
+      paid_at: '2026-09-10T00:00:00.000Z',
+      stripe_payment_intent_id: 'pi_1',
+    };
+
+    it('should apply the payment and notify the invoice owner', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(paidInvoice);
+
+      await service.applyStripePaymentSuccess({
+        invoiceId: 'inv-1',
+        chapterId: 'ch-1',
+        paymentIntentId: 'pi_1',
+        chargeId: 'ch_charge_1',
+      });
+
+      expect(mockInvoiceRepo.applyPayment).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_1',
+        'ch_charge_1',
+      );
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'ch-1',
+        expect.objectContaining({
+          category: 'billing',
+          title: 'Payment received',
+        }),
+      );
+    });
+
+    it('should silently no-op on duplicate delivery for an already PAID invoice', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      mockInvoiceRepo.findById.mockResolvedValue(paidInvoice);
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_charge_1',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('should resolve without notifying when the invoice was voided', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...baseInvoice,
+        status: 'VOID',
+      });
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('should swallow notification failures', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(paidInvoice);
+      mockNotificationService.notifyUser.mockRejectedValue(
+        new Error('push provider down'),
+      );
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_charge_1',
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 

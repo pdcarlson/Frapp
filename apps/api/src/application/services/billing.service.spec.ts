@@ -18,6 +18,7 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
+import { FinancialInvoiceService } from './financial-invoice.service';
 
 describe('BillingService', () => {
   it('should initialize successfully', () => {
@@ -31,6 +32,9 @@ describe('BillingService', () => {
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
+  let mockFinancialInvoiceService: jest.Mocked<
+    Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
   >;
 
   const baseChapter: Chapter = {
@@ -56,6 +60,8 @@ describe('BillingService', () => {
       createCustomerPortalSession: jest.fn(),
       getSubscriptionStatus: jest.fn(),
       cancelSubscription: jest.fn(),
+      createPaymentIntent: jest.fn(),
+      getPaymentIntent: jest.fn(),
       constructWebhookEvent: jest.fn(),
     };
 
@@ -69,11 +75,13 @@ describe('BillingService', () => {
 
     mockMemberRepo = {
       findById: jest.fn(),
+      findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -82,6 +90,7 @@ describe('BillingService', () => {
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -89,6 +98,10 @@ describe('BillingService', () => {
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockFinancialInvoiceService = {
+      applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -99,6 +112,10 @@ describe('BillingService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        {
+          provide: FinancialInvoiceService,
+          useValue: mockFinancialInvoiceService,
+        },
       ],
     }).compile();
 
@@ -373,7 +390,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -406,7 +423,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -439,7 +456,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -474,7 +491,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -482,6 +499,11 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
       });
       mockMemberRepo.findByChapter.mockResolvedValue([]);
 
@@ -503,7 +525,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -604,7 +626,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -616,6 +638,11 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
       });
       mockMemberRepo.findByChapter.mockResolvedValue([
         {
@@ -623,6 +650,9 @@ describe('BillingService', () => {
           user_id: 'user-pres',
           chapter_id: 'ch-1',
           role_ids: ['role-pres'],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
         },
       ]);
       mockNotificationService.notifyUser.mockRejectedValue(
@@ -1248,10 +1278,143 @@ describe('BillingService', () => {
       });
     });
 
+    describe('payment_intent.succeeded dispatch (FRA-15)', () => {
+      const paymentIntentEvent = (
+        id: string,
+        object: Record<string, unknown>,
+      ): WebhookEvent => ({
+        id,
+        type: 'payment_intent.succeeded',
+        created: Date.now(),
+        data: { object },
+      });
+
+      it('applies the member payment with a string latest_charge', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_string_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            latest_charge: 'ch_123',
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledWith({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_123',
+        });
+      });
+
+      it('normalizes an expanded latest_charge object to its id', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_object_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            latest_charge: { id: 'ch_456' },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledWith({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_456',
+        });
+      });
+
+      it('passes a null chargeId when latest_charge is null or absent', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_null_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            latest_charge: null,
+          }),
+        );
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_absent_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledTimes(2);
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenNthCalledWith(1, {
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        });
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenNthCalledWith(2, {
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        });
+      });
+
+      it('ignores an intent missing invoice_id metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_no_invoice_id', {
+              id: 'pi_1',
+              metadata: { chapter_id: 'ch-1' },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('ignores an intent missing chapter_id metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_no_chapter_id', {
+              id: 'pi_1',
+              metadata: { invoice_id: 'inv-1' },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('skips a duplicate delivery of the same event id (idempotency)', async () => {
+        const event = paymentIntentEvent('evt_pi_dup', {
+          id: 'pi_1',
+          metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+          latest_charge: 'ch_123',
+        });
+
+        await service.handleWebhookEvent(event);
+        await service.handleWebhookEvent(event);
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('should handle unknown event types gracefully', async () => {
       const event: WebhookEvent = {
         id: 'evt_unknown',
-        type: 'payment_intent.succeeded',
+        type: 'charge.refunded',
         created: Date.now(),
         data: { object: {} },
       };
