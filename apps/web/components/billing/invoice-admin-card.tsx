@@ -213,7 +213,20 @@ export function InvoiceAdminCard() {
       deniedFallback={null}
     >
       <div className="space-y-6">
-        {overdue.length > 0 ? (
+        {overdueQuery.isError ? (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                Overdue status unavailable
+              </CardTitle>
+              <CardDescription>
+                Couldn&apos;t load the overdue list — overdue badges and the
+                OVERDUE filter are unavailable until it recovers.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : overdue.length > 0 ? (
           <Card className="border-destructive/40 bg-destructive/5">
             <CardHeader className="flex flex-row items-start justify-between gap-2">
               <div>

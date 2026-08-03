@@ -294,7 +294,7 @@ describe('ServiceEntryService', () => {
       expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
     });
 
-    it('should store trimmed proof and normalize whitespace-only proof to null', async () => {
+    it('should store trimmed proof', async () => {
       mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
 
       await service.create({
@@ -310,6 +310,26 @@ describe('ServiceEntryService', () => {
         expect.objectContaining({
           proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
         }),
+      );
+    });
+
+    it('should normalize whitespace-only proof to null when the workflow is disabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(
+        receiptWorkflow(false),
+      );
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: '   ',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ proof_path: null }),
       );
     });
 

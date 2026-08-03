@@ -96,10 +96,12 @@ export class ChapterWorkflowsService {
    * Workflows; seed default 7), clamped to [0, MAX_GRACE_DAYS].
    *
    * `chapter_dues_config.grace_days` (Settings → Dues) is deliberately NOT
-   * consulted: the config PATCH materializes the workflow threshold into the
-   * row on any Workflows-tab save, so a grace-days fallback would be
-   * unreachable in practice while implying precedence that doesn't exist.
-   * Reconciling the two knobs is tracked separately (FRA-256 / FRA-227).
+   * consulted. A fallback to it would only apply while the chapter has never
+   * saved the Workflows tab: any save of `wf_dues_grace` materializes the
+   * displayed threshold into the row (config PATCH behavior), permanently
+   * shadowing `grace_days` — policy that depends on save history is not
+   * policy. One authoritative knob instead; reconciling the duplicate
+   * `grace_days` field is tracked separately (FRA-256 / FRA-227).
    */
   async getDuesGraceDays(chapterId: string): Promise<number> {
     const workflow = await this.getWorkflow(chapterId, WORKFLOW_DUES_GRACE);
