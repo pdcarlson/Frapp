@@ -46,9 +46,18 @@ export interface PaymentIntentWebhookObject {
     user_id?: string;
   };
   // Stripe sends a charge id, an expanded charge object, or null depending on
-  // payload expansion — consumers must normalize.
+  // payload expansion — normalize via chargeIdFromLatestCharge.
   latest_charge?: string | { id: string } | null;
   amount?: number;
+}
+
+/** Normalize Stripe's `latest_charge` (id, expanded object, or null). */
+export function chargeIdFromLatestCharge(
+  latestCharge: string | { id: string } | null | undefined,
+): string | null {
+  return typeof latestCharge === 'string'
+    ? latestCharge
+    : (latestCharge?.id ?? null);
 }
 
 export type WebhookEvent =
@@ -67,6 +76,9 @@ export interface CreatePaymentIntentParams {
     chapter_id: string;
     user_id: string;
   };
+  // Provider-side dedupe: concurrent create calls with the same key return
+  // the same intent instead of minting (and charging) twice.
+  idempotencyKey: string;
 }
 
 export interface PaymentIntentResult {
@@ -87,6 +99,13 @@ export interface IBillingProvider {
   createPaymentIntent(
     params: CreatePaymentIntentParams,
   ): Promise<PaymentIntentResult>;
-  getPaymentIntent(paymentIntentId: string): Promise<PaymentIntentResult>;
+  /** Null when the intent no longer exists at the provider (e.g. key/account
+   * migration) — callers treat that as "mint a fresh one", not an outage. */
+  getPaymentIntent(
+    paymentIntentId: string,
+  ): Promise<PaymentIntentResult | null>;
+  /** Best-effort cancel so an outstanding client secret can no longer be
+   * confirmed. Already-terminal intents are treated as success. */
+  cancelPaymentIntent(paymentIntentId: string): Promise<void>;
   constructWebhookEvent(payload: Buffer, signature: string): WebhookEvent;
 }

@@ -233,7 +233,7 @@ describe('CustomThrottlerGuard', () => {
 
     const httpCtx = (
       cls: new (...args: never[]) => unknown,
-      handler: () => unknown,
+      handler: (...args: never[]) => unknown,
     ): ExecutionContext =>
       ({
         getClass: () => cls,

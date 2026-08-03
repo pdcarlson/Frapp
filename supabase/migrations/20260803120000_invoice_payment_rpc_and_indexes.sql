@@ -14,6 +14,12 @@
 -- consistent with the money that actually moved, even if a different intent
 -- was stored at initiation time.
 --
+-- Both PAID writers go through this function: the Stripe webhook (intent +
+-- charge ids set) and the admin manual transition (both null — COALESCE keeps
+-- any stored intent id). That is what makes the webhook/admin race safe in
+-- BOTH directions: whichever caller loses the CAS gets zero rows and must not
+-- write the ledger.
+--
 -- `security invoker` (matching confirm_task_completion): the API always calls
 -- this via the service-role SUPABASE_CLIENT, which bypasses RLS. If a caller
 -- is ever routed through a user/anon client, the writes to the RLS-protected
@@ -50,7 +56,7 @@ begin
   update financial_invoices
      set status = 'PAID',
          paid_at = now(),
-         stripe_payment_intent_id = p_payment_intent_id
+         stripe_payment_intent_id = coalesce(p_payment_intent_id, stripe_payment_intent_id)
    where id = p_invoice_id
      and chapter_id = p_chapter_id
      and status = 'OPEN'

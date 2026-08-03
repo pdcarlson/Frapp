@@ -12,6 +12,13 @@ const V1 = '/v1';
 // the Stripe provider boundary are mocked — so these tests prove the full
 // HTTP → controller → BillingService → FinancialInvoiceService →
 // apply_invoice_payment RPC pipeline.
+//
+// The RPC params are uuid-typed and BillingService drops non-UUID metadata
+// before dispatching, so the fixtures below must be real UUIDs.
+const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
+const USER_ID = '33333333-3333-4333-8333-333333333333';
+
 const paymentIntentEvent = (eventId: string) => ({
   id: eventId,
   type: 'payment_intent.succeeded',
@@ -19,7 +26,11 @@ const paymentIntentEvent = (eventId: string) => ({
   data: {
     object: {
       id: 'pi_1',
-      metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1', user_id: 'u-1' },
+      metadata: {
+        invoice_id: INVOICE_ID,
+        chapter_id: CHAPTER_ID,
+        user_id: USER_ID,
+      },
       latest_charge: 'ch_1',
     },
   },
@@ -28,8 +39,8 @@ const paymentIntentEvent = (eventId: string) => ({
 const expectedRpcArgs = [
   'apply_invoice_payment',
   {
-    p_invoice_id: 'inv-1',
-    p_chapter_id: 'ch-1',
+    p_invoice_id: INVOICE_ID,
+    p_chapter_id: CHAPTER_ID,
     p_payment_intent_id: 'pi_1',
     p_charge_id: 'ch_1',
   },
@@ -78,9 +89,9 @@ describe('Invoice payment webhook (e2e)', () => {
     rpc.mockResolvedValue({
       data: [
         {
-          id: 'inv-1',
-          user_id: 'u-1',
-          chapter_id: 'ch-1',
+          id: INVOICE_ID,
+          user_id: USER_ID,
+          chapter_id: CHAPTER_ID,
           title: 'Dues',
           amount: 5000,
           status: 'PAID',
@@ -115,9 +126,37 @@ describe('Invoice payment webhook (e2e)', () => {
       .expect(200)
       .expect({ received: true });
 
-    // The CAS was attempted (not skipped by in-memory dedupe) and missed;
-    // the follow-up invoice lookup resolves benignly on the supabase mock
-    // (maybeSingle → { data: null, error: null }).
+    // The CAS was attempted (not skipped by in-memory dedupe) and missed; the
+    // follow-up invoice lookup and ledger scan both resolve benignly on the
+    // supabase mock (maybeSingle → { data: null, error: null }).
     expect(rpc).toHaveBeenCalledWith(...expectedRpcArgs);
+  });
+
+  // A foreign integration on the same Stripe account can attach arbitrary
+  // metadata; forwarding a non-UUID into the uuid-typed RPC would 22P02 → 500
+  // and Stripe would retry the event for days. Ack it and skip the RPC.
+  it('acks and skips the RPC for an intent whose metadata is not a UUID', async () => {
+    constructWebhookEvent.mockReturnValue({
+      id: 'evt_pi_foreign',
+      type: 'payment_intent.succeeded',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: 'pi_foreign',
+          metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+          latest_charge: 'ch_1',
+        },
+      },
+    });
+    rpc.mockClear();
+
+    await request(app.getHttpServer())
+      .post(`${V1}/webhooks/stripe`)
+      .set('stripe-signature', 'sig_test')
+      .send({ type: 'payment_intent.succeeded' })
+      .expect(200)
+      .expect({ received: true });
+
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

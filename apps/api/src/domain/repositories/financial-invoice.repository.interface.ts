@@ -15,14 +15,26 @@ export interface IFinancialInvoiceRepository {
   ): Promise<FinancialInvoice>;
   /**
    * Atomically move an OPEN invoice to PAID and insert its PAYMENT ledger row
-   * (with the Stripe charge id) in one transaction. Returns null when the
-   * invoice is missing, already PAID, or VOID — the caller treats that as an
-   * idempotent no-op.
+   * in one transaction. Both PAID writers use this: the webhook passes the
+   * intent + charge ids; the admin manual transition passes nulls (a stored
+   * intent id is preserved). Returns null when the invoice is missing, already
+   * PAID, or VOID — the caller decides whether that is a benign no-op.
    */
   applyPayment(
     id: string,
     chapterId: string,
-    paymentIntentId: string,
+    paymentIntentId: string | null,
     chargeId: string | null,
+  ): Promise<FinancialInvoice | null>;
+  /**
+   * Stamp a PaymentIntent id onto an invoice only while it is still OPEN.
+   * Returns null (without writing) when the invoice changed state underneath
+   * the caller — the pay flow must then re-read and refuse, never hand out a
+   * client secret for a settled or voided invoice.
+   */
+  setPaymentIntentIfOpen(
+    id: string,
+    chapterId: string,
+    paymentIntentId: string,
   ): Promise<FinancialInvoice | null>;
 }

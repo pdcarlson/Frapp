@@ -62,6 +62,7 @@ describe('BillingService', () => {
       cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
+      cancelPaymentIntent: jest.fn(),
       constructWebhookEvent: jest.fn(),
     };
 
@@ -1279,6 +1280,11 @@ describe('BillingService', () => {
     });
 
     describe('payment_intent.succeeded dispatch (FRA-15)', () => {
+      // The RPC params are uuid-typed, so the dispatcher only forwards metadata
+      // that actually parses as a UUID — fixtures must be real UUIDs.
+      const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+      const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
+
       const paymentIntentEvent = (
         id: string,
         object: Record<string, unknown>,
@@ -1293,7 +1299,7 @@ describe('BillingService', () => {
         await service.handleWebhookEvent(
           paymentIntentEvent('evt_pi_string_charge', {
             id: 'pi_1',
-            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
             latest_charge: 'ch_123',
           }),
         );
@@ -1301,8 +1307,8 @@ describe('BillingService', () => {
         expect(
           mockFinancialInvoiceService.applyStripePaymentSuccess,
         ).toHaveBeenCalledWith({
-          invoiceId: 'inv-1',
-          chapterId: 'ch-1',
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
           paymentIntentId: 'pi_1',
           chargeId: 'ch_123',
         });
@@ -1312,7 +1318,7 @@ describe('BillingService', () => {
         await service.handleWebhookEvent(
           paymentIntentEvent('evt_pi_object_charge', {
             id: 'pi_1',
-            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
             latest_charge: { id: 'ch_456' },
           }),
         );
@@ -1320,8 +1326,8 @@ describe('BillingService', () => {
         expect(
           mockFinancialInvoiceService.applyStripePaymentSuccess,
         ).toHaveBeenCalledWith({
-          invoiceId: 'inv-1',
-          chapterId: 'ch-1',
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
           paymentIntentId: 'pi_1',
           chargeId: 'ch_456',
         });
@@ -1331,14 +1337,14 @@ describe('BillingService', () => {
         await service.handleWebhookEvent(
           paymentIntentEvent('evt_pi_null_charge', {
             id: 'pi_1',
-            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
             latest_charge: null,
           }),
         );
         await service.handleWebhookEvent(
           paymentIntentEvent('evt_pi_absent_charge', {
             id: 'pi_1',
-            metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
           }),
         );
 
@@ -1348,16 +1354,16 @@ describe('BillingService', () => {
         expect(
           mockFinancialInvoiceService.applyStripePaymentSuccess,
         ).toHaveBeenNthCalledWith(1, {
-          invoiceId: 'inv-1',
-          chapterId: 'ch-1',
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
           paymentIntentId: 'pi_1',
           chargeId: null,
         });
         expect(
           mockFinancialInvoiceService.applyStripePaymentSuccess,
         ).toHaveBeenNthCalledWith(2, {
-          invoiceId: 'inv-1',
-          chapterId: 'ch-1',
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
           paymentIntentId: 'pi_1',
           chargeId: null,
         });
@@ -1368,7 +1374,7 @@ describe('BillingService', () => {
           service.handleWebhookEvent(
             paymentIntentEvent('evt_pi_no_invoice_id', {
               id: 'pi_1',
-              metadata: { chapter_id: 'ch-1' },
+              metadata: { chapter_id: CHAPTER_ID },
               latest_charge: 'ch_123',
             }),
           ),
@@ -1384,7 +1390,7 @@ describe('BillingService', () => {
           service.handleWebhookEvent(
             paymentIntentEvent('evt_pi_no_chapter_id', {
               id: 'pi_1',
-              metadata: { invoice_id: 'inv-1' },
+              metadata: { invoice_id: INVOICE_ID },
               latest_charge: 'ch_123',
             }),
           ),
@@ -1395,10 +1401,61 @@ describe('BillingService', () => {
         ).not.toHaveBeenCalled();
       });
 
+      it('ignores a foreign intent whose invoice_id is not a UUID', async () => {
+        const loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => {});
+
+        // Another integration on the same Stripe account can carry arbitrary
+        // metadata; forwarding it into the uuid-typed RPC would 22P02 → 500 →
+        // Stripe retries for days.
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_non_uuid_invoice', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: 'inv-1', chapter_id: CHAPTER_ID },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('non-UUID invoice metadata'),
+        );
+
+        loggerWarnSpy.mockRestore();
+      });
+
+      it('ignores a foreign intent whose chapter_id is not a UUID', async () => {
+        const loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => {});
+
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_non_uuid_chapter', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: INVOICE_ID, chapter_id: 'ch-1' },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalled();
+
+        loggerWarnSpy.mockRestore();
+      });
+
       it('skips a duplicate delivery of the same event id (idempotency)', async () => {
         const event = paymentIntentEvent('evt_pi_dup', {
           id: 'pi_1',
-          metadata: { invoice_id: 'inv-1', chapter_id: 'ch-1' },
+          metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
           latest_charge: 'ch_123',
         });
 

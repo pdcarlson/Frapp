@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   BILLING_PROVIDER,
+  chargeIdFromLatestCharge,
   type IBillingProvider,
   type WebhookEvent,
   type CheckoutSessionWebhookObject,
@@ -39,6 +40,9 @@ export interface CreatePortalInput {
   chapterId: string;
   returnUrl: string;
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 @Injectable()
 export class BillingService {
@@ -358,17 +362,21 @@ export class BillingService {
       return;
     }
 
-    const latestCharge = intent.latest_charge;
-    const chargeId =
-      typeof latestCharge === 'string'
-        ? latestCharge
-        : (latestCharge?.id ?? null);
+    // Other integrations on the same Stripe account can carry arbitrary
+    // metadata; forwarding a non-UUID into the uuid-typed RPC params would
+    // 22P02 → 500 → Stripe retries the event for days. Ack-and-log instead.
+    if (!UUID_PATTERN.test(invoiceId) || !UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `payment_intent.succeeded with non-UUID invoice metadata (invoice_id: ${invoiceId}, chapter_id: ${chapterId}): ${event.id} — ignoring foreign intent`,
+      );
+      return;
+    }
 
     await this.financialInvoiceService.applyStripePaymentSuccess({
       invoiceId,
       chapterId,
       paymentIntentId: intent.id,
-      chargeId,
+      chargeId: chargeIdFromLatestCharge(intent.latest_charge),
     });
   }
 

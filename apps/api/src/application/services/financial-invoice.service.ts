@@ -170,21 +170,43 @@ export class FinancialInvoiceService {
       );
     }
 
-    const updateData: Partial<FinancialInvoice> = { status: newStatus };
-
+    let updated: FinancialInvoice;
     if (newStatus === 'PAID') {
-      updateData.paid_at = new Date().toISOString();
+      // Same atomic CAS the webhook uses (nulls: no intent/charge to record —
+      // the RPC preserves any stored intent id). If the webhook wins the race
+      // first, this returns null instead of double-writing the ledger.
+      const paid = await this.invoiceRepo.applyPayment(
+        id,
+        chapterId,
+        null,
+        null,
+      );
+      if (!paid) {
+        throw new BadRequestException(
+          'Invoice is no longer OPEN — it was paid or voided concurrently',
+        );
+      }
+      updated = paid;
+    } else {
+      updated = await this.invoiceRepo.update(id, chapterId, {
+        status: newStatus,
+      });
     }
 
-    const updated = await this.invoiceRepo.update(id, chapterId, updateData);
-
-    if (newStatus === 'PAID') {
-      await this.transactionRepo.create({
-        chapter_id: chapterId,
-        invoice_id: id,
-        amount: invoice.amount,
-        type: 'PAYMENT',
-      });
+    if (newStatus === 'VOID' && invoice.stripe_payment_intent_id) {
+      // Kill any outstanding client secret: without this, a payment sheet the
+      // member already opened stays confirmable and can capture real money for
+      // a voided invoice (the webhook CAS would then miss, leaving a charge
+      // with no ledger row). Best-effort — voiding must not fail on Stripe.
+      try {
+        await this.billingProvider.cancelPaymentIntent(
+          invoice.stripe_payment_intent_id,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while voiding invoice ${id}: ${error instanceof Error ? error.message : error} — the intent may still be confirmable; verify in Stripe`,
+        );
+      }
     }
 
     if (invoice.status === 'DRAFT' && newStatus === 'OPEN') {
@@ -227,20 +249,22 @@ export class FinancialInvoiceService {
     let intent: PaymentIntentResult | null = null;
     try {
       if (invoice.stripe_payment_intent_id) {
+        // Null = the id no longer exists at the provider (key/account
+        // migration) — fall through and mint a fresh intent.
         const existing = await this.billingProvider.getPaymentIntent(
           invoice.stripe_payment_intent_id,
         );
-        if (existing.status === 'succeeded') {
+        if (existing?.status === 'succeeded') {
           // Money already moved; the webhook will (or did) flip the invoice.
           throw new ConflictException(
             'Payment already completed; confirmation is being processed',
           );
         }
-        if (REUSABLE_INTENT_STATUSES.has(existing.status)) {
+        if (existing && REUSABLE_INTENT_STATUSES.has(existing.status)) {
           intent = existing;
         }
-        // canceled (or any other terminal state) falls through to a fresh
-        // intent that overwrites the stored id.
+        // canceled/unknown (or any other terminal state) falls through to a
+        // fresh intent that overwrites the stored id.
       }
 
       if (!intent) {
@@ -252,6 +276,11 @@ export class FinancialInvoiceService {
             chapter_id: chapterId,
             user_id: invoice.user_id,
           },
+          // Keyed on the stored id so two concurrent first attempts collapse
+          // into ONE provider-side intent (both callers get the same one back)
+          // instead of minting two separately chargeable intents. A re-mint
+          // after canceled/unknown has a different stored id → different key.
+          idempotencyKey: `invoice-pay-${invoice.id}-${invoice.stripe_payment_intent_id ?? 'first'}`,
         });
       }
     } catch (error) {
@@ -265,11 +294,26 @@ export class FinancialInvoiceService {
     }
 
     if (intent.id !== invoice.stripe_payment_intent_id) {
-      // Persist via the repo directly: service-level update() is DRAFT-only by
-      // design, and this write must land on an OPEN invoice.
-      await this.invoiceRepo.update(invoiceId, chapterId, {
-        stripe_payment_intent_id: intent.id,
-      });
+      // Conditional stamp: only while still OPEN. The initial status check is
+      // stale by now (Stripe round-trips sit in between), and an unconditional
+      // write could overwrite the webhook-stamped id on a just-settled invoice
+      // or hand out a client secret for a voided one.
+      const stamped = await this.invoiceRepo.setPaymentIntentIfOpen(
+        invoiceId,
+        chapterId,
+        intent.id,
+      );
+      if (!stamped) {
+        const current = await this.invoiceRepo.findById(invoiceId, chapterId);
+        if (current?.status === 'PAID') {
+          throw new ConflictException(
+            'Invoice was already paid; no further payment is needed',
+          );
+        }
+        throw new BadRequestException(
+          `Only OPEN invoices can be paid (current status: ${current?.status ?? 'missing'})`,
+        );
+      }
     }
 
     return {
@@ -297,17 +341,25 @@ export class FinancialInvoiceService {
     );
 
     if (!paid) {
-      // Missing, already PAID, or VOID. VOID is the loud case: the member
-      // completed a payment for an invoice an admin voided — real money with
-      // no ledger row, needs manual reconciliation.
+      // Missing, already PAID, or VOID. Every payment_intent.succeeded means
+      // money actually moved, so a miss is benign ONLY if this charge already
+      // has its ledger row (a true redelivery). Anything else — VOID invoice,
+      // second intent on a PAID invoice, cash-marked PAID racing a card
+      // payment — is a captured charge with no ledger row: warn loudly for
+      // manual reconciliation (refund or reissue).
       const current = await this.invoiceRepo.findById(invoiceId, chapterId);
-      if (current?.status === 'VOID') {
-        this.logger.warn(
-          `payment_intent.succeeded for VOID invoice ${invoiceId} (chapter ${chapterId}, intent ${paymentIntentId}, charge ${chargeId ?? 'unknown'}) — payment captured with no ledger row; reconcile manually`,
+      const ledgered =
+        chargeId !== null &&
+        (await this.transactionRepo.findByInvoice(invoiceId)).some(
+          (t) => t.stripe_charge_id === chargeId,
+        );
+      if (ledgered) {
+        this.logger.log(
+          `payment_intent.succeeded for invoice ${invoiceId} skipped — duplicate delivery of already-ledgered charge ${chargeId}`,
         );
       } else {
-        this.logger.log(
-          `payment_intent.succeeded for invoice ${invoiceId} skipped (status: ${current?.status ?? 'missing'}) — duplicate delivery or already settled`,
+        this.logger.warn(
+          `payment_intent.succeeded for ${current?.status ?? 'missing'} invoice ${invoiceId} (chapter ${chapterId}, intent ${paymentIntentId}, charge ${chargeId ?? 'unknown'}, stored intent ${current?.stripe_payment_intent_id ?? 'none'}) — captured payment with no ledger row; reconcile manually`,
         );
       }
       return;

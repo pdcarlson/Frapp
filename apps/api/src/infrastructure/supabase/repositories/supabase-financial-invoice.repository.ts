@@ -92,7 +92,7 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
   async applyPayment(
     id: string,
     chapterId: string,
-    paymentIntentId: string,
+    paymentIntentId: string | null,
     chargeId: string | null,
   ): Promise<FinancialInvoice | null> {
     // `rpc` args/return are not inferred for `FrappSupabaseClient` because
@@ -109,5 +109,22 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
     if (error) throw error;
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;
+  }
+
+  async setPaymentIntentIfOpen(
+    id: string,
+    chapterId: string,
+    paymentIntentId: string,
+  ): Promise<FinancialInvoice | null> {
+    const { data, error } = await this.supabase
+      .from('financial_invoices')
+      .update({ stripe_payment_intent_id: paymentIntentId } as never)
+      .eq('id', id)
+      .eq('chapter_id', chapterId)
+      .eq('status', 'OPEN')
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data;
   }
 }

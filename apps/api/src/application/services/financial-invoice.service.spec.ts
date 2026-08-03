@@ -48,11 +48,12 @@ describe('FinancialInvoiceService', () => {
       create: jest.fn(),
       update: jest.fn(),
       applyPayment: jest.fn(),
+      setPaymentIntentIfOpen: jest.fn(),
     };
 
     mockTransactionRepo = {
       findByChapter: jest.fn(),
-      findByInvoice: jest.fn(),
+      findByInvoice: jest.fn().mockResolvedValue([]),
       create: jest.fn(),
     };
 
@@ -64,6 +65,7 @@ describe('FinancialInvoiceService', () => {
       cancelSubscription: jest.fn(),
       createPaymentIntent: jest.fn(),
       getPaymentIntent: jest.fn(),
+      cancelPaymentIntent: jest.fn().mockResolvedValue(undefined),
       constructWebhookEvent: jest.fn(),
     };
 
@@ -238,35 +240,48 @@ describe('FinancialInvoiceService', () => {
       expect(result.status).toBe('VOID');
     });
 
-    it('should transition OPEN to PAID and create transaction', async () => {
+    it('should transition OPEN to PAID through the atomic applyPayment CAS', async () => {
+      const openInvoice = { ...baseInvoice, status: 'OPEN' as const };
+      const paidInvoice = {
+        ...openInvoice,
+        status: 'PAID' as const,
+        paid_at: '2026-09-10T00:00:00.000Z',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.applyPayment.mockResolvedValue(paidInvoice);
+
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+
+      // AC3: a manual PAID transition carries no Stripe intent/charge id — the
+      // nulls are what express that, and the RPC inserts the ledger row.
+      expect(mockInvoiceRepo.applyPayment).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        null,
+        null,
+      );
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      // The RPC writes the ledger row inside the same transaction; the service
+      // must not double-insert it.
+      expect(mockTransactionRepo.create).not.toHaveBeenCalled();
+      expect(result.status).toBe('PAID');
+    });
+
+    it('should reject a manual PAID when the CAS misses (paid or voided concurrently)', async () => {
       const openInvoice = { ...baseInvoice, status: 'OPEN' as const };
       mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
-      mockInvoiceRepo.update.mockResolvedValue({
-        ...openInvoice,
-        status: 'PAID',
-        paid_at: '2026-09-10T00:00:00.000Z',
-      });
-      mockTransactionRepo.create.mockResolvedValue({
-        id: 'txn-1',
-        chapter_id: 'ch-1',
-        invoice_id: 'inv-1',
-        amount: 15000,
-        type: 'PAYMENT',
-        stripe_charge_id: null,
-        created_at: '2026-09-10T00:00:00.000Z',
-      });
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
 
-      await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+      await expect(
+        service.transitionStatus('inv-1', 'ch-1', 'PAID'),
+      ).rejects.toThrow(
+        'Invoice is no longer OPEN — it was paid or voided concurrently',
+      );
+      await expect(
+        service.transitionStatus('inv-1', 'ch-1', 'PAID'),
+      ).rejects.toThrow(BadRequestException);
 
-      expect(mockTransactionRepo.create).toHaveBeenCalledWith({
-        chapter_id: 'ch-1',
-        invoice_id: 'inv-1',
-        amount: 15000,
-        type: 'PAYMENT',
-      });
-      // AC3: manual PAID transitions never attach a Stripe charge id.
-      const createArg = mockTransactionRepo.create.mock.calls[0][0];
-      expect(createArg.stripe_charge_id).toBeUndefined();
+      expect(mockTransactionRepo.create).not.toHaveBeenCalled();
     });
 
     it('should transition OPEN to VOID', async () => {
@@ -280,6 +295,84 @@ describe('FinancialInvoiceService', () => {
       const result = await service.transitionStatus('inv-1', 'ch-1', 'VOID');
       expect(result.status).toBe('VOID');
       expect(mockTransactionRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should cancel the stored PaymentIntent when voiding an OPEN invoice', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        status: 'VOID',
+      });
+
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'VOID');
+
+      // Without this the member's already-open payment sheet stays confirmable
+      // and can capture real money against a voided invoice.
+      expect(mockBillingProvider.cancelPaymentIntent).toHaveBeenCalledWith(
+        'pi_outstanding',
+      );
+      expect(result.status).toBe('VOID');
+    });
+
+    it('should not call the provider when voiding an invoice with no stored intent', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: null,
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        status: 'VOID',
+      });
+
+      await service.transitionStatus('inv-1', 'ch-1', 'VOID');
+
+      expect(mockBillingProvider.cancelPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should still void when cancelling the PaymentIntent throws', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...openInvoice,
+        status: 'VOID',
+      });
+      mockBillingProvider.cancelPaymentIntent.mockRejectedValue(
+        new Error('stripe is down'),
+      );
+
+      // Best effort: a provider outage must never block the admin's void.
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'VOID');
+
+      expect(mockBillingProvider.cancelPaymentIntent).toHaveBeenCalledWith(
+        'pi_outstanding',
+      );
+      expect(result.status).toBe('VOID');
+    });
+
+    it('should not cancel a stored intent when transitioning DRAFT to VOID', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...baseInvoice,
+        stripe_payment_intent_id: null,
+      });
+      mockInvoiceRepo.update.mockResolvedValue({
+        ...baseInvoice,
+        status: 'VOID',
+      });
+
+      await service.transitionStatus('inv-1', 'ch-1', 'VOID');
+
+      expect(mockBillingProvider.cancelPaymentIntent).not.toHaveBeenCalled();
     });
 
     it('should reject invalid transitions from PAID', async () => {
@@ -327,7 +420,7 @@ describe('FinancialInvoiceService', () => {
         clientSecret: 'pi_new_123_secret',
         latestChargeId: null,
       });
-      mockInvoiceRepo.update.mockResolvedValue({
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue({
         ...openInvoice,
         stripe_payment_intent_id: 'pi_new_123',
       });
@@ -346,14 +439,149 @@ describe('FinancialInvoiceService', () => {
           chapter_id: 'ch-1',
           user_id: 'user-1',
         },
+        // Two concurrent first attempts must collapse into ONE provider-side
+        // intent rather than minting two separately chargeable ones.
+        idempotencyKey: 'invoice-pay-inv-1-first',
       });
-      expect(mockInvoiceRepo.update).toHaveBeenCalledWith('inv-1', 'ch-1', {
-        stripe_payment_intent_id: 'pi_new_123',
-      });
+      // The stamp is conditional on the invoice still being OPEN — an
+      // unconditional update could clobber a webhook-stamped id.
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_new_123',
+      );
+      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(result).toEqual({
         client_secret: 'pi_new_123_secret',
         payment_intent_id: 'pi_new_123',
       });
+    });
+
+    it('should key the idempotency token on the stored intent id when re-minting', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_canceled_1',
+      });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_canceled_1',
+        status: 'canceled',
+        clientSecret: null,
+        latestChargeId: null,
+      });
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_fresh_2',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_fresh_2_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_fresh_2',
+      });
+
+      await service.createPaymentIntent('inv-1', 'ch-1', 'user-1');
+
+      // Different stored id ⇒ different key, so the re-mint is not deduped
+      // against the original (canceled) intent.
+      expect(mockBillingProvider.createPaymentIntent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          idempotencyKey: 'invoice-pay-inv-1-pi_canceled_1',
+        }),
+      );
+    });
+
+    it('should mint a fresh intent when the stored id no longer exists at the provider', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_gone_1',
+      });
+      // Null = resource_missing at the provider (key/account migration), which
+      // is a "mint a fresh one" signal — not an outage.
+      mockBillingProvider.getPaymentIntent.mockResolvedValue(null);
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_fresh_3',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_fresh_3_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_fresh_3',
+      });
+
+      const result = await service.createPaymentIntent(
+        'inv-1',
+        'ch-1',
+        'user-1',
+      );
+
+      expect(mockBillingProvider.createPaymentIntent).toHaveBeenCalledTimes(1);
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_fresh_3',
+      );
+      expect(result).toEqual({
+        client_secret: 'pi_fresh_3_secret',
+        payment_intent_id: 'pi_fresh_3',
+      });
+    });
+
+    it('should throw ConflictException when the conditional stamp misses and the invoice is now PAID', async () => {
+      mockInvoiceRepo.findById
+        .mockResolvedValueOnce(openInvoice)
+        .mockResolvedValueOnce({
+          ...openInvoice,
+          status: 'PAID',
+          paid_at: '2026-09-10T00:00:00.000Z',
+        });
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_new_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_new_123_secret',
+        latestChargeId: null,
+      });
+      // The webhook settled the invoice while the Stripe round-trip was in
+      // flight, so the CAS refuses to stamp.
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue(null);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw BadRequestException when the conditional stamp misses and the invoice is now VOID', async () => {
+      mockInvoiceRepo.findById
+        .mockResolvedValueOnce(openInvoice)
+        .mockResolvedValueOnce({ ...openInvoice, status: 'VOID' });
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_new_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_new_123_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue(null);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException when the conditional stamp misses and the invoice vanished', async () => {
+      mockInvoiceRepo.findById
+        .mockResolvedValueOnce(openInvoice)
+        .mockResolvedValueOnce(null);
+      mockBillingProvider.createPaymentIntent.mockResolvedValue({
+        id: 'pi_new_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_new_123_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue(null);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject payment attempts by a non-owner without touching the provider', async () => {
@@ -423,6 +651,7 @@ describe('FinancialInvoiceService', () => {
         'pi_stored_1',
       );
       expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(result).toEqual({
         client_secret: 'pi_stored_1_secret',
@@ -447,7 +676,7 @@ describe('FinancialInvoiceService', () => {
       ).rejects.toThrow(ConflictException);
 
       expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
-      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
     });
 
     it('should mint a fresh PaymentIntent when the stored one was canceled', async () => {
@@ -467,7 +696,7 @@ describe('FinancialInvoiceService', () => {
         clientSecret: 'pi_fresh_2_secret',
         latestChargeId: null,
       });
-      mockInvoiceRepo.update.mockResolvedValue({
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue({
         ...openInvoice,
         stripe_payment_intent_id: 'pi_fresh_2',
       });
@@ -479,9 +708,11 @@ describe('FinancialInvoiceService', () => {
       );
 
       expect(mockBillingProvider.createPaymentIntent).toHaveBeenCalledTimes(1);
-      expect(mockInvoiceRepo.update).toHaveBeenCalledWith('inv-1', 'ch-1', {
-        stripe_payment_intent_id: 'pi_fresh_2',
-      });
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_fresh_2',
+      );
       expect(result).toEqual({
         client_secret: 'pi_fresh_2_secret',
         payment_intent_id: 'pi_fresh_2',
@@ -498,7 +729,24 @@ describe('FinancialInvoiceService', () => {
         service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(ServiceUnavailableException);
 
-      expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
+    });
+
+    it('should throw ServiceUnavailableException when retrieving the stored intent fails hard', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_stored_1',
+      });
+      mockBillingProvider.getPaymentIntent.mockRejectedValue(
+        new Error('stripe is down'),
+      );
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
     });
   });
 
@@ -536,9 +784,29 @@ describe('FinancialInvoiceService', () => {
       );
     });
 
+    const ledgerRow = (chargeId: string | null) => ({
+      id: 'txn-1',
+      chapter_id: 'ch-1',
+      invoice_id: 'inv-1',
+      amount: 15000,
+      type: 'PAYMENT' as const,
+      stripe_charge_id: chargeId,
+      created_at: '2026-09-10T00:00:00.000Z',
+    });
+
     it('should silently no-op on duplicate delivery for an already PAID invoice', async () => {
       mockInvoiceRepo.applyPayment.mockResolvedValue(null);
       mockInvoiceRepo.findById.mockResolvedValue(paidInvoice);
+      // True redelivery: this exact charge already has its ledger row.
+      mockTransactionRepo.findByInvoice.mockResolvedValue([
+        ledgerRow('ch_charge_1'),
+      ]);
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+      const loggerLogSpy = jest
+        .spyOn(service['logger'], 'log')
+        .mockImplementation(() => {});
 
       await expect(
         service.applyStripePaymentSuccess({
@@ -549,7 +817,43 @@ describe('FinancialInvoiceService', () => {
         }),
       ).resolves.toBeUndefined();
 
+      expect(mockTransactionRepo.findByInvoice).toHaveBeenCalledWith('inv-1');
+      // Already ledgered ⇒ benign duplicate, not a reconciliation alarm.
+      expect(loggerWarnSpy).not.toHaveBeenCalled();
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('duplicate delivery'),
+      );
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+
+      loggerWarnSpy.mockRestore();
+      loggerLogSpy.mockRestore();
+    });
+
+    it('should warn about an orphan charge when a second intent hits an already PAID invoice', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      mockInvoiceRepo.findById.mockResolvedValue(paidInvoice);
+      // No ledger row carries this charge — real money moved with nothing
+      // recorded against it.
+      mockTransactionRepo.findByInvoice.mockResolvedValue([]);
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_other',
+          chargeId: 'ch_charge_other',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('reconcile manually'),
+      );
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+
+      loggerWarnSpy.mockRestore();
     });
 
     it('should resolve without notifying when the invoice was voided', async () => {
@@ -558,6 +862,10 @@ describe('FinancialInvoiceService', () => {
         ...baseInvoice,
         status: 'VOID',
       });
+      mockTransactionRepo.findByInvoice.mockResolvedValue([]);
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
 
       await expect(
         service.applyStripePaymentSuccess({
@@ -568,7 +876,37 @@ describe('FinancialInvoiceService', () => {
         }),
       ).resolves.toBeUndefined();
 
+      // A captured charge against a VOID invoice always needs a human.
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('VOID invoice inv-1'),
+      );
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+
+      loggerWarnSpy.mockRestore();
+    });
+
+    it('should warn when the invoice is missing entirely on a CAS miss', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      mockInvoiceRepo.findById.mockResolvedValue(null);
+      mockTransactionRepo.findByInvoice.mockResolvedValue([]);
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_charge_1',
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('missing invoice inv-1'),
+      );
+
+      loggerWarnSpy.mockRestore();
     });
 
     it('should swallow notification failures', async () => {
@@ -663,19 +1001,10 @@ describe('FinancialInvoiceService', () => {
     it('should not notify on non DRAFT→OPEN transitions', async () => {
       const openInvoice = { ...baseInvoice, status: 'OPEN' as const };
       mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
-      mockInvoiceRepo.update.mockResolvedValue({
+      mockInvoiceRepo.applyPayment.mockResolvedValue({
         ...openInvoice,
         status: 'PAID',
         paid_at: '2026-09-10T00:00:00.000Z',
-      });
-      mockTransactionRepo.create.mockResolvedValue({
-        id: 'txn-1',
-        chapter_id: 'ch-1',
-        invoice_id: 'inv-1',
-        amount: 15000,
-        type: 'PAYMENT',
-        stripe_charge_id: null,
-        created_at: '2026-09-10T00:00:00.000Z',
       });
 
       await service.transitionStatus('inv-1', 'ch-1', 'PAID');
