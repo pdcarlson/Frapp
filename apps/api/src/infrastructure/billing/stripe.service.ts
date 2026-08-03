@@ -107,6 +107,15 @@ export class StripeBillingService implements IBillingProvider {
       // `processing`, i.e. money in flight against an invoice being closed —
       // silence there would hide a real reconciliation case.
       if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        if (error.code === 'resource_missing') {
+          // The account has no such intent (e.g. an id stored under an old
+          // key) — there is provably no money in flight, so don't dilute the
+          // reconciliation signal below.
+          this.logger.debug(
+            `PaymentIntent ${paymentIntentId} not found while canceling; nothing to cancel`,
+          );
+          return;
+        }
         this.logger.warn(
           `PaymentIntent ${paymentIntentId} could not be canceled (${error.code ?? 'unknown code'}): ${error.message} — if it was mid-payment, the charge may still settle`,
         );

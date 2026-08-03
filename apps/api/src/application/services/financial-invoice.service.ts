@@ -66,8 +66,14 @@ export interface InvoicePaymentIntent {
  * the Stripe SDK (per the billing adapter rule in spec/behavior/billing.md).
  */
 function isIdempotencyConflict(error: unknown): boolean {
-  const type = (error as { type?: unknown } | null)?.type;
-  return type === 'idempotency_error' || type === 'StripeIdempotencyError';
+  // The Stripe SDK sets `type` to the error class name and `rawType` to the
+  // wire value, so match both rather than depending on which one a given
+  // version surfaces.
+  const { type, rawType } =
+    (error as { type?: unknown; rawType?: unknown } | null) ?? {};
+  return [type, rawType].some(
+    (t) => t === 'idempotency_error' || t === 'StripeIdempotencyError',
+  );
 }
 
 export interface ApplyStripePaymentInput {
@@ -373,19 +379,23 @@ export class FinancialInvoiceService {
       // payment — is a captured charge with no ledger row: warn loudly for
       // manual reconciliation (refund or reissue).
       const current = await this.invoiceRepo.findById(invoiceId, chapterId);
+      // Only a charge id can prove a redelivery: a manual PAID writes a
+      // null-charge ledger row and the RPC preserves the stored intent id, so
+      // "PAID by this intent" looks identical to a cash entry that raced a
+      // real card capture. Without a charge id we cannot tell them apart and
+      // must not stay silent about money.
       const ledgered = chargeId
         ? (await this.transactionRepo.findByInvoice(invoiceId)).some(
             (t) => t.stripe_charge_id === chargeId,
           )
-        : // No charge id on the event (older API versions omit latest_charge),
-          // so fall back to the intent: if this same intent is the one that
-          // settled the invoice, this is an ordinary redelivery — not an
-          // unrecorded second charge.
-          current?.status === 'PAID' &&
-          current.stripe_payment_intent_id === paymentIntentId;
+        : false;
       if (ledgered) {
         this.logger.log(
           `payment_intent.succeeded for invoice ${invoiceId} skipped — duplicate delivery of already-ledgered charge ${chargeId}`,
+        );
+      } else if (chargeId === null) {
+        this.logger.warn(
+          `payment_intent.succeeded for ${current?.status ?? 'missing'} invoice ${invoiceId} (chapter ${chapterId}, intent ${paymentIntentId}) carried no charge id, so it cannot be matched to the ledger — this is either a redelivery or an unrecorded capture; verify in Stripe. Pinning a Stripe API version that sends latest_charge removes this ambiguity.`,
         );
       } else {
         this.logger.warn(

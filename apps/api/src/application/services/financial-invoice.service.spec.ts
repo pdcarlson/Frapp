@@ -1069,10 +1069,14 @@ describe('FinancialInvoiceService', () => {
       loggerWarnSpy.mockRestore();
     });
 
-    it('should treat a charge-less redelivery of the settling intent as benign', async () => {
+    it('should warn as ambiguous on a charge-less miss, even from the settling intent', async () => {
       mockInvoiceRepo.applyPayment.mockResolvedValue(null);
       // Same intent that settled the invoice, and the event carries no
-      // latest_charge (older API versions omit it) — an ordinary redelivery.
+      // latest_charge (older API versions omit it). This LOOKS like an
+      // ordinary redelivery, but a cash-marked PAID that raced a real card
+      // capture is indistinguishable: the manual path writes a null-charge
+      // ledger row and the RPC preserves the stored intent id. Money is
+      // involved, so the ambiguity must be surfaced, not assumed benign.
       mockInvoiceRepo.findById.mockResolvedValue(paidInvoice);
       const loggerWarnSpy = jest
         .spyOn(service['logger'], 'warn')
@@ -1090,12 +1094,12 @@ describe('FinancialInvoiceService', () => {
         }),
       ).resolves.toBeUndefined();
 
-      expect(loggerWarnSpy).not.toHaveBeenCalled();
-      expect(loggerLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('duplicate delivery'),
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('cannot be matched to the ledger'),
       );
+      expect(loggerLogSpy).not.toHaveBeenCalled();
       // With no charge id there is nothing to match a ledger row against, so
-      // the stored intent answers the question instead of a ledger scan.
+      // the ledger scan is skipped entirely.
       expect(mockTransactionRepo.findByInvoice).not.toHaveBeenCalled();
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
 
@@ -1122,7 +1126,7 @@ describe('FinancialInvoiceService', () => {
       // A different intent captured money against an invoice already settled by
       // pi_1 — an orphan charge with no ledger row, even without a charge id.
       expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('reconcile manually'),
+        expect.stringContaining('cannot be matched to the ledger'),
       );
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
 
