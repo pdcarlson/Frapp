@@ -47,12 +47,14 @@ The system does NOT reject unknown permission strings. It stores and evaluates t
 ## Permission Check Algorithm
 
 1. Fetch the user's `role_ids` for the active chapter from `members`.
-2. Fetch the `permissions` arrays for those roles from `roles`.
+2. Fetch the `permissions` arrays for those roles from `roles`, **filtered to the active chapter**. Roles are chapter-scoped, so a role ID carried on the membership that belongs to another chapter (stale, or written before an earlier validation gap was closed) matches no row and contributes no permissions. A request with no resolved active chapter is denied outright rather than resolved chapter-wide.
 3. Flatten to a unique set.
 4. If the set contains `*`, access is granted.
 5. Otherwise, check that **all** required permissions for the endpoint are present in the set.
 
 Permissions are never cached across requests. Each request freshly resolves the user's permission set, ensuring that role changes take effect immediately.
+
+The same resolution backs `GET /v1/users/me/permissions` (the effective-permission set clients use to render permission-aware UI), so the chapter filter applies there too.
 
 ## Role Lifecycle
 

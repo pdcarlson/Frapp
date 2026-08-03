@@ -117,10 +117,11 @@ export class BackworkController {
   @RequirePermissions(SystemPermissions.BACKWORK_ADMIN)
   @ApiOperation({ summary: 'Update department name' })
   async updateDepartment(
+    @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
     @Body() dto: UpdateDepartmentDto,
   ) {
-    return this.backworkService.updateDepartment(id, dto);
+    return this.backworkService.updateDepartment(id, chapterId, dto);
   }
 
   @Get('professors')

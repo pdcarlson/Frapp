@@ -46,15 +46,28 @@ export class PermissionsGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<RequestContext>();
     const member = request.member;
+    const chapterId = request.chapterId;
 
     if (!member?.role_ids?.length) {
       throw new ForbiddenException('No roles assigned');
     }
 
+    // `ChapterGuard` always runs ahead of this guard and pins the active
+    // chapter. Without one there is nothing to scope the lookup to, so deny
+    // rather than resolve permissions across every chapter's roles.
+    if (!chapterId) {
+      throw new ForbiddenException('No active chapter');
+    }
+
+    // Roles are chapter-scoped (`roles.chapter_id`), so filter on the active
+    // chapter as well as the id list: a stale or cross-chapter id left on
+    // `members.role_ids` then resolves to no row instead of silently granting
+    // that other chapter's permissions here.
     const { data: roles } = await this.supabase
       .from('roles')
       .select('permissions')
-      .in('id', member.role_ids);
+      .in('id', member.role_ids)
+      .eq('chapter_id', chapterId);
 
     if (!roles?.length) {
       throw new ForbiddenException('No valid roles found');

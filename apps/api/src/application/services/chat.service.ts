@@ -278,15 +278,34 @@ export class ChatService {
     });
   }
 
-  async updateCategory(
+  /**
+   * Categories are chapter-scoped, so a caller holding `channels:manage` in
+   * their own chapter must not be able to reach another chapter's category by
+   * UUID. Mirrors the channel pattern: resolve within the active chapter first
+   * (404 when it does not belong there), then mutate through a chapter-scoped
+   * repository call so the filter is enforced at the query too.
+   */
+  async getCategory(
     id: string,
-    data: { name?: string; display_order?: number },
+    chapterId: string,
   ): Promise<ChatChannelCategory> {
-    return this.categoryRepo.update(id, data);
+    const category = await this.categoryRepo.findById(id, chapterId);
+    if (!category) throw new NotFoundException('Category not found');
+    return category;
   }
 
-  async deleteCategory(id: string): Promise<void> {
-    await this.categoryRepo.delete(id);
+  async updateCategory(
+    id: string,
+    chapterId: string,
+    data: { name?: string; display_order?: number },
+  ): Promise<ChatChannelCategory> {
+    await this.getCategory(id, chapterId);
+    return this.categoryRepo.update(id, chapterId, data);
+  }
+
+  async deleteCategory(id: string, chapterId: string): Promise<void> {
+    await this.getCategory(id, chapterId);
+    await this.categoryRepo.delete(id, chapterId);
   }
 
   // ── Messages ─────────────────────────────────────────────────────────
@@ -507,11 +526,17 @@ export class ChatService {
 
   async editMessage(
     messageId: string,
+    chapterId: string,
     senderId: string,
     content: string,
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+    // Ownership alone is not enough: a member removed from another chapter
+    // would still pass the sender check on their historical messages there.
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      senderId,
+    );
 
     if (message.sender_id !== senderId) {
       throw new ForbiddenException('You can only edit your own messages');
@@ -529,11 +554,15 @@ export class ChatService {
 
   async deleteMessage(
     messageId: string,
+    chapterId: string,
     requesterId: string,
     hasManagePermission: boolean,
   ): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      requesterId,
+    );
 
     if (message.sender_id !== requesterId && !hasManagePermission) {
       throw new ForbiddenException(
@@ -550,9 +579,18 @@ export class ChatService {
 
   // ── Pins ─────────────────────────────────────────────────────────────
 
-  async pinMessage(messageId: string): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+  async pinMessage(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatMessage> {
+    // Pin/unpin are moderation controls: `channels:manage` in the caller's own
+    // chapter must not reach a message in someone else's.
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
 
     if (message.is_pinned) {
       throw new BadRequestException('Message is already pinned');
@@ -573,9 +611,16 @@ export class ChatService {
     });
   }
 
-  async unpinMessage(messageId: string): Promise<ChatMessage> {
-    const message = await this.messageRepo.findById(messageId);
-    if (!message) throw new NotFoundException('Message not found');
+  async unpinMessage(
+    messageId: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatMessage> {
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
 
     if (!message.is_pinned) {
       throw new BadRequestException('Message is not pinned');

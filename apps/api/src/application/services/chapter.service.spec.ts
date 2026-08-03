@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,8 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
@@ -43,6 +46,7 @@ describe('ChapterService', () => {
   let mockChapterRepo: jest.Mocked<IChapterRepository>;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockUserRepo: jest.Mocked<IUserRepository>;
   let mockStorageProvider: {
     getSignedUploadUrl: jest.Mock;
     getSignedDownloadUrl: jest.Mock;
@@ -89,6 +93,15 @@ describe('ChapterService', () => {
       delete: jest.fn(),
     };
 
+    mockUserRepo = {
+      findById: jest.fn(),
+      findByIds: jest.fn(),
+      findBySupabaseAuthId: jest.fn(),
+      findByEmail: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    };
+
     mockInsert = jest.fn().mockResolvedValue({ error: null });
     mockSupabase = {
       from: jest.fn().mockReturnValue({ insert: mockInsert }),
@@ -102,6 +115,7 @@ describe('ChapterService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
       ],
     }).compile();
 
@@ -642,5 +656,31 @@ describe('ChapterService', () => {
     mockChapterRepo.findById.mockResolvedValue(null);
 
     await expect(service.deleteLogo('ch-1')).rejects.toThrow(NotFoundException);
+  });
+
+  // The persisted selection is stamped into the access token as the
+  // authoritative active_chapter_id claim, so a chapter the caller cannot join
+  // must never reach it (spec/behavior/multi-tenancy.md).
+  describe('setActiveChapter', () => {
+    it('persists the selection for a member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        id: 'member-1',
+      } as Member);
+
+      await service.setActiveChapter('user-1', 'ch-1');
+
+      expect(mockUserRepo.update).toHaveBeenCalledWith('user-1', {
+        active_chapter_id: 'ch-1',
+      });
+    });
+
+    it('refuses a chapter the caller is not a member of', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      await expect(
+        service.setActiveChapter('user-1', 'ch-foreign'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockUserRepo.update).not.toHaveBeenCalled();
+    });
   });
 });

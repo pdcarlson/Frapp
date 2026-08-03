@@ -66,6 +66,13 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback active-chapter JWT claim
+
+* **Migration**: `20260802120000_active_chapter_jwt_claim.sql`
+* **First action — no deploy required**: disable the hook (**Authentication → Hooks** in the Supabase dashboard, or `hook_custom_access_token_enabled: false` via the Management API). This is the instant mitigation for anything auth-related and is almost always sufficient: with the hook off, tokens are issued without the `active_chapter_id` claim and `ChapterGuard` falls back to the `x-chapter-id` header, which every client still sends. **Do this before touching the schema** — it takes effect on the next token issuance, whereas dropping the function while the hook is still pointed at it would fail token issuance outright and lock users out.
+* **Then, if the schema must also go**: `DROP FUNCTION IF EXISTS public.custom_access_token_hook(jsonb);` followed by `ALTER TABLE users DROP COLUMN IF EXISTS active_chapter_id;`. Order matters — the function reads the column. Also drop the two auth-admin read policies if fully reverting: `DROP POLICY IF EXISTS "auth_admin_can_read_users" ON public.users;` and `DROP POLICY IF EXISTS "auth_admin_can_read_members" ON public.members;`.
+* **Note**: Dropping the column loses each user's persisted chapter selection only; memberships are untouched, so on re-apply single-chapter users auto-resolve again immediately and multi-chapter users re-select. The post-FRA-303 API tolerates the claim being absent by design, so **no API rollback is needed** — that is the whole point of the header fallback. The API only breaks if `users.active_chapter_id` is dropped while the activate endpoint is still deployed, so redeploy the pre-FRA-303 revision before dropping the column.
+
 ## Rollback past_due grace clock
 
 * **Migration**: `20260602120000_chapter_past_due_since.sql`

@@ -227,9 +227,18 @@ export class BackworkService {
 
   async updateDepartment(
     id: string,
+    chapterId: string,
     data: { name?: string },
   ): Promise<BackworkDepartment> {
-    return this.departmentRepo.update(id, data);
+    // The repository scopes the write to the active chapter, so `null` means
+    // the department is either gone or owned by another chapter. Both surface
+    // as 404 — a `backwork:admin` must not be able to probe for the existence
+    // of another chapter's departments by UUID.
+    const updated = await this.departmentRepo.update(id, chapterId, data);
+    if (!updated) {
+      throw new NotFoundException('Department not found');
+    }
+    return updated;
   }
 
   async getProfessors(chapterId: string): Promise<BackworkProfessor[]> {

@@ -19,6 +19,7 @@ describe('ChapterGuard', () => {
     headers: { 'x-chapter-id': 'chapter-1' },
     method: 'GET',
     supabaseUser: { id: 'auth-123' },
+    jwtClaims: undefined as unknown,
     appUser: undefined as unknown,
     member: undefined as unknown,
     chapterId: undefined as unknown,
@@ -41,6 +42,7 @@ describe('ChapterGuard', () => {
     appUser,
     member,
     chapter,
+    memberships,
   }: {
     appUser?: { id: string } | null;
     member?: { id: string; role_ids: string[] } | null;
@@ -48,6 +50,12 @@ describe('ChapterGuard', () => {
       subscription_status: SubscriptionStatus;
       past_due_since?: string | null;
     } | null;
+    /** Rows returned by the auto-resolve lookup (`.eq(user_id).limit(2)`). */
+    memberships?: Array<{
+      id: string;
+      role_ids: string[];
+      chapter_id: string;
+    }>;
   }) => {
     let callCount = 0;
     mockFrom.mockImplementation((table: string) => {
@@ -56,8 +64,10 @@ describe('ChapterGuard', () => {
         table === 'users' ? appUser : table === 'members' ? member : chapter;
       const eqMock: jest.Mock = jest.fn();
       const single = jest.fn().mockResolvedValue({ data });
-      // chapters and users use one .eq; members uses two .eq calls
-      eqMock.mockReturnValue({ eq: eqMock, single });
+      const limit = jest.fn().mockResolvedValue({ data: memberships ?? [] });
+      // chapters and users use one .eq; members uses either two .eq calls
+      // (explicit chapter) or one .eq + .limit (auto-resolve).
+      eqMock.mockReturnValue({ eq: eqMock, single, limit });
       return {
         select: jest.fn().mockReturnValue({ eq: eqMock }),
       };
@@ -83,10 +93,113 @@ describe('ChapterGuard', () => {
     reflector = module.get(Reflector);
   });
 
-  it('should throw ForbiddenException when x-chapter-id header is missing', async () => {
-    const request = buildRequest({ headers: {} });
-    const ctx = mockExecutionContext(request);
-    await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  // spec/behavior/multi-tenancy.md: "the JWT claim is authoritative; the
+  // `x-chapter-id` request header is accepted only as a fallback ... the header
+  // never overrides the JWT."
+  describe('chapter context resolution', () => {
+    const membership = (chapterId: string) => ({
+      id: `member-${chapterId}`,
+      role_ids: ['role-1'],
+      chapter_id: chapterId,
+    });
+
+    it('rejects a header that disagrees with the JWT claim (chapter.context.mismatch)', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' } });
+      const ctx = mockExecutionContext(
+        buildRequest({
+          headers: { 'x-chapter-id': 'chapter-header' },
+          jwtClaims: { active_chapter_id: 'chapter-jwt' },
+        }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.mismatch' },
+        status: 403,
+      });
+    });
+
+    it('lets the JWT claim win when the header is absent', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({
+        headers: {},
+        jwtClaims: { active_chapter_id: 'chapter-jwt' },
+      });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-jwt');
+    });
+
+    it('auto-resolves a single-chapter user carrying no context at all', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        memberships: [membership('chapter-sole')],
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({ headers: {} });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-sole');
+    });
+
+    it('requires explicit context from a multi-chapter user (chapter.context.required)', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        memberships: [membership('chapter-a'), membership('chapter-b')],
+      });
+      const ctx = mockExecutionContext(buildRequest({ headers: {} }));
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.required' },
+        status: 400,
+      });
+    });
+
+    it('requires explicit context when the user has no memberships', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' }, memberships: [] });
+      const ctx = mockExecutionContext(buildRequest({ headers: {} }));
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.required' },
+        status: 400,
+      });
+    });
+
+    it('rejects a chapter the caller is not a member of (chapter.context.invalid)', async () => {
+      mockSupabaseChain({ appUser: { id: 'user-1' }, member: null });
+      const ctx = mockExecutionContext(
+        buildRequest({ headers: { 'x-chapter-id': 'chapter-foreign' } }),
+      );
+
+      await expect(guard.canActivate(ctx)).rejects.toMatchObject({
+        response: { code: 'chapter.context.invalid' },
+        status: 403,
+      });
+    });
+
+    it('still accepts the header when the token predates the claim', async () => {
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: [] },
+        chapter: { subscription_status: 'active' },
+      });
+      const request = buildRequest({
+        headers: { 'x-chapter-id': 'chapter-header' },
+        jwtClaims: undefined,
+      });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).resolves.toBe(true);
+      expect(request.chapterId).toBe('chapter-header');
+    });
   });
 
   it('should throw ForbiddenException when supabaseUser is not set', async () => {

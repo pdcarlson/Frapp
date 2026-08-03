@@ -1,6 +1,7 @@
 import * as path from 'path';
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   InternalServerErrorException,
   Injectable,
@@ -13,6 +14,8 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
+import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -59,7 +62,30 @@ export class ChapterService {
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
   ) {}
+
+  /**
+   * Persist the caller's active chapter so `custom_access_token_hook` can stamp
+   * it into subsequent access tokens as the authoritative `active_chapter_id`
+   * claim (spec/behavior/multi-tenancy.md).
+   *
+   * Membership is validated here because the claim becomes authoritative: a
+   * chapter the caller cannot join must never reach the token. The caller must
+   * refresh their session afterwards — the claim only changes when a token is
+   * issued, so without a refresh the previous one stands until it expires.
+   */
+  async setActiveChapter(userId: string, chapterId: string): Promise<void> {
+    const membership = await this.memberRepo.findByUserAndChapter(
+      userId,
+      chapterId,
+    );
+    if (!membership) {
+      throw new ForbiddenException('You are not a member of this chapter');
+    }
+
+    await this.userRepo.update(userId, { active_chapter_id: chapterId });
+  }
 
   async findById(id: string): Promise<Chapter> {
     const chapter = await this.chapterRepo.findById(id);

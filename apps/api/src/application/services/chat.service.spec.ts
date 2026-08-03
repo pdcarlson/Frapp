@@ -116,6 +116,7 @@ describe('ChatService', () => {
 
     mockCategoryRepo = {
       findByChapter: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -342,11 +343,40 @@ describe('ChatService', () => {
   });
 
   describe('deleteCategory', () => {
+    const baseCategory = {
+      id: 'cat-1',
+      chapter_id: 'ch-1',
+      name: 'General',
+      display_order: 0,
+      created_at: '2026-01-01T00:00:00.000Z',
+    };
+
     it('should delete category by id', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(baseCategory);
       mockCategoryRepo.delete.mockResolvedValue();
 
-      await service.deleteCategory('cat-1');
-      expect(mockCategoryRepo.delete).toHaveBeenCalledWith('cat-1');
+      await service.deleteCategory('cat-1', 'ch-1');
+      expect(mockCategoryRepo.delete).toHaveBeenCalledWith('cat-1', 'ch-1');
+    });
+
+    // chat_channels.category_id is ON DELETE SET NULL, so an unscoped delete
+    // would silently un-categorize another tenant's channels.
+    it('should not delete a category belonging to another chapter', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(null);
+
+      await expect(service.deleteCategory('cat-1', 'ch-other')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(mockCategoryRepo.delete).not.toHaveBeenCalled();
+    });
+
+    it('should not update a category belonging to another chapter', async () => {
+      mockCategoryRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.updateCategory('cat-1', 'ch-other', { name: 'Renamed' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockCategoryRepo.update).not.toHaveBeenCalled();
     });
   });
 
@@ -733,7 +763,12 @@ describe('ChatService', () => {
         edited_at: '2026-01-01T13:00:00.000Z',
       });
 
-      const result = await service.editMessage('msg-1', 'user-1', 'Updated');
+      const result = await service.editMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        'Updated',
+      );
       expect(result.content).toBe('Updated');
       expect(result.edited_at).toBeTruthy();
     });
@@ -742,7 +777,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.editMessage('msg-1', 'user-2', 'Hacked'),
+        service.editMessage('msg-1', 'ch-1', 'user-2', 'Hacked'),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -753,7 +788,7 @@ describe('ChatService', () => {
       });
 
       await expect(
-        service.editMessage('msg-1', 'user-1', 'Updated'),
+        service.editMessage('msg-1', 'ch-1', 'user-1', 'Updated'),
       ).rejects.toThrow(BadRequestException);
     });
   });
@@ -767,7 +802,12 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      const result = await service.deleteMessage('msg-1', 'user-1', false);
+      const result = await service.deleteMessage(
+        'msg-1',
+        'ch-1',
+        'user-1',
+        false,
+      );
       expect(result.is_deleted).toBe(true);
       expect(result.content).toBe('[message deleted]');
     });
@@ -779,7 +819,7 @@ describe('ChatService', () => {
         is_deleted: true,
       });
 
-      await service.deleteMessage('msg-1', 'user-2', true);
+      await service.deleteMessage('msg-1', 'ch-1', 'user-2', true);
       expect(mockMessageRepo.update).toHaveBeenCalled();
     });
 
@@ -787,7 +827,7 @@ describe('ChatService', () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
       await expect(
-        service.deleteMessage('msg-1', 'user-2', false),
+        service.deleteMessage('msg-1', 'ch-1', 'user-2', false),
       ).rejects.toThrow(ForbiddenException);
     });
   });
@@ -803,7 +843,7 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      const result = await service.pinMessage('msg-1');
+      const result = await service.pinMessage('msg-1', 'ch-1', 'user-1');
       expect(result.is_pinned).toBe(true);
     });
 
@@ -813,18 +853,18 @@ describe('ChatService', () => {
         is_pinned: true,
       });
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should reject pinning when at 50 limit', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
       mockMessageRepo.countPinnedByChannel.mockResolvedValue(50);
 
-      await expect(service.pinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.pinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
@@ -839,16 +879,70 @@ describe('ChatService', () => {
         is_pinned: false,
       });
 
-      const result = await service.unpinMessage('msg-1');
+      const result = await service.unpinMessage('msg-1', 'ch-1', 'user-1');
       expect(result.is_pinned).toBe(false);
     });
 
     it('should reject unpinning non-pinned message', async () => {
       mockMessageRepo.findById.mockResolvedValue(baseMessage);
 
-      await expect(service.unpinMessage('msg-1')).rejects.toThrow(
-        BadRequestException,
-      );
+      await expect(
+        service.unpinMessage('msg-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  // spec/behavior/multi-tenancy.md treats cross-chapter access as a critical
+  // security bug, and spec/behavior/chat/README.md requires every message
+  // surface to authorize through the channel → chapter → membership lookup.
+  // These paths previously mutated straight off a message UUID.
+  describe('cross-chapter message mutations', () => {
+    // The message resolves, but its channel does not exist in the caller's
+    // active chapter — assertMessageAccess normalizes that to a 404 so a
+    // caller cannot probe for message ids in other chapters.
+    const messageInAnotherChapter = () => {
+      mockMessageRepo.findById.mockResolvedValue(baseMessage);
+      mockChannelRepo.findById.mockResolvedValue(null);
+    };
+
+    it('refuses to edit a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.editMessage('msg-1', 'ch-other', 'user-1', 'Hacked'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to delete a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.deleteMessage('msg-1', 'ch-other', 'user-1', true),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to pin a message from another chapter', async () => {
+      messageInAnotherChapter();
+
+      await expect(
+        service.pinMessage('msg-1', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses to unpin a message from another chapter', async () => {
+      mockMessageRepo.findById.mockResolvedValue({
+        ...baseMessage,
+        is_pinned: true,
+      });
+      mockChannelRepo.findById.mockResolvedValue(null);
+
+      await expect(
+        service.unpinMessage('msg-1', 'ch-other', 'user-1'),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockMessageRepo.update).not.toHaveBeenCalled();
     });
   });
 

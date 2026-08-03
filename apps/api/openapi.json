@@ -200,6 +200,35 @@
         ]
       }
     },
+    "/v1/chapters/{id}/activate": {
+      "post": {
+        "operationId": "ChapterController_activate_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Set the active chapter for the current user (embedded in subsequent access tokens)",
+        "tags": [
+          "Chapters"
+        ]
+      }
+    },
     "/v1/chapters/current": {
       "get": {
         "operationId": "ChapterController_getCurrent_v1",
@@ -2132,7 +2161,7 @@
             "bearer": []
           }
         ],
-        "summary": "Delete a message (soft delete)",
+        "summary": "Delete a message (soft delete; own message, or any in an accessible channel with channels:manage)",
         "tags": [
           "Chat"
         ]

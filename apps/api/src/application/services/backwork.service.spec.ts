@@ -419,11 +419,30 @@ describe('BackworkService', () => {
         name: 'Computer Science Updated',
       });
 
-      const result = await service.updateDepartment('dept-1', {
+      const result = await service.updateDepartment('dept-1', 'ch-1', {
         name: 'Computer Science Updated',
       });
 
+      expect(mockDepartmentRepo.update).toHaveBeenCalledWith('dept-1', 'ch-1', {
+        name: 'Computer Science Updated',
+      });
       expect(result.name).toBe('Computer Science Updated');
+    });
+
+    it('should not update a department owned by another chapter (404)', async () => {
+      // The chapter-scoped update matched no row, so nothing was written.
+      mockDepartmentRepo.update.mockResolvedValue(null);
+
+      await expect(
+        service.updateDepartment('dept-other-chapter', 'ch-1', {
+          name: 'Hijacked',
+        }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDepartmentRepo.update).toHaveBeenCalledWith(
+        'dept-other-chapter',
+        'ch-1',
+        { name: 'Hijacked' },
+      );
     });
   });
 

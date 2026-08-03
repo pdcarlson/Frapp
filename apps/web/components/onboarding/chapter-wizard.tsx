@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/command";
 import { dashboardTableCheckboxClassName } from "@/components/shared/table-controls";
 import { useToast } from "@/hooks/use-toast";
-import { useChapterStore } from "@/lib/stores/chapter-store";
+import { useSelectChapter } from "@/lib/auth/select-chapter";
 import { asArray, cn, getErrorMessage } from "@/lib/utils";
 
 const CHAT_LANDING_PATH = "/chat?channel=general";
@@ -135,7 +135,7 @@ export function ChapterWizardGate() {
 export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
   const router = useRouter();
   const { toast } = useToast();
-  const setActiveChapterId = useChapterStore((s) => s.setActiveChapterId);
+  const selectChapter = useSelectChapter();
 
   const onboardChapter = useOnboardChapter();
   const createInvite = useCreateInvite();
@@ -225,7 +225,7 @@ export function ChapterWizard({ onComplete }: { onComplete: () => void }) {
         chapter && typeof chapter === "object" && "id" in chapter
           ? (chapter as { id?: string }).id ?? null
           : null;
-      if (id) setActiveChapterId(id);
+      if (id) await selectChapter(id);
       toast({
         title: "Chapter created",
         description: "Your chapter is set up. Invite your members to start chatting.",

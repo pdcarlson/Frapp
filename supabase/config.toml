@@ -25,6 +25,14 @@ enable_signup = true
 double_confirm_changes = false
 enable_confirmations = false
 
+# Stamps the active chapter into every issued access token as the
+# `active_chapter_id` claim, which ChapterGuard treats as authoritative per
+# spec/behavior/multi-tenancy.md. Local only -- hosted projects enable this in
+# the dashboard (Authentication -> Hooks) or via the Management API.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
 [auth.external.google]
 enabled = false
 

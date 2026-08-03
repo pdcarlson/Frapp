@@ -67,12 +67,14 @@ export interface IChatChannelRepository {
 
 export interface IChatCategoryRepository {
   findByChapter(chapterId: string): Promise<ChatChannelCategory[]>;
+  findById(id: string, chapterId: string): Promise<ChatChannelCategory | null>;
   create(data: Partial<ChatChannelCategory>): Promise<ChatChannelCategory>;
   update(
     id: string,
+    chapterId: string,
     data: Partial<ChatChannelCategory>,
   ): Promise<ChatChannelCategory>;
-  delete(id: string): Promise<void>;
+  delete(id: string, chapterId: string): Promise<void>;
 }
 
 export interface IChatMessageRepository {

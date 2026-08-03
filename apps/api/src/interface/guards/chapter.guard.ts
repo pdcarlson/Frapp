@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   ForbiddenException,
@@ -8,7 +9,12 @@ import {
 import { Reflector } from '@nestjs/core';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
-import { RequestContext, getHeaderValue } from '../types/request-context.types';
+import {
+  MemberContext,
+  RequestContext,
+  getActiveChapterClaim,
+  getHeaderValue,
+} from '../types/request-context.types';
 import {
   SUBSCRIPTION_EXEMPT_KEY,
   SUBSCRIPTION_FREE_TIER_KEY,
@@ -32,11 +38,6 @@ export class ChapterGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestContext>();
-    const chapterId = getHeaderValue(request.headers, 'x-chapter-id');
-
-    if (!chapterId) {
-      throw new ForbiddenException('Missing x-chapter-id header');
-    }
 
     const supabaseUser = request.supabaseUser;
     if (!supabaseUser) {
@@ -45,25 +46,31 @@ export class ChapterGuard implements CanActivate {
       );
     }
 
+    // Resolved before the chapter context, because auto-resolving a
+    // single-chapter user requires knowing which memberships they hold.
     const { data: appUser } = await this.supabase
       .from('users')
       .select('id')
       .eq('supabase_auth_id', supabaseUser.id)
-      .single();
+      .single<{ id: string }>();
 
     if (!appUser) {
       throw new ForbiddenException('User profile not found');
     }
 
-    const { data: member } = await this.supabase
-      .from('members')
-      .select('id, role_ids')
-      .eq('user_id', appUser.id)
-      .eq('chapter_id', chapterId)
-      .single();
+    const resolved = await this.resolveChapterContext(request, appUser.id);
+    const chapterId = resolved.chapterId;
+
+    // The auto-resolve path already read the membership row it selected the
+    // chapter from; only an explicitly supplied chapter needs verifying.
+    const member =
+      resolved.member ?? (await this.findMembership(appUser.id, chapterId));
 
     if (!member) {
-      throw new ForbiddenException('Not a member of this chapter');
+      throw new ForbiddenException({
+        code: 'chapter.context.invalid',
+        message: 'You are not a member of the requested chapter.',
+      });
     }
 
     const { data: chapter } = await this.supabase
@@ -92,6 +99,70 @@ export class ChapterGuard implements CanActivate {
     );
 
     return true;
+  }
+
+  /**
+   * Resolves the active chapter per spec/behavior/multi-tenancy.md:
+   *
+   * 1. The JWT `active_chapter_id` claim is authoritative.
+   * 2. `x-chapter-id` is a fallback for clients that have not refreshed their
+   *    token since the claim was introduced.
+   * 3. Both present and disagreeing is a hard `403 chapter.context.mismatch` —
+   *    the header never overrides the JWT.
+   * 4. Neither present: a single-chapter user is auto-resolved server-side;
+   *    anyone else gets `400 chapter.context.required`.
+   */
+  private async resolveChapterContext(
+    request: RequestContext,
+    appUserId: string,
+  ): Promise<{ chapterId: string; member?: MemberContext }> {
+    const jwtChapterId = getActiveChapterClaim(request.jwtClaims);
+    const headerChapterId = getHeaderValue(request.headers, 'x-chapter-id');
+
+    if (jwtChapterId && headerChapterId && jwtChapterId !== headerChapterId) {
+      throw new ForbiddenException({
+        code: 'chapter.context.mismatch',
+        message:
+          'The x-chapter-id header disagrees with the active chapter in your token.',
+      });
+    }
+
+    const explicit = jwtChapterId ?? headerChapterId;
+    if (explicit) {
+      return { chapterId: explicit };
+    }
+
+    // Two rows is all it takes to tell "exactly one" from "more than one".
+    const { data: memberships } = await this.supabase
+      .from('members')
+      .select('id, role_ids, chapter_id')
+      .eq('user_id', appUserId)
+      .limit(2);
+
+    if (memberships?.length === 1) {
+      const sole = memberships[0] as MemberContext & { chapter_id: string };
+      return { chapterId: sole.chapter_id, member: sole };
+    }
+
+    throw new BadRequestException({
+      code: 'chapter.context.required',
+      message:
+        'Active chapter context is required. Send the x-chapter-id header or refresh your session after selecting a chapter.',
+    });
+  }
+
+  private async findMembership(
+    appUserId: string,
+    chapterId: string,
+  ): Promise<MemberContext | null> {
+    const { data } = await this.supabase
+      .from('members')
+      .select('id, role_ids')
+      .eq('user_id', appUserId)
+      .eq('chapter_id', chapterId)
+      .single();
+
+    return data ?? null;
   }
 
   /** Overridable seam so tests can pin "now" without real clocks. */

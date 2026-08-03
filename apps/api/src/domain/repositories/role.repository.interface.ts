@@ -5,7 +5,8 @@ export const ROLE_REPOSITORY = 'ROLE_REPOSITORY';
 export interface IRoleRepository {
   findById(id: string): Promise<Role | null>;
   findByChapter(chapterId: string): Promise<Role[]>;
-  findByIds(ids: string[]): Promise<Role[]>;
+  /** Pass `chapterId` to drop ids that belong to another chapter's roles. */
+  findByIds(ids: string[], chapterId?: string): Promise<Role[]>;
   findByChapterAndName(chapterId: string, name: string): Promise<Role | null>;
   create(data: Partial<Role>): Promise<Role>;
   createMany(data: Partial<Role>[]): Promise<Role[]>;

@@ -13,13 +13,56 @@ describe('PermissionsGuard', () => {
   let reflector: Reflector;
   let mockFrom: jest.Mock;
 
+  const ACTIVE_CHAPTER = 'ch-1';
+
   const mockHandler = jest.fn();
   const mockControllerClass = jest.fn();
 
-  const mockExecutionContext = (member?: {
-    role_ids: string[];
-  }): ExecutionContext => {
-    const request = { member };
+  interface RoleRow {
+    id: string;
+    chapter_id: string;
+    permissions: string[];
+  }
+
+  const role = (
+    id: string,
+    permissions: string[],
+    chapterId = ACTIVE_CHAPTER,
+  ): RoleRow => ({ id, chapter_id: chapterId, permissions });
+
+  /**
+   * Stands in for the PostgREST filter chain the guard builds on `roles`, and
+   * filters rows the way the database would — by the ids in `.in('id', …)` and
+   * by `.eq('chapter_id', …)`. Modelling the filters rather than returning a
+   * fixed payload is what lets a test prove a foreign-chapter role id resolves
+   * to no row at all.
+   */
+  const mockRoles = (rows: RoleRow[]) => {
+    mockFrom.mockImplementation(() => {
+      let matched = rows;
+      const chain = {
+        select: jest.fn(() => chain),
+        in: jest.fn((column: 'id', values: string[]) => {
+          matched = matched.filter((row) => values.includes(row[column]));
+          return chain;
+        }),
+        eq: jest.fn((column: 'chapter_id', value: string) => {
+          matched = matched.filter((row) => row[column] === value);
+          return chain;
+        }),
+        then: (resolve: (result: { data: RoleRow[] }) => unknown) =>
+          resolve({ data: matched }),
+      };
+      return chain;
+    });
+  };
+
+  /** Pass `null` for `chapterId` to model a request `ChapterGuard` never touched. */
+  const mockExecutionContext = (
+    member?: { role_ids: string[] },
+    chapterId: string | null = ACTIVE_CHAPTER,
+  ): ExecutionContext => {
+    const request = { member, chapterId: chapterId ?? undefined };
     return {
       switchToHttp: () => ({
         getRequest: () => request,
@@ -77,13 +120,7 @@ describe('PermissionsGuard', () => {
       handlerRequire: ['polls:view_all'],
       classRequire: ['members:view'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['polls:view_all'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['polls:view_all'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
@@ -94,13 +131,7 @@ describe('PermissionsGuard', () => {
       handlerRequire: ['polls:view_all'],
       classRequire: ['members:view'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['polls:view_all', 'members:view'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['polls:view_all', 'members:view'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -114,13 +145,7 @@ describe('PermissionsGuard', () => {
 
   it('should allow access with wildcard permission', async () => {
     mockPermissionMetadata({ handlerRequire: ['events:create'] });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['*'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['*'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -130,16 +155,10 @@ describe('PermissionsGuard', () => {
     mockPermissionMetadata({
       handlerRequire: ['events:create', 'events:update'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [
-            { permissions: ['events:create', 'members:view'] },
-            { permissions: ['events:update'] },
-          ],
-        }),
-      }),
-    });
+    mockRoles([
+      role('role-1', ['events:create', 'members:view']),
+      role('role-2', ['events:update']),
+    ]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1', 'role-2'] });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -149,13 +168,7 @@ describe('PermissionsGuard', () => {
     mockPermissionMetadata({
       handlerRequire: ['events:create', 'billing:manage'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['events:create'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['events:create'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
@@ -165,16 +178,10 @@ describe('PermissionsGuard', () => {
     mockPermissionMetadata({
       handlerRequire: ['events:create', 'billing:view', 'members:view'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [
-            { permissions: ['events:create'] },
-            { permissions: ['billing:view', 'members:view'] },
-          ],
-        }),
-      }),
-    });
+    mockRoles([
+      role('role-1', ['events:create']),
+      role('role-2', ['billing:view', 'members:view']),
+    ]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1', 'role-2'] });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -185,13 +192,7 @@ describe('PermissionsGuard', () => {
       classAny: ['roles:manage', 'billing:manage'],
       handlerAny: ['events:create', 'events:update'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['roles:manage', 'events:create'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['roles:manage', 'events:create'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     expect(await guard.canActivate(ctx)).toBe(true);
@@ -202,15 +203,52 @@ describe('PermissionsGuard', () => {
       classAny: ['roles:manage', 'billing:manage'],
       handlerAny: ['events:create', 'events:update'],
     });
-    mockFrom.mockReturnValue({
-      select: jest.fn().mockReturnValue({
-        in: jest.fn().mockResolvedValue({
-          data: [{ permissions: ['roles:manage'] }],
-        }),
-      }),
-    });
+    mockRoles([role('role-1', ['roles:manage'])]);
 
     const ctx = mockExecutionContext({ role_ids: ['role-1'] });
     await expect(guard.canActivate(ctx)).rejects.toThrow(ForbiddenException);
+  });
+
+  describe('chapter scoping', () => {
+    it('ignores a role id belonging to another chapter', async () => {
+      // `members.role_ids` can carry a stale or cross-chapter id. Resolving it
+      // must not pull in the other chapter's role — here a wildcard one.
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles([
+        role('role-foreign', ['*'], 'ch-other'),
+        role('role-1', ['members:view']),
+      ]);
+
+      const ctx = mockExecutionContext({
+        role_ids: ['role-foreign', 'role-1'],
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('Missing required permissions: events:create'),
+      );
+    });
+
+    it('denies when every role id belongs to another chapter', async () => {
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles([role('role-foreign', ['*'], 'ch-other')]);
+
+      const ctx = mockExecutionContext({ role_ids: ['role-foreign'] });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('No valid roles found'),
+      );
+    });
+
+    it('denies when the request carries no active chapter', async () => {
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles([role('role-1', ['*'])]);
+
+      const ctx = mockExecutionContext({ role_ids: ['role-1'] }, null);
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('No active chapter'),
+      );
+      expect(mockFrom).not.toHaveBeenCalled();
+    });
   });
 });
