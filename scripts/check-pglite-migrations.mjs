@@ -285,6 +285,8 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   const CH = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // channel
   const CARD = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // task-card message
   const EVCARD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"; // event-card message
+  const PCARD = "ffffffff-ffff-ffff-ffff-ffffffffffff"; // punctuation-name card
+  const LATECARD = "99999999-9999-9999-9999-999999999999"; // card racing the scrub
 
   let seeded = false;
   try {
@@ -306,6 +308,12 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       values ('${EVCARD}', '${CH}', '${U}',
               'Doomed User scheduled "BBQ" — Aug 9, 6:00 PM UTC', 'event',
               '{"event_id":"ev1","name":"BBQ"}'::jsonb);
+      -- Punctuation-bounded snapshot: word boundaries can never match it, so
+      -- the helper must fall back to exact-substring replacement.
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${PCARD}', '${CH}', '${U}',
+              'Granted 5 points to (DU) Doomed: nice work', 'points',
+              '{"actor_user_id":"someone-else","actor_name":"Someone Else","recipient_user_id":"${U}","recipient_name":"(DU) Doomed"}'::jsonb);
       insert into user_settings (user_id) values ('${U}');
       insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
       -- Rename before deletion: the content rewrite must key on the card's own
@@ -314,9 +322,18 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       select anonymize_user('${U}');
       -- Simulate the retry window: the tombstone gets PII written back onto it
       -- (PATCH /users/me is possible while the auth account still exists). The
-      -- second call must RE-scrub — the RPC has no tombstone early-return.
+      -- second call must RE-scrub the users row — no tombstone early-return —
+      -- while skipping the card scan (retries stay cheap).
       update users set display_name = 'Sneaky Comeback', bio = 'still here' where id = '${U}';
       select anonymize_user('${U}');
+      -- Simulate a card writer that raced the first scrub: its snapshot lands
+      -- after the one gated card scan. The convergence call (rescan=true) must
+      -- repair it.
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${LATECARD}', '${CH}', '${U}',
+              'Assigned "Z" to Doomed User (due later)', 'task',
+              '{"assigner_user_id":"someone-else","assigner_name":"Someone Else","assignee_user_id":"${U}","assignee_name":"Doomed User"}'::jsonb);
+      select anonymize_user('${U}', true);
     `);
     seeded = true;
   } catch (e) {
@@ -348,7 +365,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         sql: `select (select count(*)::int from point_transactions where user_id = '${U}') as points,
                      (select count(*)::int from chat_messages where sender_id = '${U}') as messages`,
         ok: (rows) =>
-          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 3,
+          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 5,
       },
       {
         name: "current-state purged: membership, settings, push token",
@@ -379,6 +396,24 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 &&
           rows[0].content === 'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
           rows[0].event_name === "BBQ",
+      },
+      {
+        name: "punctuation-bounded snapshot rewritten via exact-substring fallback",
+        sql: `select payload->>'recipient_name' as recipient, content
+                from chat_messages where id = '${PCARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].recipient === "Deleted User" &&
+          rows[0].content === "Granted 5 points to Deleted User: nice work",
+      },
+      {
+        name: "card that raced the first scrub is repaired by the rescan (convergence) call",
+        sql: `select payload->>'assignee_name' as assignee, content
+                from chat_messages where id = '${LATECARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].assignee === "Deleted User" &&
+          rows[0].content === 'Assigned "Z" to Deleted User (due later)',
       },
       {
         name: "member-typed free text is NOT rewritten (only system-generated cards)",

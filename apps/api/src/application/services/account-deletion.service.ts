@@ -109,15 +109,18 @@ export class AccountDeletionService {
     // Final convergence scrub. The auth account is gone, so nothing can write
     // to this user again — but a PATCH may have landed between the scrub above
     // and the auth deletion (the token was still valid for those seconds, and
-    // a successful run has no retry to clean it up). Re-running the
-    // (idempotent, retry-cheap) scrub as the last writer closes that window.
+    // a successful run has no retry to clean it up), and a card writer that
+    // raced the first scrub may have committed a snapshot just after the only
+    // card scan. Re-running the scrub with a forced card rescan as the last
+    // writer converges both. (The repository UPDATE additionally refuses
+    // tombstones outright, catching even a write stalled past this point.)
     // Best-effort: the deletion has already met its contract, so a transient
     // failure here is logged loudly rather than failing a completed request.
     try {
-      await this.userRepo.anonymize(userId);
+      await this.userRepo.anonymize(userId, true);
     } catch (error) {
       this.logger.error(
-        `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit slipped in during deletion it may persist — re-run anonymize_user(${userId}) manually`,
+        `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit or card slipped in during deletion it may persist — re-run anonymize_user('${userId}', true) manually`,
         error instanceof Error ? error.stack : String(error),
       );
     }

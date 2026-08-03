@@ -66,7 +66,10 @@ export class SupabaseStorageService implements IStorageProvider {
       // A bucket that does not exist holds no objects; environments that have
       // never provisioned it (fresh projects, previews) must behave like an
       // empty folder, not an outage — account deletion aborts on listing
-      // errors and would otherwise be permanently blocked there.
+      // errors and would otherwise be permanently blocked there. This cannot
+      // mask a wrong-project misconfiguration: SUPABASE_URL serves database
+      // and storage from the same project, so a client pointed at the wrong
+      // one fails at the users query long before any storage call.
       if (error && /bucket not found/i.test(error.message)) return [];
       if (error) throw error;
       const entries = data ?? [];

@@ -138,6 +138,10 @@ describe('AccountDeletionService', () => {
       'deleteAuthUser',
       'anonymize',
     ]);
+    // The convergence pass forces the card rescan to repair cards that raced
+    // the first scan; the main pass must not (retries stay cheap).
+    expect(mockUserRepo.anonymize).toHaveBeenNthCalledWith(1, 'user-1');
+    expect(mockUserRepo.anonymize).toHaveBeenLastCalledWith('user-1', true);
   });
 
   it('still succeeds when the post-auth-deletion convergence scrub fails', async () => {

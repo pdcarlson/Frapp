@@ -18,8 +18,10 @@ export interface IUserRepository {
    * Deliberately NOT a no-op on a tombstone: every call re-runs the full
    * users-row scrub so PII written back during the deletion retry window is
    * re-scrubbed (do not add a deleted_at short-circuit — that reopens the
-   * hole). Retries are cheap: only the card rewrite is first-run-gated.
+   * hole). Retries are cheap: only the card rewrite is first-run-gated —
+   * pass `rescanCards` to force it (the post-auth-deletion convergence call
+   * does, repairing cards that raced the first scrub).
    * Returns null when the user does not exist.
    */
-  anonymize(id: string): Promise<User | null>;
+  anonymize(id: string, rescanCards?: boolean): Promise<User | null>;
 }

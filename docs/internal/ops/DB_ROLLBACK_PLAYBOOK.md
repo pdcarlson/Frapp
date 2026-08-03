@@ -276,7 +276,8 @@ Additive DDL: one nullable column and one function (FRA-40). Rolling the
 *schema* back loses nothing that existed before the migration:
 
 ```sql
-DROP FUNCTION IF EXISTS anonymize_user(uuid);
+DROP FUNCTION IF EXISTS anonymize_user(uuid, boolean);
+DROP FUNCTION IF EXISTS anonymize_card_content(text, text);
 ALTER TABLE users DROP COLUMN IF EXISTS deleted_at;
 ```
 

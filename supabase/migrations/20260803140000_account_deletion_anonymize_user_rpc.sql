@@ -58,7 +58,39 @@
 alter table users
   add column if not exists deleted_at timestamptz;
 
-create or replace function anonymize_user(p_user_id uuid)
+-- Rewrites one card-content string: the snapshot name becomes "Deleted User".
+-- Names that start AND end with word characters are matched on word
+-- boundaries (a deleted "Ann" cannot corrupt "Anna"); names bounded by
+-- punctuation ("Ann.", "(AJ)") can never satisfy \m/\M, so they fall back to
+-- exact-substring replacement — the punctuation makes them distinctive enough
+-- that collisions are not a realistic concern, and the alternative is leaving
+-- their PII in searchable content forever. Blank names touch nothing.
+create or replace function anonymize_card_content(p_content text, p_name text)
+returns text
+language sql
+immutable
+as $$
+  select case
+    when p_name is null or btrim(p_name) = '' then p_content
+    when btrim(p_name) ~ '^[[:alnum:]_]' and btrim(p_name) ~ '[[:alnum:]_]$'
+      then regexp_replace(
+             p_content,
+             '\m' || regexp_replace(btrim(p_name), '([^[:alnum:]_ ])', '\\\1', 'g') || '\M',
+             'Deleted User', 'g')
+    else replace(p_content, btrim(p_name), 'Deleted User')
+  end
+$$;
+
+-- p_rescan_cards forces the card-snapshot scan to re-run even on a tombstone.
+-- The API's post-auth-deletion convergence call passes true, which repairs the
+-- one race the first-run gate cannot see: a card writer that resolved the
+-- user's name before the scrub, blocked on the row lock, and committed its
+-- card just after the first scan. Support can also pass true to repair
+-- manually. Default false keeps client retry loops O(1).
+create or replace function anonymize_user(
+  p_user_id uuid,
+  p_rescan_cards boolean default false
+)
 returns setof users
 language plpgsql
 security invoker
@@ -135,7 +167,7 @@ begin
   -- '<creator> scheduled "<name>" …', written only by EventService as the
   -- sender, so the creator prefix is rewritten structurally (non-greedy:
   -- first ' scheduled "' wins). One statement, one scan.
-  if not v_was_tombstoned then
+  if not v_was_tombstoned or p_rescan_cards then
     update chat_messages
        set payload = case
              when payload is null then payload
@@ -154,22 +186,10 @@ begin
                        else '{}'::jsonb end
            end,
            content = case
-             when kind = 'task'
-                  and payload->>'assignee_user_id' = p_user_id::text
-                  and nullif(btrim(payload->>'assignee_name'), '') is not null
-               then regexp_replace(
-                      content,
-                      '\m' || regexp_replace(btrim(payload->>'assignee_name'),
-                                             '([^[:alnum:]_ ])', '\\\1', 'g') || '\M',
-                      'Deleted User', 'g')
-             when kind = 'points'
-                  and payload->>'recipient_user_id' = p_user_id::text
-                  and nullif(btrim(payload->>'recipient_name'), '') is not null
-               then regexp_replace(
-                      content,
-                      '\m' || regexp_replace(btrim(payload->>'recipient_name'),
-                                             '([^[:alnum:]_ ])', '\\\1', 'g') || '\M',
-                      'Deleted User', 'g')
+             when kind = 'task' and payload->>'assignee_user_id' = p_user_id::text
+               then anonymize_card_content(content, payload->>'assignee_name')
+             when kind = 'points' and payload->>'recipient_user_id' = p_user_id::text
+               then anonymize_card_content(content, payload->>'recipient_name')
              when kind = 'event' and sender_id = p_user_id
                then regexp_replace(content, '^(.*?)( scheduled ")', 'Deleted User\2')
              else content
@@ -191,18 +211,22 @@ $$;
 -- anon/authenticated, so all three must be revoked. Roles are guarded on
 -- existence to keep the migration portable to bare Postgres substrates
 -- (e.g. PGlite in CI).
-revoke execute on function anonymize_user(uuid) from public;
+revoke execute on function anonymize_user(uuid, boolean) from public;
+revoke execute on function anonymize_card_content(text, text) from public;
 
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'anon') then
-    revoke execute on function anonymize_user(uuid) from anon;
+    revoke execute on function anonymize_user(uuid, boolean) from anon;
+    revoke execute on function anonymize_card_content(text, text) from anon;
   end if;
   if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    revoke execute on function anonymize_user(uuid) from authenticated;
+    revoke execute on function anonymize_user(uuid, boolean) from authenticated;
+    revoke execute on function anonymize_card_content(text, text) from authenticated;
   end if;
   if exists (select 1 from pg_roles where rolname = 'service_role') then
-    grant execute on function anonymize_user(uuid) to service_role;
+    grant execute on function anonymize_user(uuid, boolean) to service_role;
+    grant execute on function anonymize_card_content(text, text) to service_role;
   end if;
 end
 $$;
