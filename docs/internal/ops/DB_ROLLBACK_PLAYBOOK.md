@@ -153,9 +153,9 @@ After any rollback event:
     ON public.chat_message_actions FOR SELECT
     USING (auth.role() = 'authenticated');
   DROP FUNCTION IF EXISTS public.can_read_chat_message(uuid);
-  -- Optional (harmless to leave as FULL): ALTER TABLE public.chat_message_actions REPLICA IDENTITY DEFAULT;
   ```
 * **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy + function only). Drop order matters: the `SELECT` policy references `can_read_chat_message(...)`, so the policy must be dropped/recreated **before** the function. No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again.
+* **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/internal/security/SECURITY_FIXES.md`. If you find the table set to `FULL`, that is drift, not this migration.
 
 ## Rollback poll list vote aggregate RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`

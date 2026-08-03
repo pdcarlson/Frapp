@@ -40,18 +40,32 @@ as $$
                                   and mem.chapter_id = c.chapter_id
     where m.id = p_message_id
       and (
-        case c.type
-          when 'PUBLIC'   then true
-          when 'PRIVATE'  then u.id = any (coalesce(c.member_ids, '{}'::uuid[]))
-          when 'DM'       then u.id = any (coalesce(c.member_ids, '{}'::uuid[]))
-          when 'GROUP_DM' then u.id = any (coalesce(c.member_ids, '{}'::uuid[]))
-          when 'ROLE_GATED' then
+        case
+          when c.type = 'PUBLIC' then true
+          -- Grouped exactly as canAccessChannel groups them, so the two stay
+          -- legible side by side and a new member-list channel type is a
+          -- one-line change in both.
+          when c.type in ('PRIVATE', 'DM', 'GROUP_DM')
+            then u.id = any (coalesce(c.member_ids, '{}'::uuid[]))
+          when c.type = 'ROLE_GATED' then
             coalesce(array_length(c.required_permissions, 1), 0) = 0
             or exists (
               select 1
               from public.roles r
               where r.chapter_id = c.chapter_id
-                and r.id::text = any (mem.role_ids)
+                -- `members.role_ids` is an unconstrained text[], and the API
+                -- accepts role ids as `z.string().uuid()`, which permits
+                -- uppercase. Postgres uuid equality is case-insensitive but
+                -- text equality is not, so comparing as text would silently
+                -- deny a member whose stored id differs only in case, while
+                -- the app layer allowed them. Compare as uuid to match.
+                and r.id = any (
+                  array(
+                    select v::uuid
+                    from unnest(mem.role_ids) as v
+                    where v ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                  )
+                )
                 and (
                   '*' = any (r.permissions)
                   or r.permissions && c.required_permissions
@@ -83,27 +97,69 @@ begin
 end
 $$;
 
--- Realtime delivers a postgres_changes event to a subscriber only if this SELECT
--- policy passes for the changed row. For DELETE (and the OLD image of UPDATE),
--- Realtime evaluates the policy against the old row; under the default replica
--- identity that old image holds only the primary key, so `message_id` would be
--- NULL and can_read_chat_message() would deny the event for EVERY subscriber —
--- silently breaking action-removal sync (un-reaction / un-vote), which the web
--- client applies solely from these DELETE events (apps/web/lib/chat/realtime-
--- manager.ts + cache.ts). REPLICA IDENTITY FULL puts the whole old row in that
--- image so the policy can scope the event to channel members. The rows are tiny,
--- so the added WAL volume is negligible; the separate per-subscriber cost of
--- evaluating this policy on the unfiltered global subscription is tracked in FRA-291.
-alter table public.chat_message_actions replica identity full;
+-- REPLICA IDENTITY IS DELIBERATELY LEFT AT THE DEFAULT.
+--
+-- It is tempting to set `replica identity full` here, reasoning that the DELETE
+-- old-image must carry `message_id` for this policy to scope on, or removal sync
+-- breaks for every subscriber. Both halves of that are wrong, per the Realtime
+-- Postgres Changes docs:
+--
+--   "RLS policies are not applied to `DELETE` statements, because there is no way
+--    for Postgres to verify that a user has access to a deleted record. When RLS
+--    is enabled and `replica identity` is set to `full` on a table, the `old`
+--    record contains only the primary key(s)."
+--
+-- So (1) DELETE events are never RLS-filtered — they were never at risk of being
+-- dropped by this policy — and (2) with RLS enabled the `old` record is trimmed
+-- to primary keys anyway, so FULL could not hand `message_id` to the policy or to
+-- the client even if it were needed. It buys nothing and costs WAL volume on
+-- every delete, permanently.
+--
+-- The client never needed more than the key: `dispatchActionDelete(old.id)`
+-- (apps/web/lib/chat/realtime-manager.ts) resolves the removal through its local
+-- `cache.actionIndex`, which only holds actions whose INSERT it was legitimately
+-- delivered — and INSERT events ARE RLS-filtered, by the policy below.
+--
+-- Known residual, not closed by this migration: because DELETE is never
+-- RLS-filtered, the unfiltered `chat:actions:global` subscription still fans a
+-- bare action `id` out to every authenticated subscriber cross-chapter. That id
+-- is opaque — no message, user, chapter or payload — and a client ignores ids
+-- absent from its own cache, so it discloses only that *some* action somewhere
+-- was removed. Scoping that subscription per-channel is FRA-291.
 
 -- Replace the role-only SELECT policy with the membership-scoped one. `if exists`
 -- mirrors the guarded revoke/grant block above so a replay or a forward-fix that
 -- already dropped the policy (per the rollback playbook) does not abort here.
 drop policy if exists "chat_message_actions_select" on public.chat_message_actions;
 
-create policy "chat_message_actions_select"
-  on public.chat_message_actions for select
-  using (
-    auth.role() = 'authenticated'
-    and public.can_read_chat_message(message_id)
-  );
+-- `to authenticated` is load-bearing, not decoration: EXECUTE on the helper is
+-- revoked from anon (above), and Postgres resolves a function's EXECUTE ACL when
+-- it initializes the expression — before any AND short-circuit can spare it. An
+-- anon read would therefore raise `42501 permission denied for function` (which
+-- apps/web/lib/chat/use-chat-channel.ts discards, so it degrades silently) where
+-- the old policy simply returned no rows. The role clause, not qual ordering, is
+-- what keeps anon out of the function.
+--
+-- Emitted through `format()` because bare-Postgres substrates (PGlite in CI) have
+-- no `authenticated` role and `to authenticated` would abort there — the same
+-- `pg_roles` guard the revoke/grant block above uses. One policy body, one
+-- variable clause, so the two substrates cannot drift apart.
+do $$
+declare
+  v_role_clause text := '';
+begin
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    v_role_clause := 'to authenticated';
+  end if;
+
+  execute format($p$
+    create policy "chat_message_actions_select"
+      on public.chat_message_actions for select
+      %s
+      using (
+        auth.role() = 'authenticated'
+        and public.can_read_chat_message(message_id)
+      )
+  $p$, v_role_clause);
+end
+$$;

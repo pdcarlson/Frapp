@@ -165,21 +165,41 @@ const RLS_SMOKE = [
     sql: `select pg_get_expr(polqual, polrelid) as using_expr
             from pg_policy p join pg_class c on c.oid = p.polrelid
            where c.relname = 'chat_message_actions' and polcmd = 'r'`,
-    // Require the two terms to be AND-ed and reject a top-level OR — a permissive
-    // `auth.role()='authenticated' OR can_read_chat_message(...)` regression
-    // re-opens the leak yet still contains both substrings, so a bare substring
-    // match would not catch it.
-    ok: (rows) =>
-      rows.length >= 1 &&
-      rows.some((r) => {
-        const e = String(r.using_expr);
-        return (
-          /auth\.role\(\)\s*=\s*'authenticated'/i.test(e) &&
-          /can_read_chat_message\s*\(\s*message_id\s*\)/i.test(e) &&
-          /\band\b/i.test(e) &&
-          !/\bor\b/i.test(e)
-        );
-      }),
+    // EXACTLY ONE permissive SELECT policy, and it must AND the two terms.
+    //
+    // `rows.length === 1` is the load-bearing half. Postgres OR-s permissive
+    // policies together, so a second `for select using (true)` added later
+    // restores "any authenticated user reads every row" — the whole FRA-38 leak —
+    // while the hardened policy sits untouched and a `some()` check still passes.
+    // Requiring a single policy is what makes this assertion a real guard.
+    //
+    // The expression check then rejects a permissive `auth.role()='authenticated'
+    // OR can_read_chat_message(...)` rewrite, which contains both substrings yet
+    // leaks. `auth.role()` is matched in both the plain and the Supabase initplan
+    // form — `(select auth.role())` renders as `( SELECT auth.role() AS role)` —
+    // so wrapping the call to hoist it out of the per-row path (the optimization
+    // FRA-291 contemplates) does not fail CI for being strictly better.
+    ok: (rows) => {
+      if (rows.length !== 1) return false;
+      const e = String(rows[0].using_expr);
+      return (
+        /auth\.role\(\)/i.test(e) &&
+        /'authenticated'/i.test(e) &&
+        /can_read_chat_message\s*\(\s*message_id\s*\)/i.test(e) &&
+        /\band\b/i.test(e) &&
+        !/\bor\b/i.test(e)
+      );
+    },
+  },
+  {
+    name: "can_read_chat_message() EXECUTE is revoked from public and anon (not an anon PostgREST RPC oracle)",
+    // The helper is SECURITY DEFINER and answers "may I read this message?", so
+    // exposing it as an RPC hands out a membership oracle. A later `drop function;
+    // create function` silently restores the default PUBLIC grant, so pin it.
+    sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
+            from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
+    ok: (rows) => rows.length === 1 && rows[0].public_exec === false,
   },
   {
     name: "can_read_chat_message() is SECURITY DEFINER with search_path pinned to exactly public",
@@ -203,9 +223,15 @@ const RLS_SMOKE = [
     },
   },
   {
-    name: "chat_message_actions has REPLICA IDENTITY FULL (Realtime DELETE carries message_id for the RLS policy)",
+    name: "chat_message_actions keeps DEFAULT replica identity (FULL is permanent WAL cost that cannot feed this policy)",
+    // Pins the deliberate choice documented in the migration. Realtime does not
+    // apply RLS to DELETE, and with RLS enabled the `old` record is trimmed to
+    // primary keys regardless of replica identity — so FULL cannot feed
+    // message_id to this policy or to the client, and only adds WAL volume to
+    // every delete. 'd' is the default; anything else means someone re-added it
+    // on the disproven rationale.
     sql: `select relreplident from pg_class where relname = 'chat_message_actions'`,
-    ok: (rows) => rows.length === 1 && rows[0].relreplident === "f",
+    ok: (rows) => rows.length === 1 && rows[0].relreplident === "d",
   },
   {
     name: "chat_message_actions INSERT scoped to the caller's own user_id (auth.uid())",
@@ -488,9 +514,21 @@ const F = {
   userCAuth: "cccc2222-0000-0000-0000-000000000001",
   userDId: "dddd1111-0000-0000-0000-000000000001", // chapter A member, holds '*' wildcard only
   userDAuth: "dddd2222-0000-0000-0000-000000000001",
+  // Chapter A member carrying a chapter-B role id in members.role_ids. That column
+  // is an unconstrained text[], so a stale/cross-chapter id is a real possibility;
+  // the predicate must re-scope roles by chapter_id or this user gets chapter B's
+  // permissions inside chapter A.
+  userEId: "eeee1111-0000-0000-0000-000000000001",
+  userEAuth: "eeee2222-0000-0000-0000-000000000001",
+  // Chapter A member whose stored role id is the correct role, UPPERCASED. The
+  // API takes role ids as z.string().uuid(), which accepts uppercase, so this is
+  // reachable through a normal PATCH of member roles.
+  userFId: "ffff1111-0000-0000-0000-000000000001",
+  userFAuth: "ffff2222-0000-0000-0000-000000000001",
   roleSecret: "0e0e0e0e-0000-0000-0000-000000000001", // chapter A, permission chat:secret
   roleBasic: "0b0b0b0b-0000-0000-0000-000000000001", // chapter A, no permissions
   roleWildcard: "0a0a0a0a-0000-0000-0000-000000000001", // chapter A, permission '*'
+  roleSecretChapB: "0c0c0c0c-0000-0000-0000-000000000001", // chapter B, permission chat:secret
   chPublic: "c0000001-0000-0000-0000-000000000001",
   chPrivate: "c0000002-0000-0000-0000-000000000001",
   chDM: "c0000003-0000-0000-0000-000000000001",
@@ -505,7 +543,14 @@ const F = {
   msgGroupDM: "10000006-0000-0000-0000-000000000001",
 };
 
-await db.exec(`
+// Seeded outside a transaction (these rows are read-only fixtures for the
+// scenarios below and nothing later depends on the table being empty). Guarded
+// the same way the anonymize tier guards its seed: an unhandled rejection here
+// would skip db.close() and the `FAILED: N` summary, so a broken seed would exit
+// without the report that tells you it broke.
+let readSeeded = false;
+try {
+  await db.exec(`
   insert into chapters (id, name, university) values
     ('${F.chapA}', 'Chapter A', 'Uni A'),
     ('${F.chapB}', 'Chapter B', 'Uni B');
@@ -513,15 +558,20 @@ await db.exec(`
     ('${F.userAId}', '${F.userAAuth}', 'a@test.local'),
     ('${F.userBId}', '${F.userBAuth}', 'b@test.local'),
     ('${F.userCId}', '${F.userCAuth}', 'c@test.local'),
-    ('${F.userDId}', '${F.userDAuth}', 'd@test.local');
+    ('${F.userDId}', '${F.userDAuth}', 'd@test.local'),
+    ('${F.userEId}', '${F.userEAuth}', 'e@test.local'),
+    ('${F.userFId}', '${F.userFAuth}', 'f@test.local');
   insert into roles (id, chapter_id, name, permissions) values
-    ('${F.roleSecret}',   '${F.chapA}', 'Secret',   '{chat:secret}'),
-    ('${F.roleBasic}',    '${F.chapA}', 'Basic',    '{}'),
-    ('${F.roleWildcard}', '${F.chapA}', 'Wildcard', '{*}');
+    ('${F.roleSecret}',       '${F.chapA}', 'Secret',   '{chat:secret}'),
+    ('${F.roleBasic}',        '${F.chapA}', 'Basic',    '{}'),
+    ('${F.roleWildcard}',     '${F.chapA}', 'Wildcard', '{*}'),
+    ('${F.roleSecretChapB}',  '${F.chapB}', 'Secret B', '{chat:secret}');
   insert into members (user_id, chapter_id, role_ids) values
     ('${F.userAId}', '${F.chapA}', '{${F.roleSecret}}'),
     ('${F.userCId}', '${F.chapA}', '{${F.roleBasic}}'),
     ('${F.userDId}', '${F.chapA}', '{${F.roleWildcard}}'),
+    ('${F.userEId}', '${F.chapA}', '{${F.roleSecretChapB}}'),
+    ('${F.userFId}', '${F.chapA}', '{${F.roleSecret.toUpperCase()}}'),
     ('${F.userBId}', '${F.chapB}', '{}');
   insert into chat_channels (id, chapter_id, name, type, member_ids, required_permissions) values
     ('${F.chPublic}',        '${F.chapA}', 'public',     'PUBLIC',     null,              null),
@@ -538,6 +588,13 @@ await db.exec(`
     ('${F.msgRoleGatedOpen}', '${F.chRoleGatedOpen}', '${F.userAId}'),
     ('${F.msgGroupDM}',       '${F.chGroupDM}',       '${F.userAId}');
 `);
+  readSeeded = true;
+} catch (e) {
+  missing += 1;
+  console.log(
+    `ERR   chat_message_actions read-enforcement seed\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+  );
+}
 
 async function canReadAs(authUid, messageId) {
   await db.exec(
@@ -556,6 +613,7 @@ const READ_SCENARIOS = [
   { name: "cross-chapter PUBLIC is denied (tenant boundary)", uid: F.userBAuth, msg: F.msgPublic, expect: false },
   { name: "PRIVATE is denied to a chapter member not in member_ids", uid: F.userCAuth, msg: F.msgPrivate, expect: false },
   { name: "PRIVATE is visible to a member listed in member_ids", uid: F.userAAuth, msg: F.msgPrivate, expect: true },
+  { name: "DM is visible to a participant listed in member_ids", uid: F.userAAuth, msg: F.msgDM, expect: true },
   { name: "DM is denied to a non-participant", uid: F.userCAuth, msg: F.msgDM, expect: false },
   { name: "GROUP_DM is visible to a member listed in member_ids", uid: F.userAAuth, msg: F.msgGroupDM, expect: true },
   { name: "GROUP_DM is denied to a chapter member not in member_ids", uid: F.userCAuth, msg: F.msgGroupDM, expect: false },
@@ -563,11 +621,16 @@ const READ_SCENARIOS = [
   { name: "ROLE_GATED is visible with the required permission", uid: F.userAAuth, msg: F.msgRoleGated, expect: true },
   { name: "ROLE_GATED is visible to a '*' wildcard holder lacking the specific permission", uid: F.userDAuth, msg: F.msgRoleGated, expect: true },
   { name: "ROLE_GATED with empty required_permissions is visible to any member", uid: F.userCAuth, msg: F.msgRoleGatedOpen, expect: true },
+  { name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)", uid: F.userEAuth, msg: F.msgRoleGated, expect: false },
+  { name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)", uid: F.userFAuth, msg: F.msgRoleGated, expect: true },
   { name: "NULL auth.uid() (anon / no JWT) is denied", uid: null, msg: F.msgPublic, expect: false },
 ];
 
 console.log("\n=== chat_message_actions read enforcement (can_read_chat_message) ===");
-for (const s of READ_SCENARIOS) {
+if (!readSeeded) {
+  console.log("SKIP  seed failed above — read-enforcement scenarios not run");
+}
+for (const s of readSeeded ? READ_SCENARIOS : []) {
   try {
     const got = await canReadAs(s.uid, s.msg);
     if (got === s.expect) {
