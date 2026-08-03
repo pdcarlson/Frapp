@@ -315,7 +315,7 @@ describe('StripeBillingService', () => {
       expect(stripeMock.paymentIntents.cancel).toHaveBeenCalledWith('pi_123');
     });
 
-    it('should swallow an invalid-request error (already terminal or unknown)', async () => {
+    it('should warn about, but swallow, an invalid-request error (already terminal or unknown)', async () => {
       stripeMock.paymentIntents = {
         cancel: jest
           .fn()
@@ -323,20 +323,61 @@ describe('StripeBillingService', () => {
             stripeInvalidRequestError('payment_intent_unexpected_state'),
           ),
       } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
 
       // Nothing left to cancel must not fail the caller's void transition.
       await expect(
         service.cancelPaymentIntent('pi_123'),
       ).resolves.toBeUndefined();
+
+      // `payment_intent_unexpected_state` also covers an intent that is
+      // `processing` — money in flight against an invoice being closed — so
+      // silence here would hide a real reconciliation case.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('pi_123'));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('payment_intent_unexpected_state'),
+      );
+
+      warnSpy.mockRestore();
     });
 
-    it('should rethrow non-invalid-request errors', async () => {
+    it('should name the missing code in the warning when Stripe sends none', async () => {
+      stripeMock.paymentIntents = {
+        cancel: jest.fn().mockRejectedValue(stripeInvalidRequestError()),
+      } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.cancelPaymentIntent('pi_123'),
+      ).resolves.toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('unknown code'),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('should rethrow non-invalid-request errors without warning', async () => {
       const error = new Error('connection reset');
       stripeMock.paymentIntents = {
         cancel: jest.fn().mockRejectedValue(error),
       } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
 
       await expect(service.cancelPaymentIntent('pi_123')).rejects.toBe(error);
+
+      // A transport failure is not "nothing left to cancel" — it propagates to
+      // the caller's best-effort handler instead of being logged away here.
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
     });
   });
 

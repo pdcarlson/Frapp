@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
 import {
@@ -13,6 +13,7 @@ import {
 
 @Injectable()
 export class StripeBillingService implements IBillingProvider {
+  private readonly logger = new Logger(StripeBillingService.name);
   private readonly stripe: Stripe;
   private readonly priceId: string;
   private readonly webhookSecret: string;
@@ -101,8 +102,14 @@ export class StripeBillingService implements IBillingProvider {
       await this.stripe.paymentIntents.cancel(paymentIntentId);
     } catch (error) {
       // Already succeeded/canceled, or unknown to this account — nothing left
-      // to cancel, so don't fail the caller's transition.
+      // to cancel, so don't fail the caller's transition. Still surface it:
+      // `payment_intent_unexpected_state` also covers an intent that is
+      // `processing`, i.e. money in flight against an invoice being closed —
+      // silence there would hide a real reconciliation case.
       if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        this.logger.warn(
+          `PaymentIntent ${paymentIntentId} could not be canceled (${error.code ?? 'unknown code'}): ${error.message} — if it was mid-payment, the charge may still settle`,
+        );
         return;
       }
       throw error;

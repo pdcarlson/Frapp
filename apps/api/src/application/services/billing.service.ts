@@ -186,6 +186,16 @@ export class BillingService {
       return;
     }
 
+    // Same guard as the payment-intent path: a foreign integration's non-UUID
+    // metadata would otherwise reach a uuid-typed column and 500, which Stripe
+    // retries for days.
+    if (!UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `checkout.session.completed with non-UUID chapter_id (${chapterId}): ${event.id} — ignoring foreign session`,
+      );
+      return;
+    }
+
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) {
       this.logger.warn(

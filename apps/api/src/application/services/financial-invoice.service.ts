@@ -60,6 +60,16 @@ export interface InvoicePaymentIntent {
   payment_intent_id: string;
 }
 
+/**
+ * Stripe answers a same-key request that is still in flight with an
+ * idempotency conflict. Matched structurally so the domain layer stays free of
+ * the Stripe SDK (per the billing adapter rule in spec/behavior/billing.md).
+ */
+function isIdempotencyConflict(error: unknown): boolean {
+  const type = (error as { type?: unknown } | null)?.type;
+  return type === 'idempotency_error' || type === 'StripeIdempotencyError';
+}
+
 export interface ApplyStripePaymentInput {
   invoiceId: string;
   chapterId: string;
@@ -193,18 +203,22 @@ export class FinancialInvoiceService {
       });
     }
 
-    if (newStatus === 'VOID' && invoice.stripe_payment_intent_id) {
-      // Kill any outstanding client secret: without this, a payment sheet the
-      // member already opened stays confirmable and can capture real money for
-      // a voided invoice (the webhook CAS would then miss, leaving a charge
-      // with no ledger row). Best-effort — voiding must not fail on Stripe.
+    if (
+      (newStatus === 'VOID' || newStatus === 'PAID') &&
+      invoice.stripe_payment_intent_id
+    ) {
+      // Both terminal states must kill any outstanding client secret: a
+      // payment sheet the member already opened otherwise stays confirmable
+      // and can capture real money against an invoice that is voided (no
+      // ledger row) or already settled in cash (a double charge). Best-effort
+      // — a terminal transition must not fail on Stripe.
       try {
         await this.billingProvider.cancelPaymentIntent(
           invoice.stripe_payment_intent_id,
         );
       } catch (error) {
         this.logger.warn(
-          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while voiding invoice ${id}: ${error instanceof Error ? error.message : error} — the intent may still be confirmable; verify in Stripe`,
+          `Failed to cancel PaymentIntent ${invoice.stripe_payment_intent_id} while moving invoice ${id} to ${newStatus}: ${error instanceof Error ? error.message : error} — the intent may still be confirmable; verify in Stripe`,
         );
       }
     }
@@ -285,6 +299,18 @@ export class FinancialInvoiceService {
       }
     } catch (error) {
       if (error instanceof ConflictException) throw error;
+      // A concurrent request holding the same idempotency key is still in
+      // flight at the provider — that's the double-tap this key exists to
+      // collapse, not an outage. Tell the caller to retry, and don't page
+      // on-call with an ERROR log.
+      if (isIdempotencyConflict(error)) {
+        this.logger.log(
+          `Concurrent PaymentIntent request for invoice ${invoiceId}; another attempt is in flight`,
+        );
+        throw new ConflictException(
+          'A payment attempt for this invoice is already in progress. Please retry in a moment.',
+        );
+      }
       this.logger.error(
         `Stripe PaymentIntent request failed for invoice ${invoiceId}: ${error instanceof Error ? error.message : error}`,
       );
@@ -293,27 +319,26 @@ export class FinancialInvoiceService {
       );
     }
 
-    if (intent.id !== invoice.stripe_payment_intent_id) {
-      // Conditional stamp: only while still OPEN. The initial status check is
-      // stale by now (Stripe round-trips sit in between), and an unconditional
-      // write could overwrite the webhook-stamped id on a just-settled invoice
-      // or hand out a client secret for a voided one.
-      const stamped = await this.invoiceRepo.setPaymentIntentIfOpen(
-        invoiceId,
-        chapterId,
-        intent.id,
-      );
-      if (!stamped) {
-        const current = await this.invoiceRepo.findById(invoiceId, chapterId);
-        if (current?.status === 'PAID') {
-          throw new ConflictException(
-            'Invoice was already paid; no further payment is needed',
-          );
-        }
-        throw new BadRequestException(
-          `Only OPEN invoices can be paid (current status: ${current?.status ?? 'missing'})`,
+    // Re-validate that the invoice is STILL open before handing out a client
+    // secret. The check at the top of this method is stale — Stripe
+    // round-trips sit in between, and an invoice can settle (cash) or be
+    // voided in that window. This runs on the reuse path too: reusing an
+    // existing intent hands out a live secret just the same.
+    const stamped = await this.invoiceRepo.setPaymentIntentIfOpen(
+      invoiceId,
+      chapterId,
+      intent.id,
+    );
+    if (!stamped) {
+      const current = await this.invoiceRepo.findById(invoiceId, chapterId);
+      if (current?.status === 'PAID') {
+        throw new ConflictException(
+          'Invoice was already paid; no further payment is needed',
         );
       }
+      throw new BadRequestException(
+        `Only OPEN invoices can be paid (current status: ${current?.status ?? 'missing'})`,
+      );
     }
 
     return {
@@ -348,11 +373,16 @@ export class FinancialInvoiceService {
       // payment — is a captured charge with no ledger row: warn loudly for
       // manual reconciliation (refund or reissue).
       const current = await this.invoiceRepo.findById(invoiceId, chapterId);
-      const ledgered =
-        chargeId !== null &&
-        (await this.transactionRepo.findByInvoice(invoiceId)).some(
-          (t) => t.stripe_charge_id === chargeId,
-        );
+      const ledgered = chargeId
+        ? (await this.transactionRepo.findByInvoice(invoiceId)).some(
+            (t) => t.stripe_charge_id === chargeId,
+          )
+        : // No charge id on the event (older API versions omit latest_charge),
+          // so fall back to the intent: if this same intent is the one that
+          // settled the invoice, this is an ordinary redelivery — not an
+          // unrecorded second charge.
+          current?.status === 'PAID' &&
+          current.stripe_payment_intent_id === paymentIntentId;
       if (ledgered) {
         this.logger.log(
           `payment_intent.succeeded for invoice ${invoiceId} skipped — duplicate delivery of already-ledgered charge ${chargeId}`,

@@ -360,6 +360,89 @@ describe('FinancialInvoiceService', () => {
       expect(result.status).toBe('VOID');
     });
 
+    it('should cancel the stored PaymentIntent when marking an OPEN invoice PAID by hand', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.applyPayment.mockResolvedValue({
+        ...openInvoice,
+        status: 'PAID',
+        paid_at: '2026-09-10T00:00:00.000Z',
+      });
+
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+
+      // PAID is terminal too: the member may have a payment sheet already open
+      // for this intent, and after the treasurer records a cash payment
+      // confirming it would capture a second, duplicate charge.
+      expect(mockBillingProvider.cancelPaymentIntent).toHaveBeenCalledWith(
+        'pi_outstanding',
+      );
+      expect(result.status).toBe('PAID');
+    });
+
+    it('should still mark PAID when cancelling the PaymentIntent throws', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.applyPayment.mockResolvedValue({
+        ...openInvoice,
+        status: 'PAID',
+        paid_at: '2026-09-10T00:00:00.000Z',
+      });
+      mockBillingProvider.cancelPaymentIntent.mockRejectedValue(
+        new Error('stripe is down'),
+      );
+
+      // Best effort: the ledger row is already written, so a provider outage
+      // must not turn a settled invoice into a 5xx.
+      const result = await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+
+      expect(result.status).toBe('PAID');
+    });
+
+    it('should not call the provider on a manual PAID with no stored intent', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: null,
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.applyPayment.mockResolvedValue({
+        ...openInvoice,
+        status: 'PAID',
+        paid_at: '2026-09-10T00:00:00.000Z',
+      });
+
+      await service.transitionStatus('inv-1', 'ch-1', 'PAID');
+
+      expect(mockBillingProvider.cancelPaymentIntent).not.toHaveBeenCalled();
+    });
+
+    it('should not cancel the stored intent when the manual PAID CAS misses', async () => {
+      const openInvoice = {
+        ...baseInvoice,
+        status: 'OPEN' as const,
+        stripe_payment_intent_id: 'pi_outstanding',
+      };
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+
+      await expect(
+        service.transitionStatus('inv-1', 'ch-1', 'PAID'),
+      ).rejects.toThrow(BadRequestException);
+
+      // The transition never happened — killing a live intent here would strand
+      // a member mid-payment on an invoice that is still OPEN.
+      expect(mockBillingProvider.cancelPaymentIntent).not.toHaveBeenCalled();
+    });
+
     it('should not cancel a stored intent when transitioning DRAFT to VOID', async () => {
       mockInvoiceRepo.findById.mockResolvedValue({
         ...baseInvoice,
@@ -640,6 +723,10 @@ describe('FinancialInvoiceService', () => {
         clientSecret: 'pi_stored_1_secret',
         latestChargeId: null,
       });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue({
+        ...openInvoice,
+        stripe_payment_intent_id: 'pi_stored_1',
+      });
 
       const result = await service.createPaymentIntent(
         'inv-1',
@@ -651,12 +738,71 @@ describe('FinancialInvoiceService', () => {
         'pi_stored_1',
       );
       expect(mockBillingProvider.createPaymentIntent).not.toHaveBeenCalled();
-      expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
+      // Reuse hands out a live client secret just like a fresh mint, so it must
+      // run through the same still-OPEN re-check — the id it stamps is simply
+      // the one already stored.
+      expect(mockInvoiceRepo.setPaymentIntentIfOpen).toHaveBeenCalledWith(
+        'inv-1',
+        'ch-1',
+        'pi_stored_1',
+      );
       expect(mockInvoiceRepo.update).not.toHaveBeenCalled();
       expect(result).toEqual({
         client_secret: 'pi_stored_1_secret',
         payment_intent_id: 'pi_stored_1',
       });
+    });
+
+    it('should throw ConflictException when reuse re-checks and the invoice is now PAID', async () => {
+      mockInvoiceRepo.findById
+        .mockResolvedValueOnce({
+          ...openInvoice,
+          stripe_payment_intent_id: 'pi_stored_1',
+        })
+        .mockResolvedValueOnce({
+          ...openInvoice,
+          status: 'PAID',
+          paid_at: '2026-09-10T00:00:00.000Z',
+          stripe_payment_intent_id: 'pi_stored_1',
+        });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_stored_1',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_stored_1_secret',
+        latestChargeId: null,
+      });
+      // A cash payment settled the invoice while the retrieve round-tripped.
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue(null);
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw BadRequestException when reuse re-checks and the invoice is now VOID', async () => {
+      mockInvoiceRepo.findById
+        .mockResolvedValueOnce({
+          ...openInvoice,
+          stripe_payment_intent_id: 'pi_stored_1',
+        })
+        .mockResolvedValueOnce({
+          ...openInvoice,
+          status: 'VOID',
+          stripe_payment_intent_id: 'pi_stored_1',
+        });
+      mockBillingProvider.getPaymentIntent.mockResolvedValue({
+        id: 'pi_stored_1',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_stored_1_secret',
+        latestChargeId: null,
+      });
+      mockInvoiceRepo.setPaymentIntentIfOpen.mockResolvedValue(null);
+
+      // Handing back the stored secret here would let the member confirm a
+      // payment against a voided invoice.
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(BadRequestException);
     });
 
     it('should throw ConflictException when the stored PaymentIntent already succeeded', async () => {
@@ -724,12 +870,79 @@ describe('FinancialInvoiceService', () => {
       mockBillingProvider.createPaymentIntent.mockRejectedValue(
         new Error('stripe is down'),
       );
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => {});
 
       await expect(
         service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
       ).rejects.toThrow(ServiceUnavailableException);
 
+      // A genuine outage is the page-on-call case, so it keeps the ERROR log.
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Stripe PaymentIntent request failed'),
+      );
       expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
+
+      loggerErrorSpy.mockRestore();
+    });
+
+    // Stripe answers a same-key request that is still in flight with an
+    // idempotency conflict. Matched structurally (no Stripe SDK in the domain
+    // layer), so a plain tagged Error is a faithful fixture.
+    const idempotencyConflict = (type: string): Error =>
+      Object.assign(
+        new Error(
+          'Keys for idempotent requests can only be used with the same parameters they were first used with.',
+        ),
+        { type },
+      );
+
+    it.each(['idempotency_error', 'StripeIdempotencyError'])(
+      'should map a %s to ConflictException and log it as routine',
+      async (type) => {
+        mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+        mockBillingProvider.createPaymentIntent.mockRejectedValue(
+          idempotencyConflict(type),
+        );
+        const loggerErrorSpy = jest
+          .spyOn(service['logger'], 'error')
+          .mockImplementation(() => {});
+        const loggerLogSpy = jest
+          .spyOn(service['logger'], 'log')
+          .mockImplementation(() => {});
+
+        const thrown: unknown = await service
+          .createPaymentIntent('inv-1', 'ch-1', 'user-1')
+          .then(() => null)
+          .catch((error: unknown) => error);
+
+        // The double-tap this key exists to collapse — a retryable 409, not the
+        // 503 outage path, and not an ERROR that pages on-call.
+        expect(thrown).toBeInstanceOf(ConflictException);
+        expect((thrown as Error).message).toContain('already in progress');
+        expect(loggerErrorSpy).not.toHaveBeenCalled();
+        expect(loggerLogSpy).toHaveBeenCalledWith(
+          expect.stringContaining('another attempt is in flight'),
+        );
+        expect(mockInvoiceRepo.setPaymentIntentIfOpen).not.toHaveBeenCalled();
+
+        loggerErrorSpy.mockRestore();
+        loggerLogSpy.mockRestore();
+      },
+    );
+
+    it('should still map a non-idempotency tagged provider error to 503', async () => {
+      mockInvoiceRepo.findById.mockResolvedValue(openInvoice);
+      mockBillingProvider.createPaymentIntent.mockRejectedValue(
+        Object.assign(new Error('card service unavailable'), {
+          type: 'api_error',
+        }),
+      );
+
+      await expect(
+        service.createPaymentIntent('inv-1', 'ch-1', 'user-1'),
+      ).rejects.toThrow(ServiceUnavailableException);
     });
 
     it('should throw ServiceUnavailableException when retrieving the stored intent fails hard', async () => {
@@ -848,6 +1061,66 @@ describe('FinancialInvoiceService', () => {
         }),
       ).resolves.toBeUndefined();
 
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('reconcile manually'),
+      );
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+
+      loggerWarnSpy.mockRestore();
+    });
+
+    it('should treat a charge-less redelivery of the settling intent as benign', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      // Same intent that settled the invoice, and the event carries no
+      // latest_charge (older API versions omit it) — an ordinary redelivery.
+      mockInvoiceRepo.findById.mockResolvedValue(paidInvoice);
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+      const loggerLogSpy = jest
+        .spyOn(service['logger'], 'log')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(loggerWarnSpy).not.toHaveBeenCalled();
+      expect(loggerLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('duplicate delivery'),
+      );
+      // With no charge id there is nothing to match a ledger row against, so
+      // the stored intent answers the question instead of a ledger scan.
+      expect(mockTransactionRepo.findByInvoice).not.toHaveBeenCalled();
+      expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+
+      loggerWarnSpy.mockRestore();
+      loggerLogSpy.mockRestore();
+    });
+
+    it('should warn on a charge-less success from an intent other than the one that settled the invoice', async () => {
+      mockInvoiceRepo.applyPayment.mockResolvedValue(null);
+      mockInvoiceRepo.findById.mockResolvedValue(paidInvoice); // settled by pi_1
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.applyStripePaymentSuccess({
+          invoiceId: 'inv-1',
+          chapterId: 'ch-1',
+          paymentIntentId: 'pi_second',
+          chargeId: null,
+        }),
+      ).resolves.toBeUndefined();
+
+      // A different intent captured money against an invoice already settled by
+      // pi_1 — an orphan charge with no ledger row, even without a charge id.
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         expect.stringContaining('reconcile manually'),
       );
