@@ -296,14 +296,18 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       insert into point_transactions (chapter_id, user_id, amount, category, description)
       values ('${C}', '${U}', 5, 'SERVICE', 'helped');
       insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
-      insert into chat_messages (channel_id, sender_id, content) values ('${CH}', '${U}', 'hello');
+      insert into chat_messages (channel_id, sender_id, content) values ('${CH}', '${U}', 'hi, Doomed User here');
       insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
-      values ('${CARD}', '${CH}', '${U}', 'card', 'task',
-              '{"assigner_user_id":"${U}","assigner_name":"Doomed User","assignee_user_id":"someone-else","assignee_name":"Someone Else"}'::jsonb);
+      values ('${CARD}', '${CH}', '${U}', 'Assigned "T" to Doomed User (due tomorrow)', 'task',
+              '{"assigner_user_id":"someone-else","assigner_name":"Someone Else","assignee_user_id":"${U}","assignee_name":"Doomed User"}'::jsonb);
       insert into user_settings (user_id) values ('${U}');
       insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
       select anonymize_user('${U}');
-      select anonymize_user('${U}'); -- idempotent retry must not error
+      -- Simulate the retry window: the tombstone gets PII written back onto it
+      -- (PATCH /users/me is possible while the auth account still exists). The
+      -- second call must RE-scrub — the RPC has no tombstone early-return.
+      update users set display_name = 'Sneaky Comeback', bio = 'still here' where id = '${U}';
+      select anonymize_user('${U}');
     `);
     seeded = true;
   } catch (e) {
@@ -316,7 +320,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   if (seeded) {
     const FUNCTIONAL = [
       {
-        name: "users row tombstoned in place (PII scrubbed, deleted_at set)",
+        name: "users row tombstoned in place, re-scrubbed on retry (PII re-added in the window is gone)",
         sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
                      (deleted_at is not null) as tombstoned
                 from users where id = '${U}'`,
@@ -345,13 +349,21 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        name: "task-card name snapshot rewritten for the deleted user only",
-        sql: `select payload->>'assigner_name' as assigner, payload->>'assignee_name' as assignee
+        name: "card name snapshots rewritten in payload AND content, other user's snapshot untouched",
+        sql: `select payload->>'assigner_name' as assigner, payload->>'assignee_name' as assignee,
+                     content
                 from chat_messages where id = '${CARD}'`,
         ok: (rows) =>
           rows.length === 1 &&
-          rows[0].assigner === "Deleted User" &&
-          rows[0].assignee === "Someone Else",
+          rows[0].assigner === "Someone Else" &&
+          rows[0].assignee === "Deleted User" &&
+          rows[0].content === 'Assigned "T" to Deleted User (due tomorrow)',
+      },
+      {
+        name: "member-typed free text is NOT rewritten (only system-generated cards)",
+        sql: `select content from chat_messages
+               where sender_id = '${U}' and kind = 'text'`,
+        ok: (rows) => rows.length === 1 && rows[0].content === "hi, Doomed User here",
       },
     ];
     for (const lm of FUNCTIONAL) await runOne(lm);

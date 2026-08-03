@@ -12,9 +12,12 @@ export interface IStorageProvider {
     expiresIn?: number,
   ): Promise<string>;
   deleteFile(bucket: string, path: string): Promise<void>;
+  /** Delete many objects in as few provider calls as the backend allows. */
+  deleteFiles(bucket: string, paths: string[]): Promise<void>;
   /**
-   * List object paths (bucket-relative, prefix included) directly under a
-   * folder prefix. Returns [] for an empty or non-existent prefix.
+   * List ALL object paths (bucket-relative, prefix included) directly under a
+   * folder prefix, paginating internally until exhausted. Returns [] for an
+   * empty or non-existent prefix.
    */
   listFiles(bucket: string, prefix: string): Promise<string[]>;
 }

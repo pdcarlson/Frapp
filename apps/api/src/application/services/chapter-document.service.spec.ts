@@ -37,6 +37,7 @@ describe('ChapterDocumentService', () => {
       getSignedDownloadUrl: jest.fn(),
       deleteFile: jest.fn(),
       listFiles: jest.fn(),
+      deleteFiles: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

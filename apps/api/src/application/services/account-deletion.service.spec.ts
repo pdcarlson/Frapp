@@ -78,8 +78,9 @@ describe('AccountDeletionService', () => {
     mockStorage = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
-      deleteFile: jest.fn(async () => {
-        callOrder.push('deleteFile');
+      deleteFile: jest.fn(),
+      deleteFiles: jest.fn(async () => {
+        callOrder.push('deleteFiles');
       }),
       listFiles: jest.fn(async (_bucket: string, prefix: string) => {
         callOrder.push('listFiles');
@@ -94,6 +95,7 @@ describe('AccountDeletionService', () => {
     mockAnalytics = {
       forgetUser: jest.fn(async () => {
         callOrder.push('forgetUser');
+        return true;
       }),
     };
 
@@ -120,17 +122,16 @@ describe('AccountDeletionService', () => {
       'profiles',
       'chapters/chapter-a/profiles/user-1',
     );
-    expect(mockStorage.deleteFile).toHaveBeenCalledWith(
-      'profiles',
+    expect(mockStorage.deleteFiles).toHaveBeenCalledWith('profiles', [
       'chapters/chapter-a/profiles/user-1/pic.png',
-    );
+    ]);
     expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
     expect(mockAnalytics.forgetUser).toHaveBeenCalledWith('user-1');
     // Auth deletion targets the auth id, not the app id, and runs last.
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
     expect(callOrder).toEqual([
       'listFiles',
-      'deleteFile',
+      'deleteFiles',
       'anonymize',
       'forgetUser',
       'deleteAuthUser',
@@ -153,6 +154,40 @@ describe('AccountDeletionService', () => {
     );
   });
 
+  it('also purges the avatar_url folder when it lives in a chapter the user has left', async () => {
+    mockUserRepo.findById.mockResolvedValue({
+      ...liveUser,
+      avatar_url: 'chapters/old-chapter/profiles/user-1/face.png',
+    });
+    mockMemberRepo.findByUser.mockResolvedValue([membership('chapter-a')]);
+
+    await service.deleteAccount('user-1');
+
+    expect(mockStorage.listFiles).toHaveBeenCalledWith(
+      'profiles',
+      'chapters/old-chapter/profiles/user-1',
+    );
+    expect(mockStorage.listFiles).toHaveBeenCalledWith(
+      'profiles',
+      'chapters/chapter-a/profiles/user-1',
+    );
+  });
+
+  it('ignores avatar_url values that are not upload-flow storage paths', async () => {
+    mockUserRepo.findById.mockResolvedValue({
+      ...liveUser,
+      avatar_url: 'https://cdn.example.com/pic.png',
+    });
+
+    await service.deleteAccount('user-1');
+
+    expect(mockStorage.listFiles).toHaveBeenCalledTimes(1);
+    expect(mockStorage.listFiles).toHaveBeenCalledWith(
+      'profiles',
+      'chapters/chapter-a/profiles/user-1',
+    );
+  });
+
   it('404s for an unknown user without touching anything', async () => {
     mockUserRepo.findById.mockResolvedValue(null);
 
@@ -163,17 +198,52 @@ describe('AccountDeletionService', () => {
     expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
   });
 
-  it('retry on a tombstone skips the storage sweep but still re-runs anonymize, analytics, and auth deletion', async () => {
+  it('retry on a tombstone finds nothing to purge and still re-runs anonymize, analytics, and auth deletion', async () => {
     mockUserRepo.findById.mockResolvedValue(tombstone);
+    mockMemberRepo.findByUser.mockResolvedValue([]);
 
     await service.deleteAccount('user-1');
 
-    // Memberships were purged by the original run — nothing to enumerate.
-    expect(mockMemberRepo.findByUser).not.toHaveBeenCalled();
+    // Memberships and avatar_url were purged by the original run — the purge
+    // runs but has no prefixes to sweep.
     expect(mockStorage.listFiles).not.toHaveBeenCalled();
     expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
     expect(mockAnalytics.forgetUser).toHaveBeenCalledWith('user-1');
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+  });
+
+  it('aborts with 502 before any mutation when the storage sweep fails', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockStorage.listFiles.mockRejectedValue(new Error('storage down'));
+
+    await expect(service.deleteAccount('user-1')).rejects.toThrow(
+      BadGatewayException,
+    );
+    expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
+    expect(mockAnalytics.forgetUser).not.toHaveBeenCalled();
+    expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('aborts with 502 before any mutation when membership enumeration fails', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockMemberRepo.findByUser.mockRejectedValue(new Error('db blip'));
+
+    await expect(service.deleteAccount('user-1')).rejects.toThrow(
+      BadGatewayException,
+    );
+    expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
+    expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('aborts with 502 before auth deletion when the analytics forget is not confirmed', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockAnalytics.forgetUser.mockResolvedValue(false);
+
+    await expect(service.deleteAccount('user-1')).rejects.toThrow(
+      BadGatewayException,
+    );
+    expect(mockUserRepo.anonymize).toHaveBeenCalled();
+    expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
   });
 
   it('maps an auth-deletion failure to 502 after the database is already anonymized', async () => {
@@ -185,27 +255,6 @@ describe('AccountDeletionService', () => {
     );
     expect(mockUserRepo.anonymize).toHaveBeenCalled();
     expect(mockAnalytics.forgetUser).toHaveBeenCalled();
-  });
-
-  it('continues the deletion when the storage sweep fails', async () => {
-    mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockStorage.listFiles.mockRejectedValue(new Error('storage down'));
-
-    await service.deleteAccount('user-1');
-
-    expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
-    expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
-  });
-
-  it('continues the deletion when membership enumeration fails', async () => {
-    mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockMemberRepo.findByUser.mockRejectedValue(new Error('db blip'));
-
-    await service.deleteAccount('user-1');
-
-    expect(mockStorage.listFiles).not.toHaveBeenCalled();
-    expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
-    expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
   });
 
   it('404s when the user vanishes between lookup and anonymize', async () => {

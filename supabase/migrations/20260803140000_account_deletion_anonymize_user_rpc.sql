@@ -14,10 +14,13 @@
 -- every consumer that joins users for a display name naturally renders
 -- "Deleted User".
 --
--- `deleted_at` marks the tombstone. It is the idempotency guard for retries
--- (the API may re-run the flow when Supabase Auth deletion or storage cleanup
--- fails after the DB scrub) and lets interested surfaces distinguish a
--- tombstone from a live profile.
+-- `deleted_at` marks the tombstone (its original timestamp is preserved across
+-- re-runs). The function deliberately has NO early-return for tombstones: the
+-- API retries the whole flow when Supabase Auth deletion fails after the DB
+-- scrub, and during that window the user's token is still valid — a
+-- PATCH /v1/users/me could write PII back onto the tombstoned row. Re-running
+-- the full scrub on every call makes the retry converge to a clean tombstone
+-- no matter what happened in between; every statement below is idempotent.
 --
 -- The email is replaced with a per-user sentinel under the RFC 2606 reserved
 -- `.invalid` TLD: guaranteed undeliverable, collision-free with real emails,
@@ -32,13 +35,18 @@
 -- window) and not on the spec's preserved list; the points they yielded live
 -- on in point_transactions, which is preserved.
 --
--- Task/points chat cards embed display-name snapshots in their jsonb payloads
--- ("stays a correct record even if a member later leaves the chapter" — see
--- TaskService.postTaskCard / PointsService.postPointsCard). Data-retention
--- trumps snapshot fidelity, so the snapshots for the deleted user are
--- rewritten to "Deleted User". Free-text content that merely *mentions* the
--- user (chat text, notification bodies sent to other members) is out of scope,
--- exactly like a name typed into any preserved chat message.
+-- Task/points/event chat cards embed display-name snapshots twice: in the
+-- jsonb payload (task/points) and in the system-generated `content` fallback
+-- string all three writers compose ("Assigned … to <name>", "Granted … to
+-- <name>: …", "<name> scheduled …" — see TaskService.postTaskCard,
+-- PointsService.postPointsCard, EventService.postEventCard). Search matches
+-- and renders `content` (SearchService.searchMessages), so both copies must
+-- be rewritten. Data-retention trumps snapshot fidelity: the single UPDATE
+-- below rewrites the payload name keys and replaces the captured display name
+-- inside `content` for exactly the affected card rows, in one scan. Free-text
+-- that merely *mentions* the user (chat text typed by members, notification
+-- bodies sent to others) stays out of scope, exactly like a name typed into
+-- any preserved chat message.
 --
 -- `security invoker` matches the sibling atomic RPCs (transfer_presidency,
 -- check_in_event, confirm_task_completion, approve_service_entry): the API
@@ -56,6 +64,7 @@ security invoker
 as $$
 declare
   v_user users;
+  v_display_name text;
 begin
   -- The seeded "Frapp System" actor (chapter_directory_requests migration) is
   -- not a real account and must never be tombstoned. The API only ever passes
@@ -65,19 +74,20 @@ begin
       using errcode = 'invalid_parameter_value';
   end if;
 
-  -- Lock the row so a concurrent duplicate call serializes behind this one,
-  -- observes deleted_at, and returns the tombstone instead of re-scrubbing.
+  -- Lock the row so a concurrent duplicate call serializes behind this one.
+  -- No tombstone early-return (see header): a retry re-runs the whole scrub
+  -- so PII written onto the tombstone during the retry window is re-scrubbed.
   select * into v_user from users where id = p_user_id for update;
 
   if not found then
     return; -- unknown user: empty result, the API maps this to 404
   end if;
 
-  -- Idempotent retry: everything below already ran in a committed transaction.
-  if v_user.deleted_at is not null then
-    return next v_user;
-    return;
-  end if;
+  -- Captured before the scrub so the card-content rewrite below can replace
+  -- it. On a retry this is already 'Deleted User' and the replace no-ops; if
+  -- PII was re-added in the retry window, this is the re-added name and its
+  -- own card occurrences (if any) get scrubbed the same way.
+  v_display_name := v_user.display_name;
 
   update users
      set email = 'deleted+' || p_user_id::text || '@anonymized.invalid',
@@ -88,7 +98,7 @@ begin
          current_city = null,
          current_company = null,
          active_chapter_id = null,
-         deleted_at = now()
+         deleted_at = coalesce(v_user.deleted_at, now())
    where id = p_user_id
    returning * into v_user;
 
@@ -103,28 +113,41 @@ begin
   delete from channel_read_receipts where user_id = p_user_id;
   delete from study_sessions where user_id = p_user_id;
 
-  -- Display-name snapshots in system-generated cards. Keyed on the *_user_id
-  -- fields the card writers embed next to each name, so only this user's
-  -- snapshots are rewritten. `payload ||` preserves every other key.
+  -- Display-name snapshots in system-generated cards, both copies at once
+  -- (see header). Payload rewrites are keyed on the *_user_id fields the card
+  -- writers embed next to each name, so only this user's snapshots change;
+  -- `payload ||` preserves every other key, and the CASE arms are no-ops for
+  -- rows the key doesn't match. The `content` rewrite replaces the captured
+  -- display name only inside these card rows (never member-typed messages);
+  -- event cards carry no payload user id, so they key on sender_id — the
+  -- writer posts them as the creator. One statement, one scan.
   update chat_messages
-     set payload = payload || jsonb_build_object('assigner_name', 'Deleted User')
-   where kind = 'task'
-     and payload->>'assigner_user_id' = p_user_id::text;
-
-  update chat_messages
-     set payload = payload || jsonb_build_object('assignee_name', 'Deleted User')
-   where kind = 'task'
-     and payload->>'assignee_user_id' = p_user_id::text;
-
-  update chat_messages
-     set payload = payload || jsonb_build_object('actor_name', 'Deleted User')
-   where kind = 'points'
-     and payload->>'actor_user_id' = p_user_id::text;
-
-  update chat_messages
-     set payload = payload || jsonb_build_object('recipient_name', 'Deleted User')
-   where kind = 'points'
-     and payload->>'recipient_user_id' = p_user_id::text;
+     set payload = case
+           when payload is null then payload
+           else payload
+             || case when kind = 'task' and payload->>'assigner_user_id' = p_user_id::text
+                     then jsonb_build_object('assigner_name', 'Deleted User')
+                     else '{}'::jsonb end
+             || case when kind = 'task' and payload->>'assignee_user_id' = p_user_id::text
+                     then jsonb_build_object('assignee_name', 'Deleted User')
+                     else '{}'::jsonb end
+             || case when kind = 'points' and payload->>'actor_user_id' = p_user_id::text
+                     then jsonb_build_object('actor_name', 'Deleted User')
+                     else '{}'::jsonb end
+             || case when kind = 'points' and payload->>'recipient_user_id' = p_user_id::text
+                     then jsonb_build_object('recipient_name', 'Deleted User')
+                     else '{}'::jsonb end
+         end,
+         content = case
+           when v_display_name is not null and length(v_display_name) > 0
+             then replace(content, v_display_name, 'Deleted User')
+           else content
+         end
+   where (kind = 'task' and (payload->>'assigner_user_id' = p_user_id::text
+                          or payload->>'assignee_user_id' = p_user_id::text))
+      or (kind = 'points' and (payload->>'actor_user_id' = p_user_id::text
+                            or payload->>'recipient_user_id' = p_user_id::text))
+      or (kind = 'event' and sender_id = p_user_id);
 
   return next v_user;
 end;

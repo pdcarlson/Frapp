@@ -512,22 +512,47 @@ describe('AnalyticsService', () => {
   });
 
   describe('forgetUser', () => {
-    it('forwards the pseudonymous id to the provider deleted-users list', async () => {
+    it('forwards the pseudonymous id and reports the provider acknowledgement', async () => {
       const { client } = makeSupabaseMock({ data: null, error: null });
       const service = await buildService({
         salt: SALT,
         supabase: client,
         provider,
       });
+      provider.forget.mockResolvedValue(true);
 
-      await service.forgetUser(USER_ID);
+      await expect(service.forgetUser(USER_ID)).resolves.toBe(true);
 
       expect(provider.forget).toHaveBeenCalledWith(
         hashUserIdForAnalytics(SALT, USER_ID),
       );
     });
 
-    it('is a no-op when analytics is unconfigured', async () => {
+    it('reports false when the provider does not acknowledge the forget', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+      provider.forget.mockResolvedValue(false);
+
+      await expect(service.forgetUser(USER_ID)).resolves.toBe(false);
+    });
+
+    it('reports false when the provider rejects, without throwing', async () => {
+      const { client } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+      provider.forget.mockRejectedValue(new Error('posthog down'));
+
+      await expect(service.forgetUser(USER_ID)).resolves.toBe(false);
+    });
+
+    it('is a successful no-op when analytics is unconfigured (nothing was ever emitted)', async () => {
       const { client } = makeSupabaseMock({ data: null, error: null });
       const service = await buildService({
         salt: '',
@@ -535,7 +560,7 @@ describe('AnalyticsService', () => {
         provider,
       });
 
-      await service.forgetUser(USER_ID);
+      await expect(service.forgetUser(USER_ID)).resolves.toBe(true);
 
       expect(provider.forget).not.toHaveBeenCalled();
     });

@@ -12,8 +12,10 @@ import {
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
 import { User } from '../../domain/entities/user.entity';
-
-const PROFILES_BUCKET = 'profiles';
+import {
+  PROFILES_BUCKET,
+  profileFolderPrefix,
+} from '../../domain/constants/storage';
 
 const ALLOWED_CONTENT_TYPES = new Set([
   'image/jpeg',
@@ -62,7 +64,7 @@ export class UserService {
       );
     }
 
-    const storagePath = `chapters/${chapterId}/profiles/${userId}/${path.basename(filename)}`;
+    const storagePath = `${profileFolderPrefix(chapterId, userId)}/${path.basename(filename)}`;
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       PROFILES_BUCKET,
       storagePath,

@@ -293,6 +293,6 @@ Supabase Auth account is removed by the API flow. `spec/behavior/data-retention.
 documents deletion as irreversible, so this is the contract, not collateral —
 there is nothing to restore. Dropping `deleted_at` also drops the tombstone
 *marker*; if the migration is later re-applied, previously deleted users show
-`deleted_at = null` while keeping their scrubbed "Deleted User" fields (retries
-of a half-finished deletion re-run the scrub harmlessly — it is idempotent in
-effect on an already-scrubbed row).
+`deleted_at = null` while keeping their scrubbed "Deleted User" fields. That is
+safe: the function re-runs its full scrub on every call by design (no tombstone
+early-return), so re-running it on such a row simply re-stamps the marker.

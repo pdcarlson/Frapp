@@ -159,6 +159,7 @@ describe('ChatService', () => {
       getSignedDownloadUrl: jest.fn(),
       deleteFile: jest.fn(),
       listFiles: jest.fn(),
+      deleteFiles: jest.fn(),
     };
 
     mockNotificationService = {

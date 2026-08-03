@@ -41,11 +41,13 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
     });
   }
 
-  async forget(distinctId: string): Promise<void> {
+  async forget(distinctId: string): Promise<boolean> {
     // Emit a sentinel event that the provider-side "deleted users" automation
     // consumes to trigger delete-all-events for this hash. The hash is the only
     // identifier involved — there is no raw user id to leak here either.
-    await this.send({
+    // Unlike capture, delivery matters (see IAnalyticsProvider.forget), so the
+    // acknowledgement is surfaced to the caller instead of being swallowed.
+    return this.send({
       api_key: this.apiKey,
       event: 'account-deleted',
       distinct_id: distinctId,
@@ -53,7 +55,8 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
     });
   }
 
-  private async send(payload: Record<string, unknown>): Promise<void> {
+  /** Returns whether the provider acknowledged the request with a 2xx. */
+  private async send(payload: Record<string, unknown>): Promise<boolean> {
     // Bound the request so a stalled provider (DNS hang, slow POP) can't pile
     // up pending promises on the API event loop.
     const controller = new AbortController();
@@ -69,9 +72,12 @@ export class PosthogAnalyticsProvider implements IAnalyticsProvider {
         this.logger.warn(
           `PostHog capture returned ${response.status} ${response.statusText}`,
         );
+        return false;
       }
+      return true;
     } catch (error) {
       this.logger.warn('PostHog capture request failed', error as Error);
+      return false;
     } finally {
       clearTimeout(timeout);
     }
