@@ -29,6 +29,24 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Overdue invoices: if an invoice is OPEN past its `due_date`, a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.
 - Financial transactions log all payments, refunds, and adjustments with Stripe charge IDs for reconciliation.
 
+### Member payment flow
+
+- A member initiates payment with `POST /v1/invoices/:id/payment-intent` — **owner-only** (the invoice's `user_id` must be the caller) and only for an `OPEN` invoice. The endpoint creates a Stripe PaymentIntent (`amount` in cents, `usd`, metadata `invoice_id`/`chapter_id`/`user_id`) and returns `{ client_secret, payment_intent_id }` for client-side confirmation.
+- The stored intent is **reused** when it is still confirmable (`requires_payment_method`, `requires_confirmation`, `requires_action`, `processing`); a `succeeded` intent returns 409 (payment already completed, confirmation pending); a `canceled` intent is replaced by a fresh one.
+- The route is **subscription-exempt**: dues collection must stay reachable while the chapter's own subscription is `past_due`/`canceled` — collecting dues is exactly how a chapter recovers.
+- Only the `payment_intent.succeeded` webhook moves an invoice to PAID on the Stripe path; the pay endpoint never does.
+
+### Payment webhook idempotency
+
+- `payment_intent.succeeded` resolves the invoice from the intent's **metadata** (written only by our server, delivered inside a signature-verified event). Events without invoice metadata (e.g. subscription checkouts) are ignored.
+- Payment is applied by the `apply_invoice_payment` RPC: a compare-and-set (`status = 'OPEN'` → `PAID`, stamping `paid_at` and the succeeded intent's id) plus the `PAYMENT` transaction insert (with the Stripe charge id) in **one database transaction**. Duplicate deliveries, and a webhook racing an admin's manual PAID transition, update zero rows and are silent no-ops — this is invoice-level idempotency, independent of the chapter-level `last_stripe_webhook_at` mark (which orders subscription state only).
+- Unique partial indexes on `financial_invoices.stripe_payment_intent_id` and `financial_transactions.stripe_charge_id` (PAYMENT rows) are the durable idempotency floor beneath the CAS.
+- A `payment_intent.succeeded` for a **VOID** invoice is logged as a reconciliation warning: money was captured but no ledger row is written — resolve manually (refund or reissue).
+
+### Ledger provenance invariant
+
+- A `PAYMENT` transaction with a **non-null** `stripe_charge_id` was written by the webhook path and is Stripe-reconciled. A `PAYMENT` transaction with a **null** `stripe_charge_id` is a manual/offline record (admin `billing:manage` marked the invoice PAID — e.g. cash dues). The API surface cannot forge charge ids: invoice DTOs do not expose Stripe fields and validation rejects unknown properties.
+
 ## AI Usage Pricing
 
 AI features ([`ai.md`](ai.md), meeting summarization in [`meetings.md`](meetings.md)) are gated behind the paid tier with an **allowance + at-cost overage** model. Two design goals: members never see a meter at point-of-use, and the chapter treasurer never gets a surprise bill.

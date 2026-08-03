@@ -55,7 +55,7 @@
 
 - Admins create invoices for members (e.g. semester dues).
 - Invoices have statuses: DRAFT, OPEN, PAID, VOID.
-- Payments tracked via Stripe PaymentIntents.
+- Payments tracked via Stripe PaymentIntents; members pay their own open invoices in-app and the webhook confirms payment (moves the invoice to PAID). Behavior details: [`spec/behavior/billing.md`](../behavior/billing.md).
 - Financial transactions log all payments, refunds, and adjustments.
 - Overdue tracking with notifications.
 
