@@ -1,15 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-import type {
-  IBillingProvider,
-  CreateCheckoutParams,
-  CreateCustomerPortalParams,
-  WebhookEvent,
+import {
+  chargeIdFromLatestCharge,
+  type IBillingProvider,
+  type CreateCheckoutParams,
+  type CreateCustomerPortalParams,
+  type CreatePaymentIntentParams,
+  type PaymentIntentResult,
+  type WebhookEvent,
 } from '../../domain/adapters/billing.interface';
 
 @Injectable()
 export class StripeBillingService implements IBillingProvider {
+  private readonly logger = new Logger(StripeBillingService.name);
   private readonly stripe: Stripe;
   private readonly priceId: string;
   private readonly webhookSecret: string;
@@ -56,6 +60,80 @@ export class StripeBillingService implements IBillingProvider {
 
   async cancelSubscription(subscriptionId: string): Promise<void> {
     await this.stripe.subscriptions.cancel(subscriptionId);
+  }
+
+  async createPaymentIntent(
+    params: CreatePaymentIntentParams,
+  ): Promise<PaymentIntentResult> {
+    const intent = await this.stripe.paymentIntents.create(
+      {
+        amount: params.amount,
+        currency: params.currency,
+        metadata: params.metadata,
+        automatic_payment_methods: { enabled: true },
+      },
+      { idempotencyKey: params.idempotencyKey },
+    );
+    return this.toPaymentIntentResult(intent);
+  }
+
+  async getPaymentIntent(
+    paymentIntentId: string,
+  ): Promise<PaymentIntentResult | null> {
+    try {
+      const intent = await this.stripe.paymentIntents.retrieve(paymentIntentId);
+      return this.toPaymentIntentResult(intent);
+    } catch (error) {
+      // A permanently unknown id (key/account migration, restored data) is a
+      // "mint a fresh intent" signal, not an outage — surface it as null so
+      // callers don't loop on a misleading 503.
+      if (
+        error instanceof Stripe.errors.StripeInvalidRequestError &&
+        error.code === 'resource_missing'
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async cancelPaymentIntent(paymentIntentId: string): Promise<void> {
+    try {
+      await this.stripe.paymentIntents.cancel(paymentIntentId);
+    } catch (error) {
+      // Already succeeded/canceled, or unknown to this account — nothing left
+      // to cancel, so don't fail the caller's transition. Still surface it:
+      // `payment_intent_unexpected_state` also covers an intent that is
+      // `processing`, i.e. money in flight against an invoice being closed —
+      // silence there would hide a real reconciliation case.
+      if (error instanceof Stripe.errors.StripeInvalidRequestError) {
+        if (error.code === 'resource_missing') {
+          // The account has no such intent (e.g. an id stored under an old
+          // key) — there is provably no money in flight, so don't dilute the
+          // reconciliation signal below.
+          this.logger.debug(
+            `PaymentIntent ${paymentIntentId} not found while canceling; nothing to cancel`,
+          );
+          return;
+        }
+        this.logger.warn(
+          `PaymentIntent ${paymentIntentId} could not be canceled (${error.code ?? 'unknown code'}): ${error.message} — if it was mid-payment, the charge may still settle`,
+        );
+        return;
+      }
+      throw error;
+    }
+  }
+
+  private toPaymentIntentResult(
+    intent: Stripe.PaymentIntent,
+  ): PaymentIntentResult {
+    return {
+      id: intent.id,
+      status: intent.status,
+      clientSecret: intent.client_secret,
+      latestChargeId: chargeIdFromLatestCharge(intent.latest_charge),
+    };
   }
 
   constructWebhookEvent(payload: Buffer, signature: string): WebhookEvent {

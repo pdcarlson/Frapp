@@ -1,8 +1,23 @@
 import { ConfigService } from '@nestjs/config';
 import { StripeBillingService } from './stripe.service';
+import { chargeIdFromLatestCharge } from '../../domain/adapters/billing.interface';
 import Stripe from 'stripe';
 
 jest.mock('stripe');
+
+/**
+ * The automocked Stripe constructor keeps `errors.*` as (mocked) classes, so
+ * `instanceof` in the service still matches — but the mock constructor sets no
+ * fields, hence the explicit `code` assignment.
+ */
+const stripeInvalidRequestError = (code?: string): Error => {
+  const error = new Stripe.errors.StripeInvalidRequestError({
+    type: 'invalid_request_error',
+    message: 'No such payment_intent',
+  } as never) as Error & { code?: string };
+  error.code = code;
+  return error;
+};
 
 describe('StripeBillingService', () => {
   let service: StripeBillingService;
@@ -138,6 +153,246 @@ describe('StripeBillingService', () => {
       expect(stripeMock.subscriptions.cancel).toHaveBeenCalledWith(
         subscriptionId,
       );
+    });
+  });
+
+  describe('createPaymentIntent', () => {
+    it('should create a payment intent with automatic payment methods and map the result', async () => {
+      const params = {
+        amount: 5000,
+        currency: 'usd',
+        metadata: {
+          invoice_id: 'inv_123',
+          chapter_id: 'chap_123',
+          user_id: 'user_123',
+        },
+        idempotencyKey: 'invoice-pay-inv_123-first',
+      };
+
+      stripeMock.paymentIntents = {
+        create: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: null,
+        }),
+        retrieve: jest.fn(),
+      } as any;
+
+      const result = await service.createPaymentIntent(params);
+
+      // The idempotency key rides in the request-options argument, not the body.
+      expect(stripeMock.paymentIntents.create).toHaveBeenCalledWith(
+        {
+          amount: params.amount,
+          currency: params.currency,
+          metadata: params.metadata,
+          automatic_payment_methods: { enabled: true },
+        },
+        { idempotencyKey: 'invoice-pay-inv_123-first' },
+      );
+      expect(result).toEqual({
+        id: 'pi_123',
+        status: 'requires_payment_method',
+        clientSecret: 'pi_123_secret_abc',
+        latestChargeId: null,
+      });
+    });
+  });
+
+  describe('getPaymentIntent', () => {
+    it('should retrieve a payment intent and keep a string latest_charge as-is', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'succeeded',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: 'ch_123',
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(stripeMock.paymentIntents.retrieve).toHaveBeenCalledWith('pi_123');
+      expect(result).toEqual({
+        id: 'pi_123',
+        status: 'succeeded',
+        clientSecret: 'pi_123_secret_abc',
+        latestChargeId: 'ch_123',
+      });
+    });
+
+    it('should map an expanded latest_charge object to its id', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'succeeded',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: { id: 'ch_456' },
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result?.latestChargeId).toBe('ch_456');
+    });
+
+    it('should map a null latest_charge to null', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+          latest_charge: null,
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result?.latestChargeId).toBeNull();
+    });
+
+    it('should map a missing latest_charge to null', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockResolvedValue({
+          id: 'pi_123',
+          status: 'requires_payment_method',
+          client_secret: 'pi_123_secret_abc',
+        }),
+      } as any;
+
+      const result = await service.getPaymentIntent('pi_123');
+
+      expect(result?.latestChargeId).toBeNull();
+    });
+
+    it('should return null when Stripe reports the intent as resource_missing', async () => {
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest
+          .fn()
+          .mockRejectedValue(stripeInvalidRequestError('resource_missing')),
+      } as any;
+
+      // A permanently unknown id means "mint a fresh one", not an outage — so
+      // the caller must not see a throw here.
+      await expect(service.getPaymentIntent('pi_gone')).resolves.toBeNull();
+    });
+
+    it('should rethrow an invalid-request error that is not resource_missing', async () => {
+      const error = stripeInvalidRequestError('parameter_invalid_empty');
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockRejectedValue(error),
+      } as any;
+
+      await expect(service.getPaymentIntent('pi_123')).rejects.toBe(error);
+    });
+
+    it('should rethrow transport/API errors so callers can surface an outage', async () => {
+      const error = new Error('connection reset');
+      stripeMock.paymentIntents = {
+        create: jest.fn(),
+        retrieve: jest.fn().mockRejectedValue(error),
+      } as any;
+
+      await expect(service.getPaymentIntent('pi_123')).rejects.toBe(error);
+    });
+  });
+
+  describe('cancelPaymentIntent', () => {
+    it('should cancel the intent', async () => {
+      stripeMock.paymentIntents = {
+        cancel: jest.fn().mockResolvedValue({ id: 'pi_123' }),
+      } as any;
+
+      await service.cancelPaymentIntent('pi_123');
+
+      expect(stripeMock.paymentIntents.cancel).toHaveBeenCalledWith('pi_123');
+    });
+
+    it('should warn about, but swallow, an invalid-request error (already terminal or unknown)', async () => {
+      stripeMock.paymentIntents = {
+        cancel: jest
+          .fn()
+          .mockRejectedValue(
+            stripeInvalidRequestError('payment_intent_unexpected_state'),
+          ),
+      } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
+
+      // Nothing left to cancel must not fail the caller's void transition.
+      await expect(
+        service.cancelPaymentIntent('pi_123'),
+      ).resolves.toBeUndefined();
+
+      // `payment_intent_unexpected_state` also covers an intent that is
+      // `processing` — money in flight against an invoice being closed — so
+      // silence here would hide a real reconciliation case.
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('pi_123'));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('payment_intent_unexpected_state'),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('should name the missing code in the warning when Stripe sends none', async () => {
+      stripeMock.paymentIntents = {
+        cancel: jest.fn().mockRejectedValue(stripeInvalidRequestError()),
+      } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
+
+      await expect(
+        service.cancelPaymentIntent('pi_123'),
+      ).resolves.toBeUndefined();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('unknown code'),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('should rethrow non-invalid-request errors without warning', async () => {
+      const error = new Error('connection reset');
+      stripeMock.paymentIntents = {
+        cancel: jest.fn().mockRejectedValue(error),
+      } as any;
+      const warnSpy = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => {});
+
+      await expect(service.cancelPaymentIntent('pi_123')).rejects.toBe(error);
+
+      // A transport failure is not "nothing left to cancel" — it propagates to
+      // the caller's best-effort handler instead of being logged away here.
+      expect(warnSpy).not.toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('chargeIdFromLatestCharge', () => {
+    it('returns a string latest_charge unchanged', () => {
+      expect(chargeIdFromLatestCharge('ch_123')).toBe('ch_123');
+    });
+
+    it('unwraps an expanded charge object to its id', () => {
+      expect(chargeIdFromLatestCharge({ id: 'ch_456' })).toBe('ch_456');
+    });
+
+    it('maps null and undefined to null', () => {
+      expect(chargeIdFromLatestCharge(null)).toBeNull();
+      expect(chargeIdFromLatestCharge(undefined)).toBeNull();
     });
   });
 

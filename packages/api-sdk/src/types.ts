@@ -1245,6 +1245,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invoices/{id}/payment-intent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice */
+        post: operations["FinancialInvoiceController_createPaymentIntent_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invoices/{id}/transactions": {
         parameters: {
             query?: never;
@@ -4589,6 +4606,25 @@ export interface operations {
                 "application/json": components["schemas"]["TransitionInvoiceStatusDto"];
             };
         };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    FinancialInvoiceController_createPaymentIntent_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             201: {
                 headers: {

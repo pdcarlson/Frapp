@@ -18,6 +18,7 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
+import { FinancialInvoiceService } from './financial-invoice.service';
 
 describe('BillingService', () => {
   it('should initialize successfully', () => {
@@ -31,6 +32,9 @@ describe('BillingService', () => {
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
+  >;
+  let mockFinancialInvoiceService: jest.Mocked<
+    Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
   >;
 
   const baseChapter: Chapter = {
@@ -49,6 +53,15 @@ describe('BillingService', () => {
     updated_at: '2026-01-01T00:00:00.000Z',
   };
 
+  // checkout.session.completed carries the chapter id in Stripe metadata and
+  // feeds it straight to a uuid-typed column, so the handler drops anything
+  // that is not a UUID — checkout fixtures must be real UUIDs to reach it.
+  // (The subscription and invoice.paid handlers resolve the chapter by
+  // subscription id instead, so their fixtures are unaffected.)
+  const CHECKOUT_CHAPTER_ID = '44444444-4444-4444-8444-444444444444';
+  const MISSING_CHAPTER_ID = '55555555-5555-4555-8555-555555555555';
+  const checkoutChapter: Chapter = { ...baseChapter, id: CHECKOUT_CHAPTER_ID };
+
   beforeEach(async () => {
     mockBillingProvider = {
       createCustomer: jest.fn(),
@@ -56,6 +69,9 @@ describe('BillingService', () => {
       createCustomerPortalSession: jest.fn(),
       getSubscriptionStatus: jest.fn(),
       cancelSubscription: jest.fn(),
+      createPaymentIntent: jest.fn(),
+      getPaymentIntent: jest.fn(),
+      cancelPaymentIntent: jest.fn(),
       constructWebhookEvent: jest.fn(),
     };
 
@@ -69,11 +85,13 @@ describe('BillingService', () => {
 
     mockMemberRepo = {
       findById: jest.fn(),
+      findByUser: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findByChapter: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
+      transferPresidencyAtomic: jest.fn(),
     };
 
     mockRoleRepo = {
@@ -82,6 +100,7 @@ describe('BillingService', () => {
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
       create: jest.fn(),
+      createMany: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
     };
@@ -89,6 +108,10 @@ describe('BillingService', () => {
     mockNotificationService = {
       notifyUser: jest.fn().mockResolvedValue(undefined),
       notifyChapter: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockFinancialInvoiceService = {
+      applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -99,6 +122,10 @@ describe('BillingService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        {
+          provide: FinancialInvoiceService,
+          useValue: mockFinancialInvoiceService,
+        },
       ],
     }).compile();
 
@@ -373,7 +400,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -406,7 +433,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -439,7 +466,7 @@ describe('BillingService', () => {
 
       const chapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
@@ -474,7 +501,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -482,6 +509,11 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
       });
       mockMemberRepo.findByChapter.mockResolvedValue([]);
 
@@ -503,7 +535,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -565,7 +597,7 @@ describe('BillingService', () => {
         created: Date.now(),
         data: {
           object: {
-            metadata: { chapter_id: 'ch-1' },
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
             subscription: null,
             customer: null,
           },
@@ -573,7 +605,7 @@ describe('BillingService', () => {
       };
 
       const chapter = {
-        ...baseChapter,
+        ...checkoutChapter,
         subscription_id: 'sub_existing',
         stripe_customer_id: 'cus_existing',
       };
@@ -582,7 +614,7 @@ describe('BillingService', () => {
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      expect(mockChapterRepo.update).toHaveBeenCalledWith(CHECKOUT_CHAPTER_ID, {
         subscription_status: 'active',
         subscription_id: 'sub_existing',
         stripe_customer_id: 'cus_existing',
@@ -604,7 +636,7 @@ describe('BillingService', () => {
 
       const activeChapter = {
         ...baseChapter,
-        subscription_status: 'active',
+        subscription_status: 'active' as const,
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
@@ -616,6 +648,11 @@ describe('BillingService', () => {
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
       });
       mockMemberRepo.findByChapter.mockResolvedValue([
         {
@@ -623,6 +660,9 @@ describe('BillingService', () => {
           user_id: 'user-pres',
           chapter_id: 'ch-1',
           role_ids: ['role-pres'],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
         },
       ]);
       mockNotificationService.notifyUser.mockRejectedValue(
@@ -649,14 +689,49 @@ describe('BillingService', () => {
         created: Date.now(),
         data: {
           object: {
-            metadata: { chapter_id: 'ch-missing' },
+            metadata: { chapter_id: MISSING_CHAPTER_ID },
             subscription: 'sub_123',
           },
         },
       };
       mockChapterRepo.findById.mockResolvedValue(null);
       await service.handleWebhookEvent(event);
+      // A well-formed id that simply isn't ours: the lookup still runs, unlike
+      // the non-UUID guard below which returns before touching the repository.
+      expect(mockChapterRepo.findById).toHaveBeenCalledWith(MISSING_CHAPTER_ID);
       expect(mockChapterRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should ignore a checkout session whose chapter_id is not a UUID', async () => {
+      const loggerWarnSpy = jest
+        .spyOn(service['logger'], 'warn')
+        .mockImplementation(() => {});
+
+      // Another integration on the same Stripe account can attach arbitrary
+      // metadata; forwarding it into the uuid-typed chapter lookup would
+      // 22P02 → 500 → Stripe retries the event for days.
+      await expect(
+        service.handleWebhookEvent({
+          id: 'evt_checkout_non_uuid',
+          type: 'checkout.session.completed',
+          created: Date.now(),
+          data: {
+            object: {
+              metadata: { chapter_id: 'ch-1' },
+              subscription: 'sub_123',
+              customer: 'cus_123',
+            },
+          },
+        }),
+      ).resolves.not.toThrow();
+
+      expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(loggerWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('non-UUID chapter_id'),
+      );
+
+      loggerWarnSpy.mockRestore();
     });
 
     it('should ignore customer.subscription.updated missing subscription id', async () => {
@@ -727,23 +802,23 @@ describe('BillingService', () => {
         created: Date.now(),
         data: {
           object: {
-            metadata: { chapter_id: 'ch-1' },
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
             subscription: 'sub_123',
             customer: 'cus_123',
           },
         },
       };
 
-      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
       mockChapterRepo.update.mockResolvedValue({
-        ...baseChapter,
+        ...checkoutChapter,
         subscription_status: 'active',
         subscription_id: 'sub_123',
       });
 
       await service.handleWebhookEvent(event);
 
-      expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      expect(mockChapterRepo.update).toHaveBeenCalledWith(CHECKOUT_CHAPTER_ID, {
         subscription_status: 'active',
         subscription_id: 'sub_123',
         stripe_customer_id: 'cus_123',
@@ -758,16 +833,16 @@ describe('BillingService', () => {
         created: Date.now(),
         data: {
           object: {
-            metadata: { chapter_id: 'ch-1' },
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
             subscription: 'sub_123',
             customer: 'cus_123',
           },
         },
       };
 
-      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
       mockChapterRepo.update.mockResolvedValue({
-        ...baseChapter,
+        ...checkoutChapter,
         subscription_status: 'active',
       });
 
@@ -1160,7 +1235,7 @@ describe('BillingService', () => {
       });
 
       it('advances the high-water mark on checkout.session.completed', async () => {
-        const chapter = { ...baseChapter, last_stripe_webhook_at: null };
+        const chapter = { ...checkoutChapter, last_stripe_webhook_at: null };
         mockChapterRepo.findById.mockResolvedValue(chapter);
         mockChapterRepo.update.mockResolvedValue(chapter);
 
@@ -1170,24 +1245,27 @@ describe('BillingService', () => {
           created: T_NEW,
           data: {
             object: {
-              metadata: { chapter_id: 'ch-1' },
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
               subscription: 'sub_123',
               customer: 'cus_123',
             },
           },
         });
 
-        expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
-          subscription_status: 'active',
-          subscription_id: 'sub_123',
-          stripe_customer_id: 'cus_123',
-          last_stripe_webhook_at: NEW_ISO,
-        });
+        expect(mockChapterRepo.update).toHaveBeenCalledWith(
+          CHECKOUT_CHAPTER_ID,
+          {
+            subscription_status: 'active',
+            subscription_id: 'sub_123',
+            stripe_customer_id: 'cus_123',
+            last_stripe_webhook_at: NEW_ISO,
+          },
+        );
       });
 
       it('ignores a checkout.session.completed older than the high-water mark', async () => {
         const chapter = {
-          ...baseChapter,
+          ...checkoutChapter,
           subscription_status: 'past_due' as const,
           subscription_id: 'sub_123',
           last_stripe_webhook_at: NEW_ISO,
@@ -1200,7 +1278,7 @@ describe('BillingService', () => {
           created: T_OLD,
           data: {
             object: {
-              metadata: { chapter_id: 'ch-1' },
+              metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
               subscription: 'sub_123',
               customer: 'cus_123',
             },
@@ -1248,10 +1326,199 @@ describe('BillingService', () => {
       });
     });
 
+    describe('payment_intent.succeeded dispatch (FRA-15)', () => {
+      // The RPC params are uuid-typed, so the dispatcher only forwards metadata
+      // that actually parses as a UUID — fixtures must be real UUIDs.
+      const INVOICE_ID = '11111111-1111-4111-8111-111111111111';
+      const CHAPTER_ID = '22222222-2222-4222-8222-222222222222';
+
+      const paymentIntentEvent = (
+        id: string,
+        object: Record<string, unknown>,
+      ): WebhookEvent => ({
+        id,
+        type: 'payment_intent.succeeded',
+        created: Date.now(),
+        data: { object },
+      });
+
+      it('applies the member payment with a string latest_charge', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_string_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            latest_charge: 'ch_123',
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_123',
+        });
+      });
+
+      it('normalizes an expanded latest_charge object to its id', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_object_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            latest_charge: { id: 'ch_456' },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledWith({
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          chargeId: 'ch_456',
+        });
+      });
+
+      it('passes a null chargeId when latest_charge is null or absent', async () => {
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_null_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+            latest_charge: null,
+          }),
+        );
+        await service.handleWebhookEvent(
+          paymentIntentEvent('evt_pi_absent_charge', {
+            id: 'pi_1',
+            metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          }),
+        );
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledTimes(2);
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenNthCalledWith(1, {
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        });
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenNthCalledWith(2, {
+          invoiceId: INVOICE_ID,
+          chapterId: CHAPTER_ID,
+          paymentIntentId: 'pi_1',
+          chargeId: null,
+        });
+      });
+
+      it('ignores an intent missing invoice_id metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_no_invoice_id', {
+              id: 'pi_1',
+              metadata: { chapter_id: CHAPTER_ID },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('ignores an intent missing chapter_id metadata without throwing', async () => {
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_no_chapter_id', {
+              id: 'pi_1',
+              metadata: { invoice_id: INVOICE_ID },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+      });
+
+      it('ignores a foreign intent whose invoice_id is not a UUID', async () => {
+        const loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => {});
+
+        // Another integration on the same Stripe account can carry arbitrary
+        // metadata; forwarding it into the uuid-typed RPC would 22P02 → 500 →
+        // Stripe retries for days.
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_non_uuid_invoice', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: 'inv-1', chapter_id: CHAPTER_ID },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalledWith(
+          expect.stringContaining('non-UUID invoice metadata'),
+        );
+
+        loggerWarnSpy.mockRestore();
+      });
+
+      it('ignores a foreign intent whose chapter_id is not a UUID', async () => {
+        const loggerWarnSpy = jest
+          .spyOn(service['logger'], 'warn')
+          .mockImplementation(() => {});
+
+        await expect(
+          service.handleWebhookEvent(
+            paymentIntentEvent('evt_pi_non_uuid_chapter', {
+              id: 'pi_foreign',
+              metadata: { invoice_id: INVOICE_ID, chapter_id: 'ch-1' },
+              latest_charge: 'ch_123',
+            }),
+          ),
+        ).resolves.not.toThrow();
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).not.toHaveBeenCalled();
+        expect(loggerWarnSpy).toHaveBeenCalled();
+
+        loggerWarnSpy.mockRestore();
+      });
+
+      it('skips a duplicate delivery of the same event id (idempotency)', async () => {
+        const event = paymentIntentEvent('evt_pi_dup', {
+          id: 'pi_1',
+          metadata: { invoice_id: INVOICE_ID, chapter_id: CHAPTER_ID },
+          latest_charge: 'ch_123',
+        });
+
+        await service.handleWebhookEvent(event);
+        await service.handleWebhookEvent(event);
+
+        expect(
+          mockFinancialInvoiceService.applyStripePaymentSuccess,
+        ).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('should handle unknown event types gracefully', async () => {
       const event: WebhookEvent = {
         id: 'evt_unknown',
-        type: 'payment_intent.succeeded',
+        type: 'charge.refunded',
         created: Date.now(),
         data: { object: {} },
       };

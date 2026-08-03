@@ -78,6 +78,6 @@ All API errors follow a consistent shape:
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
 - File uploads are scanned for allowed MIME types. Disallowed types are rejected before storage.
-- Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Chapter-configurable overrides for specific endpoints (e.g. chat send message may have a higher limit).
+- Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Chapter-configurable overrides for specific endpoints (e.g. chat send message may have a higher limit). Exception: `POST /v1/webhooks/stripe` is exempt from rate limiting — Stripe delivers bursts from a small shared IP pool and the route is unauthenticated, so IP-keyed throttling would 429 real billing events; signature verification (invalid → 401) is the abuse control on that route.
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.
 - All secrets (Supabase keys, Stripe keys) are injected via environment variables. Never committed to version control. Never logged.

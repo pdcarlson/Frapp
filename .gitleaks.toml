@@ -12,3 +12,8 @@ paths = [
   # the gitleaks config file itself (its allowlist regexes can look secret-ish).
   '''(^|/)\.gitleaks\.toml$''',
 ]
+regexes = [
+  # dummy Stripe PaymentIntent client_secret fixture used in API specs
+  # (matches the exact fake value only, never real pi_..._secret_... material).
+  '''pi_123_secret_abc''',
+]

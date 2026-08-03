@@ -13,6 +13,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { SystemPermissions } from '../../domain/constants/permissions';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { SUBSCRIPTION_EXEMPT_KEY } from '../decorators/subscription.decorator';
 
 describe('FinancialInvoiceController', () => {
   let controller: FinancialInvoiceController;
@@ -31,6 +32,7 @@ describe('FinancialInvoiceController', () => {
       create: jest.fn(),
       update: jest.fn(),
       transitionStatus: jest.fn(),
+      createPaymentIntent: jest.fn(),
       getInvoiceTransactions: jest.fn(),
     };
 
@@ -246,6 +248,44 @@ describe('FinancialInvoiceController', () => {
       const target = controller.transitionStatus;
       const metadata = Reflect.getMetadata('permissions', target);
       expect(metadata).toEqual([SystemPermissions.BILLING_MANAGE]);
+    });
+  });
+
+  describe('createPaymentIntent', () => {
+    it('should delegate to createPaymentIntent on service and return its result', async () => {
+      const chapterId = 'chapter-1';
+      const userId = 'user-1';
+      const id = 'invoice-1';
+      const mockResult = {
+        client_secret: 'pi_123_secret_abc',
+        payment_intent_id: 'pi_123',
+      };
+      (service.createPaymentIntent as jest.Mock).mockResolvedValue(mockResult);
+
+      const result = await controller.createPaymentIntent(
+        chapterId,
+        userId,
+        id,
+      );
+
+      expect(service.createPaymentIntent).toHaveBeenCalledWith(
+        id,
+        chapterId,
+        userId,
+      );
+      expect(result).toBe(mockResult);
+    });
+
+    it('should be subscription exempt', () => {
+      const target = controller.createPaymentIntent;
+      const metadata = Reflect.getMetadata(SUBSCRIPTION_EXEMPT_KEY, target);
+      expect(metadata).toBe(true);
+    });
+
+    it('should have no handler-level permissions metadata (class-level MEMBERS_VIEW is the only gate)', () => {
+      const target = controller.createPaymentIntent;
+      const metadata = Reflect.getMetadata('permissions', target);
+      expect(metadata).toBeUndefined();
     });
   });
 

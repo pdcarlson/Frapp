@@ -231,3 +231,41 @@ ALTER TABLE chapters
 ```
 
 **Note:** Rolling back drops both new tables *and* the new columns added to `chapters` and `chat_messages`. Any data stored in those columns (`org_archetype`, `enabled_modules`, `vocabulary`, `branding`, `theme_palette`, `directory_id`, `beta_config`, `kind`, `payload`, `client_message_id`, `deleted_at`) will be permanently lost, in addition to all rows inserted into the new tables.
+
+## Rollback the invoice payment RPC + indexes (20260803120000)
+
+Additive: one function and two partial unique indexes (FRA-15). No columns or
+rows are created, so rollback loses nothing that existed before the migration.
+
+```sql
+DROP FUNCTION IF EXISTS apply_invoice_payment(uuid, uuid, text, text);
+DROP INDEX IF EXISTS idx_financial_transactions_payment_charge;
+DROP INDEX IF EXISTS idx_financial_invoices_payment_intent;
+```
+
+**Order matters only for the function**: drop it before deploying an API build
+that predates FRA-15, since the old build never calls it. Do **not** drop it
+while the current API is serving — `FinancialInvoiceService.applyStripePaymentSuccess`
+(webhook path) and `transitionStatus` → PAID (admin path) both call it, and a
+missing function surfaces as a 500 on the Stripe webhook, which Stripe then
+retries for up to ~72h.
+
+**Data caveat:** the values the migration lets the app write —
+`financial_invoices.stripe_payment_intent_id` and
+`financial_transactions.stripe_charge_id` — are *not* removed by this rollback
+and stay valid; only the uniqueness guarantee goes away. If you later re-apply
+the migration, the `CREATE UNIQUE INDEX` statements will fail if duplicate
+non-null ids accumulated while the indexes were absent. Check first:
+
+```sql
+SELECT stripe_payment_intent_id, count(*) FROM financial_invoices
+ WHERE stripe_payment_intent_id IS NOT NULL
+ GROUP BY 1 HAVING count(*) > 1;
+
+SELECT stripe_charge_id, count(*) FROM financial_transactions
+ WHERE stripe_charge_id IS NOT NULL AND type = 'PAYMENT'
+ GROUP BY 1 HAVING count(*) > 1;
+```
+
+Resolve any duplicates (they indicate a double-recorded payment worth
+reconciling in Stripe regardless) before re-applying.

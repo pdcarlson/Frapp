@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { BillingService } from '../../application/services/billing.service';
 import {
   BILLING_PROVIDER,
@@ -18,6 +19,13 @@ import {
 } from '../../domain/adapters/billing.interface';
 import type { WebhookRequest } from '../types/request-context.types';
 
+// Webhooks carry no bearer token, so the global throttler keys them by IP —
+// and Stripe delivers bursts from a small shared IP pool, which 429s real
+// billing events. Signature verification (401 below) is the abuse control
+// here instead. The named keys are mandatory: this app registers named
+// `read`/`write` throttlers, and a bare @SkipThrottle() only sets the
+// `default` key, which matches neither — a silent no-op.
+@SkipThrottle({ read: true, write: true })
 @ApiTags('Webhooks')
 @Controller('webhooks')
 export class WebhookController {

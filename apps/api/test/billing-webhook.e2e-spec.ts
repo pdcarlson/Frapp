@@ -69,4 +69,39 @@ describe('Billing webhook (e2e)', () => {
       }),
     );
   });
+
+  // FRA-275: Stripe delivers event bursts from a small shared IP pool with no
+  // bearer token, so without the exemption the whole burst lands in one
+  // ip-keyed 30/min write bucket and real billing events get 429'd.
+  it('is exempt from the write rate limit: a >30-request burst never 429s', async () => {
+    for (let i = 0; i < 40; i++) {
+      const res = await request(app.getHttpServer())
+        .post(`${V1}/webhooks/stripe`)
+        .set('stripe-signature', 'sig_test')
+        .send({ type: 'checkout.session.completed' });
+      expect(res.status).toBe(200);
+      // The skip path never reaches the throttler, so no rate-limit
+      // bookkeeping headers appear either.
+      const rateLimitHeaders = Object.keys(res.headers).filter((h) =>
+        h.startsWith('x-ratelimit'),
+      );
+      expect(rateLimitHeaders).toEqual([]);
+    }
+  });
+
+  it('leaves other unauthenticated POST routes throttled per IP', async () => {
+    // First 30 pass the throttler and die at auth (401); the 31st is cut off
+    // by the write bucket with the canonical Retry-After header.
+    for (let i = 0; i < 30; i++) {
+      await request(app.getHttpServer())
+        .post(`${V1}/invoices`)
+        .send({})
+        .expect(401);
+    }
+    const res = await request(app.getHttpServer())
+      .post(`${V1}/invoices`)
+      .send({});
+    expect(res.status).toBe(429);
+    expect(res.headers['retry-after']).toBeDefined();
+  });
 });
