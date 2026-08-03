@@ -112,8 +112,11 @@ effectively unbounded for our purposes.
 > issues" unqualified, but their Active-vs-Backlog definition and our live workspace both show Backlog is
 > exempt.)
 
-- **The binding number is *active*, and `/next` keeps it tiny** — it moves one issue `In Progress → Done`
-  at a time, so active rarely exceeds a handful. There is no realistic risk of hitting 250 active.
+- **The binding number is *active*, and `/next` keeps it tiny** — each session holds **one** claim at a
+  time (`In Progress`, then `In Review` once its PR is open), so active tracks the number of concurrent
+  sessions plus open PRs: a handful, even when work is fanned out across parallel agents. The claim
+  protocol's stale sweep also returns leaked `In Progress` issues to Backlog, which *lowers* active.
+  There is no realistic risk of hitting 250 active.
 - **Backlog stays lean by *choice*, not platform limit** — a high-signal, groomable Backlog is a
   *quality* goal (so `/next` ranks real work first), not cap avoidance. See the curator's net-new budget below.
 - **Auto-archive is automatic and free** — Linear archives **Done after ~28 days** and **Canceled after
@@ -137,10 +140,46 @@ effectively unbounded for our purposes.
 ## `/next` (the work-selection command)
 
 [`.claude/commands/next.md`](../../../.claude/commands/next.md) is the canonical entry point: pull the
-**Backlog** ranked by **Priority** (Urgent→High→Med→Low; None last), tie-break by lower FRA- number, drop
-anything with an open blocked-by relation, don't auto-start Triage items, and **stop if the MCP is
-unavailable** (no fallback). It keeps Linear in sync (`In Progress` on start, a `save_comment` trail, the
-PR link) and opens the PR with `Fixes FRA-N`.
+**Backlog** (and **Todo**) ranked by **Priority** (Urgent→High→Med→Low; None last), tie-break by lower
+FRA- number, drop anything with an open blocked-by relation, don't auto-start Triage items, and **stop if
+the MCP is unavailable** (no fallback). It keeps Linear in sync (`In Progress` on start, a `save_comment`
+trail, the PR link) and opens the PR with `Fixes FRA-N`.
+
+**`/next` claims an issue before it touches anything, so several sessions can run it concurrently.** This
+is the design that lets work fan out across parallel agents without two of them building the same issue.
+
+- **The claim is a comment; the workflow state is a projection of it.** Linear has no compare-and-swap —
+  `save_issue` is last-write-wins and cannot be used as a lock. `/next` posts an `AGENT-CLAIM` carrying a
+  run-unique `claim_id`, *then* moves the issue to **In Progress**, then re-reads the stream and yields to
+  any **strictly earlier** live claim. Contests resolve on Linear's server `createdAt`, never on a
+  timestamp written into a comment body. Yielding only to a strictly earlier claim is what keeps two
+  agents from both backing off.
+- **Claim first, verify second.** Selection and claim happen before the expensive verification, which
+  then runs against work the agent already owns. The old order — verify, then mark In Progress — left a
+  minutes-long window in which two agents could both pick the same issue.
+- **Assignee is not a claim signal.** Every issue in Frapp Live is assigned to Paul Carlson, including
+  every issue an agent is actively working, and `gitBranchName` is auto-suggested on every issue whether
+  or not a branch exists. The only evidence of live work is a live claim comment, a branch named in one,
+  or a linked PR.
+- **Leases and leaked claims.** A claim carries a **4-hour** lease renewed by editing the claim comment at
+  each checkpoint. An expired lease with no linked PR and no recently pushed branch may be taken over with
+  an `AGENT-RECLAIM`. An issue In Progress for over **72 hours** with no claim comment and no linked PR is
+  abandoned: `/next` posts an `AGENT-STALE-FLAG` and returns it to **Backlog** without picking it up, at
+  most twice per run. (FRA-38 and FRA-290 sat In Progress from June to August under the old command —
+  leaked claims are the observed failure mode this replaces, not a hypothetical.)
+- **Autonomy.** `/next` auto-picks rank 1 rather than asking which issue to work, and asks only about
+  **intent** — one-way doors on product naming or copy, destructive or irreversible changes, a spec that
+  no longer matches reality, scope explosion, or nothing viable. Anything recoverable by reading the
+  resulting PR is the agent's call. `/next --plan-only N` emits N ready-to-paste `/next FRA-xxx` prompts
+  and writes nothing to Linear, so a batch of sessions can be spun up without leaking N claims.
+- **Ending a run.** A run ends by opening a PR and moving to **In Review**, or by posting an
+  `AGENT-RELEASE` (back to Backlog, or Triage with a Priority if underspecified) or an `AGENT-HANDOFF`
+  (work exists; the claim stays live for a successor). Reasons are a closed set: `plan-rejected`,
+  `user-aborted`, `lost-race`, `blocked-discovered`, `out-of-scope`, `superseded`, `session-ending`. An
+  issue left silently In Progress is a bug.
+
+Procedure lives in `.claude/commands/next.md`; this section is policy. Where they disagree, this document
+wins.
 
 ---
 
