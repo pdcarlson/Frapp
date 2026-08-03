@@ -10,6 +10,7 @@ import {
 } from '@nestjs/throttler';
 import { createHmac } from 'node:crypto';
 import { CustomThrottlerGuard } from './custom-throttler.guard';
+import { WebhookController } from '../controllers/webhook.controller';
 
 // Expose the protected members under test.
 class TestableGuard extends CustomThrottlerGuard {
@@ -214,6 +215,78 @@ describe('CustomThrottlerGuard', () => {
 
     it('skips the read throttler for write methods', async () => {
       await expect(guard.handle(props('read', 'POST'))).resolves.toBe(true);
+    });
+  });
+
+  describe('named-throttler skip (webhook exemption)', () => {
+    // These tests pin the FRA-275 exemption end-to-end through canActivate:
+    // the @SkipThrottle({ read, write }) keys on WebhookController must match
+    // the named throttlers registered in AppModule. A bare @SkipThrottle()
+    // sets only the `default` key and silently fails to skip — the exact
+    // regression this suite exists to catch.
+    class UndecoratedController {
+      handle(): void {}
+    }
+
+    let skipGuard: TestableGuard;
+    let increment: jest.Mock;
+
+    const httpCtx = (
+      cls: new (...args: never[]) => unknown,
+      handler: () => unknown,
+    ): ExecutionContext =>
+      ({
+        getClass: () => cls,
+        getHandler: () => handler,
+        switchToHttp: () => ({
+          getRequest: () => ({ method: 'POST', headers: {}, ip: '1.2.3.4' }),
+          getResponse: () => ({ header: jest.fn() }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    beforeEach(async () => {
+      increment = jest.fn().mockResolvedValue({
+        totalHits: 1,
+        timeToExpire: 60,
+        isBlocked: false,
+        timeToBlockExpire: 0,
+      });
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        providers: [
+          TestableGuard,
+          Reflector,
+          {
+            provide: getOptionsToken(),
+            useValue: [
+              { name: 'read', ttl: 60_000, limit: 100 },
+              { name: 'write', ttl: 60_000, limit: 30 },
+            ],
+          },
+          { provide: getStorageToken(), useValue: { increment } },
+        ],
+      }).compile();
+      skipGuard = moduleRef.get(TestableGuard);
+      await skipGuard.onModuleInit();
+    });
+
+    it('never counts Stripe webhook requests against any bucket', async () => {
+      const ctx = httpCtx(
+        WebhookController,
+        WebhookController.prototype.handleStripeWebhook,
+      );
+      await expect(skipGuard.canActivate(ctx)).resolves.toBe(true);
+      expect(increment).not.toHaveBeenCalled();
+    });
+
+    it('still counts undecorated POST routes against the write bucket', async () => {
+      const ctx = httpCtx(
+        UndecoratedController,
+        UndecoratedController.prototype.handle,
+      );
+      await expect(skipGuard.canActivate(ctx)).resolves.toBe(true);
+      // Exactly once: the write throttler increments; the read throttler is
+      // method-gated off for POST by handleRequest.
+      expect(increment).toHaveBeenCalledTimes(1);
     });
   });
 
