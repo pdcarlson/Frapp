@@ -31,6 +31,7 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   CreateServiceEntryDto,
+  RequestProofUploadUrlDto,
   ReviewServiceEntryDto,
 } from '../dtos/service-entry.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
@@ -93,6 +94,45 @@ export class ServiceEntryController {
       throw new ForbiddenException('Access denied to this service entry');
     }
     return entry;
+  }
+
+  @Post('proof-upload-url')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.SERVICE_LOG)
+  @ApiOperation({ summary: 'Get signed upload URL for a service proof file' })
+  async requestProofUploadUrl(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: RequestProofUploadUrlDto,
+  ) {
+    return this.serviceEntryService.requestProofUploadUrl({
+      chapterId,
+      filename: dto.filename,
+      contentType: dto.content_type,
+    });
+  }
+
+  @Get(':id/proof-url')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @ApiOperation({
+    summary: 'Get signed proof download URL (own entry or admins)',
+  })
+  async getProofUrl(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    const isAdmin = await this.rbacService.memberHasAnyPermission(
+      chapterId,
+      userId,
+      [SystemPermissions.SERVICE_APPROVE],
+    );
+    return this.serviceEntryService.getProofDownloadUrl(
+      id,
+      chapterId,
+      userId,
+      isAdmin,
+    );
   }
 
   @Post()
