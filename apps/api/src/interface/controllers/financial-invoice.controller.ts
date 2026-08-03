@@ -21,6 +21,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { SubscriptionExempt } from '../decorators/subscription.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -138,6 +139,22 @@ export class FinancialInvoiceController {
     @Body() dto: TransitionInvoiceStatusDto,
   ) {
     return this.invoiceService.transitionStatus(id, chapterId, dto.status);
+  }
+
+  @Post(':id/payment-intent')
+  // Dues collection is exactly the recovery path for a locked chapter, so this
+  // must stay reachable when the chapter subscription is past_due/canceled.
+  @SubscriptionExempt()
+  @ApiOperation({
+    summary:
+      'Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice',
+  })
+  async createPaymentIntent(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+  ) {
+    return this.invoiceService.createPaymentIntent(id, chapterId, userId);
   }
 
   @Get(':id/transactions')

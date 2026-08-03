@@ -3082,6 +3082,35 @@
         ]
       }
     },
+    "/v1/invoices/{id}/payment-intent": {
+      "post": {
+        "operationId": "FinancialInvoiceController_createPaymentIntent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create or reuse a Stripe PaymentIntent for paying your own OPEN invoice",
+        "tags": [
+          "Financial Invoices"
+        ]
+      }
+    },
     "/v1/invoices/{id}/transactions": {
       "get": {
         "operationId": "FinancialInvoiceController_getInvoiceTransactions_v1",

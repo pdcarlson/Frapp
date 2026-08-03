@@ -5,6 +5,8 @@ import { SupabaseFinancialInvoiceRepository } from '../../infrastructure/supabas
 import { SupabaseFinancialTransactionRepository } from '../../infrastructure/supabase/repositories/supabase-financial-transaction.repository';
 import { FINANCIAL_INVOICE_REPOSITORY } from '../../domain/repositories/financial-invoice.repository.interface';
 import { FINANCIAL_TRANSACTION_REPOSITORY } from '../../domain/repositories/financial-transaction.repository.interface';
+import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
+import { StripeBillingService } from '../../infrastructure/billing/stripe.service';
 import { NotificationModule } from '../notification/notification.module';
 import { RbacModule } from '../rbac/rbac.module';
 
@@ -21,6 +23,11 @@ import { RbacModule } from '../rbac/rbac.module';
       provide: FINANCIAL_TRANSACTION_REPOSITORY,
       useClass: SupabaseFinancialTransactionRepository,
     },
+    // Local binding (not an import of BillingModule, which would create a
+    // cycle now that BillingModule imports this module). StripeBillingService
+    // is stateless, so a second instance is harmless — same pattern as
+    // BillingModule binding the chapter/member/role repositories itself.
+    { provide: BILLING_PROVIDER, useClass: StripeBillingService },
   ],
   exports: [FinancialInvoiceService],
 })

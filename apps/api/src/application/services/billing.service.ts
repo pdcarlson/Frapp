@@ -8,12 +8,15 @@ import {
 } from '@nestjs/common';
 import {
   BILLING_PROVIDER,
+  chargeIdFromLatestCharge,
   type IBillingProvider,
   type WebhookEvent,
   type CheckoutSessionWebhookObject,
   type SubscriptionWebhookObject,
   type InvoiceWebhookObject,
+  type PaymentIntentWebhookObject,
 } from '../../domain/adapters/billing.interface';
+import { FinancialInvoiceService } from './financial-invoice.service';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import type {
@@ -38,6 +41,9 @@ export interface CreatePortalInput {
   returnUrl: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
@@ -53,6 +59,7 @@ export class BillingService {
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
     private readonly notificationService: NotificationService,
+    private readonly financialInvoiceService: FinancialInvoiceService,
   ) {}
 
   async getChapterBillingStatus(chapterId: string) {
@@ -157,6 +164,9 @@ export class BillingService {
       case 'invoice.paid':
         await this.handleInvoicePaid(event);
         break;
+      case 'payment_intent.succeeded':
+        await this.handlePaymentIntentSucceeded(event);
+        break;
       default:
         this.logger.debug(`Unhandled webhook event type: ${event.type}`);
     }
@@ -172,6 +182,16 @@ export class BillingService {
     if (!chapterId) {
       this.logger.warn(
         `checkout.session.completed missing chapter_id in metadata: ${event.id}`,
+      );
+      return;
+    }
+
+    // Same guard as the payment-intent path: a foreign integration's non-UUID
+    // metadata would otherwise reach a uuid-typed column and 500, which Stripe
+    // retries for days.
+    if (!UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `checkout.session.completed with non-UUID chapter_id (${chapterId}): ${event.id} — ignoring foreign session`,
       );
       return;
     }
@@ -327,6 +347,47 @@ export class BillingService {
       // status-change alerts are limited to the subscription updated/deleted paths.
       this.logger.log(`Chapter ${chapter.id} reactivated via invoice payment`);
     }
+  }
+
+  /**
+   * Member dues payment confirmed (FRA-15). The PaymentIntent's metadata is
+   * written only by our pay endpoint and arrives inside a signature-verified
+   * event, so it is the authoritative invoice reference. Idempotency lives in
+   * the apply_invoice_payment CAS, not the chapter-level staleness mark —
+   * that mark orders *subscription* state and would misorder unrelated
+   * member payments.
+   */
+  private async handlePaymentIntentSucceeded(
+    event: WebhookEvent,
+  ): Promise<void> {
+    const intent = event.data.object as PaymentIntentWebhookObject;
+    const invoiceId = intent.metadata?.invoice_id;
+    const chapterId = intent.metadata?.chapter_id;
+
+    if (!invoiceId || !chapterId) {
+      // Not a member-invoice intent (e.g. a subscription checkout's intent).
+      this.logger.debug(
+        `payment_intent.succeeded without invoice metadata: ${event.id}`,
+      );
+      return;
+    }
+
+    // Other integrations on the same Stripe account can carry arbitrary
+    // metadata; forwarding a non-UUID into the uuid-typed RPC params would
+    // 22P02 → 500 → Stripe retries the event for days. Ack-and-log instead.
+    if (!UUID_PATTERN.test(invoiceId) || !UUID_PATTERN.test(chapterId)) {
+      this.logger.warn(
+        `payment_intent.succeeded with non-UUID invoice metadata (invoice_id: ${invoiceId}, chapter_id: ${chapterId}): ${event.id} — ignoring foreign intent`,
+      );
+      return;
+    }
+
+    await this.financialInvoiceService.applyStripePaymentSuccess({
+      invoiceId,
+      chapterId,
+      paymentIntentId: intent.id,
+      chargeId: chargeIdFromLatestCharge(intent.latest_charge),
+    });
   }
 
   private async findChapterBySubscription(

@@ -11,9 +11,10 @@ import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
+import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
 
 @Module({
-  imports: [NotificationModule],
+  imports: [NotificationModule, FinancialInvoiceModule],
   controllers: [BillingController, WebhookController],
   providers: [
     BillingService,
