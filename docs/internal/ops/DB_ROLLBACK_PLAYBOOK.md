@@ -145,7 +145,7 @@ After any rollback event:
 * **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: deploy an API revision that reverts to the prior all-time call and re-creates the original `(uuid, uuid, text)` body before dropping the `timestamptz` overload.
 
 ## Rollback `chat_message_actions` membership-scoped read RLS
-* **Migration**: `20260604150000_chat_message_actions_membership_rls.sql`
+* **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
 * **Action (forward-fix — restore the prior policy first, then drop the helper)**:
   ```sql
   DROP POLICY IF EXISTS "chat_message_actions_select" ON public.chat_message_actions;
