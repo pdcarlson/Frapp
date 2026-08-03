@@ -100,6 +100,7 @@ describe('ChapterService', () => {
       findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      anonymize: jest.fn(),
     };
 
     mockInsert = jest.fn().mockResolvedValue({ error: null });

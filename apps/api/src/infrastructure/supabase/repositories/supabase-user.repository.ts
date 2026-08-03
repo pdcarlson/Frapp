@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { PostgrestResponse } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IUserRepository } from '../../../domain/repositories/user.repository.interface';
@@ -70,5 +72,17 @@ export class SupabaseUserRepository implements IUserRepository {
       .single();
     if (error) throw error;
     return data;
+  }
+
+  async anonymize(id: string): Promise<User | null> {
+    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
+    // generated table Row types do not satisfy PostgREST's schema constraint.
+    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
+      'anonymize_user',
+      { p_user_id: id },
+    )) as PostgrestResponse<User>;
+    if (error) throw error;
+    const rows = data ?? [];
+    return rows.length > 0 ? rows[0] : null;
   }
 }

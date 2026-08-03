@@ -8,9 +8,13 @@
 
 ## Individual Account Deletion
 
-- On request (via settings or support), a user's personally identifiable information (PII) is scrubbed: email, display name, bio, avatar, profile photo.
-- Their point transactions, attendance records, chat messages, and service entries are preserved but **anonymized** — attributed to "Deleted User" with a null user reference.
-- The user's Supabase Auth account is deleted.
+- On request (`DELETE /v1/users/me`, authenticated self-service; support can run the same flow), a user's personally identifiable information (PII) is scrubbed: email, display name, bio, avatar, profile photo, graduation year, city, and company.
+- Their point transactions, attendance records, chat messages, service entries, poll votes, reactions, and invoices are preserved but **anonymized** — the `users` row becomes an in-place tombstone (`display_name = "Deleted User"`, email replaced with a per-user undeliverable sentinel, all other PII nulled, `deleted_at` set), so every historical record that references the user renders as "Deleted User". The tombstone — rather than nulling each history row's user reference — is deliberate: several history tables cascade-delete on user removal and others require a non-null user reference, so an in-place scrub is the only mechanism that keeps history intact while removing identity.
+- Current-state data is deleted outright: chapter memberships (and their custom-field values), user settings, push tokens, notifications, notification preferences, read cursors, and study sessions (location-presence history; the points they yielded remain in the preserved point transactions).
+- System-generated task/points chat cards embed display-name snapshots; the deleted user's snapshots are rewritten to "Deleted User". Free-text content that merely mentions the user (chat text typed by members, notification bodies sent to others) is preserved as-is, like any other message content.
+- Avatar/profile-photo objects are removed from storage across all of the user's chapters (best-effort; failures never block the deletion).
+- The user's Supabase Auth account is deleted **last**, only after the database scrub commits. If auth deletion fails, the API returns 502 and the request can simply be retried — the scrub is atomic and idempotent (`deleted_at` guards re-runs), and the caller's token stays valid until the auth account is actually gone.
+- A sole President who deletes their account leaves the chapter without a President (deletion is never blocked on role); the orphan-president claim flow is the recovery path.
 - This is irreversible.
 
 ## Inactive Chapter Cleanup

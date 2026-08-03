@@ -15,6 +15,7 @@ describe('AuthService', () => {
       findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      anonymize: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

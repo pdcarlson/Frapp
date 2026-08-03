@@ -40,4 +40,17 @@ export class SupabaseStorageService implements IStorageProvider {
     const { error } = await this.supabase.storage.from(bucket).remove([path]);
     if (error) throw error;
   }
+
+  async listFiles(bucket: string, prefix: string): Promise<string[]> {
+    // `list` returns names relative to the prefix and only for the immediate
+    // folder level — enough for the flat `<prefix>/<filename>` layouts this
+    // codebase uses (e.g. avatar uploads). 1000 covers any realistic folder.
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .list(prefix, { limit: 1000 });
+    if (error) throw error;
+    return (data ?? [])
+      .filter((entry) => entry.id !== null) // folders come back with id: null
+      .map((entry) => `${prefix}/${entry.name}`);
+  }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -14,6 +15,7 @@ import {
   ApiOkResponse,
 } from '@nestjs/swagger';
 import { UserService } from '../../application/services/user.service';
+import { AccountDeletionService } from '../../application/services/account-deletion.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -38,6 +40,7 @@ import {
 export class UserController {
   constructor(
     private readonly userService: UserService,
+    private readonly accountDeletionService: AccountDeletionService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -73,6 +76,17 @@ export class UserController {
     @Body() dto: UpdateUserDto,
   ) {
     return this.userService.update(userId, dto);
+  }
+
+  @Delete('me')
+  @ApiOperation({
+    summary: 'Delete current account (irreversible)',
+    description:
+      'Individual account deletion per spec/behavior/data-retention.md: PII is scrubbed to a "Deleted User" tombstone, historical records stay preserved anonymized, profile media is removed, and the Supabase Auth account is deleted last. If auth deletion fails the response is 502 and the request can simply be retried — every prior step is idempotent.',
+  })
+  async deleteMe(@CurrentUser('id') userId: string) {
+    await this.accountDeletionService.deleteAccount(userId);
+    return { success: true };
   }
 
   @Post('me/avatar-url')

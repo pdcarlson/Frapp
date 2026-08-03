@@ -116,6 +116,13 @@ const LANDMARKS = [
     ok: (rows) =>
       rows.length === 1 && rows[0].attgenerated && rows[0].attgenerated !== "",
   },
+  {
+    name: "anonymize_user RPC present, security invoker (FRA-40)",
+    sql: `select prosecdef from pg_proc p
+            join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'anonymize_user'`,
+    ok: (rows) => rows.length === 1 && rows[0].prosecdef === false,
+  },
 ];
 
 // ─── RLS smoke (ADR-12) ─────────────────────────────────────────────────────
@@ -260,6 +267,98 @@ console.log("\n=== RLS smoke ===");
   }
 }
 for (const lm of RLS_SMOKE) await runOne(lm);
+
+// ─── Functional smoke: anonymize_user (FRA-40) ──────────────────────────────
+//
+// The account-deletion contract (spec/behavior/data-retention.md "Individual
+// Account Deletion") is a *data* invariant — "history preserved, PII gone" —
+// so shape assertions alone can't pin it. This tier seeds a user with
+// preserved history (point transaction, chat messages, task card) plus
+// current-state rows (membership, settings, push token), runs the RPC twice
+// (the second call proves idempotent retry), asserts the tombstone contract,
+// and rolls the whole thing back so the validated schema stays untouched.
+
+console.log("\n=== Functional smoke: anonymize_user ===");
+{
+  const U = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"; // doomed user
+  const C = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // chapter
+  const CH = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // channel
+  const CARD = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // task-card message
+
+  let seeded = false;
+  try {
+    await db.exec(`
+      begin;
+      insert into users (id, supabase_auth_id, email, display_name, bio, avatar_url, graduation_year, current_city)
+      values ('${U}', gen_random_uuid(), 'doomed@example.com', 'Doomed User', 'bio', 'chapters/${C}/profiles/${U}/a.png', 2027, 'Troy');
+      insert into chapters (id, name, university) values ('${C}', 'Smoke', 'RPI');
+      insert into members (user_id, chapter_id) values ('${U}', '${C}');
+      insert into point_transactions (chapter_id, user_id, amount, category, description)
+      values ('${C}', '${U}', 5, 'SERVICE', 'helped');
+      insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
+      insert into chat_messages (channel_id, sender_id, content) values ('${CH}', '${U}', 'hello');
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${CARD}', '${CH}', '${U}', 'card', 'task',
+              '{"assigner_user_id":"${U}","assigner_name":"Doomed User","assignee_user_id":"someone-else","assignee_name":"Someone Else"}'::jsonb);
+      insert into user_settings (user_id) values ('${U}');
+      insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
+      select anonymize_user('${U}');
+      select anonymize_user('${U}'); -- idempotent retry must not error
+    `);
+    seeded = true;
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   anonymize_user functional seed\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
+
+  if (seeded) {
+    const FUNCTIONAL = [
+      {
+        name: "users row tombstoned in place (PII scrubbed, deleted_at set)",
+        sql: `select display_name, email, bio, avatar_url, graduation_year, current_city,
+                     (deleted_at is not null) as tombstoned
+                from users where id = '${U}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].display_name === "Deleted User" &&
+          rows[0].email === `deleted+${U}@anonymized.invalid` &&
+          rows[0].bio === null &&
+          rows[0].avatar_url === null &&
+          rows[0].graduation_year === null &&
+          rows[0].current_city === null &&
+          rows[0].tombstoned === true,
+      },
+      {
+        name: "history preserved: point transaction + chat messages keep their user FKs",
+        sql: `select (select count(*)::int from point_transactions where user_id = '${U}') as points,
+                     (select count(*)::int from chat_messages where sender_id = '${U}') as messages`,
+        ok: (rows) =>
+          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 2,
+      },
+      {
+        name: "current-state purged: membership, settings, push token",
+        sql: `select (select count(*)::int from members where user_id = '${U}')
+                   + (select count(*)::int from user_settings where user_id = '${U}')
+                   + (select count(*)::int from push_tokens where user_id = '${U}') as leftovers`,
+        ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
+      },
+      {
+        name: "task-card name snapshot rewritten for the deleted user only",
+        sql: `select payload->>'assigner_name' as assigner, payload->>'assignee_name' as assignee
+                from chat_messages where id = '${CARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].assigner === "Deleted User" &&
+          rows[0].assignee === "Someone Else",
+      },
+    ];
+    for (const lm of FUNCTIONAL) await runOne(lm);
+  }
+
+  await db.exec("rollback;");
+}
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

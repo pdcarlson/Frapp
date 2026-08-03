@@ -39,6 +39,7 @@ describe('MemberService', () => {
       findByEmail: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      anonymize: jest.fn(),
     };
 
     mockRoleRepo = {
