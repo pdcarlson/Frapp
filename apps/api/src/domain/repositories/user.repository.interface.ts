@@ -12,9 +12,14 @@ export interface IUserRepository {
   /**
    * Atomically tombstone the user via the `anonymize_user` RPC: scrub PII in
    * place, purge current-state rows (memberships, settings, tokens,
-   * notifications, read receipts, study sessions), and rewrite display-name
-   * snapshots in task/points chat cards. Idempotent — re-running on a
-   * tombstone returns it unchanged. Returns null when the user does not exist.
+   * notifications, read receipts, study sessions), and — on the first
+   * successful scrub only — rewrite display-name snapshots in
+   * task/points/event chat cards (payload keys and generated content).
+   * Deliberately NOT a no-op on a tombstone: every call re-runs the full
+   * users-row scrub so PII written back during the deletion retry window is
+   * re-scrubbed (do not add a deleted_at short-circuit — that reopens the
+   * hole). Retries are cheap: only the card rewrite is first-run-gated.
+   * Returns null when the user does not exist.
    */
   anonymize(id: string): Promise<User | null>;
 }

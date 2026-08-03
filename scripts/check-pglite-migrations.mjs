@@ -284,6 +284,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   const C = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"; // chapter
   const CH = "cccccccc-cccc-cccc-cccc-cccccccccccc"; // channel
   const CARD = "dddddddd-dddd-dddd-dddd-dddddddddddd"; // task-card message
+  const EVCARD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"; // event-card message
 
   let seeded = false;
   try {
@@ -298,10 +299,18 @@ console.log("\n=== Functional smoke: anonymize_user ===");
       insert into chat_channels (id, chapter_id, name, type) values ('${CH}', '${C}', 'general', 'PUBLIC');
       insert into chat_messages (channel_id, sender_id, content) values ('${CH}', '${U}', 'hi, Doomed User here');
       insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
-      values ('${CARD}', '${CH}', '${U}', 'Assigned "T" to Doomed User (due tomorrow)', 'task',
+      values ('${CARD}', '${CH}', '${U}',
+              'Assigned "T" to Doomed User (due tomorrow) cc Doomed Userling', 'task',
               '{"assigner_user_id":"someone-else","assigner_name":"Someone Else","assignee_user_id":"${U}","assignee_name":"Doomed User"}'::jsonb);
+      insert into chat_messages (id, channel_id, sender_id, content, kind, payload)
+      values ('${EVCARD}', '${CH}', '${U}',
+              'Doomed User scheduled "BBQ" — Aug 9, 6:00 PM UTC', 'event',
+              '{"event_id":"ev1","name":"BBQ"}'::jsonb);
       insert into user_settings (user_id) values ('${U}');
       insert into push_tokens (user_id, token) values ('${U}', 'ExponentPushToken[smoke]');
+      -- Rename before deletion: the content rewrite must key on the card's own
+      -- payload snapshot ('Doomed User'), not the live display name.
+      update users set display_name = 'D' where id = '${U}';
       select anonymize_user('${U}');
       -- Simulate the retry window: the tombstone gets PII written back onto it
       -- (PATCH /users/me is possible while the auth account still exists). The
@@ -339,7 +348,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         sql: `select (select count(*)::int from point_transactions where user_id = '${U}') as points,
                      (select count(*)::int from chat_messages where sender_id = '${U}') as messages`,
         ok: (rows) =>
-          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 2,
+          rows.length === 1 && rows[0].points === 1 && rows[0].messages === 3,
       },
       {
         name: "current-state purged: membership, settings, push token",
@@ -349,7 +358,7 @@ console.log("\n=== Functional smoke: anonymize_user ===");
         ok: (rows) => rows.length === 1 && rows[0].leftovers === 0,
       },
       {
-        name: "card name snapshots rewritten in payload AND content, other user's snapshot untouched",
+        name: "task card rewritten in payload AND content via payload snapshot (rename-proof, word-boundary safe)",
         sql: `select payload->>'assigner_name' as assigner, payload->>'assignee_name' as assignee,
                      content
                 from chat_messages where id = '${CARD}'`,
@@ -357,7 +366,19 @@ console.log("\n=== Functional smoke: anonymize_user ===");
           rows.length === 1 &&
           rows[0].assigner === "Someone Else" &&
           rows[0].assignee === "Deleted User" &&
-          rows[0].content === 'Assigned "T" to Deleted User (due tomorrow)',
+          // 'Doomed Userling' must survive — word boundaries prevent the
+          // substring collision the raw replace() had.
+          rows[0].content ===
+            'Assigned "T" to Deleted User (due tomorrow) cc Doomed Userling',
+      },
+      {
+        name: "event card creator prefix rewritten in content (no payload name to rewrite)",
+        sql: `select content, payload->>'name' as event_name
+                from chat_messages where id = '${EVCARD}'`,
+        ok: (rows) =>
+          rows.length === 1 &&
+          rows[0].content === 'Deleted User scheduled "BBQ" — Aug 9, 6:00 PM UTC' &&
+          rows[0].event_name === "BBQ",
       },
       {
         name: "member-typed free text is NOT rewritten (only system-generated cards)",

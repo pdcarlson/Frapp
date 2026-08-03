@@ -82,7 +82,7 @@ export class UserController {
   @ApiOperation({
     summary: 'Delete current account (irreversible)',
     description:
-      'Individual account deletion per spec/behavior/data-retention.md: profile media is purged first, PII is scrubbed to a "Deleted User" tombstone, historical records stay preserved anonymized, the analytics forget is confirmed, and the Supabase Auth account is deleted last. Any failing step aborts with a retryable error (502) before anything irreversible happens; the whole flow is idempotent, so simply retry until it returns success.',
+      'Individual account deletion per spec/behavior/data-retention.md: profile media is purged first, PII is scrubbed to a "Deleted User" tombstone, historical records stay preserved anonymized, the analytics forget is confirmed, and the Supabase Auth account is deleted last. A 502 means the flow did not finish — depending on the failing step the account may already be anonymized (sign-in still works until the final step succeeds) — and every step is idempotent, so simply retry until it returns success.',
   })
   async deleteMe(@CurrentUser('id') userId: string) {
     await this.accountDeletionService.deleteAccount(userId);

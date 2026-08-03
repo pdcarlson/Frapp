@@ -63,6 +63,11 @@ export class SupabaseStorageService implements IStorageProvider {
       const { data, error } = await this.supabase.storage
         .from(bucket)
         .list(prefix, { limit: pageSize, offset });
+      // A bucket that does not exist holds no objects; environments that have
+      // never provisioned it (fresh projects, previews) must behave like an
+      // empty folder, not an outage — account deletion aborts on listing
+      // errors and would otherwise be permanently blocked there.
+      if (error && /bucket not found/i.test(error.message)) return [];
       if (error) throw error;
       const entries = data ?? [];
       paths.push(

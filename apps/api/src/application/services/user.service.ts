@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  GoneException,
 } from '@nestjs/common';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
@@ -41,6 +42,15 @@ export class UserService {
   }
 
   async update(id: string, data: Partial<User>): Promise<User> {
+    // Tombstone guard: during account deletion there is a short window where
+    // the auth account (and therefore the caller's token) still works after
+    // the PII scrub. Without this check a profile edit landing in that window
+    // would write PII back onto the anonymized row.
+    const existing = await this.userRepo.findById(id);
+    if (!existing) throw new NotFoundException('User not found');
+    if (existing.deleted_at) {
+      throw new GoneException('Account has been deleted');
+    }
     return this.userRepo.update(id, data);
   }
 

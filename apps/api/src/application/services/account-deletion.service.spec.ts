@@ -127,7 +127,8 @@ describe('AccountDeletionService', () => {
     ]);
     expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
     expect(mockAnalytics.forgetUser).toHaveBeenCalledWith('user-1');
-    // Auth deletion targets the auth id, not the app id, and runs last.
+    // Auth deletion targets the auth id, not the app id; a final convergence
+    // scrub follows it to close the PATCH-during-deletion window.
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
     expect(callOrder).toEqual([
       'listFiles',
@@ -135,7 +136,18 @@ describe('AccountDeletionService', () => {
       'anonymize',
       'forgetUser',
       'deleteAuthUser',
+      'anonymize',
     ]);
+  });
+
+  it('still succeeds when the post-auth-deletion convergence scrub fails', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockUserRepo.anonymize
+      .mockResolvedValueOnce(tombstone)
+      .mockRejectedValueOnce(new Error('db blip'));
+
+    await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+    expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalled();
   });
 
   it('purges avatars across every chapter membership', async () => {
@@ -173,7 +185,23 @@ describe('AccountDeletionService', () => {
     );
   });
 
-  it('ignores avatar_url values that are not upload-flow storage paths', async () => {
+  it('extracts the avatar folder from a URL-embedded storage path', async () => {
+    mockUserRepo.findById.mockResolvedValue({
+      ...liveUser,
+      avatar_url:
+        'https://xyz.supabase.co/storage/v1/object/public/profiles/chapters/old-chapter/profiles/user-1/face.png',
+    });
+    mockMemberRepo.findByUser.mockResolvedValue([membership('chapter-a')]);
+
+    await service.deleteAccount('user-1');
+
+    expect(mockStorage.listFiles).toHaveBeenCalledWith(
+      'profiles',
+      'chapters/old-chapter/profiles/user-1',
+    );
+  });
+
+  it('ignores avatar_url values without a recognizable storage path', async () => {
     mockUserRepo.findById.mockResolvedValue({
       ...liveUser,
       avatar_url: 'https://cdn.example.com/pic.png',
@@ -221,6 +249,26 @@ describe('AccountDeletionService', () => {
     );
     expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
     expect(mockAnalytics.forgetUser).not.toHaveBeenCalled();
+    expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('aborts without scrubbing when a later prefix fails after an earlier one was swept', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockMemberRepo.findByUser.mockResolvedValue([
+      membership('chapter-a'),
+      membership('chapter-b'),
+    ]);
+    mockStorage.listFiles
+      .mockResolvedValueOnce(['chapters/chapter-a/profiles/user-1/pic.png'])
+      .mockRejectedValueOnce(new Error('second prefix 500'));
+
+    await expect(service.deleteAccount('user-1')).rejects.toThrow(
+      BadGatewayException,
+    );
+    // First folder's objects are gone (they belonged to the requester and the
+    // retry re-covers the remainder), but no account data was touched.
+    expect(mockStorage.deleteFiles).toHaveBeenCalledTimes(1);
+    expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
     expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
   });
 

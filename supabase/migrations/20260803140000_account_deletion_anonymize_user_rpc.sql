@@ -35,18 +35,19 @@
 -- window) and not on the spec's preserved list; the points they yielded live
 -- on in point_transactions, which is preserved.
 --
--- Task/points/event chat cards embed display-name snapshots twice: in the
--- jsonb payload (task/points) and in the system-generated `content` fallback
--- string all three writers compose ("Assigned … to <name>", "Granted … to
--- <name>: …", "<name> scheduled …" — see TaskService.postTaskCard,
--- PointsService.postPointsCard, EventService.postEventCard). Search matches
--- and renders `content` (SearchService.searchMessages), so both copies must
--- be rewritten. Data-retention trumps snapshot fidelity: the single UPDATE
--- below rewrites the payload name keys and replaces the captured display name
--- inside `content` for exactly the affected card rows, in one scan. Free-text
--- that merely *mentions* the user (chat text typed by members, notification
--- bodies sent to others) stays out of scope, exactly like a name typed into
--- any preserved chat message.
+-- Task/points chat cards embed display-name snapshots twice — in the jsonb
+-- payload and in the system-generated `content` fallback string — and event
+-- cards embed the creator's name in `content` only ("Assigned … to <name>",
+-- "Granted … to <name>: …", "<name> scheduled …" — see
+-- TaskService.postTaskCard, PointsService.postPointsCard,
+-- EventService.postEventCard). Search matches and renders `content`
+-- (SearchService.searchMessages), so every copy must be rewritten.
+-- Data-retention trumps snapshot fidelity: a single UPDATE rewrites the
+-- payload name keys and the content occurrences for exactly the affected card
+-- rows, in one scan, on the first successful scrub (see the inline comment on
+-- why retries skip it). Free-text that merely *mentions* the user (chat text
+-- typed by members, notification bodies sent to others) stays out of scope,
+-- exactly like a name typed into any preserved chat message.
 --
 -- `security invoker` matches the sibling atomic RPCs (transfer_presidency,
 -- check_in_event, confirm_task_completion, approve_service_entry): the API
@@ -64,7 +65,7 @@ security invoker
 as $$
 declare
   v_user users;
-  v_display_name text;
+  v_was_tombstoned boolean;
 begin
   -- The seeded "Frapp System" actor (chapter_directory_requests migration) is
   -- not a real account and must never be tombstoned. The API only ever passes
@@ -83,11 +84,7 @@ begin
     return; -- unknown user: empty result, the API maps this to 404
   end if;
 
-  -- Captured before the scrub so the card-content rewrite below can replace
-  -- it. On a retry this is already 'Deleted User' and the replace no-ops; if
-  -- PII was re-added in the retry window, this is the re-added name and its
-  -- own card occurrences (if any) get scrubbed the same way.
-  v_display_name := v_user.display_name;
+  v_was_tombstoned := v_user.deleted_at is not null;
 
   update users
      set email = 'deleted+' || p_user_id::text || '@anonymized.invalid',
@@ -114,40 +111,75 @@ begin
   delete from study_sessions where user_id = p_user_id;
 
   -- Display-name snapshots in system-generated cards, both copies at once
-  -- (see header). Payload rewrites are keyed on the *_user_id fields the card
-  -- writers embed next to each name, so only this user's snapshots change;
-  -- `payload ||` preserves every other key, and the CASE arms are no-ops for
-  -- rows the key doesn't match. The `content` rewrite replaces the captured
-  -- display name only inside these card rows (never member-typed messages);
-  -- event cards carry no payload user id, so they key on sender_id — the
-  -- writer posts them as the creator. One statement, one scan.
-  update chat_messages
-     set payload = case
-           when payload is null then payload
-           else payload
-             || case when kind = 'task' and payload->>'assigner_user_id' = p_user_id::text
-                     then jsonb_build_object('assigner_name', 'Deleted User')
-                     else '{}'::jsonb end
-             || case when kind = 'task' and payload->>'assignee_user_id' = p_user_id::text
-                     then jsonb_build_object('assignee_name', 'Deleted User')
-                     else '{}'::jsonb end
-             || case when kind = 'points' and payload->>'actor_user_id' = p_user_id::text
-                     then jsonb_build_object('actor_name', 'Deleted User')
-                     else '{}'::jsonb end
-             || case when kind = 'points' and payload->>'recipient_user_id' = p_user_id::text
-                     then jsonb_build_object('recipient_name', 'Deleted User')
-                     else '{}'::jsonb end
-         end,
-         content = case
-           when v_display_name is not null and length(v_display_name) > 0
-             then replace(content, v_display_name, 'Deleted User')
-           else content
-         end
-   where (kind = 'task' and (payload->>'assigner_user_id' = p_user_id::text
-                          or payload->>'assignee_user_id' = p_user_id::text))
-      or (kind = 'points' and (payload->>'actor_user_id' = p_user_id::text
-                            or payload->>'recipient_user_id' = p_user_id::text))
-      or (kind = 'event' and sender_id = p_user_id);
+  -- (see header). FIRST SUCCESSFUL SCRUB ONLY: the payload predicates are
+  -- unindexable, so this is a full scan of chat_messages — and it only ever
+  -- needs to run once, because snapshots are historical (with the memberships
+  -- gone, no writer can ever attribute a new card to this user, and nothing
+  -- rewrites card names back). Re-running it on every retry would let a
+  -- client retrying through an auth outage re-scan the table in a loop.
+  --
+  -- Payload rewrites are keyed on the *_user_id fields the card writers embed
+  -- next to each name, so only this user's snapshots change; `payload ||`
+  -- preserves every other key, and the CASE arms are no-ops for rows the key
+  -- doesn't match.
+  --
+  -- The `content` rewrite is keyed on each row's OWN payload name snapshot —
+  -- not the live display name — so it survives renames (the snapshot is the
+  -- exact string the writer embedded in `content`). Only the arms whose
+  -- template actually prints the name rewrite content: task content prints
+  -- the assignee, points content prints the recipient (assigner/actor names
+  -- never appear in content, so those arms leave it alone). The name is
+  -- regex-escaped and matched on word boundaries, so a deleted "Ann" cannot
+  -- corrupt "Anna", and a whitespace-only name matches nothing. Event cards
+  -- carry no payload name at all — their content template is
+  -- '<creator> scheduled "<name>" …', written only by EventService as the
+  -- sender, so the creator prefix is rewritten structurally (non-greedy:
+  -- first ' scheduled "' wins). One statement, one scan.
+  if not v_was_tombstoned then
+    update chat_messages
+       set payload = case
+             when payload is null then payload
+             else payload
+               || case when kind = 'task' and payload->>'assigner_user_id' = p_user_id::text
+                       then jsonb_build_object('assigner_name', 'Deleted User')
+                       else '{}'::jsonb end
+               || case when kind = 'task' and payload->>'assignee_user_id' = p_user_id::text
+                       then jsonb_build_object('assignee_name', 'Deleted User')
+                       else '{}'::jsonb end
+               || case when kind = 'points' and payload->>'actor_user_id' = p_user_id::text
+                       then jsonb_build_object('actor_name', 'Deleted User')
+                       else '{}'::jsonb end
+               || case when kind = 'points' and payload->>'recipient_user_id' = p_user_id::text
+                       then jsonb_build_object('recipient_name', 'Deleted User')
+                       else '{}'::jsonb end
+           end,
+           content = case
+             when kind = 'task'
+                  and payload->>'assignee_user_id' = p_user_id::text
+                  and nullif(btrim(payload->>'assignee_name'), '') is not null
+               then regexp_replace(
+                      content,
+                      '\m' || regexp_replace(btrim(payload->>'assignee_name'),
+                                             '([^[:alnum:]_ ])', '\\\1', 'g') || '\M',
+                      'Deleted User', 'g')
+             when kind = 'points'
+                  and payload->>'recipient_user_id' = p_user_id::text
+                  and nullif(btrim(payload->>'recipient_name'), '') is not null
+               then regexp_replace(
+                      content,
+                      '\m' || regexp_replace(btrim(payload->>'recipient_name'),
+                                             '([^[:alnum:]_ ])', '\\\1', 'g') || '\M',
+                      'Deleted User', 'g')
+             when kind = 'event' and sender_id = p_user_id
+               then regexp_replace(content, '^(.*?)( scheduled ")', 'Deleted User\2')
+             else content
+           end
+     where (kind = 'task' and (payload->>'assigner_user_id' = p_user_id::text
+                            or payload->>'assignee_user_id' = p_user_id::text))
+        or (kind = 'points' and (payload->>'actor_user_id' = p_user_id::text
+                              or payload->>'recipient_user_id' = p_user_id::text))
+        or (kind = 'event' and sender_id = p_user_id);
+  end if;
 
   return next v_user;
 end;

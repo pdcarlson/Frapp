@@ -33,10 +33,11 @@ import { AnalyticsService } from './analytics.service';
  *  1. avatar/profile-photo storage purge — runs first because it needs the
  *     chapter memberships and `avatar_url` the scrub destroys to locate
  *     `chapters/<chapterId>/profiles/<userId>/` folders. A failure here
- *     ABORTS the request (502): nothing has been mutated yet, so the client
- *     simply retries. Proceeding instead would tombstone the row and
- *     permanently strand the objects — the retry would have nothing left to
- *     enumerate.
+ *     ABORTS the request (502): no account data has been touched (objects in
+ *     folders swept before the failure are already gone — they belonged to
+ *     the requester and the retry re-covers the rest), so the client simply
+ *     retries. Proceeding instead would tombstone the row and permanently
+ *     strand the objects — the retry would have nothing left to enumerate.
  *  2. `anonymize_user` RPC — the authoritative, atomic step: tombstones the
  *     users row ("Deleted User" + sentinel email), purges current-state rows,
  *     scrubs card name snapshots in payload and content. It re-runs the full
@@ -75,11 +76,11 @@ export class AccountDeletionService {
       await this.purgeAvatarObjects(user);
     } catch (error) {
       this.logger.error(
-        `Avatar storage purge failed for user ${userId}; aborting before any data was changed — client should retry`,
+        `Avatar storage purge failed for user ${userId}; aborting before any ACCOUNT DATA was changed (objects under already-swept folders may be gone) — client should retry`,
         error instanceof Error ? error.stack : String(error),
       );
       throw new BadGatewayException(
-        'Profile media cleanup failed; nothing was deleted. Please retry.',
+        'Profile media cleanup did not complete; no account data was changed. Please retry.',
       );
     }
 
@@ -102,6 +103,22 @@ export class AccountDeletionService {
       );
       throw new BadGatewayException(
         'Account data was anonymized but the sign-in account could not be deleted. Please retry.',
+      );
+    }
+
+    // Final convergence scrub. The auth account is gone, so nothing can write
+    // to this user again — but a PATCH may have landed between the scrub above
+    // and the auth deletion (the token was still valid for those seconds, and
+    // a successful run has no retry to clean it up). Re-running the
+    // (idempotent, retry-cheap) scrub as the last writer closes that window.
+    // Best-effort: the deletion has already met its contract, so a transient
+    // failure here is logged loudly rather than failing a completed request.
+    try {
+      await this.userRepo.anonymize(userId);
+    } catch (error) {
+      this.logger.error(
+        `Post-auth-deletion convergence scrub failed for user ${userId}; if a concurrent profile edit slipped in during deletion it may persist — re-run anonymize_user(${userId}) manually`,
+        error instanceof Error ? error.stack : String(error),
       );
     }
   }
@@ -136,14 +153,18 @@ export class AccountDeletionService {
   }
 
   /**
-   * Folder of the current avatar, accepted only in the exact storage-path
-   * shape the upload flow issues (`chapters/<cid>/profiles/<uid>/<file>`).
-   * Anything else — absolute URLs, foreign paths — is ignored rather than
-   * guessed at.
+   * Folder of the current avatar. Accepts the bucket-relative storage path
+   * the upload flow issues (`chapters/<cid>/profiles/<uid>/<file>`) either
+   * bare or embedded in a URL (clients may store a public/signed storage URL
+   * — the object path is embedded verbatim in both forms). Anything without
+   * that recognizable shape is ignored rather than guessed at.
    */
   private avatarUrlFolder(user: User): string | null {
-    const path = user.avatar_url;
-    if (!path || !path.startsWith('chapters/')) return null;
+    const value = user.avatar_url;
+    if (!value) return null;
+    const start = value.indexOf('chapters/');
+    if (start === -1) return null;
+    const path = value.slice(start);
     const marker = `/profiles/${user.id}/`;
     const markerIndex = path.indexOf(marker);
     if (markerIndex === -1) return null;
