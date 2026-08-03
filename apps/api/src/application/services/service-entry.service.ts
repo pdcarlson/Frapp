@@ -38,9 +38,15 @@ const ALLOWED_PROOF_EXTENSIONS = new Set([
   '.pdf',
 ]);
 
-/** Folder holding one chapter's service-proof uploads (trailing slash included). */
+/**
+ * Folder holding one chapter's service-proof uploads (trailing slash
+ * included). chapterId is lowercased because storage prefix math is exact-
+ * case while the guard's uuid authorization is not: a non-canonical
+ * uppercase chapter id would otherwise mint a prefix that later validation
+ * (running on the lowercase JWT-claim form) rejects.
+ */
 function serviceProofPrefix(chapterId: string): string {
-  return `chapters/${chapterId}/service/`;
+  return `chapters/${chapterId.toLowerCase()}/service/`;
 }
 
 export interface CreateServiceEntryInput {
@@ -92,8 +98,17 @@ export class ServiceEntryService {
       );
     }
 
+    // storage-api rejects keys with characters outside its ASCII allowed set
+    // (accented letters, '#', '%', backslashes — which posix basename does
+    // not strip), and the raw StorageApiError would surface as a 500. The
+    // uuid folder already guarantees uniqueness; the filename is only for
+    // reviewer readability, so squash anything unsafe to '_'.
+    const safeFilename = path
+      .basename(input.filename)
+      .replace(/[^A-Za-z0-9._-]/g, '_');
+
     const proofId = crypto.randomUUID();
-    const storagePath = `${serviceProofPrefix(input.chapterId)}${proofId}/${path.basename(input.filename)}`;
+    const storagePath = `${serviceProofPrefix(input.chapterId)}${proofId}/${safeFilename}`;
 
     const signedUrl = await this.storageProvider.getSignedUploadUrl(
       SERVICE_BUCKET,
@@ -166,11 +181,18 @@ export class ServiceEntryService {
       throw new NotFoundException('Proof file is not available for download');
     }
 
-    const url = await this.storageProvider.getSignedDownloadUrl(
-      SERVICE_BUCKET,
-      entry.proof_path,
-    );
-    return { url };
+    try {
+      const url = await this.storageProvider.getSignedDownloadUrl(
+        SERVICE_BUCKET,
+        entry.proof_path,
+      );
+      return { url };
+    } catch {
+      // Legacy rows can hold prefix-shaped paths whose object was never
+      // uploaded (the old UI accepted free text verbatim); a missing object
+      // is a 404 for the caller, not a server fault.
+      throw new NotFoundException('Proof file is not available for download');
+    }
   }
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry> {
@@ -335,6 +357,14 @@ export class ServiceEntryService {
       throw new ForbiddenException(
         'You can only delete your own service entries',
       );
+    }
+
+    // Purge the proof object with the row (file-first, matching Backwork and
+    // chapter documents) so deleted entries don't orphan personal photos in
+    // the private bucket. Legacy free-text paths never reference an object
+    // this chapter owns, so only prefix-valid paths are deleted.
+    if (entry.proof_path?.startsWith(serviceProofPrefix(chapterId))) {
+      await this.storageProvider.deleteFile(SERVICE_BUCKET, entry.proof_path);
     }
 
     await this.serviceEntryRepo.delete(id, chapterId);

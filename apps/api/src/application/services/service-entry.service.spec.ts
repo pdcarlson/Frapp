@@ -351,6 +351,28 @@ describe('ServiceEntryService', () => {
       );
     });
 
+    it('should squash storage-unsafe filename characters to underscores', async () => {
+      const result = await service.requestProofUploadUrl({
+        chapterId: 'ch-1',
+        filename: 'café cleanup #2.jpg',
+        contentType: 'image/jpeg',
+      });
+
+      expect(result.storagePath).toMatch(
+        /^chapters\/ch-1\/service\/[0-9a-f-]{36}\/caf__cleanup__2\.jpg$/,
+      );
+    });
+
+    it('should mint a lowercase chapter prefix for a non-canonical chapterId', async () => {
+      const result = await service.requestProofUploadUrl({
+        chapterId: 'CH-1',
+        filename: 'proof.pdf',
+        contentType: 'application/pdf',
+      });
+
+      expect(result.storagePath).toMatch(/^chapters\/ch-1\/service\//);
+    });
+
     it('should reject a disallowed file extension', async () => {
       await expect(
         service.requestProofUploadUrl({
@@ -442,6 +464,20 @@ describe('ServiceEntryService', () => {
         ).rejects.toThrow('Proof file is not available for download');
       }
       expect(mockStorageProvider.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('should return 404 when the proof object no longer exists in storage', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue(proofEntry);
+      mockStorageProvider.getSignedDownloadUrl.mockRejectedValue(
+        new Error('Object not found'),
+      );
+
+      await expect(
+        service.getProofDownloadUrl('se-1', 'ch-1', 'user-1', false),
+      ).rejects.toThrow(NotFoundException);
+      await expect(
+        service.getProofDownloadUrl('se-1', 'ch-1', 'user-1', false),
+      ).rejects.toThrow('Proof file is not available for download');
     });
   });
 
@@ -654,6 +690,35 @@ describe('ServiceEntryService', () => {
 
       await service.delete('se-1', 'ch-1', 'user-1', false);
 
+      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
+    });
+
+    it('should purge the proof object when deleting an entry with proof', async () => {
+      const proofPath = 'chapters/ch-1/service/proof-1/proof.pdf';
+      mockServiceEntryRepo.findById.mockResolvedValue({
+        ...baseEntry,
+        proof_path: proofPath,
+      });
+
+      await service.delete('se-1', 'ch-1', 'user-1', false);
+
+      expect(mockStorageProvider.deleteFile).toHaveBeenCalledWith(
+        'service',
+        proofPath,
+      );
+      expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
+    });
+
+    it('should not touch storage when deleting an entry with a legacy proof path', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue({
+        ...baseEntry,
+        proof_path: 'https://example.com/proof.pdf',
+      });
+
+      await service.delete('se-1', 'ch-1', 'user-1', false);
+
+      expect(mockStorageProvider.deleteFile).not.toHaveBeenCalled();
       expect(mockServiceEntryRepo.delete).toHaveBeenCalledWith('se-1', 'ch-1');
     });
 

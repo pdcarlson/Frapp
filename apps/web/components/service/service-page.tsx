@@ -129,7 +129,6 @@ export function ServiceHoursPage() {
     hours: "1",
     minutes: "0",
     description: "",
-    proof_path: "",
   });
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
@@ -149,7 +148,6 @@ export function ServiceHoursPage() {
         date: draft.date,
         duration_minutes: totalMinutes,
         description: draft.description.trim(),
-        proof_path: draft.proof_path || undefined,
       });
       toast({
         title: "Service entry submitted",
@@ -161,7 +159,6 @@ export function ServiceHoursPage() {
         hours: "1",
         minutes: "0",
         description: "",
-        proof_path: "",
       });
     } catch (error) {
       toast({
@@ -281,9 +278,8 @@ export function ServiceHoursPage() {
               <DialogHeader>
                 <DialogTitle>Log service hours</DialogTitle>
                 <DialogDescription>
-                  Submit a service entry for admin approval. Proof uploads
-                  move to the dashboard in a future slice; paste a link or
-                  storage path here for now.
+                  Submit a service entry for admin approval. Proof file
+                  upload is coming to the dashboard in a future slice.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -352,20 +348,6 @@ export function ServiceHoursPage() {
                       }))
                     }
                     required
-                  />
-                </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="service-proof">Proof link or storage path (optional)</Label>
-                  <Input
-                    id="service-proof"
-                    value={draft.proof_path}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        proof_path: event.target.value,
-                      }))
-                    }
-                    placeholder="https://... or chapters/{id}/service/{entry}/proof.pdf"
                   />
                 </div>
               </form>
