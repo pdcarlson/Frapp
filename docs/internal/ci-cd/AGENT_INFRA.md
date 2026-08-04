@@ -11,7 +11,7 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 3. Align proposals to observed reality; avoid stale assumptions.
 4. **Never print secret values** — only names and presence/absence.
 
-**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.cursor/skills/infrastructure-research.md`](../../../.cursor/skills/infrastructure-research.md).
+**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.claude/skills/infrastructure-research/SKILL.md`](../../../.claude/skills/infrastructure-research/SKILL.md).
 
 ## Optional environment credentials
 
@@ -111,7 +111,7 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:api-contract` — OpenAPI / SDK drift
 - `npm run check:migration-safety` — migrations + promotion docs
 
-Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../../.cursor/skills/testing.md).
+Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.claude/skills/testing/SKILL.md).
 
 ## Claude Code project settings
 
@@ -120,6 +120,9 @@ Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../../.cursor/
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop (open PR → `subscribe_pr_activity` → fix CI failures and review comments until merge-ready, or a self-contained next step). |
+| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Allows nothing else — other MCP and shell tools keep their normal prompting. |
+| `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
+| `hooks` | PreToolUse + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate) and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
 
 Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
 
@@ -150,7 +153,7 @@ The agent does not need `SUPABASE_URL` / `SUPABASE_ANON_KEY` / service-role keys
 
 ### When you need a real Supabase
 
-For end-to-end verification that touches Realtime, Presence, push fanout, or RLS as GoTrue enforces it, the agent still depends on the hosted `frapp-staging` project. **This requires the Supabase MCP write tools (`create_branch`, `apply_migration`) to be allowed in the session's `.claude/settings.json` permissions.** They are denylisted by default — see the [#411 spike comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654) for the failure mode if you call them without that change.
+For end-to-end verification that touches Realtime, Presence, push fanout, or RLS as GoTrue enforces it, the agent still depends on the hosted `frapp-staging` project. **This requires the Supabase MCP write tools (`create_branch`, `apply_migration`) to be allowed in the session's `.claude/settings.json` permissions.** They are not allowlisted by default — the committed file has never carried a deny rule; the enforcement is the permission prompt, which unattended sessions cannot approve. See the [#411 spike comment](https://github.com/pdcarlson/Frapp/issues/411#issuecomment-4559934654) for the failure mode if you call them without that change.
 
 Per **ADR-12** this is the **sanctioned opt-in escape hatch** (not a hypothetical). It is off by default: a session must explicitly opt in and acknowledge cost. When opted in, a SessionStart hook would:
 
@@ -160,7 +163,7 @@ Per **ADR-12** this is the **sanctioned opt-in escape hatch** (not a hypothetica
 4. Write `SUPABASE_URL` / `SUPABASE_ANON_KEY` / a scoped, short-lived service-role JWT to `apps/*/.env.local` (gitignored). Never commit. Pre-commit grep for `*.supabase.co` and `eyJ` JWT prefixes hard-fails staged diffs that contain them.
 5. SessionEnd hook calls `delete_branch` (idempotent) and confirms via `list_branches`.
 
-This hook does not exist yet — the SessionEnd teardown + scoped MCP write allowlist are tracked as **#532**. Until it lands, the MCP write tools stay denylisted in `.claude/settings.json` and the branch path is unavailable; do not work around it in a chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
+This hook does not exist yet — the SessionEnd teardown + scoped MCP write allowlist are tracked as **#532**. Until it lands, the MCP write tools stay un-allowlisted in `.claude/settings.json` (they prompt, so headless sessions can't use them) and the branch path is unavailable; do not work around it in a chunk PR. (Note: post-#416 there are no Edge Functions in this repo, so `deploy_edge_function` is not part of the bring-up.)
 
 ### "Runtime checks BLOCKED" protocol
 
@@ -176,7 +179,7 @@ If a future chunk crosses a boundary the sandbox still can't reach (live Realtim
 ### Sandbox-blocked tooling — known list
 
 - **Docker / `supabase start` / `supabase db reset`:** the daemon is not started by default. In a **Claude Code web sandbox configured per [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md)** (setup script + Full/Custom network), `scripts/cloud-sandbox-up.sh` brings up Docker + local Supabase and writes `apps/api/.env.local`, so the full stack and `npm run start:dev -w apps/api` work and the API boots with no Infisical. Where that wiring is absent (unconfigured env, plain CI), there is still no daemon: use the PGlite harness for migration validation.
-- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** denied by `.claude/settings.json` by default. `list_projects` happens to be allowed. Do not assume any MCP tool works until you've tried it.
+- **Supabase MCP write tools (`create_branch`, `apply_migration`, `delete_branch`) and most read tools (`list_branches`, `get_project`, `get_cost`):** not granted by `.claude/settings.json` (its allow rules cover only the Workflow tool and the claude-code-remote scheduling and PR-watch tools — no Supabase entries), so they prompt — and unattended sandboxes cannot approve the prompt. `list_projects` has been observed to go through. Do not assume any MCP tool works until you've tried it.
 - **Outbound HTTP to arbitrary hosts:** governed by the sandbox's network policy. `host_not_allowed` is the failure shape. Note `supabase start` pulls images from **AWS ECR Public** (`public.ecr.aws`) + **CloudFront** (`*.cloudfront.net`), which the **Trusted** policy does not reliably allow — use **Full** (or a Custom allowlist adding those hosts). See [`CLOUD_SANDBOX.md`](../environment/CLOUD_SANDBOX.md).
 - **System packages requiring `apt-get` / root:** unavailable. The PGlite WASM bundle is npm-installable and needs none.
 

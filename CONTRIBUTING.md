@@ -120,7 +120,7 @@ type(scope): description
 - Check the "Docs / Spec impact" section — if you changed product code, update `docs/` (e.g. `docs/guides/`) and/or `spec/`. Where to put what: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](docs/internal/DOCUMENTATION_CONVENTIONS.md).
 - CI checks will run automatically.
 - Code review runs **locally before you push** (the pre-push review-gate hook requires a
-  `/diff-review` pass — or `/code-review` plus `FRAPP_SKIP_REVIEW_GATE=1`), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). Never type `@cursor` or `@cursoragent` in a PR comment unless you explicitly want to spawn a paid Cursor background agent.
+  `/diff-review` pass — or `/code-review` plus `FRAPP_SKIP_REVIEW_GATE=1`), not on the PR — see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md).
 
 ### 4. Address feedback
 

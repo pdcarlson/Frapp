@@ -1457,6 +1457,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/service-entries/proof-upload-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Get signed upload URL for a service proof file */
+        post: operations["ServiceEntryController_requestProofUploadUrl_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/service-entries/{id}/proof-url": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get signed proof download URL (own entry or admins) */
+        get: operations["ServiceEntryController_getProofUrl_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/service-entries/{id}/review": {
         parameters: {
             query?: never;
@@ -2417,6 +2451,12 @@ export interface components {
         UpdateDepartmentDto: {
             /** @description Full department name */
             name?: string;
+        };
+        RequestProofUploadUrlDto: {
+            /** @description Original filename (image or PDF) */
+            filename: string;
+            /** @description MIME content type (e.g. application/pdf) */
+            content_type: string;
         };
         CreateServiceEntryDto: {
             /** @description Date of service (YYYY-MM-DD) */
@@ -4947,6 +4987,46 @@ export interface operations {
         };
     };
     ServiceEntryController_delete_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ServiceEntryController_requestProofUploadUrl_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RequestProofUploadUrlDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ServiceEntryController_getProofUrl_v1: {
         parameters: {
             query?: never;
             header?: never;

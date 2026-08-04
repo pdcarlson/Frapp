@@ -1,4 +1,13 @@
-# Skill: Testing
+---
+name: testing
+description: >
+  Run tests, verify code changes, and keep local checks in parity with CI. Use when running or
+  writing tests (unit, E2E, Playwright visual), editing `*.spec.ts` files or CI workflow config,
+  verifying changes before a push, or setting up the test environment — lint and unit tests need
+  only `npm install`; integration/manual testing needs Docker + Supabase.
+---
+
+# Testing
 
 > Use when running tests, verifying changes, or setting up the test environment.
 
@@ -14,6 +23,7 @@
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |
 | API unit tests | `npm run test -w apps/api` |
+| API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
@@ -38,7 +48,8 @@ npm run check-types
 
 ### Full (integration / manual testing)
 
-Requires Docker + Supabase. See `AGENTS.md` "Starting the dev environment" section.
+Requires Docker + Supabase. See the "Starting the dev environment" section in
+[`AGENTS.md`](../../../AGENTS.md).
 
 Prefer Infisical-injected envs as the primary method:
 ```bash
@@ -50,7 +61,7 @@ npm run dev:api     # Infisical-injected, port 3001
 npm run dev:web     # Infisical-injected, port 3000
 ```
 
-Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env`):
+Fall back to `.env.local` files only when Infisical is unavailable (NestJS ConfigModule reads `.env.local` then `.env` — `.env.local` is a fallback, not the primary method):
 ```bash
 npm run start:dev -w apps/api   # reads .env.local, port 3001
 npm run dev -w apps/web         # reads .env.local, port 3000
@@ -91,6 +102,18 @@ const module: TestingModule = await Test.createTestingModule({
 
 Repositories and adapters are mocked via `jest.fn()` on each method. No shared mock factories — each spec defines its own fixtures inline.
 
+For the full treatment — service coverage goals, guard/interceptor test targets, coverage
+expectations, and the E2E scaffolding (the `jest-e2e.json` CommonJS transform quirks and the
+`createSupabaseMock()` factory in `apps/api/test/helpers/`) — see the testing guide:
+[`docs/guides/testing.md`](../../../docs/guides/testing.md).
+
+### E2E tests (compact)
+
+`npm run test:e2e -w apps/api` boots the app from `AppModule` with the Supabase client overridden
+via the `SUPABASE_CLIENT` provider token and guards stubbed — deterministic, no live services or
+secrets needed. Details and gotchas (env defaults, UUID-valid fixtures) are in
+[`docs/guides/testing.md`](../../../docs/guides/testing.md) §6.
+
 ### Running a subset
 
 ```bash
@@ -117,7 +140,10 @@ npm run generate -w packages/api-sdk
 
 ### Migration safety (`check:migration-safety`)
 
-Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql` and that promotion docs (`DB_PROMOTION_RUNBOOK.md`, `DB_ROLLBACK_PLAYBOOK.md`) are updated alongside migration changes.
+Validates migration filenames match `{14-digit-timestamp}_{snake_case}.sql` and that promotion docs
+([`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md),
+[`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md))
+are updated alongside migration changes.
 
 ---
 
@@ -172,7 +198,8 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 2. `npm run check-types` → `CI / lint-and-typecheck` (includes `apps/api` via `tsc -p tsconfig.build.json`, same program as `nest build`)
 3. `npm run build -w apps/api` → `CI / lint-and-typecheck` (full `nest build`; catches issues `tsc --noEmit` alone might miss)
 4. `docker build -f apps/api/Dockerfile .` → `CI / api-docker-build` (optional locally; needs Docker)
-5. `npm run test -w apps/api` → `CI / api-tests`
+5. `npm run test -w apps/api` → `CI / api-tests` (the job also runs the E2E suite,
+   `npm run test:e2e -w apps/api` — run it too when API wiring changes)
 6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
    Playwright visual tests under `tests/visual/**` are excluded by
    `apps/web/vitest.config.ts` and run separately — see item 9)
@@ -181,8 +208,8 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
 9. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
-   match the job’s single-worker Playwright run; see
-   `apps/web/tests/visual/README.md`)
+   match the job's single-worker Playwright run; see
+   [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md))
 
 ---
 

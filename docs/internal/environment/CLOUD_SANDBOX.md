@@ -170,8 +170,11 @@ validation without Docker at all, use the PGlite harness (`npm run check:pglite-
 
 ## Still out of scope
 
-- **Supabase MCP write tools** (`create_branch`, `apply_migration`) remain denied by
-  `.claude/settings.json`; local Supabase covers DB + migrations without them.
+- **Supabase MCP write tools** (`create_branch`, `apply_migration`) are not allowlisted in
+  `.claude/settings.json`, so they prompt — which unattended sandboxes cannot approve (the
+  committed file has never carried a deny rule; see
+  [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md)). Local Supabase covers DB + migrations
+  without them.
 - **Live Realtime/Presence, push fanout (APNS/FCM), RLS-as-GoTrue** against the hosted
   stack still need real staging — keep the "Runtime checks BLOCKED" protocol in
   [`../ci-cd/AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md).

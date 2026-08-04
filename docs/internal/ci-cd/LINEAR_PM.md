@@ -7,10 +7,10 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 > **Status: live.** Work tracking lives in **Linear** (team **Frapp Live**, prefix **FRA-**). The in-repo
 > `docs/backlog/` tree has been **retired** (git history is the archive); agents start work with `/next`,
 > which reads Linear directly. Provisioning is done: 6 Projects created, the 7 `[Epic]` parents assigned,
-> `severity:*` migrated to **Priority**, and dead suggestions closed for auto-archive. **One thing is not
-> keyless:** the Cursor *background* automations have **no Linear MCP in their headless environment**
-> (proven by probe), so they write to Linear with a **`LINEAR_API_KEY`** via the GraphQL API — see
-> [Cursor automations](#cursor-automations-two-linear-native-via-the-api-key).
+> `severity:*` migrated to **Priority**, and dead suggestions closed for auto-archive. Every actor is
+> **keyless**: interactive sessions and the scheduled backlog routines alike reach Linear through the
+> **native Linear MCP** injected by the Claude Code web environment — see
+> [Claude Code routines](#claude-code-routines-two-linear-native-via-the-mcp).
 
 ---
 
@@ -19,7 +19,7 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 ```
 Linear (canonical: planning, status, board, Triage intake)
    ▲ Claude Code (web) via the injected NATIVE Linear MCP — the path /next uses
-   ▲ Cursor automations (headless) via LINEAR_API_KEY → Linear GraphQL API (no MCP in that env)
+   ▲ Claude Code Routines (scheduled: curator + triage) via the same injected Linear MCP
    ▲ GitHub PRs close work (Fixes FRA-N); the Linear–GitHub integration keeps issues in sync
 ```
 
@@ -30,9 +30,9 @@ Linear (canonical: planning, status, board, Triage intake)
   `Closes #N` for a legacy GitHub twin); the integration syncs the two.
 - **Epics are Linear Projects.** The imported `[Epic]` parents (FRA-154…FRA-160) stay as parent issues
   with sub-issues, assigned to the relevant Project. **No Initiatives, no Cycles.**
-- **Triage is the intake.** New work — whether a human files it, `/next` files a follow-up, or the Cursor
-  automation files a suggestion — lands in the **Triage** inbox and is accepted into **Backlog** before
-  `/next` will auto-start it.
+- **Triage is the intake.** New work — whether a human files it, `/next` files a follow-up, or the
+  curator routine files a suggestion — lands in the **Triage** inbox and is accepted into **Backlog**
+  before `/next` will auto-start it.
 - **Issues are born in Linear.** Opening work directly as a GitHub issue is **not** the path; file in
   Linear (`save_issue` into Triage).
 
@@ -40,14 +40,13 @@ Linear (canonical: planning, status, board, Triage intake)
 
 | Actor | Reaches Linear via | Notes |
 | --- | --- | --- |
-| **Claude Code** (web) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
-| **Cursor automations** (headless) | **`LINEAR_API_KEY` → Linear GraphQL API** | A probe proved the Cursor *background* environment has **no Linear MCP** and no Linear creds, so the two automations authenticate with a `LINEAR_API_KEY` (a Cursor cloud-agent secret) against `https://api.linear.app/graphql`. Transport-agnostic — if a Cursor build later exposes a Linear MCP to background agents, the skills can use it instead. See [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md). |
-| **Cursor** (interactive IDE) | Cursor's native Linear integration / MCP | For a human in the IDE; not the automation path. |
+| **Claude Code** (web, interactive) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
+| **Claude Code Routines** (scheduled) | The **same injected Linear MCP** — routine sessions run in the same web environment | The two backlog routines (curator + triage). If the MCP is unavailable at fire time, the routine stops and reports — no key fallback. See [`ROUTINES.md`](ROUTINES.md). |
 | **GitHub** | Linear's **native GitHub integration** (the GitHub App) | PR/branch/status sync; PRs close issues via `Fixes FRA-N` / `Closes #N`. |
 
-`.mcp.json.example` is a local-reference block only (plain OAuth URL, no token) for the **Claude** side.
-**Do not** commit a root `.mcp.json` — the web environment already injects the Linear MCP for Claude and a
-committed file would double-register it. The Cursor automations don't use it (they use the API key).
+`.mcp.json.example` is a local-reference block only (plain OAuth URL, no token). **Do not** commit a
+root `.mcp.json` — the web environment already injects the Linear MCP and a committed file would
+double-register it.
 
 ---
 
@@ -81,19 +80,29 @@ carries it to Linear), and close Linear-native issues in Linear (Done/Canceled).
   the orphaned label group in the UI once empty.)
 - **`area:<x>`** stays a label group (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`).
   `data` is folded into `area:db`.
-- **`suggestion`** is the Cursor-ownership marker — keep it.
+- **`suggestion`** is the routine-ownership marker (which issues the backlog routines own) — keep it.
 - **`stale`** marks an aging suggestion that can't be *proven* resolved — kept, left open for review.
 - **Dropped:** `agent-ready` (no longer used to gate `/next`); `blocked` (express dependencies as
   **blocked-by relations** instead); `enhancement` folds into Linear's `Improvement`.
 
 ---
 
-## Ownership boundary (carries over)
+## Ownership boundary (organize broadly, destroy narrowly)
 
-The Cursor automations (curator + triage) may only modify issues they own — those carrying the
-**`suggestion`** label. Everything else — human-filed work, epics, Projects, planning items — is
-**read-only** to the automation, on both GitHub and Linear. A pre-write label gate (`get_issue` →
-confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
+The backlog routines (curator + triage) split writes into two classes:
+
+- **Destructive writes** — cancel, mark-duplicate, re-body (including adding an Agent brief) — are
+  allowed **only** on issues the routines own: those carrying the **`suggestion`** label. A
+  pre-write label gate (`get_issue` → confirm `suggestion` ∈ labels, else SKIP) enforces this before
+  every destructive mutate. Human-filed work is never canceled or re-bodied by a routine.
+- **Organizational writes** — setting Project, estimate, blocked-by relations, promoting
+  Triage → Backlog, and **filling an *absent* Priority** — are the triage routine's job **on any
+  Triage item**, whoever filed it (that's what an inbox is for). A **human-set Priority is never
+  overwritten**; routines correct obviously-wrong priorities only on `suggestion`-owned issues.
+  Epics, Project structure, and planning items remain read-only: routines never restructure them.
+
+The curator additionally touches only its own `suggestion` issues, full stop — its boundary is the
+strict one.
 
 ---
 
@@ -101,8 +110,8 @@ confirm `suggestion` ∈ labels, else SKIP) enforces this before every mutate.
 
 Linear's Free plan caps **active** issues at **250** — and **"active" is a precise Linear term**: per
 Linear's docs ([Default team pages](https://linear.app/docs/default-team-pages)), Active means the
-**Started + Unstarted** status categories (here **In Progress** + **Todo**), and **explicitly not Backlog,
-Completed, or Canceled**. So **Backlog and archived issues do *not* count toward the 250** — the Backlog is
+**Started + Unstarted** status categories (here **In Progress** + **In Review** + **Todo**), and
+**explicitly not Backlog, Completed, or Canceled**. So **Backlog and archived issues do *not* count toward the 250** — the Backlog is
 effectively unbounded for our purposes.
 
 > **Measured 2026-06-03 (this workspace, Free plan):** 276 *non-archived* issues — **260 Backlog**, ~2
@@ -122,7 +131,7 @@ effectively unbounded for our purposes.
 - **Auto-archive is automatic and free** — Linear archives **Done after ~28 days** and **Canceled after
   ~7 days** by default (tunable under *Team Settings → Issue statuses & automations*); archived issues stay
   searchable. This keeps the *board* tidy; it is **not** load-bearing for the cap (active is already far below 250).
-- The **curator** automation keeps a **conservative net-new budget** plus a **cap guard that counts
+- The **curator** routine keeps a **conservative net-new budget** plus a **cap guard that counts
   *active* (Started+Unstarted)** — not the Backlog or the open-`suggestion` set — so it never throttles
   filing just because the Backlog is large.
 
@@ -133,9 +142,39 @@ effectively unbounded for our purposes.
 - The team uses **Fibonacci estimates** (0,1,2,3,5,8,13,21). Estimates are optional context for sizing —
   `/next` surfaces an issue's estimate when shortlisting; they are **not** a filter or a gate.
 - **Triage is on**, and the team **requires an explicit Priority to move an issue out of Triage.** So
-  anything promoting Triage → Backlog (the Cursor triage automation, or a human/`/next`) **must set a
-  Priority** first. The curator sets a Priority on every issue it files; the triage automation sets
+  anything promoting Triage → Backlog (the triage routine, or a human/`/next`) **must set a
+  Priority** first. The curator sets a Priority on every issue it files; the triage routine sets
   Priority (and may set an estimate) as it buckets and promotes.
+
+## Agent briefs (depth / model / ultracode)
+
+Issues on this board are executed by agents, so an issue's description may carry a machine-readable
+**Agent brief** — a `### Agent brief` section:
+
+```markdown
+### Agent brief
+`depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>`
+<optional one line on where the depth should go>
+```
+
+- **`depth`** — how far past the literal ask the executing agent should investigate. `skim`: a
+  genuinely mechanical change (rename, version bump, copy fix) — the protocol floors of each step
+  suffice. `standard`: well-bounded, single-surface work. `deep`: load the surrounding subsystem,
+  verify against spec **and** runtime, hunt adjacent defects, and widen review. **Default is
+  `deep`** — an absent brief or field means `deep`. Calibrate by erring deeper: the cost of an agent
+  over-investigating is minutes; the cost of under-investigating is a wrong PR.
+- **`model`** — suggested model tier for the session that picks the issue up (`fable` for
+  cross-cutting, architectural, security-sensitive, or subtle-correctness work; `any` otherwise).
+  Advisory, read at session spin-up — a running session never switches models.
+- **`ultracode`** — whether multi-agent orchestration is likely to pay for itself on this issue
+  (wide verification surface, many independent files, adversarial review worth the tokens).
+
+**Who writes it:** the curator files every suggestion with a brief; the triage routine backfills
+and corrects briefs on `suggestion`-owned issues. **Human-filed issues get a brief only from a
+human** — agents never re-body them, and an absent brief simply reads as `depth:deep`. **Who reads
+it:** `/next` honors `depth` when scaling verification and review (never skipping steps, never
+shrinking `/diff-review`), and surfaces `model:`/`ultracode:` at session spin-up — `--plan-only`
+prefixes an emitted prompt with `ultracode` when the brief says `ultracode:yes`.
 
 ## `/next` (the work-selection command)
 
@@ -167,11 +206,26 @@ is the design that lets work fan out across parallel agents without two of them 
   abandoned: `/next` posts an `AGENT-STALE-FLAG` and returns it to **Backlog** without picking it up, at
   most twice per run. (FRA-38 and FRA-290 sat In Progress from June to August under the old command —
   leaked claims are the observed failure mode this replaces, not a hypothetical.)
+- **Agent briefs are honored, not required.** `/next` surfaces the issue's
+  [Agent brief](#agent-briefs-depth--model--ultracode) as sizing context when shortlisting (like the
+  estimate) and honors it after claiming, per that section's "who reads it" rules. No brief means
+  `depth:deep`.
 - **Autonomy.** `/next` auto-picks rank 1 rather than asking which issue to work, and asks only about
   **intent** — one-way doors on product naming or copy, destructive or irreversible changes, a spec that
   no longer matches reality, scope explosion, or nothing viable. Anything recoverable by reading the
   resulting PR is the agent's call. `/next --plan-only N` emits N ready-to-paste `/next FRA-xxx` prompts
   and writes nothing to Linear, so a batch of sessions can be spun up without leaking N claims.
+- **Ultracode scales depth, not scope.** `/next ultracode` runs the command's enumerated fan-out points
+  (blocker verification, spec-vs-code verification, the pre-push review lenses, and — only when its
+  three qualifying conditions hold — the command's narrow parallel-implementation exception) as
+  multi-agent **Workflow** orchestrations instead of inline checks — same steps, same Linear writes,
+  more independent eyes per step. The command text itself is the opt-in: the harness `ultracode`
+  keyword scan runs only on the human-typed, pre-expansion prompt and skips any input starting with
+  `/` (read out of the 2.1.220 build, same provenance discipline as the `/code-review` rule —
+  re-verify on newer builds), so it never fires on a slash-command turn and the agent must not wait
+  for a system-reminder to confirm it. Workflow launches auto-approve via `.claude/settings.json`
+  (see [`AGENT_INFRA.md`](AGENT_INFRA.md) "Claude Code project settings"); a launch that prompts or
+  is refused anyway falls back inline — same steps, same writes. Plain `/next` stays inline and cheap.
 - **Ending a run.** A run ends by opening a PR and moving to **In Review**, or by posting an
   `AGENT-RELEASE` (back to Backlog, or Triage with a Priority if underspecified) or an `AGENT-HANDOFF`
   (work exists; the claim stays live for a successor). Reasons are a closed set: `plan-rejected`,
@@ -183,24 +237,29 @@ wins.
 
 ---
 
-## Cursor automations (two, Linear-native via the API key)
+## Claude Code routines (two, Linear-native via the MCP)
 
-Two staggered daily automations, both writing to **Linear** via the **`LINEAR_API_KEY`** (Linear GraphQL).
-Full config + the shared Linear API primitives: [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md).
+Two staggered daily **Claude Code Routines**, both writing to **Linear** via the **native Linear
+MCP** injected by the web environment (keyless — no `LINEAR_API_KEY`). Full config + paste-ready
+prompts: [`ROUTINES.md`](ROUTINES.md).
 
-1. **Linear Issue Curator** ([`.cursor/skills/linear-curator.md`](../../../.cursor/skills/linear-curator.md))
+1. **Linear Issue Curator** ([`.claude/skills/linear-curator/SKILL.md`](../../../.claude/skills/linear-curator/SKILL.md))
    — daily. Maintains `suggestion` issues (Done/Cancel provable, else `stale`; dedup; refresh; split), then
-   discovers ≤3 net-new (conservative budget + cap guard) and files them into **Triage** with a Priority,
-   one `area:<x>`, and a dedup fingerprint. Ideates against existing **Projects** as well as codebase gaps.
-2. **Linear Triage** ([`.cursor/skills/linear-triage.md`](../../../.cursor/skills/linear-triage.md))
-   — ~1h later. Two jobs: **(A)** process the **Triage** inbox (dedup, set Project + Priority, promote to
-   Backlog), and **(B)** groom the existing **Backlog** in ~25-issue batches — set a sane **Priority**
-   (the main job, since `/next` ranks by Priority and ignores projects) and assign a **Project** only when
-   a suggestion *clearly* fits one (most suggestions stay projectless by design — no force-bucketing).
-   Organizes broadly; cancels/dedups only `suggestion`-owned issues; surfaces human-filed items rather than deciding them.
+   discovers ≤3 net-new (conservative budget + cap guard) across four lenses — engineering gaps, spec
+   gaps, creative/Projects, and live runtime signals (Sentry/Supabase advisors/CI, when available) — and
+   files them into **Triage** with a Priority, one `area:<x>`, an **Agent brief**, and a dedup fingerprint.
+2. **Linear Triage** ([`.claude/skills/linear-triage/SKILL.md`](../../../.claude/skills/linear-triage/SKILL.md))
+   — ~1h later. Two jobs: **(A)** process the **Triage** inbox (dedup, set Project + Priority, backfill
+   Agent briefs, promote to Backlog), and **(B)** groom the existing **Backlog** in ~25-issue batches —
+   set a sane **Priority** (the main job, since `/next` ranks by Priority and ignores projects) and assign
+   a **Project** only when a suggestion *clearly* fits one (most suggestions stay projectless by design —
+   no force-bucketing). Organizes broadly; cancels/dedups only `suggestion`-owned issues; surfaces
+   human-filed items rather than deciding them. Ends with a board-health report.
 
 **Ownership** (both): destructive actions only on `suggestion`-labeled issues; human/planning issues are
-read-only. **Never create GitHub issues; never touch code.** Issues are born in Linear.
+read-only. **Never create GitHub issues; never touch product code** — the sole repo-write exception is
+the docs-only self-maintenance PR defined in [`ROUTINES.md`](ROUTINES.md), which is how the routines keep
+their own contracts current. Issues are born in Linear.
 
 ---
 
@@ -208,11 +267,12 @@ read-only. **Never create GitHub issues; never touch code.** Issues are born in 
 
 These need a human (account/UI access the cloud sandbox doesn't have):
 
-1. **Linear MCP into the web environment** — so cloud Claude sessions inherit it (done; `/next` uses it).
-2. **`LINEAR_API_KEY` into Cursor cloud agents** — a Linear personal API key as a Cursor secret, for the
-   two automations (done). Stand up the **Linear Issue Curator** and **Linear Triage** automations per
-   [`CURSOR_AUTOMATIONS.md`](CURSOR_AUTOMATIONS.md) and run each once to verify they create/organize issues
-   in Linear unattended (no GitHub issues created).
+1. **Linear MCP into the web environment** — so cloud Claude sessions (interactive and routine alike)
+   inherit it (done; `/next` uses it).
+2. **Stand up the two Routines** — create the **Linear Issue Curator** and **Linear Triage** Routines in
+   the Claude Code UI per [`ROUTINES.md`](ROUTINES.md) and run each once to verify they create/organize
+   issues in Linear unattended (no GitHub issues created). No secrets needed — the old `LINEAR_API_KEY`
+   automation secret is retired and can be revoked.
 3. **GitHub App** installed on `pdcarlson/Frapp` (done) — keeps issues/PRs in sync; PRs close work.
 4. **Team Settings:** **Triage** on with *require explicit prioritization* (done); **Estimates** =
    Fibonacci (done); **Cycles OFF**. Auto-archive runs by default (28d Done / 7d Canceled) under *Issue
@@ -224,5 +284,5 @@ These need a human (account/UI access the cloud sandbox doesn't have):
 
 ## Sources
 
-- Linear MCP server (endpoint, Claude Code / Cursor setup, OAuth): <https://linear.app/docs/mcp>
+- Linear MCP server (endpoint, Claude Code setup, OAuth): <https://linear.app/docs/mcp>
 - Linear GitHub integration (magic words, branch/PR linking, sync): <https://linear.app/docs/github-integration>

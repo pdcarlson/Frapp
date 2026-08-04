@@ -1,4 +1,13 @@
-# Skill: Infrastructure Research
+---
+name: infrastructure-research
+description: >
+  Gather runtime truth from provider APIs (GitHub, Supabase, Render, Vercel, Infisical) when
+  investigating deployment state, CI failures, environment configuration, secret sync, or service
+  health. Use before proposing any infrastructure change, when reviewing PRs that touch CI or
+  deploys, when debugging staging/production issues, or when checking whether secrets are in sync.
+---
+
+# Infrastructure Research
 
 > Use when investigating deployment state, CI failures, environment configuration, or service health before proposing changes. Also applies when reviewing PRs, debugging production issues, or syncing secrets.
 
@@ -8,18 +17,15 @@
 
 Before making infrastructure-related changes, gather runtime truth from the available APIs. This prevents stale assumptions and wasted effort.
 
-**Available credentials** (env vars in Cloud sessions):
+**Available credentials:** the canonical list of provider/research env vars available in cloud agent sessions (`GITHUB_PAT`, `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN`, `INFISICAL_API_KEY`, `RENDER_API_KEY`, `VERCEL_API_KEY`, `SUPABASE_API_KEY`), including the full canonical-name/alias discussion, lives in [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md).
 
-| Env var | CLI/API | What you can check |
-|---------|---------|-------------------|
-| `GITHUB_PAT` | `gh` CLI (`export GH_TOKEN="$GITHUB_PAT"`) | PR status, CI logs, branch protection, labels, issues |
-| `PDCARLSON_SUPABASE_PERSONAL_ACCESS_TOKEN` | Supabase CLI | Project status, migrations, schema |
-| `INFISICAL_API_KEY` | Infisical API | Secret presence, sync status |
-| `RENDER_API_KEY` | Render API | Service status, deploy history |
-| `VERCEL_API_KEY` | Vercel API | Build status, deployment state |
-| `SUPABASE_API_KEY` | Supabase Management API | Project-level operations |
+Notes needed by the recipes below:
 
-> **Legacy aliases.** Older cloud VM images may expose `GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, or `RENDER_APIKEY`. Scripts tolerate GitHub aliases where explicitly noted, but new snippets should use the canonical names above.
+- For `gh`/git, export the PAT as `GH_TOKEN` first: `export GH_TOKEN="$GITHUB_PAT"` (`gh` does not auto-read `GITHUB_PAT`). Node scripts read `GITHUB_PAT` directly.
+- Older cloud VM images may expose legacy aliases (`GITHUB_PERSONAL_ACCESS_TOKEN`, `GITHUB_FULL_PERSONAL_ACCESS_TOKEN`, `RENDER_APIKEY`). Scripts tolerate GitHub aliases where explicitly noted, but new snippets should use the canonical names.
+- [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md) is the canonical variable reference.
+
+**Never print secret values.** Only reference variable names and presence/absence.
 
 ---
 
@@ -169,40 +175,30 @@ done
 1. `curl https://api-staging.frapp.live/health`
 2. Check Render deploys for recent failures
 3. Check Vercel deployments for web/landing build status
-4. Compare Infisical staging secrets against expected keys in `docs/internal/ENV_REFERENCE.md`
+4. Compare Infisical staging secrets against expected keys in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
 
 ### "Did a migration land in production?"
 
 1. `npx supabase migration list --project-ref <prod_ref>` (requires Supabase access token)
 2. Cross-reference with `supabase/migrations/` in the `production` branch
-3. Check `docs/internal/DB_PROMOTION_RUNBOOK.md` for promotion status
+3. Check [`docs/internal/ops/DB_PROMOTION_RUNBOOK.md`](../../../docs/internal/ops/DB_PROMOTION_RUNBOOK.md) for promotion status
 
 ### "Are secrets in sync?"
 
 1. List secret keys in each Infisical environment (see above)
-2. Compare against `docs/internal/ENV_REFERENCE.md`
+2. Compare against [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)
 3. Verify Infisical syncs are active for each destination (Render, Vercel, GitHub)
 
 ---
 
-## Infisical sync map (quick reference)
+## Infisical sync map
 
-| # | From | To |
-|---|------|----|
-| 1 | staging | Render → frapp-api-staging |
-| 2 | production | Render → frapp-api-prod |
-| 3 | staging | Vercel → frapp-web (Preview) |
-| 4 | production | Vercel → frapp-web (Production) |
-| 5 | staging | Vercel → frapp-landing (Preview) |
-| 6 | production | Vercel → frapp-landing (Production) |
-| 7 | per-env | GitHub Actions (OIDC) |
+The canonical sync map (which Infisical environment feeds which Render/Vercel/GitHub Actions destination) lives in [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md) under "Infisical sync map" — check it there rather than relying on a copy here.
 
 ---
 
 ## Updating this skill
 
 - Add research patterns for new provider integrations (e.g., Sentry API, Expo EAS).
-- Update the quick reference table if the Infisical sync map changes.
-- Add new API keys to the credentials table as they become available.
-- For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in `docs/internal/ENV_REFERENCE.md`), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.
-
+- If the Infisical sync map changes, update [`docs/internal/ci-cd/AGENT_INFRA.md`](../../../docs/internal/ci-cd/AGENT_INFRA.md); if credentials change, update [`docs/internal/environment/AGENT_CREDENTIALS.md`](../../../docs/internal/environment/AGENT_CREDENTIALS.md) — this skill only points at them.
+- For Infisical `workspaceId` in curl examples: set **`INFISICAL_PROJECT_ID`** to the project ID from Infisical (same value as GitHub secret `INFISICAL_PROJECT_ID` in [`docs/internal/environment/ENV_REFERENCE.md`](../../../docs/internal/environment/ENV_REFERENCE.md)), or keep **`.infisical.json`** `workspaceId` in sync and `export INFISICAL_PROJECT_ID=…` before running the snippets.

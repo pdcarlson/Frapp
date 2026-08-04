@@ -64,6 +64,15 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-08-03: `service` storage bucket for service-hour proofs (FRA-49)
+* **Migration**: `20260803231500_service_proof_bucket.sql`
+* **Purpose**: Provisions the private `service` storage bucket that holds service-hour proof uploads under `chapters/{chapter_id}/service/{proof_id}/` per `spec/behavior/service-hours.md`. First bucket managed in a migration (the five older buckets were dashboard-created); the row carries `allowed_mime_types` (images + PDF) and `file_size_limit` (25MB) because storage-api enforces those columns on the signed-URL PUT itself — the API's allowlist only gates URL issuance and a signed upload URL cannot pin a content type.
+* **Safety**: Additive DML into `storage.buckets` only — no DDL, no data changes, no RLS policies (the bucket is private; all access goes through API-issued signed URLs, which bypass RLS). The whole statement is wrapped in a `DO` block that no-ops when `storage.buckets` doesn't exist, so it replays cleanly on bare Postgres / PGlite. `ON CONFLICT (id) DO UPDATE` re-asserts `public=false` and the constraint columns, so re-running (or a pre-existing hand-made bucket) converges to the intended config.
+* **Order**: Apply **before** deploying the API build with FRA-49 — `POST /v1/service-entries/proof-upload-url` mints upload URLs against the bucket, and a missing bucket surfaces as a 500 on that route (entry creation without proof is unaffected). Harmless ahead of the deploy.
+* **Checks**: After `db push`, `select id, public, file_size_limit, allowed_mime_types from storage.buckets where id = 'service';` returns 1 row with `public = false`, `file_size_limit = 26214400`, and the five image/PDF MIME types. Post-deploy, requesting an upload URL (member with `service:log`), PUTting a small PNG to it, and creating an entry with the returned path must succeed end to end; PUTting a `text/html` body to a fresh signed URL must be rejected by storage-api.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback the `service` proof bucket.
+
 ## 2026-08-03: `chat_message_actions` membership-scoped read RLS (FRA-38)
 * **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
 * **Purpose**: Closes a high-severity cross-tenant read leak. The table's `SELECT` policy was `using (auth.role() = 'authenticated')`, so any authenticated user could read every reaction/poll-vote row in every chapter, private DM and role-gated channel — and the web client reads this table **directly under the user's JWT** (a per-channel backfill plus a global Realtime subscription), so RLS was the only gate. Replaces the policy with one scoped `TO authenticated` and gated on a new `SECURITY DEFINER` helper `public.can_read_chat_message(uuid)` that mirrors the canonical `canAccessChannel` predicate. Details in `docs/internal/security/SECURITY_FIXES.md`.

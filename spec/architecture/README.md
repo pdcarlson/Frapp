@@ -574,7 +574,7 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 **Decision:** Cloud agents and CI verify the Supabase hot path with **PGlite-backed NestJS tests as the default substrate** (Path C + Path D), and a **per-session Supabase branch as an opt-in escape hatch** (Path A) for work that genuinely needs Realtime, Storage, or the Edge runtime. A rootless in-sandbox Supabase stack (Path B) is **rejected**. The same substrate runs in CI and in the agent loop. This operationalises the testability that ADR-11 created; ADR-11 moved the logic, ADR-12 records how it is verified and where the branch escape hatch fits.
 
 - **Default (C + D).** Hot-path logic lives in NestJS (ADR-11) and is unit-tested with PGlite (in-process Postgres-in-WASM): schema, constraints, and RLS are exercised deterministically in milliseconds with no daemon, no Docker, no privileged tooling. This is the substrate for both CI and in-loop verification and covers the data layer for most chunks.
-- **Opt-in escape hatch (A).** When a task must observe Realtime / Storage / the Edge runtime, a real Supabase preview branch may be created for the session. It is **off by default**: it requires explicit opt-in, cost acknowledgement (`confirm_cost`), and a SessionEnd teardown that always deletes the branch so cost can't leak. The Supabase MCP write tools (`create_branch` / `apply_migration` / `delete_branch`) stay **denylisted in `.claude/settings.json`** until a session opts in.
+- **Opt-in escape hatch (A).** When a task must observe Realtime / Storage / the Edge runtime, a real Supabase preview branch may be created for the session. It is **off by default**: it requires explicit opt-in, cost acknowledgement (`confirm_cost`), and a SessionEnd teardown that always deletes the branch so cost can't leak. The Supabase MCP write tools (`create_branch` / `apply_migration` / `delete_branch`) stay **un-allowlisted in `.claude/settings.json`** — they prompt, which unattended sessions cannot approve; the committed file has never carried a deny rule — until a session opts in.
 - **Rejected (B).** Running the full Supabase Docker/`podman` stack rootless inside the sandbox is too flaky across providers (Docker-only Edge runtime, Elixir/Erlang Realtime, ~30 PG extensions without a tarball distribution; ~15–25 maint hrs/month) for too little gain over A.
 
 **Context:** #401 (P0): cloud-agent sandboxes can't apply migrations to real Postgres, run Edge Functions, observe Realtime, or exercise the push worker, so chat-adjacent chunks shipped with unverified runtime paths. Four research spikes settled the trade-offs:
@@ -709,7 +709,8 @@ choices made; the original decision above stands. Details + policy:
 - **Cursor automation migration is gated on a capability probe.** The suggestion automation keeps filing
   GitHub `suggestion` issues (which sync in) until a probe verifies what a Cursor **background** automation
   can do against Linear; the target is a **two-automation** (creation + triage) system writing via native
-  MCP. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+  MCP. See [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md) *(named
+  `CURSOR_AUTOMATIONS.md` at the time; renamed in amendment 4)*.
 
 #### ADR-16 amendment 2 — probe results; Cursor is key-led; cap/sync corrections (2026-06-02)
 
@@ -731,7 +732,7 @@ The capability probe (amendment 1) has run and corrects three things in amendmen
   the "strictly unidirectional" framing in amendment 1 is relaxed to that workflow description.
 - **Estimates/Triage:** team uses Fibonacci estimates and **requires an explicit Priority to leave Triage**
   (promotions set Priority). See [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
-  and [`CURSOR_AUTOMATIONS.md`](../../docs/internal/ci-cd/CURSOR_AUTOMATIONS.md).
+  and [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md) *(then `CURSOR_AUTOMATIONS.md`)*.
 
 #### ADR-16 amendment 3 — the 250 cap binds on *active* (Started+Unstarted), not Backlog (2026-06-03)
 
@@ -750,6 +751,38 @@ Todo) — explicitly **not Backlog, Completed, or Canceled**
   platform limit. Auto-archive (am. 2) still tidies the board but is **not** load-bearing for the cap.
 - Policy + the corrected guard: [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
   → *Free-tier cap and auto-archive*.
+
+#### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
+
+The two backlog automations no longer run on Cursor. Development has consolidated on Claude Code, so
+the **Linear Issue Curator** and **Linear Triage** flows now run as scheduled **Claude Code
+Routines** — fresh cloud sessions in the same web environment as interactive work, on the same
+staggered daily cadence.
+
+- **Keyless again — amendment 1's access model is restored.** Routine sessions inherit the
+  environment's injected **native Linear MCP**, so amendment 2's `LINEAR_API_KEY`/GraphQL exception
+  (a workaround for a headless sandbox with no MCP) is retired along with the platform that required
+  it. The key can be revoked; if the MCP is unavailable at fire time the routine stops and reports —
+  no key fallback.
+- **Behavior contracts moved into the repo's skill layer:** `.claude/skills/linear-curator/SKILL.md`
+  and `.claude/skills/linear-triage/SKILL.md`; the `.cursor/` tree is deleted and the task playbooks
+  it held migrated to `.claude/skills/` as well. Runbook + paste-ready Routine prompts:
+  [`docs/internal/ci-cd/ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md) (formerly
+  `CURSOR_AUTOMATIONS.md`; amendment 1–2 links repoint there).
+- **Amplified in the move:** a fourth curator discovery lens (live runtime signals — Sentry, Supabase
+  advisors, CI — through the MCPs the environment injects); a per-issue **Agent brief**
+  (`depth:` / `model:` / `ultracode:`, defaulting to `depth:deep`) that the curator writes, triage
+  backfills, and `/next` honors when scaling verification and review depth (policy:
+  [`LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md#agent-briefs-depth--model--ultracode));
+  a triage board-health report each run; and a bounded **self-maintenance contract** — each routine
+  verifies its own config against the live workspace and may open a **docs-only PR restricted to its
+  own skill files and runbook**, the routines' only permitted repo write.
+- **Unchanged and reaffirmed:** issues are born in Linear, never GitHub; the `suggestion` ownership
+  boundary with the pre-write label gate; the conservative net-new budget and the active-scoped cap
+  guard (amendment 3); routines never touch product code.
+- Legacy `<!-- cursor-suggestion: … -->` dedup markers in existing issue bodies stay valid (dedup
+  matches on the `fp=` string); new filings embed `agent-suggestion`, and old bodies upgrade
+  opportunistically when refreshed.
 
 ### ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03)
 

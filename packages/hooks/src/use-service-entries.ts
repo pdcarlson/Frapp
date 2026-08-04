@@ -56,6 +56,34 @@ export function useCreateServiceEntry() {
   });
 }
 
+export function useRequestServiceProofUploadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (body: { filename: string; content_type: string }) => {
+      const { data, error } = await client.POST(
+        "/v1/service-entries/proof-upload-url",
+        { body },
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useGetServiceProofUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.GET(
+        "/v1/service-entries/{id}/proof-url",
+        { params: { path: { id } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useReviewServiceEntry() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

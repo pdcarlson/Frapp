@@ -1,6 +1,15 @@
-# Skill: UI Development
+---
+name: ui-development
+description: >
+  Build or modify UI in the web dashboard (apps/web), landing site (apps/landing), or the shared
+  component/theme/hooks/validation packages. Use when writing or editing frontend code — React
+  components, ShadCN/Radix composites, Tailwind styling, theme tokens, TanStack Query data hooks,
+  or Zod form validation — anywhere under apps/web, apps/landing, or packages/{ui,theme,hooks,validation}.
+---
 
-> Use when building or modifying UI in the web dashboard, landing site, or shared component packages.
+# UI Development
+
+> Read before building or modifying UI in the web dashboard, landing site, or shared component packages.
 
 ---
 
@@ -37,7 +46,7 @@ Located in `apps/web/components/ui/`. These follow ShadCN conventions:
 - `cn()` utility from `@/lib/utils` (clsx + tailwind-merge)
 - Radix UI primitives for accessible behavior
 
-Available components: accordion, avatar, badge, button, card, command, dialog, dropdown-menu, input, popover, progress, scroll-area, select, separator, sheet, skeleton, switch, table, tabs, textarea, toast, tooltip.
+Available components: accordion, avatar, badge, button, card, command, dialog, dropdown-menu, input, label, popover, progress, scroll-area, select, separator, sheet, skeleton, sonner, switch, table, tabs, textarea, toast, toaster, tooltip.
 
 ### Adding a new ShadCN component
 
@@ -51,6 +60,16 @@ ShadCN components are copy-pasted from the ShadCN registry, not installed via CL
 
 ## Tailwind and theming
 
+The canonical design-system contract (color role map, component ownership matrix, state
+completeness standard, accessibility gates) lives in
+[`docs/internal/design-system/UI_UX_SYSTEM.md`](../../../docs/internal/design-system/UI_UX_SYSTEM.md);
+the tables below summarize the tokens as implemented in `@repo/theme`. **Palette note:** the
+chat-first redesign rebranded the palette to **bone / bronze / ink** (see
+`packages/theme/src/globals.css` and `tailwind.config.ts`) — the legacy `navy` / `royal-blue` /
+`emerald` **keys are preserved so existing utility classes keep compiling, but their values now map
+to ink / bronze / bone-era colors**. `UI_UX_SYSTEM.md`'s color role map predates that rebrand; where
+they disagree, the theme package is what ships.
+
 ### Theme tokens (from `@repo/theme`)
 
 The design system uses HSL CSS variables for semantic colors:
@@ -59,19 +78,23 @@ The design system uses HSL CSS variables for semantic colors:
 |-------|-------|
 | `background` / `foreground` | Page background and text |
 | `card` / `card-foreground` | Card surfaces |
-| `primary` / `primary-foreground` | Primary actions (navy-800) |
+| `primary` / `primary-foreground` | Primary actions (deep bronze — replaced royal blue) |
 | `muted` / `muted-foreground` | Subdued text and backgrounds |
 | `destructive` / `destructive-foreground` | Danger states |
 | `border` | Borders |
 | `ring` | Focus rings |
 
-### Brand colors
+### Brand color keys (legacy names, remapped values)
 
-| Name | Hex range | Usage |
+| Key | Maps to | Usage |
 |------|-----------|-------|
-| `navy` | 50–950 | Primary backgrounds, headers |
-| `royal-blue` | 50–950 | Accent, links |
-| `emerald` | 50–950 | Success states |
+| `navy` | ink ramp | Brand anchor, headers, dark surfaces |
+| `royal-blue` | bronze ramp | Primary action, accent, links |
+| `emerald` | moss/success ramp | Success states |
+
+Never treat success-green as the global primary-action color — `primary` (bronze) is the action
+color, ink is the brand anchor. Read the current values from `packages/theme/src/globals.css`
+rather than trusting any doc's hex table.
 
 ### Custom animations
 
@@ -86,8 +109,9 @@ import sharedConfig from "@repo/theme/tailwind";
 const config: Config = {
   presets: [sharedConfig],
   content: [
-    "./app/**/*.{js,ts,jsx,tsx}",
-    "../../packages/ui/src/**/*.{js,ts,jsx,tsx}",
+    "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    "./components/**/*.{js,ts,jsx,tsx,mdx}",
+    "../../packages/ui/src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
 };
 ```
@@ -108,11 +132,13 @@ Generated TypeScript client from `openapi.json`. Uses `openapi-fetch` for type-s
 
 ### React hooks (`@repo/hooks`)
 
-All data fetching uses TanStack Query via shared hooks. Import from the package root (barrel export in `packages/hooks/src/index.ts`):
+All data fetching uses TanStack Query via shared hooks — never raw `fetch`. Import from the package root (barrel export in `packages/hooks/src/index.ts`):
 
 ```typescript
 import { useCurrentUser, useUpdateUser, useMembers, useCurrentChapter } from "@repo/hooks";
 ```
+
+The barrel now covers hooks for members, events, attendance, points, chat, billing, invoices, backwork, notifications, service entries, tasks, study, documents, polls, semesters, reports, search, chapters, roles, invites, and users — check `packages/hooks/src/` before writing a new hook.
 
 Pattern:
 - `useQuery` for reads: `queryKey` for caching, `queryFn` calls `client.GET`
@@ -122,13 +148,15 @@ Pattern:
 ### Provider chain (web app)
 
 ```text
-QueryProvider (TanStack Query)
-  └─ FrappProvider (API client with Supabase auth token + chapter ID)
-       └─ NetworkProvider (online/offline state)
-            └─ App content
+ThemeProvider (next-themes — class-based dark mode)
+  └─ QueryProvider (TanStack Query)
+       └─ FrappProvider (API client with Supabase auth token + chapter ID)
+            └─ AnalyticsProvider (product analytics)
+                 └─ NetworkProvider (online/offline state)
+                      └─ App content
 ```
 
-These providers are defined in `apps/web/lib/providers/` but not yet wired into the root layout — they must be added when building real pages.
+The chain is assembled in `AppProviders` (`apps/web/app/providers.tsx`) and wired into the root layout (`apps/web/app/layout.tsx`); the individual providers live in `apps/web/lib/providers/` (ThemeProvider in `apps/web/components/theme/theme-provider.tsx`). New pages get all providers automatically — do not re-wrap.
 
 ### Validation (`@repo/validation`)
 
@@ -152,7 +180,8 @@ Use with React Hook Form or direct `parse`/`safeParse` for client-side validatio
 
 ### Visual verification
 
-After making UI changes, start the dev server and verify in-browser:
+After making UI changes, start the dev server and verify in-browser (setup details in
+[`docs/internal/environment/LOCAL_DEV.md`](../../../docs/internal/environment/LOCAL_DEV.md)):
 ```bash
 npm run dev -w apps/web   # http://localhost:3000
 npm run dev -w apps/landing  # http://localhost:3002
@@ -160,7 +189,7 @@ npm run dev -w apps/landing  # http://localhost:3002
 
 ### Dark mode
 
-The theme supports dark mode via the `.dark` class. Toggle by adding/removing the class on `<html>`. CSS variables automatically switch.
+The theme supports dark mode via the `.dark` class, managed by `next-themes` (`ThemeProvider` in the provider chain, `attribute="class"`, system default). Use `useTheme()` from `next-themes` to toggle — don't manipulate the `<html>` class directly. CSS variables automatically switch.
 
 ### Responsive design
 
