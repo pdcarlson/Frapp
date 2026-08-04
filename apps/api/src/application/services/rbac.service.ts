@@ -17,6 +17,7 @@ import {
   SystemPermissions,
   WILDCARD,
 } from '../../domain/constants/permissions';
+import { flattenPermissionSets } from '../../domain/utils/permissions';
 import { CustomRoleService } from './custom-role.service';
 
 @Injectable()
@@ -32,6 +33,15 @@ export class RbacService {
   }
 
   async create(chapterId: string, data: Partial<Role>): Promise<Role> {
+    // Only the seeded President role may carry the wildcard: letting
+    // `roles:manage` mint a new `*` role would bypass the presidency-transfer
+    // safeguard entirely (spec/behavior/rbac.md).
+    if (data.permissions?.includes(WILDCARD)) {
+      throw new BadRequestException(
+        'New roles cannot carry the wildcard (*) permission; use the presidency-transfer flow instead',
+      );
+    }
+
     const existing = await this.roleRepo.findByChapterAndName(
       chapterId,
       data.name!,
@@ -55,6 +65,18 @@ export class RbacService {
     if (!role) throw new NotFoundException('Role not found');
     if (role.chapter_id !== chapterId)
       throw new ForbiddenException('Role not in current chapter');
+
+    // An update may keep a wildcard the role already holds (the President
+    // role's permissions stay editable) but may never introduce one — that
+    // would mint a second wildcard holder outside the transfer flow.
+    if (
+      data.permissions?.includes(WILDCARD) &&
+      !role.permissions.includes(WILDCARD)
+    ) {
+      throw new BadRequestException(
+        'The wildcard (*) permission cannot be added to a role; use the presidency-transfer flow instead',
+      );
+    }
 
     if (data.name && data.name !== role.name) {
       const existing = await this.roleRepo.findByChapterAndName(
@@ -244,10 +266,10 @@ export class RbacService {
   /**
    * Flatten a member's live-role permissions and custom-role capabilities
    * (bridge model, spec/behavior/rbac.md) into one set. Both lookups resolve
-   * within `chapterId`, so stale or cross-chapter ids contribute nothing. The
-   * wildcard is only honored from live roles: a custom role carrying `*`
-   * (pre-validation data) must not mint a second President, so it is dropped
-   * here — mirroring `PermissionsGuard`.
+   * within `chapterId`, so stale or cross-chapter ids contribute nothing.
+   * The flatten policy itself (union + wildcard only from live roles) lives
+   * in `flattenPermissionSets`, shared with `PermissionsGuard` so the two
+   * can never drift.
    */
   private async resolvePermissionSet(
     chapterId: string,
@@ -266,12 +288,9 @@ export class RbacService {
         : Promise.resolve([]),
     ]);
 
-    const set = new Set(roles.flatMap((r) => r.permissions ?? []));
-    for (const role of customRoles) {
-      for (const capability of role.capabilities ?? []) {
-        if (capability !== WILDCARD) set.add(capability);
-      }
-    }
-    return set;
+    return flattenPermissionSets(
+      roles.map((r) => r.permissions),
+      customRoles.map((r) => r.capabilities),
+    );
   }
 }

@@ -116,6 +116,56 @@ describe('RbacService', () => {
     expect(result).toEqual(role);
   });
 
+  // Only the seeded President role may carry `*`; minting a new wildcard role
+  // would bypass the presidency-transfer safeguard (spec/behavior/rbac.md).
+  it('rejects creating a role with the wildcard permission', async () => {
+    await expect(
+      service.create('ch-1', {
+        name: 'Shadow President',
+        permissions: ['*', 'members:view'],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockRoleRepo.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects introducing the wildcard on update, but keeps an existing one editable', async () => {
+    const plainRole: Role = {
+      id: 'role-plain',
+      chapter_id: 'ch-1',
+      name: 'Plain',
+      permissions: ['members:view'],
+      is_system: false,
+      display_order: 5,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(plainRole);
+
+    await expect(
+      service.update('role-plain', 'ch-1', { permissions: ['*'] }),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockRoleRepo.update).not.toHaveBeenCalled();
+
+    // The President role already carries `*` — re-sending it is not an
+    // introduction and must stay allowed so its permissions remain editable.
+    const presidentRole: Role = {
+      ...plainRole,
+      id: 'role-president',
+      name: 'President',
+      permissions: ['*'],
+      is_system: true,
+    };
+    mockRoleRepo.findById.mockResolvedValue(presidentRole);
+    mockRoleRepo.update.mockResolvedValue(presidentRole);
+
+    await service.update('role-president', 'ch-1', {
+      permissions: ['*'],
+    });
+    expect(mockRoleRepo.update).toHaveBeenCalledWith('role-president', {
+      permissions: ['*'],
+    });
+  });
+
   it('should reject duplicate role name', async () => {
     const existing: Role = {
       id: 'role-1',

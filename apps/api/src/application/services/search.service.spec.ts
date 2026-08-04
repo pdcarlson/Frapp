@@ -1,11 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SearchService } from './search.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { RbacService } from './rbac.service';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 describe('SearchService', () => {
   let service: SearchService;
   let mockSupabase: jest.Mocked<Pick<SupabaseClient, 'from'>>;
+  let mockRbacService: { getEffectivePermissions: jest.Mock };
 
   const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
     const chain: Record<string, unknown> = {};
@@ -31,6 +33,10 @@ describe('SearchService', () => {
         .mockImplementation(() => makeChain({ data: [], error: null })),
     };
 
+    mockRbacService = {
+      getEffectivePermissions: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SearchService,
@@ -38,6 +44,7 @@ describe('SearchService', () => {
           provide: SUPABASE_CLIENT,
           useValue: mockSupabase,
         },
+        { provide: RbacService, useValue: mockRbacService },
       ],
     }).compile();
 
@@ -185,13 +192,7 @@ describe('SearchService', () => {
           });
         }
         if (table === 'members') {
-          return makeChain({ data: [{ role_ids: ['role-1'] }], error: null });
-        }
-        if (table === 'roles') {
-          return makeChain({
-            data: [{ permissions: ['alumni:view'] }],
-            error: null,
-          });
+          return makeChain({ data: [{ id: 'member-1' }], error: null });
         }
         if (table === 'chat_messages') {
           const chain: Record<string, unknown> = {};
@@ -214,8 +215,19 @@ describe('SearchService', () => {
         return makeChain({ data: [], error: null });
       });
 
+      // The permission set now resolves through RbacService, so custom-role
+      // capabilities gate search exactly as they gate chat channel access
+      // (bridge model, spec/behavior/rbac.md).
+      mockRbacService.getEffectivePermissions.mockResolvedValue([
+        'alumni:view',
+      ]);
+
       await service.search('ch-1', 'user-1', 'hello');
 
+      expect(mockRbacService.getEffectivePermissions).toHaveBeenCalledWith(
+        'ch-1',
+        'user-1',
+      );
       expect(searchedChannelIds).toEqual(['pub', 'priv-in', 'gated-yes']);
       expect(searchedChannelIds).not.toContain('priv-out');
       expect(searchedChannelIds).not.toContain('gated-no');

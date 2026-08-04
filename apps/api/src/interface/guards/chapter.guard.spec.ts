@@ -45,7 +45,11 @@ describe('ChapterGuard', () => {
     memberships,
   }: {
     appUser?: { id: string } | null;
-    member?: { id: string; role_ids: string[] } | null;
+    member?: {
+      id: string;
+      role_ids: string[];
+      custom_role_ids?: string[];
+    } | null;
     chapter?: {
       subscription_status: SubscriptionStatus;
       past_due_since?: string | null;
@@ -54,10 +58,12 @@ describe('ChapterGuard', () => {
     memberships?: Array<{
       id: string;
       role_ids: string[];
+      custom_role_ids?: string[];
       chapter_id: string;
     }>;
   }) => {
     let callCount = 0;
+    const selectArgs: Record<string, string[]> = {};
     mockFrom.mockImplementation((table: string) => {
       callCount++;
       const data =
@@ -69,10 +75,13 @@ describe('ChapterGuard', () => {
       // (explicit chapter) or one .eq + .limit (auto-resolve).
       eqMock.mockReturnValue({ eq: eqMock, single, limit });
       return {
-        select: jest.fn().mockReturnValue({ eq: eqMock }),
+        select: jest.fn().mockImplementation((columns: string) => {
+          (selectArgs[table] ??= []).push(columns);
+          return { eq: eqMock };
+        }),
       };
     });
-    return () => callCount;
+    return { callCount: () => callCount, selectArgs };
   };
 
   beforeEach(async () => {
@@ -248,6 +257,32 @@ describe('ChapterGuard', () => {
     expect(request.member).toEqual(member);
     expect(request.chapterId).toBe('chapter-1');
     expect(request.subscriptionStatus).toBe('active');
+  });
+
+  it('selects custom_role_ids on the membership and carries it into request.member', async () => {
+    // PermissionsGuard resolves custom-role capabilities from
+    // request.member.custom_role_ids — if this select drops the column, the
+    // bridge silently stops enforcing for the whole request.
+    const member = {
+      id: 'member-1',
+      role_ids: ['role-1'],
+      custom_role_ids: ['custom-1'],
+    };
+    const chain = mockSupabaseChain({
+      appUser: { id: 'user-1' },
+      member,
+      chapter: { subscription_status: 'active' },
+    });
+
+    const request = buildRequest();
+    const ctx = mockExecutionContext(request);
+    await guard.canActivate(ctx);
+
+    expect(request.member).toEqual(member);
+    for (const columns of chain.selectArgs['members'] ?? []) {
+      expect(columns).toContain('custom_role_ids');
+    }
+    expect((chain.selectArgs['members'] ?? []).length).toBeGreaterThan(0);
   });
 
   describe('subscription enforcement', () => {

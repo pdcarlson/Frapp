@@ -512,6 +512,7 @@ describe('AttendanceService', () => {
         user_id: 'user-3',
         chapter_id: 'ch-1',
         role_ids: ['role-exec'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',

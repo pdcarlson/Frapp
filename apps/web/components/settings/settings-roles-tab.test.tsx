@@ -146,4 +146,56 @@ describe("SettingsRolesTab", () => {
       screen.getByRole("button", { name: /create role/i }),
     ).toBeDisabled();
   });
+
+  it("never offers the wildcard as a capability checkbox", async () => {
+    const user = userEvent.setup();
+    const catalogWithWildcard = [
+      { key: "WILDCARD", permission: "*" },
+      ...CATALOG,
+    ];
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole()],
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={catalogWithWildcard} />,
+    );
+    await user.click(screen.getByRole("tab", { name: /custom/i }));
+
+    // The API rejects `*` on custom roles (400), so the chip must not render —
+    // neither on existing roles nor in the create form.
+    expect(
+      screen.queryByRole("checkbox", { name: /Pledge Educator \*/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: "new role *" }),
+    ).not.toBeInTheDocument();
+    // Ordinary capabilities still render for both.
+    expect(
+      screen.getByRole("checkbox", { name: "Pledge Educator members:view" }),
+    ).toBeInTheDocument();
+  });
+
+  it("strips a legacy wildcard from the payload when toggling capabilities", async () => {
+    const user = userEvent.setup();
+    // Pre-bridge rows can still carry `*`; echoing it back would 400 forever.
+    mockUseCustomRoles.mockReturnValue({
+      data: [customRole({ capabilities: ["*", "members:view"] })],
+      isPending: false,
+      isError: false,
+    });
+    render(
+      <SettingsRolesTab archetypeKey="ifc" canManage catalog={CATALOG} />,
+    );
+    await user.click(screen.getByRole("tab", { name: /custom/i }));
+    await user.click(
+      screen.getByRole("checkbox", { name: "Pledge Educator events:create" }),
+    );
+
+    expect(mockUpdate).toHaveBeenCalledWith({
+      id: "r1",
+      body: { capabilities: ["members:view", "events:create"] },
+    });
+  });
 });

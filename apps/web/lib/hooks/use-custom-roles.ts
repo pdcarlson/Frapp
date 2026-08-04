@@ -19,8 +19,13 @@ export type UpdateCustomRoleInput = UpdateCustomRole;
  * Lists the chapter's `chapter_custom_roles` (Settings → Roles → Custom),
  * ordered by rank. Mirrors the chapter-config hooks: scoped to the active
  * chapter, query key `["custom-roles", chapterId]`.
+ *
+ * The endpoint requires `chapter-config:view`, so callers rendered for
+ * ordinary members (e.g. the member directory) should pass `enabled: false`
+ * until the viewer's permission is confirmed — otherwise every mount fires a
+ * guaranteed-403 request that the query client retries and refires on focus.
  */
-export function useCustomRoles() {
+export function useCustomRoles(options?: { enabled?: boolean }) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
 
@@ -33,7 +38,7 @@ export function useCustomRoles() {
       // ChapterCustomRole; surface the shared type to consumers.
       return (data ?? []) as ChapterCustomRole[];
     },
-    enabled: !!chapterId,
+    enabled: !!chapterId && (options?.enabled ?? true),
     staleTime: 60_000,
   });
 }

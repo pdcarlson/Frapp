@@ -1,4 +1,8 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  ForbiddenException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PermissionsGuard } from './permissions.guard';
@@ -345,6 +349,57 @@ describe('PermissionsGuard', () => {
 
       await expect(guard.canActivate(ctx)).rejects.toThrow(
         new ForbiddenException('No valid roles found'),
+      );
+    });
+
+    it('grants an any-of requirement satisfied only by a custom-role capability', async () => {
+      mockPermissionMetadata({
+        handlerAny: ['events:create', 'events:update'],
+      });
+      mockRoles(
+        [role('role-1', ['members:view'])],
+        [customRole('custom-1', ['events:update'])],
+      );
+
+      const ctx = mockExecutionContext({
+        role_ids: ['role-1'],
+        custom_role_ids: ['custom-1'],
+      });
+
+      expect(await guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('surfaces a failed lookup as a server error, never a permission denial', async () => {
+      // A transient DB failure must not read as "no rows" and produce a
+      // terminal 403 — that would present an outage as an authorization state.
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockFrom.mockImplementation((table: string) => {
+        const chain = {
+          select: jest.fn(() => chain),
+          in: jest.fn(() => chain),
+          eq: jest.fn(() => chain),
+          then: (
+            resolve: (result: {
+              data: unknown[] | null;
+              error: { message: string } | null;
+            }) => unknown,
+          ) =>
+            resolve(
+              table === 'chapter_custom_roles'
+                ? { data: null, error: { message: 'connection reset' } }
+                : { data: [], error: null },
+            ),
+        };
+        return chain;
+      });
+
+      const ctx = mockExecutionContext({
+        role_ids: [],
+        custom_role_ids: ['custom-1'],
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        InternalServerErrorException,
       );
     });
   });

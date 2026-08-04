@@ -4,15 +4,18 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
 } from '../decorators/permissions.decorator';
+import { WILDCARD } from '../../domain/constants/permissions';
+import { flattenPermissionSets } from '../../domain/utils/permissions';
 import type { RequestContext } from '../types/request-context.types';
 
 interface RolePermissionRow {
@@ -77,18 +80,24 @@ export class PermissionsGuard implements CanActivate {
             .select('permissions')
             .in('id', roleIds)
             .eq('chapter_id', chapterId)
-        : Promise.resolve({ data: [] }),
+        : Promise.resolve({ data: [], error: null }),
       customRoleIds.length
         ? this.supabase
             .from('chapter_custom_roles')
             .select('capabilities')
             .in('id', customRoleIds)
             .eq('chapter_id', chapterId)
-        : Promise.resolve({ data: [] }),
+        : Promise.resolve({ data: [], error: null }),
     ])) as [
-      { data: RolePermissionRow[] | null },
-      { data: CustomRoleCapabilityRow[] | null },
+      { data: RolePermissionRow[] | null; error: PostgrestError | null },
+      { data: CustomRoleCapabilityRow[] | null; error: PostgrestError | null },
     ];
+
+    // A failed lookup must surface as a server fault, not a permission
+    // denial — otherwise a transient DB error reads as a terminal 403.
+    if (rolesResult.error || customRolesResult.error) {
+      throw new InternalServerErrorException('Failed to resolve permissions');
+    }
     const roles = rolesResult.data;
     const customRoles = customRolesResult.data;
 
@@ -96,20 +105,12 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No valid roles found');
     }
 
-    const userPermissions = new Set(
-      roles?.flatMap((role) => role.permissions) ?? [],
+    const userPermissions = flattenPermissionSets(
+      (roles ?? []).map((role) => role.permissions),
+      (customRoles ?? []).map((row) => row.capabilities),
     );
-    // Custom-role capabilities flatten into the same set, except the wildcard:
-    // only the live President role may carry `*` (the presidency-transfer flow
-    // is the sole path that moves it), so it is ignored here even if a
-    // pre-validation row still contains it.
-    for (const row of customRoles ?? []) {
-      for (const capability of row.capabilities ?? []) {
-        if (capability !== '*') userPermissions.add(capability);
-      }
-    }
 
-    if (userPermissions.has('*')) {
+    if (userPermissions.has(WILDCARD)) {
       return true;
     }
 

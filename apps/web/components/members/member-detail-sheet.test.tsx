@@ -1,5 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Shared spy so tests can assert the exact mutation payload the sheet sends.
+const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
 // component renders from its `member` prop (usingPreviewData bypasses useMember).
@@ -7,7 +10,9 @@ vi.mock("@repo/hooks", () => ({
   useMember: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
   useRoles: () => ({ data: [], isError: false }),
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
+  // The custom-roles section is permission-gated; grant everything by default.
+  useMyPermissions: () => ({ data: { permissions: ["*"] } }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -143,5 +148,66 @@ describe("MemberDetailSheet custom roles", () => {
     );
 
     expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberDetailSheet save payload", () => {
+  beforeEach(() => {
+    updateRolesMutateAsync.mockClear();
+  });
+
+  it("sends toggled custom_role_ids and drops ids of since-deleted roles", async () => {
+    customRolesState.data = [
+      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
+    ];
+    customRolesState.isSuccess = true;
+    customRolesState.isError = false;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        // cr-deleted no longer exists in the chapter catalog: the save must
+        // not echo it back, or the server rejects the whole payload.
+        member={{ ...baseMember, custom_role_ids: ["cr-deleted"] }}
+      />,
+    );
+
+    const historianRow = screen.getByText("Historian").closest("label");
+    fireEvent.click(historianRow!.querySelector("input")!);
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
+      id: "m1",
+      role_ids: [],
+      custom_role_ids: ["cr1"],
+    });
+  });
+
+  it("omits custom_role_ids entirely when the list could not load", async () => {
+    customRolesState.data = undefined;
+    customRolesState.isSuccess = false;
+    customRolesState.isError = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={{ ...baseMember, custom_role_ids: ["cr1"] }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    // Omission tells the server "leave the assignment unchanged" — the sheet
+    // must never strip custom roles it could not display.
+    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
+      id: "m1",
+      role_ids: [],
+    });
   });
 });

@@ -113,7 +113,14 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
 
-    const roles = await this.roleRepo.findByChapter(chapterId);
+    // Both validation fetches depend only on the chapter, so run them together.
+    const [roles, customRoles] = await Promise.all([
+      this.roleRepo.findByChapter(chapterId),
+      customRoleIds !== undefined && customRoleIds.length > 0
+        ? this.customRoleService.findByIds(customRoleIds, chapterId)
+        : Promise.resolve([]),
+    ]);
+
     const validRoleIds = new Set(roles.map((r) => r.id));
     const unknownRoleIds = roleIds.filter((id) => !validRoleIds.has(id));
     if (unknownRoleIds.length > 0) {
@@ -124,14 +131,15 @@ export class MemberService {
 
     // Custom-role ids get the same cross-chapter validation as live-role ids:
     // a fabricated or foreign id must never be persisted on the member row.
+    // Ids the member ALREADY holds are exempt — deleting a custom role leaves
+    // its id on member rows by design (spec fail-safe), and a client echoing
+    // that leftover back must not have its whole save rejected. Stale ids
+    // resolve to no row, so keeping them grants nothing.
     if (customRoleIds !== undefined && customRoleIds.length > 0) {
-      const customRoles = await this.customRoleService.findByIds(
-        customRoleIds,
-        chapterId,
-      );
       const validCustomRoleIds = new Set(customRoles.map((r) => r.id));
+      const heldCustomRoleIds = new Set(member.custom_role_ids ?? []);
       const unknownCustomRoleIds = customRoleIds.filter(
-        (id) => !validCustomRoleIds.has(id),
+        (id) => !validCustomRoleIds.has(id) && !heldCustomRoleIds.has(id),
       );
       if (unknownCustomRoleIds.length > 0) {
         throw new BadRequestException(
@@ -140,17 +148,25 @@ export class MemberService {
       }
     }
 
-    const presidentRole = roles.find(
-      (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
+    // Wildcard-carrying roles move only through the presidency-transfer flow
+    // (RbacService.transferPresidency), which reassigns them atomically and
+    // only at the current President's initiative. Keying on the permission
+    // rather than the seeded President row also blocks smuggling via any
+    // legacy non-system role that carries `*`.
+    const wildcardRoleIds = new Set(
+      roles
+        .filter((r) => r.permissions.includes(SystemPermissions.WILDCARD))
+        .map((r) => r.id),
     );
-
-    if (presidentRole) {
-      const currentlyHasPresident = member.role_ids.includes(presidentRole.id);
-      const willHavePresident = roleIds.includes(presidentRole.id);
-      if (currentlyHasPresident !== willHavePresident) {
-        // Presidency moves must go through RbacService.transferPresidency so
-        // the wildcard role is atomically reassigned and only the current
-        // President can initiate it.
+    if (wildcardRoleIds.size > 0) {
+      const currentlyHeld = member.role_ids.filter((id) =>
+        wildcardRoleIds.has(id),
+      );
+      const willHold = roleIds.filter((id) => wildcardRoleIds.has(id));
+      const changed =
+        currentlyHeld.length !== willHold.length ||
+        currentlyHeld.some((id) => !willHold.includes(id));
+      if (changed) {
         throw new ForbiddenException(
           'Use the presidency-transfer endpoint to change the President role',
         );

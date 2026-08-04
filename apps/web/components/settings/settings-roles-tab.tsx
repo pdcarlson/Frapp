@@ -342,9 +342,14 @@ function CustomView({
     role: ChapterCustomRole,
     permission: string,
   ) {
-    const next = role.capabilities.includes(permission)
-      ? role.capabilities.filter((p) => p !== permission)
-      : [...role.capabilities, permission];
+    // Strip any legacy wildcard before building the payload: the API rejects
+    // `*` on custom roles, and the chip no longer renders, so echoing a
+    // pre-bridge `*` back would make the role permanently uneditable. The
+    // first toggle on such a role also cleans the stored row.
+    const current = role.capabilities.filter((p) => p !== "*");
+    const next = current.includes(permission)
+      ? current.filter((p) => p !== permission)
+      : [...current, permission];
     try {
       await updateRole.mutateAsync({
         id: role.id,

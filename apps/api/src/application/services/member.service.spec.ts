@@ -86,6 +86,7 @@ describe('MemberService', () => {
         user_id: 'user-1',
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
@@ -130,6 +131,7 @@ describe('MemberService', () => {
       user_id: 'user-1',
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -162,6 +164,7 @@ describe('MemberService', () => {
       user_id: 'user-1',
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -361,6 +364,63 @@ describe('MemberService', () => {
       expect(mockRepo.update).not.toHaveBeenCalled();
     });
 
+    it('tolerates a stale custom role id the member already holds', async () => {
+      // Deleting a custom role leaves its id on member rows by design (spec
+      // fail-safe); a client echoing that leftover back must not have its
+      // whole save rejected.
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        custom_role_ids: ['custom-deleted'],
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+      mockCustomRoleService.findByIds.mockResolvedValue([]);
+      const updated = {
+        ...existingMember,
+        custom_role_ids: ['custom-deleted'],
+      };
+      mockRepo.update.mockResolvedValue(updated);
+
+      await service.updateRoles('member-1', ['role-1'], 'chapter-1', [
+        'custom-deleted',
+      ]);
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        role_ids: ['role-1'],
+        custom_role_ids: ['custom-deleted'],
+      });
+    });
+
+    it('blocks assigning a non-system role that carries the wildcard', async () => {
+      // A legacy `*` role minted before wildcard writes were rejected must not
+      // be attachable through the generic endpoint — the presidency-transfer
+      // flow is the only path that moves wildcard access.
+      const legacyWildcardRole = {
+        id: 'role-legacy-star',
+        chapter_id: 'chapter-1',
+        name: 'Legacy Star',
+        permissions: ['*'],
+        is_system: false,
+        display_order: 9,
+        color: null,
+        created_at: '2024-01-01',
+      };
+      mockRepo.findById.mockResolvedValue(existingMember);
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        legacyWildcardRole,
+      ]);
+
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-1', 'role-legacy-star'],
+          'chapter-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
     it('clears custom roles with an explicit empty array without a lookup', async () => {
       mockRepo.findById.mockResolvedValue(existingMember);
       mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
@@ -397,6 +457,7 @@ describe('MemberService', () => {
       user_id: 'user-1',
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-02',
@@ -417,6 +478,7 @@ describe('MemberService', () => {
       user_id: 'user-1',
       chapter_id: 'chapter-1',
       role_ids: ['role-1'],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -461,6 +523,7 @@ describe('MemberService', () => {
         user_id: 'user-1',
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
@@ -509,6 +572,7 @@ describe('MemberService', () => {
         user_id: 'user-1',
         chapter_id: 'chapter-1',
         role_ids: ['role-1'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
@@ -580,6 +644,7 @@ describe('MemberService', () => {
         user_id: 'user-1',
         chapter_id: 'chapter-other',
         role_ids: [],
+        custom_role_ids: [],
         has_completed_onboarding: false,
         created_at: '2024-01-01',
         updated_at: '2024-01-01',
@@ -602,6 +667,7 @@ describe('MemberService', () => {
           user_id: 'user-1',
           chapter_id: 'chapter-1',
           role_ids: [],
+          custom_role_ids: [],
           has_completed_onboarding: true,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
@@ -660,6 +726,7 @@ describe('MemberService', () => {
           user_id: 'user-1',
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
+          custom_role_ids: [],
           has_completed_onboarding: true,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
@@ -716,6 +783,7 @@ describe('MemberService', () => {
           user_id: 'user-1',
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
+          custom_role_ids: [],
           has_completed_onboarding: true,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
@@ -725,6 +793,7 @@ describe('MemberService', () => {
           user_id: 'user-2',
           chapter_id: 'chapter-1',
           role_ids: ['role-alumni'],
+          custom_role_ids: [],
           has_completed_onboarding: true,
           created_at: '2024-01-01',
           updated_at: '2024-01-01',
