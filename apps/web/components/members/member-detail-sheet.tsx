@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Shield, Trash2, UserRound } from "lucide-react";
 import { useMember, useRemoveMember, useRoles, useUpdateMemberRoles } from "@repo/hooks";
+import { useCustomRoles } from "@/lib/hooks/use-custom-roles";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -96,11 +97,17 @@ export function MemberDetailSheet({
         ? member.user_id
         : "") ?? "";
   const rolesQuery = useRoles();
+  // Custom roles are enforced (bridge model): assignment happens here alongside
+  // live roles. The list read needs `chapter-config:view`; when it fails, the
+  // section hides and saves omit `custom_role_ids` (server treats omission as
+  // "leave unchanged"), so a viewer without config access never strips them.
+  const customRolesQuery = useCustomRoles();
   const memberQuery = useMember(!usingPreviewData ? memberId : "");
   const updateRolesMutation = useUpdateMemberRoles();
   const removeMemberMutation = useRemoveMember();
   const { toast } = useToast();
   const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+  const [selectedCustomRoleIds, setSelectedCustomRoleIds] = useState<string[]>([]);
 
   const resolvedMember = useMemo(() => {
     if (!member) return null;
@@ -119,6 +126,19 @@ export function MemberDetailSheet({
     if (!Array.isArray(roleIds)) return [];
     return roleIds.filter((roleId): roleId is string => typeof roleId === "string");
   }, [resolvedMember]);
+
+  const memberCustomRoleIds = useMemo(() => {
+    if (!resolvedMember) return [];
+    const ids = resolvedMember.custom_role_ids;
+    if (!Array.isArray(ids)) return [];
+    return ids.filter((id): id is string => typeof id === "string");
+  }, [resolvedMember]);
+
+  const customRoleOptions = useMemo(() => {
+    const data = customRolesQuery.data;
+    if (!Array.isArray(data)) return [];
+    return data.map((role) => ({ id: role.id, label: role.label, key: role.key }));
+  }, [customRolesQuery.data]);
 
   const roleOptions = useMemo(() => {
     const rolesData = rolesQuery.data as unknown;
@@ -147,7 +167,8 @@ export function MemberDetailSheet({
   useEffect(() => {
     if (!open) return;
     setSelectedRoleIds(memberRoleIds);
-  }, [open, memberRoleIds]);
+    setSelectedCustomRoleIds(memberCustomRoleIds);
+  }, [open, memberRoleIds, memberCustomRoleIds]);
 
   const displayName =
     typeof resolvedMember?.display_name === "string" && resolvedMember.display_name.length > 0
@@ -169,6 +190,11 @@ export function MemberDetailSheet({
       await updateRolesMutation.mutateAsync({
         id: memberId,
         role_ids: selectedRoleIds,
+        // Only send the custom-role assignment when the list actually loaded;
+        // omission tells the server to leave it unchanged.
+        ...(customRolesQuery.isSuccess
+          ? { custom_role_ids: selectedCustomRoleIds }
+          : {}),
       });
       toast({
         title: "Roles updated",
@@ -213,6 +239,16 @@ export function MemberDetailSheet({
       return;
     }
     setSelectedRoleIds((previous) =>
+      previous.filter((id) => id !== roleId),
+    );
+  }
+
+  function handleCustomRoleChange(roleId: string, isChecked: boolean) {
+    if (isChecked) {
+      setSelectedCustomRoleIds((previous) => [...new Set([...previous, roleId])]);
+      return;
+    }
+    setSelectedCustomRoleIds((previous) =>
       previous.filter((id) => id !== roleId),
     );
   }
@@ -320,10 +356,51 @@ export function MemberDetailSheet({
           </div>
         </section>
 
+        {customRoleOptions.length > 0 ? (
+          <section className="mt-6 space-y-3">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <p className="text-sm font-medium">Custom roles</p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Capabilities from assigned custom roles apply on the member&apos;s
+              next request, alongside their live-role permissions.
+            </p>
+            <div className="space-y-2">
+              {customRoleOptions.map((role) => {
+                const checked = selectedCustomRoleIds.includes(role.id);
+                return (
+                  <label
+                    key={role.id}
+                    className="flex cursor-pointer items-center justify-between rounded-md border border-border p-3 transition hover:bg-muted/40"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">{role.label}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{role.key}</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      className={dashboardTableCheckboxClassName}
+                      checked={checked}
+                      disabled={!canMutate}
+                      onChange={(event) =>
+                        handleCustomRoleChange(role.id, event.target.checked)
+                      }
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
         <SheetFooter className="mt-8 gap-2">
           <Button
             variant="outline"
-            onClick={() => setSelectedRoleIds(memberRoleIds)}
+            onClick={() => {
+              setSelectedRoleIds(memberRoleIds);
+              setSelectedCustomRoleIds(memberCustomRoleIds);
+            }}
             disabled={updateRolesMutation.isPending}
           >
             Reset

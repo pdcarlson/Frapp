@@ -14,6 +14,18 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+// Custom-role assignment (bridge model): the list read is stubbed per-test via
+// this holder; default mirrors "no custom roles defined".
+const customRolesState: {
+  data: unknown;
+  isSuccess: boolean;
+  isError: boolean;
+} = { data: [], isSuccess: true, isError: false };
+
+vi.mock("@/lib/hooks/use-custom-roles", () => ({
+  useCustomRoles: () => customRolesState,
+}));
+
 import { MemberDetailSheet } from "./member-detail-sheet";
 
 const baseMember = {
@@ -68,5 +80,68 @@ describe("MemberDetailSheet custom fields", () => {
     );
 
     expect(screen.queryByText("Custom fields")).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberDetailSheet custom roles", () => {
+  it("renders assignable custom roles with the member's assignment pre-checked", () => {
+    customRolesState.data = [
+      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
+      { id: "cr2", key: "social_chair", label: "Social Chair", rank: 6, capabilities: [], core: false },
+    ];
+    customRolesState.isSuccess = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember, custom_role_ids: ["cr1"] }}
+      />,
+    );
+
+    expect(screen.getByText("Custom roles")).toBeInTheDocument();
+    expect(screen.getByText("Historian")).toBeInTheDocument();
+    expect(screen.getByText("Social Chair")).toBeInTheDocument();
+
+    const historianRow = screen.getByText("Historian").closest("label");
+    expect(historianRow).not.toBeNull();
+    expect(historianRow!.querySelector("input")!.checked).toBe(true);
+
+    const socialRow = screen.getByText("Social Chair").closest("label");
+    expect(socialRow!.querySelector("input")!.checked).toBe(false);
+  });
+
+  it("omits the custom-roles section when the chapter has none", () => {
+    customRolesState.data = [];
+    customRolesState.isSuccess = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember }}
+      />,
+    );
+
+    expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
+  });
+
+  it("omits the custom-roles section when the list cannot load (no config access)", () => {
+    customRolesState.data = undefined;
+    customRolesState.isSuccess = false;
+    customRolesState.isError = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember }}
+      />,
+    );
+
+    expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
   });
 });

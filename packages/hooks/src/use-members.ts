@@ -78,10 +78,22 @@ export function useUpdateMemberRoles() {
   const queryClient = useQueryClient();
   const chapterId = useActiveChapterId();
   return useMutation({
-    mutationFn: async ({ id, role_ids }: { id: string; role_ids: string[] }) => {
+    mutationFn: async ({
+      id,
+      role_ids,
+      custom_role_ids,
+    }: {
+      id: string;
+      role_ids: string[];
+      /** chapter_custom_roles ids; omit to leave the assignment unchanged. */
+      custom_role_ids?: string[];
+    }) => {
       const { data, error } = await client.PATCH("/v1/members/{id}/roles", {
         params: { path: { id } },
-        body: { role_ids },
+        body: {
+          role_ids,
+          ...(custom_role_ids !== undefined ? { custom_role_ids } : {}),
+        },
       });
       if (error) throw error;
       return data;
