@@ -215,6 +215,17 @@ is the design that lets work fan out across parallel agents without two of them 
   no longer matches reality, scope explosion, or nothing viable. Anything recoverable by reading the
   resulting PR is the agent's call. `/next --plan-only N` emits N ready-to-paste `/next FRA-xxx` prompts
   and writes nothing to Linear, so a batch of sessions can be spun up without leaking N claims.
+- **Ultracode scales depth, not scope.** `/next ultracode` runs the command's enumerated fan-out points
+  (blocker verification, spec-vs-code verification, the pre-push review lenses, and — only when its
+  three qualifying conditions hold — the command's narrow parallel-implementation exception) as
+  multi-agent **Workflow** orchestrations instead of inline checks — same steps, same Linear writes,
+  more independent eyes per step. The command text itself is the opt-in: the harness `ultracode`
+  keyword scan runs only on the human-typed, pre-expansion prompt and skips any input starting with
+  `/` (read out of the 2.1.220 build, same provenance discipline as the `/code-review` rule —
+  re-verify on newer builds), so it never fires on a slash-command turn and the agent must not wait
+  for a system-reminder to confirm it. Workflow launches auto-approve via `.claude/settings.json`
+  (see [`AGENT_INFRA.md`](AGENT_INFRA.md) "Claude Code project settings"); a launch that prompts or
+  is refused anyway falls back inline — same steps, same writes. Plain `/next` stays inline and cheap.
 - **Ending a run.** A run ends by opening a PR and moving to **In Review**, or by posting an
   `AGENT-RELEASE` (back to Backlog, or Triage with a Priority if underspecified) or an `AGENT-HANDOFF`
   (work exists; the claim stays live for a successor). Reasons are a closed set: `plan-rejected`,
