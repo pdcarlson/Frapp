@@ -105,8 +105,10 @@ picked this issue, not a category.
 nothing to Linear** — no claims, no sweep, no advisory comments. This is how you spin up a batch of
 sessions without leaking N claims: each claim happens when its session actually starts. Carry each
 issue's Agent brief into its emitted prompt: prefix the prompt with `ultracode ` when the brief says
-`ultracode:yes`, and append a one-line note when it names a `model:` so the launcher picks the right
-session model.
+`ultracode:yes` (the pasted turn then starts with `ultracode`, not `/`, so the harness scan fires
+and supplies the session-level reminder the opt-in paragraph above accepts — the prefix and
+argument spellings are equivalent opt-ins, not competitors), and append a one-line note when it
+names a `model:` so the launcher picks the right session model.
 
 **Inside a Workflow, the orchestrator claims and subagents do not.** A `parallel()` fan-out starts N
 agents in the same second — the worst possible input for a claim race. Run Phase 0 in the
