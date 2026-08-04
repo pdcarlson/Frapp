@@ -35,6 +35,17 @@ export class CreateServiceEntryDto {
   proof_path?: string;
 }
 
+export class RequestProofUploadUrlDto {
+  @ApiProperty({ description: 'Original filename (image or PDF)' })
+  @IsString()
+  @MaxLength(255)
+  filename: string;
+
+  @ApiProperty({ description: 'MIME content type (e.g. application/pdf)' })
+  @IsString()
+  content_type: string;
+}
+
 export class ReviewServiceEntryDto {
   @ApiProperty({ enum: ['APPROVED', 'REJECTED'] })
   @IsIn(['APPROVED', 'REJECTED'])

@@ -66,6 +66,12 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the `service` proof bucket
+
+* **Migration**: `20260803231500_service_proof_bucket.sql`
+* **Action**: Nothing schema-side is usually needed — the row is pure additive config. If the bucket must actually go: first redeploy the API at the pre-FRA-49 revision (otherwise `POST /v1/service-entries/proof-upload-url` 500s), then empty and remove the bucket **through the Storage API, never raw SQL** — `supabase.storage.emptyBucket('service')` then `supabase.storage.deleteBucket('service')` (dashboard: Storage → service → Empty bucket → Delete). Deleting `storage.objects` rows with SQL removes only metadata and strands the file bytes in the backing store with nothing left to find them by.
+* **Note**: Deleting the bucket destroys every uploaded proof object; entries keep their `proof_path` strings and `GET /v1/service-entries/{id}/proof-url` returns 404 for them afterwards. To only loosen the upload constraints instead, `update storage.buckets set allowed_mime_types = null, file_size_limit = null where id = 'service';` — no deploy required.
+
 ## Rollback active-chapter JWT claim
 
 * **Migration**: `20260802120000_active_chapter_jwt_claim.sql`
