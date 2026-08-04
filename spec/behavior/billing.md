@@ -27,7 +27,7 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - Admins with `billing:manage` create invoices for individual members (e.g. semester dues).
 - Invoice statuses: DRAFT (not yet sent), OPEN (sent, awaiting payment), PAID, VOID.
 - Payments tracked via Stripe PaymentIntents. Webhook confirms payment and moves invoice to PAID.
-- Overdue invoices: if an invoice is OPEN past its `due_date`, a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.
+- Overdue invoices: an invoice counts as overdue once it is OPEN past its `due_date` **plus the chapter's dues grace period** (the `wf_dues_grace` workflow, enabled with a 7-day threshold by default — see the runtime-enforcement rules in [`settings/customization.md`](settings/customization.md)); a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.
 - Financial transactions log all payments, refunds, and adjustments with Stripe charge IDs for reconciliation.
 
 ### Member payment flow

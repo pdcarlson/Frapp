@@ -85,13 +85,6 @@ function statusVariant(
   }
 }
 
-function isOverdue(invoice: Invoice): boolean {
-  if (invoice.status !== "OPEN" || !invoice.due_date) return false;
-  const due = new Date(invoice.due_date);
-  if (Number.isNaN(due.getTime())) return false;
-  return due.getTime() < Date.now();
-}
-
 export function InvoiceAdminCard() {
   const { toast } = useToast();
   const invoicesQuery = useInvoices();
@@ -107,6 +100,14 @@ export function InvoiceAdminCard() {
   const overdue = useMemo(
     () => asArray<Invoice>(overdueQuery.data),
     [overdueQuery.data],
+  );
+  // Overdue is server-defined (GET /invoices/overdue applies the chapter's
+  // dues grace policy), so badges and the OVERDUE filter derive from that
+  // list rather than re-deriving `due_date < now` locally — a local check
+  // would contradict the banner for invoices inside the grace window.
+  const overdueIds = useMemo(
+    () => new Set(overdue.map((inv) => inv.id)),
+    [overdue],
   );
   const members = useMemo(
     () => asArray<MemberSummary>(membersQuery.data),
@@ -134,11 +135,11 @@ export function InvoiceAdminCard() {
     return invoices
       .filter((inv) => {
         if (statusFilter === "ALL") return true;
-        if (statusFilter === "OVERDUE") return isOverdue(inv);
+        if (statusFilter === "OVERDUE") return overdueIds.has(inv.id);
         return inv.status === statusFilter;
       })
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  }, [invoices, statusFilter]);
+  }, [invoices, statusFilter, overdueIds]);
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -212,7 +213,20 @@ export function InvoiceAdminCard() {
       deniedFallback={null}
     >
       <div className="space-y-6">
-        {overdue.length > 0 ? (
+        {overdueQuery.isError ? (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="h-4 w-4" />
+                Overdue status unavailable
+              </CardTitle>
+              <CardDescription>
+                Couldn&apos;t load the overdue list — overdue badges and the
+                OVERDUE filter are unavailable until it recovers.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : overdue.length > 0 ? (
           <Card className="border-destructive/40 bg-destructive/5">
             <CardHeader className="flex flex-row items-start justify-between gap-2">
               <div>
@@ -410,7 +424,7 @@ export function InvoiceAdminCard() {
             ) : (
               <ul className="divide-y divide-border/70">
                 {filtered.map((invoice) => {
-                  const overdueRow = isOverdue(invoice);
+                  const overdueRow = overdueIds.has(invoice.id);
                   const name =
                     memberNameById.get(invoice.user_id) ?? invoice.user_id;
                   return (

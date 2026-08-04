@@ -6,7 +6,14 @@ export interface IFinancialInvoiceRepository {
   findById(id: string, chapterId: string): Promise<FinancialInvoice | null>;
   findByChapter(chapterId: string): Promise<FinancialInvoice[]>;
   findByUser(userId: string, chapterId: string): Promise<FinancialInvoice[]>;
-  findOverdue(chapterId: string): Promise<FinancialInvoice[]>;
+  /**
+   * OPEN invoices past due_date plus the chapter's dues grace period.
+   * `graceDays` 0 means an invoice is overdue the day after `due_date`.
+   */
+  findOverdue(
+    chapterId: string,
+    graceDays?: number,
+  ): Promise<FinancialInvoice[]>;
   create(data: Partial<FinancialInvoice>): Promise<FinancialInvoice>;
   update(
     id: string,

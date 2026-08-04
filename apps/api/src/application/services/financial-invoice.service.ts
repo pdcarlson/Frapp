@@ -22,6 +22,7 @@ import type {
   InvoiceStatus,
 } from '../../domain/entities/financial-invoice.entity';
 import { NotificationService } from './notification.service';
+import { ChapterWorkflowsService } from './chapter-workflows.service';
 
 export interface CreateInvoiceInput {
   chapter_id: string;
@@ -95,6 +96,7 @@ export class FinancialInvoiceService {
     @Inject(BILLING_PROVIDER)
     private readonly billingProvider: IBillingProvider,
     private readonly notificationService: NotificationService,
+    private readonly chapterWorkflows: ChapterWorkflowsService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<FinancialInvoice> {
@@ -117,7 +119,10 @@ export class FinancialInvoiceService {
   }
 
   async findOverdue(chapterId: string): Promise<FinancialInvoice[]> {
-    return this.invoiceRepo.findOverdue(chapterId);
+    // Chapter policy (Settings → Workflows): wf_dues_grace shifts when an
+    // OPEN invoice counts as overdue (0 days when the toggle is off).
+    const graceDays = await this.chapterWorkflows.getDuesGraceDays(chapterId);
+    return this.invoiceRepo.findOverdue(chapterId, graceDays);
   }
 
   async create(input: CreateInvoiceInput): Promise<FinancialInvoice> {

@@ -79,7 +79,10 @@ export class FinancialInvoiceController {
 
   @Get('overdue')
   @RequirePermissions(SystemPermissions.BILLING_VIEW)
-  @ApiOperation({ summary: 'List overdue invoices (OPEN past due_date)' })
+  @ApiOperation({
+    summary:
+      'List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled)',
+  })
   async listOverdue(@CurrentChapterId() chapterId: string) {
     return this.invoiceService.findOverdue(chapterId);
   }
