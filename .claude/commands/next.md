@@ -60,6 +60,16 @@ build, ignored setting), that is tool unavailability, not an opt-out: run that f
 the invariant above — never sit waiting on an approval. Cost stays bounded because the fan-out
 points are enumerated and capped; everything not named as a fan-out stays inline in every mode.
 
+**Honor the issue's Agent brief.** The description may carry an `### Agent brief` section —
+`` `depth:<skim|standard|deep>` · `model:<fable|any>` · `ultracode:<yes|no>` `` (policy:
+[`LINEAR_PM.md` → Agent briefs](../../docs/internal/ci-cd/LINEAR_PM.md#agent-briefs-depth--model--ultracode)).
+`depth` sets how hard to dig, never which steps run: every phase below still happens and
+`/diff-review` is never reduced. `deep` — **or an absent brief or `depth:` field, which means
+deep** — warrants the widest verification and review fan-out you can run; `standard` is the ordinary path; `skim` means
+the floors of each step suffice (the issue is mechanical — don't inflate it). `model:` and
+`ultracode:` are spin-up hints for whoever launches sessions, not runtime switches — a running
+session never changes model; `--plan-only` carries them into its emitted prompts.
+
 **Never report a step you did not run.** If you reduced scope or skipped a check, say so in both the
 Linear comment and your reply. Never claim a test, migration, or app run you didn't actually execute.
 
@@ -93,7 +103,12 @@ picked this issue, not a category.
 
 **`/next --plan-only N`** — rank and emit N ready-to-paste `/next FRA-xxx` prompts, then stop. **Write
 nothing to Linear** — no claims, no sweep, no advisory comments. This is how you spin up a batch of
-sessions without leaking N claims: each claim happens when its session actually starts.
+sessions without leaking N claims: each claim happens when its session actually starts. Carry each
+issue's Agent brief into its emitted prompt: prefix the prompt with `ultracode ` when the brief says
+`ultracode:yes` (the pasted turn then starts with `ultracode`, not `/`, so the harness scan fires
+and supplies the session-level reminder the opt-in paragraph above accepts — the prefix and
+argument spellings are equivalent opt-ins, not competitors), and append a one-line note when it
+names a `model:` so the launcher picks the right session model.
 
 **Inside a Workflow, the orchestrator claims and subagents do not.** A `parallel()` fan-out starts N
 agents in the same second — the worst possible input for a claim race. Run Phase 0 in the
@@ -127,7 +142,8 @@ populated. An issue is a candidate when **all** hold:
    authoritative only when it is linked to the issue *and* names the issue key.
 
 Read relations and links with `get_issue` where the list is thin. Surface each candidate's **estimate**
-(Fibonacci) as sizing context in the shortlist.
+(Fibonacci) and its **Agent brief** line (`depth:` / `model:` / `ultracode:`, when present) as sizing
+context in the shortlist — neither is a filter.
 
 **0.3 — Rank.** Reclaimable started work from §0.7 first — finishing beats starting. Then by
 **Priority** (Urgent→High→Med→Low; **None last**), tie-broken by **lower FRA- number**. Estimates are
@@ -210,7 +226,9 @@ optional, `parallel` under Ultracode (a barrier is right — you cannot implemen
    patterns, tests, destructive}`
 
 Read AGENTS.md and the real spec files the issue links to. **If the issue and the spec conflict, the
-spec wins.** Post the result to the issue with `save_comment` — that comment is the plan.
+spec wins.** Scale the three checks' thoroughness by the brief's `depth` (the floor is always all
+three): `deep` means also reading the surrounding subsystem and runtime evidence, not just the named
+files. Post the result to the issue with `save_comment` — that comment is the plan.
 
 If **`alreadyDone: full`**: post the evidence, set the issue **Done** (and if it has a GitHub twin,
 close that twin on GitHub so the integration syncs the closure — Linear→GitHub close-sync is less
@@ -291,6 +309,8 @@ to a file, review the file.
 
 Autonomy removes the human's eyes from the diff, so under Ultracode this gets **more** budget, not
 less — and a frozen diff has zero write contention, making it the safest thing here to parallelize.
+Size each lens's budget by the brief's `depth` as well — the floor is always all five lenses;
+`deep` (or no brief) earns the widest budget per lens.
 Layer an **additional** fan-out *on top of* `/diff-review` (never instead of it): five lenses in
 `parallel` — correctness and edge cases; security (authz, injection, secrets, Supabase RLS);
 acceptance-criteria conformance; repo conventions and simplification; test adequacy — each returning
