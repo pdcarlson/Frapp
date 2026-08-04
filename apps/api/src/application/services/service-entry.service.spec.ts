@@ -13,6 +13,10 @@ import {
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
 import { NotificationService } from './notification.service';
+import {
+  ChapterWorkflowsService,
+  WORKFLOW_HOURS_RECEIPT,
+} from './chapter-workflows.service';
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
@@ -21,6 +25,15 @@ describe('ServiceEntryService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockChapterWorkflows: jest.Mocked<
+    Pick<ChapterWorkflowsService, 'getWorkflow'>
+  >;
+
+  const receiptWorkflow = (enabled: boolean) => ({
+    key: WORKFLOW_HOURS_RECEIPT,
+    enabled,
+    threshold: null,
+  });
 
   const baseEntry: ServiceEntry = {
     id: 'se-1',
@@ -63,12 +76,19 @@ describe('ServiceEntryService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    // Default: the receipt workflow is disabled so the base create cases
+    // exercise the no-policy path; enforcement cases override per test.
+    mockChapterWorkflows = {
+      getWorkflow: jest.fn().mockResolvedValue(receiptWorkflow(false)),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServiceEntryService,
         { provide: SERVICE_ENTRY_REPOSITORY, useValue: mockServiceEntryRepo },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ChapterWorkflowsService, useValue: mockChapterWorkflows },
       ],
     }).compile();
 
@@ -294,6 +314,141 @@ describe('ServiceEntryService', () => {
         }),
       ).rejects.toThrow('duration_minutes must be a positive integer');
       expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject a proof-less submission when wf_hours_receipt is enabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+        }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+        }),
+      ).rejects.toThrow(/requires a receipt/);
+      expect(mockChapterWorkflows.getWorkflow).toHaveBeenCalledWith(
+        'ch-1',
+        WORKFLOW_HOURS_RECEIPT,
+      );
+      expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should accept a submission with proof when wf_hours_receipt is enabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
+      const withProof = {
+        ...baseEntry,
+        proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+      };
+      mockServiceEntryRepo.create.mockResolvedValue(withProof);
+      mockStorageProvider.listFiles.mockResolvedValue([
+        'chapters/ch-1/service/se-1/proof.pdf',
+      ]);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+        }),
+      );
+      // Proof satisfies the policy regardless of the toggle, so the lookup
+      // is skipped entirely on this path.
+      expect(mockChapterWorkflows.getWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('should reject whitespace-only proof when wf_hours_receipt is enabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(receiptWorkflow(true));
+
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          user_id: 'user-1',
+          date: '2026-02-26',
+          duration_minutes: 60,
+          description: 'Community cleanup',
+          proof_path: '   ',
+        }),
+      ).rejects.toThrow(/requires a receipt/);
+      expect(mockServiceEntryRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('should store trimmed proof', async () => {
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+      mockStorageProvider.listFiles.mockResolvedValue([
+        'chapters/ch-1/service/se-1/proof.pdf',
+      ]);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: '  chapters/ch-1/service/se-1/proof.pdf  ',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          proof_path: 'chapters/ch-1/service/se-1/proof.pdf',
+        }),
+      );
+    });
+
+    it('should normalize whitespace-only proof to null when the workflow is disabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(
+        receiptWorkflow(false),
+      );
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+        proof_path: '   ',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ proof_path: null }),
+      );
+    });
+
+    it('should accept a proof-less submission when wf_hours_receipt is disabled', async () => {
+      mockChapterWorkflows.getWorkflow.mockResolvedValue(
+        receiptWorkflow(false),
+      );
+      mockServiceEntryRepo.create.mockResolvedValue(baseEntry);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        user_id: 'user-1',
+        date: '2026-02-26',
+        duration_minutes: 60,
+        description: 'Community cleanup',
+      });
+
+      expect(mockServiceEntryRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ proof_path: null }),
+      );
     });
 
     it('should throw BadRequestException for empty description', async () => {

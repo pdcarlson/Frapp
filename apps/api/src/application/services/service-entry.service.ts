@@ -14,6 +14,10 @@ import {
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
 import { NotificationService } from './notification.service';
+import {
+  ChapterWorkflowsService,
+  WORKFLOW_HOURS_RECEIPT,
+} from './chapter-workflows.service';
 
 /** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
 const DEFAULT_MINUTES_PER_POINT = 60;
@@ -77,6 +81,7 @@ export class ServiceEntryService {
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     private readonly notificationService: NotificationService,
+    private readonly chapterWorkflows: ChapterWorkflowsService,
   ) {}
 
   async requestProofUploadUrl(input: RequestProofUploadUrlInput): Promise<{
@@ -241,8 +246,25 @@ export class ServiceEntryService {
       throw new BadRequestException('description is required');
     }
 
+    // Whitespace-only proof must not satisfy the receipt policy below (or be
+    // stored as a "proof" the review queue can't render).
     const proofPath = input.proof_path?.trim() || null;
-    if (proofPath) {
+
+    // Chapter policy (Settings → Workflows): wf_hours_receipt makes proof
+    // mandatory at submission. Legacy proof-less entries stay approvable at
+    // the reviewer's discretion. Only consulted when proof is absent — a
+    // submission with proof satisfies the policy either way.
+    if (!proofPath) {
+      const receiptPolicy = await this.chapterWorkflows.getWorkflow(
+        input.chapter_id,
+        WORKFLOW_HOURS_RECEIPT,
+      );
+      if (receiptPolicy.enabled) {
+        throw new BadRequestException(
+          'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
+        );
+      }
+    } else {
       await this.assertValidProofPath(input.chapter_id, proofPath);
     }
 

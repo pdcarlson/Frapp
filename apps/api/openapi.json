@@ -3057,7 +3057,7 @@
             "bearer": []
           }
         ],
-        "summary": "List overdue invoices (OPEN past due_date)",
+        "summary": "List overdue invoices (OPEN past due_date plus the dues grace period when wf_dues_grace is enabled)",
         "tags": [
           "Financial Invoices"
         ]

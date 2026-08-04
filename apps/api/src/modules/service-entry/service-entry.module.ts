@@ -7,9 +7,10 @@ import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { SupabaseStorageService } from '../../infrastructure/storage/supabase-storage.service';
 import { RbacModule } from '../rbac/rbac.module';
 import { NotificationModule } from '../notification/notification.module';
+import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
-  imports: [RbacModule, NotificationModule],
+  imports: [RbacModule, NotificationModule, ChapterConfigModule],
   controllers: [ServiceEntryController],
   providers: [
     ServiceEntryService,

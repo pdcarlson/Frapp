@@ -5,7 +5,9 @@ import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
 import {
   useCreateServiceEntry,
   useDeleteServiceEntry,
+  useGetServiceProofUrl,
   useMembers,
+  useRequestServiceProofUploadUrl,
   useReviewServiceEntry,
   useServiceEntries,
 } from "@repo/hooks";
@@ -38,9 +40,27 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+// Mirrors the API's proof allowlist (images + PDF); the bucket enforces the
+// same set plus the 25MB cap on the actual upload.
+const PROOF_CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  pdf: "application/pdf",
+};
+
+function extensionOf(name: string): string {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0 || dot === name.length - 1) return "";
+  return name.slice(dot + 1).toLowerCase();
+}
 
 type ServiceEntry = {
   id: string;
@@ -91,6 +111,22 @@ export function ServiceHoursPage() {
   const createEntry = useCreateServiceEntry();
   const reviewEntry = useReviewServiceEntry();
   const deleteEntry = useDeleteServiceEntry();
+  const orgConfig = useOrgConfig();
+
+  // Chapter policy (Settings → Workflows): when wf_hours_receipt is enabled
+  // the API rejects proof-less submissions. GET /chapters/:id/config needs
+  // chapter-config:view, which regular members don't hold — so only claim
+  // "required"/"optional" when the config actually loaded, and stay neutral
+  // otherwise. The server is the enforcement point either way.
+  const receiptWorkflow = orgConfig.data?.workflows?.find(
+    (wf) => wf.key === "wf_hours_receipt",
+  );
+  const receiptRequired = receiptWorkflow?.enabled === true;
+  const proofLabel = receiptRequired
+    ? "Proof file (required by chapter policy)"
+    : receiptWorkflow
+      ? "Proof file (optional)"
+      : "Proof file";
 
   const entries = useMemo(
     () => asArray<ServiceEntry>(entriesQuery.data),
@@ -124,12 +160,16 @@ export function ServiceHoursPage() {
   );
 
   const [logOpen, setLogOpen] = useState(false);
+  const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
     date: new Date().toISOString().slice(0, 10),
     hours: "1",
     minutes: "0",
     description: "",
   });
+
+  const requestProofUpload = useRequestServiceProofUploadUrl();
+  const submitting = createEntry.isPending || requestProofUpload.isPending;
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -143,17 +183,63 @@ export function ServiceHoursPage() {
       });
       return;
     }
+    if (proofFile && !PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)]) {
+      toast({
+        title: "File type not allowed",
+        description: "Proof accepts photos (JPG, PNG, GIF, WebP) or a PDF.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
+      let proofPath: string | undefined;
+      if (proofFile) {
+        const contentType =
+          PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)];
+        const signed = await requestProofUpload.mutateAsync({
+          filename: proofFile.name,
+          content_type: contentType,
+        });
+        const signedUrl =
+          signed && typeof signed === "object" && "signedUrl" in signed
+            ? (signed as { signedUrl?: string }).signedUrl
+            : null;
+        const storagePath =
+          signed && typeof signed === "object" && "storagePath" in signed
+            ? (signed as { storagePath?: string }).storagePath
+            : null;
+        if (!signedUrl || !storagePath) {
+          throw new Error(
+            "Upload URL response missing signed URL or storage path.",
+          );
+        }
+        const response = await fetch(signedUrl, {
+          method: "PUT",
+          body: proofFile,
+          headers: {
+            "content-type": contentType,
+            "x-upsert": "true",
+          },
+        });
+        if (!response.ok) {
+          throw new Error(
+            `Storage rejected upload (${response.status}). Proof accepts images/PDF up to 25MB.`,
+          );
+        }
+        proofPath = storagePath;
+      }
       await createEntry.mutateAsync({
         date: draft.date,
         duration_minutes: totalMinutes,
         description: draft.description.trim(),
+        proof_path: proofPath,
       });
       toast({
         title: "Service entry submitted",
         description: "An admin will review and approve it for points.",
       });
       setLogOpen(false);
+      setProofFile(null);
       setDraft({
         date: new Date().toISOString().slice(0, 10),
         hours: "1",
@@ -220,6 +306,29 @@ export function ServiceHoursPage() {
     }
   }
 
+  const getProofUrl = useGetServiceProofUrl();
+
+  async function viewProof(entry: ServiceEntry) {
+    try {
+      const data = await getProofUrl.mutateAsync(entry.id);
+      const url =
+        data && typeof data === "object" && "url" in data
+          ? (data as { url?: string }).url
+          : null;
+      if (!url) throw new Error("No download URL returned.");
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      toast({
+        title: "Couldn't open proof",
+        description: getErrorMessage(
+          error,
+          "Older entries may reference proof that was never uploaded.",
+        ),
+        variant: "destructive",
+      });
+    }
+  }
+
   async function withdraw(entry: ServiceEntry) {
     const confirmed = window.confirm(
       "Withdraw this pending service entry? You can always resubmit.",
@@ -278,8 +387,8 @@ export function ServiceHoursPage() {
               <DialogHeader>
                 <DialogTitle>Log service hours</DialogTitle>
                 <DialogDescription>
-                  Submit a service entry for admin approval. Proof file
-                  upload is coming to the dashboard in a future slice.
+                  Submit a service entry for admin approval. Attach a photo
+                  or PDF as proof of your service.
                 </DialogDescription>
               </DialogHeader>
               <form
@@ -350,21 +459,36 @@ export function ServiceHoursPage() {
                     required
                   />
                 </div>
+                <div className="grid gap-1">
+                  <Label htmlFor="service-proof">{proofLabel}</Label>
+                  <Input
+                    id="service-proof"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.gif,.webp,.pdf"
+                    onChange={(event) =>
+                      setProofFile(event.target.files?.[0] ?? null)
+                    }
+                    required={receiptRequired}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Photo or PDF, up to 25MB.
+                  </p>
+                </div>
               </form>
               <DialogFooter>
                 <Button
                   variant="outline"
                   onClick={() => setLogOpen(false)}
-                  disabled={createEntry.isPending}
+                  disabled={submitting}
                 >
                   Cancel
                 </Button>
                 <Button
                   form="service-log-form"
                   type="submit"
-                  disabled={createEntry.isPending}
+                  disabled={submitting}
                 >
-                  {createEntry.isPending ? (
+                  {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
                   Submit for approval
@@ -406,9 +530,15 @@ export function ServiceHoursPage() {
                         </p>
                         <p className="mt-1 text-sm">{entry.description}</p>
                         {entry.proof_path ? (
-                          <p className="text-xs text-muted-foreground">
-                            Proof: {entry.proof_path}
-                          </p>
+                          <Button
+                            size="sm"
+                            variant="link"
+                            className="h-auto px-0 text-xs"
+                            onClick={() => void viewProof(entry)}
+                            disabled={getProofUrl.isPending}
+                          >
+                            View proof
+                          </Button>
                         ) : null}
                       </div>
                       <div className="flex flex-wrap gap-2">

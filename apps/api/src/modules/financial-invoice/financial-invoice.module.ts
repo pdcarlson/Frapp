@@ -9,9 +9,10 @@ import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import { StripeBillingService } from '../../infrastructure/billing/stripe.service';
 import { NotificationModule } from '../notification/notification.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 
 @Module({
-  imports: [NotificationModule, RbacModule],
+  imports: [NotificationModule, RbacModule, ChapterConfigModule],
   controllers: [FinancialInvoiceController],
   providers: [
     FinancialInvoiceService,
