@@ -169,10 +169,21 @@ export function ServiceHoursPage() {
   });
 
   const requestProofUpload = useRequestServiceProofUploadUrl();
-  const submitting = createEntry.isPending || requestProofUpload.isPending;
+  // Explicit flag (not derived from the mutations' isPending) so the guard
+  // also spans the storage PUT between them — otherwise Submit re-enables
+  // mid-upload and a second click creates a duplicate entry.
+  const [submitting, setSubmitting] = useState(false);
+
+  function setLogDialogOpen(open: boolean) {
+    setLogOpen(open);
+    // The file input unmounts (and so renders empty) on close, so a kept
+    // proofFile would silently attach a stale file to the next entry.
+    if (!open) setProofFile(null);
+  }
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     const totalMinutes =
       Math.max(0, Number(draft.hours)) * 60 + Math.max(0, Number(draft.minutes));
     if (totalMinutes === 0) {
@@ -194,6 +205,7 @@ export function ServiceHoursPage() {
       });
       return;
     }
+    setSubmitting(true);
     try {
       let proofPath: string | undefined;
       if (proofFile && proofContentType) {
@@ -240,8 +252,7 @@ export function ServiceHoursPage() {
         title: "Service entry submitted",
         description: "An admin will review and approve it for points.",
       });
-      setLogOpen(false);
-      setProofFile(null);
+      setLogDialogOpen(false);
       setDraft({
         date: new Date().toISOString().slice(0, 10),
         hours: "1",
@@ -257,6 +268,8 @@ export function ServiceHoursPage() {
         ),
         variant: "destructive",
       });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -379,7 +392,7 @@ export function ServiceHoursPage() {
           </p>
         </div>
         <Can permission="service:log">
-          <Dialog open={logOpen} onOpenChange={setLogOpen}>
+          <Dialog open={logOpen} onOpenChange={setLogDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus className="h-4 w-4" /> Log service
@@ -480,7 +493,7 @@ export function ServiceHoursPage() {
               <DialogFooter>
                 <Button
                   variant="outline"
-                  onClick={() => setLogOpen(false)}
+                  onClick={() => setLogDialogOpen(false)}
                   disabled={submitting}
                 >
                   Cancel
