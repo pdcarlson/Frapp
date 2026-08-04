@@ -1,5 +1,25 @@
 {
   "doneMeansMerged": true,
+  "permissions": {
+    "allow": [
+      "Workflow",
+      "mcp__Claude_Code_Remote__send_later",
+      "mcp__Claude_Code_Remote__create_trigger",
+      "mcp__Claude_Code_Remote__update_trigger",
+      "mcp__Claude_Code_Remote__delete_trigger",
+      "mcp__Claude_Code_Remote__list_triggers",
+      "mcp__Claude_Code_Remote__subscribe_pr_activity",
+      "mcp__Claude_Code_Remote__unsubscribe_pr_activity",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__send_later",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__create_trigger",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__update_trigger",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__delete_trigger",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__list_triggers",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__subscribe_pr_activity",
+      "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__unsubscribe_pr_activity"
+    ]
+  },
+  "skipWorkflowUsageWarning": true,
   "hooks": {
     "PreToolUse": [
       {
