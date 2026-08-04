@@ -70,7 +70,7 @@ export class PermissionsGuard implements CanActivate {
     // well as the id list: a stale or cross-chapter id left on the member row
     // then resolves to no row instead of silently granting that other
     // chapter's permissions here.
-    const [{ data: roles }, { data: customRoles }] = await Promise.all([
+    const [rolesResult, customRolesResult] = (await Promise.all([
       roleIds.length
         ? this.supabase
             .from('roles')
@@ -85,22 +85,25 @@ export class PermissionsGuard implements CanActivate {
             .in('id', customRoleIds)
             .eq('chapter_id', chapterId)
         : Promise.resolve({ data: [] }),
-    ]);
+    ])) as [
+      { data: RolePermissionRow[] | null },
+      { data: CustomRoleCapabilityRow[] | null },
+    ];
+    const roles = rolesResult.data;
+    const customRoles = customRolesResult.data;
 
     if (!roles?.length && !customRoles?.length) {
       throw new ForbiddenException('No valid roles found');
     }
 
     const userPermissions = new Set(
-      (roles as RolePermissionRow[] | null)?.flatMap(
-        (role) => role.permissions,
-      ) ?? [],
+      roles?.flatMap((role) => role.permissions) ?? [],
     );
     // Custom-role capabilities flatten into the same set, except the wildcard:
     // only the live President role may carry `*` (the presidency-transfer flow
     // is the sole path that moves it), so it is ignored here even if a
     // pre-validation row still contains it.
-    for (const row of (customRoles as CustomRoleCapabilityRow[] | null) ?? []) {
+    for (const row of customRoles ?? []) {
       for (const capability of row.capabilities ?? []) {
         if (capability !== '*') userPermissions.add(capability);
       }
