@@ -289,109 +289,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/v1/members": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List chapter members */
-        get: operations["MemberController_list_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/members/search": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Search members by name */
-        get: operations["MemberController_search_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/members/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get member profile by ID */
-        get: operations["MemberController_getOne_v1"];
-        put?: never;
-        post?: never;
-        /** Remove member from chapter */
-        delete: operations["MemberController_remove_v1"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/v1/members/{id}/roles": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update member roles */
-        patch: operations["MemberController_updateRoles_v1"];
-        trace?: never;
-    };
-    "/v1/members/me/onboarding": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /** Update onboarding status */
-        patch: operations["MemberController_updateOnboarding_v1"];
-        trace?: never;
-    };
-    "/v1/alumni": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List alumni members */
-        get: operations["AlumniController_list_v1"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/v1/chapters/{id}/config": {
         parameters: {
             query?: never;
@@ -497,6 +394,109 @@ export interface paths {
         head?: never;
         /** Update a custom field (audit-logged) */
         patch: operations["CustomFieldController_update_v1"];
+        trace?: never;
+    };
+    "/v1/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List chapter members */
+        get: operations["MemberController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search members by name */
+        get: operations["MemberController_search_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get member profile by ID */
+        get: operations["MemberController_getOne_v1"];
+        put?: never;
+        post?: never;
+        /** Remove member from chapter */
+        delete: operations["MemberController_remove_v1"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/members/{id}/roles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update member roles */
+        patch: operations["MemberController_updateRoles_v1"];
+        trace?: never;
+    };
+    "/v1/members/me/onboarding": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update onboarding status */
+        patch: operations["MemberController_updateOnboarding_v1"];
+        trace?: never;
+    };
+    "/v1/alumni": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List alumni members */
+        get: operations["AlumniController_list_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/invites": {
@@ -2069,40 +2069,6 @@ export interface components {
         TransferPresidencyDto: {
             target_member_id: string;
         };
-        MemberCustomFieldValueDto: {
-            field_id: string;
-            key: string;
-            label: string;
-            /** @enum {string} */
-            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
-            /** @enum {string} */
-            visibility: "self" | "chapter" | "exec" | "president";
-            value: string | null;
-        };
-        MemberProfileDto: {
-            id: string;
-            user_id: string;
-            chapter_id: string;
-            role_ids: string[];
-            has_completed_onboarding: boolean;
-            created_at: string;
-            updated_at: string;
-            display_name: string;
-            avatar_url: string | null;
-            bio: string | null;
-            graduation_year: number | null;
-            current_city: string | null;
-            current_company: string | null;
-            email: string;
-            /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
-            custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
-        };
-        UpdateMemberRolesDto: {
-            role_ids: string[];
-        };
-        UpdateOnboardingDto: {
-            has_completed_onboarding: boolean;
-        };
         BetaConfigDto: {
             enabled?: boolean;
             /** @enum {string} */
@@ -2229,6 +2195,43 @@ export interface components {
         RemoveCustomFieldResponseDto: {
             /** @example true */
             success: boolean;
+        };
+        MemberCustomFieldValueDto: {
+            field_id: string;
+            key: string;
+            label: string;
+            /** @enum {string} */
+            type: "text" | "number" | "decimal" | "phone" | "select" | "boolean";
+            /** @enum {string} */
+            visibility: "self" | "chapter" | "exec" | "president";
+            value: string | null;
+        };
+        MemberProfileDto: {
+            id: string;
+            user_id: string;
+            chapter_id: string;
+            role_ids: string[];
+            custom_role_ids: string[];
+            has_completed_onboarding: boolean;
+            created_at: string;
+            updated_at: string;
+            display_name: string;
+            avatar_url: string | null;
+            bio: string | null;
+            graduation_year: number | null;
+            current_city: string | null;
+            current_company: string | null;
+            email: string;
+            /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
+            custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
+        };
+        UpdateMemberRolesDto: {
+            role_ids: string[];
+            /** @description Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it. */
+            custom_role_ids?: string[];
+        };
+        UpdateOnboardingDto: {
+            has_completed_onboarding: boolean;
         };
         CreateInviteDto: {
             /** @description Role name to assign to invited member */
@@ -3078,155 +3081,6 @@ export interface operations {
             };
         };
     };
-    MemberController_list_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberProfileDto"][];
-                };
-            };
-        };
-    };
-    MemberController_search_v1: {
-        parameters: {
-            query: {
-                /** @description Search query (name) */
-                q: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberProfileDto"][];
-                };
-            };
-        };
-    };
-    MemberController_getOne_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MemberProfileDto"];
-                };
-            };
-        };
-    };
-    MemberController_remove_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_updateRoles_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateMemberRolesDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    MemberController_updateOnboarding_v1: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["UpdateOnboardingDto"];
-            };
-        };
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    AlumniController_list_v1: {
-        parameters: {
-            query?: {
-                /** @description Filter by graduation year */
-                graduation_year?: string;
-                /** @description Filter by current city (partial match) */
-                city?: string;
-                /** @description Filter by current company (partial match) */
-                company?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     ChapterConfigController_getConfig_v1: {
         parameters: {
             query?: never;
@@ -3482,6 +3336,155 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CustomFieldDto"];
                 };
+            };
+        };
+    };
+    MemberController_list_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
+            };
+        };
+    };
+    MemberController_search_v1: {
+        parameters: {
+            query: {
+                /** @description Search query (name) */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"][];
+                };
+            };
+        };
+    };
+    MemberController_getOne_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberProfileDto"];
+                };
+            };
+        };
+    };
+    MemberController_remove_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_updateRoles_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateMemberRolesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    MemberController_updateOnboarding_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateOnboardingDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AlumniController_list_v1: {
+        parameters: {
+            query?: {
+                /** @description Filter by graduation year */
+                graduation_year?: string;
+                /** @description Filter by current city (partial match) */
+                city?: string;
+                /** @description Filter by current company (partial match) */
+                company?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
