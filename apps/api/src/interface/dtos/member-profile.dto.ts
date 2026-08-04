@@ -14,6 +14,9 @@ export class MemberProfileDto {
   @ApiProperty({ type: [String] })
   role_ids: string[];
 
+  @ApiProperty({ type: [String] })
+  custom_role_ids: string[];
+
   @ApiProperty()
   has_completed_onboarding: boolean;
 

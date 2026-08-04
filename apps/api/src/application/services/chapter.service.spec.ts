@@ -355,6 +355,7 @@ describe('ChapterService', () => {
       user_id: 'user-1',
       chapter_id: chapter.id,
       role_ids: [presidentRole.id],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',

@@ -24,11 +24,23 @@ describe('PermissionsGuard', () => {
     permissions: string[];
   }
 
+  interface CustomRoleRow {
+    id: string;
+    chapter_id: string;
+    capabilities: string[];
+  }
+
   const role = (
     id: string,
     permissions: string[],
     chapterId = ACTIVE_CHAPTER,
   ): RoleRow => ({ id, chapter_id: chapterId, permissions });
+
+  const customRole = (
+    id: string,
+    capabilities: string[],
+    chapterId = ACTIVE_CHAPTER,
+  ): CustomRoleRow => ({ id, chapter_id: chapterId, capabilities });
 
   /**
    * Stands in for the PostgREST filter chain the guard builds on `roles`, and
@@ -37,9 +49,10 @@ describe('PermissionsGuard', () => {
    * fixed payload is what lets a test prove a foreign-chapter role id resolves
    * to no row at all.
    */
-  const mockRoles = (rows: RoleRow[]) => {
-    mockFrom.mockImplementation(() => {
-      let matched = rows;
+  const mockRoles = (rows: RoleRow[], customRows: CustomRoleRow[] = []) => {
+    mockFrom.mockImplementation((table: string) => {
+      let matched: Array<RoleRow | CustomRoleRow> =
+        table === 'chapter_custom_roles' ? customRows : rows;
       const chain = {
         select: jest.fn(() => chain),
         in: jest.fn((column: 'id', values: string[]) => {
@@ -50,8 +63,11 @@ describe('PermissionsGuard', () => {
           matched = matched.filter((row) => row[column] === value);
           return chain;
         }),
-        then: (resolve: (result: { data: RoleRow[] }) => unknown) =>
-          resolve({ data: matched }),
+        then: (
+          resolve: (result: {
+            data: Array<RoleRow | CustomRoleRow>;
+          }) => unknown,
+        ) => resolve({ data: matched }),
       };
       return chain;
     });
@@ -59,7 +75,7 @@ describe('PermissionsGuard', () => {
 
   /** Pass `null` for `chapterId` to model a request `ChapterGuard` never touched. */
   const mockExecutionContext = (
-    member?: { role_ids: string[] },
+    member?: { role_ids: string[]; custom_role_ids?: string[] },
     chapterId: string | null = ACTIVE_CHAPTER,
   ): ExecutionContext => {
     const request = { member, chapterId: chapterId ?? undefined };
@@ -249,6 +265,87 @@ describe('PermissionsGuard', () => {
         new ForbiddenException('No active chapter'),
       );
       expect(mockFrom).not.toHaveBeenCalled();
+    });
+  });
+
+  // Bridge model (spec/behavior/rbac.md): custom-role capabilities flatten
+  // into the same permission set the guard checks.
+  describe('custom-role capabilities', () => {
+    it('grants when a required permission comes from a custom role', async () => {
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles(
+        [role('role-1', ['members:view'])],
+        [customRole('custom-1', ['events:create'])],
+      );
+
+      const ctx = mockExecutionContext({
+        role_ids: ['role-1'],
+        custom_role_ids: ['custom-1'],
+      });
+
+      expect(await guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('grants a member holding only custom roles', async () => {
+      mockPermissionMetadata({ handlerRequire: ['chapter_docs:upload'] });
+      mockRoles([], [customRole('custom-1', ['chapter_docs:upload'])]);
+
+      const ctx = mockExecutionContext({
+        role_ids: [],
+        custom_role_ids: ['custom-1'],
+      });
+
+      expect(await guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('never honors a wildcard carried by a custom role', async () => {
+      // Pre-validation rows may still contain `*`; only the live President
+      // role may wield it, so the guard drops it from custom capabilities.
+      mockPermissionMetadata({ handlerRequire: ['billing:manage'] });
+      mockRoles([], [customRole('custom-evil', ['*', 'members:view'])]);
+
+      const ctx = mockExecutionContext({
+        role_ids: [],
+        custom_role_ids: ['custom-evil'],
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('Missing required permissions: billing:manage'),
+      );
+    });
+
+    it('ignores a custom role id belonging to another chapter', async () => {
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles(
+        [role('role-1', ['members:view'])],
+        [customRole('custom-foreign', ['events:create'], 'ch-other')],
+      );
+
+      const ctx = mockExecutionContext({
+        role_ids: ['role-1'],
+        custom_role_ids: ['custom-foreign'],
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('Missing required permissions: events:create'),
+      );
+    });
+
+    it('denies when every id (live and custom) resolves to another chapter', async () => {
+      mockPermissionMetadata({ handlerRequire: ['events:create'] });
+      mockRoles(
+        [role('role-foreign', ['*'], 'ch-other')],
+        [customRole('custom-foreign', ['events:create'], 'ch-other')],
+      );
+
+      const ctx = mockExecutionContext({
+        role_ids: ['role-foreign'],
+        custom_role_ids: ['custom-foreign'],
+      });
+
+      await expect(guard.canActivate(ctx)).rejects.toThrow(
+        new ForbiddenException('No valid roles found'),
+      );
     });
   });
 });

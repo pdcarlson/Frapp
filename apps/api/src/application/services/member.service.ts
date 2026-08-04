@@ -18,6 +18,7 @@ import {
   SystemPermissions,
 } from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
+import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { allowedVisibilities } from './custom-field-visibility';
 import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
@@ -33,6 +34,7 @@ export interface MemberProfile {
   user_id: string;
   chapter_id: string;
   role_ids: string[];
+  custom_role_ids: string[];
   has_completed_onboarding: boolean;
   created_at: string;
   updated_at: string;
@@ -60,6 +62,7 @@ export class MemberService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly customFieldService: CustomFieldService,
+    private readonly customRoleService: CustomRoleService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -102,6 +105,7 @@ export class MemberService {
     memberId: string,
     roleIds: string[],
     chapterId: string,
+    customRoleIds?: string[],
   ): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
@@ -116,6 +120,24 @@ export class MemberService {
       throw new BadRequestException(
         `Role IDs do not belong to this chapter: ${unknownRoleIds.join(', ')}`,
       );
+    }
+
+    // Custom-role ids get the same cross-chapter validation as live-role ids:
+    // a fabricated or foreign id must never be persisted on the member row.
+    if (customRoleIds !== undefined && customRoleIds.length > 0) {
+      const customRoles = await this.customRoleService.findByIds(
+        customRoleIds,
+        chapterId,
+      );
+      const validCustomRoleIds = new Set(customRoles.map((r) => r.id));
+      const unknownCustomRoleIds = customRoleIds.filter(
+        (id) => !validCustomRoleIds.has(id),
+      );
+      if (unknownCustomRoleIds.length > 0) {
+        throw new BadRequestException(
+          `Custom role IDs do not belong to this chapter: ${unknownCustomRoleIds.join(', ')}`,
+        );
+      }
     }
 
     const presidentRole = roles.find(
@@ -135,7 +157,14 @@ export class MemberService {
       }
     }
 
-    return this.memberRepo.update(memberId, { role_ids: roleIds });
+    return this.memberRepo.update(memberId, {
+      role_ids: roleIds,
+      // Omitted → unchanged, so pre-bridge clients that send only `role_ids`
+      // never strip a member's custom roles.
+      ...(customRoleIds !== undefined
+        ? { custom_role_ids: customRoleIds }
+        : {}),
+    });
   }
 
   async updateOnboarding(

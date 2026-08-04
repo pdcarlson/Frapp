@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -9,6 +10,7 @@ import {
 import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { ChapterCustomRole } from '../../domain/entities/chapter-custom-role.entity';
+import { WILDCARD } from '../../domain/constants/permissions';
 import type {
   CreateCustomRoleDto,
   UpdateCustomRoleDto,
@@ -32,8 +34,11 @@ type MutateResponse = { error: PostgrestError | null };
  * CRUD over `chapter_custom_roles`, scoped to the active chapter. Part of the
  * settings family: every mutation appends a `chapter_audit_log` row (mirrored to
  * `#chapter-audit` by the ChatBridgeWorker, ADR-08) like every other settings
- * save. Custom roles are presentation-only here — wiring them into permission
- * enforcement / member assignment is tracked as a separate follow-up.
+ * save. Custom roles are enforced (bridge model, spec/behavior/rbac.md):
+ * members are assigned via `members.custom_role_ids` and the permission
+ * resolver flattens `capabilities` into the effective set, so writes here take
+ * effect on the next request. The wildcard `*` is rejected on write — only the
+ * live President role may carry it.
  */
 @Injectable()
 export class CustomRoleService {
@@ -53,11 +58,31 @@ export class CustomRoleService {
     return data ?? [];
   }
 
+  /**
+   * Rows for `ids` filtered to `chapterId`, for the permission resolver and
+   * member-assignment validation. A stale or cross-chapter id matches no row
+   * and contributes nothing (same contract as `roles` lookups).
+   */
+  async findByIds(
+    ids: string[],
+    chapterId: string,
+  ): Promise<ChapterCustomRole[]> {
+    if (!ids.length) return [];
+    const { data, error }: ListResponse = await this.supabase
+      .from('chapter_custom_roles')
+      .select('*')
+      .in('id', ids)
+      .eq('chapter_id', chapterId);
+    if (error) throw error;
+    return data ?? [];
+  }
+
   async create(
     chapterId: string,
     actorUserId: string,
     dto: CreateCustomRoleDto,
   ): Promise<ChapterCustomRole> {
+    this.assertNoWildcard(dto.capabilities);
     const { data, error }: RowResponse = await this.supabase
       .from('chapter_custom_roles')
       .insert({
@@ -102,6 +127,7 @@ export class CustomRoleService {
     actorUserId: string,
     dto: UpdateCustomRoleDto,
   ): Promise<ChapterCustomRole> {
+    this.assertNoWildcard(dto.capabilities);
     const existing = await this.findOne(id, chapterId);
 
     const patch: Record<string, unknown> = {};
@@ -162,6 +188,17 @@ export class CustomRoleService {
       },
     );
     return { success: true };
+  }
+
+  // Custom-role capabilities enter the permission-check flatten, and `*` there
+  // would mint a second wildcard holder outside the presidency-transfer flow —
+  // the one invariant spec/behavior/rbac.md reserves for the President role.
+  private assertNoWildcard(capabilities?: string[]): void {
+    if (capabilities?.includes(WILDCARD)) {
+      throw new BadRequestException(
+        'Custom roles cannot carry the wildcard (*) permission; use the presidency-transfer flow instead',
+      );
+    }
   }
 
   private async findOne(

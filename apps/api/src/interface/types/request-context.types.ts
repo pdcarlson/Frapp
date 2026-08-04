@@ -14,6 +14,8 @@ export interface AppUserContext {
 export interface MemberContext {
   id: string;
   role_ids: string[];
+  /** Assigned `chapter_custom_roles` ids (absent on rows read before the column shipped). */
+  custom_role_ids?: string[];
   user_id?: string;
   chapter_id?: string;
   [key: string]: unknown;

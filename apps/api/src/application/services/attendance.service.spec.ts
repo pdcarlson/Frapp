@@ -140,6 +140,7 @@ describe('AttendanceService', () => {
         user_id: 'user-1',
         chapter_id: 'ch-1',
         role_ids: ['role-alumni'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
@@ -172,6 +173,7 @@ describe('AttendanceService', () => {
         user_id: 'user-active',
         chapter_id: 'ch-1',
         role_ids: ['role-member'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
@@ -181,6 +183,7 @@ describe('AttendanceService', () => {
         id: 'member-2',
         user_id: 'user-alumni',
         role_ids: ['role-alumni'],
+        custom_role_ids: [],
       };
 
       mockEventRepo.findById.mockResolvedValue(mandatoryEvent);
@@ -264,6 +267,7 @@ describe('AttendanceService', () => {
         user_id: 'user-1',
         chapter_id: 'ch-1',
         role_ids: ['role-member'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2026-02-01T00:00:00.000Z',
         updated_at: '2026-02-01T00:00:00.000Z',
@@ -488,6 +492,7 @@ describe('AttendanceService', () => {
         user_id: 'user-1',
         chapter_id: 'ch-1',
         role_ids: ['role-member'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',
@@ -497,6 +502,7 @@ describe('AttendanceService', () => {
         user_id: 'user-2',
         chapter_id: 'ch-1',
         role_ids: ['role-member'],
+        custom_role_ids: [],
         has_completed_onboarding: true,
         created_at: '2020-01-01T00:00:00.000Z',
         updated_at: '2020-01-01T00:00:00.000Z',

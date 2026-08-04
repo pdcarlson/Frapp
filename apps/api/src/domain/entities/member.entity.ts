@@ -3,6 +3,8 @@ export interface Member {
   user_id: string;
   chapter_id: string;
   role_ids: string[];
+  /** Assigned `chapter_custom_roles` ids; capabilities flatten into the permission set alongside `role_ids`. */
+  custom_role_ids: string[];
   has_completed_onboarding: boolean;
   created_at: string;
   updated_at: string;

@@ -14,6 +14,7 @@ import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
 } from '../../domain/constants/permissions';
+import { CustomRoleService } from './custom-role.service';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 
@@ -21,6 +22,7 @@ describe('RbacService', () => {
   let service: RbacService;
   let mockRoleRepo: jest.Mocked<IRoleRepository>;
   let mockMemberRepo: jest.Mocked<IMemberRepository>;
+  let mockCustomRoleService: { findByIds: jest.Mock };
 
   beforeEach(async () => {
     mockRoleRepo = {
@@ -43,11 +45,16 @@ describe('RbacService', () => {
       transferPresidencyAtomic: jest.fn(),
     };
 
+    mockCustomRoleService = {
+      findByIds: jest.fn().mockResolvedValue([]),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RbacService,
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: CustomRoleService, useValue: mockCustomRoleService },
       ],
     }).compile();
 
@@ -296,6 +303,7 @@ describe('RbacService', () => {
       user_id: 'user-x',
       chapter_id: 'ch-1',
       role_ids: [],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -489,6 +497,7 @@ describe('RbacService', () => {
       user_id: 'user-1',
       chapter_id: 'ch-1',
       role_ids: ['role-foreign'],
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -513,11 +522,15 @@ describe('RbacService', () => {
   });
 
   describe('getEffectivePermissions', () => {
-    const buildMember = (role_ids: string[]): Member => ({
+    const buildMember = (
+      role_ids: string[],
+      custom_role_ids: string[] = [],
+    ): Member => ({
       id: 'member-1',
       user_id: 'user-1',
       chapter_id: 'ch-1',
       role_ids,
+      custom_role_ids,
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',
@@ -627,6 +640,120 @@ describe('RbacService', () => {
 
       expect(result).toEqual([]);
     });
+
+    // Bridge model (spec/behavior/rbac.md): custom-role capabilities flatten
+    // into the same effective set as live-role permissions.
+    it('includes custom-role capabilities alongside live-role permissions', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember(['role-a'], ['custom-1']),
+      );
+      mockRoleRepo.findByIds.mockResolvedValue([
+        buildRole('role-a', [SystemPermissions.MEMBERS_VIEW]),
+      ]);
+      mockCustomRoleService.findByIds.mockResolvedValue([
+        {
+          id: 'custom-1',
+          chapter_id: 'ch-1',
+          key: 'social_chair',
+          label: 'Social Chair',
+          rank: 5,
+          capabilities: [
+            SystemPermissions.EVENTS_CREATE,
+            SystemPermissions.EVENTS_UPDATE,
+          ],
+          core: false,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(mockCustomRoleService.findByIds).toHaveBeenCalledWith(
+        ['custom-1'],
+        'ch-1',
+      );
+      expect(result).toEqual(
+        [
+          SystemPermissions.EVENTS_CREATE,
+          SystemPermissions.EVENTS_UPDATE,
+          SystemPermissions.MEMBERS_VIEW,
+        ].sort(),
+      );
+    });
+
+    it('resolves capabilities for a member holding only custom roles', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember([], ['custom-1']),
+      );
+      mockCustomRoleService.findByIds.mockResolvedValue([
+        {
+          id: 'custom-1',
+          chapter_id: 'ch-1',
+          key: 'historian',
+          label: 'Historian',
+          rank: 9,
+          capabilities: [SystemPermissions.CHAPTER_DOCS_UPLOAD],
+          core: false,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(result).toEqual([SystemPermissions.CHAPTER_DOCS_UPLOAD]);
+      expect(mockRoleRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('drops the wildcard from custom-role capabilities (pre-validation data)', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember([], ['custom-evil']),
+      );
+      mockCustomRoleService.findByIds.mockResolvedValue([
+        {
+          id: 'custom-evil',
+          chapter_id: 'ch-1',
+          key: 'shadow_president',
+          label: 'Shadow President',
+          rank: 0,
+          capabilities: [
+            SystemPermissions.WILDCARD,
+            SystemPermissions.MEMBERS_VIEW,
+          ],
+          core: false,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      // Only the live President role may carry `*`; a custom role must never
+      // mint a second wildcard holder outside the presidency-transfer flow.
+      expect(result).toEqual([SystemPermissions.MEMBERS_VIEW]);
+
+      const granted = await service.memberHasAnyPermission('ch-1', 'user-1', [
+        SystemPermissions.BILLING_MANAGE,
+      ]);
+      expect(granted).toBe(false);
+    });
+
+    it('scopes custom-role resolution to the chapter so a foreign id grants nothing', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(
+        buildMember([], ['custom-foreign']),
+      );
+      // The chapter-scoped lookup drops the cross-chapter id.
+      mockCustomRoleService.findByIds.mockResolvedValue([]);
+
+      const result = await service.getEffectivePermissions('ch-1', 'user-1');
+
+      expect(mockCustomRoleService.findByIds).toHaveBeenCalledWith(
+        ['custom-foreign'],
+        'ch-1',
+      );
+      expect(result).toEqual([]);
+    });
   });
 
   // The Alumni role is a lifecycle marker, not a permission level: study hours,
@@ -649,6 +776,7 @@ describe('RbacService', () => {
       user_id: 'user-1',
       chapter_id: 'ch-1',
       role_ids,
+      custom_role_ids: [],
       has_completed_onboarding: true,
       created_at: '2024-01-01',
       updated_at: '2024-01-01',

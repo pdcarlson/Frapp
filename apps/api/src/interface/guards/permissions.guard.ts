@@ -19,6 +19,10 @@ interface RolePermissionRow {
   permissions: string[];
 }
 
+interface CustomRoleCapabilityRow {
+  capabilities: string[];
+}
+
 @Injectable()
 export class PermissionsGuard implements CanActivate {
   constructor(
@@ -48,7 +52,10 @@ export class PermissionsGuard implements CanActivate {
     const member = request.member;
     const chapterId = request.chapterId;
 
-    if (!member?.role_ids?.length) {
+    const roleIds = member?.role_ids ?? [];
+    const customRoleIds = member?.custom_role_ids ?? [];
+
+    if (!roleIds.length && !customRoleIds.length) {
       throw new ForbiddenException('No roles assigned');
     }
 
@@ -59,23 +66,45 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No active chapter');
     }
 
-    // Roles are chapter-scoped (`roles.chapter_id`), so filter on the active
-    // chapter as well as the id list: a stale or cross-chapter id left on
-    // `members.role_ids` then resolves to no row instead of silently granting
-    // that other chapter's permissions here.
-    const { data: roles } = await this.supabase
-      .from('roles')
-      .select('permissions')
-      .in('id', member.role_ids)
-      .eq('chapter_id', chapterId);
+    // Both role models are chapter-scoped, so filter on the active chapter as
+    // well as the id list: a stale or cross-chapter id left on the member row
+    // then resolves to no row instead of silently granting that other
+    // chapter's permissions here.
+    const [{ data: roles }, { data: customRoles }] = await Promise.all([
+      roleIds.length
+        ? this.supabase
+            .from('roles')
+            .select('permissions')
+            .in('id', roleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [] }),
+      customRoleIds.length
+        ? this.supabase
+            .from('chapter_custom_roles')
+            .select('capabilities')
+            .in('id', customRoleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [] }),
+    ]);
 
-    if (!roles?.length) {
+    if (!roles?.length && !customRoles?.length) {
       throw new ForbiddenException('No valid roles found');
     }
 
     const userPermissions = new Set(
-      (roles as RolePermissionRow[]).flatMap((role) => role.permissions),
+      (roles as RolePermissionRow[] | null)?.flatMap(
+        (role) => role.permissions,
+      ) ?? [],
     );
+    // Custom-role capabilities flatten into the same set, except the wildcard:
+    // only the live President role may carry `*` (the presidency-transfer flow
+    // is the sole path that moves it), so it is ignored here even if a
+    // pre-validation row still contains it.
+    for (const row of (customRoles as CustomRoleCapabilityRow[] | null) ?? []) {
+      for (const capability of row.capabilities ?? []) {
+        if (capability !== '*') userPermissions.add(capability);
+      }
+    }
 
     if (userPermissions.has('*')) {
       return true;

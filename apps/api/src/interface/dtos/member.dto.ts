@@ -1,11 +1,21 @@
-import { IsArray, IsBoolean, IsString } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateMemberRolesDto {
   @ApiProperty({ type: [String] })
   @IsArray()
   @IsString({ each: true })
   role_ids: string[];
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  custom_role_ids?: string[];
 }
 
 export class UpdateOnboardingDto {

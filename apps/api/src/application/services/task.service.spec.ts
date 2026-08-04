@@ -47,6 +47,7 @@ describe('TaskService', () => {
     user_id: 'user-1',
     chapter_id: 'ch-1',
     role_ids: ['role-1'],
+    custom_role_ids: [],
     has_completed_onboarding: true,
     created_at: '2026-02-01T00:00:00.000Z',
     updated_at: '2026-02-01T00:00:00.000Z',

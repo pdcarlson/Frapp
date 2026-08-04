@@ -11,16 +11,20 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { Role } from '../../domain/entities/role.entity';
+import { Member } from '../../domain/entities/member.entity';
 import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
+  WILDCARD,
 } from '../../domain/constants/permissions';
+import { CustomRoleService } from './custom-role.service';
 
 @Injectable()
 export class RbacService {
   constructor(
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly customRoleService: CustomRoleService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<Role[]> {
@@ -154,10 +158,8 @@ export class RbacService {
       userId,
       chapterId,
     );
-    if (!member?.role_ids?.length) return false;
-    const roles = await this.roleRepo.findByIds(member.role_ids, chapterId);
-    const userPermissions = new Set(roles.flatMap((r) => r.permissions));
-    if (userPermissions.has('*')) return true;
+    const userPermissions = await this.resolvePermissionSet(chapterId, member);
+    if (userPermissions.has(WILDCARD)) return true;
     return permissions.some((p) => userPermissions.has(p));
   }
 
@@ -235,10 +237,41 @@ export class RbacService {
       userId,
       chapterId,
     );
-    if (!member?.role_ids?.length) return [];
-    const roles = await this.roleRepo.findByIds(member.role_ids, chapterId);
-    if (!roles.length) return [];
-    const set = new Set(roles.flatMap((r) => r.permissions ?? []));
+    const set = await this.resolvePermissionSet(chapterId, member);
     return Array.from(set).sort();
+  }
+
+  /**
+   * Flatten a member's live-role permissions and custom-role capabilities
+   * (bridge model, spec/behavior/rbac.md) into one set. Both lookups resolve
+   * within `chapterId`, so stale or cross-chapter ids contribute nothing. The
+   * wildcard is only honored from live roles: a custom role carrying `*`
+   * (pre-validation data) must not mint a second President, so it is dropped
+   * here — mirroring `PermissionsGuard`.
+   */
+  private async resolvePermissionSet(
+    chapterId: string,
+    member: Member | null,
+  ): Promise<Set<string>> {
+    const roleIds = member?.role_ids ?? [];
+    const customRoleIds = member?.custom_role_ids ?? [];
+    if (!roleIds.length && !customRoleIds.length) return new Set();
+
+    const [roles, customRoles] = await Promise.all([
+      roleIds.length
+        ? this.roleRepo.findByIds(roleIds, chapterId)
+        : Promise.resolve([]),
+      customRoleIds.length
+        ? this.customRoleService.findByIds(customRoleIds, chapterId)
+        : Promise.resolve([]),
+    ]);
+
+    const set = new Set(roles.flatMap((r) => r.permissions ?? []));
+    for (const role of customRoles) {
+      for (const capability of role.capabilities ?? []) {
+        if (capability !== WILDCARD) set.add(capability);
+      }
+    }
+    return set;
   }
 }

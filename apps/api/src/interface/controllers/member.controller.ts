@@ -76,7 +76,12 @@ export class MemberController {
     @Param('id') id: string,
     @Body() dto: UpdateMemberRolesDto,
   ) {
-    return this.memberService.updateRoles(id, dto.role_ids, chapterId);
+    return this.memberService.updateRoles(
+      id,
+      dto.role_ids,
+      chapterId,
+      dto.custom_role_ids,
+    );
   }
 
   @Patch('me/onboarding')
