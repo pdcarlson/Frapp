@@ -1,6 +1,19 @@
-# Skill: Audit & Quality Review
+---
+name: audit
+description: >
+  Perform code quality reviews, security audits, dependency checks, API contract audits, database
+  migration reviews, or CI/CD audits on this repo. Use when asked to audit, security-review, or
+  assess quality of the codebase, when checking RLS/guard coverage or dependency vulnerabilities,
+  and as the engineering-gaps lens of scheduled routines like the Linear curator.
+---
 
-> Use when performing code audits, security reviews, dependency checks, migration reviews, or quality assessments.
+# Audit & Quality Review
+
+> Read before performing code audits, security reviews, dependency checks, migration reviews, or
+> quality assessments — whether interactively or as a read-only pass inside a scheduled routine
+> (e.g. the [Linear curator](../linear-curator/SKILL.md)'s engineering-gaps lens). In read-only
+> runs, findings are filed to Linear rather than fixed in place, and any edits made by
+> `lint --fix` are throwaway (`git checkout -- .`) — never commit them.
 
 ---
 
@@ -42,6 +55,9 @@ Check that new code follows established patterns:
 npm run check-types   # Turbo runs tsc --noEmit across all workspaces
 ```
 
+On a fresh sandbox, build shared packages first (`npx turbo run build --filter=./packages/*`) so
+workspace type-checks resolve against built outputs.
+
 Check for `any` types, `@ts-ignore`, and untyped function parameters.
 
 ### 4. Lint
@@ -63,7 +79,13 @@ The API has strict lint rules. Warnings are tracked but currently tolerated — 
    - Webhook endpoints (signature verification only)
    - Chapter creation (no chapter guard, since no chapter exists yet)
 
-2. **Write endpoints** should additionally have `@UseGuards(PermissionsGuard)` with appropriate `@RequirePermissions()`.
+2. **Every endpoint — read or write — that accesses or returns protected user/chapter data** must
+   additionally have `@UseGuards(PermissionsGuard)` with explicit `@RequirePermissions()` (or
+   `@RequireAnyOfPermissions()`). This includes GET/list endpoints — e.g. `member.controller.ts`
+   uses `MEMBERS_VIEW` on reads, and `financial-invoice.controller.ts` lists own invoices for
+   members but requires `billing:view` to list all or read others' invoices. Class-level defaults
+   are fine where they keep behavior consistent; route-level `@RequirePermissions` is **merged**
+   with the class list by `PermissionsGuard`, so both apply.
 
 3. **Audit the permissions**: Check `domain/constants/permissions.ts` for the permission enum. Verify each controller method uses the correct permission.
 
@@ -170,7 +192,7 @@ Key dependencies to watch:
 - `@tanstack/react-query` — hook API changes
 - `stripe` — webhook signature verification changes
 
-For **transitive CVEs**, prefer the root `overrides` block in [`/package.json`](../../package.json) (established in #245 / `docs/SECURITY_FIXES.md`) over per-workspace upgrades. Pin to the patched range cited by the advisory, then `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+For **transitive CVEs**, prefer the root `overrides` block in [`/package.json`](../../../package.json) (established in #245 / [`docs/internal/security/SECURITY_FIXES.md`](../../../docs/internal/security/SECURITY_FIXES.md)) over per-workspace upgrades. Pin to the patched range cited by the advisory, then `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
 
 ---
 
@@ -213,7 +235,7 @@ It does **not** inspect migration SQL for RLS. For per-table RLS coverage, use t
 
 For each migration:
 - [ ] RLS enabled on new tables
-- [ ] No destructive operations without rollback plan in `DB_ROLLBACK_PLAYBOOK.md`
+- [ ] No destructive operations without rollback plan in [`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md)
 - [ ] Foreign keys have appropriate `ON DELETE` behavior
 - [ ] Indexes added for frequently queried columns
 - [ ] `update_updated_at` trigger added for tables with `updated_at` column
@@ -244,7 +266,7 @@ For each migration:
 npm run configure:branch-protection -- --dry-run
 ```
 
-(`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
+(`configure-branch-protection` reads `GITHUB_PAT` first, with aliases tolerated (`GITHUB_TOKEN`, `GH_PAT`, `GH_TOKEN`) — export it per [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](../../../docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md).)
 
 Compare output with expected checks in `CONTRIBUTING.md`.
 
@@ -252,16 +274,16 @@ Compare output with expected checks in `CONTRIBUTING.md`.
 
 ## Spec compliance audit
 
-The spec is the source of truth. When auditing:
+The spec is the source of truth — implementation follows spec. When auditing:
 
 1. **Product**: Compare implemented features against domains under `spec/product/`
 2. **Behavior**: Verify edge cases and invariants from topics under `spec/behavior/` are tested
-3. **Architecture**: Check stack choices and patterns match `spec/architecture.md`
-4. **Environments**: Verify env setup matches `spec/environments.md`
+3. **Architecture**: Check stack choices and patterns match [`spec/architecture/README.md`](../../../spec/architecture/README.md)
+4. **Environments**: Verify env setup matches [`spec/environments/README.md`](../../../spec/environments/README.md)
 
 ---
 
-## Generating an audit report
+## Reporting findings
 
 Structure your findings as:
 
@@ -281,7 +303,11 @@ Structure your findings as:
 - ...
 ```
 
-Reference existing audit docs in `docs/archive/audits/` for format precedent.
+**Do not commit one-off audit markdown to the repo** — per
+[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md),
+narrative audit writeups are exactly the kind of file the docs restructure removed. Deliver the
+report in the conversation (or run output), fold durable facts into the canonical doc, and file
+actionable findings as **Linear** issues.
 
 ---
 

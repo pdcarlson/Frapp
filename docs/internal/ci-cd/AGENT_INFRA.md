@@ -11,7 +11,7 @@ When relevant credentials exist in the environment, prefer gathering **runtime t
 3. Align proposals to observed reality; avoid stale assumptions.
 4. **Never print secret values** — only names and presence/absence.
 
-**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.cursor/skills/infrastructure-research.md`](../../../.cursor/skills/infrastructure-research.md).
+**CLI recipes** (GitHub `gh`, Supabase, curl examples for Render/Vercel/Infisical): see [`.claude/skills/infrastructure-research/SKILL.md`](../../../.claude/skills/infrastructure-research/SKILL.md).
 
 ## Optional environment credentials
 
@@ -111,7 +111,7 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:api-contract` — OpenAPI / SDK drift
 - `npm run check:migration-safety` — migrations + promotion docs
 
-Testing workflows and CI parity: [`.cursor/skills/testing.md`](../../../.cursor/skills/testing.md).
+Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.claude/skills/testing/SKILL.md).
 
 ## Claude Code project settings
 

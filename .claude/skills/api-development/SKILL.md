@@ -1,4 +1,13 @@
-# Skill: API Development
+---
+name: api-development
+description: >
+  Build or modify NestJS API endpoints, services, repositories, DTOs, guards, or the OpenAPI
+  contract artifacts. Use when working under `apps/api/src/`, `packages/api-sdk/`, or
+  `packages/validation/` — covers the layered architecture, the 9-step new-endpoint workflow,
+  the per-route auth/guard chain, Supabase repository conventions, and contract regeneration.
+---
+
+# API Development
 
 > Use when building or modifying NestJS API endpoints, services, repositories, or the contract artifacts.
 
@@ -16,7 +25,11 @@ The API follows a layered architecture in `apps/api/src/`:
 | **Domain** | `domain/` | Entities, repository interfaces, adapter interfaces, constants |
 | **Modules** | `modules/` | NestJS module wiring (thin glue) |
 
-Dependencies flow inward: Interface → Application → Domain ← Infrastructure.
+Dependencies flow inward: Interface → Application → Domain ← Infrastructure. Respect the
+dependency direction — outer layers may import inner ones, never the reverse.
+
+For the in-depth treatment (error handling, observability hooks, service performance patterns),
+see [`docs/guides/api-architecture.md`](../../../docs/guides/api-architecture.md).
 
 ---
 
@@ -165,6 +178,8 @@ const module = await Test.createTestingModule({
 
 ### 9. Update contract artifacts
 
+After changing **any** controller or DTO, regenerate the contract:
+
 ```bash
 npm run openapi:export -w apps/api
 npm run generate -w packages/api-sdk
@@ -192,7 +207,17 @@ Bearer token → SupabaseAuthGuard (validates JWT, sets request.supabaseUser)
 
 - **Controller-level** (most common): `@UseGuards(SupabaseAuthGuard, ChapterGuard)` on the class
 - **Route-level permissions**: `@UseGuards(PermissionsGuard)` + `@RequirePermissions(...)` on individual methods
-- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — currently only on user, invite, notification, and chapter-create controllers. Only needed where user auto-sync is required on first request.
+- **AuthSyncInterceptor**: Applied via `@UseInterceptors(AuthSyncInterceptor)` — class-level on the user, invite, notification, and analytics controllers, and per-route on the pre-chapter chapter routes (create, onboard, list, activate). Only needed where user auto-sync is required on first request; `grep @UseInterceptors(AuthSyncInterceptor)` for the current list.
+
+**Every route that returns or accesses protected chapter data needs an explicit
+`@RequirePermissions(...)` / `@RequireAnyOfPermissions(...)` — including GET/list routes.** Reads
+leak chapter data just as writes corrupt it; a `@Get()` without a permission decorator is a
+finding, not a convenience. Use class-level defaults where it keeps behavior consistent:
+route-level `@RequirePermissions` is **merged** with the class-level list by `PermissionsGuard`
+(the union of both must be satisfied), so both apply. See
+[`docs/guides/api-architecture.md`](../../../docs/guides/api-architecture.md) §2 for the full
+merge semantics (including `@RequireAnyOfPermissions` OR-groups) and ChapterGuard's
+subscription-status write gating.
 
 **Order matters.** `SupabaseAuthGuard` must run before `ChapterGuard` (which needs `request.supabaseUser`). `ChapterGuard` must run before `PermissionsGuard` (which needs `request.member`).
 
@@ -222,7 +247,7 @@ When adding a table or column:
 3. Enable RLS: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;` (all tables must have RLS)
 4. Apply locally: `npx supabase db push --local`
 5. Update `database.types.ts`: `npx supabase gen types typescript --local > apps/api/src/infrastructure/supabase/database.types.ts`
-6. Update `docs/internal/DB_ROLLBACK_PLAYBOOK.md` with rollback strategy
+6. Update [`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md) with rollback strategy
 7. Filename format: `{14-digit timestamp}_{snake_case}.sql`
 
 ---

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** [`.cursor/skills/`](.cursor/skills/) (`api-development.md`, `ui-development.md`, `testing.md`, `audit.md`, `infrastructure-research.md`, `linear-curator.md`, `linear-triage.md`).
+Concise operating guide for AI agents and developers. **Deep detail:** [`docs/internal/environment/LOCAL_DEV.md`](docs/internal/environment/LOCAL_DEV.md) (machines, Infisical, ports), [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) (CI, deploys, PAT policy, Infisical sync map). **Task playbooks:** the skills under [`.claude/skills/`](.claude/skills/) — see [Skills](#skills-read-the-matching-one-before-deep-work).
 
 ## Optional agent credentials (automation / cloud sessions)
 
@@ -41,7 +41,7 @@ Work lives in **Linear** (team **Frapp Live**, prefix **FRA-**, identifiers like
 > **Hard rule (non-negotiable):** **All issues are opened in Linear** (the **Triage** inbox). **Never open a GitHub issue** — not by hand, not from an automation.
 > **Closing** is most often done by the **PR that does the work** (`Fixes FRA-N`, plus `Closes #N` for a GitHub twin) — that's the common path. But agents may also **close an issue directly** when it's a duplicate, stale, or obsolete (update it or close it). Prefer closing on the **GitHub** side for any issue that has a GitHub presence so the integration syncs it back cleanly; close Linear-native issues (no GitHub twin) in Linear (Done/Canceled). Either way the two stay in sync.
 
-How each actor reaches Linear: **Claude Code (web)** uses the **native Linear MCP** injected by the web environment (the path `/next` uses). **Cursor automations run headless with no Linear MCP**, so they use a **`LINEAR_API_KEY`** against Linear's GraphQL API (see [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md)). Epics are Linear **Projects**; new work lands in **Triage** before it's accepted into the Backlog. To start work, run `/next` — it pulls the top-priority unblocked Backlog issue, completes it, and keeps Linear in sync. Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); Linear issues link out to it and never duplicate it. Design + policy: [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md); the decision is ADR-16 in [`spec/architecture/README.md`](spec/architecture/README.md).
+How each actor reaches Linear: **Claude Code (web)** uses the **native Linear MCP** injected by the web environment (the path `/next` uses), and the **scheduled Claude Code Routines** (backlog curator + triage) use the same injected MCP (see [`docs/internal/ci-cd/ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). Epics are Linear **Projects**; new work lands in **Triage** before it's accepted into the Backlog. To start work, run `/next` — it pulls the top-priority unblocked Backlog issue, completes it, and keeps Linear in sync. Canonical product/behavior/architecture spec lives in [`spec/`](spec/README.md); Linear issues link out to it and never duplicate it. Design + policy: [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md); the decision is ADR-16 in [`spec/architecture/README.md`](spec/architecture/README.md).
 
 ## Filing follow-up work (in Linear)
 
@@ -59,13 +59,13 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 
 **How to write one (so an agent can execute it):**
 
-- **Meta block:** Linear **Priority** (Urgent/High/Medium/Low), what it blocks, originating PR, suggested `area:<x>` label / Project.
+- **Meta block:** Linear **Priority** (Urgent/High/Medium/Low), what it blocks, originating PR, suggested `area:<x>` label / Project, and an **Agent brief** (`depth:` / `model:` / `ultracode:` — err on `depth:deep`; policy in [`LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md#agent-briefs-depth--model--ultracode)).
 - **Problem/context:** what's wrong and why it matters, with exact file paths + line refs.
 - **Acceptance criteria:** an objectively verifiable checkbox list.
 - **Implementation notes:** constraints, helpers to reuse, gotchas.
 - **Definition of done:** "PR linked with `Fixes FRA-N`, criteria met, CI green."
 
-**Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two Cursor automations maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/CURSOR_AUTOMATIONS.md`](docs/internal/ci-cd/CURSOR_AUTOMATIONS.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
+**Labels & priority.** Severity is the native Linear **Priority** (Urgent/High/Medium/Low). `area:<x>` labels group by surface (`api`/`web`/`db`/`ci`/`security`/`ux`/`product`/`research`/`docs`/`deps`). Express dependencies as blocked-by **relations**, not a label. Two scheduled Claude Code Routines maintain the backlog: a **curator** files **and** maintains issues labeled `suggestion`, and a **triage** pass prioritizes/buckets/promotes — both **only ever modify `suggestion`-labeled issues they own** for destructive actions; human-filed and planning issues are off-limits. See [`docs/internal/ci-cd/ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md) and [`docs/internal/ci-cd/LINEAR_PM.md`](docs/internal/ci-cd/LINEAR_PM.md).
 
 **Lifecycle.** File in Linear → **Triage** → accepted to **Backlog** → an agent picks it up via `/next` → branch (`claude/<slug>`) → push (the local **pre-push review-gate hook** requires one review pass on the diff — the single pre-PR review gate. Agents run **`/diff-review`**, which is always invocable and writes the gate marker. The bundled `/code-review` is richer but only *conditionally* model-invocable — `Skill(skill: "code-review")` is waived only when the current turn's prompt carries `/code-review` **whitespace-delimited on both sides** (backticks, quotes, and trailing punctuation all defeat it, so expect refusal by default), never inside a sub-agent, and never under `/next`; see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). Review sub-agents inherit the session model) → PR with `Fixes FRA-N` (add `Closes #<github>` for a GitHub twin) → merge transitions FRA-N to **Done**. Express blockers as blocked-by relations so an issue isn't started until they're resolved.
 
@@ -113,27 +113,21 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API contract | `npm run check:api-contract`        |
 | Migrations   | `npm run check:migration-safety`    |
 
-CI parity and testing detail: [`.cursor/skills/testing.md`](.cursor/skills/testing.md).
+CI parity and testing detail: [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md).
 
-## Task skills (read the matching file before deep work)
+## Skills (read the matching one before deep work)
 
-| Area                    | File                                        |
-| ----------------------- | ------------------------------------------- |
-| NestJS API / contract   | `.cursor/skills/api-development.md`         |
-| Web / landing / UI      | `.cursor/skills/ui-development.md`          |
-| Tests / verification    | `.cursor/skills/testing.md`                 |
-| Audits / quality        | `.cursor/skills/audit.md`                   |
-| Linear issue curator (Cursor) | `.cursor/skills/linear-curator.md`    |
-| Linear triage (Cursor)  | `.cursor/skills/linear-triage.md`           |
-| Deploy / CI / providers | `.cursor/skills/infrastructure-research.md` |
-
-Cursor rules under `.cursor/rules/` point at these same skill files.
-
-**Claude Code skills** live under [`.claude/skills/`](.claude/skills/) and are invocable by an agent
-(unlike the `.cursor/` files above, which Claude Code does not load):
+All skills live under [`.claude/skills/`](.claude/skills/) and are invocable by an agent:
 
 | Skill | Use |
 | ----- | --- |
+| [`/api-development`](.claude/skills/api-development/SKILL.md) | NestJS API, layered architecture, contract regeneration. |
+| [`/ui-development`](.claude/skills/ui-development/SKILL.md) | Web / landing / UI: component layers, theming, data layer. |
+| [`/testing`](.claude/skills/testing/SKILL.md) | Tests, verification, CI parity. |
+| [`/audit`](.claude/skills/audit/SKILL.md) | Audits / quality reviews (RLS coverage, deps, contract, CI). |
+| [`/infrastructure-research`](.claude/skills/infrastructure-research/SKILL.md) | Deploy / CI / provider runtime-truth gathering. |
+| [`/linear-curator`](.claude/skills/linear-curator/SKILL.md) | The scheduled backlog-curator routine's behavior contract ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
+| [`/linear-triage`](.claude/skills/linear-triage/SKILL.md) | The scheduled triage routine's behavior contract ([`ROUTINES.md`](docs/internal/ci-cd/ROUTINES.md)). |
 | [`/diff-review`](.claude/skills/diff-review/SKILL.md) | The pre-push review gate (see the lifecycle above). Mechanics: [`AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). |
 | [`/handoff`](.claude/skills/handoff/SKILL.md) | Draft a copy-pasteable prompt handing work to a fresh session — when context is filling up, a task is finishing, or a parallel track should run in its own chat. Offer it proactively. |
 
