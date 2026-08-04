@@ -50,14 +50,20 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
     return data || [];
   }
 
-  async findOverdue(chapterId: string): Promise<FinancialInvoice[]> {
-    const today = new Date().toISOString().split('T')[0];
+  async findOverdue(
+    chapterId: string,
+    graceDays = 0,
+  ): Promise<FinancialInvoice[]> {
+    // Overdue = OPEN and past due_date + grace: due_date < today - graceDays.
+    const cutoff = new Date(Date.now() - graceDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
     const { data, error } = await this.supabase
       .from('financial_invoices')
       .select('*')
       .eq('chapter_id', chapterId)
       .eq('status', 'OPEN')
-      .lt('due_date', today)
+      .lt('due_date', cutoff)
       .order('due_date', { ascending: true });
     if (error) throw error;
     return data || [];
