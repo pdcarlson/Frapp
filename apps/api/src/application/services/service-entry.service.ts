@@ -9,6 +9,10 @@ import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entr
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
 import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
 import { NotificationService } from './notification.service';
+import {
+  ChapterWorkflowsService,
+  WORKFLOW_HOURS_RECEIPT,
+} from './chapter-workflows.service';
 
 /** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
 const DEFAULT_MINUTES_PER_POINT = 60;
@@ -33,6 +37,7 @@ export class ServiceEntryService {
     @Inject(SERVICE_ENTRY_REPOSITORY)
     private readonly serviceEntryRepo: IServiceEntryRepository,
     private readonly notificationService: NotificationService,
+    private readonly chapterWorkflows: ChapterWorkflowsService,
   ) {}
 
   async findById(id: string, chapterId: string): Promise<ServiceEntry> {
@@ -77,13 +82,33 @@ export class ServiceEntryService {
       throw new BadRequestException('description is required');
     }
 
+    // Whitespace-only proof must not satisfy the receipt policy below (or be
+    // stored as a "proof" the review queue can't render).
+    const proofPath = input.proof_path?.trim() || null;
+
+    // Chapter policy (Settings → Workflows): wf_hours_receipt makes proof
+    // mandatory at submission. Legacy proof-less entries stay approvable at
+    // the reviewer's discretion. Only consulted when proof is absent — a
+    // submission with proof satisfies the policy either way.
+    if (!proofPath) {
+      const receiptPolicy = await this.chapterWorkflows.getWorkflow(
+        input.chapter_id,
+        WORKFLOW_HOURS_RECEIPT,
+      );
+      if (receiptPolicy.enabled) {
+        throw new BadRequestException(
+          'This chapter requires a receipt (photo or signed slip) with service-hour submissions — attach proof and resubmit',
+        );
+      }
+    }
+
     return this.serviceEntryRepo.create({
       chapter_id: input.chapter_id,
       user_id: input.user_id,
       date: input.date,
       duration_minutes,
       description: description.trim(),
-      proof_path: input.proof_path ?? null,
+      proof_path: proofPath,
       status: 'PENDING',
       reviewed_by: null,
       review_comment: null,
