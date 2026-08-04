@@ -183,7 +183,10 @@ export function ServiceHoursPage() {
       });
       return;
     }
-    if (proofFile && !PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)]) {
+    const proofContentType = proofFile
+      ? PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)]
+      : undefined;
+    if (proofFile && !proofContentType) {
       toast({
         title: "File type not allowed",
         description: "Proof accepts photos (JPG, PNG, GIF, WebP) or a PDF.",
@@ -193,9 +196,8 @@ export function ServiceHoursPage() {
     }
     try {
       let proofPath: string | undefined;
-      if (proofFile) {
-        const contentType =
-          PROOF_CONTENT_TYPE_BY_EXTENSION[extensionOf(proofFile.name)];
+      if (proofFile && proofContentType) {
+        const contentType = proofContentType;
         const signed = await requestProofUpload.mutateAsync({
           filename: proofFile.name,
           content_type: contentType,
