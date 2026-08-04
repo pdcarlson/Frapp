@@ -38,6 +38,7 @@ import {
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
 type ServiceStatus = "PENDING" | "APPROVED" | "REJECTED";
@@ -91,6 +92,22 @@ export function ServiceHoursPage() {
   const createEntry = useCreateServiceEntry();
   const reviewEntry = useReviewServiceEntry();
   const deleteEntry = useDeleteServiceEntry();
+  const orgConfig = useOrgConfig();
+
+  // Chapter policy (Settings → Workflows): when wf_hours_receipt is enabled
+  // the API rejects proof-less submissions. GET /chapters/:id/config needs
+  // chapter-config:view, which regular members don't hold — so only claim
+  // "required"/"optional" when the config actually loaded, and stay neutral
+  // otherwise. The server is the enforcement point either way.
+  const receiptWorkflow = orgConfig.data?.workflows?.find(
+    (wf) => wf.key === "wf_hours_receipt",
+  );
+  const receiptRequired = receiptWorkflow?.enabled === true;
+  const proofLabel = receiptRequired
+    ? "Proof link or storage path (required by chapter policy)"
+    : receiptWorkflow
+      ? "Proof link or storage path (optional)"
+      : "Proof link or storage path";
 
   const entries = useMemo(
     () => asArray<ServiceEntry>(entriesQuery.data),
@@ -149,7 +166,7 @@ export function ServiceHoursPage() {
         date: draft.date,
         duration_minutes: totalMinutes,
         description: draft.description.trim(),
-        proof_path: draft.proof_path || undefined,
+        proof_path: draft.proof_path.trim() || undefined,
       });
       toast({
         title: "Service entry submitted",
@@ -355,7 +372,7 @@ export function ServiceHoursPage() {
                   />
                 </div>
                 <div className="grid gap-1">
-                  <Label htmlFor="service-proof">Proof link or storage path (optional)</Label>
+                  <Label htmlFor="service-proof">{proofLabel}</Label>
                   <Input
                     id="service-proof"
                     value={draft.proof_path}
@@ -366,6 +383,7 @@ export function ServiceHoursPage() {
                       }))
                     }
                     placeholder="https://... or chapters/{id}/service/{entry}/proof.pdf"
+                    required={receiptRequired}
                   />
                 </div>
               </form>

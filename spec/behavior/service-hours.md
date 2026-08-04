@@ -4,7 +4,7 @@ A dedicated tracker for community service and philanthropy hours, separate from 
 
 ## Logging
 
-- Members with the `service:log` permission log service entries: date, duration (hours and minutes, stored as `duration_minutes`), description (what they did), and optional proof (file upload — photo, PDF, etc.).
+- Members with the `service:log` permission log service entries: date, duration (hours and minutes, stored as `duration_minutes`), description (what they did), and proof (file upload — photo, PDF, etc.). Proof is **required at submission when the chapter's `wf_hours_receipt` workflow is enabled** (the seed default — see the runtime-enforcement rules in [`settings/customization.md`](settings/customization.md)) and optional otherwise.
 - Proof files are stored in Supabase Storage under `chapters/{chapter_id}/service/{entry_id}/`.
 - All entries are chapter-scoped.
 
