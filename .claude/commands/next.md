@@ -47,6 +47,19 @@ written to Linear.** Each fan-out below is specified as independent checks with 
 the **Workflow** tool, run them as a fan-out; without it, run them inline in the same order. A plain
 `/next` must still work end to end. Never make a decision depend on a subagent's return shape.
 
+**`ultracode` in this command's arguments IS the Workflow opt-in.** The harness `ultracode` scan
+runs only on the human-typed, pre-expansion prompt and skips any input starting with `/` (read out
+of the 2.1.220 build like the Phase 3 `/code-review` rule — re-verify on newer builds), so on a
+slash-command turn (`/next ultracode`) no system-reminder will ever confirm ultracode. Do not read
+the missing reminder as "not opted in" and quietly downgrade to plain Agent calls. When the
+arguments carry `ultracode`, or a session-level ultracode reminder is present, run the specified
+fan-outs — §1.1, §1.2, Phase 3, and Phase 2's narrow exception when it qualifies — with the
+**Workflow** tool on this file's authority. Workflow launches auto-approve (`.claude/settings.json`
+allows the tool and pre-accepts the usage warning). If a launch prompts or is refused anyway (older
+build, ignored setting), that is tool unavailability, not an opt-out: run that fan-out inline per
+the invariant above — never sit waiting on an approval. Cost stays bounded because the fan-out
+points are enumerated and capped; everything not named as a fan-out stays inline in every mode.
+
 **Never report a step you did not run.** If you reduced scope or skipped a check, say so in both the
 Linear comment and your reply. Never claim a test, migration, or app run you didn't actually execute.
 

@@ -1,5 +1,9 @@
 {
   "doneMeansMerged": true,
+  "permissions": {
+    "allow": ["Workflow"]
+  },
+  "skipWorkflowUsageWarning": true,
   "hooks": {
     "PreToolUse": [
       {
