@@ -162,40 +162,85 @@ const RLS_SMOKE = [
   },
   {
     name: "chat_message_actions SELECT gated to authenticated AND scoped via can_read_chat_message (FRA-38)",
+    // `polcmd in ('r','*')` — a FOR ALL policy (polcmd '*') also applies to SELECT
+    // and OR-s in, so filtering on 'r' alone would let `for all using (true)`
+    // reopen the leak with this assertion still green.
+    // `polpermissive` — only permissive policies OR together. A RESTRICTIVE policy
+    // can only narrow, so counting one would fail CI on a legitimate hardening.
     sql: `select pg_get_expr(polqual, polrelid) as using_expr
             from pg_policy p join pg_class c on c.oid = p.polrelid
-           where c.relname = 'chat_message_actions' and polcmd = 'r'`,
-    // EXACTLY ONE permissive SELECT policy, and it must AND the two terms.
+           where c.relname = 'chat_message_actions'
+             and p.polpermissive
+             and p.polcmd in ('r', '*')`,
+    // EXACTLY ONE permissive read-applicable policy, AND-ing the two terms.
     //
     // `rows.length === 1` is the load-bearing half. Postgres OR-s permissive
-    // policies together, so a second `for select using (true)` added later
-    // restores "any authenticated user reads every row" — the whole FRA-38 leak —
-    // while the hardened policy sits untouched and a `some()` check still passes.
-    // Requiring a single policy is what makes this assertion a real guard.
+    // policies together, so a second `using (true)` added later restores "any
+    // authenticated user reads every row" — the whole FRA-38 leak — while the
+    // hardened policy sits untouched and a `some()` check still passes.
     //
-    // The expression check then rejects a permissive `auth.role()='authenticated'
-    // OR can_read_chat_message(...)` rewrite, which contains both substrings yet
-    // leaks. `auth.role()` is matched in both the plain and the Supabase initplan
-    // form — `(select auth.role())` renders as `( SELECT auth.role() AS role)` —
-    // so wrapping the call to hoist it out of the per-row path (the optimization
-    // FRA-291 contemplates) does not fail CI for being strictly better.
+    // The expression check is a cheap smoke test, NOT a proof. It is substring
+    // shaped, so a determined rewrite slips past it — `... AND
+    // can_read_chat_message(message_id) IS NOT NULL` is constant-true (the helper
+    // is an `exists`, never null), and De Morgan spells an OR using only `AND`
+    // and `NOT`. The real enforcement guarantee comes from the black-box tier
+    // below, which reads the table as an unprivileged role; treat this assertion
+    // as "the policy still looks like what we wrote", nothing stronger.
+    //
+    // `message_id` is matched with an optional table qualifier because hoisting
+    // the helper into an initplan — `(select can_read_chat_message(message_id))`,
+    // the FRA-291 optimization — makes Postgres render it as
+    // `chat_message_actions.message_id`. Likewise `auth.role()` is accepted in the
+    // initplan form `( SELECT auth.role() AS role)`.
     ok: (rows) => {
       if (rows.length !== 1) return false;
       const e = String(rows[0].using_expr);
       return (
         /auth\.role\(\)/i.test(e) &&
         /'authenticated'/i.test(e) &&
-        /can_read_chat_message\s*\(\s*message_id\s*\)/i.test(e) &&
+        /can_read_chat_message\s*\(\s*(?:\w+\.)?message_id\s*\)/i.test(e) &&
         /\band\b/i.test(e) &&
         !/\bor\b/i.test(e)
       );
     },
   },
   {
-    name: "can_read_chat_message() EXECUTE is revoked from public and anon (not an anon PostgREST RPC oracle)",
+    name: "users stays default-deny to client roles (the invariant that closes the action-write path)",
+    // chat_message_actions' INSERT/DELETE policies gate on
+    // `user_id in (select id from users where supabase_auth_id = auth.uid())`.
+    // That subselect is what refuses direct-client writes — but only while `users`
+    // has no permissive policy reachable by a client role. Adding a routine
+    // "read your own row" policy to `users` would flip cross-channel action writes
+    // live without touching chat_message_actions at all. The auth-hook policies
+    // added by 20260802120000 are scoped `TO supabase_auth_admin` and don't count.
+    sql: `select count(*)::int as n
+            from pg_policy p
+            join pg_class c on c.oid = p.polrelid
+           where c.relname = 'users'
+             and p.polpermissive
+             and p.polcmd in ('r', '*')
+             and (
+               p.polroles = '{0}'::oid[]
+               or exists (
+                 select 1 from pg_roles r
+                  where r.oid = any (p.polroles)
+                    and r.rolname in ('anon', 'authenticated', 'public')
+               )
+             )`,
+    ok: (rows) => rows.length === 1 && rows[0].n === 0,
+  },
+  {
+    name: "can_read_chat_message() EXECUTE is revoked from PUBLIC (not a wide-open PostgREST RPC oracle)",
     // The helper is SECURITY DEFINER and answers "may I read this message?", so
     // exposing it as an RPC hands out a membership oracle. A later `drop function;
     // create function` silently restores the default PUBLIC grant, so pin it.
+    //
+    // LIMITATION: this checks the PUBLIC bit only, because PGlite has no `anon`
+    // role to check. Hosted Supabase grants `anon` EXECUTE *directly* via ALTER
+    // DEFAULT PRIVILEGES, not through PUBLIC — so a drop/recreate there could
+    // restore anon's grant while this assertion stays green. The
+    // `has_function_privilege('anon', ...)` check in DB_PROMOTION_RUNBOOK.md is
+    // what covers that; it is a promotion-time check, not a CI one.
     sql: `select has_function_privilege('public', p.oid, 'EXECUTE') as public_exec
             from pg_proc p join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'can_read_chat_message'`,
@@ -551,6 +596,7 @@ const F = {
 let readSeeded = false;
 try {
   await db.exec(`
+  begin;
   insert into chapters (id, name, university) values
     ('${F.chapA}', 'Chapter A', 'Uni A'),
     ('${F.chapB}', 'Chapter B', 'Uni B');
@@ -645,10 +691,98 @@ for (const s of readSeeded ? READ_SCENARIOS : []) {
   }
 }
 
-// Restore the default auth.uid() stub so any later assertions are unaffected.
-await db.exec(
-  `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`,
-);
+// ─── BLACK-BOX policy enforcement (FRA-38) ──────────────────────────────────
+//
+// The tier above calls can_read_chat_message() directly, which proves the
+// PREDICATE is right but says nothing about whether the POLICY is wired to it.
+// The shape assertion covers the wiring only by pattern-matching the policy
+// expression, and a pattern match is defeatable — `... AND
+// can_read_chat_message(message_id) IS NOT NULL` is constant-true, and De Morgan
+// spells an OR out of AND and NOT.
+//
+// So read the table for real, as a role that is not the owner. RLS does not
+// apply to superusers or table owners, which is why this needs its own role.
+// A permissive `using (true)` policy of ANY command shape (FOR SELECT or FOR
+// ALL), a neutered predicate, or a dropped policy all change these counts, and
+// none of them can be papered over by how the expression is spelled.
+console.log("\n=== chat_message_actions policy enforcement (black-box, SET ROLE) ===");
+if (readSeeded) {
+  try {
+    await db.exec(`
+      insert into chat_message_actions (message_id, user_id, action_type) values
+        ('${F.msgPublic}',        '${F.userAId}', 'reaction'),
+        ('${F.msgPrivate}',       '${F.userAId}', 'reaction'),
+        ('${F.msgDM}',            '${F.userAId}', 'reaction'),
+        ('${F.msgRoleGated}',     '${F.userAId}', 'reaction'),
+        ('${F.msgRoleGatedOpen}', '${F.userAId}', 'reaction'),
+        ('${F.msgGroupDM}',       '${F.userAId}', 'reaction');
+
+      drop role if exists rls_probe;
+      create role rls_probe nologin;
+      grant usage on schema public to rls_probe;
+      grant select on public.chat_message_actions to rls_probe;
+      grant execute on function public.can_read_chat_message(uuid) to rls_probe;
+      -- Mirrors the request context of a signed-in Supabase client. On PGlite the
+      -- policy carries no TO clause (no authenticated role exists), so it
+      -- applies to rls_probe and the qual is what decides visibility.
+      create or replace function auth.role() returns text language sql as $$ select 'authenticated'::text $$;
+    `);
+
+    // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
+    // userC: chapter A, no privileges, in no member list -> PUBLIC + open gate.
+    // userB: chapter B -> nothing. null uid: no JWT -> nothing.
+    const BLACKBOX = [
+      { name: "member sees every action row in channels they can read", uid: F.userAAuth, expect: 6 },
+      { name: "cross-chapter reader sees none of them (tenant boundary holds at the table)", uid: F.userBAuth, expect: 0 },
+      { name: "chapter member sees only PUBLIC + open ROLE_GATED, not PRIVATE/DM/gated", uid: F.userCAuth, expect: 2 },
+      { name: "no JWT (null auth.uid()) sees nothing", uid: null, expect: 0 },
+    ];
+
+    for (const s of BLACKBOX) {
+      await db.exec(
+        s.uid === null
+          ? `create or replace function auth.uid() returns uuid language sql as $$ select null::uuid $$;`
+          : `create or replace function auth.uid() returns uuid language sql as $$ select '${s.uid}'::uuid $$;`,
+      );
+      await db.exec("set role rls_probe;");
+      let got;
+      try {
+        const res = await db.query(
+          `select count(*)::int as n from public.chat_message_actions`,
+        );
+        got = res.rows[0].n;
+      } finally {
+        await db.exec("reset role;");
+      }
+      if (got === s.expect) {
+        console.log(`OK    ${s.name}`);
+      } else {
+        missing += 1;
+        console.log(`MISS  ${s.name}\n        ↳ expected ${s.expect} visible row(s), got ${got}`);
+      }
+    }
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   black-box policy enforcement\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
+} else {
+  console.log("SKIP  seed failed above — black-box scenarios not run");
+}
+
+// Discard both tiers' fixtures (rows, the probe role, the stub redefinitions) so
+// the validated schema is exactly what the migrations produced and anything
+// appended after this does not inherit dirty state — same contract as the
+// anonymize tier. Safe when the seed failed too: the transaction is already
+// aborted, and rollback is what clears it.
+await db.exec("rollback;");
+
+// Restore the default stubs so any later assertions are unaffected.
+await db.exec(`
+  create or replace function auth.uid()  returns uuid language sql as $$ select null::uuid $$;
+  create or replace function auth.role() returns text language sql as $$ select 'service_role'::text $$;
+`);
 
 const tableCount = await db.query(
   `select count(*)::int as n from information_schema.tables where table_schema = 'public'`,

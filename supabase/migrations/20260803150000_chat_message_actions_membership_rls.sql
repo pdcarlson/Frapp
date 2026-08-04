@@ -132,13 +132,18 @@ $$;
 -- already dropped the policy (per the rollback playbook) does not abort here.
 drop policy if exists "chat_message_actions_select" on public.chat_message_actions;
 
--- `to authenticated` is load-bearing, not decoration: EXECUTE on the helper is
--- revoked from anon (above), and Postgres resolves a function's EXECUTE ACL when
--- it initializes the expression — before any AND short-circuit can spare it. An
--- anon read would therefore raise `42501 permission denied for function` (which
--- apps/web/lib/chat/use-chat-channel.ts discards, so it degrades silently) where
--- the old policy simply returned no rows. The role clause, not qual ordering, is
--- what keeps anon out of the function.
+-- `to authenticated` is load-bearing, not decoration. EXECUTE on the helper is
+-- revoked from anon (above), so whether an anon read returns no rows or fails
+-- outright depends on whether the planner evaluates the cheap
+-- `auth.role() = 'authenticated'` conjunct before the function call. Probed both
+-- ways on PG 17.5: when the role conjunct is evaluated first it short-circuits
+-- and the read cleanly returns zero rows, but when the function is reached
+-- without EXECUTE the query dies with `42501 permission denied for function`
+-- (which apps/web/lib/chat/use-chat-channel.ts discards, so it would degrade
+-- silently). Postgres does not contractually fix that ordering — it costs quals
+-- and may reorder, and hoisting `auth.role()` into an initplan (see FRA-291)
+-- changes the shape again. The role clause removes the dependency on plan shape
+-- entirely: anon never reaches the qual, so the outcome stops being incidental.
 --
 -- Emitted through `format()` because bare-Postgres substrates (PGlite in CI) have
 -- no `authenticated` role and `to authenticated` would abort there — the same
