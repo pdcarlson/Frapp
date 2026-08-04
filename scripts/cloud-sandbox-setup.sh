@@ -37,8 +37,14 @@ cs_docker_login_if_creds
 cs_log "Pre-pulling Supabase images (one-time; cached for fast per-session startup)..."
 # Same start args as per-session bringup — without the edge-runtime exclusion this aborts
 # partway and never caches the images ordered after it, which is the whole point of the pre-pull.
+#
+# Retried for the same reason bringup is, and with more to gain: a transient failure here
+# leaves the cache cold, which then exposes EVERY later session to the live CDN. Still
+# strictly non-fatal (see the no-`set -e` note above) — a pre-pull that cannot succeed must
+# degrade to pulling at session time, never block session start.
 # shellcheck disable=SC2086
-cs_supabase start $CS_SUPABASE_START_ARGS || cs_log "WARN: 'supabase start' failed during pre-pull; images may pull at session time."
+cs_retry "pre-pull 'supabase start'" "cs_supabase stop" cs_supabase start $CS_SUPABASE_START_ARGS \
+  || cs_log "WARN: pre-pull failed (${CS_RETRY_CLASS:-unknown}) — ${CS_RETRY_HINT:-see the output above}; images will pull at session time instead."
 cs_supabase stop || true
 
 cs_log "Setup complete."

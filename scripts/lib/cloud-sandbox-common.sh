@@ -24,6 +24,23 @@ cs_log() {
 # which needs staging verification and belongs in its own change. Tracked as a follow-up.
 CS_SUPABASE_CLI_VERSION="${FRAPP_SUPABASE_CLI_VERSION:-2.110.0}"
 
+# Silence the Supabase CLI's telemetry. Exported at source time so it covers both the CLI
+# invocation in cs_supabase and the `npm install` that fetches it.
+#
+# This is a diagnostics fix, not a privacy one. The CLI posts to PostHog on startup; a
+# restrictive sandbox network policy rejects that call with `403 Host not in allowlist` —
+# the SAME wording a genuinely fatal image-registry rejection produces. That line sat at the
+# top of the failed bringup log this work came from and sent the first reader chasing a
+# network-policy problem that did not exist. Silencing it at the source is cheaper than
+# teaching every future reader to discount it (cs_classify_failure below also filters it
+# out, for CLI versions that ignore these vars).
+#
+# Set here rather than in .claude/settings.json because cloud-sandbox-setup.sh runs as root
+# BEFORE the agent process exists, so a harness-level env block would never reach the
+# pre-pull — the very step whose log is hardest to read after the fact.
+export SUPABASE_TELEMETRY_DISABLED=1
+export DO_NOT_TRACK=1
+
 # Default `supabase start` arguments, shared by per-session bringup and the setup pre-pull.
 # The Deno edge-runtime container sets an rlimit (RLIMIT_NOFILE) the cloud sandbox denies
 # ("error setting rlimit type 7: operation not permitted"), and that aborts the WHOLE
@@ -163,4 +180,193 @@ cs_docker_login_if_creds() {
   else
     cs_log "DOCKERHUB_USERNAME/TOKEN not set; using anonymous pulls (may hit rate limits)."
   fi
+}
+
+# ─── Transient-failure retry ────────────────────────────────────────────────────────────
+#
+# `supabase start` pulls ~10 images from AWS ECR Public via CloudFront. The CLI retries an
+# individual blob fetch twice internally (4s, 8s), which a CDN hiccup can simply outlast —
+# and when it does, the whole bringup dies, taking the session's database and API with it.
+# These helpers add an OUTER retry around that one network-bound step.
+#
+# Retrying indiscriminately would be worse than not retrying: a blocked allowlist or an
+# exhausted Docker Hub quota is not going to resolve itself, and burning three ~90s attempts
+# on one only delays a failure the user must fix in the web UI anyway. So the retry is gated
+# on classification, and the classifier's fatal verdicts carry the remedy with them.
+
+# Outer retry budget. Three attempts at a 10s base gives ~10s + ~20s of backoff on top of the
+# stop/start cycles themselves — comfortably longer than the ~12s the CLI's own retries cover,
+# which is what the original incident outlasted. A base delay of 0 disables the wait entirely
+# (what the test suite uses to drive the loop without sleeping).
+CS_RETRY_ATTEMPTS="${FRAPP_SANDBOX_START_RETRIES:-3}"
+CS_RETRY_BASE_DELAY="${FRAPP_SANDBOX_RETRY_BASE_DELAY:-10}"
+
+# Both knobs feed `$(( ))`, which ABORTS the shell on a non-integer. Left unguarded, a typo in
+# an environment variable meant for tuning would become a way to break bringup outright, so
+# fall back to the defaults rather than trusting the environment.
+case "$CS_RETRY_ATTEMPTS" in '' | *[!0-9]*) CS_RETRY_ATTEMPTS=3 ;; esac
+[ "$CS_RETRY_ATTEMPTS" -ge 1 ] || CS_RETRY_ATTEMPTS=1
+case "$CS_RETRY_BASE_DELAY" in '' | *[!0-9]*) CS_RETRY_BASE_DELAY=10 ;; esac
+
+# Classify a captured failure log, echoing exactly one token on stdout:
+#
+#   policy     Network policy blocked a container registry. FATAL — an allowlist does not
+#              heal on retry, and the fix is a setting in the Claude Code web environment.
+#   ratelimit  Docker Hub refused the pull. FATAL for the same reason (it needs credentials).
+#   transient  Registry/CDN hiccup: 5xx, timeout, reset, truncated transfer. Retryable.
+#   unknown    Anything else. ALSO retryable, deliberately — the point of this work is
+#              resilience against a class of network failures nobody can fully enumerate, and
+#              the two cases that genuinely cannot be retried are both named above. Erring the
+#              other way (fail fast on anything unrecognised) would leave the next unfamiliar
+#              CDN error string killing sessions exactly as before.
+#
+# ORDER MATTERS. A run that hits an allowlist rejection usually also logs a 5xx or a reset as
+# the connection dies, so policy and ratelimit are tested first; matching transient first would
+# retry a fatal misconfiguration three times over and still fail.
+#
+# Telemetry lines are stripped BEFORE the policy test. The CLI's blocked PostHog call produces
+# the identical `403 Host not in allowlist` wording as a blocked image pull but is harmless —
+# it was the red herring in this issue's original diagnosis. Matching it would abort bringup on
+# noise, the exact inversion of what this function is for. `export DO_NOT_TRACK=1` above should
+# stop the call being made at all; this filter is what keeps a CLI version that ignores the env
+# var from resurrecting the false positive.
+cs_classify_failure() {
+  local cap="${1:-}" body
+  [ -n "$cap" ] && [ -r "$cap" ] || { printf 'unknown'; return 0; }
+
+  body="$(grep -Evi 'posthog|telemetry|do_not_track' "$cap" 2>/dev/null || true)"
+
+  if printf '%s' "$body" | grep -Eqi 'not in allowlist|host_not_allowed|403 forbidden|error 403'; then
+    printf 'policy'
+  elif printf '%s' "$body" | grep -Eqi 'toomanyrequests|rate exceeded|pull rate limit|\b429\b'; then
+    printf 'ratelimit'
+  elif printf '%s' "$body" | grep -Eqi 'service unavailable|bad gateway|gateway time-?out|\b50[234]\b|i/o timeout|tls handshake timeout|connection reset|unexpected eof|broken pipe|context deadline exceeded'; then
+    printf 'transient'
+  else
+    printf 'unknown'
+  fi
+}
+
+# One-sentence remedy for a classification token. Kept next to the classifier so a new class
+# cannot be added without an answer to "so what do I do about it?".
+#
+# This string matters more than its length suggests: cloud-sandbox-up.sh passes it to fail(),
+# which writes it verbatim into .cloud-sandbox-up.failed. That sentinel is the ENTIRE
+# machine-readable failure surface — it is what a polling agent reads instead of the log.
+cs_failure_hint() {
+  case "${1:-}" in
+    policy)
+      printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in the Claude Code web environment. Applies to NEW sessions only.'
+      ;;
+    ratelimit)
+      printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to the Claude Code web environment. Applies to NEW sessions only.'
+      ;;
+    transient)
+      printf 'the container registry/CDN returned transient errors on every one of %s attempts. This is an upstream outage rather than a config problem — start a new session to retry; if it persists, check the Supabase and AWS ECR Public status pages.' "$CS_RETRY_ATTEMPTS"
+      ;;
+    toolchain)
+      printf 'the pinned Supabase CLI could not be installed or run — see .cache/supabase-cli/install.log. Delete .cache/supabase-cli/ to force a clean reinstall.'
+      ;;
+    *)
+      printf 'the failure did not match any known pattern — read the full output in /tmp/cloud-sandbox-up.log.'
+      ;;
+  esac
+}
+
+# Run a command, retrying while its output looks like a transient network failure.
+#
+#     cs_retry <label> <cleanup-command-or-empty> <cmd> [args...]
+#
+# <label> names the step in log lines. <cleanup-command-or-empty> runs between attempts and is
+# word-split on purpose, so "cs_supabase stop" works; pass "" for none. That cleanup is not
+# optional in practice for `supabase start`: a failed start leaves half-created containers
+# behind, and starting again over them fails for a different reason than the one being retried,
+# turning one legible error into two illegible ones.
+#
+# On failure the caller reads three globals. A shell function returns a status OR a value, not
+# both, and stdout is spoken for here — write_env_local captures `supabase status` on stdout,
+# which is why every helper in this file logs to stderr:
+#
+#   CS_RETRY_CLASS  policy | ratelimit | transient | unknown | toolchain
+#   CS_RETRY_HINT   the actionable remedy for that class
+#   CS_RETRY_LOG    path to the last attempt's captured output ("" if the command succeeded)
+#
+# Returns the last attempt's exit status, and never exits: this file is sourced by scripts that
+# deliberately run without `set -e`, so callers own their own error policy.
+cs_retry() {
+  local label="$1" cleanup="$2"
+  shift 2
+
+  local attempt=1 rc=0 delay class
+  CS_RETRY_CLASS=""
+  CS_RETRY_HINT=""
+  CS_RETRY_LOG="$(mktemp "${TMPDIR:-/tmp}/cloud-sandbox-retry.XXXXXX")"
+
+  while :; do
+    [ "$attempt" -gt 1 ] && cs_log "Retrying ${label} — attempt ${attempt}/${CS_RETRY_ATTEMPTS}."
+
+    # Truncate per attempt so the classification describes the LAST attempt only. Accumulating
+    # would let a 503 in attempt 1 keep a deterministic attempt-3 failure looking retryable, and
+    # would report the wrong remedy. Nothing is lost: `>&2` still streams every attempt into the
+    # caller's own log.
+    : >"$CS_RETRY_LOG"
+    # PIPESTATUS[0] is the command's status rather than tee's, and is correct whether or not the
+    # caller enabled `set -o pipefail` — which this file cannot assume either way.
+    "$@" 2>&1 | tee "$CS_RETRY_LOG" >&2
+    rc=${PIPESTATUS[0]}
+
+    if [ "$rc" -eq 0 ]; then
+      # Clear all three, not just the log. An attempt that failed transiently and then
+      # recovered would otherwise leave CS_RETRY_CLASS set on a SUCCESSFUL call, and a caller
+      # that reads it — the natural thing to do — would report a failure that did not happen.
+      rm -f "$CS_RETRY_LOG"
+      CS_RETRY_LOG=""
+      CS_RETRY_CLASS=""
+      CS_RETRY_HINT=""
+      return 0
+    fi
+
+    # cs_supabase returns 127 for its OWN install failures (bad version pin, blocked npm
+    # registry, skipped platform binary). Those are deterministic, already carry a precise
+    # message, and a retry only repeats a failing `npm install`.
+    if [ "$rc" -eq 127 ]; then
+      CS_RETRY_CLASS="toolchain"
+      CS_RETRY_HINT="$(cs_failure_hint toolchain)"
+      cs_log "ERROR: ${label} failed with a toolchain error (exit 127) — not retrying."
+      return "$rc"
+    fi
+
+    class="$(cs_classify_failure "$CS_RETRY_LOG")"
+    CS_RETRY_CLASS="$class"
+    CS_RETRY_HINT="$(cs_failure_hint "$class")"
+
+    case "$class" in
+      policy | ratelimit)
+        cs_log "ERROR: ${label} failed with a ${class} error — not retrying, since retries cannot fix it."
+        return "$rc"
+        ;;
+    esac
+
+    if [ "$attempt" -ge "$CS_RETRY_ATTEMPTS" ]; then
+      cs_log "ERROR: ${label} failed after ${attempt} attempt(s); last failure classified ${class}."
+      return "$rc"
+    fi
+
+    # Exponential: base, 2×base, 4×base... Capped because the delay is attacker-free but not
+    # typo-free — FRAPP_SANDBOX_START_RETRIES=40 would otherwise compute a delay measured in
+    # centuries and hang the session on a single sleep.
+    delay=$((CS_RETRY_BASE_DELAY * (1 << (attempt - 1))))
+    [ "$delay" -gt 300 ] && delay=300
+    cs_log "WARN: ${label} failed (${class}); retrying in ${delay}s."
+
+    if [ -n "$cleanup" ]; then
+      cs_log "Cleaning up before retry: ${cleanup}"
+      # Intentionally unquoted — $cleanup is a caller-supplied command line that must word-split.
+      # shellcheck disable=SC2086
+      $cleanup >/dev/null 2>&1 || true
+    fi
+
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
 }
