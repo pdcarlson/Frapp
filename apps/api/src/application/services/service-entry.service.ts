@@ -187,11 +187,15 @@ export class ServiceEntryService {
         entry.proof_path,
       );
       return { url };
-    } catch {
+    } catch (error) {
       // Legacy rows can hold prefix-shaped paths whose object was never
       // uploaded (the old UI accepted free text verbatim); a missing object
-      // is a 404 for the caller, not a server fault.
-      throw new NotFoundException('Proof file is not available for download');
+      // is a 404 for the caller, not a server fault. Anything else (outage,
+      // bad credentials) must stay a 5xx so monitoring sees it.
+      if (/not.?found/i.test(String((error as Error)?.message))) {
+        throw new NotFoundException('Proof file is not available for download');
+      }
+      throw error;
     }
   }
 

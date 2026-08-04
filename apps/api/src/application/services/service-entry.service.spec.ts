@@ -479,6 +479,17 @@ describe('ServiceEntryService', () => {
         service.getProofDownloadUrl('se-1', 'ch-1', 'user-1', false),
       ).rejects.toThrow('Proof file is not available for download');
     });
+
+    it('should propagate non-missing-object storage failures unchanged', async () => {
+      mockServiceEntryRepo.findById.mockResolvedValue(proofEntry);
+      mockStorageProvider.getSignedDownloadUrl.mockRejectedValue(
+        new Error('Service unavailable'),
+      );
+
+      await expect(
+        service.getProofDownloadUrl('se-1', 'ch-1', 'user-1', false),
+      ).rejects.toThrow('Service unavailable');
+    });
   });
 
   describe('approve', () => {
