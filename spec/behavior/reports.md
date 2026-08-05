@@ -94,6 +94,15 @@ so text outside that range is folded. The governing rules, in order:
   character — a member name in a non-Latin script is degraded, never a failed
   export, and never inflated into a run of question marks.
 
+### Row limits
+
+Report queries are not paged, so they are capped by PostgREST's `max_rows`
+(1000, `supabase/config.toml`). A report matching more rows than that is
+**silently short in every format**, PDF included — the document's page counter
+and the response's `row_count` describe what was returned, not what matched.
+Tracked in FRA-342; do not treat an exported report as a complete record of a
+chapter larger than the cap until it is fixed.
+
 ### Unsupported formats
 
 An unrecognized `format` is rejected with `400`, matching the points `window`

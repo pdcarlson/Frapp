@@ -149,6 +149,23 @@ export function ReportsPage() {
     "all" | "semester" | "month"
   >("all");
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
+
+  /**
+   * Any filter edit invalidates the preview.
+   *
+   * "Download CSV" serializes `preview`, while "Download PDF" re-queries with
+   * whatever the filters currently say. Without this, editing a date after
+   * generating leaves the two buttons exporting different data from the same
+   * screen — and the CSV silently carries rows that no longer match the filters
+   * the user is looking at. The kind Select already cleared it; the filter
+   * inputs did not.
+   */
+  function onFilterChange<T>(setter: (value: T) => void) {
+    return (value: T) => {
+      setter(value);
+      setPreview(null);
+    };
+  }
   // Tracked separately from the mutation's own isPending: the PDF export reuses
   // the same mutation, so without this the preview panel would flip to its
   // loading state during a download that never touches the preview.
@@ -257,8 +274,15 @@ export function ReportsPage() {
 
   /**
    * PDF export goes back to the API rather than reusing the preview: the server
-   * renders the branded template over the *full* result set and stores it
-   * privately, handing back a signed URL that expires in an hour.
+   * renders the branded template over the whole query result — not just the 25
+   * rows shown here — and stores it privately, handing back a signed URL that
+   * expires in an hour.
+   *
+   * "Whole query result" is bounded by PostgREST's `max_rows` (1000, see
+   * supabase/config.toml), which the report queries do not page past. A chapter
+   * with more matching rows than that gets a silently short report in every
+   * format, PDF included. Pre-existing and shared with JSON/CSV; tracked in
+   * FRA-342. Deliberately not claimed as complete here.
    */
   async function exportPdf() {
     setPdfPending(true);
@@ -391,7 +415,9 @@ export function ReportsPage() {
                   <Input
                     id="report-event"
                     value={eventId}
-                    onChange={(event) => setEventId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEventId)(event.target.value)
+                    }
                     placeholder="UUID — leave blank for chapter-wide"
                   />
                 </div>
@@ -401,7 +427,9 @@ export function ReportsPage() {
                     id="report-start"
                     type="date"
                     value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setStartDate)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -410,7 +438,9 @@ export function ReportsPage() {
                     id="report-end"
                     type="date"
                     value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEndDate)(event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -423,7 +453,9 @@ export function ReportsPage() {
                   <Input
                     id="report-member"
                     value={memberId}
-                    onChange={(event) => setMemberId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setMemberId)(event.target.value)
+                    }
                     placeholder="UUID — leave blank for chapter-wide"
                   />
                 </div>
@@ -432,7 +464,9 @@ export function ReportsPage() {
                   <Select
                     value={pointsWindow}
                     onValueChange={(value) =>
-                      setPointsWindow(value as typeof pointsWindow)
+                      onFilterChange(setPointsWindow)(
+                        value as typeof pointsWindow,
+                      )
                     }
                   >
                     <SelectTrigger id="report-window">
@@ -457,7 +491,9 @@ export function ReportsPage() {
                   <Input
                     id="service-report-member"
                     value={memberId}
-                    onChange={(event) => setMemberId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setMemberId)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -466,7 +502,9 @@ export function ReportsPage() {
                     id="service-report-start"
                     type="date"
                     value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setStartDate)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -475,7 +513,9 @@ export function ReportsPage() {
                     id="service-report-end"
                     type="date"
                     value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEndDate)(event.target.value)
+                    }
                   />
                 </div>
               </div>
