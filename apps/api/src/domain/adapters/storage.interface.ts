@@ -10,6 +10,12 @@ export interface IStorageProvider {
     bucket: string,
     path: string,
     expiresIn?: number,
+    /**
+     * When set, the URL forces a download with this filename instead of
+     * rendering inline — storage keys are opaque, so without it a saved report
+     * lands on disk as a UUID.
+     */
+    downloadAs?: string,
   ): Promise<string>;
   /**
    * Upload bytes the API produced itself (as opposed to handing a client a

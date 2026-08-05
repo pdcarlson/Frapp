@@ -73,7 +73,8 @@ export class ReportExportService {
     const bytes = await this.renderer.render({
       title: REPORT_TITLES[kind],
       subtitle,
-      generatedAt: generatedAt.toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
+      generatedAt:
+        generatedAt.toISOString().replace('T', ' ').slice(0, 19) + ' UTC',
       columns,
       rows,
       branding: {
@@ -97,6 +98,7 @@ export class ReportExportService {
       REPORTS_BUCKET,
       storagePath,
       REPORT_URL_TTL_SECONDS,
+      filename,
     );
 
     return {

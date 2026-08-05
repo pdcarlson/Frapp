@@ -48,7 +48,9 @@ const EXPORT_RESPONSE = {
 
 /** Join the non-empty parts of a report's scope line for the PDF header. */
 function scopeLine(parts: (string | undefined)[]): string | undefined {
-  const line = parts.filter((part): part is string => Boolean(part)).join(' · ');
+  const line = parts
+    .filter((part): part is string => Boolean(part))
+    .join(' · ');
   return line || undefined;
 }
 
@@ -177,9 +179,7 @@ export class ReportController {
         chapterId,
         kind,
         columns,
-        // Report rows are declared as interfaces, which carry no implicit index
-        // signature; the renderer only ever reads them by column key.
-        data as unknown as Record<string, unknown>[],
+        data,
         subtitle(),
       );
     }

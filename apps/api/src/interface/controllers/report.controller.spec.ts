@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReportController } from './report.controller';
 import { ReportService } from '../../application/services/report.service';
+import { ReportExportService } from '../../application/services/report-export.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
@@ -25,6 +26,16 @@ jest.mock('../../domain/utils/csv', () => ({
 describe('ReportController', () => {
   let controller: ReportController;
   let reportService: jest.Mocked<ReportService>;
+  let reportExportService: jest.Mocked<ReportExportService>;
+
+  const exportResult = {
+    url: 'https://storage.example/signed',
+    expires_at: '2026-08-05T15:00:00.000Z',
+    expires_in: 3600,
+    filename: 'frapp-attendance-report-2026-08-05.pdf',
+    storage_path: 'chapters/chapter-123/reports/attendance-2026-08-05-uuid.pdf',
+    row_count: 1,
+  };
 
   beforeEach(async () => {
     reportService = {
@@ -34,9 +45,16 @@ describe('ReportController', () => {
       getServiceReport: jest.fn(),
     } as any;
 
+    reportExportService = {
+      exportPdf: jest.fn().mockResolvedValue(exportResult),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ReportController],
-      providers: [{ provide: ReportService, useValue: reportService }],
+      providers: [
+        { provide: ReportService, useValue: reportService },
+        { provide: ReportExportService, useValue: reportExportService },
+      ],
     })
       .overrideGuard(SupabaseAuthGuard)
       .useValue({ canActivate: () => true })
@@ -228,6 +246,94 @@ describe('ReportController', () => {
       );
       expect(toCSV).toHaveBeenCalledWith(mockData, SERVICE_COLUMNS);
       expect(result).toBe('mocked,csv,content');
+    });
+  });
+
+  describe('format=pdf', () => {
+    const chapterId = 'chapter-123';
+
+    it('returns the signed-URL envelope rather than a document body', async () => {
+      reportService.getRosterReport.mockResolvedValue([]);
+
+      const result = await controller.roster(chapterId, 'pdf');
+
+      expect(result).toBe(exportResult);
+      expect(toCSV).not.toHaveBeenCalled();
+    });
+
+    it('renders attendance with the shared columns and a filter scope line', async () => {
+      reportService.getAttendanceReport.mockResolvedValue([]);
+
+      await controller.attendance(
+        chapterId,
+        { start_date: '2026-01-01', end_date: '2026-05-31' },
+        'pdf',
+      );
+
+      expect(reportExportService.exportPdf).toHaveBeenCalledWith(
+        chapterId,
+        'attendance',
+        ATTENDANCE_COLUMNS,
+        [],
+        '2026-01-01 – 2026-05-31 · All events',
+      );
+    });
+
+    it('names a single-event attendance export in its scope line', async () => {
+      reportService.getAttendanceReport.mockResolvedValue([]);
+
+      await controller.attendance(chapterId, { event_id: 'event-1' }, 'pdf');
+
+      expect(reportExportService.exportPdf).toHaveBeenCalledWith(
+        chapterId,
+        'attendance',
+        ATTENDANCE_COLUMNS,
+        [],
+        'All dates · Single event',
+      );
+    });
+
+    it('carries the points window into the scope line', async () => {
+      reportService.getPointsReport.mockResolvedValue([]);
+
+      await controller.points(chapterId, { window: 'semester' }, 'pdf');
+
+      expect(reportExportService.exportPdf).toHaveBeenCalledWith(
+        chapterId,
+        'points',
+        POINTS_COLUMNS,
+        [],
+        'Window: semester · All members',
+      );
+    });
+
+    it('scopes a service export to one member when filtered', async () => {
+      reportService.getServiceReport.mockResolvedValue([]);
+
+      await controller.service(
+        chapterId,
+        { user_id: 'user-1', start_date: '2026-03-01' },
+        'pdf',
+      );
+
+      expect(reportExportService.exportPdf).toHaveBeenCalledWith(
+        chapterId,
+        'service',
+        SERVICE_COLUMNS,
+        [],
+        'From 2026-03-01 · Single member',
+      );
+    });
+
+    it('leaves an unknown format on the JSON path', async () => {
+      const rows = [{ name: 'John Doe' }] as any;
+      reportService.getRosterReport.mockResolvedValue(rows);
+
+      const result = await controller.roster(chapterId, 'xlsx');
+
+      expect(result).toBe(rows);
+      expect(reportExportService.exportPdf).not.toHaveBeenCalled();
+      expect(toCSV).not.toHaveBeenCalled();
     });
   });
 });

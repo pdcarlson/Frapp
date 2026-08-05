@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import {
+  isReportExportEnvelope,
   useAttendanceReport,
   usePointsReport,
   useRosterReport,
   useServiceReport,
+  type ReportFormat,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -154,6 +156,10 @@ export function ReportsPage() {
     "all",
   );
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
+  // Tracked separately from the mutation's own isPending: the PDF export reuses
+  // the same mutation, so without this the preview panel would flip to its
+  // loading state during a download that never touches the preview.
+  const [pdfPending, setPdfPending] = useState(false);
 
   /** Union of flattened keys for preview rows, stable column order (matches CSV union logic). */
   const previewColumnKeys = useMemo(() => {
@@ -184,35 +190,43 @@ export function ReportsPage() {
     }
   }, [attendance, kind, points, roster, service]);
 
+  /** Run the selected report at a given format, with the current filters. */
+  async function invokeReport(format: ReportFormat): Promise<unknown> {
+    if (kind === "attendance") {
+      return attendance.mutateAsync({
+        format,
+        body: {
+          event_id: eventId || undefined,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+        },
+      });
+    }
+    if (kind === "points") {
+      return points.mutateAsync({
+        format,
+        body: {
+          user_id: memberId || undefined,
+          window: pointsWindow,
+        },
+      });
+    }
+    if (kind === "roster") {
+      return roster.mutateAsync({ format });
+    }
+    return service.mutateAsync({
+      format,
+      body: {
+        user_id: memberId || undefined,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      },
+    });
+  }
+
   async function runReport() {
     try {
-      let payload: unknown = null;
-      if (kind === "attendance") {
-        payload = await attendance.mutateAsync({
-          body: {
-            event_id: eventId || undefined,
-            start_date: startDate || undefined,
-            end_date: endDate || undefined,
-          },
-        });
-      } else if (kind === "points") {
-        payload = await points.mutateAsync({
-          body: {
-            user_id: memberId || undefined,
-            window: pointsWindow,
-          },
-        });
-      } else if (kind === "roster") {
-        payload = await roster.mutateAsync({});
-      } else if (kind === "service") {
-        payload = await service.mutateAsync({
-          body: {
-            user_id: memberId || undefined,
-            start_date: startDate || undefined,
-            end_date: endDate || undefined,
-          },
-        });
-      }
+      const payload = await invokeReport("json");
 
       const rows = extractRows(payload);
       setPreview(rows);
@@ -246,6 +260,49 @@ export function ReportsPage() {
     if (!preview || preview.length === 0) return;
     const csv = buildCsv(preview);
     downloadCsv(kind, csv);
+  }
+
+  /**
+   * PDF export goes back to the API rather than reusing the preview: the server
+   * renders the branded template over the *full* result set and stores it
+   * privately, handing back a signed URL that expires in an hour.
+   */
+  async function exportPdf() {
+    setPdfPending(true);
+    try {
+      const payload = await invokeReport("pdf");
+      if (!isReportExportEnvelope(payload)) {
+        throw new Error("The API did not return a download link.");
+      }
+      if (typeof window !== "undefined") {
+        const anchor = document.createElement("a");
+        anchor.href = payload.url;
+        anchor.rel = "noopener";
+        // The signed URL already carries a download disposition; setting the
+        // attribute keeps the filename when the browser honours it locally.
+        anchor.download = payload.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      toast({
+        title: `${reportLabel[kind]} PDF ready`,
+        description: `${payload.row_count} row${
+          payload.row_count === 1 ? "" : "s"
+        } exported. The download link expires in one hour.`,
+      });
+    } catch (error) {
+      toast({
+        title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
+        description:
+          error instanceof Error
+            ? error.message
+            : "The API rejected the request. Confirm reports:export and retry.",
+        variant: "destructive",
+      });
+    } finally {
+      setPdfPending(false);
+    }
   }
 
   return (
@@ -284,8 +341,8 @@ export function ReportsPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Generate attendance, points, roster, and service hours reports.
-            Download as CSV today; branded PDF export is parked behind a
-            dedicated backend slice.
+            Download as CSV, or export a branded PDF with your chapter&apos;s
+            name and logo.
           </p>
         </header>
 
@@ -425,7 +482,8 @@ export function ReportsPage() {
           </CardContent>
           <CardFooter className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              PDF export is coming in a later slice. Use CSV for now.
+              PDF export is generated server-side; its download link is valid
+              for one hour.
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -436,8 +494,20 @@ export function ReportsPage() {
                 <Download className="h-4 w-4" />
                 Download CSV
               </Button>
+              <Button
+                variant="outline"
+                onClick={exportPdf}
+                disabled={activeMutation.isPending}
+              >
+                {pdfPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                {pdfPending ? "Preparing PDF..." : "Download PDF"}
+              </Button>
               <Button onClick={runReport} disabled={activeMutation.isPending}>
-                {activeMutation.isPending ? (
+                {activeMutation.isPending && !pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <FileSpreadsheet className="h-4 w-4" />
@@ -457,7 +527,7 @@ export function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {activeMutation.isPending ? (
+            {activeMutation.isPending && !pdfPending ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating report...

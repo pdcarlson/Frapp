@@ -16,7 +16,11 @@ export const ATTENDANCE_COLUMNS: ReportPdfColumn[] = [
 export const POINTS_COLUMNS: ReportPdfColumn[] = [
   { key: 'member_name', header: 'Member Name', weight: 1.2 },
   { key: 'total_points', header: 'Total Points', weight: 0.6 },
-  { key: 'breakdown_by_category', header: 'Breakdown by Category', weight: 2.6 },
+  {
+    key: 'breakdown_by_category',
+    header: 'Breakdown by Category',
+    weight: 2.6,
+  },
 ];
 
 export const ROSTER_COLUMNS: ReportPdfColumn[] = [

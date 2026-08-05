@@ -27,10 +27,15 @@ export class SupabaseStorageService implements IStorageProvider {
     bucket: string,
     path: string,
     expiresIn = 3600,
+    downloadAs?: string,
   ): Promise<string> {
     const { data, error } = await this.supabase.storage
       .from(bucket)
-      .createSignedUrl(path, expiresIn);
+      .createSignedUrl(
+        path,
+        expiresIn,
+        downloadAs ? { download: downloadAs } : undefined,
+      );
 
     if (error) throw error;
     return data.signedUrl;
