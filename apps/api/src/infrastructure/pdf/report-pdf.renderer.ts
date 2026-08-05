@@ -100,7 +100,8 @@ export function toWinAnsi(value: string): string {
       out += ' ';
       continue;
     }
-    if (codePoint < 0x20) continue;
+    // DEL and the C1 block join the C0 controls in being dropped outright.
+    if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) continue;
     if (isWinAnsiEncodable(codePoint)) {
       out += char;
       continue;
@@ -110,10 +111,14 @@ export function toWinAnsi(value: string): string {
       out += stroked;
       continue;
     }
-    // A combining mark with no precomposed form (NFC left it standalone) is
-    // dropped, not replaced: losing the diacritic is the documented
-    // degradation, but "?" in the middle of a word is noise.
-    if (/\p{M}/u.test(char)) continue;
+    // Zero-width characters are dropped, not replaced. Two groups reach here:
+    // combining marks with no precomposed form (NFC left them standalone), and
+    // format characters (Cf) — a BOM surviving a UTF-8-with-BOM roster import,
+    // a zero-width space, a bidi mark. None of them occupy space on the page,
+    // so substituting "?" would *add* a visible character to a name rather
+    // than degrade one: a name starting with U+FEFF must render "Aaron",
+    // never "?Aaron".
+    if (/[\p{M}\p{Cf}]/u.test(char)) continue;
     const folded = char
       .normalize('NFKD')
       .replace(/[̀-ͯ]/g, '')

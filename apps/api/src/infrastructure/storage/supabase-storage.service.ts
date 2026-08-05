@@ -1,32 +1,19 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 
 /**
  * Reject object paths that can escape their bucket.
  *
- * storage-js interpolates the path straight into the request URL without
- * percent-encoding, and Node's URL parser then collapses `..` segments before
- * the request leaves the process — so `chapters/A/branding/../../../reports/x`
- * reads `reports/x`, in a *different bucket*, under the API's service-role key
- * (which bypasses RLS entirely). Reproduced against the local stack.
- *
  * Guarding here rather than only at each call site: this class is the single
  * chokepoint every storage operation passes through, and the paths it receives
  * come from database columns that were themselves populated from client input.
+ * See `assertSafeStoragePath` for why a raw `..` check is not sufficient.
  */
-function assertSafeObjectPath(path: string): void {
-  const segments = path.split('/');
-  if (
-    path.length === 0 ||
-    segments.some(
-      (segment) => segment === '' || segment === '.' || segment === '..',
-    )
-  ) {
-    throw new BadRequestException('Invalid storage path');
-  }
-}
+const assertSafeObjectPath = (path: string): void =>
+  assertSafeStoragePath(path);
 
 /**
  * Same guard for folder prefixes, which — unlike object paths — may legitimately

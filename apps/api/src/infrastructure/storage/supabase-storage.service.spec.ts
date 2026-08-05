@@ -138,6 +138,14 @@ describe('SupabaseStorageService', () => {
       'chapters/a/./logo.png',
       'chapters//a/logo.png',
       '',
+      // Percent-encoded dot segments. The URL parser treats %2e as "." during
+      // dot-segment removal, so these escaped a raw-segment-only check —
+      // verified reading another bucket's object against a live stack.
+      'chapters/a/branding/%2e%2e/%2e%2e/reports/chapters/b/secret.pdf',
+      'chapters/a/branding/%2E%2E/%2E%2E/reports/chapters/b/secret.pdf',
+      'chapters/a/branding/.%2e/.%2e/reports/chapters/b/secret.pdf',
+      // Backslash is a segment separator for special-scheme URLs.
+      'chapters/a/branding/..\\..\\secret.pdf',
     ];
 
     it.each(TRAVERSALS)('downloadFile rejects %p', async (path) => {
@@ -185,6 +193,34 @@ describe('SupabaseStorageService', () => {
         service.deleteFiles('reports', ['chapters/a/ok.pdf', '../../etc/x']),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('allows a filename containing a bare % (malformed encoding is not a traversal)', async () => {
+      // Server-built keys embed path.basename(userFilename), so "Q1 50% growth"
+      // is a legitimate object name. decodeURIComponent throws on it; the raw
+      // check must still pass it through.
+      await expect(
+        service.uploadFile(
+          'documents',
+          'chapters/a/documents/doc-1/Q1 50% growth.pdf',
+          new Uint8Array([1]),
+          'application/pdf',
+        ),
+      ).resolves.toBeUndefined();
+      expect(upload).toHaveBeenCalled();
+    });
+
+    it('allows a filename whose decoded form merely contains dots', async () => {
+      // "b%2e%2e" decodes to "b.." — not a dot *segment*, so it is legal.
+      await expect(
+        service.uploadFile(
+          'documents',
+          'chapters/a/documents/doc-1/b%2e%2e.pdf',
+          new Uint8Array([1]),
+          'application/pdf',
+        ),
+      ).resolves.toBeUndefined();
+      expect(upload).toHaveBeenCalled();
     });
 
     it('allows ordinary chapter-scoped paths', async () => {

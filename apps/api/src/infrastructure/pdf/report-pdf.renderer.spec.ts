@@ -45,6 +45,15 @@ describe('toWinAnsi', () => {
     expect(toWinAnsi('á')).toBe('á');
   });
 
+  it('drops zero-width format characters instead of substituting "?"', () => {
+    // A BOM surviving a UTF-8-with-BOM roster import must not print a literal
+    // "?" in front of the first member's name.
+    expect(toWinAnsi('\uFEFFAaron Smith')).toBe('Aaron Smith');
+    expect(toWinAnsi('John\u200BDoe')).toBe('JohnDoe');
+    expect(toWinAnsi('Sara\u200Eh')).toBe('Sarah');
+    expect(toWinAnsi('a\u007Fb')).toBe('ab');
+  });
+
   it('drops combining marks that have no precomposed form', () => {
     // U+0323 (dot below) on "z" has no single cp1252 character; the base
     // letter must survive rather than the pair becoming noise.

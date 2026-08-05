@@ -353,7 +353,12 @@ export function ReportsPage() {
                 <Label htmlFor="report-kind">Report</Label>
                 <Select
                   value={kind}
-                  disabled={pdfPending}
+                  // Also locked during a plain "Generate report": the run in
+                  // flight resolves into setPreview regardless of what the
+                  // select says by then, so switching mid-run would label one
+                  // report's rows as another's — and the CSV download names
+                  // the file from the *new* kind.
+                  disabled={pdfPending || activeMutation.isPending}
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
                     setPreview(null);
