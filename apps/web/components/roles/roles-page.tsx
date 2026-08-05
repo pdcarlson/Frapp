@@ -400,16 +400,20 @@ export function RolesAndPermissionsPage() {
                   <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-80 overflow-y-auto">
                     {catalog
                       // The wildcard renders only on a role that already
-                      // carries it (the President), locked: the API rejects
-                      // both introducing and stripping it — the presidency
-                      // transfer flow is the only path that moves it.
+                      // carries it. On the system President role it is locked
+                      // (the API rejects both introducing and stripping it —
+                      // the transfer flow moves it); on a legacy non-system
+                      // role it stays uncheckable-off so the API's cleanup
+                      // path (stripping `*`) is reachable from the UI.
                       .filter(
                         (entry) =>
                           entry.permission !== "*" ||
                           (activeRole?.permissions ?? []).includes("*"),
                       )
                       .map((entry) => {
-                        const lockedWildcard = entry.permission === "*";
+                        const lockedWildcard =
+                          entry.permission === "*" &&
+                          (activeRole?.is_system ?? true);
                         return (
                           <label
                             key={entry.permission}
