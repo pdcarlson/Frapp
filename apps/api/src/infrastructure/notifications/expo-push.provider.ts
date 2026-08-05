@@ -19,18 +19,40 @@ interface DeliveryTally {
 }
 
 /**
- * Expo embeds the push token in some of its error strings (e.g. `"ExponentPushToken[xxx]
- * is not a registered push notification recipient"`). Push tokens are device
- * credentials, so redact them before any string reaches a log — `spec/behavior/observability.md`
- * forbids logging token values.
+ * Fallback for a bracketed token we were not given — e.g. one echoed from a
+ * batch we did not build. The exact-match pass below is the primary defence.
  */
 const EXPO_TOKEN_PATTERN = /(Expo(?:nent)?PushToken\[)[^\]]*(\])/g;
+
+const REDACTED = '[REDACTED_PUSH_TOKEN]';
 
 /** Cap on a provider error message so one pathological error can't flood the log. */
 const MAX_ERROR_MESSAGE_LENGTH = 200;
 
-export function redactPushTokens(value: string): string {
-  return value.replace(EXPO_TOKEN_PATTERN, '$1REDACTED$2');
+/**
+ * Strip push tokens from a string before it reaches a log. Push tokens are
+ * device credentials, and `spec/behavior/observability.md` forbids logging
+ * token values; Expo echoes the offending token back in several of its error
+ * messages (e.g. `"<token> is not a registered push notification recipient"`).
+ *
+ * Redacts by **exact match against the tokens actually in play** rather than by
+ * shape. `Expo.isExpoPushToken` accepts a bare UUID as well as the
+ * `ExponentPushToken[…]` / `ExpoPushToken[…]` forms, so a shape-only pattern
+ * would miss a whole class of real tokens — and pattern-matching every UUID
+ * would instead redact unrelated ids. The pattern remains as a fallback for
+ * bracketed tokens outside the supplied set.
+ */
+export function redactPushTokens(
+  value: string,
+  tokens: readonly string[] = [],
+): string {
+  // split/join, not RegExp — a token contains `[` and `]`, which would need
+  // escaping to be used as a pattern.
+  const exact = tokens.reduce(
+    (acc, token) => (token ? acc.split(token).join(REDACTED) : acc),
+    value,
+  );
+  return exact.replace(EXPO_TOKEN_PATTERN, '$1REDACTED$2');
 }
 
 @Injectable()
@@ -82,9 +104,11 @@ export class ExpoPushProvider implements INotificationProvider {
           this.recordTickets(tickets, tally);
         } catch (error) {
           // The whole chunk is unaccounted for: Expo never returned per-message
-          // tickets, so every message in it counts as a provider failure.
+          // tickets, so every message in it counts as a provider failure. The
+          // SDK guarantees this is the only way a message goes unaccounted —
+          // it throws when the ticket count doesn't match the messages sent.
           tally.providerErrors += chunk.length;
-          this.recordProviderError(error, tally);
+          this.recordProviderError(error, tally, pushTokens);
         }
       }),
     );
@@ -116,14 +140,23 @@ export class ExpoPushProvider implements INotificationProvider {
    * a `provider:` prefix so it stays distinguishable from Expo's own per-message
    * error codes while keeping the record flat.
    */
-  private recordProviderError(error: unknown, tally: DeliveryTally): void {
+  private recordProviderError(
+    error: unknown,
+    tally: DeliveryTally,
+    tokens: readonly string[],
+  ): void {
     const name = error instanceof Error ? error.name : 'UnknownError';
     this.countCode(tally, `provider:${name}`);
 
+    // Message only, never the error object: a stack would re-embed the raw
+    // message (and any token in it), and during an outage every chunk fails at
+    // once — exactly when log volume must stay bounded. The `provider:<name>`
+    // code plus this line identify the failure class.
     const message = error instanceof Error ? error.message : String(error);
     this.logger.error(
       `push_delivery provider error (${name}): ${redactPushTokens(
         message,
+        tokens,
       ).slice(0, MAX_ERROR_MESSAGE_LENGTH)}`,
     );
   }

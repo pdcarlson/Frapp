@@ -54,7 +54,7 @@ Tickets are **not** receipts: an accepted ticket means the push service took the
 
 Records with `failures > 0` are emitted at `warn` and clean ones at `log`, so a log-level filter is a usable coarse signal on top of the field-level rate.
 
-**No token values are ever logged** — counts only. A push token echoed back inside a provider error message is redacted to `ExponentPushToken[REDACTED]` before the error is logged, consistent with the auth-token rule under Structured Logging.
+**No token values are ever logged** — counts only. Push tokens are device credentials, and the push service echoes the offending token back in several of its error messages, so a token appearing in a provider error is redacted before the error is logged, consistent with the auth-token rule under Structured Logging. Redaction is by exact match against the tokens the send was given, not by token shape: a valid push token may be a bare UUID with no distinguishing form, and matching every UUID instead would destroy request ids. Provider errors log a length-capped message only — never the error object, whose stack would re-embed the raw message, and whose volume spikes precisely during an outage.
 
 A send in which every token is invalid still emits a record: a push that reaches nobody must not be indistinguishable from having nothing to send.
 

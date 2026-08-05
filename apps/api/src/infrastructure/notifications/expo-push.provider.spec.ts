@@ -44,11 +44,15 @@ describe('ExpoPushProvider', () => {
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => undefined);
 
-    // Default: real-looking Expo tokens are valid, everything else isn't, and
-    // all messages land in one chunk.
+    // Mirrors the real `Expo.isExpoPushToken` predicate, bare-UUID arm
+    // included — that arm is why redaction can't rely on token shape.
     mockIsExpoPushToken.mockImplementation(
       (t: unknown) =>
-        typeof t === 'string' && t.startsWith('ExponentPushToken['),
+        typeof t === 'string' &&
+        (((t.startsWith('ExponentPushToken[') ||
+          t.startsWith('ExpoPushToken[')) &&
+          t.endsWith(']')) ||
+          /^[a-z\d]{8}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{4}-[a-z\d]{12}$/i.test(t)),
     );
     mockChunkPushNotifications.mockImplementation((messages: unknown[]) => [
       messages,
@@ -265,8 +269,25 @@ describe('ExpoPushProvider', () => {
       await provider.sendToUser([VALID_A], { title: 'Hi', body: 'There' });
 
       const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
-      expect(logged).toContain('ExponentPushToken[REDACTED]');
+      expect(logged).toContain('[REDACTED_PUSH_TOKEN]');
       expect(logged).not.toContain('aaaaaaaaaaaaaaaaaaaaaa');
+    });
+
+    it('redacts a bare UUID-form token, which has no bracketed shape to match', async () => {
+      // `Expo.isExpoPushToken` accepts a bare UUID as a valid push token, so a
+      // shape-only pattern would leak this class of token entirely.
+      const uuidToken = '00000000-0000-4000-8000-000000000000';
+      mockSendPushNotificationsAsync.mockRejectedValue(
+        new Error(
+          `"${uuidToken}" is not a registered push notification recipient`,
+        ),
+      );
+
+      await provider.sendToUser([uuidToken], { title: 'Hi', body: 'There' });
+
+      const logged = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(logged).toContain('[REDACTED_PUSH_TOKEN]');
+      expect(logged).not.toContain(uuidToken);
     });
 
     it('truncates a pathologically long provider error message', async () => {
@@ -282,13 +303,28 @@ describe('ExpoPushProvider', () => {
   });
 
   describe('redactPushTokens', () => {
-    it('redacts both Expo token spellings and leaves other text alone', () => {
+    it('redacts both bracketed Expo token spellings via the fallback pattern', () => {
       expect(
         redactPushTokens(
           'ExponentPushToken[abc] and ExpoPushToken[def] failed',
         ),
       ).toBe('ExponentPushToken[REDACTED] and ExpoPushToken[REDACTED] failed');
+    });
+
+    it('redacts supplied tokens by exact match regardless of shape', () => {
+      const uuidToken = '00000000-0000-4000-8000-000000000000';
+      expect(redactPushTokens(`${uuidToken} rejected`, [uuidToken])).toBe(
+        '[REDACTED_PUSH_TOKEN] rejected',
+      );
+    });
+
+    it('leaves unrelated text and ids alone', () => {
       expect(redactPushTokens('plain error')).toBe('plain error');
+      // A UUID that is not one of our tokens is not blindly redacted — doing so
+      // would destroy request ids in error messages.
+      expect(
+        redactPushTokens('request 11111111-1111-4111-8111-111111111111 failed'),
+      ).toBe('request 11111111-1111-4111-8111-111111111111 failed');
     });
   });
 });
