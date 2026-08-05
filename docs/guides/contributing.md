@@ -105,6 +105,11 @@ to source — so the breakage shows up only in `apps/api`. The CI job `clean-che
 this: it installs and runs both checks with nothing prebuilt, so a regression here fails there while
 every other job (all of which prebuild the packages) stays green.
 
+This applies to the **root** scripts, which go through turbo. A single-workspace invocation such as
+`npm run check-types -w apps/api` bypasses turbo and runs `tsc` directly, so on a cold clone it still
+fails until the packages exist — run the root script once (or `npx turbo run build --filter='./packages/*'`)
+before reaching for the `-w` form.
+
 `npm run lint` is **read-only** in every workspace — it reports violations and never edits your
 files, so it is safe in CI and in read-only audits. To apply ESLint's auto-fixes in `apps/api`, run
 the explicit fix script instead:
