@@ -159,6 +159,15 @@ describe('SupabaseStorageService', () => {
       '..\n/reports/chapters/b/secret.pdf',
       // Percent-encoded tab decodes to the same thing.
       '.%09./reports/chapters/b/secret.pdf',
+      // A malformed percent anywhere in the string used to make
+      // decodeURIComponent throw, silently disabling the decoded-form check
+      // that was the only detector of %2e%2e. The dot test no longer depends
+      // on decoding succeeding.
+      'p%/%2e%2e/reports/chapters/b/secret.pdf',
+      'p%ff/%2e%2e/reports/chapters/b/secret.pdf',
+      'p%/.%2e/reports/chapters/b/secret.pdf',
+      'p%/../reports/chapters/b/secret.pdf',
+      '%2e./reports/chapters/b/secret.pdf',
     ];
 
     it.each(TRAVERSALS)('downloadFile rejects %p', async (path) => {
@@ -221,6 +230,25 @@ describe('SupabaseStorageService', () => {
         ),
       ).resolves.toBeUndefined();
       expect(upload).toHaveBeenCalled();
+    });
+
+    it.each([
+      'chapters/a/documents/doc-1/notes (final) v2.pdf',
+      'chapters/a/documents/doc-1/...notes.pdf',
+      'chapters/a/documents/doc-1/résumé — José.pdf',
+      'chapters/a/chat/ch-1/msg-1/photo+1&2.jpg',
+      'chapters/a/backwork/res-1/中文文件.pdf',
+    ])('accepts the realistic uploaded filename %p', async (path) => {
+      // Keys embed path.basename(userFilename); a guard that rejects these
+      // breaks real uploads, which is as much a defect as letting a traversal by.
+      await expect(
+        service.uploadFile(
+          'documents',
+          path,
+          new Uint8Array([1]),
+          'image/jpeg',
+        ),
+      ).resolves.toBeUndefined();
     });
 
     it('allows a filename whose decoded form merely contains dots', async () => {

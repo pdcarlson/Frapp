@@ -1,27 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 
 /**
- * True when `path` contains a segment that can escape its prefix or bucket.
- *
- * Why this is not just `split('/').includes('..')`:
- *
- * `@supabase/storage-js` interpolates the object path into the request URL
- * without percent-encoding it, and the WHATWG URL parser then performs
- * dot-segment removal — during which it treats `%2e` as `.`, case-insensitively.
- * So `chapters/<mine>/branding/%2e%2e/%2e%2e/x` collapses to a path in a
- * *different bucket*, which the API then fetches with its service-role key
- * (bypassing RLS entirely). Verified against a live stack: the literal `..`
- * form was rejected by a raw-segment check while `%2e%2e`, `%2E%2E`, and `.%2e`
- * all still read another chapter's object.
- *
- * So both the raw and the percent-decoded forms are checked. Decoding may throw
- * on a malformed sequence — a filename legitimately containing a bare `%`, which
- * server-built keys can carry via `path.basename(filename)` — and that is safe
- * to ignore: a path that cannot be decoded cannot spell `%2e` either, so the raw
- * check stands on its own. Backslash is treated as a separator too, since
- * special-scheme URLs do the same.
- */
-/**
  * Tab, LF and CR are *deleted* from a URL by the WHATWG parser before dot
  * segments are removed, so `.\t.` reaches storage as `..`. Verified: it read an
  * object from a different bucket while a raw-and-decoded segment check accepted
@@ -29,10 +8,45 @@ import { BadRequestException } from '@nestjs/common';
  */
 const URL_STRIPPED = /[\t\n\r]/g;
 
+/** The parser treats `%2e` as `.` when deciding what is a dot segment. */
+const PERCENT_DOT = /%2e/gi;
+
 /** Any C0 control or DEL. No legitimate object key contains one. */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
 
+/**
+ * Is this segment one the URL parser will remove or climb on?
+ *
+ * Spelled the way the parser decides it: `%2e` counts as a dot, case
+ * insensitively, so `%2e%2e`, `.%2e` and `%2e.` are all `..`. Deliberately does
+ * NOT rely on `decodeURIComponent` — see the note in `isUnsafeStoragePath`.
+ */
+function isDotSegment(segment: string): boolean {
+  const normalized = segment.replace(PERCENT_DOT, '.');
+  return normalized === '' || normalized === '.' || normalized === '..';
+}
+
+/**
+ * True when `path` contains a segment that can escape its prefix or bucket.
+ *
+ * Why this is not just `split('/').includes('..')`:
+ *
+ * `@supabase/storage-js` interpolates the object path into the request URL
+ * without percent-encoding it and hands it straight to `fetch`, whose URL parser
+ * then performs dot-segment removal. Four distinct spellings have escaped in
+ * testing against a live stack, each reading another bucket's object under the
+ * service-role key (which bypasses RLS): literal `../..`; `%2e%2e` and friends,
+ * because the parser treats `%2e` as a dot; `.\t.`, because it *deletes* tab, LF
+ * and CR first; and `p%/%2e%2e/…`, which is the subtle one — a malformed percent
+ * anywhere in the string made `decodeURIComponent` throw, silently disabling the
+ * decoded-form check that was the only thing detecting `%2e%2e`.
+ *
+ * So the dot test is applied to the raw segments directly, spelled the way the
+ * parser spells it, and never depends on decoding succeeding. The decoded form
+ * is still checked as an extra pass, and backslash counts as a separator because
+ * special-scheme URLs treat it as one.
+ */
 export function isUnsafeStoragePath(path: string): boolean {
   if (path.length === 0) return true;
 
@@ -41,25 +55,20 @@ export function isUnsafeStoragePath(path: string): boolean {
     const decoded = decodeURIComponent(path);
     if (decoded !== path) forms.push(decoded);
   } catch {
-    // Malformed percent-encoding; the raw form is the only meaningful one.
+    // Malformed percent-encoding, e.g. a filename containing a bare `%`. This
+    // is intentionally NOT treated as unsafe (it would reject legitimate
+    // uploads) and, critically, nothing below depends on the decoded form
+    // existing — relying on it was bypass #4.
   }
 
-  // Reject control characters outright — this is what actually closes the
-  // tab/newline escape, and it costs nothing legitimate: server-built keys are
-  // uuid/slug structured, and path.basename of a real filename has none.
+  // Control characters are rejected outright: this is what closes the
+  // tab/newline escape, and it costs nothing legitimate, since server-built
+  // keys are uuid/slug structured and path.basename of a real filename has none.
   if (forms.some((form) => CONTROL_CHAR.test(form))) return true;
 
-  // Belt and braces: also test each form as the URL parser would see it, so the
-  // segment check still holds if the rejection above is ever relaxed.
   return forms
     .flatMap((form) => [form, form.replace(URL_STRIPPED, '')])
-    .some((form) =>
-      form
-        .split(/[/\\]/)
-        .some(
-          (segment) => segment === '' || segment === '.' || segment === '..',
-        ),
-    );
+    .some((form) => form.split(/[/\\]/).some(isDotSegment));
 }
 
 /** Throw `BadRequestException` when `path` could escape its prefix or bucket. */
