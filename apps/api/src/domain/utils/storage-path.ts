@@ -21,6 +21,18 @@ import { BadRequestException } from '@nestjs/common';
  * check stands on its own. Backslash is treated as a separator too, since
  * special-scheme URLs do the same.
  */
+/**
+ * Tab, LF and CR are *deleted* from a URL by the WHATWG parser before dot
+ * segments are removed, so `.\t.` reaches storage as `..`. Verified: it read an
+ * object from a different bucket while a raw-and-decoded segment check accepted
+ * it.
+ */
+const URL_STRIPPED = /[\t\n\r]/g;
+
+/** Any C0 control or DEL. No legitimate object key contains one. */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
+
 export function isUnsafeStoragePath(path: string): boolean {
   if (path.length === 0) return true;
 
@@ -32,11 +44,22 @@ export function isUnsafeStoragePath(path: string): boolean {
     // Malformed percent-encoding; the raw form is the only meaningful one.
   }
 
-  return forms.some((form) =>
-    form
-      .split(/[/\\]/)
-      .some((segment) => segment === '' || segment === '.' || segment === '..'),
-  );
+  // Reject control characters outright — this is what actually closes the
+  // tab/newline escape, and it costs nothing legitimate: server-built keys are
+  // uuid/slug structured, and path.basename of a real filename has none.
+  if (forms.some((form) => CONTROL_CHAR.test(form))) return true;
+
+  // Belt and braces: also test each form as the URL parser would see it, so the
+  // segment check still holds if the rejection above is ever relaxed.
+  return forms
+    .flatMap((form) => [form, form.replace(URL_STRIPPED, '')])
+    .some((form) =>
+      form
+        .split(/[/\\]/)
+        .some(
+          (segment) => segment === '' || segment === '.' || segment === '..',
+        ),
+    );
 }
 
 /** Throw `BadRequestException` when `path` could escape its prefix or bucket. */

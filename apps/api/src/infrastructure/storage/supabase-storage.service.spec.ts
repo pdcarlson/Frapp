@@ -146,6 +146,19 @@ describe('SupabaseStorageService', () => {
       'chapters/a/branding/.%2e/.%2e/reports/chapters/b/secret.pdf',
       // Backslash is a segment separator for special-scheme URLs.
       'chapters/a/branding/..\\..\\secret.pdf',
+      // Tab/LF/CR are DELETED by the WHATWG URL parser before dot-segment
+      // removal, so ".\t." arrives as "..". Seven spellings of this leaked a
+      // different bucket's object against a live stack before the guard
+      // rejected control characters.
+      '.\t./reports/chapters/b/secret.pdf',
+      '.\n./reports/chapters/b/secret.pdf',
+      '.\r./reports/chapters/b/secret.pdf',
+      '.\r\n./reports/chapters/b/secret.pdf',
+      '..\t/reports/chapters/b/secret.pdf',
+      '\t../reports/chapters/b/secret.pdf',
+      '..\n/reports/chapters/b/secret.pdf',
+      // Percent-encoded tab decodes to the same thing.
+      '.%09./reports/chapters/b/secret.pdf',
     ];
 
     it.each(TRAVERSALS)('downloadFile rejects %p', async (path) => {
