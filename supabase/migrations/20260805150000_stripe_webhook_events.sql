@@ -111,3 +111,29 @@ begin
   end if;
 end;
 $$;
+
+-- This RPC gates whether a billing side effect runs, and its authorization
+-- (Stripe signature verification) lives in the NestJS webhook path, not in
+-- table RLS. Lock EXECUTE to the service role the API uses so it can't be
+-- called directly via PostgREST by an `anon`/`authenticated` user. Postgres
+-- grants EXECUTE to PUBLIC by default, and Supabase's default privileges
+-- additionally grant it straight to anon/authenticated — so all three must be
+-- revoked, not just PUBLIC.
+revoke execute on function claim_stripe_webhook_event(text, text, integer) from public;
+
+-- anon/authenticated/service_role are Supabase-managed roles, absent in bare
+-- Postgres substrates (e.g. PGlite in CI), so guard each on role existence to
+-- keep the migration portable.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function claim_stripe_webhook_event(text, text, integer) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function claim_stripe_webhook_event(text, text, integer) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function claim_stripe_webhook_event(text, text, integer) to service_role;
+  end if;
+end
+$$;

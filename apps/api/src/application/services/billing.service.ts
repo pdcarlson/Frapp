@@ -197,12 +197,18 @@ export class BillingService {
     }
 
     if (claim.outcome === 'in_flight') {
-      // Another instance is mid-handler. Acking is right: if that worker dies,
-      // its claim goes stale and Stripe's next retry takes it over.
+      // Another instance is mid-handler. Deliberately 503 rather than ack:
+      // acking would tell Stripe the event is delivered while its outcome is
+      // still unknown, and if that worker then fails, nothing would ever retry
+      // it — a silently dropped billing event, which is exactly what the
+      // at-least-once posture above exists to prevent. Stripe's retry finds
+      // either `already_processed` (acked) or a failed/stale claim (re-taken).
       this.logger.warn(
-        `Skipping ${event.type} ${event.id}: another worker holds the claim`,
+        `Deferring ${event.type} ${event.id}: another worker holds the claim`,
       );
-      return;
+      throw new ServiceUnavailableException(
+        'Webhook event is already being processed; retry shortly',
+      );
     }
 
     this.logger.log(

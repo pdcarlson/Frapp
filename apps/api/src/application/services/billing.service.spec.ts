@@ -1995,7 +1995,7 @@ describe('BillingService', () => {
       expect(row?.lastError).toBeNull();
     });
 
-    it('skips an event another instance is mid-processing', async () => {
+    it('defers (503) instead of acking an event another instance is mid-processing', async () => {
       mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
       webhookEventStore.set('evt_inflight', {
         status: 'processing',
@@ -2004,10 +2004,15 @@ describe('BillingService', () => {
         lastError: null,
       });
 
-      await service.handleWebhookEvent(checkoutEvent('evt_inflight'));
+      // Acking here would let Stripe stop retrying while the other worker's
+      // outcome is still unknown; if that worker fails, the event is lost.
+      await expect(
+        service.handleWebhookEvent(checkoutEvent('evt_inflight')),
+      ).rejects.toThrow(ServiceUnavailableException);
 
       expect(mockChapterRepo.update).not.toHaveBeenCalled();
       expect(webhookEventStore.get('evt_inflight')?.attempts).toBe(1);
+      expect(webhookEventStore.get('evt_inflight')?.status).toBe('processing');
     });
 
     it('takes over a claim abandoned by a crashed worker', async () => {
