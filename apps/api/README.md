@@ -44,8 +44,11 @@ npm run test -w apps/api
 # E2E tests
 npm run test:e2e -w apps/api
 
-# Lint
+# Lint (read-only — never edits files)
 npm run lint -w apps/api
+
+# Lint with ESLint auto-fix applied
+npm run lint:fix -w apps/api
 
 # Export OpenAPI spec
 npm run openapi:export -w apps/api

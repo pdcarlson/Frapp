@@ -103,8 +103,9 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 
 ## Lint, test, build (repo root)
 
-- `npm run lint` — turbo lint
-- `npm run lint:api` — API only
+- `npm run lint` — turbo lint (read-only)
+- `npm run lint:api` — API only (read-only)
+- `npm run lint:api:fix` — applies ESLint auto-fixes; the only lint script that writes; see [contributing.md §5](../../guides/contributing.md#5-linting-types-and-tests)
 - `npm run test -w apps/api` — Jest
 - `npm run build` — turbo build
 - `npm run check-types` — turbo TypeScript

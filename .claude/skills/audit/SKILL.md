@@ -12,8 +12,11 @@ description: >
 > Read before performing code audits, security reviews, dependency checks, migration reviews, or
 > quality assessments — whether interactively or as a read-only pass inside a scheduled routine
 > (e.g. the [Linear curator](../linear-curator/SKILL.md)'s engineering-gaps lens). In read-only
-> runs, findings are filed to Linear rather than fixed in place, and any edits made by
-> `lint --fix` are throwaway (`git checkout -- .`) — never commit them.
+> runs, findings are filed to Linear rather than fixed in place. `npm run lint` is read-only in
+> every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
+> that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
+> and `api-sdk/types.ts` when API-related files changed; treat those edits as throwaway
+> (`git checkout -- .`) — never commit them.
 
 ---
 

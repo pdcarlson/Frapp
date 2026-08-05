@@ -104,7 +104,8 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 
 | Step         | Command                             |
 | ------------ | ----------------------------------- |
-| Lint         | `npm run lint` / `npm run lint:api` |
+| Lint         | `npm run lint` / `npm run lint:api` (read-only) |
+| Lint autofix | `npm run lint:api:fix` — the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
 | Tests        | `npm run test -w apps/api`          |
 | Build        | `npm run build`                     |
 | Types        | `npm run check-types` (includes API via `tsconfig.build.json`, same program as `nest build`) |
