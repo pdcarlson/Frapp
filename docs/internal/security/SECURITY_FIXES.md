@@ -96,3 +96,49 @@ New chapter-scoped controllers default to paid-ops (fail-closed): writes are blo
 
 ### Known follow-up
 ~~The Supabase Edge Functions on the chat hot path (`supabase/functions/chat-send`, `supabase/functions/chat-react`) bypass the NestJS guard and currently have no subscription check, so a canceled chapter can still post chat via the edge path. Tracked separately as issue #305.~~ **Closed by ADR-11 / #416:** the chat hot path now runs inside `ChatController` and inherits `@FreeTier()` + `SubscriptionGuard` like every other NestJS chat route. The bypass surface is gone.
+
+## Security Fix: Cross-tenant chat reaction read leak (`chat_message_actions` RLS)
+
+### Overview
+A high-severity multi-tenant isolation gap was fixed in the Row-Level Security for `chat_message_actions` (per-user reactions / poll votes). The gap was introduced by `supabase/migrations/20260523150000_chat_hotpath.sql` and corrected in `supabase/migrations/20260803150000_chat_message_actions_membership_rls.sql` (FRA-38 / #279).
+
+### Details
+The table's `SELECT` policy was `using (auth.role() = 'authenticated')`, so **any** authenticated Supabase user could read **every** action row across all chapters, private/DM channels, and role-gated channels. This was not purely theoretical: the web client reads `chat_message_actions` **directly under the user's JWT** (RLS-enforced) — an initial reaction backfill (`apps/web/lib/chat/use-chat-channel.ts`) and a *global* Supabase Realtime `postgres_changes` subscription (`apps/web/lib/chat/realtime-manager.ts`), the latter with **no** application-layer channel filter, so RLS was the only gate. A user in chapter A could observe reaction/vote rows for messages in chapter B (and in private/DM/role-gated channels they could not otherwise see) — confirmed by reproducing the read as the `authenticated` role against a local database before the fix (a chapter-B user counted a chapter-A action row; 0 after the fix).
+
+The fix keeps the table readable by the web client but scopes the `SELECT` policy to channel visibility, mirroring the canonical `canAccessChannel` predicate (`@repo/validation`):
+
+```sql
+using (auth.role() = 'authenticated' and public.can_read_chat_message(message_id))
+```
+
+Because the referenced tables (`chat_messages`, `chat_channels`, `members`, `roles`) are default-deny under the invoking `authenticated` role, a plain sub-select in the policy would return nothing and deny all reads; the membership lookup therefore runs inside a `SECURITY DEFINER` helper `public.can_read_chat_message(uuid)` (with `set search_path = public`; `execute` revoked from `public`/`anon`, granted only to `authenticated`/`service_role`). The helper enforces chapter membership plus the per-type rule (`PUBLIC` → any member; `PRIVATE`/`DM`/`GROUP_DM` → `member_ids`; `ROLE_GATED` → `*` or a matching `required_permissions`). The INSERT/DELETE policies (own-row scoped) and the service-role write path are unchanged, so hot-path writes are unaffected.
+
+The policy is additionally scoped `TO authenticated`. That is load-bearing rather than cosmetic: `execute` on the helper is revoked from `anon`, so an anon read either returns zero rows or dies with `42501 permission denied for function`, depending on whether the planner evaluates the cheap `auth.role() = 'authenticated'` conjunct before the function call. Both outcomes were reproduced on PG 17.5 — short-circuiting spares the call when the role conjunct is evaluated first, and the error appears when the function is reached without EXECUTE. Postgres does not contractually fix that ordering (it costs quals and may reorder, and hoisting `auth.role()` into an initplan per FRA-291 changes the shape again), and `use-chat-channel.ts` discards the error, so the failure would be silent. The role clause removes the dependency on plan shape: anon never reaches the qual. (The migration emits the clause through `format()` guarded on `pg_roles`, because bare-Postgres substrates such as the PGlite CI harness have no `authenticated` role.)
+
+The change touches no table columns and adds only an internal RLS-only function, so the curated `apps/api/src/infrastructure/supabase/database.types.ts` (which tracks table shapes and app-invoked RPCs, not internal helpers) needs no edit.
+
+### Replica identity: deliberately left at the default
+An earlier draft of this fix set `chat_message_actions` to `REPLICA IDENTITY FULL`, reasoning that Realtime evaluates the SELECT policy against the old row image to decide DELETE-event delivery, so `message_id` had to be present or un-reaction events would be dropped for every subscriber. **That reasoning is wrong in both halves**, per Supabase's Realtime Postgres Changes documentation:
+
+> RLS policies are not applied to `DELETE` statements, because there is no way for Postgres to verify that a user has access to a deleted record. When RLS is enabled and `replica identity` is set to `full` on a table, the `old` record contains only the primary key(s).
+
+So DELETE events are never RLS-filtered (they were never at risk of being dropped), and with RLS enabled the `old` record is trimmed to primary keys regardless — `FULL` could not supply `message_id` even if it were needed. It would be permanent WAL cost on every delete for no benefit, plus a false invariant baked into CI. The client never needed more than the key: `dispatchActionDelete(old.id)` resolves removals through its local `cache.actionIndex`, which only holds actions whose INSERT it was legitimately delivered — and INSERT events **are** RLS-filtered by this policy.
+
+### Residual, not closed by this fix
+Because Realtime never applies RLS to DELETE, the unfiltered `chat:actions:global` subscription still fans a bare action `id` out to every authenticated subscriber, cross-chapter. That id is opaque — no message, user, chapter, or payload — and clients ignore ids absent from their own cache, so it discloses only that *some* action somewhere was removed. Scoping that subscription per-channel is tracked as **FRA-291**.
+
+The INSERT/DELETE policies are deliberately unchanged (this issue is read-scoped), and it is worth recording why the obvious write-side worry does **not** apply. Those policies gate on `user_id in (select id from users where supabase_auth_id = auth.uid())`, and `users` is default-deny, so the subselect yields nothing and *every* direct-client write is refused — verified against the local stack as the `authenticated` role, where both a cross-chapter write and a legitimate own-channel write were denied `42501`. A member cannot, therefore, poison a poll tally by POSTing an action row for a message they can no longer read: the write path is already closed. It is closed by accident rather than by design, which is the real defect, and that the policies are effectively no-ops is tracked as **FRA-293**. Genuine hot-path writes are unaffected because they run through the Edge Function / API under `service_role`, which bypasses RLS entirely.
+
+### Verification
+The leak was reproduced and confirmed closed against a **local Supabase Postgres** instance, executing as the real `authenticated` role with `request.jwt.claims` set per user: pre-fix a chapter-B user counted **2** chapter-A action rows; post-fix **0**, while a member of the private channel still read 2 and a chapter member outside it read 1 (public only). The seeded transaction was rolled back.
+
+Regression coverage in `scripts/check-pglite-migrations.mjs` is in three tiers:
+
+1. **Catalog shape** — exactly **one** permissive read-applicable policy. The filter is `polpermissive and polcmd in ('r','*')`: Postgres ORs permissive policies together, and a `FOR ALL` policy also applies to SELECT, so a second one of either spelling would silently re-open this exact leak. Plus `SECURITY DEFINER` with `search_path` pinned to `public`, EXECUTE revoked from PUBLIC, replica identity still default, and `users` still carrying no client-reachable permissive SELECT policy.
+2. **Predicate** — a seeded tier driving `can_read_chat_message` directly across 15 cases (own-chapter, cross-chapter, `PRIVATE` in/out, `DM` in/out, `GROUP_DM` in/out, `ROLE_GATED` with/without permission, `*` wildcard, empty requirement, a chapter-B role id held by a chapter-A member, an uppercase stored role id, null `auth.uid()`).
+3. **Black-box enforcement** — reads the table through `SET ROLE` as an unprivileged probe role, asserting visible row counts per user. This tier is what actually pins the guarantee: the shape check is substring-shaped and defeatable (`... AND can_read_chat_message(message_id) IS NOT NULL` is constant-true; De Morgan spells an OR with only `AND`/`NOT`), and all such rewrites were confirmed to pass tier 1 and fail tier 3.
+
+Two gaps remain, both promotion-time checks rather than CI ones (see `DB_PROMOTION_RUNBOOK.md`): PGlite has no `anon` role, so the EXECUTE assertion checks only the PUBLIC bit while hosted Supabase grants `anon` directly; and it has no `authenticated` role, so the `TO authenticated` clause is never exercised. Full end-to-end enforcement under a real JWT stays deferred to the NestJS tier (#423).
+
+### Prevention
+For any table a browser/mobile Supabase client reads **directly** — especially over a Realtime subscription, where RLS is the sole gate — the RLS `SELECT` policy must encode the full tenant + channel-visibility rule; do not rely on "the app layer filters it." When such a policy must read default-deny tables, wrap the lookup in a `SECURITY DEFINER` helper with a pinned `search_path` and least-privilege `execute` grants, and mirror the single shared access predicate (`canAccessChannel`) rather than duplicating ad-hoc logic.

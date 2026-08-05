@@ -17,8 +17,9 @@ description: >
 
 | What | Command |
 |------|---------|
-| All lint | `npm run lint` |
-| API-only lint | `npm run lint:api` |
+| All lint | `npm run lint` (read-only) |
+| API-only lint | `npm run lint:api` (read-only) |
+| API lint autofix | `npm run lint:api:fix` — the only lint script that writes; why: [contributing.md §5](../../../docs/guides/contributing.md#5-linting-types-and-tests) |
 | Type-check | `npm run check-types` |
 | API `nest build` (Render / Docker parity) | `npm run build -w apps/api` |
 | API image (optional, needs Docker) | `docker build -f apps/api/Dockerfile .` |

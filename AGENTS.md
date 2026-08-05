@@ -15,7 +15,7 @@ Hosted agent sessions may carry provider/research credentials and cloud-sandbox 
 - Confirm before external/public actions; be proactive on internal/repo work.
 - If agent operating files change, say so in the response.
 - **Use sub-agents liberally.** Delegate broad searches, independent research, and self-contained implementation chunks to sub-agents (Explore/Plan/general-purpose), launching independent ones in parallel in a single message. Keep heavy reading out of your own context and stay focused on integration and review. Sub-agents inherit the session model (so they run on Opus in a normal session) — there is no pinned sub-agent model.
-- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the Claude Code web environment (network policy, env var, setup script), then wait. These are environment config you cannot fix from inside the session; env/network changes apply to new sessions only. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails").
+- **Stop and report cloud-sandbox failures — don't work around them.** If the local stack fails to come up (`.cloud-sandbox-up.failed`, `host_not_allowed`/`403`, Docker Hub rate limit, missing env var), STOP and tell the user exactly what to add or change in the Claude Code web environment (network policy, env var, setup script), then wait. These are environment config you cannot fix from inside the session; env/network changes apply to new sessions only. Map of symptom → fix: [`docs/internal/environment/CLOUD_SANDBOX.md`](docs/internal/environment/CLOUD_SANDBOX.md) ("When bringup fails"). Trust the `.cloud-sandbox-up.failed` sentinel over the log: transient registry errors are retried automatically, so a **successful** bringup can still contain `503`s. Policy and credential failures stop immediately, and the sentinel names the remedy.
 
 ## Project overview
 
@@ -104,7 +104,8 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 
 | Step         | Command                             |
 | ------------ | ----------------------------------- |
-| Lint         | `npm run lint` / `npm run lint:api` |
+| Lint         | `npm run lint` / `npm run lint:api` (read-only) |
+| Lint autofix | `npm run lint:api:fix` — the only lint script that writes; see [contributing.md §5](docs/guides/contributing.md#5-linting-types-and-tests) |
 | Tests        | `npm run test -w apps/api`          |
 | Build        | `npm run build`                     |
 | Types        | `npm run check-types` (includes API via `tsconfig.build.json`, same program as `nest build`) |

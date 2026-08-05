@@ -154,6 +154,19 @@ After any rollback event:
 * **Action**: Run `DROP FUNCTION IF EXISTS get_points_report(uuid, uuid, timestamptz);`
 * **Note**: Additive/no data loss — the migration drops the old `(uuid, uuid, text)` overload and recreates the RPC with a `p_since timestamptz` window filter (FRA-31). The API calls the new overload from `ReportService.getPointsReport`, so a forward-fix (rather than a bare drop) is required to keep the points report working: deploy an API revision that reverts to the prior all-time call and re-creates the original `(uuid, uuid, text)` body before dropping the `timestamptz` overload.
 
+## Rollback `chat_message_actions` membership-scoped read RLS
+* **Migration**: `20260803150000_chat_message_actions_membership_rls.sql`
+* **Action (forward-fix — restore the prior policy first, then drop the helper)**:
+  ```sql
+  DROP POLICY IF EXISTS "chat_message_actions_select" ON public.chat_message_actions;
+  CREATE POLICY "chat_message_actions_select"
+    ON public.chat_message_actions FOR SELECT
+    USING (auth.role() = 'authenticated');
+  DROP FUNCTION IF EXISTS public.can_read_chat_message(uuid);
+  ```
+* **⚠️ Note**: Rolling back **re-opens the cross-chapter / private-DM / role-gated action-read leak this migration closed** (FRA-38 / #279) — any authenticated user could again read every `chat_message_actions` row via the web client's direct query and the global Realtime subscription, so **prefer a roll-forward fix over this rollback**. No data is lost (policy + function only). Drop order matters: the `SELECT` policy references `can_read_chat_message(...)`, so the policy must be dropped/recreated **before** the function. No app-code change is required either way — the web reaction backfill and Realtime subscription work under either policy; the restored policy is simply permissive again.
+* **Replica identity**: nothing to revert. The migration deliberately leaves `chat_message_actions` at the default replica identity — see the rationale in the migration header and `docs/internal/security/SECURITY_FIXES.md`. If you find the table set to `FULL`, that is drift, not this migration.
+
 ## Rollback poll list vote aggregate RPCs
 * **Migration**: `20260417180000_add_poll_list_vote_aggregate_rpcs.sql`
 * **Action**: Run `DROP FUNCTION IF EXISTS get_poll_vote_option_totals(uuid[]);` and `DROP FUNCTION IF EXISTS get_poll_user_votes_for_messages(uuid[], uuid);`

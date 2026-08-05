@@ -96,9 +96,27 @@ cs_docker_login_if_creds
 cs_log "Starting Supabase (images cached)..."
 # Start args (incl. the mandatory edge-runtime exclusion) live in the shared lib as
 # CS_SUPABASE_START_ARGS so bringup and the setup pre-pull cannot drift apart.
+#
+# This is the ONLY retried step. It is the only network-bound one — ~10 images from ECR
+# Public via CloudFront — and a CDN hiccup here used to kill the whole session. cs_retry
+# retries transient failures and returns immediately on a blocked allowlist or an exhausted
+# Docker Hub quota, both of which need a change in the web UI that no retry can supply.
+#
+# $CS_SUPABASE_START_ARGS must stay UNQUOTED through the wrapper: quoting it collapses
+# `-x edge-runtime` into one argument and silently un-does the exclusion, which is the
+# start-aborting failure documented at length in the shared lib.
+#
+# The failure message is the whole point of the classification. fail() writes it verbatim
+# into .cloud-sandbox-up.failed, and that sentinel — not the log — is what a polling agent
+# reads, so it has to name the fix rather than just the symptom.
+CS_RETRY_LOG_LOCATION="/tmp/cloud-sandbox-up.log"
 # shellcheck disable=SC2086
-cs_supabase start $CS_SUPABASE_START_ARGS || fail "'supabase start' failed."
+cs_retry "'supabase start'" "cs_supabase stop" cs_supabase start $CS_SUPABASE_START_ARGS \
+  || fail "'supabase start' failed (${CS_RETRY_CLASS:-unknown}) — ${CS_RETRY_HINT:-see /tmp/cloud-sandbox-up.log}"
 
+# Deliberately NOT retried, here or below: both steps are deterministic and local. Retrying a
+# failing migration or an unwritable env file just triples the time to the same error, and
+# hides which step actually broke behind a generic "failed after 3 attempts".
 cs_log "Applying local migrations..."
 cs_supabase db push --local || fail "'supabase db push --local' failed."
 
