@@ -66,7 +66,11 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
-## Rollback the `service` proof bucket
+## Rollback custom-role member assignment
+
+* **Migration**: `20260804230000_member_custom_role_ids.sql`
+* **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS custom_role_ids;` — but redeploy the API at the pre-FRA-229 revision **first**: the post-FRA-229 `ChapterGuard` `select`s the column on every request and errors if it is gone.
+* **Note**: Purely additive (`uuid[] not null default '{}'`). Dropping it loses only which members hold which `chapter_custom_roles` — the roles themselves, their capabilities, and all live-role assignments are untouched, and enforcement falls back to exactly the pre-bridge behavior (custom roles present but presentation-only). No backfill is needed on re-apply; assignments would have to be redone by hand.
 
 * **Migration**: `20260803231500_service_proof_bucket.sql`
 * **Action**: Nothing schema-side is usually needed — the row is pure additive config. If the bucket must actually go: first redeploy the API at the pre-FRA-49 revision (otherwise `POST /v1/service-entries/proof-upload-url` 500s), then empty and remove the bucket **through the Storage API, never raw SQL** — `supabase.storage.emptyBucket('service')` then `supabase.storage.deleteBucket('service')` (dashboard: Storage → service → Empty bucket → Delete). Deleting `storage.objects` rows with SQL removes only metadata and strands the file bytes in the backing store with nothing left to find them by.
