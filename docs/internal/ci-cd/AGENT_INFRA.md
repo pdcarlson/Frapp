@@ -112,6 +112,14 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check:api-contract` — OpenAPI / SDK drift
 - `npm run check:migration-safety` — migrations + promotion docs
 
+`lint` and `check-types` both depend on `^build` in root `turbo.json`, so they build the shared
+packages themselves and need no `npx turbo run build --filter='./packages/*'` beforehand — a bare
+`npm install && npm run check-types` works on a cold clone. The CI job **`clean-checkout-typecheck`**
+exists solely to keep that true: it runs `npm ci`, `npm run check-types` and `npm run lint` with no
+`needs:`, no turbo cache restore, and no prebuild step. Every other Node job prebuilds the packages
+(ADR Lever A), which makes them all blind to this regression — so do not "optimize" a build or cache
+step into that job.
+
 Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.claude/skills/testing/SKILL.md).
 
 ## Claude Code project settings

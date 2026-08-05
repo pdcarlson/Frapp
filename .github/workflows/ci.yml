@@ -12,9 +12,12 @@ concurrency:
 
 # ---------------------------------------------------------------------------
 # Domain-specific parallel jobs. `packages-build` runs first (shared
-# dependency). The nine required checks always run; web-tests,
+# dependency). The required checks always run; web-tests,
 # web-visual-regression, and pglite-migrations are path-gated on PRs via the
 # `changes` job and run unconditionally on push.
+#
+# `clean-checkout-typecheck` is the deliberate exception: it depends on nothing
+# and prebuilds nothing, so it alone exercises the bare `npm install` path.
 # ---------------------------------------------------------------------------
 
 jobs:
@@ -127,6 +130,44 @@ jobs:
       - name: Docs/spec impact (check-docs-impact.mjs)
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+  # ── Clean-checkout guard (fresh-install path) ───────────────────────────
+  # Reproduces a bare `npm install && npm run check-types` on a cold machine.
+  # Deliberately has NO `needs: packages-build`, NO turbo cache restore, and NO
+  # `turbo run build --filter='./packages/*'` step — every other Node job has one,
+  # which is exactly why they are all structurally blind to this failure mode.
+  #
+  # The shared packages publish their types as `dist/index.d.ts`, and `dist/` is
+  # gitignored, so a consumer resolving the `types` condition (`apps/api`, via
+  # NodeNext) sees nothing until those packages are built. That is why `turbo.json`
+  # makes `check-types` and `lint` depend on `^build` rather than on themselves.
+  # Revert either one and this job goes red while the rest of CI stays green.
+  #
+  # Keep this job free of build/cache steps — adding one silently disarms it.
+  clean-checkout-typecheck:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `cache: npm` above only restores the ~/.npm download cache, never
+      # node_modules or packages/*/dist — the clean-checkout property holds.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check with no prebuilt packages
+        run: npm run check-types
+
+      - name: Lint with no prebuilt packages
+        run: npm run lint
 
   # ── API unit + E2E tests ────────────────────────────────────────────────
   api-tests:
