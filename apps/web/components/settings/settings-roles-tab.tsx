@@ -49,6 +49,9 @@ const SUBTAB_TRIGGER = "data-[state=active]:bg-background";
  * - **Matrix**: capabilities × roles. Columns derive at render time from the
  *   pack keys + the live `chapter_custom_roles` keys — never a hardcoded array.
  * - **Custom**: CRUD over `chapter_custom_roles` (audit-logged server-side).
+ *   Custom-role capabilities are enforced (bridge model,
+ *   spec/behavior/rbac.md): members assigned a custom role in the member
+ *   directory gain its capabilities on their next request.
  * - **Live roles**: the existing RBAC manager (system-role permissions,
  *   create/delete, presidency transfer), folded in from the former `/roles` page.
  */
@@ -268,6 +271,13 @@ function CustomView({
   const roles = customRolesQuery.data ?? [];
   const [draft, setDraft] = useState(EMPTY_DRAFT);
 
+  // The wildcard is reserved for the live President role — the API rejects it
+  // on custom roles (400), so don't offer the checkbox at all.
+  const assignableCatalog = useMemo(
+    () => catalog.filter((entry) => entry.permission !== "*"),
+    [catalog],
+  );
+
   function setRank(raw: string) {
     // Guard-parse: only commit a nonnegative integer (matches Workflows/Dues).
     const trimmed = raw.trim();
@@ -332,9 +342,14 @@ function CustomView({
     role: ChapterCustomRole,
     permission: string,
   ) {
-    const next = role.capabilities.includes(permission)
-      ? role.capabilities.filter((p) => p !== permission)
-      : [...role.capabilities, permission];
+    // Strip any legacy wildcard before building the payload: the API rejects
+    // `*` on custom roles, and the chip no longer renders, so echoing a
+    // pre-bridge `*` back would make the role permanently uneditable. The
+    // first toggle on such a role also cleans the stored row.
+    const current = role.capabilities.filter((p) => p !== "*");
+    const next = current.includes(permission)
+      ? current.filter((p) => p !== permission)
+      : [...current, permission];
     try {
       await updateRole.mutateAsync({
         id: role.id,
@@ -368,7 +383,9 @@ function CustomView({
         <CardHeader>
           <CardTitle>Custom roles</CardTitle>
           <CardDescription>
-            Chapter-defined roles with a label, rank, and capabilities. Core
+            Chapter-defined roles with a label, rank, and capabilities.
+            Capabilities are enforced: assign these roles in the member
+            directory and they apply on the member&apos;s next request. Core
             roles are protected from deletion. Saving writes an entry to the
             chapter audit log.
           </CardDescription>
@@ -408,7 +425,7 @@ function CustomView({
                     ) : null}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
-                    {catalog.map((entry) => {
+                    {assignableCatalog.map((entry) => {
                       const held = role.capabilities.includes(entry.permission);
                       return (
                         <label
@@ -489,7 +506,7 @@ function CustomView({
             <div className="grid gap-1.5">
               <span className="text-sm font-medium">Capabilities</span>
               <div className="flex flex-wrap gap-2">
-                {catalog.map((entry) => (
+                {assignableCatalog.map((entry) => (
                   <label
                     key={entry.permission}
                     className="flex items-center gap-1.5 text-xs"

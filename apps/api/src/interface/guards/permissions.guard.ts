@@ -4,19 +4,26 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Type,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { SupabaseClient } from '@supabase/supabase-js';
+import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import {
   PERMISSIONS_KEY,
   PERMISSIONS_ANY_KEY,
 } from '../decorators/permissions.decorator';
+import { WILDCARD } from '../../domain/constants/permissions';
+import { flattenPermissionSets } from '../../domain/utils/permissions';
 import type { RequestContext } from '../types/request-context.types';
 
 interface RolePermissionRow {
   permissions: string[];
+}
+
+interface CustomRoleCapabilityRow {
+  capabilities: string[];
 }
 
 @Injectable()
@@ -48,7 +55,10 @@ export class PermissionsGuard implements CanActivate {
     const member = request.member;
     const chapterId = request.chapterId;
 
-    if (!member?.role_ids?.length) {
+    const roleIds = member?.role_ids ?? [];
+    const customRoleIds = member?.custom_role_ids ?? [];
+
+    if (!roleIds.length && !customRoleIds.length) {
       throw new ForbiddenException('No roles assigned');
     }
 
@@ -59,25 +69,48 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('No active chapter');
     }
 
-    // Roles are chapter-scoped (`roles.chapter_id`), so filter on the active
-    // chapter as well as the id list: a stale or cross-chapter id left on
-    // `members.role_ids` then resolves to no row instead of silently granting
-    // that other chapter's permissions here.
-    const { data: roles } = await this.supabase
-      .from('roles')
-      .select('permissions')
-      .in('id', member.role_ids)
-      .eq('chapter_id', chapterId);
+    // Both role models are chapter-scoped, so filter on the active chapter as
+    // well as the id list: a stale or cross-chapter id left on the member row
+    // then resolves to no row instead of silently granting that other
+    // chapter's permissions here.
+    const [rolesResult, customRolesResult] = (await Promise.all([
+      roleIds.length
+        ? this.supabase
+            .from('roles')
+            .select('permissions')
+            .in('id', roleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [], error: null }),
+      customRoleIds.length
+        ? this.supabase
+            .from('chapter_custom_roles')
+            .select('capabilities')
+            .in('id', customRoleIds)
+            .eq('chapter_id', chapterId)
+        : Promise.resolve({ data: [], error: null }),
+    ])) as [
+      { data: RolePermissionRow[] | null; error: PostgrestError | null },
+      { data: CustomRoleCapabilityRow[] | null; error: PostgrestError | null },
+    ];
 
-    if (!roles?.length) {
+    // A failed lookup must surface as a server fault, not a permission
+    // denial — otherwise a transient DB error reads as a terminal 403.
+    if (rolesResult.error || customRolesResult.error) {
+      throw new InternalServerErrorException('Failed to resolve permissions');
+    }
+    const roles = rolesResult.data;
+    const customRoles = customRolesResult.data;
+
+    if (!roles?.length && !customRoles?.length) {
       throw new ForbiddenException('No valid roles found');
     }
 
-    const userPermissions = new Set(
-      (roles as RolePermissionRow[]).flatMap((role) => role.permissions),
+    const userPermissions = flattenPermissionSets(
+      (roles ?? []).map((role) => role.permissions),
+      (customRoles ?? []).map((row) => row.capabilities),
     );
 
-    if (userPermissions.has('*')) {
+    if (userPermissions.has(WILDCARD)) {
       return true;
     }
 

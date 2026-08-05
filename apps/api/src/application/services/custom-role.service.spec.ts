@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -50,6 +51,12 @@ function makeSupabase(opts: {
         Promise.resolve({ data: opts.listRows ?? [], error: null }),
       );
       builder.eq = jest.fn(() => builder);
+      // findByIds chain: select('*').in('id', ids).eq('chapter_id', ...)
+      builder.in = jest.fn(() => ({
+        eq: jest.fn(() =>
+          Promise.resolve({ data: opts.listRows ?? [], error: null }),
+        ),
+      }));
       builder.maybeSingle = jest.fn(() =>
         Promise.resolve({ data: opts.existingRole ?? null, error: null }),
       );
@@ -259,6 +266,62 @@ describe('CustomRoleService', () => {
 
       expect(result).toEqual(existing);
       expect(supabase.auditInserts).toHaveLength(0);
+    });
+  });
+
+  // Custom-role capabilities enter permission enforcement (bridge model), so
+  // the wildcard is refused at the write boundary: only the live President
+  // role may carry `*`.
+  describe('wildcard rejection', () => {
+    it('rejects create with a wildcard capability and writes nothing', async () => {
+      const supabase = makeSupabase({});
+      const service = await buildService(supabase);
+
+      await expect(
+        service.create(CHAPTER_ID, ACTOR_ID, {
+          key: 'shadow_president',
+          label: 'Shadow President',
+          capabilities: ['*', 'members:view'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(supabase.customRoleInsert).not.toHaveBeenCalled();
+      expect(supabase.auditInserts).toHaveLength(0);
+    });
+
+    it('rejects update with a wildcard capability before touching the row', async () => {
+      const existing = { id: 'r1', chapter_id: CHAPTER_ID, core: false };
+      const supabase = makeSupabase({ existingRole: existing });
+      const service = await buildService(supabase);
+
+      await expect(
+        service.update('r1', CHAPTER_ID, ACTOR_ID, {
+          capabilities: ['*'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(supabase.auditInserts).toHaveLength(0);
+    });
+  });
+
+  describe('findByIds', () => {
+    it('returns rows scoped to the chapter', async () => {
+      const rows = [{ id: 'r1', capabilities: ['members:view'] }];
+      const supabase = makeSupabase({ listRows: rows });
+      const service = await buildService(supabase);
+
+      const result = await service.findByIds(['r1'], CHAPTER_ID);
+
+      expect(result).toEqual(rows);
+      expect(supabase.from).toHaveBeenCalledWith('chapter_custom_roles');
+    });
+
+    it('short-circuits on an empty id list without querying', async () => {
+      const supabase = makeSupabase({});
+      const service = await buildService(supabase);
+
+      const result = await service.findByIds([], CHAPTER_ID);
+
+      expect(result).toEqual([]);
+      expect(supabase.from).not.toHaveBeenCalled();
     });
   });
 });

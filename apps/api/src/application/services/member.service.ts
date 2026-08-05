@@ -18,6 +18,7 @@ import {
   SystemPermissions,
 } from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
+import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
 import { allowedVisibilities } from './custom-field-visibility';
 import type { MemberCustomFieldValue } from '../../domain/entities/chapter-custom-field.entity';
@@ -33,6 +34,7 @@ export interface MemberProfile {
   user_id: string;
   chapter_id: string;
   role_ids: string[];
+  custom_role_ids: string[];
   has_completed_onboarding: boolean;
   created_at: string;
   updated_at: string;
@@ -60,6 +62,7 @@ export class MemberService {
     @Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly customFieldService: CustomFieldService,
+    private readonly customRoleService: CustomRoleService,
     private readonly rbacService: RbacService,
   ) {}
 
@@ -102,6 +105,7 @@ export class MemberService {
     memberId: string,
     roleIds: string[],
     chapterId: string,
+    customRoleIds?: string[],
   ): Promise<Member> {
     const member = await this.memberRepo.findById(memberId);
     if (!member) throw new NotFoundException('Member not found');
@@ -109,33 +113,81 @@ export class MemberService {
       throw new ForbiddenException('Member not in current chapter');
     }
 
-    const roles = await this.roleRepo.findByChapter(chapterId);
+    // Both validation fetches depend only on the chapter, so run them together.
+    const [roles, customRoles] = await Promise.all([
+      this.roleRepo.findByChapter(chapterId),
+      customRoleIds !== undefined && customRoleIds.length > 0
+        ? this.customRoleService.findByIds(customRoleIds, chapterId)
+        : Promise.resolve([]),
+    ]);
+
+    // Ids the member ALREADY holds are exempt from validation on both role
+    // models: deleting a role leaves its id on member rows by design (spec
+    // fail-safe — it resolves to no row and grants nothing), and a client
+    // echoing that leftover back must not have its whole save rejected.
     const validRoleIds = new Set(roles.map((r) => r.id));
-    const unknownRoleIds = roleIds.filter((id) => !validRoleIds.has(id));
+    const heldRoleIds = new Set(member.role_ids);
+    const unknownRoleIds = roleIds.filter(
+      (id) => !validRoleIds.has(id) && !heldRoleIds.has(id),
+    );
     if (unknownRoleIds.length > 0) {
       throw new BadRequestException(
         `Role IDs do not belong to this chapter: ${unknownRoleIds.join(', ')}`,
       );
     }
 
-    const presidentRole = roles.find(
-      (r) => r.is_system && r.permissions.includes(SystemPermissions.WILDCARD),
-    );
-
-    if (presidentRole) {
-      const currentlyHasPresident = member.role_ids.includes(presidentRole.id);
-      const willHavePresident = roleIds.includes(presidentRole.id);
-      if (currentlyHasPresident !== willHavePresident) {
-        // Presidency moves must go through RbacService.transferPresidency so
-        // the wildcard role is atomically reassigned and only the current
-        // President can initiate it.
-        throw new ForbiddenException(
-          'Use the presidency-transfer endpoint to change the President role',
+    // Custom-role ids get the same cross-chapter validation and held-id
+    // exemption as live-role ids. The exemption cannot smuggle a foreign id:
+    // the held set only ever contains ids that passed this validation before.
+    if (customRoleIds !== undefined && customRoleIds.length > 0) {
+      const validCustomRoleIds = new Set(customRoles.map((r) => r.id));
+      const heldCustomRoleIds = new Set(member.custom_role_ids ?? []);
+      const unknownCustomRoleIds = customRoleIds.filter(
+        (id) => !validCustomRoleIds.has(id) && !heldCustomRoleIds.has(id),
+      );
+      if (unknownCustomRoleIds.length > 0) {
+        throw new BadRequestException(
+          `Custom role IDs do not belong to this chapter: ${unknownCustomRoleIds.join(', ')}`,
         );
       }
     }
 
-    return this.memberRepo.update(memberId, { role_ids: roleIds });
+    // Wildcard-carrying roles move only through the presidency-transfer flow
+    // (RbacService.transferPresidency), which reassigns them atomically and
+    // only at the current President's initiative. Keying on the permission
+    // rather than the seeded President row also blocks smuggling via any
+    // legacy non-system role that carries `*`. Compared as SETS: neither the
+    // member row nor the payload is guaranteed duplicate-free, and a
+    // length-based comparison would both reject no-op saves and let a
+    // duplicated held id mask an addition.
+    const wildcardRoleIds = new Set(
+      roles
+        .filter((r) => r.permissions.includes(SystemPermissions.WILDCARD))
+        .map((r) => r.id),
+    );
+    if (wildcardRoleIds.size > 0) {
+      const currentlyHeld = new Set(
+        member.role_ids.filter((id) => wildcardRoleIds.has(id)),
+      );
+      const willHold = new Set(roleIds.filter((id) => wildcardRoleIds.has(id)));
+      const changed =
+        currentlyHeld.size !== willHold.size ||
+        [...currentlyHeld].some((id) => !willHold.has(id));
+      if (changed) {
+        throw new ForbiddenException(
+          'Wildcard-carrying roles cannot be assigned or removed here: move the President role with the presidency-transfer flow, or strip the wildcard from a legacy role via role update first',
+        );
+      }
+    }
+
+    return this.memberRepo.update(memberId, {
+      role_ids: roleIds,
+      // Omitted → unchanged, so pre-bridge clients that send only `role_ids`
+      // never strip a member's custom roles.
+      ...(customRoleIds !== undefined
+        ? { custom_role_ids: customRoleIds }
+        : {}),
+    });
   }
 
   async updateOnboarding(

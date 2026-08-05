@@ -398,25 +398,52 @@ export function RolesAndPermissionsPage() {
                     Permissions ({permissionsDraft.size}/{catalog.length})
                   </Label>
                   <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-80 overflow-y-auto">
-                    {catalog.map((entry) => (
-                      <label
-                        key={entry.permission}
-                        className="flex cursor-pointer items-center gap-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4"
-                          checked={permissionsDraft.has(entry.permission)}
-                          onChange={() =>
-                            toggleDraftPermission(entry.permission)
-                          }
-                        />
-                        <code className="text-xs">{entry.permission}</code>
-                        <span className="text-xs text-muted-foreground">
-                          {entry.key}
-                        </span>
-                      </label>
-                    ))}
+                    {catalog
+                      // The wildcard renders only on a role that already
+                      // carries it. On the system President role it is locked
+                      // (the API rejects both introducing and stripping it —
+                      // the transfer flow moves it); on a legacy non-system
+                      // role it stays uncheckable-off so the API's cleanup
+                      // path (stripping `*`) is reachable from the UI.
+                      .filter(
+                        (entry) =>
+                          entry.permission !== "*" ||
+                          (activeRole?.permissions ?? []).includes("*"),
+                      )
+                      .map((entry) => {
+                        const lockedWildcard =
+                          entry.permission === "*" &&
+                          (activeRole?.is_system ?? true);
+                        return (
+                          <label
+                            key={entry.permission}
+                            className={
+                              lockedWildcard
+                                ? "flex items-center gap-2 text-sm opacity-70"
+                                : "flex cursor-pointer items-center gap-2 text-sm"
+                            }
+                            title={
+                              lockedWildcard
+                                ? "The wildcard moves only through the presidency-transfer flow"
+                                : undefined
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={permissionsDraft.has(entry.permission)}
+                              disabled={lockedWildcard}
+                              onChange={() =>
+                                toggleDraftPermission(entry.permission)
+                              }
+                            />
+                            <code className="text-xs">{entry.permission}</code>
+                            <span className="text-xs text-muted-foreground">
+                              {entry.key}
+                            </span>
+                          </label>
+                        );
+                      })}
                   </div>
                 </div>
               </CardContent>
@@ -485,7 +512,11 @@ export function RolesAndPermissionsPage() {
                   Permissions ({createPermissions.size}/{catalog.length})
                 </Label>
                 <div className="mt-2 grid gap-2 rounded-md border border-border p-3 max-h-60 overflow-y-auto">
-                  {catalog.map((entry) => (
+                  {catalog
+                    // New roles can never carry the wildcard (the API rejects
+                    // it), so don't offer the checkbox at all.
+                    .filter((entry) => entry.permission !== "*")
+                    .map((entry) => (
                     <label
                       key={entry.permission}
                       className="flex cursor-pointer items-center gap-2 text-sm"

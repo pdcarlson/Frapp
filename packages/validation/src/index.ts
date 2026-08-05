@@ -90,6 +90,8 @@ export const CreateRoleSchema = z.object({
 
 export const UpdateMemberRolesSchema = z.object({
   role_ids: z.array(z.string().uuid()),
+  // Assigned chapter_custom_roles ids; omitted → unchanged, [] → cleared.
+  custom_role_ids: z.array(z.string().uuid()).optional(),
 });
 
 export const CreateInviteSchema = z.object({

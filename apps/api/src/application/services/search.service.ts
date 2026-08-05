@@ -7,6 +7,7 @@ import { SupabaseClient } from '@supabase/supabase-js';
 import { canAccessChannel } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { escapeFilterValue } from '../../infrastructure/supabase/supabase.utils';
+import { RbacService } from './rbac.service';
 import type { BackworkResource } from '../../domain/entities/backwork.entity';
 import type { Event } from '../../domain/entities/event.entity';
 import type {
@@ -57,6 +58,7 @@ function throwIfError(error: QueryError | null): void {
 export class SearchService {
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly rbacService: RbacService,
   ) {}
 
   async search(
@@ -245,17 +247,21 @@ export class SearchService {
 
     const { data: members, error: memError } = (await this.supabase
       .from('members')
-      .select('role_ids')
+      .select('id')
       .eq('user_id', userId)
       .eq('chapter_id', chapterId)
-      .limit(1)) as QueryResult<{ role_ids: string[] | null }>;
+      .limit(1)) as QueryResult<{ id: string }>;
     throwIfError(memError);
     const member = members?.[0];
     if (!member) return [];
 
-    const permissions = await this.effectivePermissions(
-      member.role_ids ?? [],
+    // Resolve through RbacService so custom-role capabilities count here
+    // exactly as they do for chat channel access (bridge model,
+    // spec/behavior/rbac.md) — search must never disagree with chat about
+    // which role-gated channels a member can read.
+    const permissions = await this.rbacService.getEffectivePermissions(
       chapterId,
+      userId,
     );
 
     return channels
@@ -272,25 +278,5 @@ export class SearchService {
         }),
       )
       .map((channel) => channel.id);
-  }
-
-  private async effectivePermissions(
-    roleIds: string[],
-    chapterId: string,
-  ): Promise<string[]> {
-    if (!roleIds.length) return [];
-    // Constrain to roles in the caller's chapter so a stray cross-chapter
-    // role id on the membership cannot leak permissions from another chapter.
-    const { data: roles, error } = (await this.supabase
-      .from('roles')
-      .select('permissions')
-      .eq('chapter_id', chapterId)
-      .in('id', roleIds)) as QueryResult<{ permissions: string[] | null }>;
-    throwIfError(error);
-    const set = new Set<string>();
-    for (const role of roles ?? []) {
-      for (const permission of role.permissions ?? []) set.add(permission);
-    }
-    return Array.from(set);
   }
 }

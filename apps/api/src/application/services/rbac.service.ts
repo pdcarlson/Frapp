@@ -11,16 +11,21 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { Role } from '../../domain/entities/role.entity';
+import { Member } from '../../domain/entities/member.entity';
 import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
+  WILDCARD,
 } from '../../domain/constants/permissions';
+import { flattenPermissionSets } from '../../domain/utils/permissions';
+import { CustomRoleService } from './custom-role.service';
 
 @Injectable()
 export class RbacService {
   constructor(
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
+    private readonly customRoleService: CustomRoleService,
   ) {}
 
   async findByChapter(chapterId: string): Promise<Role[]> {
@@ -28,6 +33,15 @@ export class RbacService {
   }
 
   async create(chapterId: string, data: Partial<Role>): Promise<Role> {
+    // Only the seeded President role may carry the wildcard: letting
+    // `roles:manage` mint a new `*` role would bypass the presidency-transfer
+    // safeguard entirely (spec/behavior/rbac.md).
+    if (data.permissions?.includes(WILDCARD)) {
+      throw new BadRequestException(
+        'New roles cannot carry the wildcard (*) permission; use the presidency-transfer flow instead',
+      );
+    }
+
     const existing = await this.roleRepo.findByChapterAndName(
       chapterId,
       data.name!,
@@ -51,6 +65,34 @@ export class RbacService {
     if (!role) throw new NotFoundException('Role not found');
     if (role.chapter_id !== chapterId)
       throw new ForbiddenException('Role not in current chapter');
+
+    // An update may keep a wildcard the role already holds (the President
+    // role's permissions stay editable) but may never introduce one — that
+    // would mint a second wildcard holder outside the transfer flow.
+    if (
+      data.permissions?.includes(WILDCARD) &&
+      !role.permissions.includes(WILDCARD)
+    ) {
+      throw new BadRequestException(
+        'The wildcard (*) permission cannot be added to a role; use the presidency-transfer flow instead',
+      );
+    }
+
+    // Nor may the seeded President role lose its wildcard: with introduction
+    // blocked above, a strip would be unrecoverable through the API and leave
+    // the chapter without any wildcard holder (spec/behavior/rbac.md — the
+    // President role always carries `*`). Legacy non-system roles carrying a
+    // pre-validation `*` stay strippable, as that is their cleanup path.
+    if (
+      role.is_system &&
+      role.permissions.includes(WILDCARD) &&
+      data.permissions &&
+      !data.permissions.includes(WILDCARD)
+    ) {
+      throw new BadRequestException(
+        'The President role must keep the wildcard (*) permission; use the presidency-transfer flow to move it',
+      );
+    }
 
     if (data.name && data.name !== role.name) {
       const existing = await this.roleRepo.findByChapterAndName(
@@ -154,10 +196,8 @@ export class RbacService {
       userId,
       chapterId,
     );
-    if (!member?.role_ids?.length) return false;
-    const roles = await this.roleRepo.findByIds(member.role_ids, chapterId);
-    const userPermissions = new Set(roles.flatMap((r) => r.permissions));
-    if (userPermissions.has('*')) return true;
+    const userPermissions = await this.resolvePermissionSet(chapterId, member);
+    if (userPermissions.has(WILDCARD)) return true;
     return permissions.some((p) => userPermissions.has(p));
   }
 
@@ -235,10 +275,38 @@ export class RbacService {
       userId,
       chapterId,
     );
-    if (!member?.role_ids?.length) return [];
-    const roles = await this.roleRepo.findByIds(member.role_ids, chapterId);
-    if (!roles.length) return [];
-    const set = new Set(roles.flatMap((r) => r.permissions ?? []));
+    const set = await this.resolvePermissionSet(chapterId, member);
     return Array.from(set).sort();
+  }
+
+  /**
+   * Flatten a member's live-role permissions and custom-role capabilities
+   * (bridge model, spec/behavior/rbac.md) into one set. Both lookups resolve
+   * within `chapterId`, so stale or cross-chapter ids contribute nothing.
+   * The flatten policy itself (union + wildcard only from live roles) lives
+   * in `flattenPermissionSets`, shared with `PermissionsGuard` so the two
+   * can never drift.
+   */
+  private async resolvePermissionSet(
+    chapterId: string,
+    member: Member | null,
+  ): Promise<Set<string>> {
+    const roleIds = member?.role_ids ?? [];
+    const customRoleIds = member?.custom_role_ids ?? [];
+    if (!roleIds.length && !customRoleIds.length) return new Set();
+
+    const [roles, customRoles] = await Promise.all([
+      roleIds.length
+        ? this.roleRepo.findByIds(roleIds, chapterId)
+        : Promise.resolve([]),
+      customRoleIds.length
+        ? this.customRoleService.findByIds(customRoleIds, chapterId)
+        : Promise.resolve([]),
+    ]);
+
+    return flattenPermissionSets(
+      roles.map((r) => r.permissions),
+      customRoles.map((r) => r.capabilities),
+    );
   }
 }

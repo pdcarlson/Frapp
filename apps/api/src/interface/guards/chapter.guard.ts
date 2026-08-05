@@ -135,7 +135,7 @@ export class ChapterGuard implements CanActivate {
     // Two rows is all it takes to tell "exactly one" from "more than one".
     const { data: memberships } = await this.supabase
       .from('members')
-      .select('id, role_ids, chapter_id')
+      .select('id, role_ids, custom_role_ids, chapter_id')
       .eq('user_id', appUserId)
       .limit(2);
 
@@ -157,7 +157,7 @@ export class ChapterGuard implements CanActivate {
   ): Promise<MemberContext | null> {
     const { data } = await this.supabase
       .from('members')
-      .select('id, role_ids')
+      .select('id, role_ids, custom_role_ids')
       .eq('user_id', appUserId)
       .eq('chapter_id', chapterId)
       .single();

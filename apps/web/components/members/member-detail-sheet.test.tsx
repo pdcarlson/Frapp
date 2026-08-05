@@ -1,5 +1,8 @@
-import { render, screen } from "@testing-library/react";
-import { describe, it, expect, vi } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Shared spy so tests can assert the exact mutation payload the sheet sends.
+const updateRolesMutateAsync = vi.fn().mockResolvedValue({});
 
 // The sheet pulls live data + mutations from @repo/hooks; stub them so the
 // component renders from its `member` prop (usingPreviewData bypasses useMember).
@@ -7,11 +10,25 @@ vi.mock("@repo/hooks", () => ({
   useMember: () => ({ data: undefined, isLoading: false, isError: false, refetch: vi.fn() }),
   useRoles: () => ({ data: [], isError: false }),
   useRemoveMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateMemberRoles: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateMemberRoles: () => ({ mutateAsync: updateRolesMutateAsync, isPending: false }),
+  // The custom-roles section is permission-gated; grant everything by default.
+  useMyPermissions: () => ({ data: { permissions: ["*"] } }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
+}));
+
+// Custom-role assignment (bridge model): the list read is stubbed per-test via
+// this holder; default mirrors "no custom roles defined".
+const customRolesState: {
+  data: unknown;
+  isSuccess: boolean;
+  isError: boolean;
+} = { data: [], isSuccess: true, isError: false };
+
+vi.mock("@/lib/hooks/use-custom-roles", () => ({
+  useCustomRoles: () => customRolesState,
 }));
 
 import { MemberDetailSheet } from "./member-detail-sheet";
@@ -68,5 +85,130 @@ describe("MemberDetailSheet custom fields", () => {
     );
 
     expect(screen.queryByText("Custom fields")).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberDetailSheet custom roles", () => {
+  it("renders assignable custom roles with the member's assignment pre-checked", () => {
+    customRolesState.data = [
+      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
+      { id: "cr2", key: "social_chair", label: "Social Chair", rank: 6, capabilities: [], core: false },
+    ];
+    customRolesState.isSuccess = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember, custom_role_ids: ["cr1"] }}
+      />,
+    );
+
+    expect(screen.getByText("Custom roles")).toBeInTheDocument();
+    expect(screen.getByText("Historian")).toBeInTheDocument();
+    expect(screen.getByText("Social Chair")).toBeInTheDocument();
+
+    const historianRow = screen.getByText("Historian").closest("label");
+    expect(historianRow).not.toBeNull();
+    expect(historianRow!.querySelector("input")!.checked).toBe(true);
+
+    const socialRow = screen.getByText("Social Chair").closest("label");
+    expect(socialRow!.querySelector("input")!.checked).toBe(false);
+  });
+
+  it("omits the custom-roles section when the chapter has none", () => {
+    customRolesState.data = [];
+    customRolesState.isSuccess = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember }}
+      />,
+    );
+
+    expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
+  });
+
+  it("omits the custom-roles section when the list cannot load (no config access)", () => {
+    customRolesState.data = undefined;
+    customRolesState.isSuccess = false;
+    customRolesState.isError = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData
+        member={{ ...baseMember }}
+      />,
+    );
+
+    expect(screen.queryByText("Custom roles")).not.toBeInTheDocument();
+  });
+});
+
+describe("MemberDetailSheet save payload", () => {
+  beforeEach(() => {
+    updateRolesMutateAsync.mockClear();
+  });
+
+  it("sends the selection as-is, including ids of since-deleted roles", async () => {
+    customRolesState.data = [
+      { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
+    ];
+    customRolesState.isSuccess = true;
+    customRolesState.isError = false;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        // cr-deleted no longer exists in the chapter catalog. It is still sent
+        // (the server exempts held ids) — filtering against the possibly-stale
+        // catalog would silently strip freshly assigned roles instead.
+        member={{ ...baseMember, custom_role_ids: ["cr-deleted"] }}
+      />,
+    );
+
+    const historianRow = screen.getByText("Historian").closest("label");
+    fireEvent.click(historianRow!.querySelector("input")!);
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
+      id: "m1",
+      role_ids: [],
+      custom_role_ids: ["cr-deleted", "cr1"],
+    });
+  });
+
+  it("omits custom_role_ids entirely when the list could not load", async () => {
+    customRolesState.data = undefined;
+    customRolesState.isSuccess = false;
+    customRolesState.isError = true;
+
+    render(
+      <MemberDetailSheet
+        open
+        onOpenChange={() => {}}
+        usingPreviewData={false}
+        member={{ ...baseMember, custom_role_ids: ["cr1"] }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save role changes" }));
+
+    await waitFor(() => expect(updateRolesMutateAsync).toHaveBeenCalledTimes(1));
+    // Omission tells the server "leave the assignment unchanged" — the sheet
+    // must never strip custom roles it could not display.
+    expect(updateRolesMutateAsync).toHaveBeenCalledWith({
+      id: "m1",
+      role_ids: [],
+    });
   });
 });
