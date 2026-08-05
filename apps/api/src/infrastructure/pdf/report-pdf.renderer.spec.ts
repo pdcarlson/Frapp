@@ -54,6 +54,35 @@ describe('toWinAnsi', () => {
     expect(toWinAnsi('a\u007Fb')).toBe('ab');
   });
 
+  it('drops a soft hyphen instead of printing a visible one', () => {
+    // U+00AD is a format character that cp1252 *does* encode, and pdf-lib maps
+    // it to the same glyph as "-". Passing it through would print a hyphen the
+    // input never had — and make two distinct roster rows render identically.
+    expect(toWinAnsi('Anne­Marie Okafor')).toBe('AnneMarie Okafor');
+    expect(toWinAnsi('Anne­Marie Okafor')).not.toBe(
+      toWinAnsi('Anne-Marie Okafor'),
+    );
+  });
+
+  it('collapses line and paragraph separators like a newline', () => {
+    // A Word/web-form paste carries U+2028; the contract is that anything
+    // line-break-ish becomes a space, not a visible "?".
+    expect(toWinAnsi('Setup crew Cleanup crew')).toBe(
+      'Setup crew Cleanup crew',
+    );
+    expect(toWinAnsi('a b')).toBe('a b');
+    expect(toWinAnsi('a b')).toBe('a b');
+  });
+
+  it('never fabricates a number when folding a vulgar fraction', () => {
+    // NFKD expands "⅓" to "1" + FRACTION SLASH + "3". Dropping the slash would
+    // weld the digits: "1⅓ hrs" of service would print as "113 hrs".
+    expect(toWinAnsi('Kitchen shift 1⅓ hrs')).toBe('Kitchen shift 1 1/3 hrs');
+    expect(toWinAnsi('Ran ⅔ of the 5K')).toBe('Ran 2/3 of the 5K');
+    // Directly encodable fractions are untouched.
+    expect(toWinAnsi('½ and ¾')).toBe('½ and ¾');
+  });
+
   it('drops combining marks that have no precomposed form', () => {
     // U+0323 (dot below) on "z" has no single cp1252 character; the base
     // letter must survive rather than the pair becoming noise.

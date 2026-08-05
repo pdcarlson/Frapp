@@ -59,7 +59,7 @@ function isWinAnsiEncodable(codePoint: number): boolean {
  * decomposition, so NFKD cannot recover the base letter and they would fall
  * through to "?" — turning a real Polish surname into "?ukasz Wróblewski".
  */
-const STROKE_FOLD: Record<string, string> = {
+const CHAR_FOLD: Record<string, string> = {
   Ł: 'L',
   ł: 'l',
   Đ: 'D',
@@ -76,17 +76,74 @@ const STROKE_FOLD: Record<string, string> = {
   İ: 'I',
   Ƶ: 'Z',
   ƶ: 'z',
+  // FRACTION SLASH. NFKD expands "⅓" to "1" + U+2044 + "3"; dropping the slash
+  // would weld the digits into "13", so "1⅓ hrs" of service would print as
+  // "113 hrs". A fabricated number is far worse than a degraded glyph.
+  '⁄': '/',
 };
+
+/** Zero-width: combining marks with no precomposed form, and format characters. */
+const ZERO_WIDTH = /[\p{M}\p{Cf}]/u;
+
+/** Any Unicode space, including LINE and PARAGRAPH SEPARATOR. */
+const UNICODE_SPACE = /[\p{Zs}\p{Zl}\p{Zp}]/u;
+
+/**
+ * Fold one character into WinAnsi-safe text, recursing once through its NFKD
+ * expansion. Returns '' for characters that should vanish.
+ */
+function foldChar(char: string, expanded = false): string {
+  // Zero-width first, *before* the encodable check: U+00AD SOFT HYPHEN is a
+  // format character that cp1252 happens to encode, and pdf-lib maps it to the
+  // same glyph as "-". Letting it through prints a visible hyphen where the
+  // input had nothing — so "Anne<SHY>Marie" would render "Anne-Marie" and
+  // become indistinguishable from a genuinely different member of that name.
+  if (ZERO_WIDTH.test(char)) return '';
+
+  const codePoint = char.codePointAt(0) ?? 0;
+  if (isWinAnsiEncodable(codePoint)) return char;
+
+  const mapped = CHAR_FOLD[char];
+  if (mapped) return mapped;
+
+  // LINE/PARAGRAPH SEPARATOR and exotic spaces collapse like a newline does —
+  // every cell is one line. Reached only when the space is not itself
+  // encodable, so U+00A0 keeps its own glyph.
+  if (UNICODE_SPACE.test(char)) return ' ';
+
+  if (!expanded) {
+    const decomposed = char.normalize('NFKD');
+    if (decomposed !== char) {
+      const folded = [...decomposed]
+        .map((part) => foldChar(part, true))
+        .join('');
+      // A vulgar fraction sits tight against a preceding integer ("1⅓ hrs"),
+      // and its expansion is bare digits and a slash — "11/3" reads as
+      // eleven-thirds. A leading space restores the mixed number; a stray
+      // leading space elsewhere is collapsed or trimmed below.
+      return decomposed.includes('⁄') ? ` ${folded}` : folded;
+    }
+  }
+  return '?';
+}
 
 /**
  * Make `value` safe for a WinAnsi standard font.
  *
+ * The standard PDF fonts are WinAnsi-only and pdf-lib *throws* on a code point
+ * it cannot encode, so every string reaching `drawText` passes through here.
+ *
  * Encodable characters pass through untouched, so "José" keeps its accent.
- * Anything else is folded: stroked Latin letters map to their base via
- * {@link STROKE_FOLD}, and the rest are decomposed (NFKD) and stripped of
+ * Anything else is folded: modified Latin letters map to their base via
+ * {@link CHAR_FOLD}, and the rest are decomposed (NFKD) and stripped of
  * combining marks, which recovers a base letter for most Latin extensions
- * ("ā" → "a"). What survives neither becomes "?". Control characters and
- * newlines collapse to single spaces because every cell is one line.
+ * ("ā" → "a"). Zero-width characters vanish; what survives none of that becomes
+ * "?". Control characters and newlines collapse to single spaces because every
+ * cell is one line.
+ *
+ * The guiding rule for every branch: degrading a character is fine, but a
+ * character that was invisible must never become visible, and a fold must never
+ * fabricate a different value.
  */
 export function toWinAnsi(value: string): string {
   let out = '';
@@ -102,30 +159,7 @@ export function toWinAnsi(value: string): string {
     }
     // DEL and the C1 block join the C0 controls in being dropped outright.
     if (codePoint < 0x20 || (codePoint >= 0x7f && codePoint <= 0x9f)) continue;
-    if (isWinAnsiEncodable(codePoint)) {
-      out += char;
-      continue;
-    }
-    const stroked = STROKE_FOLD[char];
-    if (stroked) {
-      out += stroked;
-      continue;
-    }
-    // Zero-width characters are dropped, not replaced. Two groups reach here:
-    // combining marks with no precomposed form (NFC left them standalone), and
-    // format characters (Cf) — a BOM surviving a UTF-8-with-BOM roster import,
-    // a zero-width space, a bidi mark. None of them occupy space on the page,
-    // so substituting "?" would *add* a visible character to a name rather
-    // than degrade one: a name starting with U+FEFF must render "Aaron",
-    // never "?Aaron".
-    if (/[\p{M}\p{Cf}]/u.test(char)) continue;
-    const folded = char
-      .normalize('NFKD')
-      .replace(/[̀-ͯ]/g, '')
-      .split('')
-      .filter((c) => isWinAnsiEncodable(c.codePointAt(0) ?? 0))
-      .join('');
-    out += folded.length > 0 ? folded : '?';
+    out += foldChar(char);
   }
   return out.replace(/\s{2,}/g, ' ').trim();
 }
