@@ -66,6 +66,13 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback scheduled notification dispatches
+
+* **Migration**: `20260805140000_scheduled_notification_dispatches.sql`
+* **Action**: `DROP TABLE IF EXISTS scheduled_notification_dispatches;` (its index drops with the table.)
+* **⚠️ Note**: Additive new table only — no existing table is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. The post-FRA-24 `ScheduledJobsService` calls `claimDispatch` before every reminder, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed" — so with the table gone the reminder sweeps degrade to sending *nothing* (they fail safe, they do not crash and do not double-send). Attendance auto-absent is unaffected: it keeps no rows here because `markAutoAbsent` is idempotent on its own.
+* **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
+
 ## Rollback custom-role member assignment
 
 * **Migration**: `20260804230000_member_custom_role_ids.sql`
