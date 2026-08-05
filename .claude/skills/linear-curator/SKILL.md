@@ -106,8 +106,8 @@ spec, the UX, and the runtime — not just whatever prompted the run.
 ### Lens 1 — Engineering gaps
 
 Run the audit playbook ([`/audit`](../audit/SKILL.md)): `npm run check-types`, `npm run lint`,
-`npm audit`, `npm run check:api-contract`, `npm run check:migration-safety`. On a fresh sandbox
-build shared packages first (`npx turbo run build --filter=./packages/*`). Plus: weak tests on
+`npm audit`, `npm run check:api-contract`, `npm run check:migration-safety`. These run fine on a
+fresh sandbox with no manual package build (`turbo.json` wires them to `^build`). Plus: weak tests on
 complex logic, N+1/in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret
 exposure, CI holes. `npm run lint` is read-only and never edits files, but `npm run check:api-contract`
 regenerates the contract artifacts when API-related files changed — treat those edits as throwaway

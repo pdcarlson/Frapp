@@ -58,8 +58,8 @@ Check that new code follows established patterns:
 npm run check-types   # Turbo runs tsc --noEmit across all workspaces
 ```
 
-On a fresh sandbox, build shared packages first (`npx turbo run build --filter=./packages/*`) so
-workspace type-checks resolve against built outputs.
+No manual package build first — `check-types` depends on `^build` in `turbo.json`, so turbo builds
+the shared packages as part of the run. This works on a fresh sandbox straight after `npm install`.
 
 Check for `any` types, `@ts-ignore`, and untyped function parameters.
 
