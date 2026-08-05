@@ -135,31 +135,45 @@ export class ScheduledJobsService {
       // correctness — it stops the same event being re-processed on all 24
       // ticks inside the lookback window, and stops replicas racing each
       // other on event_attendance's unique constraint.
+      //
+      // `endedOn` derives from the event row, never from `now`, so every tick
+      // in the lookback window computes the same claim key.
       const endedOn = toDateKey(new Date(event.end_time));
-      const claimed = await this.repository.claimDispatch(
-        event.chapter_id,
-        'EVENT',
-        event.id,
-        'AUTO_ABSENT',
-        endedOn,
-      );
-      if (!claimed) continue;
 
       try {
-        await this.attendanceService.markAutoAbsent(event.id, event.chapter_id);
-        processed += 1;
-      } catch (error) {
-        this.logger.error(
-          `auto-absent sweep: event ${event.id} failed`,
-          error as Error,
-        );
-        // Release so the next tick retries rather than leaving the event
-        // permanently unprocessed.
-        await this.repository.releaseDispatch(
+        const claimed = await this.repository.claimDispatch(
+          event.chapter_id,
           'EVENT',
           event.id,
           'AUTO_ABSENT',
           endedOn,
+        );
+        if (!claimed) continue;
+
+        try {
+          await this.attendanceService.markAutoAbsent(
+            event.id,
+            event.chapter_id,
+          );
+          processed += 1;
+        } catch (error) {
+          this.logger.error(
+            `auto-absent sweep: event ${event.id} failed`,
+            error as Error,
+          );
+          // Release so the next tick retries rather than leaving the event
+          // permanently unprocessed.
+          await this.repository.releaseDispatch(
+            'EVENT',
+            event.id,
+            'AUTO_ABSENT',
+            endedOn,
+          );
+        }
+      } catch (error) {
+        this.logger.error(
+          `auto-absent sweep: event ${event.id} could not be claimed`,
+          error as Error,
         );
       }
     }

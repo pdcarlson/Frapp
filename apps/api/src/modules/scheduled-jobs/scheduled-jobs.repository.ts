@@ -16,8 +16,15 @@ const UNIQUE_VIOLATION = '23505';
  * signals truncation with a plain 200 and a null error, so an unpaged sweep
  * query would drop rows silently and permanently. Page through instead, as
  * `SupabasePollVoteRepository` already does.
+ *
+ * Deliberately **below** `max_rows`, not equal to it. Paging stops on the
+ * first short page, so a page size at the cap only works while the two
+ * numbers happen to match: lower `max_rows` and every first page comes back
+ * short, which reads as "end of results" and silently truncates the sweep —
+ * the exact failure the paging exists to prevent. With headroom, a short page
+ * unambiguously means the rows ran out.
  */
-const SWEEP_PAGE_SIZE = 1000;
+const SWEEP_PAGE_SIZE = 500;
 
 interface EventCandidateRow {
   id: string;
@@ -94,7 +101,12 @@ export class ScheduledJobsRepository {
           .gte('end_time', endedAfter.toISOString())
           .lte('end_time', endedBefore.toISOString())
           .or('is_mandatory.eq.true,required_role_ids.not.is.null')
+          // `id` breaks ties. Offset paging over a non-unique sort key has no
+          // guaranteed total order between statements, so events sharing an
+          // `end_time` across a page boundary could be returned twice or —
+          // worse — skipped entirely.
           .order('end_time', { ascending: true })
+          .order('id', { ascending: true })
           .range(from, to),
     );
 

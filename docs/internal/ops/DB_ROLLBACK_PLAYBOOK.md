@@ -69,8 +69,15 @@ After any rollback event:
 ## Rollback scheduled notification dispatches
 
 * **Migration**: `20260805140000_scheduled_notification_dispatches.sql`
-* **Action**: `DROP TABLE IF EXISTS scheduled_notification_dispatches;` (its index drops with the table.)
-* **⚠️ Note**: Additive new table only — no existing table is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. The post-FRA-24 `ScheduledJobsService` calls `claimDispatch` before every reminder, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed" — so with the table gone the reminder sweeps degrade to sending *nothing* (they fail safe, they do not crash and do not double-send). Attendance auto-absent is unaffected: it keeps no rows here because `markAutoAbsent` is idempotent on its own.
+* **Action**: the migration creates one table **and three indexes on pre-existing tables**, which do *not* drop with it:
+  ```sql
+  DROP TABLE IF EXISTS scheduled_notification_dispatches; -- its own index drops with it
+  DROP INDEX IF EXISTS idx_events_end_time;
+  DROP INDEX IF EXISTS idx_financial_invoices_status_due_date;
+  DROP INDEX IF EXISTS idx_tasks_status_due_date;
+  ```
+  The three indexes are safe to keep — they are pure read optimizations for the sweep queries and nothing depends on their existence. Drop them only if you are fully reverting the migration.
+* **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three sweeps silently stop doing anything** — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
 * **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
 
 ## Rollback custom-role member assignment
