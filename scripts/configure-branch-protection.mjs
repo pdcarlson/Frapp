@@ -31,6 +31,12 @@ const CI_CHECKS = [
   // required only once the secret-scan job exists on the target branch and has run
   // green — otherwise every PR blocks on a missing required check.
   "secret-scan",
+  // Clean-checkout guard: runs `npm ci && npm run check-types && npm run lint` with
+  // no prebuilt shared packages, so a regression in turbo.json's `^build` dependency
+  // fails here while every other job (which prebuilds) stays green. ROLLOUT: same
+  // caveat as secret-scan — required only once the clean-checkout-typecheck job
+  // exists on the target branch and has run green.
+  "clean-checkout-typecheck",
 ];
 
 const DOCS_CHECKS = [

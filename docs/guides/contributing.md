@@ -86,6 +86,30 @@ npm run check-types
 npm test            # in apps/api
 ```
 
+These work **from a clean checkout** — `npm install && npm run check-types` is enough, with no
+manual package build first. The shared packages under `packages/` publish their types as
+`dist/index.d.ts`, and `dist/` is gitignored, so a consumer that resolves the `types` condition
+(`apps/api`, via `NodeNext`) cannot see them until those packages are built. Root `turbo.json`
+handles that by making `check-types` and `lint` depend on `^build`:
+
+```jsonc
+"lint":        { "dependsOn": ["^build"] },
+"check-types": { "dependsOn": ["^build"] }
+```
+
+Depending on `^check-types` / `^lint` instead is the trap: turbo then orders the tasks correctly but
+never produces the `dist/` outputs they read, so a fresh clone fails with `TS2307: Cannot find module
+'@repo/validation'` (and friends) until you manually run `npx turbo run build --filter='./packages/*'`.
+`apps/web` masks it — `moduleResolution: "Bundler"` picks the `import` condition and resolves straight
+to source — so the breakage shows up only in `apps/api`. The CI job `clean-checkout-typecheck` guards
+this: it installs and runs both checks with nothing prebuilt, so a regression here fails there while
+every other job (all of which prebuild the packages) stays green.
+
+This applies to the **root** scripts, which go through turbo. A single-workspace invocation such as
+`npm run check-types -w apps/api` bypasses turbo and runs `tsc` directly, so on a cold clone it still
+fails until the packages exist — run the root script once (or `npx turbo run build --filter='./packages/*'`)
+before reaching for the `-w` form.
+
 `npm run lint` is **read-only** in every workspace — it reports violations and never edits your
 files, so it is safe in CI and in read-only audits. To apply ESLint's auto-fixes in `apps/api`, run
 the explicit fix script instead:
