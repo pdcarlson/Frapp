@@ -47,6 +47,21 @@ export is never publicly addressable and never reachable across chapters.
 The dashboard additionally builds a CSV client-side from the previewed rows, which
 is why its "Download CSV" button issues no second request.
 
+Column identity, order, and labels are shared between the CSV and PDF exports.
+Individual cell values are rendered for their audience: CSV emits composite
+values as JSON so a spreadsheet import stays parseable, the PDF flattens them
+for reading (`ATTENDANCE: 12, SERVICE: 4`).
+
+### Retention
+
+**Generated PDFs are stored indefinitely.** The signed URL expires after an hour,
+but the object behind it does not — nothing currently deletes it, and each export
+writes a new object rather than replacing the last. Roster exports in particular
+carry member names, emails, roles, and join dates, so this storage is in scope for
+[`data-retention.md`](data-retention.md): a member who deletes their account still
+has their details inside any report exported before that point. Reaping old
+exports, and sweeping the prefix on account deletion, is tracked in **FRA-338**.
+
 ## PDF Formatting
 
 PDF reports use a clean, branded template with:

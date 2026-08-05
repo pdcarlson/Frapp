@@ -38,6 +38,19 @@ describe('toWinAnsi', () => {
     expect(toWinAnsi('Kaimana Āhia')).toBe('Kaimana Ahia');
   });
 
+  it('composes decomposed (NFD) input before encoding', () => {
+    // macOS/iOS-sourced text often arrives decomposed; without an NFC pass the
+    // bare combining mark becomes "?" and "José Muñoz" renders "Jose? Mun?oz".
+    expect(toWinAnsi('José Muñoz'.normalize('NFD'))).toBe('José Muñoz');
+    expect(toWinAnsi('á')).toBe('á');
+  });
+
+  it('drops combining marks that have no precomposed form', () => {
+    // U+0323 (dot below) on "z" has no single cp1252 character; the base
+    // letter must survive rather than the pair becoming noise.
+    expect(toWinAnsi('ẓ')).toBe('z');
+  });
+
   it('folds stroked letters that have no canonical decomposition', () => {
     // Ł/ł decompose to nothing, so without the explicit map a common Polish
     // surname would render as "?ukasz".

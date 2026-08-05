@@ -2,8 +2,13 @@ import type { ReportPdfColumn } from '../../domain/adapters/pdf.interface';
 
 /**
  * Column descriptors shared by the CSV writer and the PDF renderer, so the two
- * export formats can never drift apart on which columns exist or how they are
- * labelled. `weight` is PDF-only page-layout metadata; `toCSV` ignores it.
+ * export formats cannot drift apart on which columns exist, their order, or
+ * their labels. `weight` is PDF-only page-layout metadata; `toCSV` ignores it.
+ *
+ * Cell *values* are deliberately rendered differently: `toCSV` emits JSON for
+ * composite values so a spreadsheet import stays machine-parseable, while the
+ * PDF renderer flattens them for a human reader ("ATTENDANCE: 12, SERVICE: 4"
+ * rather than `{"ATTENDANCE":12,"SERVICE":4}`). Same data, different audience.
  */
 export const ATTENDANCE_COLUMNS: ReportPdfColumn[] = [
   { key: 'member_name', header: 'Member Name', weight: 1.3 },

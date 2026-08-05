@@ -53,10 +53,7 @@ const reportDescription: Record<ReportKind, string> = {
 
 type ReportRow = Record<string, unknown>;
 
-function flattenRecord(
-  value: unknown,
-  prefix = "",
-): Record<string, string> {
+function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
   const result: Record<string, string> = {};
   if (value === null || value === undefined) return result;
   if (typeof value !== "object") {
@@ -65,11 +62,7 @@ function flattenRecord(
   }
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const next = prefix ? `${prefix}.${key}` : key;
-    if (
-      child !== null &&
-      typeof child === "object" &&
-      !Array.isArray(child)
-    ) {
+    if (child !== null && typeof child === "object" && !Array.isArray(child)) {
       Object.assign(result, flattenRecord(child, next));
     } else if (Array.isArray(child)) {
       result[next] = JSON.stringify(child);
@@ -152,9 +145,9 @@ export function ReportsPage() {
   const [endDate, setEndDate] = useState("");
   const [memberId, setMemberId] = useState("");
   const [eventId, setEventId] = useState("");
-  const [pointsWindow, setPointsWindow] = useState<"all" | "semester" | "month">(
-    "all",
-  );
+  const [pointsWindow, setPointsWindow] = useState<
+    "all" | "semester" | "month"
+  >("all");
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
   // Tracked separately from the mutation's own isPending: the PDF export reuses
   // the same mutation, so without this the preview panel would flip to its
@@ -360,6 +353,7 @@ export function ReportsPage() {
                 <Label htmlFor="report-kind">Report</Label>
                 <Select
                   value={kind}
+                  disabled={pdfPending}
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
                     setPreview(null);
@@ -374,7 +368,9 @@ export function ReportsPage() {
                     </SelectItem>
                     <SelectItem value="points">{reportLabel.points}</SelectItem>
                     <SelectItem value="roster">{reportLabel.roster}</SelectItem>
-                    <SelectItem value="service">{reportLabel.service}</SelectItem>
+                    <SelectItem value="service">
+                      {reportLabel.service}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
@@ -497,7 +493,10 @@ export function ReportsPage() {
               <Button
                 variant="outline"
                 onClick={exportPdf}
-                disabled={activeMutation.isPending}
+                // Gate on pdfPending too: activeMutation swaps when the report
+                // kind changes, so keying only off it would re-enable this
+                // button mid-export and let a second render be queued.
+                disabled={pdfPending || activeMutation.isPending}
               >
                 {pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -506,7 +505,10 @@ export function ReportsPage() {
                 )}
                 {pdfPending ? "Preparing PDF..." : "Download PDF"}
               </Button>
-              <Button onClick={runReport} disabled={activeMutation.isPending}>
+              <Button
+                onClick={runReport}
+                disabled={pdfPending || activeMutation.isPending}
+              >
                 {activeMutation.isPending && !pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

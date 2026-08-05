@@ -160,9 +160,10 @@ export class ReportController {
    * Single dispatch point for the three export formats.
    *
    * CSV behaviour is byte-for-byte what it was before PDF existed — same
-   * headers, same filename, same inline body — because the dashboard's CSV path
-   * and any existing integration depend on it. `subtitle` is a thunk so the
-   * scope line is only built when a PDF actually needs it.
+   * headers, same filename, same inline body. The dashboard does not use it
+   * (it builds CSV client-side from the preview), so the contract is kept for
+   * external callers, who are exactly the ones a silent change would break.
+   * `subtitle` is a thunk so the scope line is only built when a PDF needs it.
    */
   private async respond<T extends Record<string, any>>(
     chapterId: string,

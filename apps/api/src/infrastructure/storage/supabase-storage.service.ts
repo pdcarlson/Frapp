@@ -1,7 +1,41 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+
+/**
+ * Reject object paths that can escape their bucket.
+ *
+ * storage-js interpolates the path straight into the request URL without
+ * percent-encoding, and Node's URL parser then collapses `..` segments before
+ * the request leaves the process — so `chapters/A/branding/../../../reports/x`
+ * reads `reports/x`, in a *different bucket*, under the API's service-role key
+ * (which bypasses RLS entirely). Reproduced against the local stack.
+ *
+ * Guarding here rather than only at each call site: this class is the single
+ * chokepoint every storage operation passes through, and the paths it receives
+ * come from database columns that were themselves populated from client input.
+ */
+function assertSafeObjectPath(path: string): void {
+  const segments = path.split('/');
+  if (
+    path.length === 0 ||
+    segments.some(
+      (segment) => segment === '' || segment === '.' || segment === '..',
+    )
+  ) {
+    throw new BadRequestException('Invalid storage path');
+  }
+}
+
+/**
+ * Same guard for folder prefixes, which — unlike object paths — may legitimately
+ * be empty (the bucket root).
+ */
+function assertSafePrefix(prefix: string): void {
+  if (prefix.length === 0) return;
+  assertSafeObjectPath(prefix);
+}
 
 @Injectable()
 export class SupabaseStorageService implements IStorageProvider {
@@ -15,6 +49,7 @@ export class SupabaseStorageService implements IStorageProvider {
     contentType: string,
   ): Promise<string> {
     void contentType;
+    assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUploadUrl(path);
@@ -29,6 +64,7 @@ export class SupabaseStorageService implements IStorageProvider {
     expiresIn = 3600,
     downloadAs?: string,
   ): Promise<string> {
+    assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUrl(
@@ -47,24 +83,30 @@ export class SupabaseStorageService implements IStorageProvider {
     body: Uint8Array,
     contentType: string,
   ): Promise<void> {
+    assertSafeObjectPath(path);
     const { error } = await this.supabase.storage
       .from(bucket)
-      // upsert so a retried export overwrites its own object instead of
-      // failing on a duplicate key; paths already carry a unique suffix.
+      // upsert so a caller that derives a deterministic key can refresh it in
+      // place rather than failing on a duplicate. Report exports do not rely on
+      // this — they mint a fresh uuid per call, so they never collide.
       .upload(path, body, { contentType, upsert: true });
 
     if (error) throw error;
   }
 
   async downloadFile(bucket: string, path: string): Promise<Uint8Array | null> {
+    assertSafeObjectPath(path);
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .download(path);
 
     // A missing object is a normal outcome for optional assets — the caller
-    // asked whether it exists by asking for it. Real failures still throw.
+    // asked whether it exists by asking for it. Matched narrowly on *object*:
+    // "Bucket not found" is a misconfiguration and an inaccessible object is
+    // also reported as "Object not found", so a broad match would silently
+    // turn an unprovisioned bucket into "no logo" with nothing in the logs.
     if (error) {
-      if (/not found|does not exist/i.test(error.message)) return null;
+      if (/object not found/i.test(error.message)) return null;
       throw error;
     }
     if (!data) return null;
@@ -72,11 +114,13 @@ export class SupabaseStorageService implements IStorageProvider {
   }
 
   async deleteFile(bucket: string, path: string): Promise<void> {
+    assertSafeObjectPath(path);
     const { error } = await this.supabase.storage.from(bucket).remove([path]);
     if (error) throw error;
   }
 
   async deleteFiles(bucket: string, paths: string[]): Promise<void> {
+    paths.forEach(assertSafeObjectPath);
     // `remove` natively accepts a batch; chunk defensively so a pathological
     // folder cannot produce an oversized request.
     for (let i = 0; i < paths.length; i += 100) {
@@ -88,6 +132,7 @@ export class SupabaseStorageService implements IStorageProvider {
   }
 
   async listFiles(bucket: string, prefix: string): Promise<string[]> {
+    assertSafePrefix(prefix);
     // `list` returns names relative to the prefix and only for the immediate
     // folder level — enough for the flat `<prefix>/<filename>` layouts this
     // codebase uses (e.g. avatar uploads). Paginate until exhausted so a

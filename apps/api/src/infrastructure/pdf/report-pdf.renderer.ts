@@ -90,7 +90,11 @@ const STROKE_FOLD: Record<string, string> = {
  */
 export function toWinAnsi(value: string): string {
   let out = '';
-  for (const char of value) {
+  // Compose first. Text arriving in NFD (macOS/iOS pasteboard and filesystem
+  // sources commonly are) presents "é" as "e" + U+0301: the base letter would
+  // pass through encodable and the bare combining mark would then hit the
+  // fallback, yielding "Jose?" for a name cp1252 can represent exactly.
+  for (const char of value.normalize('NFC')) {
     const codePoint = char.codePointAt(0) ?? 0;
     if (codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d) {
       out += ' ';
@@ -106,6 +110,10 @@ export function toWinAnsi(value: string): string {
       out += stroked;
       continue;
     }
+    // A combining mark with no precomposed form (NFC left it standalone) is
+    // dropped, not replaced: losing the diacritic is the documented
+    // degradation, but "?" in the middle of a word is noise.
+    if (/\p{M}/u.test(char)) continue;
     const folded = char
       .normalize('NFKD')
       .replace(/[̀-ͯ]/g, '')

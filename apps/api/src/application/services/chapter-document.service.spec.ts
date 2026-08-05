@@ -35,6 +35,8 @@ describe('ChapterDocumentService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
       listFiles: jest.fn(),
       deleteFiles: jest.fn(),

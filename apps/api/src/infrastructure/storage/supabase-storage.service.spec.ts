@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SupabaseStorageService } from './supabase-storage.service';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
@@ -6,12 +7,33 @@ describe('SupabaseStorageService', () => {
   let service: SupabaseStorageService;
   let list: jest.Mock;
   let remove: jest.Mock;
+  let download: jest.Mock;
+  let upload: jest.Mock;
+  let createSignedUrl: jest.Mock;
+  let createSignedUploadUrl: jest.Mock;
 
   beforeEach(async () => {
     list = jest.fn();
     remove = jest.fn().mockResolvedValue({ error: null });
+    download = jest.fn().mockResolvedValue({ data: null, error: null });
+    upload = jest.fn().mockResolvedValue({ error: null });
+    createSignedUrl = jest
+      .fn()
+      .mockResolvedValue({ data: { signedUrl: 'd' }, error: null });
+    createSignedUploadUrl = jest
+      .fn()
+      .mockResolvedValue({ data: { signedUrl: 'u' }, error: null });
     const mockSupabase = {
-      storage: { from: jest.fn(() => ({ list, remove })) },
+      storage: {
+        from: jest.fn(() => ({
+          list,
+          remove,
+          download,
+          upload,
+          createSignedUrl,
+          createSignedUploadUrl,
+        })),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -95,6 +117,119 @@ describe('SupabaseStorageService', () => {
 
       await expect(
         service.deleteFiles('profiles', ['p/x.png']),
+      ).rejects.toBeTruthy();
+    });
+  });
+
+  /**
+   * Path containment is a security property, not a tidiness one.
+   *
+   * storage-js interpolates the object path into the request URL unencoded and
+   * Node's URL parser then collapses `..`, so a traversal path escapes the
+   * bucket entirely and is served under the API's service-role key, which
+   * bypasses RLS. Reproduced against a live stack before this guard existed:
+   * a crafted `chapters/<mine>/branding/../../../../reports/...` read another
+   * chapter's report PDF.
+   */
+  describe('path containment', () => {
+    const TRAVERSALS = [
+      'chapters/a/branding/../../../reports/chapters/b/secret.pdf',
+      '../outside.png',
+      'chapters/a/./logo.png',
+      'chapters//a/logo.png',
+      '',
+    ];
+
+    it.each(TRAVERSALS)('downloadFile rejects %p', async (path) => {
+      await expect(
+        service.downloadFile('branding', path),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(download).not.toHaveBeenCalled();
+    });
+
+    it.each(TRAVERSALS)('uploadFile rejects %p', async (path) => {
+      await expect(
+        service.uploadFile(
+          'reports',
+          path,
+          new Uint8Array([1]),
+          'application/pdf',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
+    it.each(TRAVERSALS)('getSignedDownloadUrl rejects %p', async (path) => {
+      await expect(
+        service.getSignedDownloadUrl('reports', path),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(createSignedUrl).not.toHaveBeenCalled();
+    });
+
+    it.each(TRAVERSALS)('getSignedUploadUrl rejects %p', async (path) => {
+      await expect(
+        service.getSignedUploadUrl('branding', path, 'image/png'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(createSignedUploadUrl).not.toHaveBeenCalled();
+    });
+
+    it.each(TRAVERSALS)('deleteFile rejects %p', async (path) => {
+      await expect(service.deleteFile('reports', path)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('rejects a traversal hidden among valid batch deletes', async () => {
+      await expect(
+        service.deleteFiles('reports', ['chapters/a/ok.pdf', '../../etc/x']),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(remove).not.toHaveBeenCalled();
+    });
+
+    it('allows ordinary chapter-scoped paths', async () => {
+      await expect(
+        service.uploadFile(
+          'reports',
+          'chapters/11111111-1111-1111-1111-111111111111/reports/roster-2026-08-05-uuid.pdf',
+          new Uint8Array([1]),
+          'application/pdf',
+        ),
+      ).resolves.toBeUndefined();
+      expect(upload).toHaveBeenCalled();
+    });
+
+    it('allows the empty list prefix (bucket root) but not a traversing one', async () => {
+      list.mockResolvedValueOnce({ data: [], error: null });
+      await expect(service.listFiles('reports', '')).resolves.toEqual([]);
+      await expect(
+        service.listFiles('reports', '../other'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe('downloadFile error handling', () => {
+    it('returns null when the object is missing', async () => {
+      download.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Object not found' },
+      });
+
+      await expect(
+        service.downloadFile('branding', 'a/b.png'),
+      ).resolves.toBeNull();
+    });
+
+    it('throws when the bucket itself is missing', async () => {
+      // An unprovisioned bucket is a misconfiguration. Swallowing it here would
+      // make every chapter's PDF render logo-less with nothing in the logs.
+      download.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(
+        service.downloadFile('branding', 'a/b.png'),
       ).rejects.toBeTruthy();
     });
   });

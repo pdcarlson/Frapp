@@ -236,6 +236,21 @@ export class ChapterService {
         'storage_path must be within the chapter branding folder',
       );
     }
+    // A prefix check alone is not containment: `chapters/<id>/branding/../../..`
+    // satisfies it and still climbs out, and the stored value is later used to
+    // read the object back. Reject relative segments the way proof paths do
+    // (see ServiceEntryService.assertValidProofPath).
+    if (
+      storagePath
+        .split('/')
+        .some(
+          (segment) => segment === '' || segment === '.' || segment === '..',
+        )
+    ) {
+      throw new BadRequestException(
+        'storage_path must not contain relative path segments',
+      );
+    }
     return this.chapterRepo.update(chapterId, { logo_path: storagePath });
   }
 

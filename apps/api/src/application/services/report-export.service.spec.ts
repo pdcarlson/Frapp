@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import {
   REPORTS_BUCKET,
   REPORT_URL_TTL_SECONDS,
@@ -151,6 +151,32 @@ describe('ReportExportService', () => {
         branding: expect.objectContaining({
           logo: { bytes: new Uint8Array([9, 9]), contentType: null },
         }),
+      }),
+    );
+  });
+
+  it('still exports when a stored logo path is rejected as unsafe', async () => {
+    // Defence in depth: the storage layer throws on a traversal path, and that
+    // must degrade to "no logo", never to a failed export.
+    chapterRepo.findById.mockResolvedValue({
+      ...chapter,
+      logo_path: 'chapters/chapter-1/branding/../../../reports/other.png',
+    });
+    storage.downloadFile.mockRejectedValue(
+      new BadRequestException('Invalid storage path'),
+    );
+
+    const result = await service.exportPdf(
+      'chapter-1',
+      'roster',
+      ROSTER_COLUMNS,
+      rows,
+    );
+
+    expect(result.url).toBe('https://storage.example/signed');
+    expect(renderer.render).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branding: expect.objectContaining({ logo: null }),
       }),
     );
   });
