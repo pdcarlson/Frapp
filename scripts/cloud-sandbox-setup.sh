@@ -37,8 +37,33 @@ cs_docker_login_if_creds
 cs_log "Pre-pulling Supabase images (one-time; cached for fast per-session startup)..."
 # Same start args as per-session bringup — without the edge-runtime exclusion this aborts
 # partway and never caches the images ordered after it, which is the whole point of the pre-pull.
+#
+# Retried for the same reason bringup is, and with more to gain: a transient failure here
+# leaves the cache cold, which then exposes EVERY later session to the live CDN. Still
+# strictly non-fatal (see the no-`set -e` note above) — a pre-pull that cannot succeed must
+# degrade to pulling at session time, never block session start.
+#
+# TIGHTER BUDGET THAN BRINGUP, on purpose. This script has a ~5-minute wall-clock budget
+# (docs/internal/environment/CLOUD_SANDBOX.md), most of which `npm ci` and the first cold pull
+# already spend. Bringup's 3 attempts plus 30s of backoff can overrun it, and overrunning is
+# expensive in a way a failed session is not: the harness kills the script mid-pull, so the
+# `stop` below never runs and half-created containers get baked into the CACHED filesystem that
+# every later session inherits. Two attempts buy most of the resilience for a third of the risk.
+CS_RETRY_ATTEMPTS="${FRAPP_SANDBOX_START_RETRIES:-2}"
+CS_RETRY_BASE_DELAY="${FRAPP_SANDBOX_RETRY_BASE_DELAY:-5}"
+CS_RETRY_LOG_LOCATION="the environment setup log in the Claude Code web UI"
+# Re-sanitize: these assignments come straight from the environment and land AFTER the lib's own
+# pass, so without this the knobs reach the arithmetic unchecked here even though bringup is safe.
+cs_normalize_retry_knobs
+
+# Belt to that braces: if the harness does time us out, still tear the stack down so the cached
+# filesystem keeps only the pulled images, which are the entire point of this script.
+trap 'cs_log "Interrupted — stopping Supabase so the cached filesystem stays clean."; cs_supabase stop >/dev/null 2>&1 || true' TERM INT
+
 # shellcheck disable=SC2086
-cs_supabase start $CS_SUPABASE_START_ARGS || cs_log "WARN: 'supabase start' failed during pre-pull; images may pull at session time."
+cs_retry "pre-pull 'supabase start'" "cs_supabase stop" cs_supabase start $CS_SUPABASE_START_ARGS \
+  || cs_log "WARN: pre-pull failed (${CS_RETRY_CLASS:-unknown}) — ${CS_RETRY_HINT:-see the output above}; images will pull at session time instead."
+trap - TERM INT
 cs_supabase stop || true
 
 cs_log "Setup complete."
