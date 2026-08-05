@@ -23,9 +23,20 @@ const LIB = fileURLToPath(new URL("../../lib/cloud-sandbox-common.sh", import.me
 // backoff sleeps so the suite runs in milliseconds instead of ~30s per retry case — which is the
 // concrete reason that knob is configurable rather than hardcoded.
 function bash(script, env = {}) {
+  // EVERY knob the lib reads is pinned, not just the delay. These are ordinary environment
+  // variables, so a developer or CI runner that happens to export FRAPP_SANDBOX_START_RETRIES
+  // would otherwise silently rewrite the attempt budget and fail the budget assertions with a
+  // result that looks like a code regression. Pin them here; individual cases override via `env`.
+  const pinned = {
+    FRAPP_SANDBOX_START_RETRIES: "",
+    FRAPP_SANDBOX_RETRY_BASE_DELAY: "0",
+    FRAPP_SANDBOX_CLEANUP_TIMEOUT: "",
+    SUPABASE_TELEMETRY_DISABLED: "",
+    DO_NOT_TRACK: "",
+  };
   return spawnSync("bash", ["-c", `set -uo pipefail\n. '${LIB}'\n${script}`], {
     encoding: "utf8",
-    env: { ...process.env, FRAPP_SANDBOX_RETRY_BASE_DELAY: "0", ...env },
+    env: { ...process.env, ...pinned, ...env },
   });
 }
 
@@ -362,20 +373,66 @@ test("non-integer retry knobs fall back to defaults instead of aborting the shel
 // ─── wiring the call sites depend on ──────────────────────────────────────────────────────
 
 test("CLI telemetry is disabled by sourcing the lib", () => {
-  const res = bash("echo t=$SUPABASE_TELEMETRY_DISABLED d=$DO_NOT_TRACK");
-  assert.match(res.stdout, /t=1 d=1/);
+  // Seeded with CONTRADICTING values, because merely reading them back proves nothing: if the
+  // parent environment already had them set, the assertion would pass with the exports deleted.
+  const res = bash("echo t=$SUPABASE_TELEMETRY_DISABLED d=$DO_NOT_TRACK", {
+    SUPABASE_TELEMETRY_DISABLED: "0",
+    DO_NOT_TRACK: "0",
+  });
+  assert.match(res.stdout, /t=1 d=1/, "the lib must override, not merely inherit");
+
+  // And they must be exported, not just set — cs_supabase's `npm install` is a child process.
+  const exported = bash("bash -c 'echo child=$SUPABASE_TELEMETRY_DISABLED$DO_NOT_TRACK'");
+  assert.match(exported.stdout, /child=11/);
+});
+
+test("retry knobs are sanitised, including the shapes a digit test lets through", () => {
+  // "08" is all digits, so `*[!0-9]*` accepts it — and then `$(( ))` reads it as OCTAL and raises
+  // "value too great for base", which aborts the enclosing AND-OR list. At the real call site that
+  // means `cs_retry ... || fail ...` never runs its `fail`, and bringup marches on to `db push`
+  // against a stack that never started.
+  const octal = bash("echo d=$CS_RETRY_BASE_DELAY", { FRAPP_SANDBOX_RETRY_BASE_DELAY: "08" });
+  assert.equal(octal.status, 0, `sourcing must not fail: ${octal.stderr}`);
+  assert.match(octal.stdout, /d=8/, "08 must be 8, not an octal parse error");
+  assert.match(bash("echo d=$CS_RETRY_BASE_DELAY", { FRAPP_SANDBOX_RETRY_BASE_DELAY: "030" }).stdout, /d=30/);
+
+  // Out-of-range values must not survive: past ~61 attempts the backoff shift overflows int64 to a
+  // NEGATIVE delay that a `-gt 300` cap cannot catch, and `sleep -692...` then fails outright.
+  assert.match(bash("echo a=$CS_RETRY_ATTEMPTS", { FRAPP_SANDBOX_START_RETRIES: "999" }).stdout, /a=3/);
+  assert.match(bash("echo a=$CS_RETRY_ATTEMPTS", { FRAPP_SANDBOX_START_RETRIES: "08" }).stdout, /a=8/);
+
+  // The backoff itself must never emit a non-positive sleep, whatever the attempt number.
+  const sweep = bash(
+    `for attempt in $(seq 1 70); do
+       if [ "$attempt" -gt 16 ]; then d=300; else d=$((CS_RETRY_BASE_DELAY * (1 << (attempt - 1)))); [ "$d" -gt 300 ] && d=300; fi
+       [ "$d" -lt 0 ] && echo "NEGATIVE at $attempt"
+     done; echo swept`,
+    { FRAPP_SANDBOX_RETRY_BASE_DELAY: "10" },
+  );
+  assert.doesNotMatch(sweep.stdout, /NEGATIVE/, sweep.stdout);
+  assert.match(sweep.stdout, /swept/);
 });
 
 test("both call sites pass the start args unquoted", () => {
   // Quoting $CS_SUPABASE_START_ARGS collapses `-x edge-runtime` into a single argument, silently
   // un-doing the exclusion — which aborts `supabase start` outright in this sandbox. It is a
   // one-character regression with no local symptom, so pin it here.
+  //
+  // Matched against whitespace-normalised source rather than the raw text: an earlier version of
+  // this assertion keyed on exact layout, so wrapping the call across lines with a `\` — which
+  // `bash -n` accepts and which changes nothing — failed the test, while the thing it exists to
+  // catch is a pair of quote characters.
   for (const script of ["cloud-sandbox-up.sh", "cloud-sandbox-setup.sh"]) {
-    const src = readFileSync(fileURLToPath(new URL(`../../${script}`, import.meta.url)), "utf8");
+    const raw = readFileSync(fileURLToPath(new URL(`../../${script}`, import.meta.url)), "utf8");
+    const flat = raw.replace(/\\\n/g, " ").replace(/[ \t]+/g, " ");
+
     assert.match(
-      src,
-      /# shellcheck disable=SC2086\ncs_retry "[^"]+" "cs_supabase stop" cs_supabase start \$CS_SUPABASE_START_ARGS/,
-      `${script} must call cs_retry with an unquoted $CS_SUPABASE_START_ARGS and keep its SC2086 directive`,
+      flat,
+      /# shellcheck disable=SC2086\ncs_retry "[^"]+" "cs_supabase stop" cs_supabase start \$CS_SUPABASE_START_ARGS(\s|$)/,
+      `${script}: 'supabase start' must go through cs_retry, with a stop between attempts, an ` +
+        `unquoted $CS_SUPABASE_START_ARGS, and its SC2086 directive kept`,
     );
+    // The inverse, so the check cannot pass on a file that ALSO quotes it somewhere.
+    assert.doesNotMatch(flat, /"\$CS_SUPABASE_START_ARGS"/, `${script}: args must never be quoted`);
   }
 });

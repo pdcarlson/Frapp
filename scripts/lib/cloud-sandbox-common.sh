@@ -204,19 +204,40 @@ CS_RETRY_BASE_DELAY="${FRAPP_SANDBOX_RETRY_BASE_DELAY:-10}"
 # Both knobs feed `$(( ))`, which ABORTS the shell on a non-integer. Left unguarded, a typo in
 # an environment variable meant for tuning would become a way to break bringup outright, so
 # fall back to the defaults rather than trusting the environment.
-#
-# Range-checked as well as digit-checked. An all-digit but absurd value still passes a digit test,
-# then wraps in 64-bit arithmetic to a NEGATIVE delay that the 300s cap below cannot catch — and
-# `sleep -92233...` exits immediately, silently removing the backoff the knob exists to tune.
-# Bounds are applied with `case`, not `[ -ge ]`, because a huge digit string makes `[` itself
-# print "integer expression expected" at source time, into the session-start log.
-case "$CS_RETRY_ATTEMPTS" in '' | *[!0-9]* | ????*) CS_RETRY_ATTEMPTS=3 ;; esac
-[ "$CS_RETRY_ATTEMPTS" -ge 1 ] || CS_RETRY_ATTEMPTS=1
-case "$CS_RETRY_BASE_DELAY" in '' | *[!0-9]* | ?????*) CS_RETRY_BASE_DELAY=10 ;; esac
 
 # How long to wait for the between-attempt cleanup before giving up on it. See cs_retry.
 CS_RETRY_CLEANUP_TIMEOUT="${FRAPP_SANDBOX_CLEANUP_TIMEOUT:-120}"
-case "$CS_RETRY_CLEANUP_TIMEOUT" in '' | *[!0-9]* | ?????*) CS_RETRY_CLEANUP_TIMEOUT=120 ;; esac
+
+# Sanitize the three knobs above. Exposed as a function, not run once inline, because a caller may
+# legitimately reassign them after sourcing — cloud-sandbox-setup.sh does, to run a tighter budget
+# — and an inline guard would be bypassed by exactly the values it exists to catch.
+#
+# Two traps, both of which reached working code before being caught here:
+#
+#   Leading zeros. `*[!0-9]*` accepts "08", and `$(( ))` then parses it as OCTAL — so "08" is not
+#   8 but an arithmetic error ("value too great for base"), which aborts the enclosing AND-OR list
+#   outright. At the call site that means `cs_retry ... || fail ...` never runs its `fail`, and
+#   bringup marches on to `db push` against a stack that never started. "030" is quieter and just
+#   as wrong: 24 seconds, not 30. `10#` forces base 10.
+#
+#   Range. A digit-only value can still be absurd, and absurd values wrap: with attempts=61 the
+#   shift below overflows int64 to a NEGATIVE delay, which a `-gt 300` cap cannot catch, so
+#   `sleep -6917529027641081856` fails and the backoff silently disappears.
+#
+# Bounds use `case`, not `[ -ge ]`, because `[` on a huge digit string prints "integer expression
+# expected" into the session-start log before any of this can help.
+cs_normalize_retry_knobs() {
+  case "$CS_RETRY_ATTEMPTS" in '' | *[!0-9]* | ???*) CS_RETRY_ATTEMPTS=3 ;; esac
+  CS_RETRY_ATTEMPTS=$((10#$CS_RETRY_ATTEMPTS))
+  [ "$CS_RETRY_ATTEMPTS" -ge 1 ] || CS_RETRY_ATTEMPTS=1
+
+  case "$CS_RETRY_BASE_DELAY" in '' | *[!0-9]* | ?????*) CS_RETRY_BASE_DELAY=10 ;; esac
+  CS_RETRY_BASE_DELAY=$((10#$CS_RETRY_BASE_DELAY))
+
+  case "$CS_RETRY_CLEANUP_TIMEOUT" in '' | *[!0-9]* | ?????*) CS_RETRY_CLEANUP_TIMEOUT=120 ;; esac
+  CS_RETRY_CLEANUP_TIMEOUT=$((10#$CS_RETRY_CLEANUP_TIMEOUT))
+}
+cs_normalize_retry_knobs
 
 # Where a caller's full output ends up, named in human-facing hints. Bringup and the setup
 # pre-pull log to entirely different places, and the setup script's log does not exist yet when
@@ -414,11 +435,17 @@ cs_retry() {
       return "$rc"
     fi
 
-    # Exponential: base, 2×base, 4×base... Capped because the delay is attacker-free but not
-    # typo-free — FRAPP_SANDBOX_START_RETRIES=40 would otherwise compute a delay measured in
-    # centuries and hang the session on a single sleep.
-    delay=$((CS_RETRY_BASE_DELAY * (1 << (attempt - 1))))
-    [ "$delay" -gt 300 ] && delay=300
+    # Exponential: base, 2×base, 4×base... The exponent is bounded BEFORE the shift, not after.
+    # Capping the product alone is not enough: past ~61 attempts `1 << n` overflows int64 and the
+    # product comes back NEGATIVE, which sails through a `-gt 300` test and makes `sleep` fail
+    # outright — removing the backoff exactly when a long retry budget says it is wanted. 16
+    # doublings is already far past the cap for any sane base.
+    if [ "$attempt" -gt 16 ]; then
+      delay=300
+    else
+      delay=$((CS_RETRY_BASE_DELAY * (1 << (attempt - 1))))
+      [ "$delay" -gt 300 ] && delay=300
+    fi
     cs_log "WARN: ${label} failed (${class}); retrying in ${delay}s."
 
     if [ -n "$cleanup" ]; then

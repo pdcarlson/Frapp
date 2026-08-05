@@ -52,6 +52,9 @@ cs_log "Pre-pulling Supabase images (one-time; cached for fast per-session start
 CS_RETRY_ATTEMPTS="${FRAPP_SANDBOX_START_RETRIES:-2}"
 CS_RETRY_BASE_DELAY="${FRAPP_SANDBOX_RETRY_BASE_DELAY:-5}"
 CS_RETRY_LOG_LOCATION="the environment setup log in the Claude Code web UI"
+# Re-sanitize: these assignments come straight from the environment and land AFTER the lib's own
+# pass, so without this the knobs reach the arithmetic unchecked here even though bringup is safe.
+cs_normalize_retry_knobs
 
 # Belt to that braces: if the harness does time us out, still tear the stack down so the cached
 # filesystem keeps only the pulled images, which are the entire point of this script.
