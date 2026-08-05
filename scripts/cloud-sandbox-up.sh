@@ -109,6 +109,7 @@ cs_log "Starting Supabase (images cached)..."
 # The failure message is the whole point of the classification. fail() writes it verbatim
 # into .cloud-sandbox-up.failed, and that sentinel — not the log — is what a polling agent
 # reads, so it has to name the fix rather than just the symptom.
+CS_RETRY_LOG_LOCATION="/tmp/cloud-sandbox-up.log"
 # shellcheck disable=SC2086
 cs_retry "'supabase start'" "cs_supabase stop" cs_supabase start $CS_SUPABASE_START_ARGS \
   || fail "'supabase start' failed (${CS_RETRY_CLASS:-unknown}) — ${CS_RETRY_HINT:-see /tmp/cloud-sandbox-up.log}"

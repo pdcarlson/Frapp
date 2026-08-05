@@ -204,25 +204,42 @@ CS_RETRY_BASE_DELAY="${FRAPP_SANDBOX_RETRY_BASE_DELAY:-10}"
 # Both knobs feed `$(( ))`, which ABORTS the shell on a non-integer. Left unguarded, a typo in
 # an environment variable meant for tuning would become a way to break bringup outright, so
 # fall back to the defaults rather than trusting the environment.
-case "$CS_RETRY_ATTEMPTS" in '' | *[!0-9]*) CS_RETRY_ATTEMPTS=3 ;; esac
+#
+# Range-checked as well as digit-checked. An all-digit but absurd value still passes a digit test,
+# then wraps in 64-bit arithmetic to a NEGATIVE delay that the 300s cap below cannot catch — and
+# `sleep -92233...` exits immediately, silently removing the backoff the knob exists to tune.
+# Bounds are applied with `case`, not `[ -ge ]`, because a huge digit string makes `[` itself
+# print "integer expression expected" at source time, into the session-start log.
+case "$CS_RETRY_ATTEMPTS" in '' | *[!0-9]* | ????*) CS_RETRY_ATTEMPTS=3 ;; esac
 [ "$CS_RETRY_ATTEMPTS" -ge 1 ] || CS_RETRY_ATTEMPTS=1
-case "$CS_RETRY_BASE_DELAY" in '' | *[!0-9]*) CS_RETRY_BASE_DELAY=10 ;; esac
+case "$CS_RETRY_BASE_DELAY" in '' | *[!0-9]* | ?????*) CS_RETRY_BASE_DELAY=10 ;; esac
+
+# How long to wait for the between-attempt cleanup before giving up on it. See cs_retry.
+CS_RETRY_CLEANUP_TIMEOUT="${FRAPP_SANDBOX_CLEANUP_TIMEOUT:-120}"
+case "$CS_RETRY_CLEANUP_TIMEOUT" in '' | *[!0-9]* | ?????*) CS_RETRY_CLEANUP_TIMEOUT=120 ;; esac
+
+# Where a caller's full output ends up, named in human-facing hints. Bringup and the setup
+# pre-pull log to entirely different places, and the setup script's log does not exist yet when
+# it runs, so this must be the caller's to set.
+CS_RETRY_LOG_LOCATION="${CS_RETRY_LOG_LOCATION:-the cloud-sandbox log}"
 
 # Classify a captured failure log, echoing exactly one token on stdout:
 #
-#   policy     Network policy blocked a container registry. FATAL — an allowlist does not
-#              heal on retry, and the fix is a setting in the Claude Code web environment.
-#   ratelimit  Docker Hub refused the pull. FATAL for the same reason (it needs credentials).
-#   transient  Registry/CDN hiccup: 5xx, timeout, reset, truncated transfer. Retryable.
-#   unknown    Anything else. ALSO retryable, deliberately — the point of this work is
-#              resilience against a class of network failures nobody can fully enumerate, and
-#              the two cases that genuinely cannot be retried are both named above. Erring the
-#              other way (fail fast on anything unrecognised) would leave the next unfamiliar
-#              CDN error string killing sessions exactly as before.
+#   policy        Network policy blocked a container registry. FATAL — an allowlist does not
+#                 heal on retry, and the fix is a setting in the Claude Code web environment.
+#   ratelimit     Docker Hub refused the pull. FATAL for the same reason (it needs credentials).
+#   deterministic A local, repeatable failure (denied ulimit, port in use, dockerd down, poisoned
+#                 data volume). FATAL — retrying reruns a ~90s start to reach the same error.
+#   transient     Registry/CDN hiccup: 5xx, timeout, reset, truncated transfer. Retryable.
+#   unknown       Anything else. ALSO retryable, deliberately — the point of this work is
+#                 resilience against a class of network failures nobody can fully enumerate, and
+#                 every case that genuinely cannot be retried is named above. Erring the other
+#                 way (fail fast on anything unrecognised) would leave the next unfamiliar CDN
+#                 error string killing sessions exactly as before.
 #
-# ORDER MATTERS. A run that hits an allowlist rejection usually also logs a 5xx or a reset as
-# the connection dies, so policy and ratelimit are tested first; matching transient first would
-# retry a fatal misconfiguration three times over and still fail.
+# ORDER MATTERS. A run that hits an allowlist rejection, or dies on a denied ulimit, usually also
+# logs a 5xx or a reset as the connection drops, so every fatal class is tested before transient;
+# matching transient first would retry an unfixable failure to exhaustion and still fail.
 #
 # Telemetry lines are stripped BEFORE the policy test. The CLI's blocked PostHog call produces
 # the identical `403 Host not in allowlist` wording as a blocked image pull but is harmless —
@@ -236,11 +253,30 @@ cs_classify_failure() {
 
   body="$(grep -Evi 'posthog|telemetry|do_not_track' "$cap" 2>/dev/null || true)"
 
-  if printf '%s' "$body" | grep -Eqi 'not in allowlist|host_not_allowed|403 forbidden|error 403'; then
+  # Every test is a HERESTRING, never `printf ... | grep -q`. That pipeline is silently wrong on
+  # a real capture: grep -q exits at the first match, the printf still writing behind it takes
+  # SIGPIPE, and because both callers set `-o pipefail` the pipeline reports 141 — so a matching
+  # branch is SKIPPED. It only shows above ~64 KiB, which no small fixture reaches and every real
+  # `supabase start` log exceeds, so the fail-fast half of this function would have quietly
+  # degraded to `unknown` in exactly the situation it exists for.
+  #
+  # The numeric patterns are anchored to HTTP context rather than matched bare. `\b429\b` looked
+  # fine and was not: `.` is a word boundary, so it matches Docker's own pull progress
+  # ("Downloading 429.5MB/1.2GB") and Supabase image tags ("v2.429.0: Pulling from
+  # supabase/gotrue" — gotrue is at v2.193.0 and climbing). Since ratelimit is fail-fast and is
+  # tested before transient, one incidental number turned a retryable CDN outage into an
+  # immediate abort telling the user to add Docker Hub credentials that cannot help.
+  if grep -Eqi 'not in allowlist|host_not_allowed|host not allowed|denied by policy' <<<"$body"; then
     printf 'policy'
-  elif printf '%s' "$body" | grep -Eqi 'toomanyrequests|rate exceeded|pull rate limit|\b429\b'; then
+  elif grep -Eqi 'toomanyrequests|too many requests|rate exceeded|pull rate limit|(status|code|http)[^0-9]{0,8}429' <<<"$body"; then
     printf 'ratelimit'
-  elif printf '%s' "$body" | grep -Eqi 'service unavailable|bad gateway|gateway time-?out|\b50[234]\b|i/o timeout|tls handshake timeout|connection reset|unexpected eof|broken pipe|context deadline exceeded'; then
+  elif grep -Eqi 'error setting rlimit|port is already allocated|address already in use|cannot connect to the docker daemon|database files are incompatible' <<<"$body"; then
+    # Deterministic and local: the sandbox denies an ulimit, a port is taken, dockerd is gone, or
+    # a half-initialised data volume survived. Retrying re-runs a ~90s start to reach the same
+    # error. Every one of these already has a row in CLOUD_SANDBOX.md's symptom table, so the
+    # useful move is to send the reader there rather than to burn the budget.
+    printf 'deterministic'
+  elif grep -Eqi 'service unavailable|bad gateway|gateway time-?out|(status|code|http)[^0-9]{0,8}50[234]|i/o timeout|tls handshake timeout|connection reset|unexpected eof|broken pipe|context deadline exceeded' <<<"$body"; then
     printf 'transient'
   else
     printf 'unknown'
@@ -253,22 +289,32 @@ cs_classify_failure() {
 # This string matters more than its length suggests: cloud-sandbox-up.sh passes it to fail(),
 # which writes it verbatim into .cloud-sandbox-up.failed. That sentinel is the ENTIRE
 # machine-readable failure surface — it is what a polling agent reads instead of the log.
+# Takes the class and, optionally, where the full output can be read. That second argument is not
+# decoration: this function is shared by per-session bringup AND the setup pre-pull, and the two
+# run in different worlds. cloud-sandbox-setup.sh executes as root at environment-BUILD time, when
+# /tmp/cloud-sandbox-up.log does not exist and "start a new session" is meaningless — so no remedy
+# here may assume a session exists. Callers pass their own log location; the default stays vague
+# rather than confidently naming a file that may not be there.
 cs_failure_hint() {
-  case "${1:-}" in
+  local class="${1:-}" where="${2:-the cloud-sandbox log}"
+  case "$class" in
     policy)
       printf 'the sandbox network policy blocked a container registry. Set Network = Full, or Custom + public.ecr.aws + *.cloudfront.net, in the Claude Code web environment. Applies to NEW sessions only.'
       ;;
     ratelimit)
       printf 'Docker Hub refused the pull (anonymous rate limit). Add DOCKERHUB_USERNAME and a read-only DOCKERHUB_TOKEN to the Claude Code web environment. Applies to NEW sessions only.'
       ;;
+    deterministic)
+      printf 'a local, repeatable failure (denied ulimit, port already in use, Docker daemon down, or an incompatible Postgres data volume) — retrying cannot help. Match the exact error in %s against the symptom table in docs/internal/environment/CLOUD_SANDBOX.md ("When bringup fails").' "$where"
+      ;;
     transient)
-      printf 'the container registry/CDN returned transient errors on every one of %s attempts. This is an upstream outage rather than a config problem — start a new session to retry; if it persists, check the Supabase and AWS ECR Public status pages.' "$CS_RETRY_ATTEMPTS"
+      printf 'the container registry/CDN returned transient errors on every one of %s attempts. This is an upstream outage rather than a config problem — retry later; if it persists, check the Supabase and AWS ECR Public status pages.' "$CS_RETRY_ATTEMPTS"
       ;;
     toolchain)
       printf 'the pinned Supabase CLI could not be installed or run — see .cache/supabase-cli/install.log. Delete .cache/supabase-cli/ to force a clean reinstall.'
       ;;
     *)
-      printf 'the failure did not match any known pattern — read the full output in /tmp/cloud-sandbox-up.log.'
+      printf 'the failure did not match any known pattern — read the full output in %s.' "$where"
       ;;
   esac
 }
@@ -283,13 +329,17 @@ cs_failure_hint() {
 # behind, and starting again over them fails for a different reason than the one being retried,
 # turning one legible error into two illegible ones.
 #
-# On failure the caller reads three globals. A shell function returns a status OR a value, not
+# On failure the caller reads two globals. A shell function returns a status OR a value, not
 # both, and stdout is spoken for here — write_env_local captures `supabase status` on stdout,
 # which is why every helper in this file logs to stderr:
 #
-#   CS_RETRY_CLASS  policy | ratelimit | transient | unknown | toolchain
+#   CS_RETRY_CLASS  policy | ratelimit | deterministic | transient | unknown | toolchain
 #   CS_RETRY_HINT   the actionable remedy for that class
-#   CS_RETRY_LOG    path to the last attempt's captured output ("" if the command succeeded)
+#
+# The per-attempt capture file is an internal detail and is removed on every return path. It is
+# not exposed, because it would only ever duplicate what `>&2` already streamed into the caller's
+# own log — and an exported path to a file this function deletes is worse than no path at all.
+# Set CS_RETRY_LOG_LOCATION to name that log in human-facing hints.
 #
 # Returns the last attempt's exit status, and never exits: this file is sourced by scripts that
 # deliberately run without `set -e`, so callers own their own error policy.
@@ -297,10 +347,20 @@ cs_retry() {
   local label="$1" cleanup="$2"
   shift 2
 
-  local attempt=1 rc=0 delay class
+  local attempt=1 rc=0 delay class cap
   CS_RETRY_CLASS=""
   CS_RETRY_HINT=""
-  CS_RETRY_LOG="$(mktemp "${TMPDIR:-/tmp}/cloud-sandbox-retry.XXXXXX")"
+
+  # An unchecked mktemp here would silently disable half the feature rather than fail: the empty
+  # path makes cs_classify_failure hit its unreadable-file guard and answer `unknown` for every
+  # attempt, so policy and ratelimit stop being detected at all and get retried to exhaustion —
+  # while `tee ''` sprays confusing errors into the log naming the wrong file.
+  if ! cap="$(mktemp "${TMPDIR:-/tmp}/cloud-sandbox-retry.XXXXXX" 2>/dev/null)"; then
+    CS_RETRY_CLASS="toolchain"
+    CS_RETRY_HINT="could not create a temporary file in ${TMPDIR:-/tmp} — the disk may be full or the directory unwritable."
+    cs_log "ERROR: ${label} — cannot create a capture file in ${TMPDIR:-/tmp}; refusing to run blind."
+    return 1
+  fi
 
   while :; do
     [ "$attempt" -gt 1 ] && cs_log "Retrying ${label} — attempt ${attempt}/${CS_RETRY_ATTEMPTS}."
@@ -309,18 +369,17 @@ cs_retry() {
     # would let a 503 in attempt 1 keep a deterministic attempt-3 failure looking retryable, and
     # would report the wrong remedy. Nothing is lost: `>&2` still streams every attempt into the
     # caller's own log.
-    : >"$CS_RETRY_LOG"
+    : >"$cap"
     # PIPESTATUS[0] is the command's status rather than tee's, and is correct whether or not the
     # caller enabled `set -o pipefail` — which this file cannot assume either way.
-    "$@" 2>&1 | tee "$CS_RETRY_LOG" >&2
+    "$@" 2>&1 | tee "$cap" >&2
     rc=${PIPESTATUS[0]}
 
     if [ "$rc" -eq 0 ]; then
       # Clear all three, not just the log. An attempt that failed transiently and then
       # recovered would otherwise leave CS_RETRY_CLASS set on a SUCCESSFUL call, and a caller
       # that reads it — the natural thing to do — would report a failure that did not happen.
-      rm -f "$CS_RETRY_LOG"
-      CS_RETRY_LOG=""
+      rm -f "$cap"
       CS_RETRY_CLASS=""
       CS_RETRY_HINT=""
       return 0
@@ -331,24 +390,27 @@ cs_retry() {
     # message, and a retry only repeats a failing `npm install`.
     if [ "$rc" -eq 127 ]; then
       CS_RETRY_CLASS="toolchain"
-      CS_RETRY_HINT="$(cs_failure_hint toolchain)"
+      CS_RETRY_HINT="$(cs_failure_hint toolchain "$CS_RETRY_LOG_LOCATION")"
       cs_log "ERROR: ${label} failed with a toolchain error (exit 127) — not retrying."
+      rm -f "$cap"
       return "$rc"
     fi
 
-    class="$(cs_classify_failure "$CS_RETRY_LOG")"
+    class="$(cs_classify_failure "$cap")"
     CS_RETRY_CLASS="$class"
-    CS_RETRY_HINT="$(cs_failure_hint "$class")"
+    CS_RETRY_HINT="$(cs_failure_hint "$class" "$CS_RETRY_LOG_LOCATION")"
 
     case "$class" in
-      policy | ratelimit)
+      policy | ratelimit | deterministic)
         cs_log "ERROR: ${label} failed with a ${class} error — not retrying, since retries cannot fix it."
+        rm -f "$cap"
         return "$rc"
         ;;
     esac
 
     if [ "$attempt" -ge "$CS_RETRY_ATTEMPTS" ]; then
       cs_log "ERROR: ${label} failed after ${attempt} attempt(s); last failure classified ${class}."
+      rm -f "$cap"
       return "$rc"
     fi
 
@@ -361,9 +423,26 @@ cs_retry() {
 
     if [ -n "$cleanup" ]; then
       cs_log "Cleaning up before retry: ${cleanup}"
+      # Bounded by hand rather than with `timeout`, which cannot wrap $cleanup: it is a shell
+      # FUNCTION (cs_supabase), and timeout execs, which would lose it. The bound matters because
+      # `supabase stop` talks to the same Docker socket that cs_ensure_docker_daemon deliberately
+      # wraps in `timeout 10` — a wedged socket hangs it forever, and a hung bringup never writes
+      # a sentinel, so the session waits on one that can never arrive. The SessionStart hook's
+      # stale-lock reclaim does not save us either: it tests liveness, and a hung process is alive.
+      #
       # Intentionally unquoted — $cleanup is a caller-supplied command line that must word-split.
       # shellcheck disable=SC2086
-      $cleanup >/dev/null 2>&1 || true
+      $cleanup >/dev/null 2>&1 &
+      local cleanup_pid=$! waited=0
+      while kill -0 "$cleanup_pid" 2>/dev/null && [ "$waited" -lt "$CS_RETRY_CLEANUP_TIMEOUT" ]; do
+        sleep 1
+        waited=$((waited + 1))
+      done
+      if kill -0 "$cleanup_pid" 2>/dev/null; then
+        cs_log "WARN: cleanup did not finish in ${CS_RETRY_CLEANUP_TIMEOUT}s; abandoning it and retrying anyway."
+        kill -9 "$cleanup_pid" 2>/dev/null || true
+      fi
+      wait "$cleanup_pid" 2>/dev/null || true
     fi
 
     sleep "$delay"

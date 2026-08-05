@@ -96,27 +96,41 @@ fix just delays the answer:
 | Class | Retried? | Why |
 |-------|----------|-----|
 | `transient` — 5xx, timeout, connection reset, truncated transfer | yes | upstream hiccup; usually clears |
-| `unknown` — anything unrecognised | yes | the point is resilience against errors nobody enumerated; the two unretryable cases are both named below |
+| `unknown` — anything unrecognised | yes | the point is resilience against errors nobody enumerated, and every class that genuinely cannot be retried is named below |
 | `policy` — network policy blocked a registry host | **no** | an allowlist does not heal on retry |
 | `ratelimit` — Docker Hub pull limit | **no** | needs credentials, not patience |
+| `deterministic` — denied ulimit, port in use, dockerd down, incompatible data volume | **no** | local and repeatable; each already has a row in the symptom table below |
 | `toolchain` — `cs_supabase` exit 127 | **no** | bad version pin or blocked npm registry; a retry repeats a failing `npm install` |
 
-The classifier strips telemetry lines *before* testing for a policy failure — see the
-telemetry row in the table below for why that matters.
+Two details that look like nits and are not. The classifier strips telemetry lines *before*
+testing for a policy failure (see the telemetry row below), and it matches HTTP statuses only
+in context — a bare `429`/`503` is ignored, because Docker's own progress output
+(`Downloading 429.5MB/1.2GB`) and Supabase image tags (`v2.193.0: Pulling from …`) are full of
+incidental digits, and `ratelimit` is fail-fast. Likewise only the proxy's own
+`Host not in allowlist` marker counts as `policy`: ECR Public serves blobs from presigned
+CloudFront URLs that return a perfectly retryable `403 Forbidden` when the signature expires
+mid-pull on a large image.
 
 `db push --local` and writing `apps/api/.env.local` are deliberately **not** retried. They
 are deterministic and local, so a retry only triples the time to the same error and hides
 which step actually broke.
 
-Two knobs, both optional:
+Knobs, all optional:
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `FRAPP_SANDBOX_START_RETRIES` | `3` | total attempts for `supabase start` |
-| `FRAPP_SANDBOX_RETRY_BASE_DELAY` | `10` | seconds before the 2nd attempt; doubles each time (capped at 300s). `0` disables the wait |
+| `FRAPP_SANDBOX_START_RETRIES` | `3` (**2** in setup) | total attempts for `supabase start` |
+| `FRAPP_SANDBOX_RETRY_BASE_DELAY` | `10` (**5** in setup) | seconds before the 2nd attempt; doubles each time (capped at 300s). `0` disables the wait |
+| `FRAPP_SANDBOX_CLEANUP_TIMEOUT` | `120` | seconds to allow the between-attempt `supabase stop` before abandoning it |
 
-Non-integer values fall back to the defaults rather than aborting the shell, so a typo in a
-tuning variable cannot break bringup outright.
+The setup pre-pull runs a **tighter budget than per-session bringup** on purpose: that script
+has a ~5-minute wall-clock budget, and overrunning it is worse than failing, because the
+harness kills it mid-pull and half-created containers get baked into the *cached* filesystem
+every later session inherits. It also traps `TERM`/`INT` to tear the stack down if that
+happens anyway.
+
+Out-of-range and non-integer values fall back to the defaults rather than aborting the shell,
+so a typo in a tuning variable cannot break bringup outright.
 
 `cs_supabase` is how both scripts invoke the Supabase CLI — never bare `npx supabase`. It
 resolves a **pinned** CLI (`CS_SUPABASE_CLI_VERSION`, override with
@@ -175,12 +189,21 @@ If `.cloud-sandbox-up.failed` is present, **do not work around it** — stop and
 exactly what to add or change in the Claude Code web environment, then wait. Most of these
 failures are environment config the agent cannot fix from inside the session.
 
-**Read the sentinel first, not the log.** `.cloud-sandbox-up.failed` names the failure class
-and the remedy (`'supabase start' failed (ratelimit) — Docker Hub refused the pull …`); the
-log is for detail. This matters because registry errors in the log are no longer
-self-evidently fatal: transient ones are retried, so a **successful** bringup can contain
-several `503`s. A scary line in the log with a `.cloud-sandbox-up.done` next to it means the
-retry did its job — that is not a failure to report.
+**Read the sentinel first — then still read the log.** For the `supabase start` step,
+`.cloud-sandbox-up.failed` names the failure class and the remedy (`'supabase start' failed
+(ratelimit) — Docker Hub refused the pull …`), so start there. Two caveats, both real:
+
+- **Only that step is classified.** The other `fail()` sites still write plain reasons
+  (`'supabase db push --local' failed.`, `Docker daemon did not start.`). A bare reason is a
+  pointer to the log, not a finished diagnosis — and a failing migration is an in-repo fix, not
+  something to stop and report as environment config.
+- **A `(unknown)` class means exactly that.** Match the log against the table below yourself.
+
+Registry errors in the log are also no longer self-evidently fatal: transient ones are
+retried, so a **successful** bringup can contain several `503`s. A scary line with a
+`.cloud-sandbox-up.done` next to it means the retry did its job — not a failure to report.
+Conversely, one row below fires only on a *successful* run (`supabase start` slow / re-pulling
+every session), so skim the log even when bringup succeeds.
 
 | Symptom | Cause | What to do |
 |---------|-------|------------|

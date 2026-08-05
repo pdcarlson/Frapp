@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,7 +68,7 @@ test("classifies allowlist and rate-limit failures as fatal", () => {
     classify("Get https://public.ecr.aws/v2/supabase/postgres/blobs/sha256:ab: 403 Host not in allowlist"),
     "policy",
   );
-  assert.equal(classify("error pulling image: 403 Forbidden"), "policy");
+  assert.equal(classify("error pulling image: denied by policy"), "policy");
   assert.equal(
     classify("toomanyrequests: You have reached your pull rate limit. Increase the limit"),
     "ratelimit",
@@ -104,13 +104,81 @@ test("fatal classes win over transient noise in the same log", () => {
   // A blocked pull usually ALSO logs a 5xx or a reset as the connection dies. Matching transient
   // first would retry an unfixable misconfiguration to exhaustion and still fail.
   assert.equal(
-    classify(["403 Forbidden on public.ecr.aws", "503 Service Unavailable during teardown"].join("\n")),
+    classify(["Host not in allowlist: public.ecr.aws", "503 Service Unavailable during teardown"].join("\n")),
     "policy",
   );
   assert.equal(
     classify(["toomanyrequests: pull rate limit", "connection reset by peer"].join("\n")),
     "ratelimit",
   );
+});
+
+test("incidental digits in pull output are not read as HTTP statuses", () => {
+  // Regression: the patterns were once bare `\b429\b` / `\b50[234]\b`. `.` is a word boundary, so
+  // they matched Docker's progress lines AND Supabase image tags — and since `ratelimit` is
+  // fail-fast and tested before `transient`, one incidental number turned a retryable CDN outage
+  // into an immediate abort telling the user to add Docker Hub credentials that cannot help.
+  // gotrue was at v2.193.0 when this was written, so v2.429.0 is a matter of time, not fiction.
+  assert.equal(
+    classify(["v2.429.0: Pulling from supabase/gotrue", "failed to pull: 503 Service Unavailable"].join("\n")),
+    "transient",
+  );
+  assert.equal(
+    classify(["a1b2: Downloading 429.5MB/1.2GB", "read tcp: connection reset by peer"].join("\n")),
+    "transient",
+  );
+  assert.equal(
+    classify(["v2.502.1: Pulling from supabase/realtime", "error setting rlimit type 7: operation not permitted"].join("\n")),
+    "deterministic",
+  );
+  // Real HTTP context must still be recognised when the phrase form is absent.
+  assert.equal(classify("received unexpected HTTP status 429"), "ratelimit");
+  assert.equal(classify("registry responded with status: 503"), "transient");
+});
+
+test("a bare registry 403 is retryable; only the proxy's allowlist marker is fatal", () => {
+  // ECR Public redirects blobs to short-lived presigned CloudFront URLs. On the ~1GB postgres
+  // image — precisely this feature's workload — a slow pull can outlive the signature and get a
+  // 403 that IS retryable. Matching bare `403 Forbidden` as a policy failure aborted on it and
+  // told the user to widen a network policy that was already correct.
+  assert.equal(
+    classify("unexpected status from GET request to https://d123.cloudfront.net/v2/blob: 403 Forbidden"),
+    "unknown",
+    "a bare 403 must not be treated as a fatal allowlist rejection",
+  );
+  assert.equal(
+    classify("Get https://public.ecr.aws/v2/: 403 Host not in allowlist"),
+    "policy",
+    "the proxy's own marker must still be fatal",
+  );
+});
+
+test("classification survives a realistically large capture", () => {
+  // Regression for a silent, size-dependent failure: the tests were `printf ... | grep -q`, and
+  // grep -q exits at the first match, SIGPIPEing the printf behind it. Under the callers'
+  // `set -o pipefail` the pipeline then reports 141 and the matching branch is SKIPPED. Below
+  // ~64KiB it never reproduces, and every real `supabase start` log is far bigger — so the
+  // fail-fast half degraded to `unknown` exactly where it mattered. Small fixtures cannot catch
+  // this; the size is the test.
+  const noise = "a1b2c3d4: Downloading [====>   ] 128.5MB/1.2GB\n".repeat(8000);
+  assert.ok(noise.length > 300_000, "fixture must exceed the ~64KiB SIGPIPE threshold");
+  assert.equal(classify(`Get https://public.ecr.aws/v2/: 403 Host not in allowlist\n${noise}`), "policy");
+  assert.equal(classify(`${noise}\ntoomanyrequests: pull rate limit exceeded`), "ratelimit");
+  assert.equal(classify(`${noise}\nfailed to pull: 503 Service Unavailable`), "transient");
+});
+
+test("deterministic local failures are fatal rather than retried", () => {
+  // Each of these already has a row in CLOUD_SANDBOX.md's symptom table. Retrying one just reruns
+  // a ~90s start to reach the same error and then reports "no known pattern" — losing a diagnosis
+  // the repo already had written down.
+  for (const [label, text] of Object.entries({
+    "edge-runtime rlimit": "failed to start docker container: error setting rlimit type 7: operation not permitted",
+    "port conflict": "Error starting userland proxy: port is already allocated",
+    "dockerd down": "Cannot connect to the Docker daemon at unix:///var/run/docker.sock",
+    "poisoned volume": "FATAL: database files are incompatible with server",
+  })) {
+    assert.equal(classify(text), "deterministic", label);
+  }
 });
 
 test("unrecognised output and a missing capture file fall back to unknown", () => {
@@ -141,13 +209,16 @@ function retryHarness({ script, env = {} } = {}) {
   const counter = path.join(dir, "attempts");
   writeFileSync(counter, "0");
   try {
+    // A private TMPDIR per run is what makes `leaked` below meaningful: cs_retry mktemps its
+    // per-attempt capture file there, so anything left over is a leak this run caused.
     const res = bash(
       `COUNTER='${counter}'
        bump() { printf '%s' "$(( $(cat "$COUNTER") + 1 ))" >"$COUNTER"; cat "$COUNTER"; }
        ${script}`,
-      env,
+      { TMPDIR: dir, ...env },
     );
-    return { res, attempts: Number(readFileSync(counter, "utf8")) };
+    const leaked = readdirSync(dir).filter((f) => f.startsWith("cloud-sandbox-retry."));
+    return { res, attempts: Number(readFileSync(counter, "utf8")), leaked };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -162,13 +233,12 @@ test("retries a transient failure and reports success once it recovers", () => {
         echo "Started supabase local development setup."; return 0
       }
       cs_retry "flaky" "" flaky >/dev/null 2>&1
-      echo "rc=$? class=[\${CS_RETRY_CLASS}] log=[\${CS_RETRY_LOG}]"`,
+      echo "rc=$? class=[\${CS_RETRY_CLASS}]"`,
   });
   assert.equal(attempts, 3, "should have kept trying until it recovered");
   assert.match(res.stdout, /rc=0/);
   // A recovered call must not leave failure state behind for the caller to misread as a failure.
   assert.match(res.stdout, /class=\[\]/, "class must be cleared on success");
-  assert.match(res.stdout, /log=\[\]/, "capture path must be cleared on success");
 });
 
 test("stops at the attempt budget when the failure never clears", () => {
@@ -207,6 +277,38 @@ test("fatal classifications fail fast after exactly one attempt", () => {
     assert.equal(attempts, 1, `${label} must not be retried`);
     assert.match(res.stdout, new RegExp(`class=${expected}\\|hint=.+`), `${label} must carry a hint`);
   }
+});
+
+test("the per-attempt capture file never leaks, on any return path", () => {
+  // It is mktemp'd once per cs_retry call; the SessionStart hook relaunches bringup on every
+  // resume, so a persistently failing environment would otherwise drip one orphan per cycle onto
+  // a disk shared with the Docker image cache.
+  const cases = {
+    success: `ok() { bump >/dev/null; echo fine; return 0; }; cs_retry x "" ok`,
+    "budget exhausted": `t() { bump >/dev/null; echo "503 Service Unavailable"; return 1; }; cs_retry x "" t`,
+    "fatal policy": `p() { bump >/dev/null; echo "Host not in allowlist"; return 1; }; cs_retry x "" p`,
+    "fatal deterministic": `d() { bump >/dev/null; echo "error setting rlimit type 7"; return 1; }; cs_retry x "" d`,
+    toolchain: `b() { bump >/dev/null; echo nope; return 127; }; cs_retry x "" b`,
+  };
+  for (const [label, script] of Object.entries(cases)) {
+    const { leaked } = retryHarness({ script: `${script} >/dev/null 2>&1` });
+    assert.deepEqual(leaked, [], `${label} leaked a capture file: ${leaked.join(", ")}`);
+  }
+});
+
+test("an unusable TMPDIR fails loudly instead of silently classifying everything unknown", () => {
+  // Unchecked, the empty mktemp result made cs_classify_failure hit its unreadable-file guard and
+  // answer `unknown` for every attempt — so policy and ratelimit stopped being detected at all and
+  // were retried to exhaustion, while `tee ''` sprayed errors naming the wrong file.
+  const res = bash(
+    `p() { echo "Host not in allowlist"; return 1; }
+     cs_retry x "" p >/dev/null
+     echo "rc=$? class=\${CS_RETRY_CLASS}"`,
+    { TMPDIR: "/nonexistent-tmpdir-for-tests" },
+  );
+  assert.match(res.stdout, /rc=1/);
+  assert.match(res.stdout, /class=toolchain/, "must report the real problem, not misclassify");
+  assert.match(res.stderr, /cannot create a capture file/);
 });
 
 test("a toolchain failure (exit 127) is never retried", () => {
@@ -272,7 +374,7 @@ test("both call sites pass the start args unquoted", () => {
     const src = readFileSync(fileURLToPath(new URL(`../../${script}`, import.meta.url)), "utf8");
     assert.match(
       src,
-      /# shellcheck disable=SC2086\ncs_retry .*cs_supabase start \$CS_SUPABASE_START_ARGS/,
+      /# shellcheck disable=SC2086\ncs_retry "[^"]+" "cs_supabase stop" cs_supabase start \$CS_SUPABASE_START_ARGS/,
       `${script} must call cs_retry with an unquoted $CS_SUPABASE_START_ARGS and keep its SC2086 directive`,
     );
   }
