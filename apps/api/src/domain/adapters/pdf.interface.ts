@@ -20,8 +20,12 @@ export interface ReportPdfBranding {
    * Raw logo bytes, or null when the chapter never uploaded one. The renderer
    * treats an unusable logo as absent rather than failing the export — a broken
    * image must not cost an officer their report.
+   *
+   * Bytes only, deliberately: the renderer sniffs the magic bytes rather than
+   * trusting a stored content type, because the object was uploaded through a
+   * signed URL where the client chose its own header.
    */
-  logo?: { bytes: Uint8Array; contentType: string | null } | null;
+  logo?: { bytes: Uint8Array } | null;
 }
 
 export interface ReportPdfDocument {

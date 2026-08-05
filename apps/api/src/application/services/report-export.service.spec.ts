@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import {
   REPORTS_BUCKET,
   REPORT_URL_TTL_SECONDS,
@@ -149,22 +149,21 @@ describe('ReportExportService', () => {
     expect(renderer.render).toHaveBeenCalledWith(
       expect.objectContaining({
         branding: expect.objectContaining({
-          logo: { bytes: new Uint8Array([9, 9]), contentType: null },
+          logo: { bytes: new Uint8Array([9, 9]) },
         }),
       }),
     );
   });
 
-  it('still exports when a stored logo path is rejected as unsafe', async () => {
-    // Defence in depth: the storage layer throws on a traversal path, and that
-    // must degrade to "no logo", never to a failed export.
+  it('warns and still exports when the recorded logo object is gone', async () => {
     chapterRepo.findById.mockResolvedValue({
       ...chapter,
-      logo_path: 'chapters/chapter-1/branding/../../../reports/other.png',
+      logo_path: 'chapters/chapter-1/branding/logo.png',
     });
-    storage.downloadFile.mockRejectedValue(
-      new BadRequestException('Invalid storage path'),
-    );
+    storage.downloadFile.mockResolvedValue(null);
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
 
     const result = await service.exportPdf(
       'chapter-1',
@@ -174,11 +173,10 @@ describe('ReportExportService', () => {
     );
 
     expect(result.url).toBe('https://storage.example/signed');
-    expect(renderer.render).toHaveBeenCalledWith(
-      expect.objectContaining({
-        branding: expect.objectContaining({ logo: null }),
-      }),
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('missing from storage'),
     );
+    warn.mockRestore();
   });
 
   it('still exports when the logo cannot be fetched', async () => {

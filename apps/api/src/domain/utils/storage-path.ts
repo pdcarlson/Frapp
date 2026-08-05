@@ -1,17 +1,18 @@
 import { BadRequestException } from '@nestjs/common';
 
-/**
- * Tab, LF and CR are *deleted* from a URL by the WHATWG parser before dot
- * segments are removed, so `.\t.` reaches storage as `..`. Verified: it read an
- * object from a different bucket while a raw-and-decoded segment check accepted
- * it.
- */
-const URL_STRIPPED = /[\t\n\r]/g;
-
 /** The parser treats `%2e` as `.` when deciding what is a dot segment. */
 const PERCENT_DOT = /%2e/gi;
 
-/** Any C0 control or DEL. No legitimate object key contains one. */
+/**
+ * Any C0 control or DEL. No legitimate object key contains one.
+ *
+ * This is load-bearing, not hygiene: the WHATWG URL parser *deletes* tab, LF
+ * and CR from a URL before removing dot segments, so `.\t.` arrives at storage
+ * as `..` while looking like neither `.` nor `..` to a segment comparison.
+ * Seven such spellings read another bucket's object against a live stack
+ * before this check existed. Rejecting the characters outright is what closes
+ * that — do not relax it without adding a strip-then-recheck pass in its place.
+ */
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHAR = /[\u0000-\u001F\u007F]/;
 
@@ -66,9 +67,7 @@ export function isUnsafeStoragePath(path: string): boolean {
   // keys are uuid/slug structured and path.basename of a real filename has none.
   if (forms.some((form) => CONTROL_CHAR.test(form))) return true;
 
-  return forms
-    .flatMap((form) => [form, form.replace(URL_STRIPPED, '')])
-    .some((form) => form.split(/[/\\]/).some(isDotSegment));
+  return forms.some((form) => form.split(/[/\\]/).some(isDotSegment));
 }
 
 /** Throw `BadRequestException` when `path` could escape its prefix or bucket. */

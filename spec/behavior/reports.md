@@ -72,11 +72,33 @@ PDF reports use a clean, branded template with:
 - Tabular data with alternating row shading for readability, paginated across
   landscape US Letter pages.
 
-The document is rendered with the standard PDF fonts, which cover Latin-1. Text
-outside that range is folded to its nearest encodable form (`ā` → `a`) and
-anything with no such form becomes `?` — a member name in a non-Latin script is
-degraded, never a failed export. A logo that is missing or not a readable
-PNG/JPEG is skipped with a warning for the same reason.
+A logo that is missing, or not a readable PNG/JPEG, is skipped with a warning
+rather than failing the export.
+
+### Text degradation
+
+The document is rendered with the standard PDF fonts, which cover Latin-1 only,
+so text outside that range is folded. The governing rules, in order:
+
+- Characters Latin-1 can represent pass through unchanged — `José` keeps its accent.
+- Modified Latin letters fold to their base: `ā` → `a`, `Ł` → `L`, `Đ` → `D`.
+- **Zero-width characters vanish rather than degrading.** Combining marks with no
+  precomposed form, format characters (a UTF-8 BOM surviving a roster import, a
+  zero-width space, a bidi mark), and the soft hyphen are dropped — a character
+  that was invisible must never become visible.
+- Line and paragraph separators, and exotic spaces, collapse to a single space,
+  as newlines and tabs do. Every cell is one line.
+- Vulgar fractions expand rather than losing a digit: `1⅓ hrs` renders
+  `1 1/3 hrs`, never `113 hrs`. A fold must never fabricate a different value.
+- Anything left with no encodable form becomes a single `?` per source
+  character — a member name in a non-Latin script is degraded, never a failed
+  export, and never inflated into a run of question marks.
+
+### Unsupported formats
+
+An unrecognized `format` is rejected with `400`, matching the points `window`
+rule above, rather than silently falling back to `json`. Omitting `format`
+selects `json`.
 
 ## Chat Integration
 

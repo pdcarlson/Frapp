@@ -117,14 +117,22 @@ function foldChar(char: string, expanded = false): string {
       const folded = [...decomposed]
         .map((part) => foldChar(part, true))
         .join('');
+      // One source character yields at most one "?". Emitting it per unfoldable
+      // *part* would turn a 3-character Hangul name into eight question marks
+      // (each syllable decomposes into jamo) and would print "?n" for "ŉ",
+      // whose expansion contains a modifier letter plus a perfectly good "n".
+      if (folded === '') return '?';
       // A vulgar fraction sits tight against a preceding integer ("1⅓ hrs"),
       // and its expansion is bare digits and a slash — "11/3" reads as
-      // eleven-thirds. A leading space restores the mixed number; a stray
-      // leading space elsewhere is collapsed or trimmed below.
+      // eleven-thirds. A leading space restores the mixed number. It can leave
+      // a space mid-token ("Lot A⅓" → "Lot A 1/3"), which is the accepted cost
+      // of never printing a wrong number.
       return decomposed.includes('⁄') ? ` ${folded}` : folded;
     }
   }
-  return '?';
+  // An expansion part that folds to nothing is dropped, not marked: the caller
+  // above decides whether the character as a whole was lost.
+  return expanded ? '' : '?';
 }
 
 /**

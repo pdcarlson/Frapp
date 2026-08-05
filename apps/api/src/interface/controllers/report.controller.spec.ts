@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReportController } from './report.controller';
 import { ReportService } from '../../application/services/report.service';
@@ -325,15 +326,30 @@ describe('ReportController', () => {
       );
     });
 
-    it('leaves an unknown format on the JSON path', async () => {
+    it('defaults to the JSON path when no format is given', async () => {
       const rows = [{ name: 'John Doe' }] as any;
       reportService.getRosterReport.mockResolvedValue(rows);
 
-      const result = await controller.roster(chapterId, 'xlsx');
+      const result = await controller.roster(chapterId);
 
       expect(result).toBe(rows);
       expect(reportExportService.exportPdf).not.toHaveBeenCalled();
       expect(toCSV).not.toHaveBeenCalled();
     });
+
+    it.each(['xlsx', 'PDF', 'Csv', ''])(
+      'rejects the unsupported format %p rather than serving JSON',
+      async (format) => {
+        // Silently returning rows for `format=PDF` gives an external caller no
+        // signal that it did not get the download envelope it asked for.
+        reportService.getRosterReport.mockResolvedValue([]);
+
+        await expect(controller.roster(chapterId, format)).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(reportExportService.exportPdf).not.toHaveBeenCalled();
+        expect(toCSV).not.toHaveBeenCalled();
+      },
+    );
   });
 });

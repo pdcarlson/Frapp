@@ -120,11 +120,20 @@ export class ReportExportService {
    */
   private async loadLogo(
     logoPath: string | null,
-  ): Promise<{ bytes: Uint8Array; contentType: string | null } | null> {
+  ): Promise<{ bytes: Uint8Array } | null> {
     if (!logoPath) return null;
     try {
       const bytes = await this.storage.downloadFile(BRANDING_BUCKET, logoPath);
-      return bytes ? { bytes, contentType: null } : null;
+      if (!bytes) {
+        // The chapter believes it has a logo but the object is gone. Silence
+        // here would leave "our logo stopped appearing" with nothing to
+        // correlate against.
+        this.logger.warn(
+          `Chapter logo "${logoPath}" is recorded but missing from storage; rendering report without it.`,
+        );
+        return null;
+      }
+      return { bytes };
     } catch (error) {
       this.logger.warn(
         `Could not load chapter logo "${logoPath}" for report export: ${

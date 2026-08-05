@@ -1,4 +1,12 @@
-import { Body, Controller, Post, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -26,10 +34,13 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 import { toCSV } from '../../domain/utils/csv';
 import { REPORT_COLUMNS, type ReportKind } from './report-columns';
 
+/** Export formats every /v1/reports route accepts. Anything else is a 400. */
+const REPORT_FORMATS = ['json', 'csv', 'pdf'];
+
 const FORMAT_QUERY = {
   name: 'format',
   required: false,
-  schema: { type: 'string' as const, enum: ['json', 'csv', 'pdf'] },
+  schema: { type: 'string' as const, enum: REPORT_FORMATS },
   description:
     'json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL.',
 };
@@ -174,6 +185,17 @@ export class ReportController {
     subtitle: () => string | undefined,
   ) {
     const columns = REPORT_COLUMNS[kind];
+
+    // Reject an unrecognized format rather than quietly serving JSON. The
+    // contract advertises an enum, and `format=PDF` silently returning rows
+    // instead of a download envelope is a trap for an external caller with no
+    // error to notice. Matches this endpoint family's existing stance on an
+    // unsupported points `window` (spec/behavior/reports.md).
+    if (format !== undefined && !REPORT_FORMATS.includes(format)) {
+      throw new BadRequestException(
+        `Unsupported format "${format}". Expected one of: ${REPORT_FORMATS.join(', ')}.`,
+      );
+    }
 
     if (format === 'pdf') {
       return this.reportExportService.exportPdf(

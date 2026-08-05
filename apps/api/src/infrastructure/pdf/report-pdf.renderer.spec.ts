@@ -1,4 +1,4 @@
-import { PDFDocument } from 'pdf-lib';
+import { PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
 import {
   ReportPdfRenderer,
   formatCell,
@@ -10,6 +10,23 @@ const COLUMNS = [
   { key: 'member_name', header: 'Member Name' },
   { key: 'status', header: 'Status' },
 ];
+
+/**
+ * How many image XObjects the first page references. Entries are PDFRefs, so
+ * each is resolved through the document context before its Subtype is read.
+ */
+function imageCount(pdf: PDFDocument): number {
+  const resources = pdf.getPage(0).node.Resources();
+  const xobjects = resources?.lookupMaybe(PDFName.of('XObject'), PDFDict);
+  if (!xobjects) return 0;
+  return xobjects.entries().filter(([, value]) => {
+    const resolved = pdf.context.lookup(value);
+    return (
+      resolved instanceof PDFRawStream &&
+      resolved.dict.get(PDFName.of('Subtype')) === PDFName.of('Image')
+    );
+  }).length;
+}
 
 function doc(overrides: Partial<ReportPdfDocument> = {}): ReportPdfDocument {
   return {
@@ -99,6 +116,20 @@ describe('toWinAnsi', () => {
   it('replaces characters with no encodable form', () => {
     expect(toWinAnsi('李雷')).toBe('??');
     expect(toWinAnsi('ok 🎉')).toBe('ok ?');
+  });
+
+  it('emits at most one "?" per source character', () => {
+    // Hangul syllables decompose into 2-3 jamo, none encodable. Marking each
+    // part would print eight question marks for a three-character name and
+    // blow past the column's fitText budget.
+    expect(toWinAnsi('김철수')).toBe('???');
+  });
+
+  it('keeps the usable part of a mixed expansion', () => {
+    // "ŉ" is U+02BC + "n": the modifier letter is unencodable, the "n" is not.
+    expect(toWinAnsi('ŉ')).toBe('n');
+    // "ẚ" is "a" + U+02BE — the base letter must survive alone.
+    expect(toWinAnsi('ẚ')).toBe('a');
   });
 
   it('collapses newlines and tabs so a cell stays one line', () => {
@@ -203,12 +234,15 @@ describe('ReportPdfRenderer', () => {
         branding: {
           chapterName: 'Tau Nu',
           university: 'RPI',
-          logo: { bytes: new Uint8Array(png), contentType: 'image/png' },
+          logo: { bytes: new Uint8Array(png) },
         },
       }),
     );
 
-    await expect(PDFDocument.load(bytes)).resolves.toBeDefined();
+    // Assert the image actually landed on the page. Merely loading the document
+    // passes just as happily when embedLogo returns null, so it would not catch
+    // every chapter silently losing its branding.
+    expect(imageCount(await PDFDocument.load(bytes))).toBe(1);
   });
 
   it('renders without the logo when the bytes are not a usable image', async () => {
@@ -217,16 +251,14 @@ describe('ReportPdfRenderer', () => {
         branding: {
           chapterName: 'Tau Nu',
           university: 'RPI',
-          logo: {
-            bytes: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-            contentType: 'image/png',
-          },
+          logo: { bytes: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]) },
         },
       }),
     );
 
     const parsed = await PDFDocument.load(bytes);
     expect(parsed.getPageCount()).toBe(1);
+    expect(imageCount(parsed)).toBe(0);
   });
 
   it('tolerates rows missing a column and extra unmapped keys', async () => {
