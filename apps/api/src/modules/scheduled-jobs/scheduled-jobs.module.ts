@@ -4,21 +4,32 @@ import { ScheduledJobsRepository } from './scheduled-jobs.repository';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
+import { ChapterModule } from '../chapter/chapter.module';
 
 /**
  * Scheduled workers for spec-required, time-triggered behavior that no user
  * action initiates. Runs in-process on the API against the already-registered
- * `ScheduleModule.forRoot()`, matching the `chat-push-worker` deployment
- * posture (ADR-09); the scaling watermark for splitting workers out is
- * documented in `docs/internal/ops/DEPLOYMENT.md`.
+ * `ScheduleModule.forRoot()`, matching the in-process posture the chat workers
+ * use (ADR-09).
+ *
+ * Unlike those workers, a `@Cron` handler fires on **every** replica rather
+ * than following a single Realtime subscription, so multi-instance safety here
+ * comes from the `scheduled_notification_dispatches` claim rather than from
+ * the deployment topology — see `docs/internal/ops/DEPLOYMENT.md` §5.6.
  *
  * Imports `AttendanceModule` to reuse `markAutoAbsent` rather than restate its
  * eligibility rules, `NotificationModule` for the preference- and
- * quiet-hours-aware fanout, and `ChapterConfigModule` for the per-chapter dues
- * grace that defines "overdue".
+ * quiet-hours-aware fanout, `ChapterConfigModule` for the per-chapter dues
+ * grace that defines "overdue", and `ChapterModule` for `MEMBER_REPOSITORY`,
+ * used to confirm a task's assigner still belongs to the chapter.
  */
 @Module({
-  imports: [AttendanceModule, NotificationModule, ChapterConfigModule],
+  imports: [
+    AttendanceModule,
+    NotificationModule,
+    ChapterConfigModule,
+    ChapterModule,
+  ],
   providers: [ScheduledJobsService, ScheduledJobsRepository],
   exports: [ScheduledJobsService],
 })

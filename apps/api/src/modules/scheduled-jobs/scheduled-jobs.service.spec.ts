@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
 
@@ -11,6 +12,7 @@ import { ScheduledJobsRepository } from './scheduled-jobs.repository';
  * some hours of the day would be worse than no suite.
  */
 const NOW = new Date('2026-08-05T12:00:00Z');
+const TODAY = '2026-08-05';
 const TOMORROW = '2026-08-06';
 
 describe('ScheduledJobsService', () => {
@@ -19,6 +21,8 @@ describe('ScheduledJobsService', () => {
   let notifyUser: jest.Mock;
   let getDuesGraceDays: jest.Mock;
   let claimDispatch: jest.Mock;
+  let releaseDispatch: jest.Mock;
+  let findByUserAndChapter: jest.Mock;
   let findEventsPendingAutoAbsent: jest.Mock;
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
@@ -47,6 +51,9 @@ describe('ScheduledJobsService', () => {
     getDuesGraceDays = jest.fn().mockResolvedValue(0);
     // Default: the claim succeeds, i.e. this is the first sweep to see it.
     claimDispatch = jest.fn().mockResolvedValue(true);
+    releaseDispatch = jest.fn().mockResolvedValue(undefined);
+    // Default: the assigner is still a member of the chapter.
+    findByUserAndChapter = jest.fn().mockResolvedValue({ id: 'mem-1' });
     findEventsPendingAutoAbsent = jest.fn().mockResolvedValue([]);
     findOpenInvoicesDueBetween = jest.fn().mockResolvedValue([]);
     findIncompleteTasksDueBetween = jest.fn().mockResolvedValue([]);
@@ -61,11 +68,13 @@ describe('ScheduledJobsService', () => {
             findOpenInvoicesDueBetween,
             findIncompleteTasksDueBetween,
             claimDispatch,
+            releaseDispatch,
           },
         },
         { provide: AttendanceService, useValue: { markAutoAbsent } },
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
+        { provide: MEMBER_REPOSITORY, useValue: { findByUserAndChapter } },
       ],
     }).compile();
 
@@ -97,7 +106,19 @@ describe('ScheduledJobsService', () => {
       expect(endedAfter).toEqual(new Date('2026-08-04T12:00:00Z'));
     });
 
-    it('keeps sweeping after one event fails', async () => {
+    it('skips an event another tick or replica already claimed', async () => {
+      findEventsPendingAutoAbsent.mockResolvedValue([
+        { id: 'evt-1', chapter_id: 'chap-1', end_time: '2026-08-05T10:00:00Z' },
+      ]);
+      claimDispatch.mockResolvedValue(false);
+
+      const result = await service.sweepAutoAbsent(NOW);
+
+      expect(result).toEqual({ events: 0 });
+      expect(markAutoAbsent).not.toHaveBeenCalled();
+    });
+
+    it('releases the claim when marking fails, so the next tick retries', async () => {
       findEventsPendingAutoAbsent.mockResolvedValue([
         {
           id: 'evt-bad',
@@ -115,6 +136,13 @@ describe('ScheduledJobsService', () => {
       const result = await service.sweepAutoAbsent(NOW);
 
       expect(result).toEqual({ events: 1 });
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'EVENT',
+        'evt-bad',
+        'AUTO_ABSENT',
+        TODAY,
+      );
+      // The sweep keeps going after the failure.
       expect(markAutoAbsent).toHaveBeenCalledWith('evt-ok', 'chap-1');
     });
   });
@@ -131,6 +159,7 @@ describe('ScheduledJobsService', () => {
         'INVOICE',
         'inv-1',
         'DUE_SOON',
+        TOMORROW,
       );
       expect(notifyUser).toHaveBeenCalledWith(
         'user-1',
@@ -139,13 +168,46 @@ describe('ScheduledJobsService', () => {
           title: 'Payment due tomorrow',
           body: 'Fall Dues ($250.00) is due tomorrow.',
           category: 'billing',
+          data: { target: { screen: 'billing' } },
         }),
       );
     });
 
-    it('does not notify when the dispatch claim is already held', async () => {
-      findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
-      claimDispatch.mockResolvedValue(false);
+    // Regression: `isNewlyOverdue` used `<=`, which called an invoice overdue
+    // on the morning it was due — contradicting GET /invoices/overdue, which
+    // uses `due_date < today - grace`.
+    it('does not call an invoice overdue on its own due date', async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([
+        { ...INVOICE, due_date: TODAY },
+      ]);
+
+      const result = await service.sweepInvoiceReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({
+          title: 'Payment due today',
+          body: 'Fall Dues ($250.00) is due today.',
+        }),
+      );
+      expect(claimDispatch).toHaveBeenCalledWith(
+        'chap-1',
+        'INVOICE',
+        'inv-1',
+        'DUE_SOON',
+        TODAY,
+      );
+    });
+
+    it('does not call an invoice overdue on the last day of its grace', async () => {
+      // due 07-29 + 7 days grace lands exactly on today; overdue starts the
+      // day after.
+      findOpenInvoicesDueBetween.mockResolvedValue([
+        { ...INVOICE, due_date: '2026-07-29' },
+      ]);
+      getDuesGraceDays.mockResolvedValue(7);
 
       const result = await service.sweepInvoiceReminders(NOW);
 
@@ -155,8 +217,9 @@ describe('ScheduledJobsService', () => {
 
     it('notifies once an invoice passes due_date plus the chapter dues grace', async () => {
       findOpenInvoicesDueBetween.mockResolvedValue([
-        { ...INVOICE, due_date: '2026-07-30' },
+        { ...INVOICE, due_date: '2026-07-28' },
       ]);
+      getDuesGraceDays.mockResolvedValue(7);
 
       const result = await service.sweepInvoiceReminders(NOW);
 
@@ -166,6 +229,7 @@ describe('ScheduledJobsService', () => {
         'INVOICE',
         'inv-1',
         'OVERDUE',
+        '2026-07-28',
       );
       expect(notifyUser).toHaveBeenCalledWith(
         'user-1',
@@ -174,13 +238,9 @@ describe('ScheduledJobsService', () => {
       );
     });
 
-    it('respects the chapter dues grace before calling an invoice overdue', async () => {
-      // Due yesterday, but the chapter allows a 7-day grace, so it is not
-      // overdue yet.
-      findOpenInvoicesDueBetween.mockResolvedValue([
-        { ...INVOICE, due_date: '2026-08-04' },
-      ]);
-      getDuesGraceDays.mockResolvedValue(7);
+    it('does not notify when the dispatch claim is already held', async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
+      claimDispatch.mockResolvedValue(false);
 
       const result = await service.sweepInvoiceReminders(NOW);
 
@@ -201,13 +261,30 @@ describe('ScheduledJobsService', () => {
 
     it('resolves the dues grace once per chapter, not once per invoice', async () => {
       findOpenInvoicesDueBetween.mockResolvedValue([
-        { ...INVOICE, id: 'inv-1', due_date: '2026-07-30' },
-        { ...INVOICE, id: 'inv-2', due_date: '2026-07-31' },
+        { ...INVOICE, id: 'inv-1', due_date: '2026-07-28' },
+        { ...INVOICE, id: 'inv-2', due_date: '2026-07-27' },
       ]);
 
       await service.sweepInvoiceReminders(NOW);
 
       expect(getDuesGraceDays).toHaveBeenCalledTimes(1);
+    });
+
+    // Regression: the claim is taken before the send, so a send that fails
+    // must give the claim back or the reminder is lost forever.
+    it('releases the claim when delivery fails entirely', async () => {
+      findOpenInvoicesDueBetween.mockResolvedValue([INVOICE]);
+      notifyUser.mockRejectedValue(new Error('supabase down'));
+
+      const result = await service.sweepInvoiceReminders(NOW);
+
+      expect(result).toEqual({ sent: 0 });
+      expect(releaseDispatch).toHaveBeenCalledWith(
+        'INVOICE',
+        'inv-1',
+        'DUE_SOON',
+        TOMORROW,
+      );
     });
   });
 
@@ -218,12 +295,6 @@ describe('ScheduledJobsService', () => {
       const result = await service.sweepTaskReminders(NOW);
 
       expect(result).toEqual({ sent: 1 });
-      expect(claimDispatch).toHaveBeenCalledWith(
-        'chap-1',
-        'TASK',
-        'task-1',
-        'DUE_SOON',
-      );
       expect(notifyUser).toHaveBeenCalledTimes(1);
       expect(notifyUser).toHaveBeenCalledWith(
         'user-1',
@@ -231,7 +302,24 @@ describe('ScheduledJobsService', () => {
         expect.objectContaining({
           title: 'Task due tomorrow',
           category: 'tasks',
+          data: { target: { screen: 'tasks', taskId: 'task-1' } },
         }),
+      );
+    });
+
+    // A missed 09:00 tick must degrade to a late nudge, not silence.
+    it('still nudges on the due date itself when a tick was missed', async () => {
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: TODAY },
+      ]);
+
+      const result = await service.sweepTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Task due today' }),
       );
     });
 
@@ -256,6 +344,25 @@ describe('ScheduledJobsService', () => {
       );
     });
 
+    // Removing a member leaves tasks.created_by pointing at them; they must
+    // not keep receiving that chapter's task titles.
+    it('does not notify an assigner who has left the chapter', async () => {
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: '2026-08-04' },
+      ]);
+      findByUserAndChapter.mockResolvedValue(null);
+
+      const result = await service.sweepTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledTimes(1);
+      expect(notifyUser).toHaveBeenCalledWith(
+        'user-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Task overdue' }),
+      );
+    });
+
     it('sends a single notification for a self-assigned overdue task', async () => {
       findIncompleteTasksDueBetween.mockResolvedValue([
         { ...TASK, due_date: '2026-08-04', created_by: 'user-1' },
@@ -264,6 +371,30 @@ describe('ScheduledJobsService', () => {
       await service.sweepTaskReminders(NOW);
 
       expect(notifyUser).toHaveBeenCalledTimes(1);
+      // A self-assigned task needs no membership lookup for the assigner.
+      expect(findByUserAndChapter).not.toHaveBeenCalled();
+    });
+
+    // One recipient failing must not silence the other — the spec requires
+    // both the assignee and the assigner to hear about an overdue task.
+    it('still notifies the assigner when the assignee delivery fails', async () => {
+      findIncompleteTasksDueBetween.mockResolvedValue([
+        { ...TASK, due_date: '2026-08-04' },
+      ]);
+      notifyUser.mockRejectedValueOnce(new Error('push token rejected'));
+
+      const result = await service.sweepTaskReminders(NOW);
+
+      expect(result).toEqual({ sent: 1 });
+      expect(notifyUser).toHaveBeenCalledTimes(2);
+      expect(notifyUser).toHaveBeenLastCalledWith(
+        'admin-1',
+        'chap-1',
+        expect.objectContaining({ title: 'Task overdue' }),
+      );
+      // Partial delivery keeps the claim: retrying would re-spam the
+      // recipient who did receive it.
+      expect(releaseDispatch).not.toHaveBeenCalled();
     });
 
     it('does not notify when the dispatch claim is already held', async () => {
@@ -278,15 +409,15 @@ describe('ScheduledJobsService', () => {
       expect(notifyUser).not.toHaveBeenCalled();
     });
 
-    it('does not treat a task due today as overdue', async () => {
-      findIncompleteTasksDueBetween.mockResolvedValue([
-        { ...TASK, due_date: '2026-08-05' },
-      ]);
+    // Tasks have no per-chapter grace, so the 7-day overdue lookback is
+    // enforced entirely by the query window rather than re-checked in code.
+    it('bounds the task query to the lookback and lead-time window', async () => {
+      await service.sweepTaskReminders(NOW);
 
-      const result = await service.sweepTaskReminders(NOW);
-
-      expect(result).toEqual({ sent: 0 });
-      expect(notifyUser).not.toHaveBeenCalled();
+      expect(findIncompleteTasksDueBetween).toHaveBeenCalledWith(
+        '2026-07-29',
+        TOMORROW,
+      );
     });
   });
 });

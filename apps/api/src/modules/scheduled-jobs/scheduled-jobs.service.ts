@@ -1,5 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import {
   AttendanceService,
   CHECK_IN_GRACE_PERIOD_MINUTES,
@@ -8,6 +10,8 @@ import { NotificationService } from '../../application/services/notification.ser
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import {
   ScheduledJobsRepository,
+  type DispatchEntityType,
+  type DispatchThreshold,
   type SweepInvoiceRow,
   type SweepTaskRow,
 } from './scheduled-jobs.repository';
@@ -38,8 +42,10 @@ const OVERDUE_LOOKBACK_DAYS = 7;
 
 /**
  * Upper bound on a chapter's configurable dues grace (mirrors
- * `ChapterWorkflowsService`). Used only to size the invoice query window; the
- * per-chapter grace is applied exactly, in code.
+ * `MAX_GRACE_DAYS` in `ChapterWorkflowsService`). Used only to size the
+ * invoice query window; the per-chapter grace is applied exactly, in code.
+ * Raising the clamp there without raising this would narrow the window below
+ * what long-grace chapters need, so the two must move together.
  */
 const MAX_DUES_GRACE_DAYS = 365;
 
@@ -69,9 +75,9 @@ function formatUsd(cents: number): string {
  * **Idempotency.** Auto-absent delegates to `AttendanceService.markAutoAbsent`,
  * which already skips members holding an attendance record, so re-running it
  * is a no-op. The reminder sweeps claim a row in
- * `scheduled_notification_dispatches` before sending — see
- * `ScheduledJobsRepository.claimDispatch`. That claim is what makes these
- * safe on more than one replica: a plain `@Cron` fires on every instance.
+ * `scheduled_notification_dispatches` before sending — see `claimAndNotify`.
+ * That claim is what makes these safe on more than one replica: a plain
+ * `@Cron` fires on every instance.
  *
  * **Failure isolation.** One chapter's bad data must not stop the sweep, so
  * every per-entity step is caught and logged individually.
@@ -85,6 +91,8 @@ export class ScheduledJobsService {
     private readonly attendanceService: AttendanceService,
     private readonly notificationService: NotificationService,
     private readonly workflows: ChapterWorkflowsService,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -123,6 +131,20 @@ export class ScheduledJobsService {
 
     let processed = 0;
     for (const event of events) {
+      // Claim first. markAutoAbsent is idempotent, so this is not needed for
+      // correctness — it stops the same event being re-processed on all 24
+      // ticks inside the lookback window, and stops replicas racing each
+      // other on event_attendance's unique constraint.
+      const endedOn = toDateKey(new Date(event.end_time));
+      const claimed = await this.repository.claimDispatch(
+        event.chapter_id,
+        'EVENT',
+        event.id,
+        'AUTO_ABSENT',
+        endedOn,
+      );
+      if (!claimed) continue;
+
       try {
         await this.attendanceService.markAutoAbsent(event.id, event.chapter_id);
         processed += 1;
@@ -130,6 +152,14 @@ export class ScheduledJobsService {
         this.logger.error(
           `auto-absent sweep: event ${event.id} failed`,
           error as Error,
+        );
+        // Release so the next tick retries rather than leaving the event
+        // permanently unprocessed.
+        await this.repository.releaseDispatch(
+          'EVENT',
+          event.id,
+          'AUTO_ABSENT',
+          endedOn,
         );
       }
     }
@@ -146,12 +176,15 @@ export class ScheduledJobsService {
    * Notify members about invoices coming due and invoices that have just
    * become overdue.
    *
-   * Overdue is `due_date` + the chapter's dues grace (`wf_dues_grace`), so the
-   * threshold is per chapter and can only be applied after the rows are known.
-   * The query window is therefore widened by the maximum configurable grace
-   * and narrowed exactly, in code.
+   * Overdue is strictly past `due_date` + the chapter's dues grace
+   * (`wf_dues_grace`), matching `SupabaseFinancialInvoiceRepository.findOverdue`
+   * — a reminder must never contradict what the member sees in their invoice
+   * list. The threshold is per chapter and can only be applied after the rows
+   * are known, so the query window is widened by the maximum configurable
+   * grace and narrowed exactly, in code.
    */
   async sweepInvoiceReminders(now: Date): Promise<{ sent: number }> {
+    const todayKey = toDateKey(now);
     const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
     const windowStart = toDateKey(
       addDays(now, -(OVERDUE_LOOKBACK_DAYS + MAX_DUES_GRACE_DAYS)),
@@ -167,8 +200,8 @@ export class ScheduledJobsService {
 
     for (const invoice of invoices) {
       try {
-        if (invoice.due_date === dueSoonKey) {
-          if (await this.notifyInvoiceDueSoon(invoice)) sent += 1;
+        if (invoice.due_date >= todayKey) {
+          if (await this.notifyInvoiceDueSoon(invoice, todayKey)) sent += 1;
           continue;
         }
 
@@ -198,8 +231,8 @@ export class ScheduledJobsService {
    * tasks that have just gone overdue (`spec/behavior/tasks.md`).
    */
   async sweepTaskReminders(now: Date): Promise<{ sent: number }> {
-    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
     const todayKey = toDateKey(now);
+    const dueSoonKey = toDateKey(addDays(now, DUE_SOON_LEAD_DAYS));
     const windowStart = toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS));
 
     const tasks = await this.repository.findIncompleteTasksDueBetween(
@@ -210,10 +243,10 @@ export class ScheduledJobsService {
     let sent = 0;
     for (const task of tasks) {
       try {
-        if (task.due_date === dueSoonKey) {
-          if (await this.notifyTaskDueSoon(task)) sent += 1;
-        } else if (task.due_date < todayKey) {
-          if (await this.notifyTaskOverdue(task)) sent += 1;
+        if (task.due_date >= todayKey) {
+          if (await this.notifyTaskDueSoon(task, todayKey)) sent += 1;
+        } else if (await this.notifyTaskOverdue(task)) {
+          sent += 1;
         }
       } catch (error) {
         this.logger.error(`task sweep: task ${task.id} failed`, error as Error);
@@ -225,9 +258,13 @@ export class ScheduledJobsService {
   }
 
   /**
-   * True when `due_date` + grace fell inside the lookback window ending now.
-   * Both bounds matter: the upper keeps the sweep from firing before grace has
-   * actually elapsed, the lower keeps it from resurrecting old debt.
+   * True when `due_date` + grace fell strictly before today, and no earlier
+   * than the lookback window.
+   *
+   * Strict on the upper bound: an invoice is overdue the day *after*
+   * `due_date` + grace (`spec/behavior/billing.md`), so `<=` here would push
+   * "past due" while the invoice list still showed it as current. The lower
+   * bound keeps the sweep from resurrecting old debt.
    */
   private isNewlyOverdue(
     dueDate: string,
@@ -237,75 +274,67 @@ export class ScheduledJobsService {
     const overdueKey = toDateKey(
       addDays(new Date(`${dueDate}T00:00:00Z`), graceDays),
     );
-    const todayKey = toDateKey(now);
-    const lookbackKey = toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS));
-    return overdueKey <= todayKey && overdueKey >= lookbackKey;
+    return (
+      overdueKey < toDateKey(now) &&
+      overdueKey >= toDateKey(addDays(now, -OVERDUE_LOOKBACK_DAYS))
+    );
   }
 
-  private async notifyInvoiceDueSoon(invoice: SweepInvoiceRow) {
-    const claimed = await this.repository.claimDispatch(
-      invoice.chapter_id,
-      'INVOICE',
-      invoice.id,
-      'DUE_SOON',
-    );
-    if (!claimed) return false;
-
-    await this.notificationService.notifyUser(
-      invoice.user_id,
-      invoice.chapter_id,
-      {
-        title: 'Payment due tomorrow',
-        body: `${invoice.title} (${formatUsd(invoice.amount)}) is due tomorrow.`,
-        category: 'billing',
-        data: { invoiceId: invoice.id, threshold: 'DUE_SOON' },
-      },
-    );
-    return true;
+  /**
+   * "tomorrow" for the normal lead time, "today" when a missed tick pushed the
+   * reminder to the due date itself. The due-soon window spans both days so a
+   * skipped sweep degrades to a late nudge instead of silence — but the copy
+   * must not claim "tomorrow" for something due today.
+   */
+  private dueSoonPhrase(dueDate: string, todayKey: string): string {
+    return dueDate === todayKey ? 'today' : 'tomorrow';
   }
 
-  private async notifyInvoiceOverdue(invoice: SweepInvoiceRow) {
-    const claimed = await this.repository.claimDispatch(
-      invoice.chapter_id,
-      'INVOICE',
-      invoice.id,
-      'OVERDUE',
-    );
-    if (!claimed) return false;
-
-    await this.notificationService.notifyUser(
-      invoice.user_id,
-      invoice.chapter_id,
-      {
-        title: 'Payment overdue',
-        body: `${invoice.title} (${formatUsd(invoice.amount)}) is past due.`,
-        category: 'billing',
-        data: { invoiceId: invoice.id, threshold: 'OVERDUE' },
-      },
-    );
-    return true;
+  private notifyInvoiceDueSoon(invoice: SweepInvoiceRow, todayKey: string) {
+    const when = this.dueSoonPhrase(invoice.due_date, todayKey);
+    return this.claimAndNotify({
+      chapterId: invoice.chapter_id,
+      entityType: 'INVOICE',
+      entityId: invoice.id,
+      threshold: 'DUE_SOON',
+      dueDate: invoice.due_date,
+      recipients: [invoice.user_id],
+      title: `Payment due ${when}`,
+      body: `${invoice.title} (${formatUsd(invoice.amount)}) is due ${when}.`,
+      category: 'billing',
+      target: { screen: 'billing' },
+    });
   }
 
-  private async notifyTaskDueSoon(task: SweepTaskRow) {
-    const claimed = await this.repository.claimDispatch(
-      task.chapter_id,
-      'TASK',
-      task.id,
-      'DUE_SOON',
-    );
-    if (!claimed) return false;
+  private notifyInvoiceOverdue(invoice: SweepInvoiceRow) {
+    return this.claimAndNotify({
+      chapterId: invoice.chapter_id,
+      entityType: 'INVOICE',
+      entityId: invoice.id,
+      threshold: 'OVERDUE',
+      dueDate: invoice.due_date,
+      recipients: [invoice.user_id],
+      title: 'Payment overdue',
+      body: `${invoice.title} (${formatUsd(invoice.amount)}) is past due.`,
+      category: 'billing',
+      target: { screen: 'billing' },
+    });
+  }
 
-    await this.notificationService.notifyUser(
-      task.assignee_id,
-      task.chapter_id,
-      {
-        title: 'Task due tomorrow',
-        body: `"${task.title}" is due tomorrow.`,
-        category: 'tasks',
-        data: { taskId: task.id, threshold: 'DUE_SOON' },
-      },
-    );
-    return true;
+  private notifyTaskDueSoon(task: SweepTaskRow, todayKey: string) {
+    const when = this.dueSoonPhrase(task.due_date, todayKey);
+    return this.claimAndNotify({
+      chapterId: task.chapter_id,
+      entityType: 'TASK',
+      entityId: task.id,
+      threshold: 'DUE_SOON',
+      dueDate: task.due_date,
+      recipients: [task.assignee_id],
+      title: `Task due ${when}`,
+      body: `"${task.title}" is due ${when}.`,
+      category: 'tasks',
+      target: { screen: 'tasks', taskId: task.id },
+    });
   }
 
   /**
@@ -315,24 +344,112 @@ export class ScheduledJobsService {
    * would turn one overdue task into an unbounded notification burst.
    *
    * A self-assigned task collapses to a single notification.
+   *
+   * The assigner's membership is re-checked before they are notified. Removing
+   * a member deletes their `chapter_members` row but leaves `tasks.created_by`
+   * pointing at them, so an officer who graduated or was removed would
+   * otherwise keep receiving that chapter's task titles — and accumulate
+   * `notifications` rows scoped to a chapter they no longer belong to. The
+   * assignee needs no such check: an unfinished task is their own record, and
+   * `markAutoAbsent`-style membership churn does not reassign it.
    */
   private async notifyTaskOverdue(task: SweepTaskRow) {
+    const recipients = [task.assignee_id];
+
+    if (task.created_by !== task.assignee_id) {
+      const assigner = await this.memberRepo.findByUserAndChapter(
+        task.created_by,
+        task.chapter_id,
+      );
+      if (assigner) recipients.push(task.created_by);
+    }
+
+    return this.claimAndNotify({
+      chapterId: task.chapter_id,
+      entityType: 'TASK',
+      entityId: task.id,
+      threshold: 'OVERDUE',
+      dueDate: task.due_date,
+      recipients,
+      title: 'Task overdue',
+      body: `"${task.title}" is past its due date.`,
+      category: 'tasks',
+      target: { screen: 'tasks', taskId: task.id },
+    });
+  }
+
+  /**
+   * Claim a reminder, then deliver it to every recipient.
+   *
+   * Claiming before sending is what keeps two replicas from double-notifying.
+   * The two failure modes that buys are both handled here rather than left to
+   * callers:
+   *
+   * - **Every send failed.** The claim is released so the next sweep retries;
+   *   otherwise one transient error would suppress that reminder forever.
+   * - **Some sends failed.** The claim is kept — retrying would re-notify the
+   *   recipients who already got it — and the shortfall is logged. Partial
+   *   delivery still counts as sent.
+   *
+   * Recipients are deduped and delivered independently, so one member's
+   * failure cannot silence another's; that matters for overdue tasks, where
+   * the spec requires both the assignee and the assigner to hear about it.
+   */
+  private async claimAndNotify(params: {
+    chapterId: string;
+    entityType: DispatchEntityType;
+    entityId: string;
+    threshold: DispatchThreshold;
+    dueDate: string;
+    recipients: string[];
+    title: string;
+    body: string;
+    category: string;
+    target: Record<string, unknown>;
+  }): Promise<boolean> {
     const claimed = await this.repository.claimDispatch(
-      task.chapter_id,
-      'TASK',
-      task.id,
-      'OVERDUE',
+      params.chapterId,
+      params.entityType,
+      params.entityId,
+      params.threshold,
+      params.dueDate,
     );
     if (!claimed) return false;
 
-    const recipients = new Set([task.assignee_id, task.created_by]);
+    const recipients = [...new Set(params.recipients)];
+    let delivered = 0;
+
     for (const userId of recipients) {
-      await this.notificationService.notifyUser(userId, task.chapter_id, {
-        title: 'Task overdue',
-        body: `"${task.title}" is past its due date.`,
-        category: 'tasks',
-        data: { taskId: task.id, threshold: 'OVERDUE' },
-      });
+      try {
+        await this.notificationService.notifyUser(userId, params.chapterId, {
+          title: params.title,
+          body: params.body,
+          category: params.category,
+          data: { target: params.target },
+        });
+        delivered += 1;
+      } catch (error) {
+        this.logger.error(
+          `${params.entityType} ${params.entityId} (${params.threshold}): delivery to ${userId} failed`,
+          error as Error,
+        );
+      }
+    }
+
+    if (delivered === 0) {
+      await this.repository.releaseDispatch(
+        params.entityType,
+        params.entityId,
+        params.threshold,
+        params.dueDate,
+      );
+      return false;
+    }
+
+    if (delivered < recipients.length) {
+      this.logger.warn(
+        `${params.entityType} ${params.entityId} (${params.threshold}): delivered to ${delivered}/${recipients.length} recipients; not retrying`,
+      );
     }
     return true;
   }
