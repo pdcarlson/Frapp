@@ -222,6 +222,33 @@ describe('AccountDeletionService', () => {
     );
   });
 
+  it.each([
+    'chapters/x/../y/profiles/user-1/a.png',
+    'chapters/x/%2e%2e/y/profiles/user-1/a.png',
+    'chapters//x/profiles/user-1/a.png',
+  ])(
+    'still completes deletion when avatar_url is an unusable path (%p)',
+    async (avatarUrl) => {
+      // avatar_url is unvalidated free text. The storage layer rejects paths
+      // with relative segments, and this purge runs before anything else — so
+      // propagating that rejection would turn the user's own right-to-erasure
+      // request into a permanent 502 they cannot self-serve out of.
+      mockUserRepo.findById.mockResolvedValue({
+        ...liveUser,
+        avatar_url: avatarUrl,
+      });
+
+      await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+
+      // Only the membership-derived prefix is swept; the bad value is ignored.
+      expect(mockStorage.listFiles).toHaveBeenCalledTimes(1);
+      expect(mockStorage.listFiles).toHaveBeenCalledWith(
+        'profiles',
+        'chapters/chapter-a/profiles/user-1',
+      );
+    },
+  );
+
   it('404s for an unknown user without touching anything', async () => {
     mockUserRepo.findById.mockResolvedValue(null);
 

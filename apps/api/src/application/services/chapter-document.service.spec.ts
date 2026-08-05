@@ -142,6 +142,28 @@ describe('ChapterDocumentService', () => {
       );
     });
 
+    it.each([
+      'chapters/ch-1/documents/../../../branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/documents/%2e%2e/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/documents/p%/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/documents/.\t./branding/chapters/ch-2/logo.png',
+    ])(
+      'rejects a prefix-passing traversal in storage_path (%p)',
+      async (storagePath) => {
+        // See the equivalent backwork test: the startsWith check accepts these,
+        // and the stored value is later signed for download.
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            title: 'Leak',
+            storage_path: storagePath,
+            uploaded_by: 'user-1',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
     it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
       await expect(
         service.confirmUpload({
