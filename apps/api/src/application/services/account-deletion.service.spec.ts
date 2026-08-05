@@ -78,6 +78,8 @@ describe('AccountDeletionService', () => {
     mockStorage = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
       deleteFiles: jest.fn(async () => {
         callOrder.push('deleteFiles');

@@ -36,6 +36,36 @@ export class SupabaseStorageService implements IStorageProvider {
     return data.signedUrl;
   }
 
+  async uploadFile(
+    bucket: string,
+    path: string,
+    body: Uint8Array,
+    contentType: string,
+  ): Promise<void> {
+    const { error } = await this.supabase.storage
+      .from(bucket)
+      // upsert so a retried export overwrites its own object instead of
+      // failing on a duplicate key; paths already carry a unique suffix.
+      .upload(path, body, { contentType, upsert: true });
+
+    if (error) throw error;
+  }
+
+  async downloadFile(bucket: string, path: string): Promise<Uint8Array | null> {
+    const { data, error } = await this.supabase.storage
+      .from(bucket)
+      .download(path);
+
+    // A missing object is a normal outcome for optional assets — the caller
+    // asked whether it exists by asking for it. Real failures still throw.
+    if (error) {
+      if (/not found|does not exist/i.test(error.message)) return null;
+      throw error;
+    }
+    if (!data) return null;
+    return new Uint8Array(await data.arrayBuffer());
+  }
+
   async deleteFile(bucket: string, path: string): Promise<void> {
     const { error } = await this.supabase.storage.from(bucket).remove([path]);
     if (error) throw error;
