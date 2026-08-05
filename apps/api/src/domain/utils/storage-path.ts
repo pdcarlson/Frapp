@@ -4,6 +4,19 @@ import { BadRequestException } from '@nestjs/common';
 const PERCENT_DOT = /%2e/gi;
 
 /**
+ * Percent-encoded path separators, normalized before splitting.
+ *
+ * Today's stack does not decode these — undici leaves them literal and the
+ * storage server rejects the key — so `..%2f..%2fx` is inert *in production*.
+ * It is normalized anyway because the guard must not depend on that: a proxy,
+ * CDN, or gateway that decodes `%2f` before path resolution is a common
+ * misconfiguration, and without this the only thing catching an encoded
+ * separator is the decoded form, which a malformed `%` disables (bypass #4's
+ * exact shape). Detection should never rest on `decodeURIComponent` succeeding.
+ */
+const PERCENT_SEPARATOR = /%2f|%5c/gi;
+
+/**
  * Any C0 control or DEL. No legitimate object key contains one.
  *
  * This is load-bearing, not hygiene: the WHATWG URL parser *deletes* tab, LF
@@ -67,7 +80,9 @@ export function isUnsafeStoragePath(path: string): boolean {
   // keys are uuid/slug structured and path.basename of a real filename has none.
   if (forms.some((form) => CONTROL_CHAR.test(form))) return true;
 
-  return forms.some((form) => form.split(/[/\\]/).some(isDotSegment));
+  return forms.some((form) =>
+    form.replace(PERCENT_SEPARATOR, '/').split(/[/\\]/).some(isDotSegment),
+  );
 }
 
 /** Throw `BadRequestException` when `path` could escape its prefix or bucket. */

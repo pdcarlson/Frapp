@@ -168,6 +168,15 @@ describe('SupabaseStorageService', () => {
       'p%/.%2e/reports/chapters/b/secret.pdf',
       'p%/../reports/chapters/b/secret.pdf',
       '%2e./reports/chapters/b/secret.pdf',
+      // Percent-encoded separators. Inert on today's stack (undici leaves them
+      // literal and storage rejects the key), but the raw check must not depend
+      // on that — the decoded form was the only other detector, and a malformed
+      // % disables it.
+      '..%2f..%2freports/chapters/b/secret.pdf',
+      '..%2F..%2Freports/chapters/b/secret.pdf',
+      '..%5c..%5creports/chapters/b/secret.pdf',
+      '..%2f..%2fsecret%2ekey%ff',
+      '..%2f..%2fsecret%2ekey%',
     ];
 
     it.each(TRAVERSALS)('downloadFile rejects %p', async (path) => {
@@ -238,6 +247,10 @@ describe('SupabaseStorageService', () => {
       'chapters/a/documents/doc-1/résumé — José.pdf',
       'chapters/a/chat/ch-1/msg-1/photo+1&2.jpg',
       'chapters/a/backwork/res-1/中文文件.pdf',
+      'chapters/a/documents/doc-1/report..final.pdf',
+      'chapters/a/documents/doc-1/100%done.pdf',
+      // Normalizing %2f splits this into two harmless segments, not a traversal.
+      'chapters/a/documents/doc-1/weird%2fname.png',
     ])('accepts the realistic uploaded filename %p', async (path) => {
       // Keys embed path.basename(userFilename); a guard that rejects these
       // breaks real uploads, which is as much a defect as letting a traversal by.
