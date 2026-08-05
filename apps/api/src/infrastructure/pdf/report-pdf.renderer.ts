@@ -54,12 +54,38 @@ function isWinAnsiEncodable(codePoint: number): boolean {
 }
 
 /**
+ * Latin letters whose glyph is a *stroked* or otherwise modified base rather
+ * than a base plus a combining mark. Unicode gives these no canonical
+ * decomposition, so NFKD cannot recover the base letter and they would fall
+ * through to "?" — turning a real Polish surname into "?ukasz Wróblewski".
+ */
+const STROKE_FOLD: Record<string, string> = {
+  Ł: 'L',
+  ł: 'l',
+  Đ: 'D',
+  đ: 'd',
+  Ħ: 'H',
+  ħ: 'h',
+  Ŧ: 'T',
+  ŧ: 't',
+  Ŋ: 'N',
+  ŋ: 'n',
+  Ə: 'E',
+  ə: 'e',
+  ı: 'i',
+  İ: 'I',
+  Ƶ: 'Z',
+  ƶ: 'z',
+};
+
+/**
  * Make `value` safe for a WinAnsi standard font.
  *
  * Encodable characters pass through untouched, so "José" keeps its accent.
- * Anything else is decomposed (NFKD) and stripped of combining marks, which
- * recovers a readable base letter for most Latin extensions ("ā" → "a"); what
- * survives that and still cannot be encoded becomes "?". Control characters and
+ * Anything else is folded: stroked Latin letters map to their base via
+ * {@link STROKE_FOLD}, and the rest are decomposed (NFKD) and stripped of
+ * combining marks, which recovers a base letter for most Latin extensions
+ * ("ā" → "a"). What survives neither becomes "?". Control characters and
  * newlines collapse to single spaces because every cell is one line.
  */
 export function toWinAnsi(value: string): string {
@@ -73,6 +99,11 @@ export function toWinAnsi(value: string): string {
     if (codePoint < 0x20) continue;
     if (isWinAnsiEncodable(codePoint)) {
       out += char;
+      continue;
+    }
+    const stroked = STROKE_FOLD[char];
+    if (stroked) {
+      out += stroked;
       continue;
     }
     const folded = char

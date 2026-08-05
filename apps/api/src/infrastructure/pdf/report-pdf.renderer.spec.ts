@@ -38,6 +38,13 @@ describe('toWinAnsi', () => {
     expect(toWinAnsi('Kaimana Āhia')).toBe('Kaimana Ahia');
   });
 
+  it('folds stroked letters that have no canonical decomposition', () => {
+    // Ł/ł decompose to nothing, so without the explicit map a common Polish
+    // surname would render as "?ukasz".
+    expect(toWinAnsi('Łukasz Wróblewski')).toBe('Lukasz Wróblewski');
+    expect(toWinAnsi('Đorđe')).toBe('Dorde');
+  });
+
   it('replaces characters with no encodable form', () => {
     expect(toWinAnsi('李雷')).toBe('??');
     expect(toWinAnsi('ok 🎉')).toBe('ok ?');
