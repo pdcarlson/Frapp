@@ -80,11 +80,27 @@ PR targets:
 Before pushing:
 
 ```bash
-npm run lint
-npm run lint:api    # optional API-only lint run
+npm run lint        # read-only, every workspace
+npm run lint:api    # optional API-only lint run (read-only; fix with `npm run lint:api:fix`)
 npm run check-types
 npm test            # in apps/api
 ```
+
+`npm run lint` is **read-only** in every workspace — it reports violations and never edits your
+files, so it is safe in CI and in read-only audits. To apply ESLint's auto-fixes in `apps/api`, run
+the explicit fix script instead:
+
+```bash
+npm run lint:api:fix        # or: npm run lint:fix -w apps/api
+```
+
+`apps/api` is the only workspace with a fix script; everywhere else, resolve the reported
+violations by hand (or with your editor's ESLint integration).
+
+Keep `--fix` out of any `lint` script. Under `apps/api`'s config `prettier/prettier` is an
+**error**, and every Prettier violation is auto-fixable — so a `lint` script carrying `--fix`
+repairs the error, exits `0`, and the failure never reaches CI (the repaired file is discarded
+with the runner).
 
 In CI, we also run:
 
