@@ -390,6 +390,88 @@ describe('MemberService', () => {
       });
     });
 
+    it('tolerates a stale live-role id the member already holds', async () => {
+      // Deleting a live role leaves its id on member rows (spec Edge Cases);
+      // echoing it back must not fail the save — mirrors the custom-role rule.
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        role_ids: ['role-1', 'role-deleted'],
+      });
+      mockRoleRepo.findByChapter.mockResolvedValue([presidentRole, memberRole]);
+      const updated = {
+        ...existingMember,
+        role_ids: ['role-1', 'role-deleted'],
+      };
+      mockRepo.update.mockResolvedValue(updated);
+
+      await service.updateRoles(
+        'member-1',
+        ['role-1', 'role-deleted'],
+        'chapter-1',
+      );
+
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        role_ids: ['role-1', 'role-deleted'],
+      });
+    });
+
+    it('compares wildcard roles as sets: duplicates neither bypass nor false-403', async () => {
+      // (a) A duplicated held president id must not mask adding a second
+      // wildcard role, and (b) a duplicate in a no-op payload must not read
+      // as a presidency change.
+      const legacyWildcardRole = {
+        id: 'role-legacy-star',
+        chapter_id: 'chapter-1',
+        name: 'Legacy Star',
+        permissions: ['*'],
+        is_system: false,
+        display_order: 9,
+        color: null,
+        created_at: '2024-01-01',
+      };
+      mockRoleRepo.findByChapter.mockResolvedValue([
+        presidentRole,
+        memberRole,
+        legacyWildcardRole,
+      ]);
+
+      // (a) held [legacy, legacy]; payload [legacy, president] — lengths
+      // match, but the SET gains the president role → must be blocked.
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        role_ids: ['role-legacy-star', 'role-legacy-star'],
+      });
+      await expect(
+        service.updateRoles(
+          'member-1',
+          ['role-legacy-star', 'role-president'],
+          'chapter-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+
+      // (b) held [president]; payload [president, president, member role] —
+      // the wildcard SET is unchanged → allowed.
+      mockRepo.findById.mockResolvedValue({
+        ...existingMember,
+        role_ids: ['role-president'],
+      });
+      const updated = {
+        ...existingMember,
+        role_ids: ['role-president', 'role-president', 'role-1'],
+      };
+      mockRepo.update.mockResolvedValue(updated);
+
+      await service.updateRoles(
+        'member-1',
+        ['role-president', 'role-president', 'role-1'],
+        'chapter-1',
+      );
+      expect(mockRepo.update).toHaveBeenCalledWith('member-1', {
+        role_ids: ['role-president', 'role-president', 'role-1'],
+      });
+    });
+
     it('blocks assigning a non-system role that carries the wildcard', async () => {
       // A legacy `*` role minted before wildcard writes were rejected must not
       // be attachable through the generic endpoint — the presidency-transfer

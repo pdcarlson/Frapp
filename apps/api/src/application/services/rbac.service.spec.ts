@@ -166,6 +166,50 @@ describe('RbacService', () => {
     });
   });
 
+  it('rejects stripping the wildcard from the President role, but allows it on a legacy role', async () => {
+    // With introduction blocked, a strip would be unrecoverable and leave the
+    // chapter without any wildcard holder.
+    const presidentRole: Role = {
+      id: 'role-president',
+      chapter_id: 'ch-1',
+      name: 'President',
+      permissions: ['*'],
+      is_system: true,
+      display_order: 1,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockRoleRepo.findById.mockResolvedValue(presidentRole);
+
+    await expect(
+      service.update('role-president', 'ch-1', {
+        permissions: ['events:create'],
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(mockRoleRepo.update).not.toHaveBeenCalled();
+
+    // A legacy non-system role carrying a pre-validation `*` must stay
+    // strippable — that is its cleanup path.
+    const legacyRole: Role = {
+      ...presidentRole,
+      id: 'role-legacy',
+      name: 'Legacy Star',
+      is_system: false,
+    };
+    mockRoleRepo.findById.mockResolvedValue(legacyRole);
+    mockRoleRepo.update.mockResolvedValue({
+      ...legacyRole,
+      permissions: ['members:view'],
+    });
+
+    await service.update('role-legacy', 'ch-1', {
+      permissions: ['members:view'],
+    });
+    expect(mockRoleRepo.update).toHaveBeenCalledWith('role-legacy', {
+      permissions: ['members:view'],
+    });
+  });
+
   it('should reject duplicate role name', async () => {
     const existing: Role = {
       id: 'role-1',

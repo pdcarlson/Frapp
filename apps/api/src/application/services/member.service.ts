@@ -121,20 +121,24 @@ export class MemberService {
         : Promise.resolve([]),
     ]);
 
+    // Ids the member ALREADY holds are exempt from validation on both role
+    // models: deleting a role leaves its id on member rows by design (spec
+    // fail-safe — it resolves to no row and grants nothing), and a client
+    // echoing that leftover back must not have its whole save rejected.
     const validRoleIds = new Set(roles.map((r) => r.id));
-    const unknownRoleIds = roleIds.filter((id) => !validRoleIds.has(id));
+    const heldRoleIds = new Set(member.role_ids);
+    const unknownRoleIds = roleIds.filter(
+      (id) => !validRoleIds.has(id) && !heldRoleIds.has(id),
+    );
     if (unknownRoleIds.length > 0) {
       throw new BadRequestException(
         `Role IDs do not belong to this chapter: ${unknownRoleIds.join(', ')}`,
       );
     }
 
-    // Custom-role ids get the same cross-chapter validation as live-role ids:
-    // a fabricated or foreign id must never be persisted on the member row.
-    // Ids the member ALREADY holds are exempt — deleting a custom role leaves
-    // its id on member rows by design (spec fail-safe), and a client echoing
-    // that leftover back must not have its whole save rejected. Stale ids
-    // resolve to no row, so keeping them grants nothing.
+    // Custom-role ids get the same cross-chapter validation and held-id
+    // exemption as live-role ids. The exemption cannot smuggle a foreign id:
+    // the held set only ever contains ids that passed this validation before.
     if (customRoleIds !== undefined && customRoleIds.length > 0) {
       const validCustomRoleIds = new Set(customRoles.map((r) => r.id));
       const heldCustomRoleIds = new Set(member.custom_role_ids ?? []);
@@ -152,23 +156,26 @@ export class MemberService {
     // (RbacService.transferPresidency), which reassigns them atomically and
     // only at the current President's initiative. Keying on the permission
     // rather than the seeded President row also blocks smuggling via any
-    // legacy non-system role that carries `*`.
+    // legacy non-system role that carries `*`. Compared as SETS: neither the
+    // member row nor the payload is guaranteed duplicate-free, and a
+    // length-based comparison would both reject no-op saves and let a
+    // duplicated held id mask an addition.
     const wildcardRoleIds = new Set(
       roles
         .filter((r) => r.permissions.includes(SystemPermissions.WILDCARD))
         .map((r) => r.id),
     );
     if (wildcardRoleIds.size > 0) {
-      const currentlyHeld = member.role_ids.filter((id) =>
-        wildcardRoleIds.has(id),
+      const currentlyHeld = new Set(
+        member.role_ids.filter((id) => wildcardRoleIds.has(id)),
       );
-      const willHold = roleIds.filter((id) => wildcardRoleIds.has(id));
+      const willHold = new Set(roleIds.filter((id) => wildcardRoleIds.has(id)));
       const changed =
-        currentlyHeld.length !== willHold.length ||
-        currentlyHeld.some((id) => !willHold.includes(id));
+        currentlyHeld.size !== willHold.size ||
+        [...currentlyHeld].some((id) => !willHold.has(id));
       if (changed) {
         throw new ForbiddenException(
-          'Use the presidency-transfer endpoint to change the President role',
+          'Wildcard-carrying roles cannot be assigned or removed here: move the President role with the presidency-transfer flow, or strip the wildcard from a legacy role via role update first',
         );
       }
     }

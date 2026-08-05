@@ -260,15 +260,13 @@ export function MemberDetailSheet({
         id: memberId,
         role_ids: selectedRoleIds,
         // Only send the custom-role assignment when the list actually loaded;
-        // omission tells the server to leave it unchanged. Sending is also
-        // restricted to ids in the loaded list, which drops leftovers from
-        // since-deleted custom roles instead of echoing them back.
+        // omission tells the server to leave it unchanged. The selection is
+        // sent as-is — NOT filtered against the loaded catalog, which can be
+        // up to a minute stale and would silently strip a freshly assigned
+        // role. Leftover ids of since-deleted roles are harmless: the server
+        // exempts ids the member already holds, and they resolve to nothing.
         ...(customRolesQuery.isSuccess
-          ? {
-              custom_role_ids: selectedCustomRoleIds.filter((id) =>
-                customRoleOptions.some((option) => option.id === id),
-              ),
-            }
+          ? { custom_role_ids: selectedCustomRoleIds }
           : {}),
       });
       toast({

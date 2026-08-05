@@ -78,6 +78,22 @@ export class RbacService {
       );
     }
 
+    // Nor may the seeded President role lose its wildcard: with introduction
+    // blocked above, a strip would be unrecoverable through the API and leave
+    // the chapter without any wildcard holder (spec/behavior/rbac.md — the
+    // President role always carries `*`). Legacy non-system roles carrying a
+    // pre-validation `*` stay strippable, as that is their cleanup path.
+    if (
+      role.is_system &&
+      role.permissions.includes(WILDCARD) &&
+      data.permissions &&
+      !data.permissions.includes(WILDCARD)
+    ) {
+      throw new BadRequestException(
+        'The President role must keep the wildcard (*) permission; use the presidency-transfer flow to move it',
+      );
+    }
+
     if (data.name && data.name !== role.name) {
       const existing = await this.roleRepo.findByChapterAndName(
         role.chapter_id,

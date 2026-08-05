@@ -156,7 +156,7 @@ describe("MemberDetailSheet save payload", () => {
     updateRolesMutateAsync.mockClear();
   });
 
-  it("sends toggled custom_role_ids and drops ids of since-deleted roles", async () => {
+  it("sends the selection as-is, including ids of since-deleted roles", async () => {
     customRolesState.data = [
       { id: "cr1", key: "historian", label: "Historian", rank: 5, capabilities: [], core: false },
     ];
@@ -168,8 +168,9 @@ describe("MemberDetailSheet save payload", () => {
         open
         onOpenChange={() => {}}
         usingPreviewData={false}
-        // cr-deleted no longer exists in the chapter catalog: the save must
-        // not echo it back, or the server rejects the whole payload.
+        // cr-deleted no longer exists in the chapter catalog. It is still sent
+        // (the server exempts held ids) — filtering against the possibly-stale
+        // catalog would silently strip freshly assigned roles instead.
         member={{ ...baseMember, custom_role_ids: ["cr-deleted"] }}
       />,
     );
@@ -182,7 +183,7 @@ describe("MemberDetailSheet save payload", () => {
     expect(updateRolesMutateAsync).toHaveBeenCalledWith({
       id: "m1",
       role_ids: [],
-      custom_role_ids: ["cr1"],
+      custom_role_ids: ["cr-deleted", "cr1"],
     });
   });
 
