@@ -10,7 +10,7 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 > `severity:*` migrated to **Priority**, and dead suggestions closed for auto-archive. Every actor is
 > **keyless**: interactive sessions and the scheduled backlog routines alike reach Linear through the
 > **native Linear MCP** injected by the Claude Code web environment — see
-> [Claude Code routines](#claude-code-routines-two-linear-native-via-the-mcp).
+> [Claude Code routines](#claude-code-routines-three-linear-native-via-the-mcp).
 
 ---
 
@@ -19,7 +19,7 @@ planning and work status; GitHub issues are an executable layer that **syncs one
 ```
 Linear (canonical: planning, status, board, Triage intake)
    ▲ Claude Code (web) via the injected NATIVE Linear MCP — the path /next uses
-   ▲ Claude Code Routines (scheduled: curator + triage) via the same injected Linear MCP
+   ▲ Claude Code Routines (scheduled: curator + triage + PR follow-ups) via the same injected Linear MCP
    ▲ GitHub PRs close work (Fixes FRA-N); the Linear–GitHub integration keeps issues in sync
 ```
 
@@ -41,7 +41,7 @@ Linear (canonical: planning, status, board, Triage intake)
 | Actor | Reaches Linear via | Notes |
 | --- | --- | --- |
 | **Claude Code** (web, interactive) | **Native Linear MCP**, injected by the web environment | No `gh` CLI in the web sandbox; MCP is the only path. No fallback tracker. |
-| **Claude Code Routines** (scheduled) | The **same injected Linear MCP** — routine sessions run in the same web environment | The two backlog routines (curator + triage). If the MCP is unavailable at fire time, the routine stops and reports — no key fallback. See [`ROUTINES.md`](ROUTINES.md). |
+| **Claude Code Routines** (scheduled) | The **same injected Linear MCP** — routine sessions run in the same web environment | The three backlog routines (curator + triage + weekly PR follow-ups; the harvester also reads PRs via the GitHub MCP). If the MCP is unavailable at fire time, the routine stops and reports — no key fallback. See [`ROUTINES.md`](ROUTINES.md). |
 | **GitHub** | Linear's **native GitHub integration** (the GitHub App) | PR/branch/status sync; PRs close issues via `Fixes FRA-N` / `Closes #N`. |
 
 `.mcp.json.example` is a local-reference block only (plain OAuth URL, no token). **Do not** commit a
@@ -89,7 +89,7 @@ carries it to Linear), and close Linear-native issues in Linear (Done/Canceled).
 
 ## Ownership boundary (organize broadly, destroy narrowly)
 
-The backlog routines (curator + triage) split writes into two classes:
+The backlog routines (curator, triage, and the weekly PR follow-ups harvester) split writes into two classes:
 
 - **Destructive writes** — cancel, mark-duplicate, re-body (including adding an Agent brief) — are
   allowed **only** on issues the routines own: those carrying the **`suggestion`** label. A
@@ -264,7 +264,7 @@ paste-ready prompts: [`ROUTINES.md`](ROUTINES.md).
    `/next` via the normal pipeline. Publishes the **"PR Follow-ups — Human Action List"** Linear document
    from live issue state — check-off is issue state, not a list kept anywhere else.
 
-**Ownership** (both): destructive actions only on `suggestion`-labeled issues; human/planning issues are
+**Ownership** (all three): destructive actions only on `suggestion`-labeled issues; human/planning issues are
 read-only. **Never create GitHub issues; never touch product code** — the sole repo-write exception is
 the docs-only self-maintenance PR defined in [`ROUTINES.md`](ROUTINES.md), which is how the routines keep
 their own contracts current. Issues are born in Linear.
@@ -277,9 +277,9 @@ These need a human (account/UI access the cloud sandbox doesn't have):
 
 1. **Linear MCP into the web environment** — so cloud Claude sessions (interactive and routine alike)
    inherit it (done; `/next` uses it).
-2. **Stand up the two Routines** — create the **Linear Issue Curator** and **Linear Triage** Routines in
-   the Claude Code UI per [`ROUTINES.md`](ROUTINES.md) and run each once to verify they create/organize
-   issues in Linear unattended (no GitHub issues created). No secrets needed — the old `LINEAR_API_KEY`
+2. **Stand up the three Routines** — create the **Linear Issue Curator**, **Linear Triage**, and
+   **PR Follow-ups** Routines per [`ROUTINES.md`](ROUTINES.md) and run each once to verify they
+   create/organize issues in Linear unattended (no GitHub issues created). No secrets needed — the old `LINEAR_API_KEY`
    automation secret is retired and can be revoked.
 3. **GitHub App** installed on `pdcarlson/Frapp` (done) — keeps issues/PRs in sync; PRs close work.
 4. **Team Settings:** **Triage** on with *require explicit prioritization* (done); **Estimates** =

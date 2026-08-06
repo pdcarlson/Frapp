@@ -30,7 +30,7 @@ self-maintenance PR defined in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUT
   mcp__Linear__save_comment,mcp__Linear__list_comments,mcp__Linear__list_documents,
   mcp__Linear__save_document,mcp__Linear__get_team")`. Verify access up front (`get_team` for
   **Frapp Live**). **If the Linear MCP is unavailable, stop and report — no fallback.** The ID
-  cache lives in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#linear-access-shared-by-both-routines).
+  cache lives in [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md#linear-access-shared-by-all-routines).
 - **GitHub** via the GitHub MCP tools (`mcp__github__list_pull_requests`,
   `mcp__github__pull_request_read` with `get`, `get_comments`, `get_review_comments`). If the
   GitHub MCP is unavailable, stop and report likewise — the harvest cannot run blind.
@@ -42,6 +42,11 @@ Destructive writes (cancel, re-body, mark-duplicate, state changes) only on issu
 Human-filed and planning issues are strictly read-only. Policy:
 [`LINEAR_PM.md` → Ownership boundary](../../../docs/internal/ci-cd/LINEAR_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
+Within the `suggestion` set, lifecycle ownership is partitioned by fingerprint namespace: issues
+whose marker starts `fp=pr-followup/` belong to **this** routine — the daily curator skips them
+(its "provable from code/spec" close bar and instant-`stale` rule don't fit human actions), and
+this routine never touches `suggestion` issues outside its namespace beyond dedup reads.
+
 ## State: the Human Action List document
 
 All cross-run state lives in one Linear **document** on team Frapp Live titled
@@ -49,7 +54,7 @@ All cross-run state lives in one Linear **document** on team Frapp Live titled
 create it on first run with `save_document`). It carries, in an HTML comment at the end:
 
 ```html
-<!-- pr-followups-state: v1 last-run=<ISO date> newest-pr=#<N> backfill-oldest=#<N> backfill-done=<yes|no> -->
+<!-- pr-followups-state: v1 last-run=<ISO date> newest-pr=#<N> backfill-oldest=#<N> backfill-empty-streak=<0|1|2> backfill-done=<yes|no> -->
 ```
 
 - `newest-pr` — the highest PR number already harvested (forward watermark).
@@ -81,9 +86,10 @@ further back actually been done?" — it runs every time, before anything new is
 1. **Forward:** all PRs (merged, closed, and open) with `updated_at` in the window since
    `last-run` minus 1 day of overlap (dedup makes overlap safe).
 2. **Backward (audit crawl):** while `backfill-done=no`, also take up to **10** PRs below
-   `backfill-oldest`, oldest-first stopping rule: when a full chunk yields zero items twice in a
-   row, set `backfill-done=yes`. This is how coverage eventually reaches "even further back"
-   without one giant run.
+   `backfill-oldest`. Stopping rule, evaluated across runs via the marker: a chunk yielding zero
+   items increments `backfill-empty-streak`; any yield resets it to 0; at 2, set
+   `backfill-done=yes`. This is how coverage eventually reaches "even further back" without one
+   giant run.
 
 ### What counts as a follow-up item
 

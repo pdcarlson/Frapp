@@ -13,7 +13,7 @@ GitHub):
 | --- | --- | --- | --- |
 | 1 | **Linear Issue Curator** | [`.claude/skills/linear-curator/SKILL.md`](../../../.claude/skills/linear-curator/SKILL.md) | daily 08:00 ET |
 | 2 | **Linear Triage** | [`.claude/skills/linear-triage/SKILL.md`](../../../.claude/skills/linear-triage/SKILL.md) | daily 09:00 ET (~1h after #1) |
-| 3 | **PR Follow-ups** | [`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 08:00 ET (before #1–2 that morning) |
+| 3 | **PR Follow-ups** | [`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00 ET (a full hour before #1–2 that morning) |
 
 The curator **creates and maintains** `suggestion` issues in Linear's **Triage** inbox. An hour
 later the triage routine works **both** the **Triage inbox** (prioritize, bucket, backfill Agent
@@ -64,7 +64,7 @@ for reads; writes go through `save_issue` / `save_comment`.
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | the Frapp Claude Code web environment (`pdcarlson/Frapp`) | Routine sessions clone the repo and load `.claude/` skills from the default branch (`main`) at run time. |
-| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 08:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, and `0 12 * * 1` during EDT (shift +1h when ET returns to EST). Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 12 * * 1,4` if a week's batch runs long. |
+| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, and `0 11 * * 1` during EDT (shift +1h when ET returns to EST). Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
 | Model | **Fable** (`claude-fable-5`) | Quality scales with reasoning; use the strongest available model. |
 | Session | fresh session per run | Each run re-reads its skill from `main` — no state carried between runs; Linear itself is the memory (markers, labels, comments). |
 | Access | **Linear MCP** (injected by the environment) | Plus the repo itself for the curator's engineering/spec lenses, and the **GitHub MCP** for the PR Follow-ups harvest. No secrets needed — `LINEAR_API_KEY` is **not** used. |
@@ -113,8 +113,8 @@ has good work to pull. Invoke the linear-triage skill (.claude/skills/linear-tri
 follow it EXACTLY: process Linear's TRIAGE inbox — dedup, set a Project only where one clearly
 fits, set a Priority (required to leave Triage), backfill Agent briefs on `suggestion`-owned items
 (err on depth:deep), add blocked-by relations, and promote clearly-actionable items — including
-well-formed human-filed ones — to BACKLOG; hold ambiguous items and genuine human decisions in
-Triage with a short comment. Then groom a ~25-issue Backlog
+well-formed human-filed ones — to BACKLOG; hold ambiguous items, genuine human decisions, and
+`[pr-followup][human]` human-action items in Triage (never promote those) with a short comment. Then groom a ~25-issue Backlog
 batch: sane Priorities first, briefs backfilled, projects only for clear fits. You may organize ANY
 Triage item (project/estimate/filling an absent priority — never overwrite a human-set priority),
 but only cancel, mark-duplicate, or re-body `suggestion`-owned issues. Use the native Linear MCP;
@@ -123,7 +123,7 @@ skill's docs-only self-maintenance PR is the sole exception). Where this prompt 
 disagree, the skill wins. End with the board-health report the skill specifies.
 ```
 
-**Routine 3 — "PR Follow-ups"** (weekly Mon 08:00 ET):
+**Routine 3 — "PR Follow-ups"** (weekly Mon 07:00 ET):
 
 ```text
 You are the PR Follow-ups harvester for the Frapp repository — you make sure nothing a PR left
@@ -153,7 +153,7 @@ items.
 2. Schedule daily **08:00 ET**; model **Fable**; environment `pdcarlson/Frapp` (`main`).
 3. Paste the **Curator** prompt from [Routine prompts](#routine-prompts-copy-paste) above.
 4. Repeat for **"Linear Triage"**, scheduled **09:00 ET**, with the **Triage** prompt.
-5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 08:00 ET**, with the **PR Follow-ups**
+5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 07:00 ET**, with the **PR Follow-ups**
    prompt. (The live one was created programmatically via the Routines API on 2026-08-06 with
    completion notifications push+email — the weekly digest; recreating it in the UI is equivalent.)
 6. Enable all three.
