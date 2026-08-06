@@ -15,7 +15,13 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
 
-const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
+/**
+ * Grace period after `end_time` during which check-in stays open and before
+ * which auto-absent must not run (`spec/behavior/events.md`). Exported so the
+ * scheduled auto-absent sweep computes the same cutoff this service enforces,
+ * rather than keeping a second copy that could drift.
+ */
+export const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
 
 @Injectable()
 export class AttendanceService {

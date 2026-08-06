@@ -22,7 +22,7 @@
 - **Excuse workflow (admin-only):** Admins mark members as EXCUSED with an optional reason string. Members cannot self-submit excuses. Excused members are not penalized for mandatory events and do not appear as ABSENT in reports.
 - Admins can also manually mark members as ABSENT or LATE after the event.
 - Marking a member ABSENT who previously checked in (PRESENT) does NOT reverse the points already awarded. The admin must separately create a point adjustment if needed.
-- **Auto-absent:** For mandatory or role-targeted events, members who are required to attend but did not check in and were not marked EXCUSED are auto-marked ABSENT after the grace period ends. Alumni-role members are excluded on non-targeted events — they can neither check in nor self-excuse, so marking them would guarantee an ABSENT record they have no way to avoid. A role-targeted event keeps whoever it names, alumni included.
+- **Auto-absent:** For mandatory or role-targeted events, members who are required to attend but did not check in and were not marked EXCUSED are auto-marked ABSENT after the grace period ends. Alumni-role members are excluded on non-targeted events — they can neither check in nor self-excuse, so marking them would guarantee an ABSENT record they have no way to avoid. A role-targeted event keeps whoever it names, alumni included. This runs automatically: an hourly scheduled sweep processes every event whose grace period closed in the preceding 24 hours, so no officer action is required. The admin-triggered endpoint remains available for immediate marking. Re-running is harmless — members who already hold an attendance record are skipped.
 
 ## Edge Cases
 

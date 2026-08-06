@@ -314,7 +314,22 @@ This is the deliberate default for now per **`spec/architecture/README.md` ADR-0
 
 When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModule` if needed) as a separate Render Background Worker reading from the same secrets; no code changes are required beyond a new entry point that boots just those modules.
 
-### 5.6 Deploy Hooks (for GitHub Actions)
+### 5.6 In-process scheduled jobs
+
+`ScheduledJobsModule` runs three `@Cron` sweeps inside the API Render service: attendance auto-absent (hourly), and invoice and task due/overdue reminders (daily at 09:00). They are registered against the `ScheduleModule.forRoot()` in `app.module.ts`.
+
+**These differ from the §5.5 chat workers in one way that matters for scaling.** The chat workers each hold a single Supabase Realtime subscription, so extra replicas mostly duplicate a stream. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
+
+Consequences worth knowing before scaling the API service:
+
+- Adding replicas does **not** multiply notifications, and needs no configuration change.
+- The sweeps are self-healing across missed ticks — auto-absent looks back 24 hours, overdue reminders 7 days, and due-soon reminders accept the due date itself as a late catch-up — so a deploy that skips 09:00 delays reminders rather than dropping them.
+- The claim is taken *before* sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it.
+- Timing is UTC. No `TZ` is set on the API service, so `EVERY_DAY_AT_9AM` means 09:00 UTC and the sweeps' date arithmetic is UTC-based. Setting `TZ` on the service would shift both together; do it deliberately, not incidentally.
+
+Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short and run at most hourly — but if they are split, they must not run in *both* places at once unless the dispatch claim is preserved, since that is the only thing preventing duplicate work.
+
+### 5.7 Deploy Hooks (for GitHub Actions)
 
 In each Render service → Settings → Deploy Hook → copy the URL. Store secrets as GitHub **environment-scoped** secrets (same names in both environments, different values):
 
