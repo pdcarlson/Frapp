@@ -69,11 +69,11 @@ After any rollback event:
 ## Rollback system-role `system_key`
 
 * **Migration**: `20260806220000_role_system_key.sql`
-* **Action**: drop the index first, then the column (the index is partial on the column, so it will not drop implicitly if you target the column with `RESTRICT`):
+* **Action**: dropping the column is sufficient — Postgres drops indexes involving the column automatically, including this partial one (verified under PGlite), so no `CASCADE` and no separate `DROP INDEX` are required:
   ```sql
-  DROP INDEX IF EXISTS idx_roles_chapter_system_key;
   ALTER TABLE roles DROP COLUMN IF EXISTS system_key;
   ```
+  To revert only the uniqueness guarantee while keeping the column and its values, drop the index alone instead: `DROP INDEX IF EXISTS idx_roles_chapter_system_key;`
   **Redeploy the API at the pre-FRA-320 revision first.** The post-FRA-320 code `select`s and filters on `system_key` in `RbacService.getAlumniRoleId`, `MemberService.findAlumniByChapter`, and `BillingService.notifyChapterPresident`, and `ChapterService.create` *inserts* it — with the column gone, chapter creation 500s outright and the three lookups error rather than degrading.
 * **Note**: Additive DDL only (one nullable column + one partial unique index); no existing column, constraint, policy, or row is altered, so nothing predating the migration can be lost. Rolling back reverts every system-role lookup to name matching, which **re-opens the silent rename fail-open this migration closed** (FRA-320): renaming the Alumni role again disables study-hour, event-check-in, and chat-posting restrictions chapter-wide with no error and no log line. Prefer a roll-forward fix.
 * **Data caveat**: the column holds derived identity, not user data — on re-apply the migration's backfill reconstructs it from each system role's current name, so no snapshot is needed. The one thing that does *not* survive a drop/re-apply cycle: a chapter that renamed a system role **while the column existed** kept a correct key through the rename, but the re-apply backfill matches on the *current* name and will leave that role with a null key. Those chapters silently return to the fail-open path. If any chapter has renamed a system role since this migration landed, snapshot `select id, chapter_id, name, system_key from roles where system_key is not null` before dropping and restore it after re-applying.
