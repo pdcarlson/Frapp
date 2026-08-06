@@ -237,11 +237,11 @@ wins.
 
 ---
 
-## Claude Code routines (two, Linear-native via the MCP)
+## Claude Code routines (three, Linear-native via the MCP)
 
-Two staggered daily **Claude Code Routines**, both writing to **Linear** via the **native Linear
-MCP** injected by the web environment (keyless — no `LINEAR_API_KEY`). Full config + paste-ready
-prompts: [`ROUTINES.md`](ROUTINES.md).
+Three **Claude Code Routines** — two staggered daily, one weekly — all writing to **Linear** via the
+**native Linear MCP** injected by the web environment (keyless — no `LINEAR_API_KEY`). Full config +
+paste-ready prompts: [`ROUTINES.md`](ROUTINES.md).
 
 1. **Linear Issue Curator** ([`.claude/skills/linear-curator/SKILL.md`](../../../.claude/skills/linear-curator/SKILL.md))
    — daily. Maintains `suggestion` issues (Done/Cancel provable, else `stale`; dedup; refresh; split), then
@@ -255,6 +255,14 @@ prompts: [`ROUTINES.md`](ROUTINES.md).
    a **Project** only when a suggestion *clearly* fits one (most suggestions stay projectless by design —
    no force-bucketing). Organizes broadly; cancels/dedups only `suggestion`-owned issues; surfaces
    human-filed items rather than deciding them. Ends with a board-health report.
+3. **PR Follow-ups** ([`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md))
+   — weekly, Monday before the daily pair. Audits previously harvested items against reality (close only
+   on proof), sweeps recent + progressively older PRs for human-action and deferred items ("Flagged for
+   review" sections, agent-stated TODOs, unresolved review threads), researches how each gets done, and
+   files them into **Triage** (`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled,
+   `fp=pr-followup/…` dedup markers). Human-action items stay held in Triage; agent-doable ones flow to
+   `/next` via the normal pipeline. Publishes the **"PR Follow-ups — Human Action List"** Linear document
+   from live issue state — check-off is issue state, not a list kept anywhere else.
 
 **Ownership** (both): destructive actions only on `suggestion`-labeled issues; human/planning issues are
 read-only. **Never create GitHub issues; never touch product code** — the sole repo-write exception is
