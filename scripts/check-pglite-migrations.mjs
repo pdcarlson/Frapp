@@ -41,8 +41,9 @@ if (files.length === 0) {
 // `vector` is registered ahead of any migration needing it (FRA-308). PGlite
 // only makes a bundled extension *available*; `create extension vector` still
 // has to be written in a migration, exactly like `pgcrypto`. Registering it
-// costs nothing until then — it is a lazily-unpacked tarball, not a running
-// extension — and it is what lets the AI corpus migrations (ADR-13 §13) replay
+// adds no cost this gate can measure until then (the bundle is a lazily-unpacked
+// tarball, not a running extension; wall-clock is unchanged within run-to-run
+// noise) — and it is what lets the AI corpus migrations (ADR-13 §13) replay
 // here instead of forcing a carve-out out of this gate. See the `pg_available_
 // extensions` landmark below, which fails if this registration is ever dropped.
 const db = new PGlite({ extensions: { pgcrypto, vector } });
