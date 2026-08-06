@@ -168,8 +168,11 @@ describe("PointsPage success state", () => {
     render(<PointsPage />);
 
     expect(screen.getByText("user-a")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
+    // The leaderboard total and the balance are both 42; match each by the
+    // element that owns it so a future shared value can't make these ambiguous.
+    expect(screen.getByRole("cell", { name: "42" })).toBeInTheDocument();
     expect(screen.getByText("My balance")).toBeInTheDocument();
+    expect(screen.getByText("42 points")).toBeInTheDocument();
     expect(screen.getByText("Founders Day check-in")).toBeInTheDocument();
     expect(screen.getByText("+12")).toBeInTheDocument();
     expect(screen.queryByText("Couldn't load the points ledger")).not.toBeInTheDocument();

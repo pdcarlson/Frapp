@@ -76,9 +76,10 @@ regen, so no other surface was disturbed.
 
 **Chromium revision used:** `chromium-headless-shell v1223`
 (Chrome Headless Shell 148.0.7778.96), the build `@playwright/test` 1.60.0
-resolves — 1.60.0 is what `^1.58.2` in `apps/web/package.json` installs today,
-i.e. the same version `npx playwright install --with-deps chromium` pulls in
-the `web-visual-regression` job.
+ships. The root `package-lock.json` pins `@playwright/test`, `playwright`, and
+`playwright-core` to 1.60.0, so `npx playwright install --with-deps chromium`
+in the `web-visual-regression` job resolves the same revision rather than
+whatever `^1.58.2` happens to float to.
 
 **Sandbox note (differs from the #311 precedent below):** the cloud sandbox
 pre-installs revision 1194 at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`,
