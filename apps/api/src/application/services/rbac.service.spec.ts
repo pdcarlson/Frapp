@@ -1026,10 +1026,7 @@ describe('RbacService', () => {
         system_key: null,
       });
 
-      const [, updatePayload] = mockRoleRepo.update.mock.calls[0] as [
-        string,
-        Partial<Role>,
-      ];
+      const [, updatePayload] = mockRoleRepo.update.mock.calls[0];
       expect(updatePayload).not.toHaveProperty('system_key');
       expect(updatePayload.name).toBe('Graduated');
     });

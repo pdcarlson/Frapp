@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import type {
   IBillingProvider,
@@ -1604,6 +1605,69 @@ describe('BillingService', () => {
           priority: 'URGENT',
           category: 'billing',
         }),
+      );
+    });
+
+    // FRA-320: this lookup used a bare 'President' string literal, so a chapter
+    // that relabelled the role silently stopped receiving billing alerts.
+    it('still notifies the president after the President role is renamed', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_update_renamed_pres',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+            status: 'past_due',
+          },
+        },
+      };
+
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'past_due',
+      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
+        id: 'role-pres',
+        chapter_id: 'ch-1',
+        // Relabelled by the chapter; only `system_key` still identifies it.
+        name: 'Chapter Chair',
+        system_key: SystemRoleKeys.PRESIDENT,
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
+      });
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        {
+          id: 'member-pres',
+          user_id: 'user-pres',
+          chapter_id: 'ch-1',
+          role_ids: ['role-pres'],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'ch-1',
+        SystemRoleKeys.PRESIDENT,
+      );
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-pres',
+        'ch-1',
+        expect.objectContaining({ title: 'Subscription Status Changed' }),
       );
     });
 

@@ -112,7 +112,8 @@ export class RbacService {
     // resolves on, so it is immutable through the API: moving or clearing it
     // would reintroduce exactly the detach-by-rename hole it was added to
     // close. Renaming a system role stays allowed — it is now only a relabel.
-    const { system_key: _ignoredSystemKey, ...updatable } = data;
+    const updatable = { ...data };
+    delete updatable.system_key;
 
     return this.roleRepo.update(roleId, updatable);
   }
