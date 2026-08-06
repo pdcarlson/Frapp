@@ -56,6 +56,45 @@ entry below each time a chunk touches a dashboard surface (or, when nothing
 changed, record why the existing baseline still applies) so reviewers don't
 re-investigate the same surface.
 
+### `/points` — FRA-235 preview-fallback removal, regenerated
+
+**Status:** baseline **regenerated** (`points-main-content-linux.png`), verified
+locally against the same Chromium revision CI installs.
+
+**Why it moved:** the old baseline captured a 1112×256 `LoadingState` card. In
+this harness there is no active chapter, and `useMyPoints` was the one read in
+`packages/hooks/src/use-points.ts` without `enabled: !!chapterId` — so it fired
+against the non-routable `NEXT_PUBLIC_API_URL`, and TanStack Query's retry
+backoff (3 retries, 1s/2s/4s) kept `isLoading` true well past the
+`networkidle` screenshot point. FRA-235 gates that read like its three
+siblings, so the query is now disabled without a chapter and the page renders
+its real shell with honest empty states ("No leaderboard entries", "No
+transactions in this window", `My balance 0 points`) at 1112×729. The diff was
+16,231 px (ratio 0.03) before regeneration. Every other route in the suite
+still matches its existing baseline — the full 16-test run passed after the
+regen, so no other surface was disturbed.
+
+**Chromium revision used:** `chromium-headless-shell v1223`
+(Chrome Headless Shell 148.0.7778.96), the build `@playwright/test` 1.60.0
+resolves — 1.60.0 is what `^1.58.2` in `apps/web/package.json` installs today,
+i.e. the same version `npx playwright install --with-deps chromium` pulls in
+the `web-visual-regression` job.
+
+**Sandbox note (differs from the #311 precedent below):** the cloud sandbox
+pre-installs revision 1194 at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`,
+which Playwright 1.60 refuses to launch. Unlike when #311 was attested, the
+Playwright CDN was reachable from this sandbox, so revision 1223 was fetched
+and the regen ran on the CI-matching build rather than falling back to a
+static-equivalence argument.
+
+Regenerate command used:
+
+```bash
+cd apps/web
+CI=true npx playwright test tests/visual/dashboard-routes.spec.ts \
+  --grep "/points" --update-snapshots
+```
+
 ### `/chat` — Chunk 04 (#278) rewrite, attested via #311
 
 **Status:** baseline unchanged; rationale below; CI runtime confirmation is the
