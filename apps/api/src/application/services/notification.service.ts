@@ -81,10 +81,17 @@ export class NotificationService {
       data: payload.data ?? {},
     });
 
-    const pushTokens = await this.pushTokenRepo.findByUser(userId);
-    if (pushTokens.length === 0) return;
-
+    // Push is best-effort, and the token lookup is part of it. Once the
+    // notification row above is committed the user *has* been notified in
+    // app, so nothing after this point may throw out of `notifyUser` — a
+    // caller that retried on a token-lookup blip would write a second
+    // notification row for the same event. That matters for the scheduled
+    // reminder sweeps, which release their dispatch claim and retry when a
+    // delivery reports failure.
     try {
+      const pushTokens = await this.pushTokenRepo.findByUser(userId);
+      if (pushTokens.length === 0) return;
+
       await this.pushProvider.sendToUser(
         pushTokens.map((t) => t.token),
         {
@@ -92,6 +99,9 @@ export class NotificationService {
           body: payload.body,
           data: { ...payload.data, notificationId: notification.id },
           priority: effectivePriority,
+          // Forwarded for delivery telemetry only — lets `push_delivery`
+          // records be sliced by category (see the Expo provider).
+          category,
         },
       );
     } catch (err) {

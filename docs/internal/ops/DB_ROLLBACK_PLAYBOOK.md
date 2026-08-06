@@ -73,6 +73,20 @@ After any rollback event:
 * **Note**: Additive table + function only; nothing else references them, so dropping loses only the delivery ledger. Behaviour reverts to the in-memory `Set` — dedup within one process, and a replay after any restart re-applies the event. No backfill on re-apply; the table refills from the next deliveries.
 * **Lighter option — usually the right one**: if the goal is just to unstick a specific event rather than remove the feature, do not drop anything. `update stripe_webhook_events set status = 'failed' where event_id = 'evt_…';` makes it immediately re-claimable on Stripe's next retry, and `select event_id, event_type, status, attempts, last_error from stripe_webhook_events where status <> 'processed' order by claimed_at desc;` lists everything currently stuck or failing.
 
+## Rollback scheduled notification dispatches
+
+* **Migration**: `20260805140000_scheduled_notification_dispatches.sql`
+* **Action**: the migration creates one table **and three indexes on pre-existing tables**, which do *not* drop with it:
+  ```sql
+  DROP TABLE IF EXISTS scheduled_notification_dispatches; -- its own index drops with it
+  DROP INDEX IF EXISTS idx_events_end_time;
+  DROP INDEX IF EXISTS idx_financial_invoices_status_due_date;
+  DROP INDEX IF EXISTS idx_tasks_status_due_date;
+  ```
+  The three indexes are safe to keep — they are pure read optimizations for the sweep queries and nothing depends on their existence. Drop them only if you are fully reverting the migration.
+* **⚠️ Note**: Additive DDL only — no existing table's data is touched, so nothing that predates the migration can be lost. But **redeploy the API at the pre-FRA-24 revision first**, or disable the sweeps. `ScheduledJobsService` claims a row before *every* unit of work, and `ScheduledJobsRepository` treats an unexpected insert error as "not claimed", so with the table gone **all three sweeps silently stop doing anything** — reminders send nothing, and attendance auto-absent stops marking. They fail safe (no crash, no double-send) but they also fail *quietly*: the only signal is a `dispatch claim failed` line per item. Auto-absent is not exempt — it claims under `entity_type = 'EVENT'` so it runs once per event instead of once per replica per hour.
+* **Data caveat**: the rows are delivery bookkeeping — which reminder has already gone out for which invoice/task. Dropping the table erases that memory, so **re-applying the migration and re-enabling the sweeps re-sends every reminder still inside the 7-day `OVERDUE_LOOKBACK_DAYS` window** (and any invoice/task due the next day). Members see duplicates for anything in that window; older items stay silent because the lookback bound excludes them. If that matters, snapshot the table before dropping and restore it alongside the re-apply.
+
 ## Rollback custom-role member assignment
 
 * **Migration**: `20260804230000_member_custom_role_ids.sql`

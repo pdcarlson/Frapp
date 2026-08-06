@@ -30,7 +30,8 @@ A lightweight task management system for chapter operations.
 
 - Assignee is notified when a task is assigned to them.
 - Assignee is notified 1 day before the due date if the task is not COMPLETED.
-- Assignee and admin are both notified when a task becomes OVERDUE.
+- Assignee and admin are both notified when a task becomes OVERDUE. The admin notified is the task's creator — the member who assigned it — not every `tasks:manage` holder.
+- The two due-date reminders above are sent by a daily scheduled sweep, each at most once per task: delivery is recorded in `scheduled_notification_dispatches`, so re-running a sweep, or running it on several API instances, cannot duplicate a reminder. A task that went overdue more than 7 days ago is not retro-notified.
 - Assignee is notified when completion is confirmed (and points are awarded).
 
 ## Visibility
