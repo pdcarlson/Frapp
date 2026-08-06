@@ -13,8 +13,8 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import { Role } from '../../domain/entities/role.entity';
 import { Member } from '../../domain/entities/member.entity';
 import {
-  ALUMNI_ROLE_NAME,
   SystemPermissions,
+  SystemRoleKeys,
   WILDCARD,
 } from '../../domain/constants/permissions';
 import { flattenPermissionSets } from '../../domain/utils/permissions';
@@ -53,6 +53,11 @@ export class RbacService {
       ...data,
       chapter_id: chapterId,
       is_system: false,
+      // A caller-supplied `system_key` would let `roles:manage` mint a role
+      // that impersonates a seeded one — claiming ALUMNI would hand its
+      // lifecycle restrictions to that role's holders. Custom roles never
+      // carry a key.
+      system_key: null,
     });
   }
 
@@ -103,7 +108,13 @@ export class RbacService {
         throw new ConflictException('Role name already exists in this chapter');
     }
 
-    return this.roleRepo.update(roleId, data);
+    // `system_key` is the identity every authorization and lifecycle lookup
+    // resolves on, so it is immutable through the API: moving or clearing it
+    // would reintroduce exactly the detach-by-rename hole it was added to
+    // close. Renaming a system role stays allowed — it is now only a relabel.
+    const { system_key: _ignoredSystemKey, ...updatable } = data;
+
+    return this.roleRepo.update(roleId, updatable);
   }
 
   async delete(roleId: string, chapterId: string): Promise<void> {
@@ -243,15 +254,20 @@ export class RbacService {
   }
 
   /**
-   * Id of the chapter's Alumni role, or `null` when it has none (renamed or
-   * deleted). Exposed for callers that classify a batch of members rather than
-   * asking about one — e.g. excluding alumni from auto-absent marking — so they
-   * resolve the role once instead of per member.
+   * Id of the chapter's Alumni role, or `null` when it has none. Exposed for
+   * callers that classify a batch of members rather than asking about one —
+   * e.g. excluding alumni from auto-absent marking — so they resolve the role
+   * once instead of per member.
+   *
+   * Resolves on `system_key`, so renaming the role no longer detaches the
+   * lifecycle restrictions from it. `null` now means the role was genuinely
+   * never seeded or was renamed *before* the FRA-320 backfill, not merely
+   * relabelled.
    */
   async getAlumniRoleId(chapterId: string): Promise<string | null> {
-    const alumniRole = await this.roleRepo.findByChapterAndName(
+    const alumniRole = await this.roleRepo.findByChapterAndSystemKey(
       chapterId,
-      ALUMNI_ROLE_NAME,
+      SystemRoleKeys.ALUMNI,
     );
     return alumniRole?.id ?? null;
   }

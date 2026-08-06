@@ -13,6 +13,7 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import {
   ALUMNI_ROLE_NAME,
   SystemPermissions,
+  SystemRoleKeys,
 } from '../../domain/constants/permissions';
 import { CustomRoleService } from './custom-role.service';
 import type { Role } from '../../domain/entities/role.entity';
@@ -30,6 +31,7 @@ describe('RbacService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -112,6 +114,7 @@ describe('RbacService', () => {
       display_order: 10,
       chapter_id: 'ch-1',
       is_system: false,
+      system_key: null,
     });
     expect(result).toEqual(role);
   });
@@ -858,6 +861,7 @@ describe('RbacService', () => {
       id: 'role-alumni',
       chapter_id: 'ch-1',
       name: ALUMNI_ROLE_NAME,
+      system_key: SystemRoleKeys.ALUMNI,
       permissions: [SystemPermissions.MEMBERS_VIEW],
       is_system: true,
       display_order: 7,
@@ -880,12 +884,12 @@ describe('RbacService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(
         memberWithRoles(['role-alumni']),
       );
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
 
       await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(true);
-      expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledWith(
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
         'ch-1',
-        ALUMNI_ROLE_NAME,
+        SystemRoleKeys.ALUMNI,
       );
     });
 
@@ -893,7 +897,7 @@ describe('RbacService', () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(
         memberWithRoles(['role-member']),
       );
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
 
       await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
     });
@@ -903,20 +907,20 @@ describe('RbacService', () => {
 
       await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
       // No role lookup needed when there is no membership.
-      expect(mockRoleRepo.findByChapterAndName).not.toHaveBeenCalled();
+      expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
     });
 
     it('fails open to normal permissions when the chapter has no Alumni role', async () => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(
         memberWithRoles(['role-alumni']),
       );
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
     });
 
     it('hasAlumniRole resolves from caller-supplied role ids without a member lookup', async () => {
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
 
       await expect(
         service.hasAlumniRole('ch-1', ['role-alumni']),
@@ -930,7 +934,104 @@ describe('RbacService', () => {
       await expect(service.hasAlumniRole('ch-1', undefined)).resolves.toBe(
         false,
       );
+      expect(mockRoleRepo.findByChapterAndSystemKey).not.toHaveBeenCalled();
+    });
+  });
+
+  // FRA-320. Before `system_key`, every one of these resolved the Alumni role
+  // by the literal name "Alumni", so a President renaming it silently switched
+  // off study-hour, check-in, and chat restrictions chapter-wide — and
+  // reattaching the freed name to another role moved those restrictions onto
+  // its holders instead.
+  describe('system roles are rename-proof (FRA-320)', () => {
+    const renamedAlumniRole: Role = {
+      id: 'role-alumni',
+      chapter_id: 'ch-1',
+      // Renamed by the chapter. Only the label changed.
+      name: 'Alumni (Inactive)',
+      system_key: SystemRoleKeys.ALUMNI,
+      permissions: [SystemPermissions.MEMBERS_VIEW],
+      is_system: true,
+      display_order: 7,
+      color: '#6B7280',
+      created_at: '2024-01-01',
+    };
+
+    const alumniMember: Member = {
+      id: 'member-1',
+      user_id: 'user-1',
+      chapter_id: 'ch-1',
+      role_ids: ['role-alumni'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    };
+
+    it('still applies Alumni restrictions after the role is renamed', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(alumniMember);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        renamedAlumniRole,
+      );
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(true);
+      // Resolved by key, never by the (now different) display name.
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'ch-1',
+        SystemRoleKeys.ALUMNI,
+      );
       expect(mockRoleRepo.findByChapterAndName).not.toHaveBeenCalled();
+    });
+
+    it('does not transfer Alumni restrictions to a role that takes the freed name', async () => {
+      // The chapter renamed Alumni, then created a custom role called
+      // "Alumni". The custom role carries no system_key, so the lookup still
+      // resolves the real one and its holders are unaffected.
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue({
+        ...alumniMember,
+        role_ids: ['role-impostor'],
+      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(
+        renamedAlumniRole,
+      );
+
+      await expect(service.isAlumni('ch-1', 'user-1')).resolves.toBe(false);
+    });
+
+    it('refuses to set system_key when creating a custom role', async () => {
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.create.mockResolvedValue({} as Role);
+
+      await service.create('ch-1', {
+        name: 'Impostor',
+        permissions: ['members:view'],
+        // A caller trying to mint a role that impersonates the seeded Alumni.
+        system_key: SystemRoleKeys.ALUMNI,
+      });
+
+      expect(mockRoleRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ system_key: null }),
+      );
+    });
+
+    it('strips system_key from role updates', async () => {
+      const role: Role = { ...renamedAlumniRole, name: 'Alumni' };
+      mockRoleRepo.findById.mockResolvedValue(role);
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.update.mockResolvedValue(role);
+
+      await service.update('role-alumni', 'ch-1', {
+        name: 'Graduated',
+        // Attempting to detach the key — the rename hole by another route.
+        system_key: null,
+      });
+
+      const [, updatePayload] = mockRoleRepo.update.mock.calls[0] as [
+        string,
+        Partial<Role>,
+      ];
+      expect(updatePayload).not.toHaveProperty('system_key');
+      expect(updatePayload.name).toBe('Graduated');
     });
   });
 });

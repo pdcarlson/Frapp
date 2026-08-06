@@ -99,6 +99,7 @@ describe('BillingService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
@@ -505,7 +506,7 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -539,7 +540,7 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       await service.handleWebhookEvent(event);
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
@@ -644,7 +645,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'canceled',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -1139,7 +1140,7 @@ describe('BillingService', () => {
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
         mockChapterRepo.update.mockResolvedValue(chapter);
-        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
@@ -1183,7 +1184,7 @@ describe('BillingService', () => {
         mockChapterRepo.update.mockResolvedValue(chapter);
         // Mock a reachable president so the no-notify assertion below actually
         // exercises the statusChanged gate (not just a missing-role early return).
-        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
@@ -1570,7 +1571,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -1629,7 +1630,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockRejectedValue(
+      mockRoleRepo.findByChapterAndSystemKey.mockRejectedValue(
         new Error('Database error'),
       );
 
@@ -1668,7 +1669,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'canceled',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',

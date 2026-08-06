@@ -60,6 +60,20 @@ export class SupabaseRoleRepository implements IRoleRepository {
     return data;
   }
 
+  async findByChapterAndSystemKey(
+    chapterId: string,
+    systemKey: string,
+  ): Promise<Role | null> {
+    const { data, error } = await this.supabase
+      .from('roles')
+      .select('*')
+      .eq('chapter_id', chapterId)
+      .eq('system_key', systemKey)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  }
+
   async create(roleData: Partial<Role>): Promise<Role> {
     const { data, error } = await this.supabase
       .from('roles')
