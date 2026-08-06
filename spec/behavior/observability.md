@@ -32,6 +32,32 @@ Key metrics exported for monitoring dashboards:
 - Active study sessions.
 - Push notification delivery success/failure rate.
 
+### Push delivery
+
+Push delivery success/failure rate is derived from a structured log record emitted once per push attempt by the Expo provider (`apps/api/src/infrastructure/notifications/expo-push.provider.ts`). It follows the Structured Logging convention above — one flat JSON object per record:
+
+| Field | Meaning |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| `event` | Always `push_delivery`. |
+| `priority` | Resolved priority (`URGENT` / `NORMAL` / `SILENT`) — after any quiet-hours downgrade. |
+| `category` | Notification category (`chat`, `events`, `announcements`, …); `default` when the caller sets none. |
+| `attempted` | Push tokens the send was asked to reach. |
+| `accepted` | Messages the push service accepted (`status: 'ok'` ticket). |
+| `invalidTokens` | Tokens rejected as malformed before any send. |
+| `ticketErrors` | Messages the push service rejected (`status: 'error'` ticket). |
+| `providerErrors` | Messages in a chunk whose transport call threw — no per-message outcome was returned. |
+| `failures` | `invalidTokens + ticketErrors + providerErrors`. |
+| `failureRate` | `failures / attempted`; `0` when nothing was attempted. |
+| `errorCodes` | Count per push-service error code (`DeviceNotRegistered`, `MessageTooBig`, …). Transport throws are keyed `provider:<ErrorName>` so they stay distinguishable. |
+
+Tickets are **not** receipts: an accepted ticket means the push service took the message, not that the device displayed it. `accepted` is therefore an upper bound on delivery, and a `status: 'error'` ticket is counted as a failure rather than a send.
+
+Records with `failures > 0` are emitted at `warn` and clean ones at `log`, so a log-level filter is a usable coarse signal on top of the field-level rate.
+
+**No token values are ever logged** — counts only. Push tokens are device credentials, and the push service echoes the offending token back in several of its error messages, so a token appearing in a provider error is redacted before the error is logged, consistent with the auth-token rule under Structured Logging. Redaction is by exact match against the tokens the send was given, not by token shape: a valid push token may be a bare UUID with no distinguishing form, and matching every UUID instead would destroy request ids. Provider errors log a length-capped message only — never the error object, whose stack would re-embed the raw message, and whose volume spikes precisely during an outage.
+
+A send in which every token is invalid still emits a record: a push that reaches nobody must not be indistinguishable from having nothing to send.
+
 ## Alerting
 
 Configurable alerts (via the monitoring provider) for:
@@ -40,4 +66,4 @@ Configurable alerts (via the monitoring provider) for:
 - API downtime (health check fails).
 - Database connection pool exhaustion.
 - Stripe webhook processing failures.
-- Push notification delivery failure spike.
+- Push notification delivery failure spike — thresholds in [`ALERT_ROUTING.md`](../../docs/internal/ops/ALERT_ROUTING.md#push-notification-delivery).

@@ -99,6 +99,9 @@ export class NotificationService {
           body: payload.body,
           data: { ...payload.data, notificationId: notification.id },
           priority: effectivePriority,
+          // Forwarded for delivery telemetry only — lets `push_delivery`
+          // records be sliced by category (see the Expo provider).
+          category,
         },
       );
     } catch (err) {
