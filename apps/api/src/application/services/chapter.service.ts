@@ -8,6 +8,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 import { CHAPTER_REPOSITORY } from '../../domain/repositories/chapter.repository.interface';
 import type { IChapterRepository } from '../../domain/repositories/chapter.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
@@ -236,6 +237,14 @@ export class ChapterService {
         'storage_path must be within the chapter branding folder',
       );
     }
+    // A prefix check alone is not containment: `chapters/<id>/branding/../../..`
+    // satisfies it and still climbs out, and the stored value is later read back
+    // to embed the logo in exported PDFs. Percent-encoded dot segments count —
+    // see assertSafeStoragePath for why.
+    assertSafeStoragePath(
+      storagePath,
+      'storage_path must not contain relative path segments',
+    );
     return this.chapterRepo.update(chapterId, { logo_path: storagePath });
   }
 

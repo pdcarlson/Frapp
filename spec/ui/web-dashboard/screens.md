@@ -243,7 +243,7 @@ A dismissible card (on `/chat` or as a banner in `#general`) nudges officers tow
 | Tasks | Kanban columns (TODO, IN_PROGRESS, COMPLETED, OVERDUE) or table view | Kanban or table |
 | Service Hours | Review queue (pending entries), approve/reject actions, stats | Queue + table |
 | Documents | Folder tree + document list, upload modal | Tree + list |
-| Reports | Report-type selector, date-range picker, format toggle (JSON/CSV), download | Form + preview |
+| Reports | Report-type selector, date-range picker, generate + download CSV + download PDF | Form + preview |
 | Polls | Poll list, create-poll form, results bar chart | List + chart |
 
 The standalone `/home` overview dashboard was removed in the chat-first product; the post-sign-in landing is `/chat` (a chat catch-up). Chapter health and quick actions are re-homed as inline chat artifacts.

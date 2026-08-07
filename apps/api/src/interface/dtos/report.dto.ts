@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   POINTS_WINDOWS,
   type PointsWindow,
@@ -57,4 +57,29 @@ export class ServiceReportDto {
   @IsOptional()
   @IsString()
   end_date?: string;
+}
+
+/**
+ * Envelope returned when `format=pdf`. The PDF itself is never streamed
+ * inline — it lands in a private bucket and the caller gets a time-limited
+ * signed URL (spec/behavior/reports.md, "Export Flow").
+ */
+export class ReportExportResponseDto {
+  @ApiProperty({ description: 'Signed download URL, valid for one hour' })
+  url: string;
+
+  @ApiProperty({ description: 'ISO timestamp at which the URL stops working' })
+  expires_at: string;
+
+  @ApiProperty({ description: 'URL lifetime in seconds', example: 3600 })
+  expires_in: number;
+
+  @ApiProperty({ description: 'Suggested download filename' })
+  filename: string;
+
+  @ApiProperty({ description: 'Bucket-relative object path' })
+  storage_path: string;
+
+  @ApiProperty({ description: 'Number of data rows in the document' })
+  row_count: number;
 }
