@@ -19,12 +19,18 @@ Jest is configured in `apps/api/package.json` with scripts:
 - `npm run test` — unit tests
 - `npm run test:watch` — watch mode
 - `npm run test:e2e` — E2E tests (uses `test/jest-e2e.json`)
+- `npm run test:ai-evals` — adversarial AI evals (uses `test/ai-evals/jest-ai-evals.json`)
 
-Both the unit and E2E suites run in CI in the **`api-tests`** job (`.github/workflows/ci.yml`) — it
-runs `npm run test -w apps/api` followed by `npm run test:e2e -w apps/api`. `api-tests` is a
-merge-blocking required check (see `scripts/configure-branch-protection.mjs`), so the E2E suite gates
-PRs to `main`/`production` without a separate status. The E2E specs override the Supabase client with
-mocks (see §6), so the job is deterministic and needs no live database or secrets.
+All three suites run in CI in the **`api-tests`** job (`.github/workflows/ci.yml`) — it runs
+`npm run test -w apps/api`, then `npm run test:e2e -w apps/api`, then
+`npm run test:ai-evals -w apps/api`. `api-tests` is a merge-blocking required check (see
+`scripts/configure-branch-protection.mjs`), so all three gate PRs to `main`/`production` without a
+separate status. The E2E specs override the Supabase client with mocks (see §6) and the evals are
+pure fixtures, so the job is deterministic and needs no live database or secrets.
+
+Each suite needs its own config because their file patterns don't overlap: unit jest is
+`rootDir: "src"` matching `*.spec.ts`, E2E matches `*.e2e-spec.ts` under `test/`, and the evals match
+`*.eval-spec.ts` under `test/ai-evals/`. A file in the wrong place runs in no suite at all.
 
 The typical Nest testing pattern:
 
@@ -85,7 +91,9 @@ Interceptors:
 
 The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/workflows/ci.yml` runs ESLint, TypeScript, **`npm run check:brand-assets`**, and (on pull requests) **`scripts/check-docs-impact.mjs`** so non-doc code changes must include related `docs/` or `spec/` updates in the same PR.
 
-The **`api-tests`** job runs **both** the unit suite (`npm run test -w apps/api`) and the E2E suite (`npm run test:e2e -w apps/api`) after building shared packages. Because the E2E specs mock Supabase (§6), the job stays deterministic in GitHub Actions and requires no external services.
+The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
+
+The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/internal/security/ai-prompt-injection.md`](../internal/security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.
 
 ## 5a. Chat hot-path tests (ADR-11 / #416)
 

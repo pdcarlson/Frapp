@@ -203,6 +203,14 @@ jobs:
       - name: Run API E2E tests
         run: npm run test:e2e -w apps/api
 
+      # Adversarial AI evals (spec §13 → Evals). Required to run on any change
+      # to prompts, retrieval or the tool registry; run unconditionally instead,
+      # which is a superset and costs ~1.5s. A separate path-gated job would add
+      # a checkout + `npm ci` + package build — minutes, against ADR-15's budget,
+      # to gate seconds of tests.
+      - name: Run AI evals
+        run: npm run test:ai-evals -w apps/api
+
   # ── Web unit tests (Vitest / jsdom) ─────────────────────────────────────
   web-tests:
     needs: [packages-build, changes]
