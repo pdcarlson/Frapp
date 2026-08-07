@@ -116,6 +116,37 @@ export class StudyService {
   }
 
   /**
+   * Watermark to restart from when a paused session resumes.
+   *
+   * `pauseSession` parks the watermark on the last whole credited minute, so
+   * `paused_at - last_heartbeat_at` is up to 59s of real, already-earned
+   * foreground time still owed to the member. Resuming at `now` would discard
+   * it — the very truncation `accrue()` exists to prevent, on the path that
+   * fires most often. Shifting the restart back by the owed remainder carries
+   * it into the next interval instead.
+   */
+  private resumeWatermark(session: StudySession, now: Date): string {
+    const owedMs =
+      new Date(session.paused_at as string).getTime() -
+      new Date(session.last_heartbeat_at).getTime();
+    // Clamp: a clock skew or a hand-edited row must never hand out free time.
+    const carry = Math.min(Math.max(owedMs, 0), MS_PER_MINUTE);
+    return new Date(now.getTime() - carry).toISOString();
+  }
+
+  /**
+   * True when the watermark is older than the stale-heartbeat window, i.e. the
+   * server has no recent proof the member was actually in the zone. Crediting
+   * that gap would bank unverified time.
+   */
+  private isStale(session: StudySession, now: Date): boolean {
+    const gap =
+      (now.getTime() - new Date(session.last_heartbeat_at).getTime()) /
+      MS_PER_MINUTE;
+    return gap > HEARTBEAT_STALE_MINUTES;
+  }
+
+  /**
    * Points for a finished session. Shared by COMPLETED and PAUSED_EXPIRED —
    * `spec/behavior/study-sessions.md` awards both on foreground minutes,
    * unlike EXPIRED / LOCATION_INVALID which award nothing.
@@ -365,27 +396,33 @@ export class StudyService {
     );
     if (expired) return expired;
 
+    // Location is checked before the implicit resume below, not after: the
+    // member may have left the zone while backgrounded, and this heartbeat is
+    // the only evidence available until the next one five minutes out.
+    const inside = pointInPolygon(lat, lng, geofence.coordinates);
+
     if (session.paused_at) {
-      // Inside grace. Paused time does not accrue, so restart the watermark
-      // here rather than crediting the gap.
+      if (!inside) {
+        return this.sessionRepo.update(session.id, {
+          status: 'LOCATION_INVALID',
+          end_time: now.toISOString(),
+        });
+      }
+      // Inside grace and back in the zone. Paused time does not accrue, so
+      // restart the watermark — carrying the pre-pause remainder with it.
       return this.sessionRepo.update(session.id, {
         paused_at: null,
-        last_heartbeat_at: now.toISOString(),
+        last_heartbeat_at: this.resumeWatermark(session, now),
       });
     }
 
-    const lastHeartbeat = new Date(session.last_heartbeat_at);
-    const staleMinutes =
-      (now.getTime() - lastHeartbeat.getTime()) / MS_PER_MINUTE;
-
-    if (staleMinutes > HEARTBEAT_STALE_MINUTES) {
+    if (this.isStale(session, now)) {
       return this.sessionRepo.update(session.id, {
         status: 'EXPIRED',
         end_time: now.toISOString(),
       });
     }
 
-    const inside = pointInPolygon(lat, lng, geofence.coordinates);
     if (!inside) {
       return this.sessionRepo.update(session.id, {
         status: 'LOCATION_INVALID',
@@ -442,6 +479,19 @@ export class StudyService {
     // Already paused and still inside grace — a duplicate pause (two tab-hide
     // events, a retry) must not restart the grace clock.
     if (session.paused_at) return session;
+
+    // A pause arriving long after the last heartbeat proves nothing about the
+    // gap before it: the member may have been away the whole time, and every
+    // other write path bounds crediting by the stale window. Without this,
+    // POSTing /pause after an hour of silence would bank the hour as
+    // foreground time and `stopSession` would skip its own stale check
+    // (paused_at governs there), so nothing downstream would catch it.
+    if (this.isStale(session, now)) {
+      return this.sessionRepo.update(session.id, {
+        status: 'EXPIRED',
+        end_time: now.toISOString(),
+      });
+    }
 
     const { totalMinutes, watermark } = this.accrue(session, now);
 
@@ -505,7 +555,7 @@ export class StudyService {
 
     return this.sessionRepo.update(session.id, {
       paused_at: null,
-      last_heartbeat_at: now.toISOString(),
+      last_heartbeat_at: this.resumeWatermark(session, now),
     });
   }
 
@@ -551,17 +601,11 @@ export class StudyService {
     // rule silently win and report the wrong status.
     const creditUpTo = session.paused_at ? new Date(session.paused_at) : now;
 
-    if (!session.paused_at) {
-      const staleMinutes =
-        (now.getTime() - new Date(session.last_heartbeat_at).getTime()) /
-        MS_PER_MINUTE;
-
-      if (staleMinutes > HEARTBEAT_STALE_MINUTES) {
-        return this.sessionRepo.update(session.id, {
-          status: 'EXPIRED',
-          end_time: now.toISOString(),
-        });
-      }
+    if (!session.paused_at && this.isStale(session, now)) {
+      return this.sessionRepo.update(session.id, {
+        status: 'EXPIRED',
+        end_time: now.toISOString(),
+      });
     }
 
     const { totalMinutes, watermark } = this.accrue(session, creditUpTo);

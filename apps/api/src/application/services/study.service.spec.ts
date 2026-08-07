@@ -763,6 +763,39 @@ describe('StudyService', () => {
           NotFoundException,
         );
       });
+
+      // A pause proves nothing about the gap that preceded it. Crediting an
+      // unheartbeaten hour would bank time the server never verified — and
+      // stopSession skips its own stale check once paused_at is set, so
+      // nothing downstream would catch it.
+      it('expires instead of banking a gap older than the stale window', async () => {
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2026-02-26T11:05:00.000Z'));
+        // Watermark still at 10:05 — an hour with no heartbeat.
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
+          runningAt1005,
+        );
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        mockSessionRepo.update.mockResolvedValue({
+          ...runningAt1005,
+          status: 'EXPIRED',
+        });
+
+        const result = await service.pauseSession('user-1', 'ch-1');
+
+        expect(result.status).toBe('EXPIRED');
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          expect.objectContaining({ status: 'EXPIRED' }),
+        );
+        // Critically, the 60-minute gap was never credited.
+        expect(mockSessionRepo.update).not.toHaveBeenCalledWith(
+          'sess-1',
+          expect.objectContaining({ total_foreground_minutes: 65 }),
+        );
+        expect(mockPointTxnRepo.create).not.toHaveBeenCalled();
+      });
     });
 
     describe('resumeSession', () => {
@@ -870,6 +903,38 @@ describe('StudyService', () => {
         expect(result.status).toBe('LOCATION_INVALID');
       });
 
+      // Regression: resume used to reset the watermark to `now`, throwing away
+      // the sub-minute remainder pauseSession had deliberately parked. Across
+      // many tab switches that is the exact compounding loss accrue() exists
+      // to prevent.
+      it('carries the pre-pause sub-minute remainder across the resume', async () => {
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
+        // Watermark parked at 10:12:00, paused at 10:12:30 -> 30s still owed.
+        // Resuming at 10:15 is 2m30s paused, comfortably inside the 5m grace.
+        const paused: StudySession = {
+          ...baseSession,
+          last_heartbeat_at: '2026-02-26T10:12:00.000Z',
+          paused_at: '2026-02-26T10:12:30.000Z',
+          total_foreground_minutes: 12,
+        };
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        mockSessionRepo.update.mockResolvedValue({
+          ...paused,
+          paused_at: null,
+        });
+
+        await service.resumeSession('user-1', 'ch-1', 5, 5);
+
+        expect(mockSessionRepo.update).toHaveBeenCalledWith('sess-1', {
+          paused_at: null,
+          // 10:15:00 minus the 30s owed — not 10:15:00 flat.
+          last_heartbeat_at: '2026-02-26T10:14:30.000Z',
+        });
+      });
+
       it('is a no-op on a session that was never paused', async () => {
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(
           runningAt1005,
@@ -962,6 +1027,32 @@ describe('StudyService', () => {
           paused_at: null,
           last_heartbeat_at: '2026-02-26T10:15:00.000Z',
         });
+      });
+
+      // The implicit resume is the path taken by a client that never calls
+      // /resume, so skipping the polygon check here would let a member resume
+      // from anywhere and accrue from the next heartbeat onward.
+      it('rejects an implicit resume from outside the geofence', async () => {
+        jest
+          .useFakeTimers()
+          .setSystemTime(new Date('2026-02-26T10:15:00.000Z'));
+        const paused = pausedAt('2026-02-26T10:12:00.000Z', {
+          total_foreground_minutes: 12,
+        });
+        mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
+        mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
+        mockSessionRepo.update.mockResolvedValue({
+          ...paused,
+          status: 'LOCATION_INVALID',
+        });
+
+        const result = await service.heartbeat('user-1', 'ch-1', 99, 99);
+
+        expect(result.status).toBe('LOCATION_INVALID');
+        expect(mockSessionRepo.update).toHaveBeenCalledWith(
+          'sess-1',
+          expect.objectContaining({ status: 'LOCATION_INVALID' }),
+        );
       });
 
       it('expires a heartbeat that arrives after grace', async () => {

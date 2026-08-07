@@ -199,18 +199,37 @@ export function StudyPage() {
     [toast],
   );
 
+  // `useMutation` hands back a fresh object on every render, so none of these
+  // are safe to name as effect dependencies — an effect that depends on one
+  // tears down and re-runs on every render, and `mutateAsync` itself triggers a
+  // render by flipping `isPending`. Holding the callables in a ref keeps the
+  // effects below keyed on real state transitions instead.
+  const apiRef = useRef({
+    heartbeat: heartbeat.mutateAsync,
+    pause: pauseSession.mutateAsync,
+    resume: resumeSession.mutateAsync,
+    settle: settleIfEnded,
+  });
+  useEffect(() => {
+    apiRef.current = {
+      heartbeat: heartbeat.mutateAsync,
+      pause: pauseSession.mutateAsync,
+      resume: resumeSession.mutateAsync,
+      settle: settleIfEnded,
+    };
+  });
+
   const sendHeartbeat = useCallback(async () => {
-    if (!activeSession) return;
     try {
       const pos = await getCurrentPosition();
-      const result = await heartbeat.mutateAsync({
+      const result = await apiRef.current.heartbeat({
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
       });
       setGeolocationError(null);
       // A heartbeat can come back terminal (stale, outside the polygon, or a
       // grace window that lapsed) — surface that instead of ticking on.
-      settleIfEnded(result);
+      apiRef.current.settle(result);
     } catch (error) {
       setGeolocationError(
         getErrorMessage(
@@ -219,7 +238,7 @@ export function StudyPage() {
         ),
       );
     }
-  }, [activeSession, heartbeat, settleIfEnded]);
+  }, []);
 
   // Mirror foreground state to the server. A hidden tab or a manual pause is
   // the web adaptation of the mobile background signal — the server owns the
@@ -231,32 +250,36 @@ export function StudyPage() {
   useEffect(() => {
     if (!activeSession) {
       lastForegroundRef.current = true;
-      return undefined;
+      return;
     }
 
     const foreground = !isPaused && !pageHidden;
     // Idempotent on re-render: only an actual transition reaches the server.
-    if (foreground === lastForegroundRef.current) return undefined;
+    if (foreground === lastForegroundRef.current) return;
     lastForegroundRef.current = foreground;
 
-    let cancelled = false;
+    // Deliberately no cancellation flag. The response is the only way
+    // PAUSED_EXPIRED reaches this page, so it has to be handled even if the
+    // component re-rendered (or the session ended) while the request was in
+    // flight — `settleIfEnded` is a no-op for anything non-terminal.
     void (async () => {
       try {
-        let result: unknown;
-        if (foreground) {
-          const pos = await getCurrentPosition();
-          result = await resumeSession.mutateAsync({
-            lat: pos.coords.latitude,
-            lng: pos.coords.longitude,
-          });
-        } else {
-          result = await pauseSession.mutateAsync();
-        }
-        if (cancelled) return;
+        const result = foreground
+          ? await (async () => {
+              const pos = await getCurrentPosition();
+              return apiRef.current.resume({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+              });
+            })()
+          : await apiRef.current.pause();
         setGeolocationError(null);
-        settleIfEnded(result);
+        apiRef.current.settle(result);
       } catch (error) {
-        if (cancelled) return;
+        // Roll the ref back so the next render retries instead of believing
+        // the server agrees with us. A pause that silently failed would let
+        // background time accrue again — the whole hole being closed here.
+        lastForegroundRef.current = !foreground;
         setGeolocationError(
           getErrorMessage(
             error,
@@ -267,18 +290,7 @@ export function StudyPage() {
         );
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    activeSession,
-    isPaused,
-    pageHidden,
-    pauseSession,
-    resumeSession,
-    settleIfEnded,
-  ]);
+  }, [activeSession, isPaused, pageHidden]);
 
   // Start / stop the 1-second elapsed timer and the 5-minute heartbeat
   // interval based on visibility + pause state. The server also expires

@@ -80,13 +80,24 @@ to a route. The caller's effective permission set is loaded once via
 
 **Web study hours** is a deliberate adaptation of the mobile foreground
 enforcement rule. The `/study` timer uses the `Page Visibility API` — when
-the tab is hidden the client-side elapsed timer pauses and the heartbeat
-stops firing. A `pagehide` listener also best-effort stops the session when
-the tab closes (the server additionally expires sessions after 10 minutes
-of stale heartbeats). Members who need uninterrupted tracking should use
-the mobile app, which keeps the session alive through OS foreground
-controls. This divergence is called out in-copy on `/study` so there are
-no surprises.
+the tab is hidden (or the member hits the manual pause button) the client
+calls `POST /v1/study-sessions/pause`, so the **server** stops crediting
+time and starts the grace clock; returning calls `/resume` with fresh
+coordinates. The pause is server-owned on purpose: a client that only
+stopped its own heartbeat left the server unable to tell "backgrounded"
+from "heartbeat in flight", and the gap was credited as study time. If the
+member does not come back within the study zone's `pause_grace_minutes`,
+the session ends as `PAUSED_EXPIRED`, keeping only the minutes banked
+before the pause; the page surfaces that outcome as a toast. A `pagehide`
+listener still best-effort stops the session when the tab closes, and the
+server additionally expires sessions after 10 minutes of stale heartbeats.
+Members who need uninterrupted tracking should use the mobile app once its
+study screen exists. This divergence is called out in-copy on `/study` so
+there are no surprises. Full rules: [`spec/behavior/study-sessions.md`](../../behavior/study-sessions.md).
+
+**Study Zones** (`/geofences`, `geofences:manage`) configures each zone's
+polygon plus its points rate, minimum session length, and **pause grace
+(min)** — the window above, per zone.
 
 **Default route.** Chat is the default landing surface for the chat-first
 chat-first rework. The unauthenticated landing page lives at `/` and redirects to
