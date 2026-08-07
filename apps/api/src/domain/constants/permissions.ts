@@ -179,7 +179,10 @@ export const DEFAULT_SYSTEM_ROLES = [
     // to.
     name: ALUMNI_ROLE_NAME,
     system_key: SystemRoleKeys.ALUMNI,
-    permissions: [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ALUMNI_POST],
+    permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.ALUMNI_POST,
+    ],
     is_system: true,
     display_order: 7,
     color: '#6B7280',
@@ -199,11 +202,26 @@ export const DEFAULT_SYSTEM_ROLES = [
  * specifies) plus `alumni:post`, which is what marks it alumni-writable.
  */
 export const DEFAULT_CHANNELS = [
-  { name: 'general', type: 'PUBLIC', is_read_only: false, required_permissions: null },
-  { name: 'announcements', type: 'PUBLIC', is_read_only: true, required_permissions: null },
+  {
+    name: 'general',
+    type: 'PUBLIC',
+    is_read_only: false,
+    required_permissions: null,
+  },
+  {
+    name: 'announcements',
+    type: 'PUBLIC',
+    is_read_only: true,
+    required_permissions: null,
+  },
   // System-write, member-read audit feed. The Chunk 02 audit bridge and the
   // onboarding welcome message post system_audit messages here / to #general.
-  { name: 'chapter-audit', type: 'PUBLIC', is_read_only: true, required_permissions: null },
+  {
+    name: 'chapter-audit',
+    type: 'PUBLIC',
+    is_read_only: true,
+    required_permissions: null,
+  },
   {
     name: 'alumni',
     type: 'ROLE_GATED',
