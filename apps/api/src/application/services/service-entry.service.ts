@@ -18,6 +18,7 @@ import {
   ChapterWorkflowsService,
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
+import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 
 /** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
 const DEFAULT_MINUTES_PER_POINT = 60;
@@ -146,6 +147,15 @@ export class ServiceEntryService {
     ) {
       throw new BadRequestException(
         'proof_path must be a storage path within the chapter service-proof folder',
+      );
+    }
+    // The literal-segment check above misses the percent-encoded and
+    // control-character spellings, so run the shared helper too — this path is
+    // then validated identically to the other confirm-upload flows. It runs
+    // second so a plainly wrong path keeps its more helpful message.
+    if (isUnsafeStoragePath(proofPath)) {
+      throw new BadRequestException(
+        'proof_path must not contain relative path segments',
       );
     }
 

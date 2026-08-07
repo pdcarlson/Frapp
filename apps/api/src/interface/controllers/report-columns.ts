@@ -1,29 +1,63 @@
-export const ATTENDANCE_COLUMNS = [
-  { key: 'member_name', header: 'Member Name' },
-  { key: 'event_name', header: 'Event Name' },
-  { key: 'event_date', header: 'Date' },
-  { key: 'status', header: 'Status' },
-  { key: 'check_in_time', header: 'Check-in Time' },
+import type { ReportPdfColumn } from '../../domain/adapters/pdf.interface';
+
+/**
+ * Column descriptors shared by the CSV writer and the PDF renderer, so the two
+ * export formats cannot drift apart on which columns exist, their order, or
+ * their labels. `weight` is PDF-only page-layout metadata; `toCSV` ignores it.
+ *
+ * Cell *values* are deliberately rendered differently: `toCSV` emits JSON for
+ * composite values so a spreadsheet import stays machine-parseable, while the
+ * PDF renderer flattens them for a human reader ("ATTENDANCE: 12, SERVICE: 4"
+ * rather than `{"ATTENDANCE":12,"SERVICE":4}`). Same data, different audience.
+ */
+export const ATTENDANCE_COLUMNS: ReportPdfColumn[] = [
+  { key: 'member_name', header: 'Member Name', weight: 1.3 },
+  { key: 'event_name', header: 'Event Name', weight: 1.6 },
+  { key: 'event_date', header: 'Date', weight: 0.9 },
+  { key: 'status', header: 'Status', weight: 0.7 },
+  { key: 'check_in_time', header: 'Check-in Time', weight: 1 },
 ];
 
-export const POINTS_COLUMNS = [
-  { key: 'member_name', header: 'Member Name' },
-  { key: 'total_points', header: 'Total Points' },
-  { key: 'breakdown_by_category', header: 'Breakdown by Category' },
+export const POINTS_COLUMNS: ReportPdfColumn[] = [
+  { key: 'member_name', header: 'Member Name', weight: 1.2 },
+  { key: 'total_points', header: 'Total Points', weight: 0.6 },
+  {
+    key: 'breakdown_by_category',
+    header: 'Breakdown by Category',
+    weight: 2.6,
+  },
 ];
 
-export const ROSTER_COLUMNS = [
-  { key: 'name', header: 'Name' },
-  { key: 'email', header: 'Email' },
-  { key: 'roles', header: 'Roles' },
-  { key: 'join_date', header: 'Join Date' },
-  { key: 'point_balance', header: 'Point Balance' },
+export const ROSTER_COLUMNS: ReportPdfColumn[] = [
+  { key: 'name', header: 'Name', weight: 1.2 },
+  { key: 'email', header: 'Email', weight: 1.6 },
+  { key: 'roles', header: 'Roles', weight: 1.2 },
+  { key: 'join_date', header: 'Join Date', weight: 0.8 },
+  { key: 'point_balance', header: 'Point Balance', weight: 0.7 },
 ];
 
-export const SERVICE_COLUMNS = [
-  { key: 'member_name', header: 'Member Name' },
-  { key: 'date', header: 'Date' },
-  { key: 'duration_minutes', header: 'Duration (minutes)' },
-  { key: 'description', header: 'Description' },
-  { key: 'status', header: 'Status' },
+export const SERVICE_COLUMNS: ReportPdfColumn[] = [
+  { key: 'member_name', header: 'Member Name', weight: 1.2 },
+  { key: 'date', header: 'Date', weight: 0.8 },
+  { key: 'duration_minutes', header: 'Duration (minutes)', weight: 0.9 },
+  { key: 'description', header: 'Description', weight: 2.2 },
+  { key: 'status', header: 'Status', weight: 0.7 },
 ];
+
+/** The four report kinds the export endpoints expose. */
+export type ReportKind = 'attendance' | 'points' | 'roster' | 'service';
+
+export const REPORT_COLUMNS: Record<ReportKind, ReportPdfColumn[]> = {
+  attendance: ATTENDANCE_COLUMNS,
+  points: POINTS_COLUMNS,
+  roster: ROSTER_COLUMNS,
+  service: SERVICE_COLUMNS,
+};
+
+/** Human title rendered into the PDF header band. */
+export const REPORT_TITLES: Record<ReportKind, string> = {
+  attendance: 'Attendance Report',
+  points: 'Points Report',
+  roster: 'Member Roster',
+  service: 'Service Hours Report',
+};

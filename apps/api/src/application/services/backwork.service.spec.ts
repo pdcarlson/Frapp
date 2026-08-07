@@ -90,6 +90,8 @@ describe('BackworkService', () => {
     mockStorageProvider = {
       getSignedUploadUrl: jest.fn(),
       getSignedDownloadUrl: jest.fn(),
+      uploadFile: jest.fn(),
+      downloadFile: jest.fn(),
       deleteFile: jest.fn(),
       listFiles: jest.fn(),
       deleteFiles: jest.fn(),
@@ -230,6 +232,29 @@ describe('BackworkService', () => {
         }),
       ).rejects.toThrow(ConflictException);
     });
+
+    it.each([
+      'chapters/ch-1/backwork/../../../branding/chapters/ch-2/branding/logo.png',
+      'chapters/ch-1/backwork/%2e%2e/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/backwork/p%/%2e%2e/branding/chapters/ch-2/logo.png',
+      'chapters/ch-1/backwork/.\t./branding/chapters/ch-2/logo.png',
+    ])(
+      'rejects a prefix-passing traversal in storage_path (%p)',
+      async (storagePath) => {
+        // The startsWith check accepts all of these. Persisting one would let
+        // GET /backwork/:id mint a service-role-signed URL to an arbitrary
+        // object in any bucket, since the value is echoed back to storage.
+        await expect(
+          service.confirmUpload({
+            chapter_id: 'ch-1',
+            uploader_id: 'user-1',
+            storage_path: storagePath,
+            file_hash: 'newhash',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockResourceRepo.create).not.toHaveBeenCalled();
+      },
+    );
 
     it('should reject a storage_path outside the chapter (cross-chapter)', async () => {
       await expect(
