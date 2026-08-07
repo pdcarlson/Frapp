@@ -1,11 +1,19 @@
-import { useMemo } from "react";
-import { Pressable, StyleSheet, Switch, Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { FrappTokens } from "@repo/theme/tokens";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 import {
   type PreferenceState,
+  type QuietHoursWindow,
   useNotificationPreferencesSync,
 } from "@/lib/use-notification-preferences-sync";
 
@@ -15,12 +23,52 @@ type PreferenceRow = {
   description: string;
 };
 
+const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
+
+/**
+ * The API stores `quiet_hours_tz` as a free-text string, and push delivery feeds it
+ * straight to `Intl.DateTimeFormat`, which throws on an unknown zone. Reject a bad
+ * zone at the input rather than writing one the server cannot format with.
+ *
+ * Fails open when the runtime cannot validate zones at all, so a device with a
+ * stripped-down `Intl` never blocks editing.
+ */
+function isSupportedTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
+  } catch {
+    return true;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Must agree with the hook's normalizer, including the range check — otherwise a
+ * value like `24:00` passes here, is rejected there, and the edit silently no-ops
+ * while the field still shows the uncommitted text.
+ */
+function isValidTimeInput(value: string): boolean {
+  if (!TIME_INPUT_PATTERN.test(value)) return false;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours <= 23 && minutes <= 59;
+}
+
+/** "22:00" -> "10:00 PM". Falls back to the raw value for anything unparseable. */
+function formatTimeOfDay(value: string): string {
+  if (!isValidTimeInput(value)) return value;
+  const [rawHours, rawMinutes] = value.split(":");
+  const hours = Number(rawHours);
+  const suffix = hours < 12 ? "AM" : "PM";
+  const displayHours = hours % 12 === 0 ? 12 : hours % 12;
+  return `${displayHours}:${rawMinutes} ${suffix}`;
+}
+
 const PREFERENCE_ROWS: PreferenceRow[] = [
-  {
-    key: "quietHoursEnabled",
-    title: "Quiet hours",
-    description: "Silence normal-priority pushes from 10:00 PM to 8:00 AM.",
-  },
   {
     key: "dmAlertsEnabled",
     title: "Direct message alerts",
@@ -75,6 +123,133 @@ function PreferenceToggleRow({
   );
 }
 
+type QuietHoursCardProps = {
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  quietHoursWindow: QuietHoursWindow;
+  onWindowChange: (next: QuietHoursWindow) => void;
+  tokens: FrappTokens;
+  styles: ReturnType<typeof createStyles>;
+};
+
+function QuietHoursCard({
+  enabled,
+  onEnabledChange,
+  quietHoursWindow,
+  onWindowChange,
+  tokens,
+  styles,
+}: QuietHoursCardProps) {
+  const [draft, setDraft] = useState<QuietHoursWindow>(quietHoursWindow);
+
+  // Re-sync when the effective window changes underneath us: a server hydrate, an
+  // edit made on web, or the remembered window being restored on re-enable.
+  useEffect(() => {
+    setDraft(quietHoursWindow);
+  }, [quietHoursWindow]);
+
+  const draftIsValid =
+    isValidTimeInput(draft.start.trim()) &&
+    isValidTimeInput(draft.end.trim()) &&
+    draft.tz.trim().length > 0 &&
+    isSupportedTimeZone(draft.tz.trim());
+
+  const commitDraft = () => {
+    if (!draftIsValid) {
+      setDraft(quietHoursWindow);
+      return;
+    }
+    onWindowChange({
+      start: draft.start.trim(),
+      end: draft.end.trim(),
+      tz: draft.tz.trim(),
+    });
+  };
+
+  return (
+    <View style={styles.quietHoursCard}>
+      <View style={styles.quietHoursHeaderRow}>
+        <View style={styles.toggleTextStack}>
+          <Text style={styles.toggleTitle}>Quiet hours</Text>
+          <Text style={styles.toggleDescription}>
+            {enabled
+              ? `Silence normal-priority pushes from ${formatTimeOfDay(
+                  quietHoursWindow.start,
+                )} to ${formatTimeOfDay(quietHoursWindow.end)}.`
+              : "Silence normal-priority pushes during a window you choose."}
+          </Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={onEnabledChange}
+          accessibilityLabel="Quiet hours"
+          trackColor={{
+            false: tokens.color.surface.border,
+            true: tokens.color.feedback.infoBorderStrong,
+          }}
+          thumbColor={enabled ? tokens.color.brand.royalBlue : tokens.color.surface.card}
+        />
+      </View>
+
+      <View style={styles.quietHoursFieldRow}>
+        <View style={styles.quietHoursField}>
+          <Text style={styles.quietHoursFieldLabel}>Start</Text>
+          <TextInput
+            value={draft.start}
+            onChangeText={(value) => setDraft((current) => ({ ...current, start: value }))}
+            onBlur={commitDraft}
+            placeholder="22:00"
+            placeholderTextColor={tokens.color.text.muted}
+            accessibilityLabel="Quiet hours start time"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
+            style={styles.quietHoursInput}
+          />
+        </View>
+        <View style={styles.quietHoursField}>
+          <Text style={styles.quietHoursFieldLabel}>End</Text>
+          <TextInput
+            value={draft.end}
+            onChangeText={(value) => setDraft((current) => ({ ...current, end: value }))}
+            onBlur={commitDraft}
+            placeholder="08:00"
+            placeholderTextColor={tokens.color.text.muted}
+            accessibilityLabel="Quiet hours end time"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
+            style={styles.quietHoursInput}
+          />
+        </View>
+      </View>
+
+      <View style={styles.quietHoursField}>
+        <Text style={styles.quietHoursFieldLabel}>Timezone</Text>
+        <TextInput
+          value={draft.tz}
+          onChangeText={(value) => setDraft((current) => ({ ...current, tz: value }))}
+          onBlur={commitDraft}
+          placeholder="America/New_York"
+          placeholderTextColor={tokens.color.text.muted}
+          accessibilityLabel="Quiet hours timezone"
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.quietHoursInput}
+        />
+      </View>
+
+      <Text style={draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError}>
+        {!draftIsValid
+          ? "Use 24-hour HH:mm times (e.g. 21:00) and an IANA timezone."
+          : enabled
+            ? "Applies to this account on every device."
+            : "Saved for when you turn quiet hours back on."}
+      </Text>
+    </View>
+  );
+}
+
 export default function PreferencesScreen() {
   const { tokens, themePreference, resolvedTheme, setThemePreference } =
     useFrappTheme();
@@ -82,6 +257,8 @@ export default function PreferencesScreen() {
   const {
     preferences,
     setPreference,
+    quietHoursWindow,
+    setQuietHoursWindow,
     isHydrated,
     hydrationRecovered,
     persistenceFailed,
@@ -132,6 +309,15 @@ export default function PreferencesScreen() {
         <Text style={styles.summaryMeta}>{summaryMeta}</Text>
       </View>
 
+      <QuietHoursCard
+        enabled={preferences.quietHoursEnabled}
+        onEnabledChange={(value) => setPreference("quietHoursEnabled", value)}
+        quietHoursWindow={quietHoursWindow}
+        onWindowChange={setQuietHoursWindow}
+        tokens={tokens}
+        styles={styles}
+      />
+
       {PREFERENCE_ROWS.map((row) => (
         <PreferenceToggleRow
           key={row.key}
@@ -180,7 +366,13 @@ export default function PreferencesScreen() {
       <TaskLoopCard
         category="Quiet hours"
         state={quietHoursSync}
-        title={preferences.quietHoursEnabled ? "10:00 PM → 8:00 AM" : "Disabled"}
+        title={
+          preferences.quietHoursEnabled
+            ? `${formatTimeOfDay(quietHoursWindow.start)} → ${formatTimeOfDay(
+                quietHoursWindow.end,
+              )}`
+            : "Disabled"
+        }
         body={
           quietHoursSync === "synced"
             ? "Quiet-hour preference is synced to your account."
@@ -277,6 +469,53 @@ function createStyles(tokens: FrappTokens) {
       flex: 1,
       gap: 4,
       paddingRight: 12,
+    },
+    quietHoursCard: {
+      borderRadius: tokens.radius.lg,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.card,
+      padding: tokens.spacing.lg,
+      gap: 12,
+    },
+    quietHoursHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+    },
+    quietHoursFieldRow: {
+      flexDirection: "row",
+      gap: 12,
+    },
+    quietHoursField: {
+      flex: 1,
+    },
+    quietHoursFieldLabel: {
+      fontSize: tokens.type.label,
+      fontWeight: "700",
+      letterSpacing: 0.3,
+      textTransform: "uppercase",
+      color: tokens.color.text.secondary,
+    },
+    quietHoursInput: {
+      marginTop: 6,
+      borderRadius: tokens.radius.md,
+      borderWidth: 1,
+      borderColor: tokens.color.surface.border,
+      backgroundColor: tokens.color.surface.muted,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: tokens.color.text.primary,
+    },
+    quietHoursHint: {
+      fontSize: tokens.type.meta,
+      color: tokens.color.text.secondary,
+    },
+    quietHoursHintError: {
+      fontSize: tokens.type.meta,
+      fontWeight: "600",
+      color: tokens.color.feedback.errorText,
     },
     toggleTitle: {
       fontSize: tokens.type.section - 2,
