@@ -333,6 +333,59 @@ describe("useNotificationPreferencesSync", () => {
     expect(settings.quiet_hours_tz).toBe("America/Chicago");
   });
 
+  it("reads a window whose Postgres time carries fractional seconds", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const { client } = createStatefulClient({
+      quiet_hours_start: "21:30:00.5",
+      quiet_hours_end: "07:15:00",
+      quiet_hours_tz: "America/Chicago",
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.quietHoursSync).toBe("synced");
+      expect(result.current.quietHoursWindow).toEqual({
+        start: "21:30",
+        end: "07:15",
+        tz: "America/Chicago",
+      });
+    });
+
+    expect(result.current.preferences.quietHoursEnabled).toBe(true);
+  });
+
+  it("treats an out-of-range stored time as no window", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const { client } = createStatefulClient({
+      quiet_hours_start: "24:00:00",
+      quiet_hours_end: "07:00:00",
+      quiet_hours_tz: "America/Chicago",
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.quietHoursSync).toBe("synced");
+    });
+
+    // The server cannot enforce hour 24, so reporting it as "on" would be a lie.
+    await waitFor(() => {
+      expect(result.current.preferences.quietHoursEnabled).toBe(false);
+    });
+    expect(result.current.quietHoursWindow).toEqual({
+      start: "22:00",
+      end: "08:00",
+      tz: expect.any(String),
+    });
+  });
+
   it("restores a window cached from a previous app run when the server has none", async () => {
     mockState.secureStoreToken = "test-token";
     mockState.asyncStorageMap.set(

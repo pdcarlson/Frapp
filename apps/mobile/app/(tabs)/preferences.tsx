@@ -25,14 +25,44 @@ type PreferenceRow = {
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
 
+/**
+ * The API stores `quiet_hours_tz` as a free-text string, and push delivery feeds it
+ * straight to `Intl.DateTimeFormat`, which throws on an unknown zone. Reject a bad
+ * zone at the input rather than writing one the server cannot format with.
+ *
+ * Fails open when the runtime cannot validate zones at all, so a device with a
+ * stripped-down `Intl` never blocks editing.
+ */
+function isSupportedTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
+  } catch {
+    return true;
+  }
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Must agree with the hook's normalizer, including the range check — otherwise a
+ * value like `24:00` passes here, is rejected there, and the edit silently no-ops
+ * while the field still shows the uncommitted text.
+ */
+function isValidTimeInput(value: string): boolean {
+  if (!TIME_INPUT_PATTERN.test(value)) return false;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours <= 23 && minutes <= 59;
+}
+
 /** "22:00" -> "10:00 PM". Falls back to the raw value for anything unparseable. */
 function formatTimeOfDay(value: string): string {
-  const match = TIME_INPUT_PATTERN.exec(value);
-  if (!match) return value;
+  if (!isValidTimeInput(value)) return value;
   const [rawHours, rawMinutes] = value.split(":");
   const hours = Number(rawHours);
-  const minutes = Number(rawMinutes);
-  if (hours > 23 || minutes > 59) return value;
   const suffix = hours < 12 ? "AM" : "PM";
   const displayHours = hours % 12 === 0 ? 12 : hours % 12;
   return `${displayHours}:${rawMinutes} ${suffix}`;
@@ -119,9 +149,10 @@ function QuietHoursCard({
   }, [quietHoursWindow]);
 
   const draftIsValid =
-    TIME_INPUT_PATTERN.test(draft.start.trim()) &&
-    TIME_INPUT_PATTERN.test(draft.end.trim()) &&
-    draft.tz.trim().length > 0;
+    isValidTimeInput(draft.start.trim()) &&
+    isValidTimeInput(draft.end.trim()) &&
+    draft.tz.trim().length > 0 &&
+    isSupportedTimeZone(draft.tz.trim());
 
   const commitDraft = () => {
     if (!draftIsValid) {

@@ -17,8 +17,12 @@ const DEFAULT_QUIET_HOURS_END = "08:00";
 const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
 const MAX_QUIET_HOURS_TZ_LENGTH = 100;
 
-/** Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss). */
-const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2})?$/;
+/**
+ * Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss), and
+ * additionally tolerates the fractional seconds a Postgres `time` column can hold —
+ * reading those as "no window" would wrongly report quiet hours as off.
+ */
+const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
 function resolveDeviceTimeZone(): string {
   try {
@@ -362,7 +366,9 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
         };
         if (value) {
           const window = resolveWindowForEnable();
-          setRememberedWindow(window);
+          setRememberedWindow((current) =>
+            sameQuietHoursWindow(current, window) ? current : window,
+          );
           body = {
             quiet_hours_start: window.start,
             quiet_hours_end: window.end,
