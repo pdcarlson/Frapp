@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Loader2, Scale, WandSparkles } from "lucide-react";
+import { Loader2, Scale, WandSparkles } from "lucide-react";
 import { useAdjustPoints, useMembers } from "@repo/hooks";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,6 @@ type MemberOption = {
 type PointsAdjustmentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  usingPreviewData: boolean;
   onAdjusted: () => Promise<void> | void;
 };
 
@@ -39,7 +38,6 @@ function getErrorMessage(error: unknown): string {
 export function PointsAdjustmentDialog({
   open,
   onOpenChange,
-  usingPreviewData,
   onAdjusted,
 }: PointsAdjustmentDialogProps) {
   const adjustPointsMutation = useAdjustPoints();
@@ -79,9 +77,7 @@ export function PointsAdjustmentDialog({
 
   const submitLabel = adjustPointsMutation.isPending
     ? "Submitting..."
-    : usingPreviewData
-      ? "Simulate adjustment"
-      : "Submit adjustment";
+    : "Submit adjustment";
 
   async function handleSubmit() {
     const parsedAmount = Number(amount);
@@ -117,15 +113,6 @@ export function PointsAdjustmentDialog({
         title: "Reason required",
         description: "Add a reason with at least 8 characters for audit clarity.",
         variant: "destructive",
-      });
-      return;
-    }
-
-    if (usingPreviewData) {
-      toast({
-        title: "Live points adjustment unavailable",
-        description:
-          "Complete chapter auth/bootstrap and reload live member data before adjusting points.",
       });
       return;
     }
@@ -176,15 +163,6 @@ export function PointsAdjustmentDialog({
             Apply a manual adjustment with a required reason for audit trail integrity.
           </DialogDescription>
         </DialogHeader>
-
-        {usingPreviewData ? (
-          <div className="flex items-start gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-            <div>
-              Preview mode is active. Submissions are simulated to validate copy and form behavior.
-            </div>
-          </div>
-        ) : null}
 
         <div className="grid gap-3">
           <label className="space-y-1 text-sm">
