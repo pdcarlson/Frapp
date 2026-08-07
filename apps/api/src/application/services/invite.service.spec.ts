@@ -17,6 +17,7 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import type { Invite } from '../../domain/entities/invite.entity';
 import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 
 describe('InviteService', () => {
@@ -53,6 +54,7 @@ describe('InviteService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -157,6 +159,7 @@ describe('InviteService', () => {
       id: 'role-member',
       chapter_id: 'ch-1',
       name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
       permissions: [],
       is_system: true,
       display_order: 3,
@@ -210,6 +213,7 @@ describe('InviteService', () => {
       id: 'role-member',
       chapter_id: 'ch-1',
       name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
       permissions: [],
       is_system: true,
       display_order: 3,
@@ -240,6 +244,52 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+  });
+
+  // FRA-320: the fallback used to match the literal name 'Member', so a chapter
+  // that relabelled its seeded Member role left redeemers with no role at all.
+  it('falls back to the seeded Member role even after it is renamed', async () => {
+    const invite: Invite = {
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'NonExistentRole',
+      expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    };
+    const renamedMemberRole: Role = {
+      id: 'role-member',
+      chapter_id: 'ch-1',
+      name: 'Active Brother',
+      system_key: SystemRoleKeys.MEMBER,
+      permissions: [],
+      is_system: true,
+      display_order: 3,
+      color: null,
+      created_at: '2024-01-01',
+    };
+    mockInviteRepo.findByToken.mockResolvedValue(invite);
+    mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+    mockInviteRepo.markUsedAtomically.mockResolvedValue(true);
+    mockRoleRepo.findByChapter.mockResolvedValue([renamedMemberRole]);
+    mockMemberRepo.create.mockResolvedValue({
+      id: 'member-1',
+      user_id: 'user-2',
+      chapter_id: 'ch-1',
+      role_ids: [renamedMemberRole.id],
+      custom_role_ids: [],
+      has_completed_onboarding: false,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    await service.redeem('test-uuid', 'user-2');
+
+    expect(mockMemberRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({ role_ids: ['role-member'] }),
+    );
   });
 
   it('should reject expired invite', async () => {
@@ -347,6 +397,7 @@ describe('InviteService', () => {
       id: 'role-member',
       chapter_id: 'ch-1',
       name: 'Member',
+      system_key: SystemRoleKeys.MEMBER,
       permissions: [],
       is_system: true,
       display_order: 3,

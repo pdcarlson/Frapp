@@ -1,6 +1,6 @@
 # State Microcopy Pack
 
-> Last updated: 2026-04-17  
+> Last updated: 2026-08-06  
 > Scope: dashboard and mobile state messaging
 
 This pack defines approved copy for high-frequency state messages so members and admins see consistent language across surfaces.
@@ -11,7 +11,8 @@ This pack defines approved copy for high-frequency state messages so members and
 |---|---|---|
 | Loading | — | `Loading chapter members...` |
 | Empty | `No members match this view` | `Try a broader search or invite your first members to populate this directory.` |
-| Preview/unauthenticated | `Showing preview member data` | `Sign in to load live chapter member records.` |
+| Error | `Unable to load live member records` | `The members workflow no longer falls back to preview data. Verify your chapter access and API health, then retry.` |
+| Offline | `Members directory unavailable offline` | `Reconnect to load live membership records and role updates.` |
 
 ## Events (dashboard)
 
@@ -37,7 +38,8 @@ This pack defines approved copy for high-frequency state messages so members and
 | Loading | — | `Loading points ledger...` |
 | Empty leaderboard | `No leaderboard entries` | `Point activity will populate after attendance, study, or admin adjustments.` |
 | Empty transactions | `No transactions in this window` | `Your attendance, study sessions, and adjustments will appear here.` |
-| Preview/unauthenticated | `Showing preview points data` | `Sign in to load live leaderboard and transaction records.` |
+| Error | `Couldn't load the points ledger` | `Standings and transactions are unavailable, so none are shown. Verify your chapter access and API health, then retry.` |
+| Offline | `Points ledger unavailable offline` | `Reconnect to refresh leaderboard standings and transaction history.` |
 
 ## Points — Audit tab (dashboard)
 

@@ -217,6 +217,33 @@ Mobile and per-app `dev:*` commands: [`LOCAL_DEV.md`](./LOCAL_DEV.md).
 
 Create `.env.local` files in each app directory with the values from the `local` column above. These files are gitignored.
 
+### Production builds (`npm run build`) and `NODE_ENV`
+
+The two Next apps build through [`scripts/next-build.mjs`](../../../scripts/next-build.mjs), which pins
+`NODE_ENV=production` for the build. **Do not change `build` back to a bare `next build`.**
+
+`next build` does *not* force a production `NODE_ENV` — `next/dist/bin/next` only warns, then does
+`process.env.NODE_ENV = process.env.NODE_ENV || defaultEnv`, so an ambient `NODE_ENV=development`
+survives. Next selects its server runtime purely off that value
+(`next/dist/server/route-modules/app-page/module.compiled.js`), loading the React **dev** runtime to
+prerender chunks Turbopack compiled against the React **prod** runtime. Two React copies means the
+prod copy's dispatcher is `null`, so the first hook in Next's own `OuterLayoutRouter` throws:
+
+```
+TypeError: Cannot read properties of null (reading 'useContext')
+```
+
+Every prerendered route dies; the route named in the error is just whichever build worker reached it
+first, so the failure looks route-specific when it is not. The cloud sandbox exports
+`NODE_ENV=development`, which is what surfaced this (FRA-305). `next build --debug-prerender` is
+unaffected — Next sets `NODE_ENV=development` itself, after the wrapper hands off.
+
+`apps/web` additionally needs `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` **at build
+time** — several dashboard routes construct a Supabase client while prerendering. Without them the
+build fails on `/chat` with `Your project's URL and API key are required to create a Supabase client!`.
+Vercel supplies these; locally, run the build under `npx infisical run` or export them from your local
+stack values.
+
 ---
 
 ## Adding a New Variable

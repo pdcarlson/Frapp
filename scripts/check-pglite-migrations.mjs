@@ -125,6 +125,26 @@ const LANDMARKS = [
       /action_type/.test(rows[0].indexdef),
   },
   {
+    name: "roles system_key partial UNIQUE on (chapter_id, system_key) (FRA-320)",
+    sql: `select indexdef from pg_indexes where indexname = 'idx_roles_chapter_system_key'`,
+    ok: (rows) =>
+      rows.length === 1 &&
+      /UNIQUE/i.test(rows[0].indexdef) &&
+      /system_key/.test(rows[0].indexdef) &&
+      // Partial, so the unbounded set of custom roles (system_key null) is
+      // unconstrained while each chapter keeps at most one role per key.
+      /WHERE/i.test(rows[0].indexdef),
+  },
+  {
+    name: "seeded system roles are backfilled with a system_key (FRA-320)",
+    sql: `select count(*)::int as missing from roles
+           where is_system = true and system_key is null`,
+    // Vacuously true on a fresh PGlite database (no rows), but pins the
+    // backfill's shape so a later migration that seeds roles without a key
+    // fails here rather than silently reopening the rename hole.
+    ok: (rows) => rows.length === 1 && rows[0].missing === 0,
+  },
+  {
     name: "chapter_directory has GENERATED search_vector column",
     sql: `select attgenerated from pg_attribute
            where attrelid = 'chapter_directory'::regclass and attname = 'search_vector'`,

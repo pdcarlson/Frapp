@@ -29,6 +29,7 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 
 export interface CreateCheckoutInput {
@@ -501,9 +502,9 @@ export class BillingService {
     newStatus: string,
   ): Promise<void> {
     try {
-      const presidentRole = await this.roleRepo.findByChapterAndName(
+      const presidentRole = await this.roleRepo.findByChapterAndSystemKey(
         chapterId,
-        'President',
+        SystemRoleKeys.PRESIDENT,
       );
       if (!presidentRole) return;
 

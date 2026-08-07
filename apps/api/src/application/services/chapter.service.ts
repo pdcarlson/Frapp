@@ -27,6 +27,7 @@ import { checkWcagContrast } from '../../domain/utils/wcag';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
+  SystemRoleKeys,
 } from '../../domain/constants/permissions';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
@@ -132,6 +133,7 @@ export class ChapterService {
     const rolesData = DEFAULT_SYSTEM_ROLES.map((roleDef) => ({
       chapter_id: chapter.id,
       name: roleDef.name,
+      system_key: roleDef.system_key,
       permissions: [...roleDef.permissions],
       is_system: roleDef.is_system,
       display_order: roleDef.display_order,
@@ -147,7 +149,9 @@ export class ChapterService {
       throw new InternalServerErrorException('Failed to create default roles');
     }
 
-    const presidentRole = roles.find((r) => r.name === 'President');
+    const presidentRole = roles.find(
+      (r) => r.system_key === SystemRoleKeys.PRESIDENT,
+    );
     if (!presidentRole) {
       this.logger.error(
         `President role missing after default role creation for chapter ${chapter.id}`,

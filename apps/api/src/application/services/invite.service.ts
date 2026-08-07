@@ -14,6 +14,7 @@ import type { IMemberRepository } from '../../domain/repositories/member.reposit
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
 import { Invite } from '../../domain/entities/invite.entity';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
 
 @Injectable()
@@ -88,9 +89,13 @@ export class InviteService {
     if (!claimed) throw new GoneException('Invite already used');
 
     const roles = await this.roleRepo.findByChapter(invite.chapter_id);
+    // `invite.role` is the display name chosen when the invite was issued, so
+    // it is matched by name by design. The fallback is the seeded Member role,
+    // which resolves by `system_key` — a chapter that relabelled it would
+    // otherwise leave redeemers with no role at all.
     let targetRole = roles.find((r) => r.name === invite.role);
     if (!targetRole) {
-      targetRole = roles.find((r) => r.name === 'Member');
+      targetRole = roles.find((r) => r.system_key === SystemRoleKeys.MEMBER);
     }
 
     const member = await this.memberRepo.create({

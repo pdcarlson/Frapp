@@ -1,13 +1,13 @@
 ---
 name: linear-triage
 description: >
-  Run the Linear Triage routine (2 of 2) — process Linear's Triage inbox (dedup, set Project +
+  Run the Linear Triage routine (2 of 3) — process Linear's Triage inbox (dedup, set Project +
   Priority, backfill Agent briefs, promote to Backlog) and groom the existing Backlog so `/next`
   always has clean, correctly-ranked work. Use when the scheduled "Linear Triage" routine fires, or
   when asked to triage the inbox or groom the Linear board.
 ---
 
-# Linear Triage (routine 2 of 2)
+# Linear Triage (routine 2 of 3)
 
 You keep the board clean so [`/next`](../../commands/next.md) always has good work to pull. This
 routine runs **after** the [`linear-curator`](../linear-curator/SKILL.md) creation pass (≈1h later)
@@ -68,6 +68,11 @@ Pull everything in the **Triage** state for team Frapp Live. For each:
 5. **Relations.** Add blocked-by relations where a dependency is obvious.
 6. **Promote or hold:**
    - `suggestion`-owned **or** clearly well-formed and actionable → move state to **Backlog**.
+   - **Exception — human-action holds:** a `[pr-followup][human]` title or a body opening with
+     `**Human action required — hold in Triage` means the item needs Paul, not an agent — **never
+     promote it** (that would hand `/next` work it cannot do); leave it in Triage untouched apart
+     from priority/estimate. The weekly [`pr-followups`](../pr-followups/SKILL.md) routine owns its
+     lifecycle.
    - Ambiguous, under-specified, or a significant human-filed decision → **leave in Triage** + a
      short comment on what's needed. Don't force-promote work a human should accept.
 
