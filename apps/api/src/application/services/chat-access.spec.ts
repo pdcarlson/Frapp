@@ -117,7 +117,10 @@ describe('canAccessChannel', () => {
       ).toBe(false);
     });
 
-    it('allows any member when no permission is required', () => {
+    // FRA-321: these two previously returned true, which made a ROLE_GATED
+    // channel that gates on nothing functionally PUBLIC — and, because the
+    // alumni post rule keyed on channel type, alumni-postable as well.
+    it('denies a member when the requirement list is empty', () => {
       expect(
         canAccessChannel({
           ...base,
@@ -127,10 +130,10 @@ describe('canAccessChannel', () => {
             required_permissions: [],
           },
         }),
-      ).toBe(true);
+      ).toBe(false);
     });
 
-    it('allows any member when required_permissions is null', () => {
+    it('denies a member when required_permissions is null', () => {
       expect(
         canAccessChannel({
           ...base,
@@ -138,6 +141,20 @@ describe('canAccessChannel', () => {
             type: 'ROLE_GATED',
             member_ids: null,
             required_permissions: null,
+          },
+        }),
+      ).toBe(false);
+    });
+
+    it('still allows the wildcard through an empty requirement list', () => {
+      expect(
+        canAccessChannel({
+          ...base,
+          permissions: ['*'],
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: [],
           },
         }),
       ).toBe(true);
@@ -261,7 +278,7 @@ describe('canAccessChannel', () => {
       },
     );
 
-    it.each(['ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
+    it.each(['DM', 'GROUP_DM'] as const)(
       'allows an alumni post in a %s channel',
       (type) => {
         expect(
@@ -279,14 +296,84 @@ describe('canAccessChannel', () => {
       },
     );
 
+    // FRA-321: the seeded #alumni channel. `alumni:post` in the *channel's*
+    // requirement list is what makes it alumni-writable.
+    it('allows an alumni post in a ROLE_GATED channel requiring alumni:post', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          permissions: ['members:view', 'alumni:post'],
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: ['members:view', 'alumni:post'],
+            is_read_only: false,
+          },
+          operation: 'post',
+        }),
+      ).toBe(true);
+    });
+
+    // The regression this issue was filed for: a chapter's #exec-board gated on
+    // members:view — the Alumni role's own permission — used to be postable
+    // purely because its type was ROLE_GATED.
+    it('denies an alumni post in a ROLE_GATED channel that does not require alumni:post', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          permissions: ['members:view', 'alumni:post'],
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: ['members:view'],
+            is_read_only: false,
+          },
+          operation: 'post',
+        }),
+      ).toBe(false);
+    });
+
+    it('still lets an alumni read a ROLE_GATED channel it may not post in', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          permissions: ['members:view', 'alumni:post'],
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: ['members:view'],
+            is_read_only: false,
+          },
+          operation: 'read',
+        }),
+      ).toBe(true);
+    });
+
+    it('exempts votes from the alumni rule in a ROLE_GATED channel', () => {
+      expect(
+        canAccessChannel({
+          ...alumni,
+          permissions: ['members:view', 'alumni:post'],
+          channel: {
+            type: 'ROLE_GATED',
+            member_ids: null,
+            required_permissions: ['members:view'],
+            is_read_only: false,
+          },
+          operation: 'vote',
+        }),
+      ).toBe(true);
+    });
+
     it('still applies the read-only gate inside an alumni-postable channel', () => {
       expect(
         canAccessChannel({
           ...alumni,
+          permissions: ['members:view', 'alumni:post'],
           channel: {
             type: 'ROLE_GATED',
             member_ids: null,
-            required_permissions: null,
+            required_permissions: ['members:view', 'alumni:post'],
             is_read_only: true,
           },
           operation: 'post',
