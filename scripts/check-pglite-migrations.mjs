@@ -718,6 +718,10 @@ const READ_SCENARIOS = [
   // predicate and canAccessChannel now deny it; the backfill guarantees no
   // existing row is in that shape and the API rejects creating one.
   { name: "ROLE_GATED with empty required_permissions is denied (no longer falls open)", uid: F.userCAuth, msg: F.msgRoleGatedOpen, expect: false },
+  // ...but the wildcard still wins, exactly as canAccessChannel has it. Spelling
+  // the deny as a length test placed *before* the wildcard branch would deny a
+  // President here and silently re-introduce SQL/TypeScript drift.
+  { name: "ROLE_GATED with empty required_permissions still admits a '*' wildcard holder", uid: F.userDAuth, msg: F.msgRoleGatedOpen, expect: true },
   { name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)", uid: F.userEAuth, msg: F.msgRoleGated, expect: false },
   { name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)", uid: F.userFAuth, msg: F.msgRoleGated, expect: true },
   { name: "NULL auth.uid() (anon / no JWT) is denied", uid: null, msg: F.msgPublic, expect: false },

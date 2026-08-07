@@ -28,6 +28,14 @@ where type = 'ROLE_GATED'
   and name = 'alumni'
   and coalesce(array_length(required_permissions, 1), 0) = 0;
 
+--    Known residual: a chapter that RENAMED #alumni is not matched here, and is
+--    indistinguishable from a chapter-created role-gated channel -- picking one
+--    would be a guess about intent, the same call the FRA-320 role backfill made
+--    for renamed system roles. Such a channel falls to step 2 instead, so its
+--    members keep reading it and only alumni posting stops. Recoverable without
+--    a migration: an officer with `channels:manage` adds `alumni:post` to the
+--    channel's required_permissions.
+--
 -- 2. Every other ROLE_GATED channel that gates on nothing -- the shape the old
 --    seeder produced and the API still accepted. `members:view` is exactly
 --    today's effective behavior ("any active member can read"), so no existing
@@ -78,9 +86,16 @@ as $$
           -- channel: deny rather than fall open (FRA-321). Step 2 above
           -- guarantees no existing row is in that shape, and the API rejects
           -- creating or updating one into it.
+          --
+          -- The deny needs no explicit length test: `&&` against an empty array
+          -- is false and against NULL is NULL, so an empty requirement list
+          -- already matches no one. Testing the length *first* would be worse
+          -- than redundant -- it would sit in front of the wildcard branch and
+          -- deny a President, which canAccessChannel does not. Keeping the two
+          -- spellings equivalent is the whole point: this predicate and its
+          -- TypeScript twin drifting is what produced FRA-321.
           when c.type = 'ROLE_GATED' then
-            coalesce(array_length(c.required_permissions, 1), 0) > 0
-            and exists (
+            exists (
               select 1
               from public.roles r
               where r.chapter_id = c.chapter_id
