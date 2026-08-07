@@ -775,7 +775,10 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({ ...paused, paused_at: null });
+        mockSessionRepo.update.mockResolvedValue({
+          ...paused,
+          paused_at: null,
+        });
 
         await service.resumeSession('user-1', 'ch-1', 5, 5);
 
@@ -898,7 +901,10 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(patientGeofence);
-        mockSessionRepo.update.mockResolvedValue({ ...paused, paused_at: null });
+        mockSessionRepo.update.mockResolvedValue({
+          ...paused,
+          paused_at: null,
+        });
 
         // 20 paused minutes: past the 10-minute stale threshold, inside the
         // chapter's 30-minute grace.
@@ -943,7 +949,10 @@ describe('StudyService', () => {
         });
         mockSessionRepo.findActiveByUserAndChapter.mockResolvedValue(paused);
         mockGeofenceRepo.findById.mockResolvedValue(baseGeofence);
-        mockSessionRepo.update.mockResolvedValue({ ...paused, paused_at: null });
+        mockSessionRepo.update.mockResolvedValue({
+          ...paused,
+          paused_at: null,
+        });
 
         await service.heartbeat('user-1', 'ch-1', 5, 5);
 

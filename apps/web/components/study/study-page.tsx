@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import {
   useGeofences,
+  usePauseStudySession,
+  useResumeStudySession,
   useStartStudySession,
   useStopStudySession,
   useStudyHeartbeat,
@@ -50,6 +52,7 @@ type Geofence = {
   minutes_per_point: number;
   points_per_interval: number;
   min_session_minutes: number;
+  pause_grace_minutes: number;
 };
 
 type StudySession = {
@@ -66,10 +69,19 @@ type StudySession = {
   start_time: string;
   end_time: string | null;
   last_heartbeat_at: string | null;
+  paused_at: string | null;
   total_foreground_minutes: number;
   points_awarded: boolean;
   created_at: string;
 };
+
+/** Statuses that mean the session is over — nothing further will accrue. */
+const TERMINAL_STATUSES: StudySession["status"][] = [
+  "COMPLETED",
+  "EXPIRED",
+  "PAUSED_EXPIRED",
+  "LOCATION_INVALID",
+];
 
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes, matches mobile
 
@@ -112,6 +124,8 @@ export function StudyPage() {
   const sessionsQuery = useStudySessions();
   const startSession = useStartStudySession();
   const heartbeat = useStudyHeartbeat();
+  const pauseSession = usePauseStudySession();
+  const resumeSession = useResumeStudySession();
   const stopSession = useStopStudySession();
 
   const geofences = useMemo(
@@ -156,15 +170,47 @@ export function StudyPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
+  // Clear local session state when the server reports the session is over —
+  // notably PAUSED_EXPIRED, which arrives as the *response* to a pause or
+  // resume rather than as an error.
+  const settleIfEnded = useCallback(
+    (result: unknown): boolean => {
+      const session =
+        result && typeof result === "object" ? (result as StudySession) : null;
+      if (!session || !TERMINAL_STATUSES.includes(session.status)) return false;
+
+      setActiveSession(null);
+      setActiveGeofenceId(null);
+      setElapsedSeconds(0);
+      setIsPaused(false);
+      toast({
+        title:
+          session.status === "PAUSED_EXPIRED"
+            ? "Session expired while paused"
+            : "Study session ended",
+        description:
+          session.status === "PAUSED_EXPIRED"
+            ? `You didn't return in time. ${session.total_foreground_minutes} foreground minute${session.total_foreground_minutes === 1 ? "" : "s"} were counted.`
+            : `Ended as ${session.status}.`,
+        variant: session.status === "COMPLETED" ? "default" : "destructive",
+      });
+      return true;
+    },
+    [toast],
+  );
+
   const sendHeartbeat = useCallback(async () => {
     if (!activeSession) return;
     try {
       const pos = await getCurrentPosition();
-      await heartbeat.mutateAsync({
+      const result = await heartbeat.mutateAsync({
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
       });
       setGeolocationError(null);
+      // A heartbeat can come back terminal (stale, outside the polygon, or a
+      // grace window that lapsed) — surface that instead of ticking on.
+      settleIfEnded(result);
     } catch (error) {
       setGeolocationError(
         getErrorMessage(
@@ -173,7 +219,66 @@ export function StudyPage() {
         ),
       );
     }
-  }, [activeSession, heartbeat]);
+  }, [activeSession, heartbeat, settleIfEnded]);
+
+  // Mirror foreground state to the server. A hidden tab or a manual pause is
+  // the web adaptation of the mobile background signal — the server owns the
+  // grace window from there, so pausing locally without telling it is exactly
+  // what let background time count as study time
+  // (spec/behavior/study-sessions.md § Anti-Distraction).
+  const lastForegroundRef = useRef(true);
+
+  useEffect(() => {
+    if (!activeSession) {
+      lastForegroundRef.current = true;
+      return undefined;
+    }
+
+    const foreground = !isPaused && !pageHidden;
+    // Idempotent on re-render: only an actual transition reaches the server.
+    if (foreground === lastForegroundRef.current) return undefined;
+    lastForegroundRef.current = foreground;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        let result: unknown;
+        if (foreground) {
+          const pos = await getCurrentPosition();
+          result = await resumeSession.mutateAsync({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+        } else {
+          result = await pauseSession.mutateAsync();
+        }
+        if (cancelled) return;
+        setGeolocationError(null);
+        settleIfEnded(result);
+      } catch (error) {
+        if (cancelled) return;
+        setGeolocationError(
+          getErrorMessage(
+            error,
+            foreground
+              ? "Couldn't resume the session. It will expire if you don't return soon."
+              : "Couldn't reach the server to pause. Your session may expire.",
+          ),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSession,
+    isPaused,
+    pageHidden,
+    pauseSession,
+    resumeSession,
+    settleIfEnded,
+  ]);
 
   // Start / stop the 1-second elapsed timer and the 5-minute heartbeat
   // interval based on visibility + pause state. The server also expires
@@ -308,10 +413,11 @@ export function StudyPage() {
       <header>
         <h2 className="text-2xl font-semibold tracking-tight">Study hours</h2>
         <p className="text-sm text-muted-foreground">
-          Start a tracked study session inside a chapter study zone. The web
-          timer pauses when the tab is hidden and ends when the tab closes,
-          matching the browser&apos;s background limits. The mobile app keeps
-          sessions alive through OS foreground enforcement.
+          Start a tracked study session inside a chapter study zone. Hiding the
+          tab pauses the session on the server — time stops counting, and if you
+          don&apos;t come back within the study zone&apos;s grace window the
+          session expires with only the minutes you actually studied. Closing
+          the tab ends it outright.
         </p>
       </header>
 
@@ -347,6 +453,12 @@ export function StudyPage() {
               {isPaused ? (
                 <Badge variant="outline" className="gap-1">
                   <Pause className="h-3 w-3" /> Manually paused
+                </Badge>
+              ) : null}
+              {isPaused || pageHidden ? (
+                <Badge variant="secondary">
+                  Return within {activeGeofence?.pause_grace_minutes ?? 5} min
+                  or the session expires
                 </Badge>
               ) : null}
               {geolocationError ? (
