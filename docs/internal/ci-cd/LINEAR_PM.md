@@ -32,7 +32,9 @@ Linear (canonical: planning, status, board, Triage intake)
   with sub-issues, assigned to the relevant Project. **No Initiatives, no Cycles.**
 - **Triage is the intake.** New work — whether a human files it, `/next` files a follow-up, or the
   curator routine files a suggestion — lands in the **Triage** inbox and is accepted into **Backlog**
-  before `/next` will auto-start it.
+  before `/next` will auto-start it. One deliberate carve-out: a `/next` run that fixes a defect it
+  discovered on its own branch may file the issue and claim it in the same breath (see the batching
+  rules below) — that is record-keeping for work already underway, not auto-starting inbox work.
 - **Issues are born in Linear.** Opening work directly as a GitHub issue is **not** the path; file in
   Linear (`save_issue` into Triage).
 
@@ -60,6 +62,9 @@ carries it to Linear), and close Linear-native issues in Linear (Done/Canceled).
 
 - A **Linear-native** issue is closed by a PR with the magic word **`Fixes FRA-N`** (also
   `Closes`/`Resolves FRA-N`) in the PR title/body — on merge, Linear transitions `FRA-N` to **Done**.
+  A batched PR carries **one magic-word line per issue it closes**; each transitions independently.
+  (Multiple references per PR are documented by Linear but were not yet observed here at adoption —
+  the first batched merge verifies every member transitioned rather than assuming it.)
 - An issue that has a **GitHub twin** is closed with **`Closes #<github>`**; the GitHub closure **syncs
   into** Linear and transitions the twin. (`/next` adds both magic words when a twin exists.)
 
@@ -121,9 +126,11 @@ effectively unbounded for our purposes.
 > issues" unqualified, but their Active-vs-Backlog definition and our live workspace both show Backlog is
 > exempt.)
 
-- **The binding number is *active*, and `/next` keeps it tiny** — each session holds **one** claim at a
-  time (`In Progress`, then `In Review` once its PR is open), so active tracks the number of concurrent
-  sessions plus open PRs: a handful, even when work is fanned out across parallel agents. The claim
+- **The binding number is *active*, and `/next` keeps it tiny** — each session holds **one claimed
+  unit** at a time: usually a single issue, at most a small batch (cap 3, see below), plus up to one
+  pipelined unit while a PR is open. Active therefore tracks sessions × a small constant (worst
+  case ~6 per session: two 3-member units) plus open PRs — even ten concurrent sessions sit far
+  below the 250-active cap. The claim
   protocol's stale sweep also returns leaked `In Progress` issues to Backlog, which *lowers* active.
   There is no realistic risk of hitting 250 active.
 - **Backlog stays lean by *choice*, not platform limit** — a high-signal, groomable Backlog is a
@@ -215,6 +222,21 @@ is the design that lets work fan out across parallel agents without two of them 
   no longer matches reality, scope explosion, or nothing viable. Anything recoverable by reading the
   resulting PR is the agent's call. `/next --plan-only N` emits N ready-to-paste `/next FRA-xxx` prompts
   and writes nothing to Linear, so a batch of sessions can be spun up without leaking N claims.
+- **Batching, discovery, and pipelining.** A run claims one coherent **unit**: usually a single
+  issue, at most a small batch (**cap 3 elective members, combined estimate ≤ 8**; any issue
+  estimated ≥ 5 runs solo; an inseparable parent+sub-issue unit is exempt from the member cap but
+  not the ceiling) of same-root-cause, same-subsystem, or mechanically-kin issues that ship as
+  **one branch, one PR** with one `Fixes FRA-N` line per member. Claims are posted per member —
+  same `claim_id`, global rank order, all before implementation — and races or vetoes excise
+  members rather than aborting the batch wholesale; when the excised member was the batch's point,
+  each remaining member is released per its own exit row (what is never permitted is shipping an
+  incoherent rump, or rebuilding a lost member against its race winner). Any defect discovered
+  mid-run is **fixed in-branch or filed to Triage with a Priority — never dropped**; a fixed defect
+  that warrants its own record is filed *and* claimed into the batch so the PR closes it
+  (record-keeping claims sit outside the caps, which bound planned scope). After a merge, a
+  context-healthy session may loop to claim its next unit; while babysitting an open PR — under the
+  same context bar — it may pipeline **at most one** additional unit on a fresh from-`main` branch.
+  Procedure, caps, and the verified pipelining hazards live in `.claude/commands/next.md`.
 - **Ultracode scales depth, not scope.** `/next ultracode` runs the command's enumerated fan-out points
   (blocker verification, spec-vs-code verification, the pre-push review lenses, and — only when its
   three qualifying conditions hold — the command's narrow parallel-implementation exception) as
@@ -226,11 +248,13 @@ is the design that lets work fan out across parallel agents without two of them 
   for a system-reminder to confirm it. Workflow launches auto-approve via `.claude/settings.json`
   (see [`AGENT_INFRA.md`](AGENT_INFRA.md) "Claude Code project settings"); a launch that prompts or
   is refused anyway falls back inline — same steps, same writes. Plain `/next` stays inline and cheap.
-- **Ending a run.** A run ends by opening a PR and moving to **In Review**, or by posting an
-  `AGENT-RELEASE` (back to Backlog, or Triage with a Priority if underspecified) or an `AGENT-HANDOFF`
-  (work exists; the claim stays live for a successor). Reasons are a closed set: `plan-rejected`,
-  `user-aborted`, `lost-race`, `blocked-discovered`, `out-of-scope`, `superseded`, `session-ending`. An
-  issue left silently In Progress is a bug.
+- **Ending a run.** A run ends by opening a PR and moving **every claimed member** to **In Review**
+  (after which it may loop or pipeline per the batching bullet), or by posting an `AGENT-RELEASE`
+  (back to Backlog, or Triage with a Priority if underspecified) or an `AGENT-HANDOFF` (work exists;
+  the claim stays live for a successor) — **per member**: a release on one batch member frees that
+  member only. Reasons are a closed set: `plan-rejected`, `user-aborted`, `lost-race`,
+  `blocked-discovered`, `out-of-scope`, `superseded`, `session-ending`. An issue left silently In
+  Progress is a bug.
 
 Procedure lives in `.claude/commands/next.md`; this section is policy. Where they disagree, this document
 wins.
