@@ -74,28 +74,7 @@ function makeRun(overrides = {}) {
   };
 }
 
-// Minimal fetch mock: routes matched by "METHOD path-substring" in order,
-// records calls.
-function makeFetchMock(routes) {
-  const calls = [];
-  const fetchImpl = async (url, init = {}) => {
-    const method = init.method ?? "GET";
-    calls.push({ method, url });
-    const route = routes.find(
-      (r) => r.method === method && url.includes(r.path),
-    );
-    const status = route?.status ?? 200;
-    const body = route?.body ?? {};
-    return {
-      ok: status >= 200 && status < 300,
-      status,
-      text: async () => JSON.stringify(body),
-    };
-  };
-  return { fetchImpl, calls };
-}
-
-const quiet = { log: () => {} };
+import { makeFetchMock, quiet } from "./helpers.mjs";
 
 // ── jobFailedInRealStep ─────────────────────────────────────────────────────
 
