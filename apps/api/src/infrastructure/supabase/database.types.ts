@@ -26,6 +26,7 @@ import type {
   Role,
   SemesterArchive,
   ServiceEntry,
+  StripeWebhookEvent,
   StudyGeofence,
   StudySession,
   Task,
@@ -88,6 +89,7 @@ export interface Database {
       chapter_documents: TableDefinition<ChapterDocument>;
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
+      stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
     };
     Views: Record<string, never>;
     Functions: {
