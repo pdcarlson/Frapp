@@ -259,34 +259,45 @@ export function buildWakeComment({ run, verdict, reason, rerunResult }) {
 }
 
 // ── GitHub REST helpers (injectable fetch, same headers as configure-branch-protection.mjs)
+// Exported for reuse by sibling watchdog scripts (pr-base-sync.mjs) — one request/upsert
+// implementation, so the delete-then-create webhook semantics can't drift between them.
 
-async function ghRequest({
+export async function ghRequest({
   token,
   fetchImpl = fetch,
   method = "GET",
   path,
   body,
 }) {
-  const response = await fetchImpl(`https://api.github.com${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      ...(body ? { "Content-Type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  let data = null;
-  const text = await response.text();
-  if (text) {
-    try {
-      data = JSON.parse(text);
-    } catch {
-      data = text;
+  // Network-level rejections (DNS, ECONNRESET — undici throws, it doesn't return a
+  // response) surface as an ordinary failed request. Both watchdogs treat `ok: false`
+  // as a fail-safe skip; an uncaught throw instead aborted the WHOLE run — for
+  // pr-base-sync that dropped every PR after the failing one and turned a transient
+  // socket blip into a red run on main.
+  try {
+    const response = await fetchImpl(`https://api.github.com${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    let data = null;
+    const text = await response.text();
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
     }
+    return { ok: response.ok, status: response.status, data };
+  } catch {
+    return { ok: false, status: 0, data: null };
   }
-  return { ok: response.ok, status: response.status, data };
 }
 
 /**
@@ -367,9 +378,69 @@ export async function findOpenPrNumber({ token, repo, run, fetchImpl }) {
 }
 
 /**
- * Delete-then-create upsert scoped to one workflow's marker. All stale
- * comment ids are collected across pages BEFORE any delete — deleting while
- * paginating shifts later comments backward and skips them. Creating (not
+ * All comment ids on the PR whose body carries `marker`, collected across pages
+ * BEFORE any delete — deleting while paginating shifts later comments backward
+ * and skips them.
+ */
+export async function findMarkedCommentIds({
+  token,
+  repo,
+  prNumber,
+  marker,
+  fetchImpl,
+}) {
+  const ids = [];
+  for (let page = 1; page <= MAX_COMMENT_PAGES; page += 1) {
+    const { ok, data } = await ghRequest({
+      token,
+      fetchImpl,
+      path: `/repos/${repo}/issues/${prNumber}/comments?per_page=100&page=${page}`,
+    });
+    if (!ok || !Array.isArray(data)) break;
+    for (const comment of data) {
+      // startsWith, not includes: every wake comment leads with its marker, while a
+      // human/agent quote-reply embeds the (invisible) marker mid-body behind "> " —
+      // an includes() match would silently DELETE that reply on the next upsert.
+      if (comment.body?.startsWith(marker)) ids.push(comment.id);
+    }
+    if (data.length < 100) break;
+  }
+  return ids;
+}
+
+/**
+ * Deletes every comment on the PR that leads with `marker`, without posting a
+ * replacement. Shared by upsertWakeComment (its delete half) and pr-base-sync's
+ * back-in-sync cleanup, so the delete semantics can't drift between watchdogs.
+ * Returns the number of comments deleted.
+ */
+export async function clearMarkedComments({
+  token,
+  repo,
+  prNumber,
+  marker,
+  fetchImpl,
+}) {
+  const staleIds = await findMarkedCommentIds({
+    token,
+    repo,
+    prNumber,
+    marker,
+    fetchImpl,
+  });
+  for (const id of staleIds) {
+    await ghRequest({
+      token,
+      fetchImpl,
+      method: "DELETE",
+      path: `/repos/${repo}/issues/comments/${id}`,
+    });
+  }
+  return staleIds.length;
+}
+
+/**
+ * Delete-then-create upsert scoped to one workflow's marker. Creating (not
  * editing) is what makes the webhook deliver action=created to the wake path.
  */
 export async function upsertWakeComment({
@@ -380,28 +451,7 @@ export async function upsertWakeComment({
   body,
   fetchImpl,
 }) {
-  const staleIds = [];
-  for (let page = 1; page <= MAX_COMMENT_PAGES; page += 1) {
-    const { ok, data } = await ghRequest({
-      token,
-      fetchImpl,
-      path: `/repos/${repo}/issues/${prNumber}/comments?per_page=100&page=${page}`,
-    });
-    if (!ok || !Array.isArray(data)) break;
-    for (const comment of data) {
-      if (comment.body?.includes(marker)) staleIds.push(comment.id);
-    }
-    if (data.length < 100) break;
-  }
-
-  for (const id of staleIds) {
-    await ghRequest({
-      token,
-      fetchImpl,
-      method: "DELETE",
-      path: `/repos/${repo}/issues/comments/${id}`,
-    });
-  }
+  await clearMarkedComments({ token, repo, prNumber, marker, fetchImpl });
 
   const { ok, status } = await ghRequest({
     token,
