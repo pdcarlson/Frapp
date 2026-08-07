@@ -14,8 +14,8 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { Member } from '../../domain/entities/member.entity';
 import { User } from '../../domain/entities/user.entity';
 import {
-  ALUMNI_ROLE_NAME,
   SystemPermissions,
+  SystemRoleKeys,
 } from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
@@ -280,9 +280,9 @@ export class MemberService {
     chapterId: string,
     filter?: AlumniFilter,
   ): Promise<MemberProfile[]> {
-    const alumniRole = await this.roleRepo.findByChapterAndName(
+    const alumniRole = await this.roleRepo.findByChapterAndSystemKey(
       chapterId,
-      ALUMNI_ROLE_NAME,
+      SystemRoleKeys.ALUMNI,
     );
     if (!alumniRole) return [];
 

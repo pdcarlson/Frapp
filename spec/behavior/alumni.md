@@ -18,11 +18,11 @@ Enforced restrictions:
 
 A member holding `*` (President) bypasses the posting restriction, so a chapter cannot lock itself out by assigning the Alumni role to its own President.
 
-If a chapter has no Alumni role (e.g. it was renamed or deleted), these checks fail open to the caller's normal permissions rather than denying everyone.
+If a chapter has no Alumni role, these checks fail open to the caller's normal permissions rather than denying everyone.
 
 > **Scope caveat:** the posting rule keys on channel *type*, not on the `#alumni` channel's identity — so **any** ROLE_GATED channel is alumni-postable. Because `DEFAULT_CHANNELS` seeds channels without `required_permissions`, and an empty requirement means "any chapter member", a chapter that creates a ROLE_GATED `#exec` channel without setting `required_permissions` would let alumni post there. Tightening ROLE_GATED seeding is tracked as follow-up work.
 
-> **Known limitation:** the Alumni role is resolved by name. System roles can currently be renamed, which would silently disable these restrictions. Giving system roles a stable, rename-proof key is tracked as follow-up work.
+> **Role identity:** the Alumni role is resolved by its stable `roles.system_key` (`ALUMNI`), not by name, so renaming it does not affect these restrictions — see [`rbac.md`](rbac.md#role-lifecycle). One legacy exception: a chapter that renamed the role *before* `system_key` was introduced has no key on it and keeps the fail-open behavior above.
 
 ## Alumni Directory
 

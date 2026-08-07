@@ -11,6 +11,7 @@ import { USER_REPOSITORY } from '../../domain/repositories/user.repository.inter
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { CustomFieldService } from './custom-field.service';
 import { CustomRoleService } from './custom-role.service';
 import { RbacService } from './rbac.service';
@@ -49,6 +50,7 @@ describe('MemberService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       delete: jest.fn(),
@@ -829,15 +831,15 @@ describe('MemberService', () => {
           updated_at: '2024-01-01',
         },
       ];
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
 
       const result = await service.findAlumniByChapter('chapter-1');
 
-      expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledWith(
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
         'chapter-1',
-        'Alumni',
+        SystemRoleKeys.ALUMNI,
       );
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
@@ -909,7 +911,7 @@ describe('MemberService', () => {
           updated_at: '2024-01-01',
         },
       ];
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(alumniRole);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(alumniRole);
       mockRepo.findByChapter.mockResolvedValue(members);
       mockUserRepo.findByIds.mockResolvedValue(users);
 
@@ -922,7 +924,7 @@ describe('MemberService', () => {
     });
 
     it('should return empty array when no Alumni role exists', async () => {
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       const result = await service.findAlumniByChapter('chapter-1');
 

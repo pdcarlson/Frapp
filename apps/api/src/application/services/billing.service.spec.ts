@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
+import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { BILLING_PROVIDER } from '../../domain/adapters/billing.interface';
 import type {
   IBillingProvider,
@@ -179,6 +180,7 @@ describe('BillingService', () => {
       findByChapter: jest.fn(),
       findByIds: jest.fn(),
       findByChapterAndName: jest.fn(),
+      findByChapterAndSystemKey: jest.fn(),
       create: jest.fn(),
       createMany: jest.fn(),
       update: jest.fn(),
@@ -592,7 +594,7 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -626,7 +628,7 @@ describe('BillingService', () => {
         subscription_id: 'sub_123',
       };
       mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       await service.handleWebhookEvent(event);
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
@@ -731,7 +733,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'canceled',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -1226,7 +1228,7 @@ describe('BillingService', () => {
         };
         mockChapterRepo.findBySubscriptionId.mockResolvedValue(chapter);
         mockChapterRepo.update.mockResolvedValue(chapter);
-        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
@@ -1270,7 +1272,7 @@ describe('BillingService', () => {
         mockChapterRepo.update.mockResolvedValue(chapter);
         // Mock a reachable president so the no-notify assertion below actually
         // exercises the statusChanged gate (not just a missing-role early return).
-        mockRoleRepo.findByChapterAndName.mockResolvedValue(presidentRole);
+        mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(presidentRole);
         mockMemberRepo.findByChapter.mockResolvedValue([presidentMember]);
 
         await service.handleWebhookEvent(subUpdated('past_due', T_NEW));
@@ -1657,7 +1659,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -1693,6 +1695,69 @@ describe('BillingService', () => {
       );
     });
 
+    // FRA-320: this lookup used a bare 'President' string literal, so a chapter
+    // that relabelled the role silently stopped receiving billing alerts.
+    it('still notifies the president after the President role is renamed', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_sub_update_renamed_pres',
+        type: 'customer.subscription.updated',
+        created: Date.now(),
+        data: {
+          object: {
+            id: 'sub_123',
+            status: 'past_due',
+          },
+        },
+      };
+
+      const activeChapter = {
+        ...baseChapter,
+        subscription_status: 'active' as const,
+        subscription_id: 'sub_123',
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(activeChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...activeChapter,
+        subscription_status: 'past_due',
+      });
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
+        id: 'role-pres',
+        chapter_id: 'ch-1',
+        // Relabelled by the chapter; only `system_key` still identifies it.
+        name: 'Chapter Chair',
+        system_key: SystemRoleKeys.PRESIDENT,
+        permissions: [],
+        is_system: true,
+        display_order: 0,
+        color: null,
+        created_at: '2024-01-01',
+      });
+      mockMemberRepo.findByChapter.mockResolvedValue([
+        {
+          id: 'member-pres',
+          user_id: 'user-pres',
+          chapter_id: 'ch-1',
+          role_ids: ['role-pres'],
+          custom_role_ids: [],
+          has_completed_onboarding: true,
+          created_at: '2024-01-01',
+          updated_at: '2024-01-01',
+        },
+      ]);
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledWith(
+        'ch-1',
+        SystemRoleKeys.PRESIDENT,
+      );
+      expect(mockNotificationService.notifyUser).toHaveBeenCalledWith(
+        'user-pres',
+        'ch-1',
+        expect.objectContaining({ title: 'Subscription Status Changed' }),
+      );
+    });
+
     it('should handle errors when notifying chapter president', async () => {
       const event: WebhookEvent = {
         id: 'evt_sub_update_notify_error',
@@ -1716,7 +1781,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockRejectedValue(
+      mockRoleRepo.findByChapterAndSystemKey.mockRejectedValue(
         new Error('Database error'),
       );
 
@@ -1755,7 +1820,7 @@ describe('BillingService', () => {
         ...activeChapter,
         subscription_status: 'canceled',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue({
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue({
         id: 'role-pres',
         chapter_id: 'ch-1',
         name: 'President',
@@ -1862,7 +1927,7 @@ describe('BillingService', () => {
         ...subChapter,
         subscription_status: 'past_due',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       const event: WebhookEvent = {
         id: 'evt_sub_updated_dup',
@@ -1879,7 +1944,7 @@ describe('BillingService', () => {
 
       expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
       // The redelivery must not re-alert the president either.
-      expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledTimes(1);
+      expect(mockRoleRepo.findByChapterAndSystemKey).toHaveBeenCalledTimes(1);
     });
 
     it('skips a replayed customer.subscription.deleted across instances', async () => {
@@ -1888,7 +1953,7 @@ describe('BillingService', () => {
         ...subChapter,
         subscription_status: 'canceled',
       });
-      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+      mockRoleRepo.findByChapterAndSystemKey.mockResolvedValue(null);
 
       const event: WebhookEvent = {
         id: 'evt_sub_deleted_dup',
