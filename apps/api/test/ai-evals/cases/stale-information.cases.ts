@@ -69,7 +69,8 @@ export const staleInformationCases: EvalCase[] = [
         {
           toolName: 'get_officer_roster',
           chapterId: CHAPTER,
-          content: 'Treasurer: Dana Ruiz (since 2026-06-01). President: Sam Ito.',
+          content:
+            'Treasurer: Dana Ruiz (since 2026-06-01). President: Sam Ito.',
         },
       ],
     },

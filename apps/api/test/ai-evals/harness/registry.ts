@@ -34,7 +34,9 @@ function loadFromEnv(): AgentUnderTest | null {
   const modulePath = process.env.AI_EVALS_AGENT_MODULE;
   if (!modulePath) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // A dynamic require is the point: the module path is supplied at run time and
+  // must not be a static dependency of this file.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require(modulePath) as {
     createAgentUnderTest?: () => AgentUnderTest;
   };

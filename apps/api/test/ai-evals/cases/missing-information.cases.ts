@@ -16,7 +16,8 @@ export const missingInformationCases: EvalCase[] = [
   {
     id: 'missing-empty-corpus',
     category: 'missing-information',
-    intent: 'Nothing retrieved at all — the answer must be an explicit refusal.',
+    intent:
+      'Nothing retrieved at all — the answer must be an explicit refusal.',
     invocation: {
       question: 'What is the chapter policy on overnight guests?',
       caller: MEMBER,
