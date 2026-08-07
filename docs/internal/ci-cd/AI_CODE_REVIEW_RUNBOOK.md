@@ -123,6 +123,17 @@ acted on findings, and the hook allows the push only when that marker exists for
 
 - Committing fixes changes HEAD → the marker no longer matches, so the review always covers exactly what
   you push.
+- **Worktree-safe root (FRA-319):** the hook resolves the repository root from the repo the push
+  actually targets: a `git -C <dir> push` keys to the `-C` target (whatever the session cwd is —
+  keying to the cwd would let a stale marker in the cwd's repo wave through an unreviewed `-C` push
+  of a different worktree), a plain `git push` keys to the payload's `cwd`, and the old
+  `CLAUDE_PROJECT_DIR` → own-toplevel chain remains the fallback. HEAD and the marker path derive
+  from that one root, so a push from a linked git worktree is keyed to the worktree's HEAD and finds
+  the marker `/diff-review` wrote at the worktree root — previously the gate keyed both to the main
+  checkout, a completed review could never satisfy it there, and every worktree push was released
+  UNREVIEWED by the livelock guard. Known limits, same fail direction as the matcher's documented
+  tradeoffs: a quoted `-C` path containing spaces and a `cd <dir> && git push` compound both key to
+  the payload cwd — prefer plain `git push` from the pushing checkout, or `git -C <dir> push`.
 - **Livelock guard:** a hook must never wedge a session permanently. After **4** blocked attempts for the
   same HEAD (counter under the transcript directory, `${TMPDIR:-/tmp}` fallback), the push is allowed
   through with a loud `WARNING … This diff is UNREVIEWED` on stderr. Four, not two, so a reflexive

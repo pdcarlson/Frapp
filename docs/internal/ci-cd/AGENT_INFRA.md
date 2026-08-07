@@ -50,6 +50,7 @@ whose closure syncs GitHub→Linear). Design + policy: [`LINEAR_PM.md`](LINEAR_P
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
+| PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the `PR_BASE_SYNC_TOKEN` PAT secret exists** (default-token pushes trigger no CI), otherwise — and always for conflicts — upserts one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
@@ -150,10 +151,12 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 | ------ | -------- | ------ |
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
+| `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and not auto-updateable — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
 | Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | nothing, **if** Routines are enabled account-side |
 
 Layered conclusion: the self-wake is the only complete net, the watchdog comment is the fast path
-for CI outcomes, and the webhook is the fast path for failures and human comments. Arm all three.
+for CI outcomes, the base-sync comment is the fast path for base moves and merge conflicts, and the
+webhook is the fast path for failures and human comments. Arm them all.
 The sandbox shell cannot reach `api.github.com` (returns the org-connect error), so background
 polling of GitHub is impossible — GitHub is reachable only through MCP tools, only while awake.
 If `send_later` returns `MCP error -32003 … requires approval`, Routines are disabled account-side;
@@ -197,6 +200,41 @@ repo change fixes it — the session must say so to the user and rely on the oth
 Because `workflow_run` executes the **default branch's** copy of the workflow and script, changes
 to either take effect only after merging to `main` — they cannot be exercised from the PR that
 introduces them (unit tests + this doc are the pre-merge verification).
+
+### Base-branch sync (`scripts/ci/pr-base-sync.mjs`)
+
+Branch protection on `main` sets `strict: true`, so every merge to `main` outdates every other
+open PR. `pr-base-sync.yml` fires on each push to `main` and sweeps open PRs targeting it —
+sequentially, capped at 20 per sweep with the remainder logged (never silently truncated), and
+listed **least-recently-updated first**: acting on a PR bumps its `updated_at` to the back of the
+next sweep's order, so a deferred PR rotates to the front instead of being starved behind the same
+busy twenty. Per PR, after bounded polling of GitHub's lazily-computed `mergeable` flag:
+
+- **Conflicted** → one `<!-- frapp-base-sync -->` wake comment telling the watching agent session
+  to `git fetch origin main && git merge origin/main`, resolve, and push. Conflicts always go to
+  an agent — no API call can resolve them.
+- **Behind and clean** (measured with the compare API's `behind_by`, not `mergeable_state`, which
+  reports `blocked` over `behind`) → auto-updated via `PUT …/update-branch` with
+  `expected_head_sha`, **only when the `PR_BASE_SYNC_TOKEN` secret is configured**. This must be a
+  fine-grained PAT (contents + pull-requests write): pushes made with the default `GITHUB_TOKEN`
+  do not create workflow runs (GitHub's recursion guard), so an update through it would strand
+  required checks at "Expected" with no CI ever running — strictly worse than not updating. With
+  no PAT, on a fork head, or when the update call fails, the wake comment asks the agent to merge
+  `main` itself — the agent's own push triggers CI normally. GitHub invalidates `mergeable`
+  lazily, so a sweep racing the base push can read a stale `true` for a freshly-conflicted PR;
+  when the update-branch call then fails with a conflict message, the sweep posts the **conflict**
+  wake (not the behind one), so the agent always gets resolution guidance when it will need it.
+- **Already in sync** → any stale base-sync wake comment is deleted and the sweep stays silent.
+  Unknown mergeability (API error, `mergeable` never resolves) is skipped fail-safe: never
+  blind-updated, never falsely accused of conflicts; the next base move re-sweeps.
+
+Comment mechanics match `ci-wake.mjs` (shared helpers): delete-then-create so created-only webhook
+listeners fire on every base move, one live comment per PR. Like the CI wake watchdog it is
+best-effort, minimal-action-surface, and **not** a required check; a successful auto-update posts
+no comment at all — CI runs on the updated head and the CI wake announces its outcome. The
+GITHUB_TOKEN-pushes-trigger-no-CI constraint is GitHub's documented recursion guard
+(docs-verified knowledge, 2026-08-07; not yet observed in this repo — confirm on the first
+post-merge firing with the PAT configured).
 
 ### Applied permission allows
 

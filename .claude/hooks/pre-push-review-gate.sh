@@ -44,10 +44,9 @@
 # git-level .githooks/pre-commit gitleaks scan.
 set -euo pipefail
 
-ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
-
-# ── Read the hook payload from stdin and extract command + transcript_path in a single
-#    JSON parse (newlines in the command are flattened to spaces for matching). ─────────
+# ── Read the hook payload from stdin and extract command + transcript_path + cwd in a
+#    single JSON parse (newlines in the command are flattened to spaces for matching).
+#    The gate root is resolved AFTER parsing, from the payload's cwd — see below. ───────
 payload="$(cat)"
 
 json_escape() {
@@ -77,7 +76,8 @@ except Exception:
     sys.exit(1)
 cmd = (d.get("tool_input", {}) or {}).get("command", "") or ""
 tp = d.get("transcript_path", "") or ""
-sys.stdout.write(cmd.replace("\t", " ").replace("\r", "\n").replace("\n", ";") + "\t" + tp)
+cwd = d.get("cwd", "") or ""
+sys.stdout.write(cmd.replace("\t", " ").replace("\r", "\n").replace("\n", ";") + "\t" + tp + "\t" + cwd)
 ' 2>/dev/null && return 0
   printf '%s' "$payload" | node -e '
 let s = "";
@@ -86,7 +86,8 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
   try { d = JSON.parse(s); } catch { process.exit(1); }
   const cmd = ((d.tool_input || {}).command || "");
   const tp = d.transcript_path || "";
-  process.stdout.write(cmd.replace(/\t/g, " ").replace(/\r/g, "\n").replace(/\n/g, ";") + "\t" + tp);
+  const cwd = d.cwd || "";
+  process.stdout.write(cmd.replace(/\t/g, " ").replace(/\r/g, "\n").replace(/\n/g, ";") + "\t" + tp + "\t" + cwd);
 });
 ' 2>/dev/null && return 0
   return 1
@@ -95,7 +96,9 @@ process.stdin.on("data", (d) => (s += d)).on("end", () => {
 parse_failed=0
 if fields="$(parse_payload)"; then
   command="${fields%%$'\t'*}"
-  transcript_path="${fields#*$'\t'}"
+  rest="${fields#*$'\t'}"
+  transcript_path="${rest%%$'\t'*}"
+  command_cwd="${rest#*$'\t'}"
 else
   # No interpreter and/or a malformed payload. Deny, but ONLY for payloads that plausibly
   # concern a push, and — critically — fall through into the normal marker / bypass / livelock
@@ -122,6 +125,42 @@ else
   parse_failed=1
   command="git push"   # synthetic: routes this payload down the push path below
   transcript_path=""
+  command_cwd=""
+fi
+
+# ── Resolve the gate root from the repo the push actually targets ──────────────────────
+# CLAUDE_PROJECT_DIR stays pinned to the original project directory even when the push
+# runs inside a git worktree (EnterWorktree makes that reachable). Keying HEAD and the
+# marker off it there meant a genuinely completed /diff-review never satisfied the gate:
+# the hook read the MAIN worktree's HEAD while the skill wrote the marker at the pushing
+# worktree's root, so every push was denied until the livelock guard released it labelled
+# UNREVIEWED — silent non-enforcement, the opposite of this gate's contract (FRA-319).
+# Precedence, highest wins, each falling through when it doesn't resolve to a repo:
+#   1. The `git -C <dir> push` target — the repo being pushed regardless of cwd. Without
+#      this, a stale marker in the cwd's repo would ALLOW an unreviewed `-C` push of a
+#      different worktree (fail-open), and a reviewed `-C` push would be denied.
+#   2. The payload's cwd — the plain `git push` case, worktree or main checkout alike.
+#   3. CLAUDE_PROJECT_DIR, then the hook's own toplevel — the pre-cwd behavior, kept for
+#      parse failures and older harnesses.
+# Known limit, same direction as push_re's documented tradeoffs: a quoted `-C` path with
+# spaces and a `cd <dir> && git push` compound both key to the payload cwd (documented in
+# AI_CODE_REVIEW_RUNBOOK.md).
+# The -C extraction requires `push` after the dir WITHIN the same shell statement, so
+# `git -C /a fetch; git push` never borrows /a for the second statement's push.
+cdir_re='git[[:space:]]+(-[^[:space:];&|]*[[:space:]]+([^-;&|][^[:space:];&|]*[[:space:]]+)?)*-C[[:space:]]+([^[:space:];&|]+)[[:space:]]+([^;&|]*[[:space:]])?push([^[:alnum:]_-]|$)'
+push_c_dir=""
+if [[ "$command" =~ $cdir_re ]]; then
+  push_c_dir="${BASH_REMATCH[3]}"
+fi
+ROOT=""
+if [ -n "$push_c_dir" ]; then
+  ROOT="$(git -C "$push_c_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+if [ -z "$ROOT" ] && [ -n "${command_cwd:-}" ]; then
+  ROOT="$(git -C "$command_cwd" rev-parse --show-toplevel 2>/dev/null || true)"
+fi
+if [ -z "$ROOT" ]; then
+  ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
 fi
 
 # The deliberate bypass may arrive two ways, and both must work. The hook's own environment

@@ -19,6 +19,11 @@ const HOOK = fileURLToPath(new URL("../../../.claude/hooks/pre-push-review-gate.
 // a forged marker behind on an interrupted run, which opens the real gate for that HEAD.
 let repo;
 let headSha;
+// A linked worktree of `repo` whose HEAD has diverged — the FRA-319 scenario, where
+// CLAUDE_PROJECT_DIR (still `repo`) and the pushing checkout disagree about both the
+// repository root and HEAD.
+let worktree;
+let worktreeHeadSha;
 
 before(() => {
   repo = mkdtempSync(path.join(tmpdir(), "review-gate-"));
@@ -30,17 +35,34 @@ before(() => {
   git("add", "-A");
   git("commit", "-qm", "init");
   headSha = execFileSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+
+  worktree = mkdtempSync(path.join(tmpdir(), "review-gate-wt-"));
+  git("worktree", "add", worktree, "-b", "wt-branch");
+  writeFileSync(path.join(worktree, "wt.txt"), "worktree\n");
+  execFileSync("git", ["-C", worktree, "add", "-A"], { stdio: "pipe" });
+  execFileSync("git", ["-C", worktree, "commit", "-qm", "wt"], { stdio: "pipe" });
+  worktreeHeadSha = execFileSync("git", ["-C", worktree, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  assert.notEqual(worktreeHeadSha, headSha, "worktree HEAD must diverge or the cases are vacuous");
 });
 
-after(() => rmSync(repo, { recursive: true, force: true }));
+after(() => {
+  rmSync(worktree, { recursive: true, force: true });
+  rmSync(repo, { recursive: true, force: true });
+});
 
-function runHook(command, { env = {}, pathOverride, transcriptPath = "", raw = false } = {}) {
+function runHook(command, { env = {}, pathOverride, transcriptPath = "", cwd = "", raw = false } = {}) {
   // `raw` sends the argument to the hook verbatim, for the malformed-payload cases. Without it
   // a "malformed" string would just be JSON-wrapped into a perfectly valid payload and the case
   // would assert nothing — which is exactly what an earlier revision of this file did.
   const payload = raw
     ? command
-    : JSON.stringify({ tool_input: { command }, transcript_path: transcriptPath });
+    : JSON.stringify({
+        tool_input: { command },
+        transcript_path: transcriptPath,
+        ...(cwd ? { cwd } : {}),
+      });
   // A fresh TMPDIR per call keeps the livelock attempt counter from leaking between cases.
   const tmp = mkdtempSync(path.join(tmpdir(), "rg-tmp-"));
   const res = spawnSync("bash", [HOOK], {
@@ -127,6 +149,84 @@ test("a marker for a different SHA does not satisfy the gate", () => {
   mkdirSync(path.join(repo, ".cache", "diff-review"), { recursive: true });
   writeFileSync(path.join(repo, ".cache", "diff-review", "0".repeat(40)), "");
   assertDeny(runHook("git push"), "stale marker");
+  clearMarker();
+});
+
+// ── Worktree resolution (FRA-319) ───────────────────────────────────────────
+// CLAUDE_PROJECT_DIR is pinned to `repo` in every runHook call, so these cases prove the
+// hook trusts the payload's cwd over it: HEAD and the marker path must both resolve to the
+// worktree, or a completed review can never satisfy the gate there.
+
+const worktreeMarker = () => path.join(worktree, ".cache", "diff-review", worktreeHeadSha);
+
+test("worktree: a marker at the worktree root for the worktree HEAD allows the push", () => {
+  clearMarker();
+  mkdirSync(path.dirname(worktreeMarker()), { recursive: true });
+  writeFileSync(worktreeMarker(), "");
+  assertAllow(runHook("git push", { cwd: worktree }), "worktree marker");
+  rmSync(path.join(worktree, ".cache"), { recursive: true, force: true });
+});
+
+test("worktree: a stale main-worktree marker does not satisfy a worktree push", () => {
+  // The pre-fix failure inverted: the main root holds a perfectly valid marker for the MAIN
+  // HEAD, but the push is happening in the worktree, whose HEAD has no marker anywhere.
+  writeMarker();
+  assertDeny(runHook("git push", { cwd: worktree }), "stale main marker, worktree push");
+  clearMarker();
+});
+
+test("worktree: the node parser extracts cwd when python3 is absent", () => {
+  // Parity discriminator for the matched parser pair: with python3 gone, only the node
+  // branch runs. If it failed to extract cwd, the root would fall back to
+  // CLAUDE_PROJECT_DIR (= repo), the worktree marker would never be found, and this
+  // would deny — so an allow proves the node branch carries the field too.
+  clearMarker();
+  const stub = makeStub(STUB_BINS.filter((b) => b !== "python3"));
+  mkdirSync(path.dirname(worktreeMarker()), { recursive: true });
+  writeFileSync(worktreeMarker(), "");
+  assertAllow(
+    runHook("git push", { cwd: worktree, pathOverride: stub }),
+    "worktree marker via node parser",
+  );
+  rmSync(path.join(worktree, ".cache"), { recursive: true, force: true });
+  rmSync(stub, { recursive: true, force: true });
+});
+
+// ── `git -C <dir> push`: the gate keys to the -C target, not the cwd ────────
+// push_re deliberately matches the -C form, so ROOT must follow it: keying to the cwd
+// instead would let a stale marker in the cwd's repo wave through an unreviewed push of a
+// DIFFERENT worktree (fail-open), and would deny a genuinely reviewed -C push.
+
+test("-C push: a marker at the -C target satisfies the gate regardless of cwd", () => {
+  clearMarker();
+  mkdirSync(path.dirname(worktreeMarker()), { recursive: true });
+  writeFileSync(worktreeMarker(), "");
+  assertAllow(
+    runHook(`git -C ${worktree} push`, { cwd: repo }),
+    "-C target marker, cwd elsewhere",
+  );
+  rmSync(path.join(worktree, ".cache"), { recursive: true, force: true });
+});
+
+test("-C push: a valid marker in the cwd's repo must NOT allow pushing another worktree", () => {
+  // The fail-open case: main checkout holds a legitimate marker for main HEAD, but the
+  // command pushes the (unreviewed) worktree. Keying to cwd would exit 0 here.
+  writeMarker();
+  assertDeny(
+    runHook(`git -C ${worktree} push`, { cwd: repo }),
+    "cwd marker, unreviewed -C target",
+  );
+  clearMarker();
+});
+
+test("a -C on an earlier statement is not borrowed for a later plain push", () => {
+  // `git -C <wt> fetch; git push` — the push targets the cwd repo, whose HEAD has a
+  // marker; extracting the first statement's -C would key to the worktree and deny.
+  writeMarker();
+  assertAllow(
+    runHook(`git -C ${worktree} fetch; git push`, { cwd: repo }),
+    "plain push keyed to cwd, not the fetch's -C",
+  );
   clearMarker();
 });
 
