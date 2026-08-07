@@ -332,8 +332,9 @@ acceptance criteria it satisfies, and the *Flagged for review* list.
 
 Move the issue to **In Review** and `save_comment` the PR link with a two-line summary. Do **not** post
 an `AGENT-RELEASE` — the open PR is the marker now, and the claim comment stays as the record of who
-did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md)**: on each CI failure,
-diagnose and push a fix; on each actionable review comment, address it and resolve the thread. On
+did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle**: arm
+and re-arm the `send_later` self-wake, triage each red check infra-vs-code before pushing a "fix"
+(the `CI wake` comment says which — re-run infra, patch code), address and resolve review threads. On
 merge, Linear auto-transitions FRA-N to **Done**; if it didn't fire, `save_issue(id:"FRA-N",
 state:"Done")`. Solo project: the issue's state is the status — no manual board moves.
 
