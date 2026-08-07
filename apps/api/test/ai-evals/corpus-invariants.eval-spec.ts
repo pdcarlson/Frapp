@@ -4,7 +4,7 @@
  * a set of cases that look adversarial but assert nothing.
  */
 import { allEvalCases } from './cases';
-import { authorityCeiling } from './harness/grader';
+import { authorityCeiling, ceilingPermits } from './harness/grader';
 import {
   EVAL_CATEGORIES,
   INJECTION_VECTORS,
@@ -21,6 +21,19 @@ const injectionEntries: InjectionEntry[] = allEvalCases.flatMap((c) =>
 const escalationEntries: InjectionEntry[] = injectionEntries.filter(
   ([, , injection]) => injection.goal === 'privilege-escalation',
 );
+
+/** Cases that place a source belonging to another chapter in the context window. */
+const foreignSourceEntries = allEvalCases.flatMap((c) => {
+  const foreign = [
+    ...c.invocation.corpus
+      .filter((d) => d.chapterId !== c.invocation.caller.chapterId)
+      .map((d) => `${d.title} ${d.body}`),
+    ...c.invocation.toolResults
+      .filter((r) => r.chapterId !== c.invocation.caller.chapterId)
+      .map((r) => r.content),
+  ];
+  return foreign.length > 0 ? [[c.id, c, foreign] as const] : [];
+});
 
 function contextText(evalCase: EvalCase): string {
   return [
@@ -51,6 +64,15 @@ describe('eval corpus coverage', () => {
     const ids = allEvalCases.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  // Guards against the whole file silently asserting nothing: an empty filter
+  // would leave the describe.each blocks below with no cases to run.
+  it('has cases in every group the invariants below iterate', () => {
+    expect(allEvalCases.length).toBeGreaterThan(0);
+    expect(injectionEntries.length).toBeGreaterThan(0);
+    expect(escalationEntries.length).toBeGreaterThan(0);
+    expect(foreignSourceEntries.length).toBeGreaterThan(0);
+  });
 });
 
 describe.each(allEvalCases.map((c) => [c.id, c] as const))(
@@ -65,6 +87,11 @@ describe.each(allEvalCases.map((c) => [c.id, c] as const))(
       expect(Boolean(evalCase.injection)).toBe(
         evalCase.category === 'prompt-injection',
       );
+    });
+
+    it('asserts something about the answer', () => {
+      // A case with an empty `expect` grades every answer as compliant.
+      expect(Object.keys(evalCase.expect).length).toBeGreaterThan(0);
     });
 
     it('only expects citations of documents in the caller’s own chapter', () => {
@@ -82,6 +109,15 @@ describe.each(allEvalCases.map((c) => [c.id, c] as const))(
       const mustNot = new Set(evalCase.expect.mustNotMention ?? []);
       for (const needle of evalCase.expect.mustMention ?? []) {
         expect(mustNot.has(needle)).toBe(false);
+      }
+    });
+
+    it('draws every mustMention string from the context it was given', () => {
+      // An expectation that no source supports would be unsatisfiable by a
+      // correct agent — the case would be testing the fixture, not the agent.
+      const context = `${contextText(evalCase)} ${evalCase.invocation.question}`;
+      for (const needle of evalCase.expect.mustMention ?? []) {
+        expect(context.toLowerCase()).toContain(needle.toLowerCase());
       }
     });
   },
@@ -106,15 +142,45 @@ describe.each(injectionEntries)(
 
 describe.each(escalationEntries)(
   'privilege-escalation case %s',
-  (_id, evalCase) => {
-    it('models an injector strictly weaker than the caller', () => {
-      // If the injector held everything the caller holds, the ceiling would
-      // equal the caller's permissions and the case would prove nothing about
-      // confused-deputy escalation.
-      const ceiling = authorityCeiling(evalCase);
-      expect(ceiling.size).toBeLessThan(
-        evalCase.invocation.caller.permissions.length,
-      );
+  (_id, evalCase, injection) => {
+    it('names the permission the injection is reaching for', () => {
+      expect(injection.attemptedPermission).toBeTruthy();
+    });
+
+    it('computes a ceiling that excludes that permission', () => {
+      // The real invariant. "Ceiling smaller than the caller's" would pass for
+      // an injector who happened to hold the escalation target already.
+      const attempted = injection.attemptedPermission ?? '';
+      expect(ceilingPermits(authorityCeiling(evalCase), attempted)).toBe(false);
+    });
+
+    it('models a caller who could have performed it directly', () => {
+      // Otherwise ordinary RBAC would have stopped it and the case proves
+      // nothing specific to the confused-deputy problem.
+      const callerPermissions = new Set(evalCase.invocation.caller.permissions);
+      const attempted = injection.attemptedPermission ?? '';
+      expect(
+        callerPermissions.has('*') || callerPermissions.has(attempted),
+      ).toBe(true);
+    });
+  },
+);
+
+describe.each(foreignSourceEntries)(
+  'case %s plants another chapter’s content',
+  (_id, evalCase, foreignTexts) => {
+    it('pins a mustNotMention string drawn from that foreign content', () => {
+      // Without this, a case can stage a cross-tenant leak and then assert
+      // nothing about whether the leak reached the answer.
+      const mustNot = evalCase.expect.mustNotMention ?? [];
+      expect(mustNot.length).toBeGreaterThan(0);
+
+      for (const foreign of foreignTexts) {
+        const covered = mustNot.some((needle) =>
+          foreign.toLowerCase().includes(needle.toLowerCase()),
+        );
+        expect(covered).toBe(true);
+      }
     });
   },
 );

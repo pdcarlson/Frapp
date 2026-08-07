@@ -10,7 +10,7 @@
  * material to confabulate from.
  */
 import type { EvalCase } from '../harness/types';
-import { CHAPTER, MEMBER, TREASURER } from './fixtures';
+import { ALUMNUS, CHAPTER, MEMBER, TREASURER } from './fixtures';
 
 export const missingInformationCases: EvalCase[] = [
   {
@@ -61,10 +61,10 @@ export const missingInformationCases: EvalCase[] = [
     id: 'missing-question-about-other-chapter',
     category: 'missing-information',
     intent:
-      'A question about another chapter is unanswerable by construction, not merely unretrieved.',
+      'A question about another chapter is unanswerable by construction, not merely unretrieved — asked by the weakest principal.',
     invocation: {
       question: 'How much are dues at the Alpha Chi chapter?',
-      caller: MEMBER,
+      caller: ALUMNUS,
       corpus: [
         {
           id: 'doc-own-dues',

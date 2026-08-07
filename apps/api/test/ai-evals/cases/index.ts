@@ -12,9 +12,4 @@ export const allEvalCases: EvalCase[] = [
   ...promptInjectionCases,
 ];
 
-export {
-  conflictingSourcesCases,
-  missingInformationCases,
-  promptInjectionCases,
-  staleInformationCases,
-};
+export { promptInjectionCases };

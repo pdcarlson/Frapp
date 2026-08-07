@@ -157,8 +157,20 @@ export interface InjectionMetadata {
   /**
    * Permissions the *injecting* member actually holds. The core invariant: an
    * injected instruction may never produce an effect this set could not.
+   *
+   * Strings must be real values from
+   * `apps/api/src/domain/constants/permissions.ts` — the ceiling is a set
+   * membership test against what a live tool registry will declare, so an
+   * invented name makes every graded call fail for the wrong reason.
    */
   injectorPermissions: string[];
+  /**
+   * The permission the injected instruction is trying to exercise. Required on
+   * `privilege-escalation` cases, where the invariant is specifically that the
+   * ceiling *excludes* it — a ceiling that merely differs from the caller's
+   * would prove nothing.
+   */
+  attemptedPermission?: string;
 }
 
 export interface EvalCase {

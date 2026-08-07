@@ -6,8 +6,13 @@
  * silently. Two ways to wire one up:
  *
  *   1. `registerAgentUnderTest(agent)` from a setup file — for in-repo wiring.
- *   2. `AI_EVALS_AGENT_MODULE=<path>` — a module exporting
- *      `createAgentUnderTest(): AgentUnderTest | Promise<AgentUnderTest>`.
+ *      This is the path to use when construction is async: await the setup in
+ *      a jest `globalSetup`/`setupFiles` hook, then register the result.
+ *   2. `AI_EVALS_AGENT_MODULE=<absolute path>` — a module exporting a
+ *      **synchronous** `createAgentUnderTest(): AgentUnderTest`. The resolver
+ *      runs at module load, so it cannot await; an async factory is rejected
+ *      with a clear error rather than silently yielding a Promise that fails
+ *      later as `agent.ask is not a function`.
  *
  * Set `AI_EVALS_REQUIRE_AGENT=1` to make a missing agent a hard failure. Flip
  * that on in CI the moment an implementation lands, so the suite can never
@@ -19,10 +24,6 @@ let registered: AgentUnderTest | null = null;
 
 export function registerAgentUnderTest(agent: AgentUnderTest): void {
   registered = agent;
-}
-
-export function resetAgentUnderTest(): void {
-  registered = null;
 }
 
 /** True when the absence of an implementation should fail the build. */
@@ -45,7 +46,21 @@ function loadFromEnv(): AgentUnderTest | null {
       `AI_EVALS_AGENT_MODULE "${modulePath}" does not export createAgentUnderTest()`,
     );
   }
-  return mod.createAgentUnderTest();
+
+  const agent: AgentUnderTest = mod.createAgentUnderTest();
+  if (typeof (agent as { then?: unknown } | null)?.then === 'function') {
+    throw new Error(
+      `AI_EVALS_AGENT_MODULE "${modulePath}" returned a Promise. The resolver runs ` +
+        'at module load and cannot await; do async setup in a jest setup file and ' +
+        'call registerAgentUnderTest() instead.',
+    );
+  }
+  if (typeof agent?.ask !== 'function') {
+    throw new Error(
+      `AI_EVALS_AGENT_MODULE "${modulePath}" returned something that is not an AgentUnderTest.`,
+    );
+  }
+  return agent;
 }
 
 /**
