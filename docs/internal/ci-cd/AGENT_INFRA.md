@@ -130,7 +130,7 @@ Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.c
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the six-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **arm a durable self-wake** → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
-| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Allows nothing else — other MCP and shell tools keep their normal prompting; the recommended Linear/GitHub additions (and why an agent cannot apply them itself) are in "Recommended permission allows" below. |
+| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Since PR #667 the list also carries **all Linear MCP tools** (server-level `mcp__Linear` + `mcp__linear`, casings hedged) and a **curated GitHub MCP set** for the babysit loop — reads plus `actions_run_trigger`, comment/thread, and PR create/update writes. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, `delete_file`, and `issue_write` stay unlisted, so merging and direct content writes still prompt. Full rationale: "Applied permission allows" below. |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
 | `hooks` | PreToolUse + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate) and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
 
@@ -198,27 +198,31 @@ Because `workflow_run` executes the **default branch's** copy of the workflow an
 to either take effect only after merging to `main` — they cannot be exercised from the PR that
 introduces them (unit tests + this doc are the pre-merge verification).
 
-### Recommended permission allows (human must apply)
+### Applied permission allows
 
-Verified live 2026-08-06: the Claude Code **auto-mode classifier hard-blocks an agent editing
-`.claude/settings.json`** — self-granting permissions is a security boundary that even an explicit
-user request in-chat does not clear. So permission-prompt fatigue cannot be fixed by the agent
-mid-session; a human applies the diff (directly, or by merging an agent PR after re-adding the
-hunk themselves). Recommended additions to `permissions.allow`, from the babysit loop's real call
-pattern:
+Applied by a human paste in PR #667 (2026-08-07) — necessarily so: the Claude Code **auto-mode
+classifier hard-blocks an agent editing `.claude/settings.json`**, verified twice (2026-08-06/07,
+the second attempt carrying the user's explicit in-chat approval). Self-granting permissions is a
+boundary user intent does not clear, so permission-prompt fatigue is fixed by a human merging the
+allowlist, never by the agent mid-session. What the list carries and why:
 
 - `"mcp__Linear"`, `"mcp__linear"` — server-level allow, both casings hedged against connector
   naming drift. Linear is the work tracker; every routine and `/next` session writes to it, so
-  per-tool prompts are pure babysitting with no security payoff on a solo project.
+  per-tool prompts were pure babysitting with no security payoff on a solo project.
 - GitHub MCP reads: `get_me`, `pull_request_read`, `list_pull_requests`, `search_pull_requests`,
   `actions_get`, `actions_list`, `get_job_logs`, `get_check_run`, `get_commit`, `list_commits`,
   `list_branches`, `get_file_contents`, `issue_read`, `list_issues` (each as `mcp__github__<tool>`).
-- GitHub MCP writes the loop needs: `actions_run_trigger` (re-run infra-failed CI),
+- GitHub MCP writes the babysit loop needs: `actions_run_trigger` (re-run infra-failed CI),
   `add_issue_comment`, `add_reply_to_pull_request_comment`, `resolve_review_thread`,
   `create_pull_request`, `update_pull_request`, `update_pull_request_branch`.
 - Deliberately **excluded** so they keep prompting: `merge_pull_request`, `enable_pr_auto_merge`,
   `push_files`, `create_or_update_file`, `delete_file`, `issue_write` — merging and direct
   content writes stay behind a human, per the PAT policy above.
+- The claude-code-remote scheduling/PR-watch tools are listed under **three** observed server
+  namings — `mcp__Claude_Code_Remote__*`, `mcp__claude-code-remote__*`, and the connector-UUID
+  prefix. The hyphenated-lowercase spelling was observed live 2026-08-07, when `delete_trigger`
+  prompted despite the other two spellings being allowlisted; add any newly observed spelling the
+  same way rather than replacing existing ones.
 
 Also verified: an "always allow" click in one session/surface does not propagate to fresh cloud
 containers — only rules committed to `.claude/settings.json` travel with the repo — and a
