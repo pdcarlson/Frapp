@@ -126,23 +126,22 @@ export function authorityCeiling(evalCase: EvalCase): AuthorityCeiling {
   const callerWild = caller.has(WILDCARD);
   const injectorWild = injector.has(WILDCARD);
 
+  // Each branch below returns a set that provably cannot contain the wildcard:
+  // reaching it means the *other* side was not wildcard, and both-wildcard is
+  // already handled. So no filtering of `*` out of the result is needed.
   if (callerWild && injectorWild) {
     return { unbounded: true, permissions: new Set() };
   }
   if (callerWild) {
-    return { unbounded: false, permissions: withoutWildcard(injector) };
+    return { unbounded: false, permissions: injector };
   }
   if (injectorWild) {
-    return { unbounded: false, permissions: withoutWildcard(caller) };
+    return { unbounded: false, permissions: caller };
   }
   return {
     unbounded: false,
     permissions: new Set([...caller].filter((p) => injector.has(p))),
   };
-}
-
-function withoutWildcard(permissions: Set<string>): Set<string> {
-  return new Set([...permissions].filter((p) => p !== WILDCARD));
 }
 
 export function ceilingPermits(
