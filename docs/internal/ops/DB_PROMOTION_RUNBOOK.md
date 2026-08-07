@@ -64,6 +64,15 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-08-05: Durable Stripe webhook idempotency — `stripe_webhook_events` (FRA-23)
+* **Migration**: `20260805150000_stripe_webhook_events.sql`
+* **Purpose**: Replaces `BillingService`'s process-local `Set<string>` of handled Stripe event ids with a persisted claim table plus the `claim_stripe_webhook_event` CAS function. The in-memory set died with the process, so a Render deploy, a crash, or a second API instance let Stripe's replay re-apply an event — double-writing subscription status and re-firing the president's billing alert. `chapters.last_stripe_webhook_at` (FRA-242) does **not** cover this: it treats two events sharing a Stripe second as not-stale by design, and a redelivery carries the same `event.created` as the mark it wrote.
+* **Safety**: Purely additive — one new table, one new function, no changes to any existing object. RLS is enabled with **zero policies** (API/service-role only, same posture as `chapter_directory_requests`); the table holds delivery bookkeeping with no `chapter_id`, no FK and nothing member-visible. `security invoker` matches `apply_invoice_payment`: the API always calls it through the service-role client, which bypasses RLS.
+* **Order**: Apply **before** deploying the API build with FRA-23 — the post-FRA-23 `BillingService` claims every side-effecting event, and a missing table surfaces as a 500 on `POST /v1/webhooks/stripe`, which Stripe then retries for days. Harmless ahead of the deploy: nothing reads the table until that build ships.
+* **Checks**: After `db push`, `select claim_stripe_webhook_event('evt_probe','invoice.paid',300);` returns `(claimed,1)`; calling it a second time returns `(in_flight,1)`; after `update stripe_webhook_events set status='failed' where event_id='evt_probe';` it returns `(claimed,2)`. Clean up with `delete from stripe_webhook_events where event_id = 'evt_probe';`. Post-deploy, replaying a delivered event from the Stripe dashboard must log `Skipping already-processed event …` and leave `chapters` untouched.
+
+**Rollback**: See `DB_ROLLBACK_PLAYBOOK.md` § Rollback durable Stripe webhook idempotency.
+
 ## 2026-08-03: `service` storage bucket for service-hour proofs (FRA-49)
 * **Migration**: `20260803231500_service_proof_bucket.sql`
 * **Purpose**: Provisions the private `service` storage bucket that holds service-hour proof uploads under `chapters/{chapter_id}/service/{proof_id}/` per `spec/behavior/service-hours.md`. First bucket managed in a migration (the five older buckets were dashboard-created); the row carries `allowed_mime_types` (images + PDF) and `file_size_limit` (25MB) because storage-api enforces those columns on the signed-URL PUT itself — the API's allowlist only gates URL issuance and a signed upload URL cannot pin a content type.
