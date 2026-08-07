@@ -2593,6 +2593,23 @@ export interface components {
              */
             end_date: string;
         };
+        ReportExportResponseDto: {
+            /** @description Signed download URL, valid for one hour */
+            url: string;
+            /** @description ISO timestamp at which the URL stops working */
+            expires_at: string;
+            /**
+             * @description URL lifetime in seconds
+             * @example 3600
+             */
+            expires_in: number;
+            /** @description Suggested download filename */
+            filename: string;
+            /** @description Bucket-relative object path */
+            storage_path: string;
+            /** @description Number of data rows in the document */
+            row_count: number;
+        };
         AttendanceReportDto: {
             /** @description Filter by event ID */
             event_id?: string;
@@ -5615,8 +5632,9 @@ export interface operations {
     };
     ReportController_attendance_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -5628,18 +5646,22 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_points_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -5651,18 +5673,22 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_roster_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -5670,18 +5696,22 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };
     ReportController_service_v1: {
         parameters: {
-            query: {
-                format: string;
+            query?: {
+                /** @description json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL. */
+                format?: "json" | "csv" | "pdf";
             };
             header?: never;
             path?: never;
@@ -5693,11 +5723,14 @@ export interface operations {
             };
         };
         responses: {
+            /** @description Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf). */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ReportExportResponseDto"] | Record<string, never>[] | string;
+                };
             };
         };
     };

@@ -16,9 +16,87 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
 import { FinancialInvoiceService } from './financial-invoice.service';
+
+/** One row of the fake `stripe_webhook_events` table (FRA-23). */
+interface WebhookEventRow {
+  status: 'processing' | 'processed' | 'failed';
+  attempts: number;
+  claimedAtMs: number;
+  lastError: string | null;
+}
+
+/**
+ * In-memory stand-in for the `claim_stripe_webhook_event` RPC, mirroring its
+ * contract exactly: first caller claims, a `processed` row is skipped, a
+ * `failed` row is immediately re-claimable, and a `processing` row is taken
+ * over only once its lease has expired.
+ *
+ * The store lives OUTSIDE the service, so pointing a second `BillingService`
+ * at the same store is precisely the "API restarted / second instance"
+ * scenario that the old in-process `Set` could not survive. The SQL itself is
+ * verified against real Postgres — see the FRA-23 notes in
+ * `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`.
+ */
+function createWebhookEventRepo(
+  store: Map<string, WebhookEventRow>,
+  nowMs: () => number = () => Date.now(),
+): IStripeWebhookEventRepository {
+  return {
+    claim: jest.fn(
+      async (eventId: string, _eventType: string, staleSeconds: number) => {
+        const existing = store.get(eventId);
+        if (!existing) {
+          store.set(eventId, {
+            status: 'processing',
+            attempts: 1,
+            claimedAtMs: nowMs(),
+            lastError: null,
+          });
+          return { outcome: 'claimed' as const, attempts: 1 };
+        }
+
+        const leaseExpired =
+          existing.status === 'processing' &&
+          existing.claimedAtMs < nowMs() - staleSeconds * 1000;
+
+        if (existing.status === 'failed' || leaseExpired) {
+          existing.status = 'processing';
+          existing.attempts += 1;
+          existing.claimedAtMs = nowMs();
+          existing.lastError = null;
+          return { outcome: 'claimed' as const, attempts: existing.attempts };
+        }
+
+        return {
+          outcome:
+            existing.status === 'processed'
+              ? ('already_processed' as const)
+              : ('in_flight' as const),
+          attempts: existing.attempts,
+        };
+      },
+    ),
+    markProcessed: jest.fn(async (eventId: string) => {
+      const row = store.get(eventId);
+      if (row) {
+        row.status = 'processed';
+        row.lastError = null;
+      }
+    }),
+    markFailed: jest.fn(async (eventId: string, error: string) => {
+      const row = store.get(eventId);
+      if (row) {
+        row.status = 'failed';
+        row.lastError = error;
+      }
+    }),
+  };
+}
 
 describe('BillingService', () => {
   it('should initialize successfully', () => {
@@ -36,6 +114,8 @@ describe('BillingService', () => {
   let mockFinancialInvoiceService: jest.Mocked<
     Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
   >;
+  let webhookEventStore: Map<string, WebhookEventRow>;
+  let mockWebhookEventRepo: IStripeWebhookEventRepository;
 
   const baseChapter: Chapter = {
     id: 'ch-1',
@@ -114,6 +194,9 @@ describe('BillingService', () => {
       applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
     };
 
+    webhookEventStore = new Map();
+    mockWebhookEventRepo = createWebhookEventRepo(webhookEventStore);
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BillingService,
@@ -121,6 +204,10 @@ describe('BillingService', () => {
         { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+        {
+          provide: STRIPE_WEBHOOK_EVENT_REPOSITORY,
+          useValue: mockWebhookEventRepo,
+        },
         { provide: NotificationService, useValue: mockNotificationService },
         {
           provide: FinancialInvoiceService,
@@ -1702,6 +1789,267 @@ describe('BillingService', () => {
           category: 'billing',
         }),
       );
+    });
+  });
+
+  // FRA-23. The point of every test here is that the guard survives the
+  // *process*: each one either drives a second BillingService instance over the
+  // same store (a restart / second replica) or manipulates the stored claim
+  // directly. An in-process Set passes none of them.
+  describe('durable webhook idempotency (FRA-23)', () => {
+    const buildService = async (
+      repo: IStripeWebhookEventRepository,
+    ): Promise<BillingService> => {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          BillingService,
+          { provide: BILLING_PROVIDER, useValue: mockBillingProvider },
+          { provide: CHAPTER_REPOSITORY, useValue: mockChapterRepo },
+          { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+          { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
+          { provide: STRIPE_WEBHOOK_EVENT_REPOSITORY, useValue: repo },
+          { provide: NotificationService, useValue: mockNotificationService },
+          {
+            provide: FinancialInvoiceService,
+            useValue: mockFinancialInvoiceService,
+          },
+        ],
+      }).compile();
+      return module.get(BillingService);
+    };
+
+    const subChapter = {
+      ...baseChapter,
+      subscription_status: 'active' as const,
+      subscription_id: 'sub_dup',
+    };
+
+    const checkoutEvent = (id: string): WebhookEvent => ({
+      id,
+      type: 'checkout.session.completed',
+      created: 1_760_000_000,
+      data: {
+        object: {
+          metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+          subscription: 'sub_dup',
+          customer: 'cus_123',
+        },
+      },
+    });
+
+    it('skips a replayed checkout on a fresh service instance (restart)', async () => {
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+      const event = checkoutEvent('evt_restart');
+
+      await service.handleWebhookEvent(event);
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+
+      // The API restarts: brand-new service, brand-new repository object, same
+      // durable store. Stripe redelivers the identical event.
+      const afterRestart = await buildService(
+        createWebhookEventRepo(webhookEventStore),
+      );
+      await afterRestart.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      expect(webhookEventStore.get('evt_restart')?.status).toBe('processed');
+    });
+
+    it('skips a replayed customer.subscription.updated across instances', async () => {
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(subChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...subChapter,
+        subscription_status: 'past_due',
+      });
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+
+      const event: WebhookEvent = {
+        id: 'evt_sub_updated_dup',
+        type: 'customer.subscription.updated',
+        created: 1_760_000_000,
+        data: { object: { id: 'sub_dup', status: 'past_due' } },
+      };
+
+      await service.handleWebhookEvent(event);
+      const afterRestart = await buildService(
+        createWebhookEventRepo(webhookEventStore),
+      );
+      await afterRestart.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      // The redelivery must not re-alert the president either.
+      expect(mockRoleRepo.findByChapterAndName).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a replayed customer.subscription.deleted across instances', async () => {
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(subChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...subChapter,
+        subscription_status: 'canceled',
+      });
+      mockRoleRepo.findByChapterAndName.mockResolvedValue(null);
+
+      const event: WebhookEvent = {
+        id: 'evt_sub_deleted_dup',
+        type: 'customer.subscription.deleted',
+        created: 1_760_000_000,
+        data: { object: { id: 'sub_dup' } },
+      };
+
+      await service.handleWebhookEvent(event);
+      const afterRestart = await buildService(
+        createWebhookEventRepo(webhookEventStore),
+      );
+      await afterRestart.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a replayed invoice.paid across instances', async () => {
+      const pastDueChapter = {
+        ...subChapter,
+        subscription_status: 'past_due' as const,
+      };
+      mockChapterRepo.findBySubscriptionId.mockResolvedValue(pastDueChapter);
+      mockChapterRepo.update.mockResolvedValue({
+        ...pastDueChapter,
+        subscription_status: 'active',
+      });
+
+      const event: WebhookEvent = {
+        id: 'evt_invoice_dup',
+        type: 'invoice.paid',
+        created: 1_760_000_000,
+        data: { object: { subscription: 'sub_dup' } },
+      };
+
+      await service.handleWebhookEvent(event);
+      const afterRestart = await buildService(
+        createWebhookEventRepo(webhookEventStore),
+      );
+      await afterRestart.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips a replayed payment_intent.succeeded across instances', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_pi_dup',
+        type: 'payment_intent.succeeded',
+        created: 1_760_000_000,
+        data: {
+          object: {
+            id: 'pi_1',
+            metadata: {
+              invoice_id: '11111111-1111-4111-8111-111111111111',
+              chapter_id: CHECKOUT_CHAPTER_ID,
+            },
+            latest_charge: 'ch_1',
+          },
+        },
+      };
+
+      await service.handleWebhookEvent(event);
+      const afterRestart = await buildService(
+        createWebhookEventRepo(webhookEventStore),
+      );
+      await afterRestart.handleWebhookEvent(event);
+
+      expect(
+        mockFinancialInvoiceService.applyStripePaymentSuccess,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('records the failure and rethrows when a handler throws', async () => {
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.update.mockRejectedValue(new Error('database exploded'));
+
+      await expect(
+        service.handleWebhookEvent(checkoutEvent('evt_fail')),
+      ).rejects.toThrow('database exploded');
+
+      const row = webhookEventStore.get('evt_fail');
+      expect(row?.status).toBe('failed');
+      expect(row?.lastError).toBe('database exploded');
+    });
+
+    it('reprocesses a failed event on the next delivery', async () => {
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.update.mockRejectedValueOnce(new Error('transient'));
+      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+      const event = checkoutEvent('evt_retry');
+
+      await expect(service.handleWebhookEvent(event)).rejects.toThrow(
+        'transient',
+      );
+      expect(webhookEventStore.get('evt_retry')?.status).toBe('failed');
+
+      // Stripe retries; the failed claim is immediately re-claimable.
+      await service.handleWebhookEvent(event);
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(2);
+      const row = webhookEventStore.get('evt_retry');
+      expect(row?.status).toBe('processed');
+      expect(row?.attempts).toBe(2);
+      expect(row?.lastError).toBeNull();
+    });
+
+    it('defers (503) instead of acking an event another instance is mid-processing', async () => {
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
+      webhookEventStore.set('evt_inflight', {
+        status: 'processing',
+        attempts: 1,
+        claimedAtMs: Date.now(),
+        lastError: null,
+      });
+
+      // Acking here would let Stripe stop retrying while the other worker's
+      // outcome is still unknown; if that worker fails, the event is lost.
+      await expect(
+        service.handleWebhookEvent(checkoutEvent('evt_inflight')),
+      ).rejects.toThrow(ServiceUnavailableException);
+
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
+      expect(webhookEventStore.get('evt_inflight')?.attempts).toBe(1);
+      expect(webhookEventStore.get('evt_inflight')?.status).toBe('processing');
+    });
+
+    it('takes over a claim abandoned by a crashed worker', async () => {
+      mockChapterRepo.findById.mockResolvedValue(checkoutChapter);
+      mockChapterRepo.update.mockResolvedValue(checkoutChapter);
+
+      const now = Date.now();
+      webhookEventStore.set('evt_abandoned', {
+        status: 'processing',
+        attempts: 1,
+        // Claimed ten minutes ago and never finished — the worker died.
+        claimedAtMs: now - 10 * 60 * 1000,
+        lastError: null,
+      });
+
+      const survivor = await buildService(
+        createWebhookEventRepo(webhookEventStore, () => now),
+      );
+      await survivor.handleWebhookEvent(checkoutEvent('evt_abandoned'));
+
+      expect(mockChapterRepo.update).toHaveBeenCalledTimes(1);
+      const row = webhookEventStore.get('evt_abandoned');
+      expect(row?.status).toBe('processed');
+      expect(row?.attempts).toBe(2);
+    });
+
+    it('does not persist a claim for unhandled event types', async () => {
+      await service.handleWebhookEvent({
+        id: 'evt_unhandled',
+        type: 'customer.created',
+        created: 1_760_000_000,
+        data: { object: {} },
+      });
+
+      expect(webhookEventStore.size).toBe(0);
+      expect(mockWebhookEventRepo.claim).not.toHaveBeenCalled();
+      expect(mockChapterRepo.update).not.toHaveBeenCalled();
     });
   });
 });

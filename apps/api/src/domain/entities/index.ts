@@ -18,3 +18,4 @@ export * from './chapter-document.entity';
 export * from './poll-vote.entity';
 export * from './semester-archive.entity';
 export * from './chapter-custom-role.entity';
+export * from './stripe-webhook-event.entity';

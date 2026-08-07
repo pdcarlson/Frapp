@@ -27,6 +27,8 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.interface';
 import type { IRoleRepository } from '../../domain/repositories/role.repository.interface';
+import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
+import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import { NotificationService } from './notification.service';
 
 export interface CreateCheckoutInput {
@@ -44,10 +46,31 @@ export interface CreatePortalInput {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * The event types with side effects, and therefore the only ones worth
+ * deduplicating (FRA-23). Anything else is logged and dropped before the
+ * database is touched, so a shared Stripe account's unrelated traffic does not
+ * accumulate claim rows. Keep in sync with the switch in `handleWebhookEvent`.
+ */
+const HANDLED_WEBHOOK_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'checkout.session.completed',
+  'customer.subscription.updated',
+  'customer.subscription.deleted',
+  'invoice.paid',
+  'payment_intent.succeeded',
+]);
+
+/**
+ * How long a claim may sit in `processing` before another delivery may take it
+ * over. Only reached when a worker died mid-handler; a healthy handler
+ * finishes in well under a second. Stripe's own retry cadence starts at
+ * minutes, so this never races a normal redelivery.
+ */
+const WEBHOOK_CLAIM_STALE_SECONDS = 300;
+
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
-  private readonly processedEventIds = new Set<string>();
 
   constructor(
     @Inject(BILLING_PROVIDER)
@@ -58,6 +81,8 @@ export class BillingService {
     private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY)
     private readonly roleRepo: IRoleRepository,
+    @Inject(STRIPE_WEBHOOK_EVENT_REPOSITORY)
+    private readonly webhookEventRepo: IStripeWebhookEventRepository,
     private readonly notificationService: NotificationService,
     private readonly financialInvoiceService: FinancialInvoiceService,
   ) {}
@@ -143,35 +168,106 @@ export class BillingService {
     }
   }
 
+  /**
+   * Idempotency is durable (FRA-23): the event id is claimed in
+   * `stripe_webhook_events` *before* any side effect runs, so a redelivery
+   * after a deploy, crash, or onto a second instance is skipped rather than
+   * re-applied. This is deliberately at-least-once — a claim that survives its
+   * handler's crash is retried after the stale lease rather than dropped,
+   * because losing a billing event is worse than re-applying one.
+   *
+   * Distinct from FRA-242's `last_stripe_webhook_at` ordering mark, which
+   * treats a same-second redelivery as fresh and so cannot dedup on its own.
+   */
   async handleWebhookEvent(event: WebhookEvent): Promise<void> {
-    if (this.processedEventIds.has(event.id)) {
+    if (!HANDLED_WEBHOOK_EVENT_TYPES.has(event.type)) {
+      this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+      return;
+    }
+
+    const claim = await this.webhookEventRepo.claim(
+      event.id,
+      event.type,
+      WEBHOOK_CLAIM_STALE_SECONDS,
+    );
+
+    if (claim.outcome === 'already_processed') {
       this.logger.debug(`Skipping already-processed event ${event.id}`);
       return;
     }
 
-    this.logger.log(`Processing webhook event: ${event.type} (${event.id})`);
-
-    switch (event.type) {
-      case 'checkout.session.completed':
-        await this.handleCheckoutCompleted(event);
-        break;
-      case 'customer.subscription.updated':
-        await this.handleSubscriptionUpdated(event);
-        break;
-      case 'customer.subscription.deleted':
-        await this.handleSubscriptionDeleted(event);
-        break;
-      case 'invoice.paid':
-        await this.handleInvoicePaid(event);
-        break;
-      case 'payment_intent.succeeded':
-        await this.handlePaymentIntentSucceeded(event);
-        break;
-      default:
-        this.logger.debug(`Unhandled webhook event type: ${event.type}`);
+    if (claim.outcome === 'in_flight') {
+      // Another instance is mid-handler. Deliberately 503 rather than ack:
+      // acking would tell Stripe the event is delivered while its outcome is
+      // still unknown, and if that worker then fails, nothing would ever retry
+      // it — a silently dropped billing event, which is exactly what the
+      // at-least-once posture above exists to prevent. Stripe's retry finds
+      // either `already_processed` (acked) or a failed/stale claim (re-taken).
+      this.logger.warn(
+        `Deferring ${event.type} ${event.id}: another worker holds the claim`,
+      );
+      throw new ServiceUnavailableException(
+        'Webhook event is already being processed; retry shortly',
+      );
     }
 
-    this.processedEventIds.add(event.id);
+    this.logger.log(
+      `Processing webhook event: ${event.type} (${event.id}), attempt ${claim.attempts}`,
+    );
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed':
+          await this.handleCheckoutCompleted(event);
+          break;
+        case 'customer.subscription.updated':
+          await this.handleSubscriptionUpdated(event);
+          break;
+        case 'customer.subscription.deleted':
+          await this.handleSubscriptionDeleted(event);
+          break;
+        case 'invoice.paid':
+          await this.handleInvoicePaid(event);
+          break;
+        case 'payment_intent.succeeded':
+          await this.handlePaymentIntentSucceeded(event);
+          break;
+        default:
+          // Unreachable while the switch and HANDLED_WEBHOOK_EVENT_TYPES agree.
+          this.logger.error(
+            `Claimed ${event.id} but no handler for type ${event.type} — ` +
+              'HANDLED_WEBHOOK_EVENT_TYPES is out of sync with the switch',
+          );
+      }
+    } catch (error) {
+      await this.releaseFailedClaim(event, error);
+      // Rethrow so the controller 5xxs and Stripe retries, as before.
+      throw error;
+    }
+
+    await this.webhookEventRepo.markProcessed(event.id);
+  }
+
+  /**
+   * Record the failure and leave the event immediately re-claimable (AC-4).
+   * Never masks the handler's error: a bookkeeping failure here is logged, and
+   * the row simply stays `processing` until its lease expires.
+   */
+  private async releaseFailedClaim(
+    event: WebhookEvent,
+    error: unknown,
+  ): Promise<void> {
+    const message = error instanceof Error ? error.message : String(error);
+    try {
+      await this.webhookEventRepo.markFailed(event.id, message);
+    } catch (markError) {
+      this.logger.error(
+        `Failed to record webhook failure for ${event.id}; the claim will be ` +
+          `retried after its lease expires: ${
+            markError instanceof Error ? markError.message : String(markError)
+          }`,
+      );
+    }
   }
 
   private async handleCheckoutCompleted(event: WebhookEvent): Promise<void> {

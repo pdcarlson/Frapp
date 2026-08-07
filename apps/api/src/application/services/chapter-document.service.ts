@@ -15,6 +15,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 
 const ALLOWED_CONTENT_TYPES = new Set([
   'image/jpeg',
@@ -110,6 +111,13 @@ export class ChapterDocumentService {
         'storage_path must be within the chapter documents folder',
       );
     }
+    // See the equivalent guard in BackworkService.confirmUpload: a prefix check
+    // alone lets relative segments through, and this value is persisted and
+    // later signed for download.
+    assertSafeStoragePath(
+      input.storage_path,
+      'storage_path must not contain relative path segments',
+    );
 
     return this.documentRepo.create({
       chapter_id: input.chapter_id,
