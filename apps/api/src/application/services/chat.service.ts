@@ -44,6 +44,12 @@ const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
 const CHAT_BUCKET = 'chat';
 
+// A ROLE_GATED channel that gates on nothing is denied by `canAccessChannel`
+// (FRA-321), so reject the shape at the write points rather than letting a
+// chapter create a channel nobody but the President can open.
+const ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE =
+  'A ROLE_GATED channel must specify at least one entry in required_permissions';
+
 const ALLOWED_CONTENT_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -189,6 +195,13 @@ export class ChatService {
       );
     }
 
+    if (
+      input.type === 'ROLE_GATED' &&
+      (input.required_permissions ?? []).length === 0
+    ) {
+      throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
+    }
+
     return this.channelRepo.create({
       chapter_id: input.chapter_id,
       name: input.name,
@@ -214,7 +227,19 @@ export class ChatService {
       >
     >,
   ): Promise<ChatChannel> {
-    await this.getChannel(id, chapterId);
+    const existing = await this.getChannel(id, chapterId);
+
+    // `type` is not updatable, so the existing row decides whether the gate
+    // applies. Only guard when the caller actually sends the field — omitting it
+    // leaves the stored list intact.
+    if (
+      existing.type === 'ROLE_GATED' &&
+      data.required_permissions !== undefined &&
+      (data.required_permissions ?? []).length === 0
+    ) {
+      throw new BadRequestException(ROLE_GATED_REQUIRES_PERMISSIONS_MESSAGE);
+    }
+
     return this.channelRepo.update(id, chapterId, data);
   }
 

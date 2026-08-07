@@ -48,6 +48,12 @@ export const SystemPermissions = {
   CHAPTER_CONFIG_MANAGE: 'chapter-config:manage',
 
   CHAPTER_DIRECTORY_SEARCH: 'chapter-directory:search',
+
+  // Marks a ROLE_GATED channel as one the Alumni lifecycle may author in. Held
+  // by the Alumni role, but the posting gate reads it off the *channel's*
+  // `required_permissions` — see `ALUMNI_CHANNEL_PERMISSION` in
+  // `@repo/validation`.
+  ALUMNI_POST: 'alumni:post',
 } as const;
 
 export type SystemPermission =
@@ -173,18 +179,38 @@ export const DEFAULT_SYSTEM_ROLES = [
     // to.
     name: ALUMNI_ROLE_NAME,
     system_key: SystemRoleKeys.ALUMNI,
-    permissions: [SystemPermissions.MEMBERS_VIEW],
+    permissions: [SystemPermissions.MEMBERS_VIEW, SystemPermissions.ALUMNI_POST],
     is_system: true,
     display_order: 7,
     color: '#6B7280',
   },
 ] as const;
 
+/**
+ * Channels seeded on chapter creation.
+ *
+ * `required_permissions` is persisted verbatim by `ChapterService.create`. It
+ * is meaningful only for ROLE_GATED channels — `canAccessChannel` denies a
+ * ROLE_GATED channel whose requirement list is empty, so every ROLE_GATED entry
+ * here MUST carry a non-empty list or the seeded channel is unreachable.
+ *
+ * `#alumni` requires `members:view` (held by every seeded role, so active
+ * members and alumni both keep the read access `spec/behavior/alumni.md`
+ * specifies) plus `alumni:post`, which is what marks it alumni-writable.
+ */
 export const DEFAULT_CHANNELS = [
-  { name: 'general', type: 'PUBLIC', is_read_only: false },
-  { name: 'announcements', type: 'PUBLIC', is_read_only: true },
+  { name: 'general', type: 'PUBLIC', is_read_only: false, required_permissions: null },
+  { name: 'announcements', type: 'PUBLIC', is_read_only: true, required_permissions: null },
   // System-write, member-read audit feed. The Chunk 02 audit bridge and the
   // onboarding welcome message post system_audit messages here / to #general.
-  { name: 'chapter-audit', type: 'PUBLIC', is_read_only: true },
-  { name: 'alumni', type: 'ROLE_GATED', is_read_only: false },
+  { name: 'chapter-audit', type: 'PUBLIC', is_read_only: true, required_permissions: null },
+  {
+    name: 'alumni',
+    type: 'ROLE_GATED',
+    is_read_only: false,
+    required_permissions: [
+      SystemPermissions.MEMBERS_VIEW,
+      SystemPermissions.ALUMNI_POST,
+    ],
+  },
 ] as const;
