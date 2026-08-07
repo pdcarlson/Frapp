@@ -29,6 +29,7 @@ import {
   STORAGE_PROVIDER,
   type IStorageProvider,
 } from '../../domain/adapters/storage.interface';
+import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 
 const BACKWORK_BUCKET = 'backwork';
 
@@ -137,6 +138,15 @@ export class BackworkService {
         'storage_path must be within the chapter backwork folder',
       );
     }
+    // A prefix check is not containment — relative segments satisfy it and
+    // still climb out, and this value is persisted and later handed to
+    // getSignedDownloadUrl/deleteFile. The storage layer rejects them too, but
+    // this write path must not rely on that alone: it is what turns any future
+    // gap in that guard into a cross-bucket read of a service-role-signed URL.
+    assertSafeStoragePath(
+      input.storage_path,
+      'storage_path must not contain relative path segments',
+    );
 
     const existing = await this.resourceRepo.findByFileHash(
       input.chapter_id,
