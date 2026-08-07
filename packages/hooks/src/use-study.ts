@@ -40,6 +40,7 @@ export function useCreateGeofence() {
       minutes_per_point: number;
       points_per_interval: number;
       min_session_minutes: number;
+      pause_grace_minutes: number;
     }) => {
       const { data, error } = await client.POST("/v1/geofences", { body });
       if (error) throw error;
@@ -67,6 +68,7 @@ export function useUpdateGeofence() {
         minutes_per_point?: number;
         points_per_interval?: number;
         min_session_minutes?: number;
+        pause_grace_minutes?: number;
       };
     }) => {
       const { data, error } = await client.PATCH("/v1/geofences/{id}", {
@@ -130,6 +132,49 @@ export function useStudyHeartbeat() {
       );
       if (error) throw error;
       return data;
+    },
+  });
+}
+
+/**
+ * Tell the server the session went to the background. Foreground minutes stop
+ * accruing at this instant and the grace clock starts; the session auto-expires
+ * as PAUSED_EXPIRED if `/resume` doesn't arrive within the zone's grace window.
+ */
+export function usePauseStudySession() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.POST("/v1/study-sessions/pause");
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+    },
+  });
+}
+
+/**
+ * Return-to-foreground signal. Carries coordinates because the member may have
+ * left the study zone while away and the next heartbeat is up to five minutes
+ * out.
+ */
+export function useResumeStudySession() {
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { lat: number; lng: number }) => {
+      const { data, error } = await client.POST("/v1/study-sessions/resume", {
+        body,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["study-sessions"] });
+      queryClient.invalidateQueries({ queryKey: ["points"] });
     },
   });
 }

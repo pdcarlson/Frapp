@@ -23,6 +23,7 @@ import {
   UpdateGeofenceDto,
   StartStudySessionDto,
   StudySessionHeartbeatDto,
+  ResumeStudySessionDto,
 } from '../dtos/study.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -54,6 +55,7 @@ export class StudyGeofenceController {
       minutes_per_point: dto.minutes_per_point,
       points_per_interval: dto.points_per_interval,
       min_session_minutes: dto.min_session_minutes,
+      pause_grace_minutes: dto.pause_grace_minutes,
     });
   }
 
@@ -109,6 +111,33 @@ export class StudySessionController {
     @Body() dto: StudySessionHeartbeatDto,
   ) {
     return this.studyService.heartbeat(userId, chapterId, dto.lat, dto.lng);
+  }
+
+  @Post('pause')
+  @ApiOperation({
+    summary: 'Pause the active session (app backgrounded / tab hidden)',
+    description:
+      'Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.',
+  })
+  async pause(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.studyService.pauseSession(userId, chapterId);
+  }
+
+  @Post('resume')
+  @ApiOperation({
+    summary: 'Resume a paused session (with lat/lng)',
+    description:
+      'Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.',
+  })
+  async resume(
+    @CurrentUser('id') userId: string,
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: ResumeStudySessionDto,
+  ) {
+    return this.studyService.resumeSession(userId, chapterId, dto.lat, dto.lng);
   }
 
   @Post('stop')

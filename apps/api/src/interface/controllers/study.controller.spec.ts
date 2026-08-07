@@ -21,6 +21,8 @@ describe('StudyController', () => {
       deleteGeofence: jest.fn(),
       startSession: jest.fn(),
       heartbeat: jest.fn(),
+      pauseSession: jest.fn(),
+      resumeSession: jest.fn(),
       stopSession: jest.fn(),
       listSessions: jest.fn(),
     };
@@ -178,6 +180,45 @@ describe('StudyController', () => {
         );
 
         expect(studyService.heartbeat).toHaveBeenCalledWith(
+          userId,
+          chapterId,
+          dto.lat,
+          dto.lng,
+        );
+        expect(result).toEqual(expectedResult);
+      });
+    });
+
+    describe('pause', () => {
+      it('should call studyService.pauseSession with correct arguments', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const expectedResult = { id: 'session-1', paused_at: 'now' };
+        studyService.pauseSession.mockResolvedValue(expectedResult as any);
+
+        const result = await sessionController.pause(userId, chapterId);
+
+        expect(studyService.pauseSession).toHaveBeenCalledWith(
+          userId,
+          chapterId,
+        );
+        expect(result).toEqual(expectedResult);
+      });
+    });
+
+    describe('resume', () => {
+      // Resume carries coordinates: the member may have left the zone while
+      // backgrounded and the next heartbeat is up to five minutes out.
+      it('should call studyService.resumeSession with the posted coordinates', async () => {
+        const userId = 'user-123';
+        const chapterId = 'chapter-123';
+        const dto = { lat: 10, lng: 20 };
+        const expectedResult = { id: 'session-1', paused_at: null };
+        studyService.resumeSession.mockResolvedValue(expectedResult as any);
+
+        const result = await sessionController.resume(userId, chapterId, dto);
+
+        expect(studyService.resumeSession).toHaveBeenCalledWith(
           userId,
           chapterId,
           dto.lat,
