@@ -1,6 +1,6 @@
 ---
-description: Claim the next viable Linear issue as In Progress before touching it, complete it, and keep Linear in sync — safe to run in several sessions at once
-argument-hint: "[FRA-123] [--plan-only N]"
+description: Claim the next viable unit of Linear work — one issue, or a small coherent batch — as In Progress before touching it, complete it, and keep Linear in sync — safe to run in several sessions at once
+argument-hint: "[FRA-123 ...] [--plan-only N]"
 ---
 
 Work tracking lives in **Linear** (team **Frapp Live**, prefix **FRA-**), reached via the **native
@@ -9,9 +9,9 @@ Linear MCP** — the canonical hub. New issues are created in Linear; PRs close 
 [`LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md); this file is procedure. Where they disagree,
 the doc wins and this file is the bug.
 
-Claim one issue, complete it, and leave the tracker cleaner than you found it. **Several sessions run
-this at once** — the claim protocol in Phase 0 is what keeps them off each other's work, so it comes
-before anything expensive.
+Claim one **unit** of work — usually a single issue, sometimes a small coherent batch — complete it,
+and leave the tracker cleaner than you found it. **Several sessions run this at once** — the claim
+protocol in Phase 0 is what keeps them off each other's work, so it comes before anything expensive.
 
 ## Invariants
 
@@ -30,17 +30,35 @@ Do not proceed unclaimed, do not substitute GitHub issues or a scratch file, do 
 No claim means no work. Load schemas first, e.g. `ToolSearch("select:mcp__Linear__list_issues,
 mcp__Linear__get_issue,mcp__Linear__list_comments,mcp__Linear__save_issue,mcp__Linear__save_comment")`.
 
-**Ownership is per run, not per turn.** From `AGENT-CLAIM` until the PR is open, you own exactly one
-issue. Ending a *turn* mid-run needs only a heartbeat. Ending the *run* — you will not resume this
-issue in this session — requires an `AGENT-RELEASE` or `AGENT-HANDOFF` as your last action before
-responding. The Exits table is the complete list of run-ending situations; if yours is not there, the
-run is not ending. An issue left silently In Progress is a bug you introduced.
+**Ownership is per run, not per turn.** From `AGENT-CLAIM` until the PR is open, you own exactly the
+issues you claimed — every one of them. Ending a *turn* mid-run needs only a heartbeat. Ending the
+*run* — you will not resume this work in this session — requires an `AGENT-RELEASE` or
+`AGENT-HANDOFF` **per still-held issue** as your last action before responding. The Exits table is
+the complete list of run-ending situations; if yours is not there, the run is not ending. An issue
+left silently In Progress is a bug you introduced, and a batch gives you N chances to introduce it.
 
-**One issue per invocation.** The unit is one branch and one independently revertible PR. Never claim
-a batch — parallelism belongs at the session layer, which is what this protocol is for. Sole
-exception: sub-issues that cannot ship alone ("add column" + "use column", where the first is dead
-code). Test: *would each be a shippable, revertible PR by itself?* Yes → separate sessions. No → claim
-the parent and those sub-issues as one unit, one branch, one PR.
+**One coherent unit per invocation — usually one issue, sometimes a small batch.** The unit of
+shipping never changes: **one branch, one coherent, revertible PR.** What may vary is how many issues
+that PR closes. Batch only when every member independently clears §0.2 and the set reads as *one
+change* — same root cause, same subsystem, or mechanical kin a reviewer would want in one diff.
+Caps: `MAX_BATCH` members, combined estimate ≤ 8; any single issue estimated ≥ 5 (or reading that
+large) runs solo. Estimates gate *batching*, never candidacy. Batching is for coherence, not
+throughput: if the PR body would need an unrelated section per issue, those are separate runs — that
+parallelism belongs at the session layer. The old test still applies per member — *would this be a
+shippable, revertible PR by itself?* — it just no longer forces "separate sessions" when the pieces
+are small and belong together; sub-issues that cannot ship alone ("add column" + "use column") batch
+with their parent exactly as before.
+
+**Nothing discovered is dropped.** Any defect, drift, or missing coverage you notice mid-run has
+exactly two exits: **fix it now** — when it sits within or adjacent to the surface you are already
+touching and doesn't change the PR's revert story — or **file it** (`save_issue` → **Triage** with a
+Priority, `file:line` evidence, and an Agent brief when you can write one). A drive-by fix small
+enough to review as part of the diff needs no issue — note it in the PR body. A fixed defect that
+warrants its own record (user-visible behavior, security, anything someone would later search the
+tracker for) gets filed **and claimed into the batch** — same `CLAIM_ID`, claim comment and all, cap
+still binding — so the PR closes it. That record-keeping claim on an issue you *just self-filed* is
+the sole exception to "Triage is never claimable", which otherwise governs auto-starting inbox work.
+Everything else is filed and left for the board. Silence is the only failure mode.
 
 **Ultracode changes how thoroughly a step is done — never which steps happen, and never what gets
 written to Linear.** Each fan-out below is specified as independent checks with named outputs: with
@@ -83,6 +101,7 @@ named in one, or a linked PR.
 | Name | Value |
 | --- | --- |
 | `CLAIM_ID` | 8 hex chars (`openssl rand -hex 4`), generated **once** per run, reused in every comment you post |
+| `MAX_BATCH` | **3 issues** per claimed unit, combined estimate **≤ 8**; any single issue ≥ 5 runs solo |
 | `LEASE` | **4 hours**, renewed by every heartbeat |
 | `ORPHAN_AGE` | **72 hours** — an In Progress issue with *no* claim comment, no linked PR and no activity this long is abandoned |
 | Sentinels | `AGENT-CLAIM` `AGENT-RECLAIM` `AGENT-HEARTBEAT` `AGENT-RELEASE` `AGENT-HANDOFF` `AGENT-STALE-FLAG` — always the comment's first line |
@@ -90,16 +109,23 @@ named in one, or a linked PR.
 A claim is **live** when its `claim_id` has no later `AGENT-RELEASE` carrying the same id **and** its
 lease has not expired. Lease age is measured from server time — the `createdAt`/`updatedAt` that
 `list_comments` returns for the claim comment or its newest `AGENT-HEARTBEAT` — never from a
-timestamp written inside a comment body, which is the author's own clock.
+timestamp written inside a comment body, which is the author's own clock. One `claim_id` may appear
+on several issues at once (a batch); liveness is always judged **per issue, in that issue's own
+comment stream** — an `AGENT-RELEASE` posted on one member releases that member only, and sweepers
+never need to look past the issue they are inspecting.
 
 ## Modes
 
 **`/next`** — the full flow.
 
-**`/next FRA-123`** — skip ranking (§0.3–0.4); still claim and verify (§0.5–0.6), since a named issue
-may already be held. Backlog *and* Todo are claimable as usual; **Triage never is, in any mode**. If
-you lose the race, **stop and report who holds it** — do not fall back to ranking, because the human
-picked this issue, not a category.
+**`/next FRA-123 [FRA-124 …]`** — skip ranking (§0.3–0.4); still claim and verify (§0.5–0.6) per
+named issue, since a named issue may already be held. Several keys claim as one batch — the caps and
+the coherence test still apply, and if the named set doesn't honestly batch, say so in your reply and
+ask rather than silently splitting or silently shipping an incoherent PR. Backlog *and* Todo are
+claimable as usual; **Triage never is, in any mode** (sole exception: the record-keeping claim in
+"Nothing discovered is dropped"). If you lose the race on a named issue, **report who holds it** — do
+not fall back to ranking, because the human picked the issues, not a category. Losing one member of a
+named batch does not abandon the rest: proceed with what you won and report the loss.
 
 **`/next --plan-only N`** — rank and emit N ready-to-paste `/next FRA-xxx` prompts, then stop. **Write
 nothing to Linear** — no claims, no sweep, no advisory comments. This is how you spin up a batch of
@@ -108,11 +134,15 @@ issue's Agent brief into its emitted prompt: prefix the prompt with `ultracode `
 `ultracode:yes` (the pasted turn then starts with `ultracode`, not `/`, so the harness scan fires
 and supplies the session-level reminder the opt-in paragraph above accepts — the prefix and
 argument spellings are equivalent opt-ins, not competitors), and append a one-line note when it
-names a `model:` so the launcher picks the right session model.
+names a `model:` so the launcher picks the right session model. An emitted prompt may name a batch
+(`/next FRA-a FRA-b`) when the ranked issues batch under the invariant's test — group at plan time,
+so the session layer and in-run batching don't fight over the same related issues.
 
 **Inside a Workflow, the orchestrator claims and subagents do not.** A `parallel()` fan-out starts N
 agents in the same second — the worst possible input for a claim race. Run Phase 0 in the
-orchestrator, sequentially, once per issue; then hand each subagent one issue key. A deterministic
+orchestrator, sequentially, once per issue; then hand each subagent one issue key or one
+pre-composed batch — the batch decision is the orchestrator's, made at claim time, never a
+subagent's. A deterministic
 partition beats optimistic claiming whenever a coordinator exists. **After the fan-out, reconcile
 every issue you claimed** — a subagent that errored, timed out, or returned nothing is
 indistinguishable from one that died, and its claim leaks exactly like FRA-38 did. In Review with a
@@ -153,11 +183,15 @@ ordering is deterministic so concurrent agents agree on it and the claim resolve
 keep five sessions from colliding in lockstep, **start at the candidate whose index is the first hex
 digit of your `CLAIM_ID` modulo 3** (so 0, 1, or 2) and walk from there, wrapping to the top.
 
-**0.4 — Auto-pick.** Take rank 1 and go. Do **not** ask which issue to work — that is the babysitting
-this command exists to remove, and the ranking is already the answer. Ask only when the ranking cannot
-decide: no candidate clears §0.2 (report why — do not settle for a worse issue), or the top two are
-genuinely tied and materially different in kind. Announce the pick and the runners-up; you are not
-asking permission.
+**0.4 — Auto-pick.** Take rank 1 and go. **Batch extension:** having picked rank 1, scan the
+remaining candidates for members that batch with it under the invariant's test — same root cause,
+same subsystem, mechanical kin — respecting the caps. Compose the batch **now**, before claiming: a
+batch is fixed at claim time and only ever shrinks (lost races, per-member vetoes); it never grows
+mid-run except through the record-keeping claim in "Nothing discovered is dropped". Do **not** ask
+which issue to work — that is the babysitting this command exists to remove, and the ranking is
+already the answer. Ask only when the ranking cannot decide: no candidate clears §0.2 (report why —
+do not settle for a worse issue), or the top two are genuinely tied and materially different in
+kind. Announce the pick — and the batch, if any — and the runners-up; you are not asking permission.
 
 **0.5 — Claim it.** Linear has **no compare-and-swap** — `save_issue` is last-write-wins and cannot be
 a lock. The comment stream is the only append-only, server-ordered structure available, so **the claim
@@ -172,6 +206,14 @@ Comment before state, always: if the session dies between the two writes, the is
 and the §0.2 filter still honours it. Walk until you win or the list is exhausted (cap 8). If every
 attempt lost to a *live* claim, report **"backlog saturated with active agents"**; if you simply ran
 out of candidates, say that instead — different problems, different fixes.
+
+A batch claims **sequentially in global rank order** — the deterministic §0.3 order every session
+agrees on, not your staggered walk, which applies only to where the *first* member came from.
+Total-order acquisition is what keeps two batching sessions from deadlocking over opposite ends of
+the same set. Post **all** of the batch's claims before starting any implementation; both §0.6
+verifies then cover **every** member. A lost race on one member yields that member only — release
+`lost-race`, state untouched, shrink the batch, continue. Never abandon won members over a lost one,
+and never "top up" a shrunk batch with a fresh candidate after implementation has begun.
 
 **0.6 — Verify, twice.** Once immediately after the state write, and again immediately before the
 **first repo mutation** in Phase 2 — the second costs one read and is all that stands between you and
@@ -209,6 +251,11 @@ the rest. Skip any issue already carrying an `AGENT-STALE-FLAG` newer than its l
 ten runs don't post ten flags.
 
 ## Phase 1 — verify the work is still real
+
+Under a batch, this phase runs **per member**: each issue gets its own §1.1/§1.2 verdicts and its
+own verification comment. A live blocker or a veto fires per member — **excise that member**
+(release it with the appropriate reason and state per the Exits table) and continue with the rest.
+If the excised member was the batch's point, release the others too, each per its own row.
 
 **1.1 — Blocked-by verification.** Linear's relations go stale: blockers get merged and nobody flips
 the relation. Answer *"is this actually still blocked?"* against the repo and git history, not against
@@ -281,11 +328,13 @@ it; agents never reach across. Every integrating edit (shared types, exports, wi
 Codemod-shaped work passes this test; feature work usually does not.
 
 **Heartbeat into Linear, not to the user** — under session fan-out nobody is watching this session.
-Edit your claim comment (`save_comment` with its `id`) to bump `Heartbeat:` at each checkpoint:
-verification done, first commit, each meaningful commit, before and after any long-running command, PR
-opened, and any time you would otherwise go quiet. One claim comment per issue per session — edit it,
-never spam new ones; if editing fails, post `AGENT-HEARTBEAT` with the same `claim_id`. **Re-read the
-issue at each heartbeat**: if someone moved it to Done or Canceled, or a later `AGENT-RECLAIM`
+Edit **every claim comment you hold** (`save_comment` with each `id` — one per batch member) to bump
+`Heartbeat:` at each checkpoint: verification done, first commit, each meaningful commit, before and
+after any long-running command, PR opened, and any time you would otherwise go quiet. Renewing all
+members keeps every issue's own comment stream authoritative — sweepers and §0.2 readers never have
+to follow a pointer to some "primary" member. One claim comment per issue per session — edit it,
+never spam new ones; if editing fails, post `AGENT-HEARTBEAT` with the same `claim_id`. **Re-read
+each issue at each heartbeat**: if someone moved it to Done or Canceled, or a later `AGENT-RECLAIM`
 superseded you, stop and ask.
 
 Verify end-to-end — run the tests and the app. Never claim a step you didn't run.
@@ -310,7 +359,9 @@ to a file, review the file.
 Autonomy removes the human's eyes from the diff, so under Ultracode this gets **more** budget, not
 less — and a frozen diff has zero write contention, making it the safest thing here to parallelize.
 Size each lens's budget by the brief's `depth` as well — the floor is always all five lenses;
-`deep` (or no brief) earns the widest budget per lens.
+`deep` (or no brief) earns the widest budget per lens. A batch concentrates several issues' surface
+under one review with a fixed findings cap, so **any batch of ≥ 2 runs `/diff-review` at `xhigh`** —
+per-issue depth must not be silently diluted by batching.
 Layer an **additional** fan-out *on top of* `/diff-review` (never instead of it): five lenses in
 `parallel` — correctness and edge cases; security (authz, injection, secrets, Supabase RLS);
 acceptance-criteria conformance; repo conventions and simplification; test adequacy — each returning
@@ -326,37 +377,71 @@ are the minimum list. Put files in their canonical home per
 [`DOCUMENTATION_CONVENTIONS.md`](../../docs/internal/DOCUMENTATION_CONVENTIONS.md); **never drop a
 stray file to satisfy the gate.**
 
-Push and open the PR with **`Fixes FRA-N`** in the title or body — the literal magic word, not a prose
-mention (add `Closes #<github>` if the issue has a GitHub twin). Body: what changed, why, which
-acceptance criteria it satisfies, and the *Flagged for review* list.
+Push and open the PR with **`Fixes FRA-N`** in the title or body — the literal magic word, not a
+prose mention — **one line per batch member** (add `Closes #<github>` per member with a GitHub twin).
+Linear documents multiple magic-word references per PR; on the **first** batched merge, confirm every
+member actually transitioned rather than assuming it — docs-verified is not observed-here. Body: what
+changed, why, which acceptance criteria **each member** satisfies, and the *Flagged for review* list.
+Doc-sync is per member too: the gate is PR-level and binary, so nothing mechanical catches a batch
+that documents only one of its issues — each member's §1.2 drift items get their docs touch.
 
-Move the issue to **In Review** and `save_comment` the PR link with a two-line summary. Do **not** post
-an `AGENT-RELEASE` — the open PR is the marker now, and the claim comment stays as the record of who
-did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle**: arm
+Move **every member** to **In Review** and `save_comment` the PR link on each. Do **not** post an
+`AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who did
+the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR lifecycle**: arm
 and re-arm the `send_later` self-wake, triage each red check infra-vs-code before pushing a "fix"
 (the `CI wake` comment says which — re-run infra, patch code), address and resolve review threads. On
-merge, Linear auto-transitions FRA-N to **Done**; if it didn't fire, `save_issue(id:"FRA-N",
-state:"Done")`. Solo project: the issue's state is the status — no manual board moves.
+merge, Linear auto-transitions each `Fixes`-named issue to **Done**; for any member where it didn't
+fire, `save_issue(id:"FRA-N", state:"Done")`. Solo project: the issue's state is the status — no
+manual board moves.
 
-Then stop. `/next` ships one issue and ends — do not start another.
+**After the merge (or a terminal release), the run may loop.** `/next` ships one coherent unit per
+PR — not one per session. When a PR merges and your context is still healthy (roughly: under
+two-thirds spent, no compaction yet), you may return to Phase 0 with a **fresh `CLAIM_ID`**: restart
+the designated branch from `origin/main` (`git fetch origin main && git checkout -B <branch>
+origin/main`) and claim the next unit. Otherwise end and let a fresh session take it — a degraded
+session claiming new work is worse than an idle board.
+
+**Pipelining — at most two open PRs.** Babysit wall-time is idle time; while a PR is open you may
+claim the next unit on a **fresh from-`main` branch** named `<designated-branch>-p2` (never branch B
+from A — the branch model is from-`main` only, and this line is the standing, Paul-approved grant
+for the suffixed branch). Each hard rule below closes a verified hazard, not a hypothetical:
+
+- **Check out the branch you push.** The pre-push gate resolves the *checked-out* HEAD, not the
+  pushed ref — pushing a non-checked-out ref either slips an unreviewed diff through or burns the
+  gate's livelock budget toward an UNREVIEWED release. No worktrees for the same reason: the marker
+  and the check would key on different roots.
+- **Commit WIP before every branch switch**, so a babysit fix on PR A never pulls B's half-built
+  work into review scope (`/diff-review` includes dirty-tree changes) or lands on the wrong branch.
+  Each `/diff-review` covers exactly one branch's HEAD.
+- **Migrations in both PRs → pick non-colliding version prefixes up front.** Branch protection's
+  `strict: true` re-runs the collision check after the first merge; expect an
+  `update_pull_request_branch` + fresh-CI cycle on the surviving PR, and don't try to re-review
+  `main`'s own merge delta — the gate doesn't ask for it.
+- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: one re-armed self-wake
+  whose check covers *all* open PRs, a `subscribe_pr_activity` per PR, stop conditions evaluated
+  over the set.
 
 ## Exits
 
 Act **before** you respond. Releasing an issue that has committed work is worse than leaving it
-claimed, because the next agent restarts from zero on top of it: work exists → hand off, never release.
+claimed, because the next agent restarts from zero on top of it: work exists → hand off, never
+release. Under a batch, every row applies **per member** — a release or handoff on one member never
+speaks for another, and a run ends only when every still-held member has its exit action.
 
 | Situation | Action |
 | --- | --- |
-| Turn ends, run continues | Heartbeat only — no release |
+| Turn ends, run continues | Heartbeat only (every held claim comment) — no release |
 | Blocker confirmed live | `AGENT-RELEASE` `blocked-discovered`, state → Backlog |
 | Veto fired, waiting on the user | `AGENT-RELEASE` (`out-of-scope`, or `plan-rejected`), state → Backlog |
 | User changed the subject | `AGENT-RELEASE` `user-aborted`, state → Backlog |
 | Issue underspecified | `AGENT-RELEASE` `blocked-discovered`, state → **Triage** (set a Priority), with an explanation |
 | Already shipped | State → Done, `AGENT-RELEASE` `superseded` |
-| Lost the race | `AGENT-RELEASE` `lost-race`, **state untouched** |
+| Lost the race | `AGENT-RELEASE` `lost-race`, **state untouched** — a batch shrinks and continues |
+| Batch member vetoed / blocked | Release **that member** per its row above; the rest of the batch continues |
 | Context nearly exhausted, work exists | `AGENT-HANDOFF` `session-ending`, state untouched, claim left live |
 | Linear MCP unavailable | Stop and report. No claim, no work, no fallback tracker |
-| PR opened | Neither — state → In Review, babysit to merge |
+| PR opened | Neither — **every member** → In Review, babysit to merge; the run may then loop or pipeline per Phase 4 |
+| Session ending, PR open **and** pipelined unit claimed | PR'd members stay In Review; each unshipped member exits per its own row (work exists → handoff) |
 
 `Reason` is a closed set: `plan-rejected` · `user-aborted` · `lost-race` · `blocked-discovered` ·
 `out-of-scope` · `superseded` · `session-ending`.
@@ -372,6 +457,7 @@ Post literally, substituting bracketed values; the sentinel is always the first 
 
 **Claimed by:** Claude Code `/next` session `a3f19c2e` (acting as Paul Carlson)
 **Branch:** `claude/fix-signup-redirect` (local until review passes)
+**Batch:** solo — or: FRA-100 · FRA-101 · FRA-102 (one claim comment per member, same claim id; this lease renews on this issue's own comment)
 **Prior art:** none
 **Heartbeat:** 2026-08-03T14:22:07Z — lease 4h, renewed on every heartbeat
 
@@ -395,6 +481,7 @@ Still working FRA-100 — lease renewed. Branch `claude/fix-signup-redirect` @ `
 **Reason:** plan-rejected
 **State restored to:** Backlog
 **Work left behind:** none — no commits, no branch, no PR
+**Batch:** releasing FRA-100 only; FRA-101 · FRA-102 remain claimed under `a3f19c2e` — omit when solo
 
 FRA-100 is free. Any agent may claim it.
 ```
@@ -419,8 +506,9 @@ Taking this over. If the original agent is alive, post AGENT-RELEASE — this cl
 **Reason:** session-ending (context exhausted mid-implementation)
 **State:** In Progress — claim left LIVE intentionally
 **Branch:** `claude/fix-signup-redirect` @ `9f2a1c0` (pushed / local only)
+**Batch:** FRA-100 · FRA-101 — both handed off; this comment posted on each — omit when solo
 **Done:** schema migration + API route   **Remaining:** client wiring, tests
-**Takeover:** allowed — post AGENT-RECLAIM and continue on this branch. Do NOT restart from scratch.
+**Takeover:** allowed — post AGENT-RECLAIM and continue on this branch (take the whole batch: the branch carries all members' work). Do NOT restart from scratch.
 ```
 
 **AGENT-STALE-FLAG** — the §0.7 demotion. Keep the closing line verbatim; it is load-bearing for trust.

@@ -169,6 +169,8 @@ A task is not "done" when the code is pushed — it's done when the PR is ready 
 5. **Babysit until green:** on each real CI failure, diagnose and push a fix; on each actionable review comment, address it and resolve the thread. Don't go quiet between rounds — the PR diff is the record.
 6. **Stop conditions:** the PR is green and review-clean, OR a failure is genuinely out of scope (file an issue, report and stop), OR the user says to stop (`unsubscribe_pr_activity`, and cancel any armed check-in).
 
+A `/next` session may hold **up to two open PRs** (the pipelining mode in `.claude/commands/next.md` Phase 4). Every obligation above then reads **plural**: one re-armed self-wake whose check covers *all* open PRs, a `subscribe_pr_activity` per PR, stop conditions evaluated over the set. The pipelined unit runs on a fresh from-`main` branch suffixed `-p2` — this sentence is the standing grant for that second branch; never stack it on the first PR's branch.
+
 This is enforced by `doneMeansMerged: true` in `.claude/settings.json`; the AGENTS.md text is the human-readable contract. Wake-path mechanics and the watchdog: [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md) § "PR babysitting: wake signals and CI-failure triage".
 
 ## Claude Code web sandbox
