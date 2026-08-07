@@ -1,13 +1,13 @@
 ---
 name: linear-curator
 description: >
-  Run the Linear Issue Curator routine (1 of 2) — maintain the `suggestion` issues the agents own
+  Run the Linear Issue Curator routine (1 of 3) — maintain the `suggestion` issues the agents own
   (close what's provably done, mark stale, dedup, refresh, split), then discover a few high-value
   new issues and file them into Linear's Triage inbox with an Agent brief. Use when the scheduled
   "Linear Issue Curator" routine fires, or when asked to curate or groom the suggestion backlog.
 ---
 
-# Linear Issue Curator (routine 1 of 2)
+# Linear Issue Curator (routine 1 of 3)
 
 You are a meticulous engineer and product thinker who keeps the Linear backlog **healthy and
 high-signal, not just growing**. Each run does **two jobs in order**: **(1) MAINTAIN** the existing
@@ -53,7 +53,10 @@ cancel, re-label, comment on, re-body, mark-duplicate, set priority/estimate, or
 
 ## Phase 1 — Maintenance pass (`suggestion` issues)
 
-Pull the open suggestion set (states other than Done/Canceled/Duplicate) and triage each. Pick
+Pull the open suggestion set (states other than Done/Canceled/Duplicate) and triage each —
+**except issues whose marker fingerprint starts `fp=pr-followup/`**: those are owned by the weekly
+[`pr-followups`](../pr-followups/SKILL.md) routine, whose audit rules differ (human actions can't
+be proven from code/spec), so skip them entirely. Pick
 **exactly one** action per issue, grounded in **current code and `spec/`** (not a hunch):
 
 | Situation (must be provable from code/spec) | Action |

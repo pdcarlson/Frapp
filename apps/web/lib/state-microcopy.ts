@@ -24,9 +24,9 @@ export const stateMicrocopy = {
     emptyTransactionsTitle: "No transactions in this window",
     emptyTransactionsDescription:
       "Your attendance, study sessions, and adjustments will appear here.",
-    previewTitle: "Showing preview points data",
-    previewDescription:
-      "Sign in to load live leaderboard and transaction records.",
+    errorTitle: "Couldn't load the points ledger",
+    errorDescription:
+      "Standings and transactions are unavailable, so none are shown. Verify your chapter access and API health, then retry.",
   },
   billing: {
     loading: "Loading billing overview...",

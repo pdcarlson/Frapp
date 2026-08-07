@@ -183,6 +183,16 @@ npm run start:dev -w apps/api   # bypasses the infisical-wrapped dev:api script
 
 `/health` and `/docs` then respond on `:3001`.
 
+### Running `npm run build` in the sandbox
+
+The sandbox exports `NODE_ENV=development`. That is correct for `dev`, but a bare `next build`
+inherits it and produces a broken prerender (`Cannot read properties of null (reading 'useContext')`
+on an arbitrary route). The Next apps therefore build through
+[`scripts/next-build.mjs`](../../../scripts/next-build.mjs), which pins `NODE_ENV=production` — see
+[`ENV_REFERENCE.md` → Production builds](./ENV_REFERENCE.md#production-builds-npm-run-build-and-node_env)
+for the full mechanism. `apps/web` also needs `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+exported for its build to prerender.
+
 ## When bringup fails — STOP and report
 
 If `.cloud-sandbox-up.failed` is present, **do not work around it** — stop and tell the user

@@ -6,20 +6,28 @@ UI (config-as-code isn't supported), so this file is the source of truth you cop
 it in sync when you change a routine. History of how backlog automation got here: ADR-16 and its
 amendments in [`spec/architecture/README.md`](../../../spec/architecture/README.md).
 
-There are **two** routines, staggered daily, both writing to **Linear** (never GitHub):
+There are **three** routines — two staggered daily, one weekly — all writing to **Linear** (never
+GitHub):
 
 | # | Routine | Skill (behavior contract) | When |
 | --- | --- | --- | --- |
 | 1 | **Linear Issue Curator** | [`.claude/skills/linear-curator/SKILL.md`](../../../.claude/skills/linear-curator/SKILL.md) | daily 08:00 ET |
 | 2 | **Linear Triage** | [`.claude/skills/linear-triage/SKILL.md`](../../../.claude/skills/linear-triage/SKILL.md) | daily 09:00 ET (~1h after #1) |
+| 3 | **PR Follow-ups** | [`.claude/skills/pr-followups/SKILL.md`](../../../.claude/skills/pr-followups/SKILL.md) | weekly Mon 07:00 ET (a full hour before #1–2 that morning) |
 
 The curator **creates and maintains** `suggestion` issues in Linear's **Triage** inbox. An hour
 later the triage routine works **both** the **Triage inbox** (prioritize, bucket, backfill Agent
 briefs, dedup, promote to Backlog) **and the existing Backlog** (set sane Priorities in batches —
 the main job, since `/next` ranks by Priority and ignores projects — and projectify only suggestions
 that *clearly* fit) — feeding clean, ranked work to
-[`/next`](../../../.claude/commands/next.md). The routine prompts are thin — the real rules live in
-the two skill files, which the routine session loads from the repo.
+[`/next`](../../../.claude/commands/next.md). Weekly, the **PR Follow-ups** harvester audits its
+previously filed items against reality, sweeps recent (and progressively older) PRs for
+human-action and deferred items — "Flagged for review" sections, agent-stated TODOs, unresolved
+review threads — researches how each gets done, files them into **Triage** (`[pr-followup]` /
+`[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers), and republishes the
+**"PR Follow-ups — Human Action List"** Linear document; running it on Monday *before* #1–2 means
+that same morning's curator/triage passes maintain and rank what it filed. The routine prompts are
+thin — the real rules live in the skill files, which the routine session loads from the repo.
 
 > **Hard rule (see `AGENTS.md`):** all issues are **opened in Linear**, never GitHub. Work is
 > **closed via GitHub PRs** (`Fixes FRA-N`); the Linear–GitHub integration keeps the two in sync.
@@ -28,7 +36,7 @@ the two skill files, which the routine session loads from the repo.
 
 ---
 
-## Linear access (shared by both routines)
+## Linear access (shared by all routines)
 
 Routine sessions run in the Frapp Claude Code web environment, which **injects the native Linear
 MCP** — the same path `/next` uses. No API key, no GraphQL helper, no secrets to manage. Each run
@@ -56,10 +64,10 @@ for reads; writes go through `save_issue` / `save_comment`.
 | Setting | Value | Notes |
 |---|---|---|
 | Environment | the Frapp Claude Code web environment (`pdcarlson/Frapp`) | Routine sessions clone the repo and load `.claude/` skills from the default branch (`main`) at run time. |
-| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET** | If the UI takes cron in UTC: `0 12 * * *` and `0 13 * * *` during EDT (shift +1h when ET returns to EST). Daily cadence — no per-PR trigger. |
+| Schedule | Curator **daily 08:00 ET**; Triage **daily 09:00 ET**; PR Follow-ups **weekly Mon 07:00 ET** | If the UI takes cron in UTC: `0 12 * * *`, `0 13 * * *`, and `0 11 * * 1` during EDT (shift +1h when ET returns to EST). Daily/weekly cadence — no per-PR trigger. Flip PR Follow-ups to twice weekly with `0 11 * * 1,4` if a week's batch runs long. |
 | Model | **Fable** (`claude-fable-5`) | Quality scales with reasoning; use the strongest available model. |
 | Session | fresh session per run | Each run re-reads its skill from `main` — no state carried between runs; Linear itself is the memory (markers, labels, comments). |
-| Access | **Linear MCP** (injected by the environment) | Plus the repo itself for the curator's engineering/spec lenses. No secrets needed — `LINEAR_API_KEY` is **not** used. |
+| Access | **Linear MCP** (injected by the environment) | Plus the repo itself for the curator's engineering/spec lenses, and the **GitHub MCP** for the PR Follow-ups harvest. No secrets needed — `LINEAR_API_KEY` is **not** used. |
 
 ---
 
@@ -105,14 +113,35 @@ has good work to pull. Invoke the linear-triage skill (.claude/skills/linear-tri
 follow it EXACTLY: process Linear's TRIAGE inbox — dedup, set a Project only where one clearly
 fits, set a Priority (required to leave Triage), backfill Agent briefs on `suggestion`-owned items
 (err on depth:deep), add blocked-by relations, and promote clearly-actionable items — including
-well-formed human-filed ones — to BACKLOG; hold ambiguous items and genuine human decisions in
-Triage with a short comment. Then groom a ~25-issue Backlog
+well-formed human-filed ones — to BACKLOG; hold ambiguous items, genuine human decisions, and
+`[pr-followup][human]` human-action items in Triage (never promote those) with a short comment. Then groom a ~25-issue Backlog
 batch: sane Priorities first, briefs backfilled, projects only for clear fits. You may organize ANY
 Triage item (project/estimate/filling an absent priority — never overwrite a human-set priority),
 but only cancel, mark-duplicate, or re-body `suggestion`-owned issues. Use the native Linear MCP;
 if it is unavailable, stop and report. NEVER create a GitHub issue; never modify product code (the
 skill's docs-only self-maintenance PR is the sole exception). Where this prompt and the skill
 disagree, the skill wins. End with the board-health report the skill specifies.
+```
+
+**Routine 3 — "PR Follow-ups"** (weekly Mon 07:00 ET):
+
+```text
+You are the PR Follow-ups harvester for the Frapp repository — you make sure nothing a PR left
+for a human silently falls through the cracks. Invoke the pr-followups skill
+(.claude/skills/pr-followups/SKILL.md) and follow it EXACTLY: first AUDIT previously harvested
+`pr-followup` items against current code/config/runtime (Done/Canceled only on proof, else leave
+open), then HARVEST human-action and deferred items from PRs updated since the last run plus a
+bounded backward crawl of older PRs — Flagged-for-review sections, agent-stated TODOs and
+undecided points, unresolved review threads — research each against the repo's configs and
+runbooks and file it into Linear's TRIAGE inbox (`[pr-followup]` / `[pr-followup][human]` titles,
+`suggestion` + one `area:<x>` label, a Priority, an fp=pr-followup dedup marker, and a concrete
+"How to do it" section), then PUBLISH the "PR Follow-ups — Human Action List" Linear document from
+live issue state and update its state marker. Destructive writes only on `suggestion`-labeled
+issues. NEVER create a GitHub issue; never modify product code (the skill's docs-only
+self-maintenance PR is the sole exception). Filing zero issues is a fine outcome. If the Linear or
+GitHub MCP is unavailable, stop and report. Where this prompt and the skill disagree, the skill
+wins. End with the run report the skill specifies, leading with the "Needs you" count and top 3
+items.
 ```
 
 ---
@@ -124,14 +153,17 @@ disagree, the skill wins. End with the board-health report the skill specifies.
 2. Schedule daily **08:00 ET**; model **Fable**; environment `pdcarlson/Frapp` (`main`).
 3. Paste the **Curator** prompt from [Routine prompts](#routine-prompts-copy-paste) above.
 4. Repeat for **"Linear Triage"**, scheduled **09:00 ET**, with the **Triage** prompt.
-5. Enable both.
-6. **One-time teardown of the predecessor:** deactivate the two legacy automations of the same
+5. Repeat for **"PR Follow-ups"**, scheduled **weekly Mon 07:00 ET**, with the **PR Follow-ups**
+   prompt. (The live one was created programmatically via the Routines API on 2026-08-06 with
+   completion notifications push+email — the weekly digest; recreating it in the UI is equivalent.)
+6. Enable all three.
+7. **One-time teardown of the predecessor:** deactivate the two legacy automations of the same
    names in the retired Cursor dashboard (cursor.com/agents) and revoke their `LINEAR_API_KEY`
    secret — until then they keep firing daily (their skill files no longer exist on `main`) and
    race these Routines with unguarded writes. Delete this step once done.
 
-> Routine sessions read the skills from `main` at run time — merge the branch that adds
-> `.claude/skills/linear-curator/` and `.claude/skills/linear-triage/` before enabling them.
+> Routine sessions read the skills from `main` at run time — merge the branch that adds a
+> routine's `.claude/skills/<name>/` directory before enabling it.
 
 ## Verify
 
@@ -144,17 +176,23 @@ disagree, the skill wins. End with the board-health report the skill specifies.
   one clearly fits) and clearly-actionable ones move to Backlog; ambiguous items and genuine
   human decisions stay in Triage with a comment; nothing human-owned is canceled or re-bodied; the
   run ends with the board-health report.
-- Confirm both schedules show a next-run time.
+- **PR Follow-ups:** run it once manually. Confirm harvested items land in **Triage** titled
+  `[pr-followup] …` / `[pr-followup][human] …` with `suggestion` + `area:*` + a Priority + a
+  "How to do it" section + the `fp=pr-followup/…` marker; the **"PR Follow-ups — Human Action
+  List"** document exists with a fresh `pr-followups-state` marker; run it again → no duplicates;
+  previously filed items are only closed with cited proof. **No GitHub issue is created.**
+- Confirm all schedules show a next-run time.
 
 ## Self-maintenance (the "update themselves" contract)
 
-**This section is the binding contract — the two skills defer to it.** Both routines end each run
+**This section is the binding contract — the skills defer to it.** All routines end each run
 by verifying their own contract against reality — the ID cache above,
 the commands their lenses run, the links and file paths they cite, and whether new surfaces (a new
 Project, label, spec area, or MCP tool) should change their behavior. On drift:
 
 - **Mechanical drift** → the routine opens a **docs-only PR** restricted to
-  `.claude/skills/linear-curator/`, `.claude/skills/linear-triage/`, and this file, on a `claude/…`
+  `.claude/skills/linear-curator/`, `.claude/skills/linear-triage/`,
+  `.claude/skills/pr-followups/`, and this file, on a `claude/…`
   branch through the normal pre-push review gate. At most one per run; the routine never merges it —
   a human does.
 - **Judgment-laden drift** → the routine files a `suggestion` issue (`area:docs`) describing the
@@ -164,7 +202,7 @@ This is the routines' **only** permitted repo write.
 
 ## Maintenance
 
-- Behavior changes go in the two `.claude/skills/linear-*/SKILL.md` files; only re-paste a routine
+- Behavior changes go in the routines' `.claude/skills/*/SKILL.md` files; only re-paste a routine
   prompt if the prompt block itself changes.
 - Keep the ID cache above current if states/labels/projects change (self-maintenance automates the
   check).
