@@ -18,6 +18,10 @@ export function useMyPoints(window?: PointWindow) {
       return data;
     },
     staleTime: 30_000,
+    // Matches every other read in this file: without an active chapter the
+    // request cannot resolve a scope, and an ungated fetch would surface as a
+    // page-level error rather than the "no chapter selected" empty state.
+    enabled: !!chapterId,
   });
 }
 

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EmptyState, LoadingState, OfflineState } from "@/components/shared/async-states";
+import { EmptyState, ErrorState, LoadingState, OfflineState } from "@/components/shared/async-states";
 import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
@@ -37,34 +37,6 @@ type PointTransactionRow = {
   description: string;
   created_at: string;
 };
-const fallbackLeaderboard: LeaderboardRow[] = [
-  { user_id: "preview-user-1", total: 320 },
-  { user_id: "preview-user-2", total: 295 },
-  { user_id: "preview-user-3", total: 244 },
-];
-const fallbackTransactions: PointTransactionRow[] = [
-  {
-    id: "preview-txn-1",
-    amount: 10,
-    category: "ATTENDANCE",
-    description: "Chapter Meeting check-in",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: "preview-txn-2",
-    amount: 6,
-    category: "STUDY",
-    description: "Library geofence session",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
-  },
-  {
-    id: "preview-txn-3",
-    amount: -3,
-    category: "FINE",
-    description: "Late arrival adjustment",
-    created_at: new Date(Date.now() - 1000 * 60 * 60 * 9).toISOString(),
-  },
-];
 
 function formatTimestamp(value: string): string {
   const parsed = new Date(value);
@@ -84,28 +56,22 @@ export default function PointsPage() {
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
-  const usingPreviewData = leaderboardQuery.isError || summaryQuery.isError;
 
   const isLoading = leaderboardQuery.isLoading || summaryQuery.isLoading;
+  const hasError = leaderboardQuery.isError || summaryQuery.isError;
 
   const leaderboard = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackLeaderboard;
-    }
     return Array.isArray(leaderboardQuery.data)
       ? (leaderboardQuery.data as LeaderboardRow[])
       : [];
-  }, [usingPreviewData, leaderboardQuery.data]);
+  }, [leaderboardQuery.data]);
 
   const summary = summaryQuery.data as
     | { balance?: number; transactions?: PointTransactionRow[] }
     | undefined;
   const transactions = useMemo(() => {
-    if (usingPreviewData) {
-      return fallbackTransactions;
-    }
     return Array.isArray(summary?.transactions) ? summary.transactions : [];
-  }, [usingPreviewData, summary?.transactions]);
+  }, [summary?.transactions]);
   const filteredLeaderboard = useMemo(() => {
     const query = leaderboardSearch.trim().toLowerCase();
     if (!query) return leaderboard;
@@ -191,6 +157,25 @@ export default function PointsPage() {
     return <LoadingState message={stateMicrocopy.points.loading} />;
   }
 
+  // The leaderboard and the ledger are what officers read chapter financial
+  // standing off, so a failed fetch must not be papered over with plausible
+  // rows (`spec/ui/resilience.md` §1: "Show, don't guess"). Failing the whole
+  // page — rather than rendering a healthy-looking shell — also keeps the
+  // adjust and bulk-export controls out of reach while the data is unknown,
+  // matching how Members handles its supporting queries.
+  if (hasError) {
+    return (
+      <ErrorState
+        title={stateMicrocopy.points.errorTitle}
+        description={stateMicrocopy.points.errorDescription}
+        onRetry={() => {
+          void leaderboardQuery.refetch();
+          void summaryQuery.refetch();
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -219,41 +204,12 @@ export default function PointsPage() {
           </div>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
-          <Badge variant="secondary">{usingPreviewData ? "Preview balance" : "My balance"}</Badge>
+          <Badge variant="secondary">My balance</Badge>
           <p className="text-2xl font-semibold">
-            {usingPreviewData
-              ? 186
-              : typeof summary?.balance === "number"
-                ? summary.balance
-                : 0} points
+            {typeof summary?.balance === "number" ? summary.balance : 0} points
           </p>
         </CardContent>
       </Card>
-
-      {usingPreviewData ? (
-        <Card className="border-amber-200 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/30">
-          <CardContent className="flex items-center justify-between gap-4 pt-6">
-            <div>
-              <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
-                {stateMicrocopy.points.previewTitle}
-              </p>
-              <p className="text-xs text-amber-800 dark:text-amber-200">
-                {stateMicrocopy.points.previewDescription}
-              </p>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                leaderboardQuery.refetch();
-                summaryQuery.refetch();
-              }}
-            >
-              Retry
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <Card>
@@ -431,7 +387,6 @@ export default function PointsPage() {
       <PointsAdjustmentDialog
         open={adjustDialogOpen}
         onOpenChange={setAdjustDialogOpen}
-        usingPreviewData={usingPreviewData}
         onAdjusted={async () => {
           await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
         }}
