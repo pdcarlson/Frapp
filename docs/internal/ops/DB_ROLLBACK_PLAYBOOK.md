@@ -66,6 +66,13 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback durable Stripe webhook idempotency
+
+* **Migration**: `20260805150000_stripe_webhook_events.sql`
+* **Action**: Redeploy the API at the pre-FRA-23 revision **first** — the post-FRA-23 `BillingService` claims every side-effecting event and 500s on `POST /v1/webhooks/stripe` if the table or function is gone, which makes Stripe retry the same events for days. Then `DROP FUNCTION IF EXISTS public.claim_stripe_webhook_event(text, text, integer); DROP TABLE IF EXISTS stripe_webhook_events;`.
+* **Note**: Additive table + function only; nothing else references them, so dropping loses only the delivery ledger. Behaviour reverts to the in-memory `Set` — dedup within one process, and a replay after any restart re-applies the event. No backfill on re-apply; the table refills from the next deliveries.
+* **Lighter option — usually the right one**: if the goal is just to unstick a specific event rather than remove the feature, do not drop anything. `update stripe_webhook_events set status = 'failed' where event_id = 'evt_…';` makes it immediately re-claimable on Stripe's next retry, and `select event_id, event_type, status, attempts, last_error from stripe_webhook_events where status <> 'processed' order by claimed_at desc;` lists everything currently stuck or failing.
+
 ## Rollback scheduled notification dispatches
 
 * **Migration**: `20260805140000_scheduled_notification_dispatches.sql`
