@@ -170,6 +170,16 @@ export function StudyPage() {
       document.removeEventListener("visibilitychange", handleVisibility);
   }, []);
 
+  // Identity of the session currently on screen. Responses are matched against
+  // this rather than against a lifecycle flag: a request must still be able to
+  // settle a session after the component re-renders (that is the whole point of
+  // handling PAUSED_EXPIRED), but it must never settle a *different* session
+  // than the one it was issued for.
+  const activeSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeSessionIdRef.current = activeSession?.id ?? null;
+  }, [activeSession]);
+
   // Clear local session state when the server reports the session is over —
   // notably PAUSED_EXPIRED, which arrives as the *response* to a pause or
   // resume rather than as an error.
@@ -178,6 +188,10 @@ export function StudyPage() {
       const session =
         result && typeof result === "object" ? (result as StudySession) : null;
       if (!session || !TERMINAL_STATUSES.includes(session.status)) return false;
+      // A slow pause/resume can land after the member stopped and started a
+      // fresh session; settling then would wipe the new session's timer and
+      // leave it running server-side until the stale rule kills it.
+      if (session.id !== activeSessionIdRef.current) return false;
 
       setActiveSession(null);
       setActiveGeofenceId(null);
@@ -258,10 +272,11 @@ export function StudyPage() {
     if (foreground === lastForegroundRef.current) return;
     lastForegroundRef.current = foreground;
 
-    // Deliberately no cancellation flag. The response is the only way
-    // PAUSED_EXPIRED reaches this page, so it has to be handled even if the
-    // component re-rendered (or the session ended) while the request was in
-    // flight — `settleIfEnded` is a no-op for anything non-terminal.
+    // Deliberately no cancellation flag: the response is the only way
+    // PAUSED_EXPIRED reaches this page, so it must still be handled after a
+    // re-render. Staleness is judged by session identity instead, which a
+    // re-render does not change.
+    const issuedFor = activeSession.id;
     void (async () => {
       try {
         const result = foreground
@@ -273,10 +288,12 @@ export function StudyPage() {
               });
             })()
           : await apiRef.current.pause();
+        if (activeSessionIdRef.current !== issuedFor) return;
         setGeolocationError(null);
         apiRef.current.settle(result);
       } catch (error) {
-        // Roll the ref back so the next render retries instead of believing
+        if (activeSessionIdRef.current !== issuedFor) return;
+        // Roll the ref back so the next transition retries instead of believing
         // the server agrees with us. A pause that silently failed would let
         // background time accrue again — the whole hole being closed here.
         lastForegroundRef.current = !foreground;
