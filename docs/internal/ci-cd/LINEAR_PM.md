@@ -128,9 +128,9 @@ effectively unbounded for our purposes.
 
 - **The binding number is *active*, and `/next` keeps it tiny** — each session holds **one claimed
   unit** at a time: usually a single issue, at most a small batch (cap 3, see below), plus up to one
-  pipelined unit while a PR is open. Active therefore tracks sessions × a small constant plus open
-  PRs — still a handful, two orders of magnitude under the cap, even when work is fanned out across
-  parallel agents. The claim
+  pipelined unit while a PR is open. Active therefore tracks sessions × a small constant (worst
+  case ~6 per session: two 3-member units) plus open PRs — even ten concurrent sessions sit far
+  below the 250-active cap. The claim
   protocol's stale sweep also returns leaked `In Progress` issues to Backlog, which *lowers* active.
   There is no realistic risk of hitting 250 active.
 - **Backlog stays lean by *choice*, not platform limit** — a high-signal, groomable Backlog is a
@@ -223,15 +223,20 @@ is the design that lets work fan out across parallel agents without two of them 
   resulting PR is the agent's call. `/next --plan-only N` emits N ready-to-paste `/next FRA-xxx` prompts
   and writes nothing to Linear, so a batch of sessions can be spun up without leaking N claims.
 - **Batching, discovery, and pipelining.** A run claims one coherent **unit**: usually a single
-  issue, at most a small batch (**cap 3, combined estimate ≤ 8**; any issue estimated ≥ 5 runs solo)
-  of same-root-cause, same-subsystem, or mechanically-kin issues that ship as **one branch, one PR**
-  with one `Fixes FRA-N` line per member. Claims are posted per member — same `claim_id`, global
-  rank order, all before implementation — and races or vetoes excise members, never the batch. Any
-  defect discovered mid-run is **fixed in-branch or filed to Triage with a Priority — never
-  dropped**; a fixed defect that warrants its own record is filed *and* claimed into the batch so
-  the PR closes it. After a merge, a context-healthy session may loop to claim its next unit; while
-  babysitting an open PR it may pipeline **at most one** additional unit on a fresh from-`main`
-  branch. Procedure, caps, and the verified pipelining hazards live in `.claude/commands/next.md`.
+  issue, at most a small batch (**cap 3 elective members, combined estimate ≤ 8**; any issue
+  estimated ≥ 5 runs solo; an inseparable parent+sub-issue unit is exempt from the member cap but
+  not the ceiling) of same-root-cause, same-subsystem, or mechanically-kin issues that ship as
+  **one branch, one PR** with one `Fixes FRA-N` line per member. Claims are posted per member —
+  same `claim_id`, global rank order, all before implementation — and races or vetoes excise
+  members rather than aborting the batch wholesale; when the excised member was the batch's point,
+  each remaining member is released per its own exit row (what is never permitted is shipping an
+  incoherent rump, or rebuilding a lost member against its race winner). Any defect discovered
+  mid-run is **fixed in-branch or filed to Triage with a Priority — never dropped**; a fixed defect
+  that warrants its own record is filed *and* claimed into the batch so the PR closes it
+  (record-keeping claims sit outside the caps, which bound planned scope). After a merge, a
+  context-healthy session may loop to claim its next unit; while babysitting an open PR — under the
+  same context bar — it may pipeline **at most one** additional unit on a fresh from-`main` branch.
+  Procedure, caps, and the verified pipelining hazards live in `.claude/commands/next.md`.
 - **Ultracode scales depth, not scope.** `/next ultracode` runs the command's enumerated fan-out points
   (blocker verification, spec-vs-code verification, the pre-push review lenses, and — only when its
   three qualifying conditions hold — the command's narrow parallel-implementation exception) as
