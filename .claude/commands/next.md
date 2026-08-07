@@ -135,7 +135,8 @@ ask rather than silently splitting or silently shipping an incoherent PR. Backlo
 claimable as usual; **Triage never is, in any mode** (sole exception: the record-keeping claim in
 "Nothing discovered is dropped"). If you lose the race on a named issue, **report who holds it** — do
 not fall back to ranking, because the human picked the issues, not a category. Losing one member of a
-named batch does not abandon the rest: proceed with what you won and report the loss.
+named batch does not abandon the rest: proceed with what you won — subject to §0.5's coherence
+escape when the lost member was the batch's point — and report the loss.
 
 **`/next --plan-only N`** — rank and emit N ready-to-paste `/next FRA-xxx` prompts, then stop. **Write
 nothing to Linear** — no claims, no sweep, no advisory comments. This is how you spin up a batch of
