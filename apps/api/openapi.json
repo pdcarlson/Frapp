@@ -4101,6 +4101,58 @@
         ]
       }
     },
+    "/v1/study-sessions/pause": {
+      "post": {
+        "description": "Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.",
+        "operationId": "StudySessionController_pause_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pause the active session (app backgrounded / tab hidden)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
+    "/v1/study-sessions/resume": {
+      "post": {
+        "description": "Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.",
+        "operationId": "StudySessionController_resume_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResumeStudySessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Resume a paused session (with lat/lng)",
+        "tags": [
+          "Study Hours"
+        ]
+      }
+    },
     "/v1/study-sessions/stop": {
       "post": {
         "operationId": "StudySessionController_stop_v1",
@@ -6583,6 +6635,11 @@
           "min_session_minutes": {
             "type": "number",
             "default": 15
+          },
+          "pause_grace_minutes": {
+            "type": "number",
+            "default": 5,
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
           }
         },
         "required": [
@@ -6613,6 +6670,10 @@
           },
           "min_session_minutes": {
             "type": "number"
+          },
+          "pause_grace_minutes": {
+            "type": "number",
+            "description": "Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED."
           }
         }
       },
@@ -6636,6 +6697,21 @@
         ]
       },
       "StudySessionHeartbeatDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
+      "ResumeStudySessionDto": {
         "type": "object",
         "properties": {
           "lat": {
