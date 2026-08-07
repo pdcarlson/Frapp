@@ -49,6 +49,7 @@ whose closure syncs GitHub→Linear). Design + policy: [`LINEAR_PM.md`](LINEAR_P
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
+| CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
@@ -128,12 +129,102 @@ Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.c
 
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop (open PR → `subscribe_pr_activity` → fix CI failures and review comments until merge-ready, or a self-contained next step). |
-| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Allows nothing else — other MCP and shell tools keep their normal prompting. |
+| `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the six-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **arm a durable self-wake** → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
+| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Allows nothing else — other MCP and shell tools keep their normal prompting; the recommended Linear/GitHub additions (and why an agent cannot apply them itself) are in "Recommended permission allows" below. |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
 | `hooks` | PreToolUse + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate) and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
 
 Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
+
+## PR babysitting: wake signals and CI-failure triage
+
+Why the babysit loop needs more than `subscribe_pr_activity`, and what each layer covers. Root
+cause on record: during the 2026-08-06 GitHub Actions outage, PR #659's `secret-scan` job died in
+runner setup ("Failed to resolve action download info. Error: Service Unavailable" — the job's only
+step was "Set up job"), six sibling jobs were cancelled without ever getting a runner, and the
+watching session was never woken — the PR sat silent for ~2h until a human noticed.
+
+### Wake coverage
+
+| Signal | Fires on | Misses |
+| ------ | -------- | ------ |
+| PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
+| `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
+| Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | nothing, **if** Routines are enabled account-side |
+
+Layered conclusion: the self-wake is the only complete net, the watchdog comment is the fast path
+for CI outcomes, and the webhook is the fast path for failures and human comments. Arm all three.
+The sandbox shell cannot reach `api.github.com` (returns the org-connect error), so background
+polling of GitHub is impossible — GitHub is reachable only through MCP tools, only while awake.
+If `send_later` returns `MCP error -32003 … requires approval`, Routines are disabled account-side;
+that is not a permissions-file problem (the allow rules below are honored for other tools) and no
+repo change fixes it — the session must say so to the user and rely on the other two layers.
+
+### What the watchdog does (`scripts/ci/ci-wake.mjs`)
+
+- **Classifies** the completed run. *Infra failure*: every failed job died before its first
+  repo-defined step (runner-phase steps only — the outage signature); a `cancelled` run counts
+  only when **no job ever started a step** (never got a runner), so a deliberate human/agent
+  cancellation of a running job is commented but never resurrected; `timed_out` /
+  `startup_failure` / `stale` count too. *Code failure*: any job failed in a real step.
+  *Superseded*: a newer run of the same workflow exists for the branch (repush; `ci.yml`'s
+  `cancel-in-progress` cancels the old run on every push) — stays fully silent, no re-run, no
+  comment. Classification **fails closed**: if the jobs or runs API errors mid-classification,
+  the run is reported as unclassified and never called "infra", never requeued — an API blip
+  must not relabel a real code failure as infrastructure.
+- **Auto-requeues infra failures** via `rerun-failed-jobs` (falling back to plain `rerun` for
+  cancelled-only runs), capped at **3 total attempts** per run id. The cap is mandatory: per
+  GitHub's documented `workflow_run` semantics, a re-run creates a new attempt of the same run
+  and fires `workflow_run: completed` again when it finishes, and GITHUB_TOKEN's recursion guard
+  does **not** stop this loop (it only blocks *creating* new runs) — so an uncapped loop would
+  retry to GitHub's 50-attempt ceiling. Prior art: vercel/next.js `retry_test.yml` uses exactly
+  this trigger + `run_attempt` guard. These are docs-verified claims (2026-08-06), not yet
+  observed in this repo — confirm on the first post-merge firing.
+- **Upserts one wake comment per workflow** on the open PR: deletes that workflow's previous
+  marker comments (`<!-- frapp-ci-wake:<workflow name> -->`) and posts a fresh one, so a green
+  `Links` wake can never erase a red `CI` wake. Open-state is checked via the pulls API (a
+  merged/closed PR gets no wake), and the head-owner comes from the run's head repo so fork PRs
+  resolve. Delete-then-create, never edit-in-place — comment edits deliver webhook
+  `action=edited`, which created-only listeners (the agent wake path) never see. At most one
+  live comment per watched workflow (≤3) keeps threads readable.
+- Runs with minimal action surface (checkout only, preinstalled runner Node, no `npm ci`) so the
+  watchdog itself has the least possible exposure to the action-download infra failures it absorbs.
+  It is best-effort by design; the self-wake layer covers the case where the watchdog run dies too.
+- Scope note vs. ADR-14: the "no inline GitHub comments" trade-off recorded for AI *review*
+  (see `AI_CODE_REVIEW_RUNBOOK.md`) is unchanged — the wake comment is machine signaling about CI
+  state, not review commentary, and there is exactly one live comment per PR.
+
+Because `workflow_run` executes the **default branch's** copy of the workflow and script, changes
+to either take effect only after merging to `main` — they cannot be exercised from the PR that
+introduces them (unit tests + this doc are the pre-merge verification).
+
+### Recommended permission allows (human must apply)
+
+Verified live 2026-08-06: the Claude Code **auto-mode classifier hard-blocks an agent editing
+`.claude/settings.json`** — self-granting permissions is a security boundary that even an explicit
+user request in-chat does not clear. So permission-prompt fatigue cannot be fixed by the agent
+mid-session; a human applies the diff (directly, or by merging an agent PR after re-adding the
+hunk themselves). Recommended additions to `permissions.allow`, from the babysit loop's real call
+pattern:
+
+- `"mcp__Linear"`, `"mcp__linear"` — server-level allow, both casings hedged against connector
+  naming drift. Linear is the work tracker; every routine and `/next` session writes to it, so
+  per-tool prompts are pure babysitting with no security payoff on a solo project.
+- GitHub MCP reads: `get_me`, `pull_request_read`, `list_pull_requests`, `search_pull_requests`,
+  `actions_get`, `actions_list`, `get_job_logs`, `get_check_run`, `get_commit`, `list_commits`,
+  `list_branches`, `get_file_contents`, `issue_read`, `list_issues` (each as `mcp__github__<tool>`).
+- GitHub MCP writes the loop needs: `actions_run_trigger` (re-run infra-failed CI),
+  `add_issue_comment`, `add_reply_to_pull_request_comment`, `resolve_review_thread`,
+  `create_pull_request`, `update_pull_request`, `update_pull_request_branch`.
+- Deliberately **excluded** so they keep prompting: `merge_pull_request`, `enable_pr_auto_merge`,
+  `push_files`, `create_or_update_file`, `delete_file`, `issue_write` — merging and direct
+  content writes stay behind a human, per the PAT policy above.
+
+Also verified: an "always allow" click in one session/surface does not propagate to fresh cloud
+containers — only rules committed to `.claude/settings.json` travel with the repo — and a
+`send_later` / `create_trigger` failure shaped `MCP error -32003 … requires approval` is an
+account-side Routines gate, not a permissions-file miss (allow rules for those tools are already
+present and honored when the gate is open).
 
 ## Agent dev stack (cloud sessions)
 
