@@ -22,6 +22,7 @@ import {
   profileFolderPrefix,
 } from '../../domain/constants/storage';
 import type { User } from '../../domain/entities/user.entity';
+import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 import { AnalyticsService } from './analytics.service';
 
 /**
@@ -171,6 +172,14 @@ export class AccountDeletionService {
     const marker = `/profiles/${user.id}/`;
     const markerIndex = path.indexOf(marker);
     if (markerIndex === -1) return null;
-    return path.slice(0, markerIndex + marker.length - 1);
+    const folder = path.slice(0, markerIndex + marker.length - 1);
+    // `avatar_url` is an unvalidated free-text column, so it can carry relative
+    // segments. The storage layer rejects those — and this purge runs *before*
+    // anything else, converting the rejection into a permanent 502 that would
+    // brick the user's own right-to-erasure request with no way to self-serve
+    // out of it. An unusable folder is ignored exactly like an unrecognizable
+    // one; the membership-derived prefixes above still sweep the real objects.
+    if (isUnsafeStoragePath(folder)) return null;
+    return folder;
   }
 }

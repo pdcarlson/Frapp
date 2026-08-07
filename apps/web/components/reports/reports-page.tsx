@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Download, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import {
+  isReportExportEnvelope,
   useAttendanceReport,
   usePointsReport,
   useRosterReport,
   useServiceReport,
+  type ReportFormat,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,10 +53,7 @@ const reportDescription: Record<ReportKind, string> = {
 
 type ReportRow = Record<string, unknown>;
 
-function flattenRecord(
-  value: unknown,
-  prefix = "",
-): Record<string, string> {
+function flattenRecord(value: unknown, prefix = ""): Record<string, string> {
   const result: Record<string, string> = {};
   if (value === null || value === undefined) return result;
   if (typeof value !== "object") {
@@ -63,11 +62,7 @@ function flattenRecord(
   }
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
     const next = prefix ? `${prefix}.${key}` : key;
-    if (
-      child !== null &&
-      typeof child === "object" &&
-      !Array.isArray(child)
-    ) {
+    if (child !== null && typeof child === "object" && !Array.isArray(child)) {
       Object.assign(result, flattenRecord(child, next));
     } else if (Array.isArray(child)) {
       result[next] = JSON.stringify(child);
@@ -150,10 +145,31 @@ export function ReportsPage() {
   const [endDate, setEndDate] = useState("");
   const [memberId, setMemberId] = useState("");
   const [eventId, setEventId] = useState("");
-  const [pointsWindow, setPointsWindow] = useState<"all" | "semester" | "month">(
-    "all",
-  );
+  const [pointsWindow, setPointsWindow] = useState<
+    "all" | "semester" | "month"
+  >("all");
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
+
+  /**
+   * Any filter edit invalidates the preview.
+   *
+   * "Download CSV" serializes `preview`, while "Download PDF" re-queries with
+   * whatever the filters currently say. Without this, editing a date after
+   * generating leaves the two buttons exporting different data from the same
+   * screen — and the CSV silently carries rows that no longer match the filters
+   * the user is looking at. The kind Select already cleared it; the filter
+   * inputs did not.
+   */
+  function onFilterChange<T>(setter: (value: T) => void) {
+    return (value: T) => {
+      setter(value);
+      setPreview(null);
+    };
+  }
+  // Tracked separately from the mutation's own isPending: the PDF export reuses
+  // the same mutation, so without this the preview panel would flip to its
+  // loading state during a download that never touches the preview.
+  const [pdfPending, setPdfPending] = useState(false);
 
   /** Union of flattened keys for preview rows, stable column order (matches CSV union logic). */
   const previewColumnKeys = useMemo(() => {
@@ -184,35 +200,43 @@ export function ReportsPage() {
     }
   }, [attendance, kind, points, roster, service]);
 
+  /** Run the selected report at a given format, with the current filters. */
+  async function invokeReport(format: ReportFormat): Promise<unknown> {
+    if (kind === "attendance") {
+      return attendance.mutateAsync({
+        format,
+        body: {
+          event_id: eventId || undefined,
+          start_date: startDate || undefined,
+          end_date: endDate || undefined,
+        },
+      });
+    }
+    if (kind === "points") {
+      return points.mutateAsync({
+        format,
+        body: {
+          user_id: memberId || undefined,
+          window: pointsWindow,
+        },
+      });
+    }
+    if (kind === "roster") {
+      return roster.mutateAsync({ format });
+    }
+    return service.mutateAsync({
+      format,
+      body: {
+        user_id: memberId || undefined,
+        start_date: startDate || undefined,
+        end_date: endDate || undefined,
+      },
+    });
+  }
+
   async function runReport() {
     try {
-      let payload: unknown = null;
-      if (kind === "attendance") {
-        payload = await attendance.mutateAsync({
-          body: {
-            event_id: eventId || undefined,
-            start_date: startDate || undefined,
-            end_date: endDate || undefined,
-          },
-        });
-      } else if (kind === "points") {
-        payload = await points.mutateAsync({
-          body: {
-            user_id: memberId || undefined,
-            window: pointsWindow,
-          },
-        });
-      } else if (kind === "roster") {
-        payload = await roster.mutateAsync({});
-      } else if (kind === "service") {
-        payload = await service.mutateAsync({
-          body: {
-            user_id: memberId || undefined,
-            start_date: startDate || undefined,
-            end_date: endDate || undefined,
-          },
-        });
-      }
+      const payload = await invokeReport("json");
 
       const rows = extractRows(payload);
       setPreview(rows);
@@ -246,6 +270,56 @@ export function ReportsPage() {
     if (!preview || preview.length === 0) return;
     const csv = buildCsv(preview);
     downloadCsv(kind, csv);
+  }
+
+  /**
+   * PDF export goes back to the API rather than reusing the preview: the server
+   * renders the branded template over the whole query result — not just the 25
+   * rows shown here — and stores it privately, handing back a signed URL that
+   * expires in an hour.
+   *
+   * "Whole query result" is bounded by PostgREST's `max_rows` (1000, see
+   * supabase/config.toml), which the report queries do not page past. A chapter
+   * with more matching rows than that gets a silently short report in every
+   * format, PDF included. Pre-existing and shared with JSON/CSV; tracked in
+   * FRA-342. Deliberately not claimed as complete here.
+   */
+  async function exportPdf() {
+    setPdfPending(true);
+    try {
+      const payload = await invokeReport("pdf");
+      if (!isReportExportEnvelope(payload)) {
+        throw new Error("The API did not return a download link.");
+      }
+      if (typeof window !== "undefined") {
+        const anchor = document.createElement("a");
+        anchor.href = payload.url;
+        anchor.rel = "noopener";
+        // The signed URL already carries a download disposition; setting the
+        // attribute keeps the filename when the browser honours it locally.
+        anchor.download = payload.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+      }
+      toast({
+        title: `${reportLabel[kind]} PDF ready`,
+        description: `${payload.row_count} row${
+          payload.row_count === 1 ? "" : "s"
+        } exported. The download link expires in one hour.`,
+      });
+    } catch (error) {
+      toast({
+        title: `Couldn't export ${reportLabel[kind].toLowerCase()} PDF`,
+        description:
+          error instanceof Error
+            ? error.message
+            : "The API rejected the request. Confirm reports:export and retry.",
+        variant: "destructive",
+      });
+    } finally {
+      setPdfPending(false);
+    }
   }
 
   return (
@@ -284,8 +358,8 @@ export function ReportsPage() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Generate attendance, points, roster, and service hours reports.
-            Download as CSV today; branded PDF export is parked behind a
-            dedicated backend slice.
+            Download as CSV, or export a branded PDF with your chapter&apos;s
+            name and logo.
           </p>
         </header>
 
@@ -303,6 +377,12 @@ export function ReportsPage() {
                 <Label htmlFor="report-kind">Report</Label>
                 <Select
                   value={kind}
+                  // Also locked during a plain "Generate report": the run in
+                  // flight resolves into setPreview regardless of what the
+                  // select says by then, so switching mid-run would label one
+                  // report's rows as another's — and the CSV download names
+                  // the file from the *new* kind.
+                  disabled={pdfPending || activeMutation.isPending}
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
                     setPreview(null);
@@ -317,7 +397,9 @@ export function ReportsPage() {
                     </SelectItem>
                     <SelectItem value="points">{reportLabel.points}</SelectItem>
                     <SelectItem value="roster">{reportLabel.roster}</SelectItem>
-                    <SelectItem value="service">{reportLabel.service}</SelectItem>
+                    <SelectItem value="service">
+                      {reportLabel.service}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
@@ -333,7 +415,9 @@ export function ReportsPage() {
                   <Input
                     id="report-event"
                     value={eventId}
-                    onChange={(event) => setEventId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEventId)(event.target.value)
+                    }
                     placeholder="UUID — leave blank for chapter-wide"
                   />
                 </div>
@@ -343,7 +427,9 @@ export function ReportsPage() {
                     id="report-start"
                     type="date"
                     value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setStartDate)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -352,7 +438,9 @@ export function ReportsPage() {
                     id="report-end"
                     type="date"
                     value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEndDate)(event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -365,7 +453,9 @@ export function ReportsPage() {
                   <Input
                     id="report-member"
                     value={memberId}
-                    onChange={(event) => setMemberId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setMemberId)(event.target.value)
+                    }
                     placeholder="UUID — leave blank for chapter-wide"
                   />
                 </div>
@@ -374,7 +464,9 @@ export function ReportsPage() {
                   <Select
                     value={pointsWindow}
                     onValueChange={(value) =>
-                      setPointsWindow(value as typeof pointsWindow)
+                      onFilterChange(setPointsWindow)(
+                        value as typeof pointsWindow,
+                      )
                     }
                   >
                     <SelectTrigger id="report-window">
@@ -399,7 +491,9 @@ export function ReportsPage() {
                   <Input
                     id="service-report-member"
                     value={memberId}
-                    onChange={(event) => setMemberId(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setMemberId)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -408,7 +502,9 @@ export function ReportsPage() {
                     id="service-report-start"
                     type="date"
                     value={startDate}
-                    onChange={(event) => setStartDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setStartDate)(event.target.value)
+                    }
                   />
                 </div>
                 <div className="grid gap-1">
@@ -417,7 +513,9 @@ export function ReportsPage() {
                     id="service-report-end"
                     type="date"
                     value={endDate}
-                    onChange={(event) => setEndDate(event.target.value)}
+                    onChange={(event) =>
+                      onFilterChange(setEndDate)(event.target.value)
+                    }
                   />
                 </div>
               </div>
@@ -425,7 +523,8 @@ export function ReportsPage() {
           </CardContent>
           <CardFooter className="flex items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">
-              PDF export is coming in a later slice. Use CSV for now.
+              PDF export is generated server-side; its download link is valid
+              for one hour.
             </p>
             <div className="flex items-center gap-2">
               <Button
@@ -436,8 +535,26 @@ export function ReportsPage() {
                 <Download className="h-4 w-4" />
                 Download CSV
               </Button>
-              <Button onClick={runReport} disabled={activeMutation.isPending}>
-                {activeMutation.isPending ? (
+              <Button
+                variant="outline"
+                onClick={exportPdf}
+                // Gate on pdfPending too: activeMutation swaps when the report
+                // kind changes, so keying only off it would re-enable this
+                // button mid-export and let a second render be queued.
+                disabled={pdfPending || activeMutation.isPending}
+              >
+                {pdfPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                {pdfPending ? "Preparing PDF..." : "Download PDF"}
+              </Button>
+              <Button
+                onClick={runReport}
+                disabled={pdfPending || activeMutation.isPending}
+              >
+                {activeMutation.isPending && !pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <FileSpreadsheet className="h-4 w-4" />
@@ -457,7 +574,7 @@ export function ReportsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {activeMutation.isPending ? (
+            {activeMutation.isPending && !pdfPending ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating report...

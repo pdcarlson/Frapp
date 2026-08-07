@@ -1,0 +1,56 @@
+name: CI wake
+
+# Wake path for the PR-babysitting loop (docs/internal/ci-cd/AGENT_INFRA.md
+# § PR babysitting). `workflow_run: completed` fires for EVERY terminal
+# conclusion — success, failure, cancelled, timed_out — which is exactly the
+# coverage the PR-activity webhook lacks (it fires only on CI failure and
+# comments). scripts/ci/ci-wake.mjs classifies the outcome, auto-requeues
+# GitHub-infra failures (attempt-capped), and upserts one wake comment on the
+# open PR so watching agent sessions get a webhook event for silent states.
+#
+# This runs the DEFAULT branch's copy of this file and of ci-wake.mjs
+# (workflow_run semantics), so changes take effect only after merging to main.
+#
+# Deliberately minimal action surface: checkout only, preinstalled runner
+# Node, no npm ci — every extra action download is exposure to the same
+# "Failed to resolve action download info" infra failure this watchdog exists
+# to absorb. Best-effort by design: if this workflow is itself killed by an
+# outage, the babysitting agent's scheduled self-wake (send_later) is the
+# durable fallback.
+
+on:
+  workflow_run:
+    workflows: [CI, "Docs spec sync", Links]
+    types: [completed]
+
+permissions:
+  actions: write # re-queue infra-failed runs
+  pull-requests: write # find the PR / comment on it
+  issues: write # PR comments go through the issues API
+  contents: read
+
+# Deliberately NO concurrency group: GitHub keeps only one pending slot per
+# group and cancels the previously-pending run when a third queues, so a burst
+# of three completions (CI + Docs + Links, the outage case) would silently
+# drop one workflow's wake. Concurrent runs are safe instead because each
+# workflow upserts only its own marker comment.
+
+jobs:
+  ci-wake:
+    # Push runs to main/production have their own consumers
+    # (deploy-api.yml, verify-deployments.yml); only PR runs need a wake.
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # ci-wake.mjs is dependency-free (global fetch + node:fs on the runner's
+      # preinstalled Node) — no setup-node, no npm ci.
+      - name: Classify outcome, requeue infra failures, post wake comment
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/ci/ci-wake.mjs

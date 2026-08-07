@@ -14,9 +14,16 @@
 // and RLS *enforcement* as the `authenticated` role (SET ROLE + real JWT) —
 // tracked in #423 and the NestJS Jest tier. See
 // `docs/internal/ci-cd/AGENT_INFRA.md` ("Agent dev stack").
+//
+// Extensions: a migration may only use what is registered on the PGlite
+// constructor below — `pgcrypto` and `vector` (pgvector) today. An unregistered
+// extension fails with `extension "X" is not available`, which reads like a
+// PGlite limitation but is a one-line fix here. Adding a bundled extension is
+// the preferred answer; carving migrations out of this gate is not.
 
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { vector } from "@electric-sql/pglite/vector";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -31,7 +38,15 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-const db = new PGlite({ extensions: { pgcrypto } });
+// `vector` is registered ahead of any migration needing it (FRA-308). PGlite
+// only makes a bundled extension *available*; `create extension vector` still
+// has to be written in a migration, exactly like `pgcrypto`. Registering it
+// adds no cost this gate can measure until then (the bundle is a lazily-unpacked
+// tarball, not a running extension; wall-clock is unchanged within run-to-run
+// noise) — and it is what lets the AI corpus migrations (ADR-13 §13) replay
+// here instead of forcing a carve-out out of this gate. See the `pg_available_
+// extensions` landmark below, which fails if this registration is ever dropped.
+const db = new PGlite({ extensions: { pgcrypto, vector } });
 await db.waitReady;
 
 // PGlite ships without the `auth.*` namespace Supabase RLS policies reference.
@@ -122,6 +137,18 @@ const LANDMARKS = [
             join pg_namespace n on n.oid = p.pronamespace
            where n.nspname = 'public' and p.proname = 'anonymize_user'`,
     ok: (rows) => rows.length === 1 && rows[0].prosecdef === false,
+  },
+  {
+    // Capability landmark, not a schema landmark: nothing creates the extension
+    // yet (the AI corpus migrations are still ahead of us — FRA-309). It pins the
+    // FRA-308 decision that pgvector clears this gate by registration alone, so
+    // dropping the `vector` import fails here and now rather than under the first
+    // corpus migration, where it would read as "pgvector doesn't work in PGlite"
+    // and re-open a question that is settled. Availability is the whole contract:
+    // `create extension vector` cannot succeed without it, and needs nothing else.
+    name: "pgvector available to migrations (create extension vector will resolve) — FRA-308",
+    sql: `select default_version from pg_available_extensions where name = 'vector'`,
+    ok: (rows) => rows.length === 1 && Boolean(rows[0].default_version),
   },
 ];
 

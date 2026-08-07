@@ -4533,11 +4533,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -4552,7 +4558,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4572,11 +4598,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -4591,7 +4623,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4611,16 +4663,42 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4640,11 +4718,17 @@
         "parameters": [
           {
             "name": "format",
-            "required": true,
+            "required": false,
             "in": "query",
             "schema": {
-              "type": "string"
-            }
+              "type": "string",
+              "enum": [
+                "json",
+                "csv",
+                "pdf"
+              ]
+            },
+            "description": "json (default) returns rows, csv returns an inline CSV body, pdf renders a branded document and returns a signed download URL."
           }
         ],
         "requestBody": {
@@ -4659,7 +4743,27 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Report rows (json), an inline CSV body (csv), or a signed download envelope (pdf).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ReportExportResponseDto"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6664,6 +6768,44 @@
           "label",
           "start_date",
           "end_date"
+        ]
+      },
+      "ReportExportResponseDto": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Signed download URL, valid for one hour"
+          },
+          "expires_at": {
+            "type": "string",
+            "description": "ISO timestamp at which the URL stops working"
+          },
+          "expires_in": {
+            "type": "number",
+            "description": "URL lifetime in seconds",
+            "example": 3600
+          },
+          "filename": {
+            "type": "string",
+            "description": "Suggested download filename"
+          },
+          "storage_path": {
+            "type": "string",
+            "description": "Bucket-relative object path"
+          },
+          "row_count": {
+            "type": "number",
+            "description": "Number of data rows in the document"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at",
+          "expires_in",
+          "filename",
+          "storage_path",
+          "row_count"
         ]
       },
       "AttendanceReportDto": {
