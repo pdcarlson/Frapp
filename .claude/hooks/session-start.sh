@@ -1,7 +1,7 @@
 #!/bin/bash
 # SessionStart hook: in the cloud sandbox only, kick off the local Docker + Supabase + API
-# stack in the background. Work tracking lives in Linear (team Frapp Live, via the native
-# Linear MCP) — there is no in-repo backlog to summarize here; /next reads Linear directly.
+# stack in the background. Work tracking lives in GitHub Issues (via the GitHub MCP) —
+# there is no in-repo backlog to summarize here; /next reads the tracker directly.
 set -euo pipefail
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"

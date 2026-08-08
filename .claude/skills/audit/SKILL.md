@@ -4,15 +4,15 @@ description: >
   Perform code quality reviews, security audits, dependency checks, API contract audits, database
   migration reviews, or CI/CD audits on this repo. Use when asked to audit, security-review, or
   assess quality of the codebase, when checking RLS/guard coverage or dependency vulnerabilities,
-  and as the engineering-gaps lens of scheduled routines like the Linear curator.
+  and as the engineering-gaps lens of scheduled routines like the Issue Curator.
 ---
 
 # Audit & Quality Review
 
 > Read before performing code audits, security reviews, dependency checks, migration reviews, or
 > quality assessments — whether interactively or as a read-only pass inside a scheduled routine
-> (e.g. the [Linear curator](../linear-curator/SKILL.md)'s engineering-gaps lens). In read-only
-> runs, findings are filed to Linear rather than fixed in place. `npm run lint` is read-only in
+> (e.g. the [Issue Curator](../issue-curator/SKILL.md)'s engineering-gaps lens). In read-only
+> runs, findings are filed as GitHub issues rather than fixed in place. `npm run lint` is read-only in
 > every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
 > that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
 > and `api-sdk/types.ts` when API-related files changed; treat those edits as throwaway
@@ -310,7 +310,7 @@ Structure your findings as:
 [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../../../docs/internal/DOCUMENTATION_CONVENTIONS.md),
 narrative audit writeups are exactly the kind of file the docs restructure removed. Deliver the
 report in the conversation (or run output), fold durable facts into the canonical doc, and file
-actionable findings as **Linear** issues.
+actionable findings as **GitHub** issues.
 
 ---
 

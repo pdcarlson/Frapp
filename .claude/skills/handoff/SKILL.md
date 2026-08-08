@@ -68,8 +68,8 @@ git log --oneline origin/main..HEAD
 git rev-parse HEAD
 ```
 
-PR number and CI state, and the Linear issue and its status, are worth including too — but those need
-GitHub/Linear tools this skill does not itself request, and they are often unavailable (a
+PR number and CI state, and the tracker issue and its status, are worth including too — but those need
+GitHub tools this skill does not itself request, and they are often unavailable (a
 disconnected MCP server, an unauthorised connector). Include them **only** if you can read them live
 in this session. If you can't, say "unverified" rather than reaching for what you remember; a stale
 CI verdict is worse than none, because the new session will act on it.
@@ -88,7 +88,7 @@ Structure:
 1. **The command line.** `/next` for mode `next`. For `continue` or `parallel`, a plain instruction
    naming the task — those aren't `/next` work because the issue is already picked.
 2. **Task and why** — 2–4 sentences. What we're achieving and what makes it worth doing. Not how.
-3. **Live state** — branch, HEAD SHA, PR + CI, Linear issue, tree clean or not. Facts only, as just
+3. **Live state** — branch, HEAD SHA, PR + CI, tracker issue, tree clean or not. Facts only, as just
    verified.
 4. **Where to look** — canonical files and issue IDs. Pointers, not précis. Include `AGENTS.md` and
    the specific spec/doc the work touches.

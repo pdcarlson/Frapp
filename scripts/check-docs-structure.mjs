@@ -50,13 +50,13 @@ for (const p of added) {
     violations.push(`${p} — new file at spec/ root; spec/ is grouped into folders (architecture/, behavior/, product/, ui/, environments/)`);
   }
   if (/^spec\/.*\/chunks\//.test(p)) {
-    violations.push(`${p} — 'chunks/' folders are retired; merge canon into the real spec, track delivery in Linear`);
+    violations.push(`${p} — 'chunks/' folders are retired; merge canon into the real spec, track delivery in GitHub Issues`);
   }
   if (/^docs\/archive\//.test(p)) {
     violations.push(`${p} — docs/archive/ is retired; git history is the archive`);
   }
   if (/^docs\/backlog\//.test(p)) {
-    violations.push(`${p} — docs/backlog/ is retired; work tracking lives in Linear (see docs/internal/ci-cd/LINEAR_PM.md)`);
+    violations.push(`${p} — docs/backlog/ is retired; work tracking lives in GitHub Issues (see docs/internal/ci-cd/GITHUB_PM.md)`);
   }
 }
 

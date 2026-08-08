@@ -26,10 +26,6 @@
       "mcp__bf7c680d-5fdc-5ef4-b4a0-abadb619bf0a__unsubscribe_pr_activity",
       "mcp__github__subscribe_pr_activity",
       "mcp__github__unsubscribe_pr_activity",
-      "mcp__Linear",
-      "mcp__linear",
-      "mcp__5928a707-2591-54b8-b95d-505c9ff3098f",
-      "mcp__5b8e7be9-0594-452e-a220-a8864e03b895",
       "mcp__github__get_me",
       "mcp__github__pull_request_read",
       "mcp__github__list_pull_requests",
@@ -45,6 +41,12 @@
       "mcp__github__get_file_contents",
       "mcp__github__issue_read",
       "mcp__github__list_issues",
+      "mcp__github__search_issues",
+      "mcp__github__issue_write",
+      "mcp__github__sub_issue_write",
+      "mcp__github__get_label",
+      "mcp__github__list_issue_types",
+      "mcp__github__list_issue_fields",
       "mcp__github__add_issue_comment",
       "mcp__github__add_reply_to_pull_request_comment",
       "mcp__github__resolve_review_thread",
@@ -62,15 +64,6 @@
           {
             "type": "command",
             "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/pre-push-review-gate.sh"
-          }
-        ]
-      },
-      {
-        "matcher": "mcp__.*__(save_.*|get_workspace)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/linear-autoallow.sh"
           }
         ]
       }
