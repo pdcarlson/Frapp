@@ -40,13 +40,52 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 - **Expo SDK 54 → 56 upgrade** (closes ~16 of the 26 remaining moderates): #289
 - **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
-- **Outstanding `next` moderate advisories (web + landing)**: #291
+- ~~**Outstanding `next` moderate advisories (web + landing)**: #291~~ — **closed.** See "Next.js advisory cleanup" below.
 - **`geist` (apps/web)**: #292
 - **`brace-expansion` 5.x in minimatch 10.x tree**: not separately tracked — moderate only, and the override that would close it (`^2.0.3`) breaks minimatch 10.x at runtime (different exported API). Re-evaluate when an audit-clean cross-major version exists.
 
 ### Prevention
 
 When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** over per-workspace upgrades. Pin to the patched range cited in the advisory (e.g., `<=1.3.3` ⇒ override to `^1.4.0`) and re-run `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+
+> **Two corrections to the above, learned in #291 — read before deleting the lockfile.** Overrides do *not* move an existing **peer** resolution, and a full `rm package-lock.json` rebuild **drops the optional platform binaries for every host except the one that ran it**. Delete just the offending entries and run `npm install --package-lock-only` instead. See "Next.js advisory cleanup" below.
+
+## Next.js advisory cleanup (issue #291)
+
+### Overview
+
+`next` was pinned at `^16.1.5` in `apps/web` and `apps/landing`, resolving to **16.2.6** — vulnerable to nine advisories (4 high: middleware/proxy bypass, Server Actions DoS, SSRF in Server Actions on custom servers, SSRF in rewrites; 5 moderate: two response-body cache-confusion variants, unbounded Edge Server Action payload, Image Optimization SVG DoS, unauthenticated Server Function endpoint disclosure). All are fixed in `>=16.2.11`; stable `16.3.0` clears the range.
+
+### Why the pin bump alone was not enough
+
+`geist` (a direct `apps/web` dependency) declares a peer `next: ">=13.2.0"`. After bumping both workspace pins to `^16.3.0`, npm installed `16.3.0` **nested** under each app but left the **hoisted** `node_modules/next` at the already-locked `16.2.6` to satisfy that peer — so the vulnerable copy stayed in the tree and `npm audit` was unchanged. Neither `npm dedupe` nor a root `overrides.next` entry moves an existing peer resolution.
+
+The fix is to delete only the stale entries and let npm re-resolve them:
+
+```sh
+# remove `node_modules/next` and every `@next/swc-*` entry from package-lock.json, then:
+npm install --package-lock-only
+```
+
+That collapses the tree to a **single hoisted `next@16.3.0`** with no nested duplicates, and touches ~445 lines of the lockfile instead of rewriting it.
+
+### Do not "fix" this with a full lockfile rebuild
+
+`rm -rf node_modules package-lock.json && npm install` also clears the advisory, and it is what the #245 Prevention note above recommends — but on this repo it **silently breaks every platform except the one that ran it**. npm records only the optional platform binaries matching the current host, so a rebuild on Linux x64 drops:
+
+* `@next/swc-darwin-arm64` / `-darwin-x64` — the primary dev machines
+* `@next/swc-win32-*`, `@next/swc-linux-arm64-*`
+* 20 of the 24 `@img/sharp-*` variants, including `linuxmusl-arm64`
+
+`npm ci` then succeeds on Linux x64 and CI stays green, while a Mac or ARM checkout fails to load the SWC binary. Prefer the surgical `--package-lock-only` path above; if a full rebuild is ever unavoidable, diff the `@next/swc-*` and `@img/sharp-*` entry counts before and after and restore any platform that disappeared.
+
+### Result
+
+`npm audit`: **68 → 65** total (high 25 → 22); `next` no longer appears and the nine advisories above are cleared. Because only the `next` entries were re-resolved, no unrelated dependency moved — `prettier`, `@playwright/test`, and the rest of the tree are byte-identical to `main`, so the visual-regression baselines and formatter output are unchanged.
+
+For contrast, the discarded full rebuild reported 68 → 54. The extra 11 came from unrelated packages whose ranges already permitted patched versions (`concurrently`/`shell-quote`, `multer`, `undici`, and others). Those are each tracked separately — clearing them as an invisible side effect of a `next` bump would put unreviewed dependency movement in a security PR, which is how a regression like the dropped platform binaries ships unnoticed.
+
+The one `postcss` high advisory that previously rode in under `next`'s dependency chain now resolves solely through `@expo/metro-config` in the mobile tree — it belongs to the Expo SDK upgrade (#289), not to `next`.
 
 ## Security Fix: Unrestricted File Upload in Chapter Logos
 
