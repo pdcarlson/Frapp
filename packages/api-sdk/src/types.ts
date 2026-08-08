@@ -2305,7 +2305,7 @@ export interface components {
             quiet_hours_start?: string | null;
             /** @description Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear. */
             quiet_hours_end?: string | null;
-            /** @description Timezone for quiet hours (e.g. America/New_York). */
+            /** @description IANA timezone for quiet hours (e.g. America/New_York). Must be a zone the server can resolve. Pass null to clear. */
             quiet_hours_tz?: string | null;
             /**
              * @description Theme preference

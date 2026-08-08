@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Logger, NotFoundException } from '@nestjs/common';
 import { NotificationService } from './notification.service';
 import {
   NOTIFICATION_REPOSITORY,
@@ -225,6 +225,107 @@ describe('NotificationService', () => {
           priority: 'URGENT',
         }),
       );
+    });
+
+    // #687: `quiet_hours_tz` predates server-side validation, so stored rows can
+    // still hold a zone `Intl.DateTimeFormat` throws on. That throw happened
+    // before `notificationRepo.create`, so the member silently lost the push AND
+    // the in-app row — and `notifyChapter`'s `Promise.allSettled` hid it.
+    describe('invalid quiet_hours_tz', () => {
+      const invalidSettings: UserSettings = {
+        ...baseSettings,
+        quiet_hours_tz: 'Mars/Olympus',
+      };
+
+      it('still creates the notification row and attempts push', async () => {
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await expect(
+          service.notifyUser('u-1', 'ch-1', { title: 'Test', body: 'Body' }),
+        ).resolves.toBeUndefined();
+
+        expect(mockNotificationRepo.create).toHaveBeenCalledWith(
+          expect.objectContaining({ user_id: 'u-1', title: 'Test' }),
+        );
+        expect(mockPushProvider.sendToUser).toHaveBeenCalled();
+      });
+
+      it('logs a warning naming the user and the offending zone', async () => {
+        const warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+        });
+
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining('Mars/Olympus'),
+        );
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('u-1'));
+
+        warn.mockRestore();
+      });
+
+      // Discriminates the two possible fallbacks: UTC keeps enforcing the
+      // window, skipping quiet hours entirely would leave this NORMAL.
+      it('falls back to UTC rather than skipping quiet hours', async () => {
+        jest.useFakeTimers();
+        jest.setSystemTime(new Date('2026-06-15T15:00:00Z'));
+
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...invalidSettings,
+          quiet_hours_start: '14:00:00',
+          quiet_hours_end: '16:00:00',
+        });
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+          priority: 'NORMAL',
+        });
+
+        expect(mockPushProvider.sendToUser).toHaveBeenCalledWith(
+          [basePushToken.token],
+          expect.objectContaining({ priority: 'SILENT' }),
+        );
+
+        jest.useRealTimers();
+      });
+
+      it('does not drop the member from a chapter-wide notify', async () => {
+        mockMemberRepo.findByChapter.mockResolvedValue([
+          { user_id: 'u-1' },
+        ] as never);
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyChapter('ch-1', { title: 'Test', body: 'Body' });
+
+        expect(mockNotificationRepo.create).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('should not send push when user has no push tokens', async () => {

@@ -69,7 +69,10 @@ export class NotificationService {
 
     const settings = await this.settingsRepo.findByUser(userId);
     let effectivePriority = payload.priority ?? 'NORMAL';
-    if (effectivePriority !== 'URGENT' && this.isInQuietHours(settings)) {
+    if (
+      effectivePriority !== 'URGENT' &&
+      this.isInQuietHours(settings, userId)
+    ) {
       effectivePriority = 'SILENT';
     }
 
@@ -121,20 +124,20 @@ export class NotificationService {
     );
   }
 
-  private isInQuietHours(settings: UserSettings | null): boolean {
+  private isInQuietHours(
+    settings: UserSettings | null,
+    userId: string,
+  ): boolean {
     if (!settings?.quiet_hours_start || !settings?.quiet_hours_end) {
       return false;
     }
 
     const tz = settings.quiet_hours_tz ?? 'UTC';
     const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
+    const formatter = this.resolveQuietHoursFormatter(tz, userId);
+    if (!formatter) {
+      return false;
+    }
     const parts = formatter.formatToParts(now);
     const hour =
       parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10) % 24;
@@ -157,6 +160,45 @@ export class NotificationService {
       return currentMinutes >= startMinutes || currentMinutes < endMinutes;
     }
     return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
+
+  /**
+   * `Intl.DateTimeFormat` throws `RangeError` on an unknown IANA zone, and this
+   * runs *before* `notificationRepo.create` — so an uncaught throw costs the
+   * member the push **and** the in-app row, silently, since `notifyChapter`
+   * swallows the rejection through `Promise.allSettled`. Rows predating the
+   * `quiet_hours_tz` DTO validation can still carry such a zone, so degrade
+   * instead of throwing: a time-shifted quiet window is a far smaller failure
+   * than a member whose notifications simply stop.
+   *
+   * Returns `null` only when the runtime cannot resolve `UTC` either — an ICU
+   * build that can't do zones at all. Quiet hours are then skipped rather than
+   * costing the member the notification, keeping this method total.
+   */
+  private resolveQuietHoursFormatter(
+    tz: string,
+    userId: string,
+  ): Intl.DateTimeFormat | null {
+    const options: Intl.DateTimeFormatOptions = {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    };
+
+    try {
+      return new Intl.DateTimeFormat('en-CA', { ...options, timeZone: tz });
+    } catch {
+      this.logger.warn(
+        `Invalid quiet_hours_tz "${tz}" for user ${userId} — falling back to UTC`,
+      );
+    }
+
+    try {
+      return new Intl.DateTimeFormat('en-CA', { ...options, timeZone: 'UTC' });
+    } catch {
+      return null;
+    }
   }
 
   async listNotifications(

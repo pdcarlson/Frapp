@@ -5,9 +5,47 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  Validate,
   ValidateIf,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Rejects a `quiet_hours_tz` the runtime cannot resolve. The stored value is fed
+ * straight to `Intl.DateTimeFormat` during push delivery, so an unknown zone
+ * written here used to cost that member every notification — push and in-app row
+ * alike — until someone edited the field. `@MaxLength` alone never caught it.
+ *
+ * Fails open when the runtime cannot resolve even `UTC`, so an ICU build without
+ * zone data rejects nothing rather than everything. Mirrors the client-side probe
+ * in `apps/mobile/app/(tabs)/preferences.tsx`.
+ */
+@ValidatorConstraint({ name: 'supportedTimeZone', async: false })
+export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    if (value === undefined || value === null) return true;
+    if (typeof value !== 'string') return false;
+
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' });
+    } catch {
+      return true;
+    }
+
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  defaultMessage(): string {
+    return 'quiet_hours_tz must be a valid IANA time zone (e.g. America/New_York)';
+  }
+}
 
 export class RegisterPushTokenDto {
   @ApiProperty({ description: 'Expo push token' })
@@ -68,7 +106,8 @@ export class UpdateUserSettingsDto {
   quiet_hours_end?: string | null;
 
   @ApiPropertyOptional({
-    description: 'Timezone for quiet hours (e.g. America/New_York).',
+    description:
+      'IANA timezone for quiet hours (e.g. America/New_York). Must be a zone the server can resolve. Pass null to clear.',
     nullable: true,
     type: String,
   })
@@ -76,6 +115,7 @@ export class UpdateUserSettingsDto {
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @MaxLength(100)
+  @Validate(SupportedTimeZoneConstraint)
   quiet_hours_tz?: string | null;
 
   @ApiPropertyOptional({

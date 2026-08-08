@@ -46,8 +46,10 @@ Tapping the notification opens the app directly to the relevant content. If the 
 
 - Per-user configurable start and end time (e.g. 10:00 PM to 8:00 AM).
 - During quiet hours, NORMAL notifications are delivered as badge-only (no sound/vibration). URGENT notifications are unaffected.
-- Quiet hours are timezone-aware (stored as UTC offsets). The implementation uses `Intl.DateTimeFormat` to convert the current UTC time to the user's timezone; midnight is normalized to hour 0 to handle locale-specific h24 hour cycles.
+- Quiet hours are timezone-aware. `quiet_hours_tz` holds an **IANA zone name** (e.g. `America/New_York`), not a UTC offset — offsets cannot express DST. The implementation uses `Intl.DateTimeFormat` to convert the current UTC time to the user's timezone; midnight is normalized to hour 0 to handle locale-specific h24 hour cycles.
 - `PATCH /v1/settings` accepts `quiet_hours_start`, `quiet_hours_end`, and `quiet_hours_tz` as nullable. Omitting a field preserves its existing value; sending `null` explicitly clears the field, which disables quiet-hour enforcement.
+- **`quiet_hours_tz` is validated server-side.** A zone the server cannot resolve is rejected with `400` — clients are not trusted to check, and the web profile panel posts free text.
+- **An unresolvable stored zone degrades to UTC; it never blocks delivery.** Quiet-hour evaluation runs *before* the notification row is written (step 3 of the delivery flow), so a `RangeError` out of `Intl.DateTimeFormat` would cost the member the push **and** the in-app row — silently, since `notifyChapter` swallows per-member rejections through `Promise.allSettled`. Rows written before the validation above can still carry such a zone, so delivery falls back to UTC and logs a warning naming the user and the offending zone. A time-shifted quiet window is the accepted cost; losing the notification is not.
 
 ## Mobile preference sync
 
