@@ -439,9 +439,11 @@ Move **every member** to **In Review**: swap its `in-progress` label for **`in-r
 (read-modify-write) and `add_issue_comment` the PR link on each. Do **not** post an
 `AGENT-RELEASE` — the open PR is the marker now, and the claim comments stay as the record of who
 did the work. **Babysit the PR to merge-ready per [`AGENTS.md`](../../AGENTS.md) § Autonomous PR
-lifecycle**: arm and re-arm the `send_later` self-wake, triage each red check infra-vs-code before
-pushing a "fix" (the `CI wake` comment says which — re-run infra, patch code), address and resolve
-review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
+lifecycle**: rely on the wake layers that don't prompt (PR-activity webhook + `CI wake` and
+`PR base sync` comments) — **do not arm a `send_later` self-wake**, which prompts the owner and
+cannot be allowlisted (AGENT_INFRA § "Applied permission allows", the ceiling rule) — triage each
+red check infra-vs-code before pushing a "fix" (the `CI wake` comment says which — re-run infra,
+patch code), address and resolve review threads. On merge, GitHub closes each `Fixes`-named issue as `completed`; for any member
 where it didn't fire, `issue_write` state closed + `completed` yourself. Remove a closed member's
 `in-review` label if GitHub left it (labels survive closing — harmless, but tidy). Solo project:
 the issue's state is the status — no manual board moves.
@@ -476,9 +478,8 @@ hypothetical:
   `strict: true` re-runs the collision check after the first merge; expect an
   `update_pull_request_branch` + fresh-CI cycle on the surviving PR, and don't try to re-review
   `main`'s own merge delta — the gate doesn't ask for it.
-- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: one re-armed self-wake
-  whose check covers *all* open PRs, a `subscribe_pr_activity` per PR, stop conditions evaluated
-  over the set.
+- The [`AGENTS.md`](../../AGENTS.md) babysit obligations read **plural**: a
+  `subscribe_pr_activity` per PR, wake comments read per PR, stop conditions evaluated over the set.
 
 ## Exits
 
