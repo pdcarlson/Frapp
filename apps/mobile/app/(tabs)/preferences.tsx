@@ -10,6 +10,7 @@ import {
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { FrappTokens } from "@repo/theme/tokens";
+import { isSupportedTimeZone } from "@repo/validation";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 import {
   type PreferenceState,
@@ -24,28 +25,6 @@ type PreferenceRow = {
 };
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
-
-/**
- * The API stores `quiet_hours_tz` as a free-text string, and push delivery feeds it
- * straight to `Intl.DateTimeFormat`, which throws on an unknown zone. Reject a bad
- * zone at the input rather than writing one the server cannot format with.
- *
- * Fails open when the runtime cannot validate zones at all, so a device with a
- * stripped-down `Intl` never blocks editing.
- */
-function isSupportedTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
-  } catch {
-    return true;
-  }
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Must agree with the hook's normalizer, including the range check — otherwise a
@@ -72,7 +51,8 @@ const PREFERENCE_ROWS: PreferenceRow[] = [
   {
     key: "dmAlertsEnabled",
     title: "Direct message alerts",
-    description: "Allow immediate push notifications for chapter direct messages.",
+    description:
+      "Allow immediate push notifications for chapter direct messages.",
   },
   {
     key: "eventRemindersEnabled",
@@ -117,7 +97,9 @@ function PreferenceToggleRow({
           false: tokens.color.surface.border,
           true: tokens.color.feedback.infoBorderStrong,
         }}
-        thumbColor={value ? tokens.color.brand.royalBlue : tokens.color.surface.card}
+        thumbColor={
+          value ? tokens.color.brand.royalBlue : tokens.color.surface.card
+        }
       />
     </View>
   );
@@ -187,7 +169,9 @@ function QuietHoursCard({
             false: tokens.color.surface.border,
             true: tokens.color.feedback.infoBorderStrong,
           }}
-          thumbColor={enabled ? tokens.color.brand.royalBlue : tokens.color.surface.card}
+          thumbColor={
+            enabled ? tokens.color.brand.royalBlue : tokens.color.surface.card
+          }
         />
       </View>
 
@@ -196,7 +180,9 @@ function QuietHoursCard({
           <Text style={styles.quietHoursFieldLabel}>Start</Text>
           <TextInput
             value={draft.start}
-            onChangeText={(value) => setDraft((current) => ({ ...current, start: value }))}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, start: value }))
+            }
             onBlur={commitDraft}
             placeholder="22:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -211,7 +197,9 @@ function QuietHoursCard({
           <Text style={styles.quietHoursFieldLabel}>End</Text>
           <TextInput
             value={draft.end}
-            onChangeText={(value) => setDraft((current) => ({ ...current, end: value }))}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, end: value }))
+            }
             onBlur={commitDraft}
             placeholder="08:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -228,7 +216,9 @@ function QuietHoursCard({
         <Text style={styles.quietHoursFieldLabel}>Timezone</Text>
         <TextInput
           value={draft.tz}
-          onChangeText={(value) => setDraft((current) => ({ ...current, tz: value }))}
+          onChangeText={(value) =>
+            setDraft((current) => ({ ...current, tz: value }))
+          }
           onBlur={commitDraft}
           placeholder="America/New_York"
           placeholderTextColor={tokens.color.text.muted}
@@ -239,7 +229,11 @@ function QuietHoursCard({
         />
       </View>
 
-      <Text style={draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError}>
+      <Text
+        style={
+          draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError
+        }
+      >
         {!draftIsValid
           ? "Use 24-hour HH:mm times (e.g. 21:00) and an IANA timezone."
           : enabled
@@ -333,7 +327,8 @@ export default function PreferencesScreen() {
       <View style={styles.themeCard}>
         <Text style={styles.themeLabel}>Theme override</Text>
         <Text style={styles.themeDescription}>
-          System is the default. Manual override persists locally for reliable preview testing.
+          System is the default. Manual override persists locally for reliable
+          preview testing.
         </Text>
         <View style={styles.themeOptionRow}>
           {THEME_OPTIONS.map((themeOption) => {
@@ -421,7 +416,11 @@ export default function PreferencesScreen() {
             ? "Preference writes failed. Toggle a preference again to re-attempt."
             : "AsyncStorage cache mirrors the latest toggle state for offline reads."
         }
-        meta={persistenceFailed ? "Local storage write failed" : "Last verified just now"}
+        meta={
+          persistenceFailed
+            ? "Local storage write failed"
+            : "Last verified just now"
+        }
       />
     </ScreenShell>
   );

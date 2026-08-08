@@ -9,6 +9,7 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
+import { normalizeTimeZoneInput } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -61,6 +62,7 @@ export function ProfilePanel() {
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
 
   useEffect(() => {
     if (userQuery.data) {
@@ -97,7 +99,7 @@ export function ProfilePanel() {
         graduation_year:
           profileDraft.graduation_year === null
             ? null
-            : profileDraft.graduation_year ?? undefined,
+            : (profileDraft.graduation_year ?? undefined),
         current_city: profileDraft.current_city ?? undefined,
         current_company: profileDraft.current_company ?? undefined,
       });
@@ -120,10 +122,24 @@ export function ProfilePanel() {
   async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
+      // `normalizeTimeZoneInput` returns null for "cleared" and undefined for
+      // "not a zone we accept". Blank must reach the server as an explicit null:
+      // sending "" (what the input holds) would be rejected, which would leave a
+      // member holding a bad stored zone unable to save anything on this form —
+      // including turning quiet hours off.
+      const tz = normalizeTimeZoneInput(settingsDraft.quiet_hours_tz);
+      if (tz === undefined) {
+        setTimeZoneError(
+          "Enter an IANA time zone name like America/Chicago. A UTC offset such as -05:00 can't follow daylight saving time.",
+        );
+        return;
+      }
+      setTimeZoneError(null);
+
       await updateSettings.mutateAsync({
         quiet_hours_start: settingsDraft.quiet_hours_start ?? undefined,
         quiet_hours_end: settingsDraft.quiet_hours_end ?? undefined,
-        quiet_hours_tz: settingsDraft.quiet_hours_tz ?? undefined,
+        quiet_hours_tz: tz,
         theme: settingsDraft.theme,
       });
       toast({
@@ -303,18 +319,28 @@ export function ProfilePanel() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="quiet-tz">Timezone offset</Label>
+                <Label htmlFor="quiet-tz">Timezone</Label>
                 <Input
                   id="quiet-tz"
                   value={settings.quiet_hours_tz ?? ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setTimeZoneError(null);
                     setSettingsDraft((prev) => ({
                       ...prev,
                       quiet_hours_tz: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder="e.g. America/Chicago"
+                  aria-invalid={timeZoneError ? true : undefined}
+                  aria-describedby={
+                    timeZoneError ? "quiet-tz-error" : undefined
+                  }
                 />
+                {timeZoneError ? (
+                  <p id="quiet-tz-error" className="text-sm text-destructive">
+                    {timeZoneError}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="grid gap-2 sm:max-w-xs">
@@ -354,8 +380,8 @@ export function ProfilePanel() {
         <CardHeader>
           <CardTitle>Tutorial</CardTitle>
           <CardDescription>
-            Replay the onboarding tour. It&apos;ll reopen on your next
-            dashboard visit.
+            Replay the onboarding tour. It&apos;ll reopen on your next dashboard
+            visit.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -393,8 +419,8 @@ export function ProfilePanel() {
         <CardHeader>
           <CardTitle>Session</CardTitle>
           <CardDescription>
-            Sign out of this device. Signing in again refreshes your
-            permission set.
+            Sign out of this device. Signing in again refreshes your permission
+            set.
           </CardDescription>
         </CardHeader>
         <CardContent>

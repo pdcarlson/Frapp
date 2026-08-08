@@ -10,40 +10,33 @@ import {
   ValidatorConstraint,
   type ValidatorConstraintInterface,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
 
 /**
- * Rejects a `quiet_hours_tz` the runtime cannot resolve. The stored value is fed
- * straight to `Intl.DateTimeFormat` during push delivery, so an unknown zone
- * written here used to cost that member every notification — push and in-app row
- * alike — until someone edited the field. `@MaxLength` alone never caught it.
+ * Rejects a `quiet_hours_tz` this system will not accept. The stored value is fed
+ * to `Intl.DateTimeFormat` during push delivery, so an unknown zone written here
+ * used to cost that member every notification — push and in-app row alike —
+ * until someone edited the field. `@MaxLength` alone never caught it.
  *
- * Fails open when the runtime cannot resolve even `UTC`, so an ICU build without
- * zone data rejects nothing rather than everything. Mirrors the client-side probe
- * in `apps/mobile/app/(tabs)/preferences.tsx`.
+ * The rule itself lives in `@repo/validation` because the web panel and the
+ * mobile preferences screen have to agree with the server about which zones are
+ * acceptable: a client that submits what the server rejects produces a save that
+ * fails with no field-level explanation, which is how unresolvable zones reached
+ * stored rows to begin with.
  */
 @ValidatorConstraint({ name: 'supportedTimeZone', async: false })
 export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
+    // `null` clears the field, and the @Transform below has already turned blank
+    // input into `null` — so any string reaching here is a real candidate zone.
     if (value === undefined || value === null) return true;
-    if (typeof value !== 'string') return false;
-
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: 'UTC' });
-    } catch {
-      return true;
-    }
-
-    try {
-      new Intl.DateTimeFormat('en-US', { timeZone: value });
-      return true;
-    } catch {
-      return false;
-    }
+    return isSupportedTimeZone(value);
   }
 
   defaultMessage(): string {
-    return 'quiet_hours_tz must be a valid IANA time zone (e.g. America/New_York)';
+    return 'quiet_hours_tz must be a time zone the server can resolve (e.g. America/New_York)';
   }
 }
 
@@ -107,14 +100,20 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'IANA timezone for quiet hours (e.g. America/New_York). Must be a zone the server can resolve. Pass null to clear.',
+      'Time zone for quiet hours — must be one the server can resolve (e.g. America/New_York). Prefer a named zone: a fixed offset such as -05:00 is accepted but does not follow daylight saving time. Pass null or an empty string to clear.',
     nullable: true,
     type: String,
   })
   @IsOptional()
+  // A cleared input is a clear, not a validation error. The web panel binds this
+  // field to `""`, so rejecting blank would leave a member who has a bad stored
+  // zone unable to turn quiet hours off — the one escape hatch they need.
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.trim().length === 0 ? null : value,
+  )
   @ValidateIf((_, value) => value !== null)
   @IsString()
-  @MaxLength(100)
+  @MaxLength(MAX_TIME_ZONE_LENGTH)
   @Validate(SupportedTimeZoneConstraint)
   quiet_hours_tz?: string | null;
 

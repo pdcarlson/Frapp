@@ -36,6 +36,13 @@ export type NotifyPayload = {
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
 
+  /**
+   * `user:zone` pairs already reported by `resolveQuietHoursFormatter`. Bounded
+   * by the number of members holding an unusable stored zone, which the DTO
+   * validation now stops growing.
+   */
+  private readonly warnedQuietHoursZones = new Set<string>();
+
   constructor(
     @Inject(NOTIFICATION_REPOSITORY)
     private readonly notificationRepo: INotificationRepository,
@@ -132,7 +139,10 @@ export class NotificationService {
       return false;
     }
 
-    const tz = settings.quiet_hours_tz ?? 'UTC';
+    // `||`, not `??`: a blank stored zone means "unset", not "invalid". Rows
+    // written before the field was validated can hold `''`, and `??` would send
+    // that through the formatter to throw and warn on every single delivery.
+    const tz = settings.quiet_hours_tz || 'UTC';
     const now = new Date();
     const formatter = this.resolveQuietHoursFormatter(tz, userId);
     if (!formatter) {
@@ -174,6 +184,9 @@ export class NotificationService {
    * Returns `null` only when the runtime cannot resolve `UTC` either — an ICU
    * build that can't do zones at all. Quiet hours are then skipped rather than
    * costing the member the notification, keeping this method total.
+   *
+   * The warning is emitted after the fallback resolves, once per (user, zone)
+   * per process — see the comments inline.
    */
   private resolveQuietHoursFormatter(
     tz: string,
@@ -189,16 +202,36 @@ export class NotificationService {
     try {
       return new Intl.DateTimeFormat('en-CA', { ...options, timeZone: tz });
     } catch {
+      // Fall through — the zone is unusable; report it once we know what we
+      // actually fell back to, so the log never claims a UTC fallback that
+      // itself failed.
+    }
+
+    let fallback: Intl.DateTimeFormat | null = null;
+    try {
+      fallback = new Intl.DateTimeFormat('en-CA', {
+        ...options,
+        timeZone: 'UTC',
+      });
+    } catch {
+      fallback = null;
+    }
+
+    // The offending row cannot repair itself, and this runs per delivery — for a
+    // chapter-wide send that is one line per affected member, every time. Warn
+    // once per (user, zone) per process so the signal survives without becoming
+    // the noise that hides the next problem.
+    const warnKey = `${userId}:${tz}`;
+    if (!this.warnedQuietHoursZones.has(warnKey)) {
+      this.warnedQuietHoursZones.add(warnKey);
       this.logger.warn(
-        `Invalid quiet_hours_tz "${tz}" for user ${userId} — falling back to UTC`,
+        fallback
+          ? `Invalid quiet_hours_tz "${tz}" for user ${userId} — falling back to UTC`
+          : `Invalid quiet_hours_tz "${tz}" for user ${userId} and this runtime cannot resolve UTC — skipping quiet-hours enforcement`,
       );
     }
 
-    try {
-      return new Intl.DateTimeFormat('en-CA', { ...options, timeZone: 'UTC' });
-    } catch {
-      return null;
-    }
+    return fallback;
   }
 
   async listNotifications(
