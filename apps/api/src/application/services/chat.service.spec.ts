@@ -921,26 +921,11 @@ describe('ChatService', () => {
         expect(mockMessageRepo.create).toHaveBeenCalled();
       });
 
-      it('leaves replies in a normal channel alone', async () => {
-        mockChannelRepo.findById.mockResolvedValue(baseChannel);
-        mockMessageRepo.findById.mockResolvedValue({
-          ...baseMessage,
-          id: 'msg-same',
-          channel_id: 'ch-chan-1',
-        });
-        mockMessageRepo.create.mockResolvedValue(baseMessage);
-
-        const result = await service.sendMessage({
-          chapter_id: 'ch-1',
-          channel_id: 'ch-chan-1',
-          sender_id: 'user-1',
-          content: 'Replying in #general',
-          reply_to_id: 'msg-same',
-        });
-
-        expect(result).toEqual({ message: baseMessage, deduplicated: false });
-        expect(mockMessageRepo.create).toHaveBeenCalled();
-      });
+      // No "reply in a normal channel still works" case here: "should accept a
+      // reply targeting a message in the same channel" above already covers it
+      // with the same channel, payload, and assertions. No mutation of this
+      // guard fails one without failing the other, so a read-only-specific copy
+      // would assert nothing new while implying the split is covered twice.
     });
   });
 

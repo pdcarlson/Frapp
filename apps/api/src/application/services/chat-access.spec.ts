@@ -415,25 +415,52 @@ describe('canAccessChannel', () => {
 });
 
 describe('allowsInThreadReplies', () => {
+  const channel = {
+    type: 'PUBLIC' as const,
+    member_ids: null,
+    required_permissions: null,
+  };
+
   it('allows replies in a normal channel', () => {
-    expect(allowsInThreadReplies({ is_read_only: false })).toBe(true);
+    expect(allowsInThreadReplies({ ...channel, is_read_only: false })).toBe(
+      true,
+    );
   });
 
   it('rejects replies in a read-only channel', () => {
-    expect(allowsInThreadReplies({ is_read_only: true })).toBe(false);
+    expect(allowsInThreadReplies({ ...channel, is_read_only: true })).toBe(
+      false,
+    );
   });
 
   // The flag is optional on `ChannelAccessRecord` because read checks never
-  // consult it. An absent flag must read as "not read-only" — the same default
-  // `canAccessChannel` applies — or every DM would stop accepting replies.
+  // consult it, so the predicate has to answer for an absent one. No *real*
+  // channel reaches this branch — `ChatChannel.is_read_only` is a required
+  // `boolean` and the column is `not null default false` — it exists only so a
+  // caller hand-building a record for a read check gets the same default
+  // `canAccessChannel` uses. Do not cite it as evidence the open default is
+  // load-bearing for DMs; it is not.
   it('treats an absent or null flag as replyable', () => {
-    expect(allowsInThreadReplies({})).toBe(true);
-    expect(allowsInThreadReplies({ is_read_only: null })).toBe(true);
+    expect(allowsInThreadReplies(channel)).toBe(true);
+    expect(allowsInThreadReplies({ ...channel, is_read_only: null })).toBe(
+      true,
+    );
   });
 
-  // The rule is a property of the channel, not the caller: the predicate takes
-  // no permissions at all, so `announcements:post` and `"*"` cannot reach it.
-  it('is decided by the channel alone, with no permission input', () => {
-    expect(allowsInThreadReplies.length).toBe(1);
-  });
+  // `is_read_only` is the only field that may decide this. Keying off channel
+  // type or `required_permissions` instead would let a renamed or re-typed
+  // announcements channel silently start accepting threads.
+  it.each(['PUBLIC', 'PRIVATE', 'ROLE_GATED', 'DM', 'GROUP_DM'] as const)(
+    'ignores every other channel field on a read-only %s channel',
+    (type) => {
+      expect(
+        allowsInThreadReplies({
+          type,
+          member_ids: ['user-1'],
+          required_permissions: ['announcements:post'],
+          is_read_only: true,
+        }),
+      ).toBe(false);
+    },
+  );
 });

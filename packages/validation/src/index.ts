@@ -547,8 +547,10 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
  * Read-only channels (`#announcements`, `#chapter-audit`) are broadcast
  * surfaces. Per `spec/behavior/chat/README.md` § Announcements: "Announcement
  * messages cannot be replied to in-thread (read-only channel for non-admins)."
- * Threading a broadcast fragments an urgent message into nested side
- * conversations members may never notice.
+ * A reply would turn a one-way broadcast into a conversation the channel's
+ * whole point is to not have — note the rationale is the one-way model, *not*
+ * hidden nesting: replies here are Discord-style reply-with-quote rendered in
+ * the main timeline (§ Reply threads), so nothing is ever tucked out of sight.
  *
  * Two deliberate properties:
  *
@@ -560,11 +562,18 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
  * - **Unconditional on permissions.** `canAccessChannel` decides who may author a
  *   top-level announcement; this decides that nobody threads one — holders of
  *   `announcements:post` and of the `"*"` wildcard included. The rule is a
- *   property of the channel, not of the caller.
+ *   property of the channel, not of the caller, so this deliberately takes no
+ *   permissions argument. Do not add one: a `"*"` escape hatch here reopens
+ *   exactly the hole the predicate exists to close.
+ *
+ * Takes a whole `ChannelAccessRecord` rather than just the field it reads, for
+ * the same reason `isAlumniPostableChannel` does: a `Pick<…, "is_read_only">`
+ * is an all-optional type, so a caller handing over a projection that never
+ * selected the column would type-check and read as replyable. Requiring the
+ * full record makes the caller prove it loaded a real channel — this predicate
+ * must fail closed, and an omitted field is the one way it could fail open.
  */
-export function allowsInThreadReplies(
-  channel: Pick<ChannelAccessRecord, "is_read_only">,
-): boolean {
+export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
   return !channel.is_read_only;
 }
 
