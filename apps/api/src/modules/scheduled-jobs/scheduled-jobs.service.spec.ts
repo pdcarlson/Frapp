@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
+import { ReportRetentionService } from '../../application/services/report-retention.service';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
@@ -26,6 +27,7 @@ describe('ScheduledJobsService', () => {
   let findEventsPendingAutoAbsent: jest.Mock;
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
+  let sweepExpiredReports: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -57,6 +59,9 @@ describe('ScheduledJobsService', () => {
     findEventsPendingAutoAbsent = jest.fn().mockResolvedValue([]);
     findOpenInvoicesDueBetween = jest.fn().mockResolvedValue([]);
     findIncompleteTasksDueBetween = jest.fn().mockResolvedValue([]);
+    sweepExpiredReports = jest
+      .fn()
+      .mockResolvedValue({ deleted: 0, failed: 0 });
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -74,6 +79,7 @@ describe('ScheduledJobsService', () => {
         { provide: AttendanceService, useValue: { markAutoAbsent } },
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
+        { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
         { provide: MEMBER_REPOSITORY, useValue: { findByUserAndChapter } },
       ],
     }).compile();
@@ -418,6 +424,37 @@ describe('ScheduledJobsService', () => {
         '2026-07-29',
         TOMORROW,
       );
+    });
+  });
+
+  describe('sweepExpiredReports', () => {
+    it('delegates to the retention service with the sweep clock', async () => {
+      // The work list is storage-derived, so this handler passes only `now`.
+      // Nothing reads the chapters table — a DB error therefore cannot masquerade
+      // as "no chapters to sweep".
+      sweepExpiredReports.mockResolvedValue({ deleted: 3, failed: 0 });
+
+      const result = await service.sweepExpiredReports(NOW);
+
+      expect(sweepExpiredReports).toHaveBeenCalledWith(NOW);
+      expect(result).toEqual({ deleted: 3, failed: 0 });
+    });
+
+    it('passes the real clock through the cron wrapper', async () => {
+      await service.handleReportRetentionSweep();
+
+      expect(sweepExpiredReports).toHaveBeenCalledWith(expect.any(Date));
+    });
+
+    it('does not let a storage failure escape the cron handler', async () => {
+      // An unhandled rejection out of a @Cron handler is fatal under Node's
+      // default --unhandled-rejections=throw: this sweep reaches storage
+      // directly, so an outage would otherwise restart the API every hour.
+      sweepExpiredReports.mockRejectedValue(new Error('storage down'));
+
+      await expect(
+        service.handleReportRetentionSweep(),
+      ).resolves.toBeUndefined();
     });
   });
 });

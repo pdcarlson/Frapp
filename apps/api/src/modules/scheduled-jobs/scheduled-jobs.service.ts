@@ -9,6 +9,10 @@ import {
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
 import {
+  ReportRetentionService,
+  type ReportSweepResult,
+} from '../../application/services/report-retention.service';
+import {
   ScheduledJobsRepository,
   type DispatchEntityType,
   type DispatchThreshold,
@@ -91,6 +95,7 @@ export class ScheduledJobsService {
     private readonly attendanceService: AttendanceService,
     private readonly notificationService: NotificationService,
     private readonly workflows: ChapterWorkflowsService,
+    private readonly reportRetention: ReportRetentionService,
     @Inject(MEMBER_REPOSITORY)
     private readonly memberRepo: IMemberRepository,
   ) {}
@@ -108,6 +113,51 @@ export class ScheduledJobsService {
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async handleTaskReminderSweep(): Promise<void> {
     await this.sweepTaskReminders(new Date());
+  }
+
+  /**
+   * The only handler here that needs its own catch.
+   *
+   * The other three reach the database through `fetchAllPages`, which absorbs
+   * a query error and returns `[]`, so they cannot reject. This one reaches
+   * *storage*, and a failure listing the bucket root propagates. An unhandled
+   * rejection out of a `@Cron` handler is not a logged blip — Node's default
+   * `--unhandled-rejections=throw` turns it into an uncaught exception and
+   * takes the API process down, hourly. A sweep that cannot start must skip
+   * this tick loudly, not restart the service.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleReportRetentionSweep(): Promise<void> {
+    try {
+      await this.sweepExpiredReports(new Date());
+    } catch (error) {
+      this.logger.error(
+        'report retention sweep: could not enumerate the reports bucket; skipping this tick',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
+   * Reap generated report PDFs past their retention window
+   * (`spec/behavior/data-retention.md`).
+   *
+   * Hourly rather than daily: the window is 24h, so an hourly tick deletes an
+   * expired export within an hour of it expiring instead of leaving a
+   * PII-bearing snapshot for up to a further day.
+   *
+   * This is the one sweep here that needs no `scheduled_notification_dispatches`
+   * claim. The others guard against a *duplicate side effect* — two replicas
+   * sending the same reminder twice. Deleting a storage object is idempotent:
+   * Supabase's `remove()` reports success for a key that is already gone, so
+   * the replica that loses the race simply deletes nothing. A plain `@Cron`
+   * firing on every instance is safe as-is.
+   *
+   * Thin by design — the service owns the whole sweep because it derives its
+   * work list from storage, not from this repository.
+   */
+  async sweepExpiredReports(now: Date): Promise<ReportSweepResult> {
+    return this.reportRetention.sweepExpiredReports(now);
   }
 
   /**

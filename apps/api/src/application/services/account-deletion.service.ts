@@ -24,6 +24,10 @@ import {
 import type { User } from '../../domain/entities/user.entity';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 import { AnalyticsService } from './analytics.service';
+import {
+  REPORT_RETENTION_HOURS,
+  ReportRetentionService,
+} from './report-retention.service';
 
 /**
  * Individual account deletion (spec/behavior/data-retention.md).
@@ -31,14 +35,18 @@ import { AnalyticsService } from './analytics.service';
  * Ordering is the contract, and every step is idempotent so the whole flow is
  * safely retryable until it returns success:
  *
- *  1. avatar/profile-photo storage purge — runs first because it needs the
- *     chapter memberships and `avatar_url` the scrub destroys to locate
- *     `chapters/<chapterId>/profiles/<userId>/` folders. A failure here
- *     ABORTS the request (502): no account data has been touched (objects in
- *     folders swept before the failure are already gone — they belonged to
- *     the requester and the retry re-covers the rest), so the client simply
- *     retries. Proceeding instead would tombstone the row and permanently
- *     strand the objects — the retry would have nothing left to enumerate.
+ *  1. storage PII purge — profile photos, then the generated reports of every
+ *     chapter the user belongs to. Runs first because both need the chapter
+ *     memberships (and, for photos, the `avatar_url`) that the scrub destroys
+ *     to locate `chapters/<chapterId>/profiles/<userId>/` folders and
+ *     `chapters/<chapterId>/reports/` prefixes. A **photo** failure ABORTS the
+ *     request (502): no account data has been touched (folders swept before
+ *     the failure are already empty — they belonged to the requester and the
+ *     retry re-covers the rest), so the client simply retries. Proceeding
+ *     instead would tombstone the row and permanently strand the objects —
+ *     the retry would have nothing left to enumerate. A **report** failure is
+ *     logged and the flow continues; those objects have their own 24h reaper,
+ *     so aborting would revoke erasure over a delay the sweep already bounds.
  *  2. `anonymize_user` RPC — the authoritative, atomic step: tombstones the
  *     users row ("Deleted User" + sentinel email), purges current-state rows,
  *     scrubs card name snapshots in payload and content. It re-runs the full
@@ -67,6 +75,7 @@ export class AccountDeletionService {
     @Inject(AUTH_ADMIN_PROVIDER)
     private readonly authAdmin: IAuthAdminProvider,
     private readonly analytics: AnalyticsService,
+    private readonly reportRetention: ReportRetentionService,
   ) {}
 
   async deleteAccount(userId: string): Promise<void> {
@@ -74,14 +83,14 @@ export class AccountDeletionService {
     if (!user) throw new NotFoundException('User not found');
 
     try {
-      await this.purgeAvatarObjects(user);
+      await this.purgeStorageObjects(user);
     } catch (error) {
       this.logger.error(
-        `Avatar storage purge failed for user ${userId}; aborting before any ACCOUNT DATA was changed (objects under already-swept folders may be gone) — client should retry`,
+        `Storage PII purge failed for user ${userId}; aborting before any ACCOUNT DATA was changed (objects swept before the failure are already gone) — client should retry`,
         error instanceof Error ? error.stack : String(error),
       );
       throw new BadGatewayException(
-        'Profile media cleanup did not complete; no account data was changed. Please retry.',
+        'Stored file cleanup did not complete; no account data was changed. Please retry.',
       );
     }
 
@@ -128,6 +137,47 @@ export class AccountDeletionService {
   }
 
   /**
+   * Every storage object holding this user's PII, purged before the scrub
+   * that would destroy the memberships locating them.
+   *
+   * Memberships are read once and shared: the two purges must agree on the
+   * chapter set, and a second read could straddle a membership change and
+   * leave one of them sweeping a prefix the other did not.
+   */
+  private async purgeStorageObjects(user: User): Promise<void> {
+    const memberships = await this.memberRepo.findByUser(user.id);
+    const chapterIds = memberships.map((membership) => membership.chapter_id);
+
+    await this.purgeAvatarObjects(user, chapterIds);
+
+    // Generated reports are chapter-scoped snapshots — a rendered PDF cannot
+    // have one member removed from it — so erasure means dropping the whole
+    // report prefix of every chapter this user is in. Safe because exports are
+    // derived artifacts, regenerable from the source tables
+    // (spec/behavior/data-retention.md).
+    //
+    // Best-effort, unlike the avatar purge above, and the asymmetry is the
+    // point: report objects have an independent backstop and profile photos do
+    // not. The hourly retention sweep deletes every export past 24h whether or
+    // not this ran, so a failure here delays report erasure by at most that
+    // window. Letting it abort instead would trade a bounded delay for three
+    // unbounded harms — the user could never complete a right-to-erasure
+    // request at all; every retry would re-run the avatar purge that already
+    // succeeded, destroying their profile photos while leaving the account
+    // alive; and one chapter's unlistable prefix would block deletion for every
+    // member of that chapter. A storage misconfiguration must not be able to
+    // revoke erasure.
+    try {
+      await this.reportRetention.purgeUserReports(chapterIds);
+    } catch (error) {
+      this.logger.error(
+        `Report purge failed for user ${user.id}; deletion is proceeding; the hourly retention sweep normally removes these exports within ~${REPORT_RETENTION_HOURS + 1}h, but it cannot age out an object whose stored-at timestamp is missing and it skips a prefix it cannot read — investigate the reports bucket if this repeats`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  /**
    * Delete every profile-photo object the flow can locate: one folder per
    * current chapter membership, plus the folder derived from `avatar_url` —
    * the live avatar may sit under a chapter the user has since left, which
@@ -136,11 +186,13 @@ export class AccountDeletionService {
    * original run's purge already succeeded (a failed purge aborts before the
    * scrub).
    */
-  private async purgeAvatarObjects(user: User): Promise<void> {
+  private async purgeAvatarObjects(
+    user: User,
+    chapterIds: string[],
+  ): Promise<void> {
     const prefixes = new Set<string>();
-    const memberships = await this.memberRepo.findByUser(user.id);
-    for (const membership of memberships) {
-      prefixes.add(profileFolderPrefix(membership.chapter_id, user.id));
+    for (const chapterId of chapterIds) {
+      prefixes.add(profileFolderPrefix(chapterId, user.id));
     }
     const avatarFolder = this.avatarUrlFolder(user);
     if (avatarFolder) prefixes.add(avatarFolder);

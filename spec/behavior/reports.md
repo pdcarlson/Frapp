@@ -54,13 +54,35 @@ for reading (`ATTENDANCE: 12, SERVICE: 4`).
 
 ### Retention
 
-**Generated PDFs are stored indefinitely.** The signed URL expires after an hour,
-but the object behind it does not — nothing currently deletes it, and each export
-writes a new object rather than replacing the last. Roster exports in particular
-carry member names, emails, roles, and join dates, so this storage is in scope for
-[`data-retention.md`](data-retention.md): a member who deletes their account still
-has their details inside any report exported before that point. Reaping old
-exports, and sweeping the prefix on account deletion, is tracked in **#694**.
+**Generated PDFs are deleted about 24 hours after they are written.** The signed
+URL expires after an hour, so anything past that is already unreachable through
+the API; the extra day covers a stalled download or a retried request without
+keeping the artifact around longer than it is useful. An hourly sweep removes
+expired objects, so an export is reaped within an hour of turning 24h old — a
+real ceiling of ~25h, not exactly 24.
+
+The sweep is best-effort, and the two ways it declines to act are deliberate
+rather than incidental. It **skips** a chapter prefix it cannot read, retrying on
+the next tick. It **keeps** an object whose stored-at timestamp storage did not
+report, because treating unknown age as old would delete an export someone is
+still downloading — such an object is never aged out at all, and is removed only
+by an account-deletion purge or by hand. Both cases are logged precisely so
+"reaped nothing" is distinguishable from "nothing to reap".
+
+Reports are **derived artifacts** — every one is regenerable from the source tables
+it was rendered from, and nothing in the database references the stored object — so
+deleting one never affects live data. Re-running the export produces a new object
+with a new random key.
+
+Roster exports carry member names, emails, roles, and join dates, which puts this
+storage in scope for [`data-retention.md`](data-retention.md). Account deletion
+therefore does **not** wait for the retention window: it clears the report prefix of
+every chapter the departing member currently belongs to, before the database scrub.
+A rendered PDF cannot have one member removed from it, so dropping the chapter's
+exports is the only complete erasure — officers simply re-export. That step is
+best-effort and bounded rather than absolute (see
+[`data-retention.md`](data-retention.md) for exactly what it does and does not
+reach); the sweep above is what normally closes the gap.
 
 ## PDF Formatting
 

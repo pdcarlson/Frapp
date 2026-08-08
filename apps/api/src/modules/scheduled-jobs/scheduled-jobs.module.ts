@@ -5,6 +5,7 @@ import { AttendanceModule } from '../attendance/attendance.module';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterConfigModule } from '../chapter-config/chapter-config.module';
 import { ChapterModule } from '../chapter/chapter.module';
+import { ReportRetentionModule } from '../report-retention/report-retention.module';
 
 /**
  * Scheduled workers for spec-required, time-triggered behavior that no user
@@ -20,8 +21,9 @@ import { ChapterModule } from '../chapter/chapter.module';
  * Imports `AttendanceModule` to reuse `markAutoAbsent` rather than restate its
  * eligibility rules, `NotificationModule` for the preference- and
  * quiet-hours-aware fanout, `ChapterConfigModule` for the per-chapter dues
- * grace that defines "overdue", and `ChapterModule` for `MEMBER_REPOSITORY`,
- * used to confirm a task's assigner still belongs to the chapter.
+ * grace that defines "overdue", `ChapterModule` for `MEMBER_REPOSITORY`, used
+ * to confirm a task's assigner still belongs to the chapter, and
+ * `ReportRetentionModule` for the generated-report reaper.
  */
 @Module({
   imports: [
@@ -29,6 +31,7 @@ import { ChapterModule } from '../chapter/chapter.module';
     NotificationModule,
     ChapterConfigModule,
     ChapterModule,
+    ReportRetentionModule,
   ],
   providers: [ScheduledJobsService, ScheduledJobsRepository],
   exports: [ScheduledJobsService],
