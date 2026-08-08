@@ -119,17 +119,24 @@ When a report is cut short, every format says so:
 
 The note header is flattened to plain ASCII — Node rejects a header value
 containing typographic punctuation outright, so an unsanitized note would fail
-the request rather than warn about it. The PDF and the dashboard show the note
-with its original typography.
+the request rather than warn about it. Only the header copy is flattened, so
+the `json`/`csv` warnings read in ASCII; the PDF carries the note in its
+envelope instead and keeps the original typography in both the document and
+its download toast.
 
 All three headers are named in the API's CORS `exposedHeaders`, and the
 dashboard reads them: the report hooks return the truncation flags alongside
 the rows, the preview toast says the report is incomplete instead of quoting a
 row count, and downloading the CSV — which is serialized from that preview —
-warns again at the moment the file leaves the app. Exposing the headers without
-reading them would have been decoration; the CSV-to-nationals path is exactly
-the one this is for. A truncated report is also logged as a warning by the API,
-for callers that discard headers.
+warns again at the moment the file leaves the app. Exposing headers nobody
+reads would have been decoration. A truncated report is also logged as a
+warning by the API, for callers that discard headers.
+
+**The CSV bytes themselves carry no marker**, unlike the PDF, which prints
+`INCOMPLETE — …` into the document. Keeping the CSV body clean is deliberate —
+it is consumed by parsers, and a preamble row would break them — but it means
+a downloaded CSV, once detached from the app, no longer says it is short. The
+warnings above sit either side of that gap rather than closing it.
 
 The in-document clause is deliberately plain ASCII. The standard PDF fonts are
 Latin-1 only, so a warning glyph like `⚠` folds to `?` under the rules in

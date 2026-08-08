@@ -55,10 +55,14 @@ export interface ReportTruncation {
 }
 
 function readTruncation(response: Response): ReportTruncation {
-  const rowLimit = response.headers.get("X-Report-Row-Limit");
+  const rawLimit = response.headers.get("X-Report-Row-Limit");
+  const rowLimit = rawLimit === null ? Number.NaN : Number(rawLimit);
   return {
     truncated: response.headers.get("X-Report-Truncated") === "true",
-    rowLimit: rowLimit === null ? null : Number(rowLimit),
+    // A malformed header reads the same as a missing one. `rowLimit` is typed
+    // `number | null`, so letting `NaN` through would put a value in it that
+    // every consumer has to remember is not a number.
+    rowLimit: Number.isFinite(rowLimit) ? rowLimit : null,
     note: response.headers.get("X-Report-Truncation-Note"),
   };
 }

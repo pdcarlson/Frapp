@@ -128,9 +128,12 @@ function dateRange(start?: string, end?: string): string | undefined {
  *
  * Typographic punctuation folds to its ASCII cousin and everything else is
  * dropped; collapsing whitespace first also means a CR or LF can never survive
- * into a header value. The note keeps its original typography everywhere a
- * human actually reads it — the PDF and the dashboard — and only the header
- * copy is flattened.
+ * into a header value.
+ *
+ * Only the header copy is flattened, and only `json`/`csv` callers read it —
+ * the dashboard's preview and CSV warnings therefore show the ASCII form. The
+ * PDF path carries the note in the response envelope instead, so the document
+ * and its download toast keep the original typography.
  */
 function toHeaderValue(note: string): string {
   return note

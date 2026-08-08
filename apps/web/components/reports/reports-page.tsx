@@ -9,6 +9,7 @@ import {
   useRosterReport,
   useServiceReport,
   type ReportFormat,
+  type ReportResponse,
   type ReportTruncation,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
@@ -224,7 +225,7 @@ export function ReportsPage() {
   /** Run the selected report at a given format, with the current filters. */
   async function invokeReport(
     format: ReportFormat,
-  ): Promise<{ payload: unknown; truncation: ReportTruncation }> {
+  ): Promise<ReportResponse<unknown>> {
     if (kind === "attendance") {
       return attendance.mutateAsync({
         format,
