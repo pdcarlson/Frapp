@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Logger,
   Post,
   Query,
   Res,
@@ -17,7 +18,10 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { ReportService } from '../../application/services/report.service';
+import {
+  ReportService,
+  type ReportResult,
+} from '../../application/services/report.service';
 import { ReportExportService } from '../../application/services/report-export.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -36,6 +40,27 @@ import { REPORT_COLUMNS, type ReportKind } from './report-columns';
 
 /** Export formats every /v1/reports route accepts. Anything else is a 400. */
 const REPORT_FORMATS = ['json', 'csv', 'pdf'];
+
+/**
+ * Set when a report's row ceiling cut it short.
+ *
+ * Truncation is signalled in headers rather than in the body because the `json`
+ * body is a bare array and the `csv` body is consumed by parsers: wrapping
+ * either in an envelope to carry one boolean would break every existing caller
+ * — `packages/hooks/src/use-reports.ts`, the dashboard, and the generated SDK —
+ * for a condition that a chapter-sized dataset should never reach. The `pdf`
+ * format has an envelope already, so it carries the flag as a field *and*
+ * prints it on the document.
+ */
+const TRUNCATED_HEADER = 'X-Report-Truncated';
+const ROW_LIMIT_HEADER = 'X-Report-Row-Limit';
+/**
+ * Carries `ReportResult.note` — what was cut, when the row count does not say
+ * it. Without this a roster whose *balances* were truncated would announce
+ * itself with nothing but a row cap the document never reached, which reads as
+ * a false positive on a report of the right length.
+ */
+const TRUNCATION_NOTE_HEADER = 'X-Report-Truncation-Note';
 
 const FORMAT_QUERY = {
   name: 'format',
@@ -57,6 +82,26 @@ const EXPORT_RESPONSE = {
   },
 };
 
+/**
+ * Reject an unrecognized format rather than quietly serving JSON. The contract
+ * advertises an enum, and `format=PDF` silently returning rows instead of a
+ * download envelope is a trap for an external caller with no error to notice.
+ * Matches this endpoint family's existing stance on an unsupported points
+ * `window` (spec/behavior/reports.md).
+ *
+ * Called before the report is read, not while responding: the read is now up
+ * to dozens of sequential round-trips, and doing all of that only to reject
+ * the request as malformed turns a typo into an expensive one — and a cheap
+ * way to keep the API busy.
+ */
+function assertSupportedFormat(format: string | undefined): void {
+  if (format !== undefined && !REPORT_FORMATS.includes(format)) {
+    throw new BadRequestException(
+      `Unsupported format "${format}". Expected one of: ${REPORT_FORMATS.join(', ')}.`,
+    );
+  }
+}
+
 /** Join the non-empty parts of a report's scope line for the PDF header. */
 function scopeLine(parts: (string | undefined)[]): string | undefined {
   const line = parts
@@ -72,6 +117,55 @@ function dateRange(start?: string, end?: string): string | undefined {
   return 'All dates';
 }
 
+/**
+ * Make a note safe to put in an HTTP header.
+ *
+ * Node validates header content and **throws** on a byte outside the
+ * latin1-ish set it accepts — the em dash in "balances are incomplete — summed
+ * from…" is enough to do it. Unsanitized, announcing a truncated report would
+ * crash the request instead: a 500 in place of a warning, which is strictly
+ * worse than the silent truncation this all exists to fix.
+ *
+ * Typographic punctuation folds to its ASCII cousin and everything else is
+ * dropped; collapsing whitespace first also means a CR or LF can never survive
+ * into a header value.
+ *
+ * Only the header copy is flattened, and only `json`/`csv` callers read it —
+ * the dashboard's preview and CSV warnings therefore show the ASCII form. The
+ * PDF path carries the note in the response envelope instead, so the document
+ * and its download toast keep the original typography.
+ */
+function toHeaderValue(note: string): string {
+  return note
+    .replace(/[‒-―]/g, '-')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\x20-\x7e]/g, '')
+    .trim();
+}
+
+/**
+ * The clause that keeps a truncated PDF from passing itself off as complete.
+ * It rides in the header scope line, next to the date range, because that is
+ * the line a reader already checks to learn what the document covers — and
+ * unlike the `Page N of M` footer, it describes what was *matched* rather than
+ * what was printed.
+ *
+ * Deliberately WinAnsi-encodable. The standard PDF fonts cover Latin-1, and
+ * `toWinAnsi` folds anything else — a `⚠` reaches the page as a bare `?`,
+ * which reads as an encoding glitch rather than a warning (see
+ * spec/behavior/reports.md § Text degradation). The em dash survives here; the
+ * emphasis has to come from the word.
+ */
+function truncationNotice(result: ReportResult<unknown>): string | undefined {
+  if (!result.truncated) return undefined;
+  return `INCOMPLETE — ${
+    result.note ??
+    `capped at the first ${result.limit.toLocaleString('en-US')} rows`
+  }`;
+}
+
 @ApiTags('Reports')
 @ApiBearerAuth()
 @ApiExtraModels(ReportExportResponseDto)
@@ -79,6 +173,8 @@ function dateRange(start?: string, end?: string): string | undefined {
 @RequirePermissions(SystemPermissions.REPORTS_EXPORT)
 @Controller('reports')
 export class ReportController {
+  private readonly logger = new Logger(ReportController.name);
+
   constructor(
     private readonly reportService: ReportService,
     private readonly reportExportService: ReportExportService,
@@ -94,12 +190,13 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getAttendanceReport(chapterId, {
+    assertSupportedFormat(format);
+    const result = await this.reportService.getAttendanceReport(chapterId, {
       event_id: dto.event_id,
       start_date: dto.start_date,
       end_date: dto.end_date,
     });
-    return this.respond(chapterId, 'attendance', data, format, res, () =>
+    return this.respond(chapterId, 'attendance', result, format, res, () =>
       scopeLine([
         dateRange(dto.start_date, dto.end_date),
         dto.event_id ? 'Single event' : 'All events',
@@ -117,11 +214,12 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getPointsReport(chapterId, {
+    assertSupportedFormat(format);
+    const result = await this.reportService.getPointsReport(chapterId, {
       user_id: dto.user_id,
       window: dto.window,
     });
-    return this.respond(chapterId, 'points', data, format, res, () =>
+    return this.respond(chapterId, 'points', result, format, res, () =>
       scopeLine([
         `Window: ${dto.window ?? 'all'}`,
         dto.user_id ? 'Single member' : 'All members',
@@ -138,8 +236,9 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getRosterReport(chapterId);
-    return this.respond(chapterId, 'roster', data, format, res, () =>
+    assertSupportedFormat(format);
+    const result = await this.reportService.getRosterReport(chapterId);
+    return this.respond(chapterId, 'roster', result, format, res, () =>
       scopeLine(['Current members']),
     );
   }
@@ -154,12 +253,13 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getServiceReport(chapterId, {
+    assertSupportedFormat(format);
+    const result = await this.reportService.getServiceReport(chapterId, {
       user_id: dto.user_id,
       start_date: dto.start_date,
       end_date: dto.end_date,
     });
-    return this.respond(chapterId, 'service', data, format, res, () =>
+    return this.respond(chapterId, 'service', result, format, res, () =>
       scopeLine([
         dateRange(dto.start_date, dto.end_date),
         dto.user_id ? 'Single member' : 'All members',
@@ -179,22 +279,29 @@ export class ReportController {
   private async respond<T extends Record<string, any>>(
     chapterId: string,
     kind: ReportKind,
-    data: T[],
+    result: ReportResult<T>,
     format: string | undefined,
     res: Response | undefined,
     subtitle: () => string | undefined,
   ) {
     const columns = REPORT_COLUMNS[kind];
+    const { rows, truncated } = result;
 
-    // Reject an unrecognized format rather than quietly serving JSON. The
-    // contract advertises an enum, and `format=PDF` silently returning rows
-    // instead of a download envelope is a trap for an external caller with no
-    // error to notice. Matches this endpoint family's existing stance on an
-    // unsupported points `window` (spec/behavior/reports.md).
-    if (format !== undefined && !REPORT_FORMATS.includes(format)) {
-      throw new BadRequestException(
-        `Unsupported format "${format}". Expected one of: ${REPORT_FORMATS.join(', ')}.`,
+    if (truncated) {
+      // A short report that does not announce itself reads as a complete
+      // record of the chapter, and these get emailed to nationals and
+      // advisors. Log it too: the caller may be a script that drops headers.
+      this.logger.warn(
+        `${kind} report for chapter ${chapterId} is incomplete — ${
+          result.note ?? `hit the ${result.limit}-row ceiling`
+        }.`,
       );
+      res?.setHeader(TRUNCATED_HEADER, 'true');
+      res?.setHeader(ROW_LIMIT_HEADER, String(result.limit));
+      const headerNote = result.note && toHeaderValue(result.note);
+      if (headerNote) {
+        res?.setHeader(TRUNCATION_NOTE_HEADER, headerNote);
+      }
     }
 
     if (format === 'pdf') {
@@ -202,8 +309,11 @@ export class ReportController {
         chapterId,
         kind,
         columns,
-        data,
-        subtitle(),
+        rows,
+        scopeLine([subtitle(), truncationNotice(result)]),
+        truncated,
+        result.limit,
+        result.note,
       );
     }
 
@@ -213,9 +323,9 @@ export class ReportController {
         'Content-Disposition',
         `attachment; filename="${kind}-report.csv"`,
       );
-      return toCSV(data, columns);
+      return toCSV(rows, columns);
     }
 
-    return data;
+    return rows;
   }
 }

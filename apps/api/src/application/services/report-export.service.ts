@@ -17,6 +17,7 @@ import {
   REPORT_TITLES,
   type ReportKind,
 } from '../../interface/controllers/report-columns';
+import { REPORT_MAX_ROWS } from './report.service';
 
 /** Private bucket holding generated report artifacts (see the reports_bucket migration). */
 export const REPORTS_BUCKET = 'reports';
@@ -37,6 +38,21 @@ export interface ReportExportResult {
   /** Bucket-relative object path, for support/debugging. */
   storage_path: string;
   row_count: number;
+  /**
+   * True when the report hit the row ceiling and the document is **not** a
+   * complete record. `row_count` describes what was printed either way, so it
+   * cannot answer this on its own.
+   */
+  truncated: boolean;
+  /** The ceiling `truncated` refers to. */
+  row_limit: number;
+  /**
+   * What was cut, when the row count alone does not say it — a roster whose
+   * balances were summed from a truncated read is the right length, so
+   * `row_limit` on its own would describe a cut the document never took.
+   * Absent when the row count is the whole story.
+   */
+  truncation_note?: string;
 }
 
 @Injectable()
@@ -65,6 +81,9 @@ export class ReportExportService {
     columns: ReportPdfColumn[],
     rows: Record<string, unknown>[],
     subtitle?: string,
+    truncated = false,
+    rowLimit: number = REPORT_MAX_ROWS,
+    truncationNote?: string,
   ): Promise<ReportExportResult> {
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) throw new NotFoundException('Chapter not found');
@@ -110,6 +129,9 @@ export class ReportExportService {
       filename,
       storage_path: storagePath,
       row_count: rows.length,
+      truncated,
+      row_limit: rowLimit,
+      truncation_note: truncationNote,
     };
   }
 
