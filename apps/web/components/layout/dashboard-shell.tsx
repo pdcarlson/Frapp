@@ -46,6 +46,7 @@ import { OnboardingTutorial } from "@/components/onboarding/onboarding-tutorial"
 import { signOutCurrentSession } from "@/lib/auth/session";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { ChapterLockup } from "@/components/layout/chapter-lockup";
+import { ChapterSwitcher } from "@/components/layout/chapter-switcher";
 import { BetaBadge, type BetaBadgeStyle } from "@/components/layout/beta-badge";
 
 type DashboardShellProps = {
@@ -297,8 +298,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
               Open dashboard routes and chapter tools.
             </SheetDescription>
           </SheetHeader>
-          <div className="mt-6 space-y-4">
+          <div className="mt-6 space-y-2">
             <ChapterLockup />
+            <ChapterSwitcher />
           </div>
           <nav className="mt-6 space-y-4">
             {renderSections(() => setMobileNavOpen(false))}
@@ -314,8 +316,9 @@ export function DashboardShell({ children }: DashboardShellProps) {
       </a>
       <div className="mx-auto flex w-full max-w-[1400px]">
         <aside className="hidden min-h-screen w-72 flex-col border-r border-side-divider bg-side-bg px-3 py-5 text-side-fg lg:flex">
-          <div className="px-1">
+          <div className="space-y-2 px-1">
             <ChapterLockup />
+            <ChapterSwitcher />
           </div>
           <nav
             aria-label="Primary"

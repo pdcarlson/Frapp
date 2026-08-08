@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useActivateChapter } from "@repo/hooks";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -8,7 +9,7 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 /**
  * Single entry point for changing the caller's active chapter.
  *
- * Three things have to happen together, and skipping any one of them leaves the
+ * Four things have to happen together, and skipping any one of them leaves the
  * client and the API disagreeing about which chapter the user is in:
  *
  * 1. Persist the selection server-side, so `custom_access_token_hook` can stamp
@@ -19,11 +20,22 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
  *    `x-chapter-id` header with `chapter.context.mismatch`.
  * 3. Update the local store, which drives the `x-chapter-id` fallback header
  *    and every React Query cache key.
+ * 4. Drop the query cache, so the outgoing chapter's rows cannot be rendered
+ *    under the incoming chapter's context. Only about half the chapter-scoped
+ *    query keys carry `chapterId` (`["members", chapterId]` does;
+ *    `["channels"]`, `["documents", folder]`, `["tasks", assigneeId]` and
+ *    friends do not), so switching without this leaves the unscoped ones
+ *    serving the previous chapter's data until they go stale.
+ *
+ *    Dropping wholesale rather than enumerating keys is deliberate: the
+ *    enumeration is exactly the list that is already incomplete, and a chapter
+ *    switch invalidates the entire view of the app anyway.
  *
  * See spec/behavior/multi-tenancy.md.
  */
 export function useSelectChapter() {
   const activateChapter = useActivateChapter();
+  const queryClient = useQueryClient();
   const setActiveChapterId = useChapterStore((s) => s.setActiveChapterId);
 
   return useCallback(
@@ -49,8 +61,16 @@ export function useSelectChapter() {
       }
 
       setActiveChapterId(chapterId);
+
+      // After the store, so any refetch this triggers resolves against the
+      // incoming chapter. A refetch that still races the provider's re-memo
+      // fails closed rather than leaking: the session was already refreshed
+      // above, so a stale `x-chapter-id` now disagrees with the new claim and
+      // ChapterGuard rejects it with chapter.context.mismatch (403). No
+      // outgoing-chapter data can reach the screen either way.
+      queryClient.clear();
       return true;
     },
-    [activateChapter, setActiveChapterId],
+    [activateChapter, queryClient, setActiveChapterId],
   );
 }

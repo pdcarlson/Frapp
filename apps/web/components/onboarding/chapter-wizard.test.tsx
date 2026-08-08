@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Capture the onboard mutation args. `vi.hoisted` runs before the hoisted
 // `vi.mock` factory, so the spies exist when the factory wires them in.
@@ -56,6 +57,23 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 
 import { ChapterWizard } from "./chapter-wizard";
 
+/**
+ * The wizard calls `useSelectChapter`, which reaches for the query client (to
+ * activate the chapter and to drop the outgoing chapter's cache). In the app
+ * `QueryProvider` always wraps this — see `app/providers.tsx` — so the provider
+ * belongs in the harness rather than being mocked away.
+ */
+function renderWizard() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ChapterWizard onComplete={() => {}} />
+    </QueryClientProvider>,
+  );
+}
+
 /** Drive the wizard from the find step to the identity step via manual entry. */
 function gotoIdentityStep() {
   fireEvent.click(screen.getByRole("button", { name: "Manual entry" }));
@@ -76,7 +94,7 @@ describe("ChapterWizard legal acceptance gate", () => {
   });
 
   it("blocks Create chapter until Terms/Privacy is accepted", () => {
-    render(<ChapterWizard onComplete={() => {}} />);
+    renderWizard();
     gotoIdentityStep();
 
     const createButton = screen.getByRole("button", {
@@ -90,7 +108,7 @@ describe("ChapterWizard legal acceptance gate", () => {
   });
 
   it("links to the Terms, Privacy, and FERPA pages", () => {
-    render(<ChapterWizard onComplete={() => {}} />);
+    renderWizard();
     gotoIdentityStep();
 
     expect(
@@ -107,7 +125,7 @@ describe("ChapterWizard legal acceptance gate", () => {
   });
 
   it("submits with accept_terms_privacy once accepted", async () => {
-    render(<ChapterWizard onComplete={() => {}} />);
+    renderWizard();
     gotoIdentityStep();
 
     fireEvent.click(screen.getByRole("checkbox"));
