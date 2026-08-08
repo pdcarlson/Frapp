@@ -609,7 +609,9 @@ describe('ChapterGuard', () => {
       requiresModule('events');
 
       await expect(
-        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ method: 'POST' })),
+        ),
       ).resolves.toBe(true);
     });
 
@@ -621,7 +623,9 @@ describe('ChapterGuard', () => {
       requiresModule('events');
 
       await expect(
-        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ method: 'POST' })),
+        ),
       ).resolves.toBe(true);
     });
 
@@ -630,7 +634,9 @@ describe('ChapterGuard', () => {
       requiresModule('events');
 
       await expect(
-        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ method: 'POST' })),
+        ),
       ).resolves.toBe(true);
     });
 
@@ -639,7 +645,9 @@ describe('ChapterGuard', () => {
       jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
 
       await expect(
-        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ method: 'POST' })),
+        ),
       ).resolves.toBe(true);
     });
 
@@ -650,7 +658,9 @@ describe('ChapterGuard', () => {
       requiresModule('events');
 
       await expect(
-        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+        guard.canActivate(
+          mockExecutionContext(buildRequest({ method: 'POST' })),
+        ),
       ).rejects.toMatchObject({
         response: { code: 'chapter.subscription.canceled' },
       });
