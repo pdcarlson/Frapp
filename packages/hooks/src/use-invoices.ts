@@ -121,6 +121,76 @@ export function useUpdateInvoice() {
   });
 }
 
+/**
+ * Mint (or reuse) a Stripe PaymentIntent for the caller's own OPEN invoice.
+ *
+ * Returns the `client_secret` the Stripe Elements sheet confirms against. The
+ * server owns every guard worth trusting — ownership (403), OPEN-ness (400,
+ * re-checked *after* the Stripe round-trip), and a per-invoice idempotency key
+ * so two concurrent taps collapse into one chargeable intent rather than two.
+ *
+ * Deliberately does NOT invalidate the invoice queries: creating an intent
+ * moves no money and changes no invoice state. The refresh belongs after
+ * confirmation — see `useAwaitInvoicePaid`.
+ */
+export function usePayInvoice() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (invoiceId: string) => {
+      const { data, error } = await client.POST(
+        "/v1/invoices/{id}/payment-intent",
+        { params: { path: { id: invoiceId } } },
+      );
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+/**
+ * Poll an invoice until the Stripe webhook has flipped it to PAID.
+ *
+ * A successful `confirmPayment` in the browser means the money moved, not that
+ * the invoice row settled: `payment_intent.succeeded` → `apply_invoice_payment`
+ * is what actually writes PAID, and that webhook lands out-of-band. So rather
+ * than optimistically marking the invoice paid — which would show PAID even if
+ * the reconciliation later failed — re-read until the server agrees.
+ *
+ * Resolves `false` once the attempts are exhausted so a slow webhook degrades
+ * to an honest "payment received, confirmation pending" instead of hanging the
+ * dialog open forever or lying about the outcome. Invalidates the invoice
+ * queries either way, since the row may well have changed.
+ */
+export function useAwaitInvoicePaid(options?: {
+  attempts?: number;
+  intervalMs?: number;
+}) {
+  const attempts = options?.attempts ?? 8;
+  const intervalMs = options?.intervalMs ?? 1500;
+  const client = useFrappClient();
+  const queryClient = useQueryClient();
+  const chapterId = useActiveChapterId();
+  return useMutation({
+    mutationFn: async (invoiceId: string) => {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        const { data } = await client.GET("/v1/invoices/{id}", {
+          params: { path: { id: invoiceId } },
+        });
+        if ((data as { status?: string } | undefined)?.status === "PAID") {
+          return true;
+        }
+        if (attempt < attempts - 1) {
+          await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        }
+      }
+      return false;
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices", chapterId] });
+    },
+  });
+}
+
 export function useTransitionInvoiceStatus() {
   const client = useFrappClient();
   const queryClient = useQueryClient();
