@@ -5,7 +5,8 @@
 #   1. start the Docker daemon (does not persist across sessions)
 #   2. supabase start (fast — images were cached by cloud-sandbox-setup.sh)
 #   3. supabase db push --local
-#   4. write apps/api/.env.local from `supabase status` + Stripe env vars
+#   4. repair the local Postgres default ACLs (the image ships them without DML grants)
+#   5. write apps/api/.env.local from `supabase status` + Stripe env vars
 #
 # Auto-launched in the background by .claude/hooks/session-start.sh (gated on the
 # /etc/frapp-cloud-sandbox marker or FRAPP_CLOUD_SANDBOX=1), or run directly. Writes a
@@ -90,6 +91,62 @@ write_env_local() {
   fi
 }
 
+# Repair the local Postgres default ACLs so the API can actually read its own tables.
+#
+# The pinned supabase/postgres image (17.6.x) ships a default ACL for role `postgres` in
+# schema `public` that grants anon / authenticated / service_role only `Dxtm` (TRUNCATE,
+# REFERENCES, TRIGGER, MAINTAIN) on tables — the DML bits `arwd` (SELECT/INSERT/UPDATE/DELETE)
+# are missing. Sequences are crippled the same way (`w` only, missing `rU`). `supabase db push`
+# applies migrations as `postgres`, so every table it creates inherits that ACL and the API's
+# first query dies with `42501 permission denied for table chapters` while /health reports
+# `degraded`. The `supabase_admin` default ACL is correct (`arwdDxtm`) but irrelevant — the CLI
+# does not create objects as that role. A full `supabase db reset --local` reproduces it, so
+# this is the image's shipped state, not drift in one session's database.
+#
+# Two halves, both required and both idempotent:
+#   * GRANT ... ON ALL TABLES/SEQUENCES repairs the objects the migrations just created.
+#   * ALTER DEFAULT PRIVILEGES repairs the objects later migrations will create, so a session
+#     that adds a migration does not have to re-run this by hand.
+#
+# Function EXECUTE is deliberately NOT granted. The repo's RPC migrations manage EXECUTE
+# explicitly (revoked from anon/authenticated, granted to service_role), and a blanket
+# `GRANT EXECUTE ON ALL FUNCTIONS` would silently undo that lockdown.
+#
+# Local stack only. Hosted Supabase projects ship correct default grants, which is why this
+# lives in sandbox tooling and NOT in supabase/migrations/ — as a migration it would be a
+# no-op at best and a privilege change on hosted projects at worst.
+repair_local_acls() {
+  local sql db_url container
+  sql="
+grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
+grant usage, select on all sequences in schema public to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant select, insert, update, delete on tables to anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  grant usage, select on sequences to anon, authenticated, service_role;
+"
+
+  # Preferred path: the host psql against the URL the CLI reports, so the port stays in one
+  # place (supabase/config.toml) rather than being duplicated here.
+  db_url=$(cs_supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
+  if [ -n "$db_url" ] && command -v psql >/dev/null 2>&1; then
+    if printf '%s' "$sql" | psql "$db_url" -v ON_ERROR_STOP=1 -q -f - 2>&1; then
+      return 0
+    fi
+    cs_log "WARN: psql ACL repair failed; retrying inside the database container."
+  fi
+
+  # Fallback: psql inside the db container. `supabase start` guarantees that container,
+  # whereas the host psql is incidental to the sandbox base image.
+  container=$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' 2>/dev/null | head -1)
+  if [ -z "$container" ]; then
+    cs_log "ERROR: no running supabase_db_* container found for the ACL repair."
+    return 1
+  fi
+  printf '%s' "$sql" \
+    | docker exec -i "$container" psql -U postgres -d postgres -v ON_ERROR_STOP=1 -q -f - 2>&1
+}
+
 cs_ensure_docker_daemon || fail "Docker daemon did not start."
 cs_docker_login_if_creds
 
@@ -119,6 +176,11 @@ cs_retry "'supabase start'" "cs_supabase stop" cs_supabase start $CS_SUPABASE_ST
 # hides which step actually broke behind a generic "failed after 3 attempts".
 cs_log "Applying local migrations..."
 cs_supabase db push --local || fail "'supabase db push --local' failed."
+
+# Must run AFTER db push: the repair fixes the tables those migrations just created, and the
+# grants are what stand between a green /health and `42501 permission denied for table …`.
+cs_log "Repairing local Postgres default ACLs..."
+repair_local_acls || fail "Could not repair local Postgres default ACLs (see /tmp/cloud-sandbox-up.log)."
 
 cs_log "Writing apps/api/.env.local..."
 write_env_local || fail "Could not write apps/api/.env.local from 'supabase status'."

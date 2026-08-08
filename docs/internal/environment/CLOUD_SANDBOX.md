@@ -74,7 +74,7 @@ The filesystem is cached but running processes are not, so work is split:
 | Phase | Script | Runs | Does |
 |-------|--------|------|------|
 | Setup (cached) | `scripts/cloud-sandbox-setup.sh` | once, as root, before the agent | writes the `/etc/frapp-cloud-sandbox` marker; `npm ci`; transient dockerd + `docker login` + `supabase start`/`stop` purely to **pull + cache images** |
-| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; write `apps/api/.env.local` |
+| Per-session | `scripts/cloud-sandbox-up.sh` | every session, in the background | start dockerd; `docker login`; `supabase start` (fast — images cached); `db push --local`; repair local Postgres default ACLs; write `apps/api/.env.local` |
 
 Both source `scripts/lib/cloud-sandbox-common.sh` (`cs_log`, `cs_ensure_docker_daemon`,
 `cs_docker_login_if_creds`, `cs_supabase`, `cs_retry`, `cs_classify_failure`,
@@ -111,9 +111,17 @@ incidental digits, and `ratelimit` is fail-fast. Likewise only the proxy's own
 CloudFront URLs that return a perfectly retryable `403 Forbidden` when the signature expires
 mid-pull on a large image.
 
-`db push --local` and writing `apps/api/.env.local` are deliberately **not** retried. They
-are deterministic and local, so a retry only triples the time to the same error and hides
-which step actually broke.
+`db push --local`, the ACL repair, and writing `apps/api/.env.local` are deliberately **not**
+retried. They are deterministic and local, so a retry only triples the time to the same error
+and hides which step actually broke.
+
+The ACL repair runs **after** `db push` because it fixes the tables those migrations just
+created: the pinned Postgres image grants `anon`/`authenticated`/`service_role` no DML on
+objects created by `postgres`, so without it the API's first query is `42501 permission
+denied`. It also resets the schema's *default* privileges, so migrations added in a later
+session inherit working grants. It never touches function `EXECUTE` — the RPC migrations
+manage that explicitly, and a blanket grant would undo their lockdown. See the `42501` row
+under [When bringup fails](#when-bringup-fails--stop-and-report).
 
 Knobs, all optional:
 
@@ -228,6 +236,7 @@ every session), so skim the log even when bringup succeeds.
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
 | `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then a sentinel reading `'supabase start' failed (toolchain)` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. Survives `supabase db reset --local` | **Already handled** — bringup runs a `repair_local_acls` step after `db push` that grants table/sequence DML and fixes the default privileges for future migrations. If it recurs, re-run `bash scripts/cloud-sandbox-up.sh`. Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.
