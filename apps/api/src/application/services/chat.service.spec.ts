@@ -840,6 +840,108 @@ describe('ChatService', () => {
       expect(result).toEqual({ message: baseMessage, deduplicated: false });
       expect(mockMessageRepo.create).toHaveBeenCalled();
     });
+
+    // #734: a read-only channel is a broadcast surface. `canAccessChannel`
+    // decides who may author a top-level announcement; these cover the separate
+    // invariant that nobody threads one, whatever they hold.
+    describe('in-thread replies in a read-only channel', () => {
+      const announcements: ChatChannel = {
+        ...baseChannel,
+        name: 'announcements',
+        is_read_only: true,
+      };
+
+      it('rejects a reply from a sender holding announcements:post', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects a reply from the President wildcard too', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue(['*']);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects before spending a lookup on the replied-to message', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+
+        await expect(
+          service.sendMessage({
+            chapter_id: 'ch-1',
+            channel_id: 'ch-chan-1',
+            sender_id: 'user-1',
+            content: 'Threading a broadcast',
+            reply_to_id: 'msg-same',
+          }),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockMessageRepo.findById).not.toHaveBeenCalled();
+      });
+
+      it('still accepts a top-level announcement from an authorized officer', async () => {
+        mockChannelRepo.findById.mockResolvedValue(announcements);
+        mockRbac.getEffectivePermissions.mockResolvedValue([
+          'announcements:post',
+        ]);
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Chapter meeting moved to 7pm',
+        });
+
+        expect(result).toEqual({ message: baseMessage, deduplicated: false });
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+
+      it('leaves replies in a normal channel alone', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+        mockMessageRepo.findById.mockResolvedValue({
+          ...baseMessage,
+          id: 'msg-same',
+          channel_id: 'ch-chan-1',
+        });
+        mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+        const result = await service.sendMessage({
+          chapter_id: 'ch-1',
+          channel_id: 'ch-chan-1',
+          sender_id: 'user-1',
+          content: 'Replying in #general',
+          reply_to_id: 'msg-same',
+        });
+
+        expect(result).toEqual({ message: baseMessage, deduplicated: false });
+        expect(mockMessageRepo.create).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('editMessage', () => {

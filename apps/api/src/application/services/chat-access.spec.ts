@@ -1,4 +1,4 @@
-import { canAccessChannel } from '@repo/validation';
+import { allowsInThreadReplies, canAccessChannel } from '@repo/validation';
 
 describe('canAccessChannel', () => {
   const base = {
@@ -411,5 +411,29 @@ describe('canAccessChannel', () => {
         }),
       ).toBe(true);
     });
+  });
+});
+
+describe('allowsInThreadReplies', () => {
+  it('allows replies in a normal channel', () => {
+    expect(allowsInThreadReplies({ is_read_only: false })).toBe(true);
+  });
+
+  it('rejects replies in a read-only channel', () => {
+    expect(allowsInThreadReplies({ is_read_only: true })).toBe(false);
+  });
+
+  // The flag is optional on `ChannelAccessRecord` because read checks never
+  // consult it. An absent flag must read as "not read-only" — the same default
+  // `canAccessChannel` applies — or every DM would stop accepting replies.
+  it('treats an absent or null flag as replyable', () => {
+    expect(allowsInThreadReplies({})).toBe(true);
+    expect(allowsInThreadReplies({ is_read_only: null })).toBe(true);
+  });
+
+  // The rule is a property of the channel, not the caller: the predicate takes
+  // no permissions at all, so `announcements:post` and `"*"` cannot reach it.
+  it('is decided by the channel alone, with no permission input', () => {
+    expect(allowsInThreadReplies.length).toBe(1);
   });
 });

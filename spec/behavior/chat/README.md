@@ -119,7 +119,7 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - The `#announcements` channel is special: only members with `announcements:post` permission can send messages. All members can read.
 - Posting to `#announcements` triggers a push notification to all chapter members (respecting their notification preferences).
-- Announcement messages cannot be replied to in-thread (read-only channel for non-admins).
+- Announcement messages cannot be replied to in-thread. The rule is a property of the **channel**, not the caller: it is keyed off `is_read_only` (so it covers `#chapter-audit` and any chapter-created read-only channel, and survives a chapter renaming its announcements channel), and it holds regardless of permissions — a member with `announcements:post`, and the President's `*`, are refused a threaded reply just the same. `announcements:post` governs who may author a **top-level** announcement; nobody threads one. A `reply_to_id` into a read-only channel is rejected with **400**, matching the adjacent cross-channel reply rejection. Enforced by `allowsInThreadReplies` in `@repo/validation`, called from `ChatService.sendMessage`.
 
 ## Slash Commands and Integrations
 

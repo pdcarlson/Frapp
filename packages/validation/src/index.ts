@@ -542,6 +542,33 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
 }
 
 /**
+ * Whether `channel` accepts in-thread replies.
+ *
+ * Read-only channels (`#announcements`, `#chapter-audit`) are broadcast
+ * surfaces. Per `spec/behavior/chat/README.md` § Announcements: "Announcement
+ * messages cannot be replied to in-thread (read-only channel for non-admins)."
+ * Threading a broadcast fragments an urgent message into nested side
+ * conversations members may never notice.
+ *
+ * Two deliberate properties:
+ *
+ * - **Keyed off `is_read_only`, not the channel name.** The same flag already
+ *   decides *who* may post (`canAccessChannel`), so one flag governs broadcast
+ *   semantics end to end. A name match would silently stop enforcing the moment
+ *   a chapter renamed its announcements channel, and would miss `#chapter-audit`
+ *   and any chapter-created read-only channel.
+ * - **Unconditional on permissions.** `canAccessChannel` decides who may author a
+ *   top-level announcement; this decides that nobody threads one — holders of
+ *   `announcements:post` and of the `"*"` wildcard included. The rule is a
+ *   property of the channel, not of the caller.
+ */
+export function allowsInThreadReplies(
+  channel: Pick<ChannelAccessRecord, "is_read_only">,
+): boolean {
+  return !channel.is_read_only;
+}
+
+/**
  * Decide whether `userId` may access (read / participate in) `channel`.
  *
  * - Non-members of the owning chapter are always denied.
