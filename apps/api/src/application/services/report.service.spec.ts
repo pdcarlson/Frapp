@@ -548,30 +548,8 @@ describe('ReportService', () => {
     });
   });
 
-  describe('the points RPC is paged on different terms', () => {
-    it('issues a single call for a chapter that fits in one page', async () => {
-      // PostgREST applies LIMIT/OFFSET outside the function call, so an empty
-      // trailing page still re-runs get_points_report in full — a GROUP BY
-      // over the chapter's entire point_transactions. Ending on a short page
-      // instead is what keeps the ordinary report from costing double.
-      const rpcChain = makeChain({
-        data: rows(300, (i) => ({
-          member_name: `Member ${i}`,
-          total_points: 1,
-          breakdown_by_category: {},
-        })),
-        error: null,
-      });
-      (mockSupabase.rpc as jest.Mock).mockReturnValue(rpcChain);
-
-      const result = await service.getPointsReport('ch-1', {});
-
-      expect(result.rows).toHaveLength(300);
-      expect(result.truncated).toBe(false);
-      expect(mockSupabase.rpc as jest.Mock).toHaveBeenCalledTimes(1);
-    });
-
-    it('keeps paging while pages come back full', async () => {
+  describe('the points RPC pages on the same terms as a table', () => {
+    it('reads every member when the RPC spans pages', async () => {
       const rpcChain = makeChain({
         data: rows(1200, (i) => ({
           member_name: `Member ${String(i).padStart(5, '0')}`,
@@ -586,12 +564,28 @@ describe('ReportService', () => {
 
       expect(result.rows).toHaveLength(1200);
       expect(new Set(result.rows.map((r) => r.member_name)).size).toBe(1200);
-      // 500-row pages: two full, then a short one that ends the read.
-      expect((rpcChain as { ranges: [number, number][] }).ranges).toEqual([
-        [0, 499],
-        [500, 999],
-        [1000, 1499],
-      ]);
+    });
+
+    it('reads every member when the server caps RPC pages below the request', async () => {
+      // The RPC pays a redundant aggregation on its terminating page rather
+      // than ending on a short one, precisely so this case reads correctly
+      // instead of stopping at the cap and calling itself complete.
+      const rpcChain = makeChain({
+        data: rows(1200, (i) => ({
+          member_name: `Member ${String(i).padStart(5, '0')}`,
+          total_points: 1,
+          breakdown_by_category: {},
+        })),
+        error: null,
+        maxRowsCap: 200,
+      });
+      (mockSupabase.rpc as jest.Mock).mockReturnValue(rpcChain);
+
+      const result = await service.getPointsReport('ch-1', {});
+
+      expect(result.rows).toHaveLength(1200);
+      expect(result.truncated).toBe(false);
+      expect(new Set(result.rows.map((r) => r.member_name)).size).toBe(1200);
     });
   });
 
