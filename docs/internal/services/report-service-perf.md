@@ -44,7 +44,11 @@ Four consequences worth remembering when editing these queries:
   double the cost of the report for every chapter that fits in one page, which
   is all of them, so that read ends on a _short_ page and uses a page size
   (`REPORT_RPC_PAGE_SIZE`, 500) held below `max_rows` to keep "short"
-  unambiguous.
+  unambiguous. This is the one read that trades safety for cost, so it carries
+  the residual the others do not: if a server's `max_rows` were ever set below
+  500, this read — and only this one — would stop at the cap and report itself
+  complete. 500 is half the default, and the same trade
+  `scheduled-jobs.repository.ts` makes.
 - **The page size is a request, not an assumption.** `fetchAllPages` advances
   by however many rows came back and stops only on an _empty_ page, so a
   server whose `max_rows` is lower than `REPORT_PAGE_SIZE` costs extra

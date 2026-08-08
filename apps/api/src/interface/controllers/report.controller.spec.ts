@@ -1,3 +1,4 @@
+import { ServerResponse } from 'node:http';
 import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReportController } from './report.controller';
@@ -299,6 +300,27 @@ describe('ReportController', () => {
       await controller.service(chapterId, {}, 'csv', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('X-Report-Truncated', 'true');
+    });
+
+    it('flattens the note to something Node will accept as a header value', async () => {
+      // Node *throws* on a header value containing an em dash, so an
+      // unsanitized note would turn "your report is incomplete" into a 500 —
+      // strictly worse than the silent truncation this all exists to fix.
+      // Asserted through the real ServerResponse.setHeader, not a jest.fn(),
+      // because the validation being relied on lives in Node.
+      const realRes = new ServerResponse({} as never);
+      reportService.getServiceReport.mockResolvedValue(
+        short(
+          [],
+          'point balances are incomplete — summed from the first 50,000 transactions',
+        ),
+      );
+
+      await controller.service(chapterId, {}, 'csv', realRes as never);
+
+      expect(realRes.getHeader('X-Report-Truncation-Note')).toBe(
+        'point balances are incomplete - summed from the first 50,000 transactions',
+      );
     });
 
     it('carries the note in a header so json/csv callers learn what was cut', async () => {

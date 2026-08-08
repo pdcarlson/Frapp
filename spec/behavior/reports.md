@@ -117,7 +117,12 @@ When a report is cut short, every format says so:
 | `csv`  | The same headers. The CSV body is unchanged, so parsers are unaffected.                                                                                                               |
 | `pdf`  | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                                           |
 
-Both headers are named in the API's CORS `exposedHeaders`; without that a
+The note header is flattened to plain ASCII — Node rejects a header value
+containing typographic punctuation outright, so an unsanitized note would fail
+the request rather than warn about it. The PDF and the dashboard show the note
+with its original typography.
+
+All three headers are named in the API's CORS `exposedHeaders`; without that a
 browser would strip them and the dashboard — the caller most likely to forward
 a report — would see a short report as a complete one. A truncated report is
 also logged as a warning by the API, for callers that discard headers.

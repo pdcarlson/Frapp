@@ -40,7 +40,11 @@ async function bootstrap() {
     // truncation flags are set by the API, stripped by the browser, and a
     // short report looks complete to the one caller most likely to email it
     // onward. See spec/behavior/reports.md § Row limits.
-    exposedHeaders: ['X-Report-Truncated', 'X-Report-Row-Limit'],
+    exposedHeaders: [
+      'X-Report-Truncated',
+      'X-Report-Row-Limit',
+      'X-Report-Truncation-Note',
+    ],
   });
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });

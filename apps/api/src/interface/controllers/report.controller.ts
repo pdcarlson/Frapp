@@ -130,6 +130,27 @@ function dateRange(start?: string, end?: string): string | undefined {
  * spec/behavior/reports.md § Text degradation). The em dash survives; the
  * emphasis has to come from the word.
  */
+/**
+ * Make a note safe to put in an HTTP header.
+ *
+ * Node validates header content and **throws** on a byte outside the
+ * latin1-ish set it accepts — the em dash in "balances are incomplete — summed
+ * from…" is enough to do it. Unsanitized, announcing a truncated report would
+ * crash the request instead: a 500 in place of a warning, which is strictly
+ * worse than the silent truncation this all exists to fix. The note keeps its
+ * typography everywhere it is actually read by a human (the PDF, the toast);
+ * only the header copy is flattened.
+ */
+function toHeaderValue(note: string): string {
+  return note
+    .replace(/[‒-―]/g, '-')
+    .replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\x20-\x7e]/g, '')
+    .trim();
+}
+
 function truncationNotice(result: ReportResult<unknown>): string | undefined {
   if (!result.truncated) return undefined;
   return `INCOMPLETE — ${
@@ -270,8 +291,9 @@ export class ReportController {
       );
       res?.setHeader(TRUNCATED_HEADER, 'true');
       res?.setHeader(ROW_LIMIT_HEADER, String(result.limit));
-      if (result.note) {
-        res?.setHeader(TRUNCATION_NOTE_HEADER, result.note);
+      const headerNote = result.note && toHeaderValue(result.note);
+      if (headerNote) {
+        res?.setHeader(TRUNCATION_NOTE_HEADER, headerNote);
       }
     }
 
