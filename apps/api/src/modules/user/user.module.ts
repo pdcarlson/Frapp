@@ -7,6 +7,7 @@ import { AnalyticsModule } from '../analytics/analytics.module';
 import { AuthModule } from '../auth/auth.module';
 import { ChapterModule } from '../chapter/chapter.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { ReportRetentionModule } from '../report-retention/report-retention.module';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { SupabaseMemberRepository } from '../../infrastructure/supabase/repositories/supabase-member.repository';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
@@ -15,7 +16,15 @@ import { AUTH_ADMIN_PROVIDER } from '../../domain/adapters/auth-admin.interface'
 import { SupabaseAuthAdminService } from '../../infrastructure/supabase/supabase-auth-admin.service';
 
 @Module({
-  imports: [AnalyticsModule, AuthModule, ChapterModule, RbacModule],
+  imports: [
+    AnalyticsModule,
+    AuthModule,
+    ChapterModule,
+    RbacModule,
+    // Account deletion sweeps the departing member's chapters' report exports
+    // alongside their profile photos (spec/behavior/data-retention.md).
+    ReportRetentionModule,
+  ],
   controllers: [UserController],
   providers: [
     UserService,

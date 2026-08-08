@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase/supabase.provider';
-import type { IStorageProvider } from '../../domain/adapters/storage.interface';
+import type {
+  IStorageProvider,
+  StorageObject,
+} from '../../domain/adapters/storage.interface';
 import { assertSafeStoragePath } from '../../domain/utils/storage-path';
 
 /**
@@ -22,6 +25,20 @@ const assertSafeObjectPath = (path: string): void =>
 function assertSafePrefix(prefix: string): void {
   if (prefix.length === 0) return;
   assertSafeObjectPath(prefix);
+}
+
+/**
+ * Storage timestamps as a Date, or null when absent or unparseable.
+ *
+ * The listing is metadata the backend supplies, not something this codebase
+ * writes, so an age-based caller must be able to tell "stored at T" from "no
+ * idea when" — `new Date(undefined)` would hand it an Invalid Date that
+ * silently compares false against every cutoff instead.
+ */
+function parseTimestamp(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 @Injectable()
@@ -119,13 +136,21 @@ export class SupabaseStorageService implements IStorageProvider {
   }
 
   async listFiles(bucket: string, prefix: string): Promise<string[]> {
+    const objects = await this.listObjects(bucket, prefix);
+    return objects.map((object) => object.path);
+  }
+
+  async listObjects(
+    bucket: string,
+    prefix: string,
+  ): Promise<StorageObject[]> {
     assertSafePrefix(prefix);
     // `list` returns names relative to the prefix and only for the immediate
     // folder level — enough for the flat `<prefix>/<filename>` layouts this
     // codebase uses (e.g. avatar uploads). Paginate until exhausted so a
     // folder beyond one page is never silently truncated.
     const pageSize = 1000;
-    const paths: string[] = [];
+    const objects: StorageObject[] = [];
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await this.supabase.storage
         .from(bucket)
@@ -140,12 +165,15 @@ export class SupabaseStorageService implements IStorageProvider {
       if (error && /bucket not found/i.test(error.message)) return [];
       if (error) throw error;
       const entries = data ?? [];
-      paths.push(
+      objects.push(
         ...entries
           .filter((entry) => entry.id !== null) // folders come back with id: null
-          .map((entry) => `${prefix}/${entry.name}`),
+          .map((entry) => ({
+            path: `${prefix}/${entry.name}`,
+            createdAt: parseTimestamp(entry.created_at),
+          })),
       );
-      if (entries.length < pageSize) return paths;
+      if (entries.length < pageSize) return objects;
     }
   }
 }

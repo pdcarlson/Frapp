@@ -161,6 +161,30 @@ export class ScheduledJobsRepository {
   }
 
   /**
+   * Every chapter id, for sweeps that walk a per-chapter storage prefix.
+   *
+   * Storage cannot supply these: `listObjects` returns only the immediate
+   * folder level and drops folder entries, so listing `chapters/` comes back
+   * empty and each prefix has to be named explicitly.
+   *
+   * Unfiltered by subscription status on purpose — a canceled chapter's
+   * exports are exactly as stale, and as full of member PII, as an active
+   * one's.
+   */
+  async findAllChapterIds(): Promise<string[]> {
+    const rows = await this.fetchAllPages<{ id: string }>(
+      'report retention sweep: chapter lookup failed',
+      (from, to) =>
+        this.supabase
+          .from('chapters')
+          .select('id')
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * Claim the right to send one reminder.
    *
    * Returns `true` only for the caller that inserted the row. A unique

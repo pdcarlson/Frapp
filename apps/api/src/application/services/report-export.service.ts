@@ -17,9 +17,17 @@ import {
   REPORT_TITLES,
   type ReportKind,
 } from '../../interface/controllers/report-columns';
+import {
+  REPORTS_BUCKET,
+  reportsFolderPrefix,
+} from '../../domain/constants/storage';
 
-/** Private bucket holding generated report artifacts (see the reports_bucket migration). */
-export const REPORTS_BUCKET = 'reports';
+/**
+ * Private bucket holding generated report artifacts (see the reports_bucket
+ * migration). Re-exported from the shared storage constants so the writer and
+ * the retention purges cannot drift apart — see `domain/constants/storage.ts`.
+ */
+export { REPORTS_BUCKET };
 
 /** spec/behavior/reports.md: "API returns a signed download URL (valid for 1 hour)". */
 export const REPORT_URL_TTL_SECONDS = 3600;
@@ -86,7 +94,7 @@ export class ReportExportService {
 
     const day = generatedAt.toISOString().slice(0, 10);
     const filename = `frapp-${kind}-report-${day}.pdf`;
-    const storagePath = `chapters/${chapterId}/reports/${kind}-${day}-${randomUUID()}.pdf`;
+    const storagePath = `${reportsFolderPrefix(chapterId)}/${kind}-${day}-${randomUUID()}.pdf`;
 
     await this.storage.uploadFile(
       REPORTS_BUCKET,

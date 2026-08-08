@@ -11,3 +11,21 @@ export const PROFILES_BUCKET = 'profiles';
 export function profileFolderPrefix(chapterId: string, userId: string): string {
   return `chapters/${chapterId}/profiles/${userId}`;
 }
+
+/**
+ * Generated-report storage layout, shared by the export path
+ * (ReportExportService) and the two purges that reap it — the scheduled
+ * retention sweep and the account-deletion sweep (ReportRetentionService).
+ *
+ * Here for the same reason as the profiles pair above, and the stakes are
+ * higher: roster exports embed member names, emails, roles, and join dates
+ * (`report-columns.ts` ROSTER_COLUMNS), and both purges treat an empty folder
+ * as success. A layout change made in the writer alone would leave the purges
+ * sweeping a prefix nothing writes to, reporting success over surviving PII.
+ */
+export const REPORTS_BUCKET = 'reports';
+
+/** Folder holding one chapter's generated reports (no trailing slash). */
+export function reportsFolderPrefix(chapterId: string): string {
+  return `chapters/${chapterId}/reports`;
+}
