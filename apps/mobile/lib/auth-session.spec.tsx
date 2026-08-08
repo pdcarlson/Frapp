@@ -400,6 +400,38 @@ describe("AuthSessionProvider — magic-link callback", () => {
     expect(result.current.callbackError).toBeNull();
   });
 
+  it("preserves an encoded '+' in the provider's message", async () => {
+    mockState.deepLinkUrl =
+      "frapp://#error_description=Rate+limit+hit%3A+wait+1%2B+minutes";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+
+    // URLSearchParams already turns '+' into a space and %2B into '+'. A second
+    // unescaping pass would render this as "1  minutes".
+    await waitFor(() =>
+      expect(result.current.callbackError).toBe(
+        "Rate limit hit: wait 1+ minutes",
+      ),
+    );
+  });
+
+  it("clears a stale callback error once a session arrives", async () => {
+    mockState.deepLinkUrl = "frapp://#error=access_denied";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.callbackError).toBe("access_denied"),
+    );
+
+    await act(async () => {
+      emitAuthChange(SESSION);
+    });
+
+    // Otherwise the next sign-out drops the member back on a sign-in screen
+    // still showing an error about a link they abandoned.
+    await waitFor(() => expect(result.current.callbackError).toBeNull());
+  });
+
   it("ignores a plain app-open deep link carrying no auth params", async () => {
     mockState.deepLinkUrl = "frapp://events";
 

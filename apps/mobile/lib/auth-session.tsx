@@ -75,16 +75,14 @@ function readAuthParams(url: string): {
   const read = (name: string) =>
     fragmentParams.get(name) ?? queryParams.get(name);
 
-  const errorDescription = read("error_description") ?? read("error");
-
   return {
     accessToken: read("access_token"),
     refreshToken: read("refresh_token"),
     code: read("code"),
-    // Supabase percent-encodes this and uses '+' for spaces.
-    errorDescription: errorDescription
-      ? errorDescription.replace(/\+/g, " ")
-      : null,
+    // URLSearchParams already decodes '+' to a space and %2B to a literal '+',
+    // so no extra unescaping here — doing it again would turn an encoded plus
+    // sign in the provider's message into a space.
+    errorDescription: read("error_description") ?? read("error"),
   };
 }
 
@@ -165,6 +163,9 @@ export function AuthSessionProvider({
       if (cancelled) return;
       setSession(nextSession ?? null);
       setStatus(nextSession ? "authenticated" : "unauthenticated");
+      // A session arriving answers whatever the last failed link complained
+      // about; leaving it set would show a stale error on the next sign-out.
+      if (nextSession) setCallbackError(null);
     });
 
     return () => {
@@ -216,7 +217,9 @@ export function AuthSessionProvider({
           return;
         }
         const claim = data.claims[ACTIVE_CHAPTER_CLAIM];
-        setChapterId(typeof claim === "string" && claim.length > 0 ? claim : null);
+        setChapterId(
+          typeof claim === "string" && claim.length > 0 ? claim : null,
+        );
       })
       .catch(() => {
         if (!cancelled) setChapterId(null);
