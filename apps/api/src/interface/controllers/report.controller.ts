@@ -118,28 +118,19 @@ function dateRange(start?: string, end?: string): string | undefined {
 }
 
 /**
- * The clause that keeps a truncated PDF from passing itself off as complete.
- * It rides in the header scope line, next to the date range, because that is
- * the line a reader already checks to learn what the document covers — and
- * unlike the `Page N of M` footer, it describes what was *matched* rather than
- * what was printed.
- *
- * Deliberately WinAnsi-encodable. The standard PDF fonts cover Latin-1, and
- * `toWinAnsi` folds anything else — a `⚠` reaches the page as a bare `?`,
- * which reads as an encoding glitch rather than a warning (see
- * spec/behavior/reports.md § Text degradation). The em dash survives; the
- * emphasis has to come from the word.
- */
-/**
  * Make a note safe to put in an HTTP header.
  *
  * Node validates header content and **throws** on a byte outside the
  * latin1-ish set it accepts — the em dash in "balances are incomplete — summed
  * from…" is enough to do it. Unsanitized, announcing a truncated report would
  * crash the request instead: a 500 in place of a warning, which is strictly
- * worse than the silent truncation this all exists to fix. The note keeps its
- * typography everywhere it is actually read by a human (the PDF, the toast);
- * only the header copy is flattened.
+ * worse than the silent truncation this all exists to fix.
+ *
+ * Typographic punctuation folds to its ASCII cousin and everything else is
+ * dropped; collapsing whitespace first also means a CR or LF can never survive
+ * into a header value. The note keeps its original typography everywhere a
+ * human actually reads it — the PDF and the dashboard — and only the header
+ * copy is flattened.
  */
 function toHeaderValue(note: string): string {
   return note
@@ -151,6 +142,19 @@ function toHeaderValue(note: string): string {
     .trim();
 }
 
+/**
+ * The clause that keeps a truncated PDF from passing itself off as complete.
+ * It rides in the header scope line, next to the date range, because that is
+ * the line a reader already checks to learn what the document covers — and
+ * unlike the `Page N of M` footer, it describes what was *matched* rather than
+ * what was printed.
+ *
+ * Deliberately WinAnsi-encodable. The standard PDF fonts cover Latin-1, and
+ * `toWinAnsi` folds anything else — a `⚠` reaches the page as a bare `?`,
+ * which reads as an encoding glitch rather than a warning (see
+ * spec/behavior/reports.md § Text degradation). The em dash survives here; the
+ * emphasis has to come from the word.
+ */
 function truncationNotice(result: ReportResult<unknown>): string | undefined {
   if (!result.truncated) return undefined;
   return `INCOMPLETE — ${

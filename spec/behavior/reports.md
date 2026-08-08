@@ -115,17 +115,21 @@ When a report is cut short, every format says so:
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers, plus `X-Report-Truncation-Note` when the row count alone does not explain the cut. The body stays a bare array. |
 | `csv`  | The same headers. The CSV body is unchanged, so parsers are unaffected.                                                                                                               |
-| `pdf`  | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                                           |
+| `pdf`  | `truncated: true`, `row_limit`, and `truncation_note` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                       |
 
 The note header is flattened to plain ASCII — Node rejects a header value
 containing typographic punctuation outright, so an unsanitized note would fail
 the request rather than warn about it. The PDF and the dashboard show the note
 with its original typography.
 
-All three headers are named in the API's CORS `exposedHeaders`; without that a
-browser would strip them and the dashboard — the caller most likely to forward
-a report — would see a short report as a complete one. A truncated report is
-also logged as a warning by the API, for callers that discard headers.
+All three headers are named in the API's CORS `exposedHeaders`, and the
+dashboard reads them: the report hooks return the truncation flags alongside
+the rows, the preview toast says the report is incomplete instead of quoting a
+row count, and downloading the CSV — which is serialized from that preview —
+warns again at the moment the file leaves the app. Exposing the headers without
+reading them would have been decoration; the CSV-to-nationals path is exactly
+the one this is for. A truncated report is also logged as a warning by the API,
+for callers that discard headers.
 
 The in-document clause is deliberately plain ASCII. The standard PDF fonts are
 Latin-1 only, so a warning glyph like `⚠` folds to `?` under the rules in

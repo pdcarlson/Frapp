@@ -37,6 +37,38 @@ export interface ReportExportEnvelope {
   truncation_note?: string;
 }
 
+/**
+ * Whether a `json`/`csv` report was cut short, read off the response headers.
+ *
+ * Those two formats keep bare bodies — an array and CSV bytes — so external
+ * parsers are unaffected, which leaves headers as the only channel. That only
+ * helps if a caller actually reads them: openapi-fetch hands back `response`
+ * alongside `data`, and dropping it is what makes a truncated report look
+ * complete on the surface most likely to forward one.
+ */
+export interface ReportTruncation {
+  truncated: boolean;
+  /** The ceiling `truncated` refers to. */
+  rowLimit: number | null;
+  /** What was cut, when the row count alone does not say it. */
+  note: string | null;
+}
+
+function readTruncation(response: Response): ReportTruncation {
+  const rowLimit = response.headers.get("X-Report-Row-Limit");
+  return {
+    truncated: response.headers.get("X-Report-Truncated") === "true",
+    rowLimit: rowLimit === null ? null : Number(rowLimit),
+    note: response.headers.get("X-Report-Truncation-Note"),
+  };
+}
+
+/** A report payload plus whether the API said it was incomplete. */
+export interface ReportResponse<T> {
+  payload: T;
+  truncation: ReportTruncation;
+}
+
 /** Narrow a report response to the PDF envelope. */
 export function isReportExportEnvelope(
   payload: unknown,
@@ -63,12 +95,15 @@ export function useAttendanceReport() {
         end_date?: string;
       };
     }) => {
-      const { data, error } = await client.POST("/v1/reports/attendance", {
-        params: { query: { format } },
-        body,
-      });
+      const { data, error, response } = await client.POST(
+        "/v1/reports/attendance",
+        {
+          params: { query: { format } },
+          body,
+        },
+      );
       if (error) throw error;
-      return data;
+      return { payload: data, truncation: readTruncation(response) };
     },
   });
 }
@@ -83,12 +118,15 @@ export function usePointsReport() {
       format?: ReportFormat;
       body: { user_id?: string; window?: "all" | "semester" | "month" };
     }) => {
-      const { data, error } = await client.POST("/v1/reports/points", {
-        params: { query: { format } },
-        body,
-      });
+      const { data, error, response } = await client.POST(
+        "/v1/reports/points",
+        {
+          params: { query: { format } },
+          body,
+        },
+      );
       if (error) throw error;
-      return data;
+      return { payload: data, truncation: readTruncation(response) };
     },
   });
 }
@@ -97,11 +135,14 @@ export function useRosterReport() {
   const client = useFrappClient();
   return useMutation({
     mutationFn: async ({ format = "json" }: { format?: ReportFormat } = {}) => {
-      const { data, error } = await client.POST("/v1/reports/roster", {
-        params: { query: { format } },
-      });
+      const { data, error, response } = await client.POST(
+        "/v1/reports/roster",
+        {
+          params: { query: { format } },
+        },
+      );
       if (error) throw error;
-      return data;
+      return { payload: data, truncation: readTruncation(response) };
     },
   });
 }
@@ -120,12 +161,15 @@ export function useServiceReport() {
         end_date?: string;
       };
     }) => {
-      const { data, error } = await client.POST("/v1/reports/service", {
-        params: { query: { format } },
-        body,
-      });
+      const { data, error, response } = await client.POST(
+        "/v1/reports/service",
+        {
+          params: { query: { format } },
+          body,
+        },
+      );
       if (error) throw error;
-      return data;
+      return { payload: data, truncation: readTruncation(response) };
     },
   });
 }
