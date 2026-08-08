@@ -9,6 +9,8 @@ import {
   useRosterReport,
   useServiceReport,
   type ReportFormat,
+  type ReportResponse,
+  type ReportTruncation,
 } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
@@ -120,6 +122,23 @@ function extractRows(payload: unknown): ReportRow[] {
   return [];
 }
 
+/**
+ * One sentence naming what the API said was cut.
+ *
+ * Prefers the server's note over the row cap: a roster truncated by its
+ * transaction read is the right length with wrong balances, so quoting a row
+ * limit it never reached reads as a false alarm and teaches officers to ignore
+ * the warning.
+ */
+function truncationSummary(truncation: ReportTruncation): string {
+  if (truncation.note) {
+    return `${truncation.note[0]?.toUpperCase()}${truncation.note.slice(1)}.`;
+  }
+  return truncation.rowLimit
+    ? `Capped at ${truncation.rowLimit.toLocaleString()} rows.`
+    : "The API reported this report as incomplete.";
+}
+
 function downloadCsv(kind: ReportKind, csv: string) {
   if (typeof window === "undefined") return;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -149,6 +168,8 @@ export function ReportsPage() {
     "all" | "semester" | "month"
   >("all");
   const [preview, setPreview] = useState<ReportRow[] | null>(null);
+  /** Truncation reported alongside the current preview, if any. */
+  const [truncation, setTruncation] = useState<ReportTruncation | null>(null);
 
   /**
    * Any filter edit invalidates the preview.
@@ -164,6 +185,7 @@ export function ReportsPage() {
     return (value: T) => {
       setter(value);
       setPreview(null);
+      setTruncation(null);
     };
   }
   // Tracked separately from the mutation's own isPending: the PDF export reuses
@@ -201,7 +223,9 @@ export function ReportsPage() {
   }, [attendance, kind, points, roster, service]);
 
   /** Run the selected report at a given format, with the current filters. */
-  async function invokeReport(format: ReportFormat): Promise<unknown> {
+  async function invokeReport(
+    format: ReportFormat,
+  ): Promise<ReportResponse<unknown>> {
     if (kind === "attendance") {
       return attendance.mutateAsync({
         format,
@@ -236,16 +260,29 @@ export function ReportsPage() {
 
   async function runReport() {
     try {
-      const payload = await invokeReport("json");
+      const { payload, truncation } = await invokeReport("json");
 
       const rows = extractRows(payload);
       setPreview(rows);
+      setTruncation(truncation);
 
       if (rows.length === 0) {
         toast({
           title: "Report is empty",
           description:
             "Adjust the filters (date range, member) and retry. Empty windows produce no rows.",
+        });
+        return;
+      }
+
+      // A truncated report must not read as a finished one here: this toast is
+      // what an officer sees immediately before clicking "Download CSV" and
+      // sending the file on.
+      if (truncation.truncated) {
+        toast({
+          title: `${reportLabel[kind]} report is incomplete`,
+          variant: "destructive",
+          description: `${truncationSummary(truncation)} Anything you download from this preview is not a complete record of the chapter.`,
         });
         return;
       }
@@ -270,6 +307,16 @@ export function ReportsPage() {
     if (!preview || preview.length === 0) return;
     const csv = buildCsv(preview);
     downloadCsv(kind, csv);
+    // The CSV is serialized from the preview, so it inherits the preview's
+    // truncation. Saying so at download time is the last point before the file
+    // leaves the app and stops carrying any context at all.
+    if (truncation?.truncated) {
+      toast({
+        title: "Downloaded an incomplete CSV",
+        variant: "destructive",
+        description: `${truncationSummary(truncation)} Do not treat this file as a complete record of the chapter.`,
+      });
+    }
   }
 
   /**
@@ -278,16 +325,16 @@ export function ReportsPage() {
    * rows shown here — and stores it privately, handing back a signed URL that
    * expires in an hour.
    *
-   * "Whole query result" is bounded by PostgREST's `max_rows` (1000, see
-   * supabase/config.toml), which the report queries do not page past. A chapter
-   * with more matching rows than that gets a silently short report in every
-   * format, PDF included. Pre-existing and shared with JSON/CSV; tracked in
-   * FRA-342. Deliberately not claimed as complete here.
+   * "Whole query result" is bounded by the API's report row ceiling, which the
+   * queries now page up to rather than stopping at PostgREST's `max_rows`. A
+   * chapter past the ceiling is never silently short: the envelope comes back
+   * with `truncated`, and the toast below says so rather than reporting a row
+   * count that reads as complete. See spec/behavior/reports.md § Row limits.
    */
   async function exportPdf() {
     setPdfPending(true);
     try {
-      const payload = await invokeReport("pdf");
+      const { payload } = await invokeReport("pdf");
       if (!isReportExportEnvelope(payload)) {
         throw new Error("The API did not return a download link.");
       }
@@ -303,10 +350,21 @@ export function ReportsPage() {
         anchor.remove();
       }
       toast({
-        title: `${reportLabel[kind]} PDF ready`,
-        description: `${payload.row_count} row${
-          payload.row_count === 1 ? "" : "s"
-        } exported. The download link expires in one hour.`,
+        title: payload.truncated
+          ? `${reportLabel[kind]} PDF ready — incomplete`
+          : `${reportLabel[kind]} PDF ready`,
+        variant: payload.truncated ? "destructive" : undefined,
+        // Prefer the server's note over the row cap. A roster truncated by the
+        // transaction read is the right length with wrong balances, so quoting
+        // a row limit it never reached reads as a false positive.
+        description: payload.truncated
+          ? `${
+              payload.truncation_note ??
+              `Capped at ${payload.row_limit.toLocaleString()} rows`
+            }, so this document is not a complete record of the chapter. The download link expires in one hour.`
+          : `${payload.row_count} row${
+              payload.row_count === 1 ? "" : "s"
+            } exported. The download link expires in one hour.`,
       });
     } catch (error) {
       toast({
@@ -386,6 +444,7 @@ export function ReportsPage() {
                   onValueChange={(value) => {
                     setKind(value as ReportKind);
                     setPreview(null);
+                    setTruncation(null);
                   }}
                 >
                   <SelectTrigger id="report-kind">

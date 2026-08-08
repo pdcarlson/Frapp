@@ -34,6 +34,17 @@ async function bootstrap() {
       /^https:\/\/(?:[a-zA-Z0-9-]+\.)*frapp\.live$/,
     ],
     credentials: true,
+    // Only the seven CORS-safelisted response headers reach browser JS unless
+    // they are named here. The dashboard is cross-origin by design
+    // (api.frapp.live vs app.frapp.live), so without this the report
+    // truncation flags are set by the API, stripped by the browser, and a
+    // short report looks complete to the one caller most likely to email it
+    // onward. See spec/behavior/reports.md § Row limits.
+    exposedHeaders: [
+      'X-Report-Truncated',
+      'X-Report-Row-Limit',
+      'X-Report-Truncation-Note',
+    ],
   });
 
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
