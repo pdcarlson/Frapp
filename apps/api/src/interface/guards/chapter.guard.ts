@@ -21,6 +21,7 @@ import {
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
 import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
+import { isModuleEnabled } from '@repo/validation';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -271,10 +272,9 @@ export class ChapterGuard implements CanActivate {
    * - **Writes only.** `spec/product/modules.md` promises "Data is preserved —
    *   re-enabling restores access", so reads of a disabled module's data keep
    *   working; the toggle freezes a surface, it does not strand data.
-   * - **Enabled unless explicitly `false`.** Same contract as the client's
-   *   `isModuleEnabled` (`apps/web/lib/hooks/use-org-config.ts`). A chapter
-   *   created before a module existed has no key for it, and must not be
-   *   locked out of a module it never turned off.
+   * - **Enabled unless explicitly `false`**, via the shared `isModuleEnabled`
+   *   predicate in `@repo/validation` — the same one the web surfaces use, so
+   *   the client's idea of "off" cannot drift from the server's.
    */
   private enforceModule(
     context: ExecutionContext,
@@ -289,7 +289,7 @@ export class ChapterGuard implements CanActivate {
     );
     if (!moduleKey) return;
 
-    if (enabledModules?.[moduleKey] === false) {
+    if (!isModuleEnabled(enabledModules, moduleKey)) {
       throw new ForbiddenException({
         code: 'chapter.module.disabled',
         message: `The "${moduleKey}" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.`,

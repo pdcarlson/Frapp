@@ -116,3 +116,42 @@ describe("DashboardCommandMenu module gating", () => {
     expect(screen.getByText("Go to Documents")).toBeInTheDocument();
   });
 });
+
+// The gate resolves a command's module by looking its href up in nav-config.
+// An href that doesn't match resolves to `undefined` and is silently treated
+// as always-on — which is correct for free surfaces but would let a future
+// paid-module command through ungated, reintroducing exactly the bug #264
+// fixed. This test makes that drift loud instead of silent.
+describe("command hrefs resolve against nav-config", () => {
+  // Free, always-on surfaces whose command href intentionally differs from
+  // the nav entry. Adding a *paid-module* route here would be a bug.
+  const KNOWN_UNRESOLVED = new Set([
+    "/roles", // nav routes this as "/settings?tab=roles"
+  ]);
+
+  it("every navigation command resolves, or is a documented free-surface exception", async () => {
+    const { DASHBOARD_NAV_BY_HREF } = await import("./nav-config");
+    const { navigationCommands } = await import("./dashboard-command-menu");
+
+    expect(navigationCommands.length).toBeGreaterThan(0);
+
+    const unresolved = navigationCommands
+      .map((c) => c.href)
+      .filter(
+        (href) => !DASHBOARD_NAV_BY_HREF[href] && !KNOWN_UNRESOLVED.has(href),
+      );
+    expect(unresolved).toEqual([]);
+  });
+
+  it("guards the exception list itself — no exception may be a paid-module route", async () => {
+    const { DASHBOARD_NAV_ITEMS } = await import("./nav-config");
+    // A route excused from resolution must not be one nav module-gates under
+    // a different href, or the excuse would be hiding a real gap.
+    const gatedLabels = new Set(
+      DASHBOARD_NAV_ITEMS.filter((i) => i.module).map((i) => i.id),
+    );
+    for (const href of KNOWN_UNRESOLVED) {
+      expect(gatedLabels.has(href.replace(/^\//, ""))).toBe(false);
+    }
+  });
+});

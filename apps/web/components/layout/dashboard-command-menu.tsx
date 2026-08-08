@@ -36,7 +36,11 @@ type DashboardCommandMenuProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const navigationCommands = [
+/**
+ * Exported so tests can assert every href still resolves in `nav-config`.
+ * An href that doesn't resolve silently loses its module gate (#264).
+ */
+export const navigationCommands = [
   { icon: MessagesSquare, label: "Go to Chat", shortcut: "G C", href: "/chat" },
   { icon: Sparkles, label: "Go to Profile", shortcut: "G P", href: "/profile" },
   { icon: Users, label: "Go to Members", shortcut: "G M", href: "/members" },
