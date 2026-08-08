@@ -91,11 +91,11 @@ feature/xyz ──PR──▶ main (staging) ──PR──▶ production (produ
 
 **Vercel environment mapping:**
 
-| Vercel environment           | Git trigger           | Domain example                                 |
-| ---------------------------- | --------------------- | ---------------------------------------------- |
-| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live`                 |
+| Vercel environment           | Git trigger           | Domain example            |
+| ---------------------------- | --------------------- | ------------------------- |
+| **Production**               | Push to `production`  | `app.frapp.live`, `frapp.live` |
 | **Preview** (pre-production) | Push to `main`        | `app.staging.frapp.live`, `staging.frapp.live` |
-| **Disabled**                 | Any other branch / PR | No auto deployment                             |
+| **Disabled**                 | Any other branch / PR | No auto deployment        |
 
 The `main` branch's staging domain is configured by assigning the domain to the Preview environment and filtering to the `main` branch in Vercel's domain settings. Each app's `vercel.json` also uses `git.deploymentEnabled` so only `main` and `production` auto-deploy (`"**": false` is used to match feature branch names that include `/`).
 
@@ -195,10 +195,10 @@ In each Vercel project → Settings → Domains:
 
 #### Staging Domains (connected to Preview environment, filtered to `main` branch)
 
-| Project         | Domain                   | Environment | Branch filter |
-| --------------- | ------------------------ | ----------- | ------------- |
-| `frapp-web`     | `app.staging.frapp.live` | Preview     | `main`        |
-| `frapp-landing` | `staging.frapp.live`     | Preview     | `main`        |
+| Project         | Domain                    | Environment | Branch filter |
+| --------------- | ------------------------- | ----------- | ------------- |
+| `frapp-web`     | `app.staging.frapp.live`  | Preview     | `main`        |
+| `frapp-landing` | `staging.frapp.live`      | Preview     | `main`        |
 
 **To set this up:** In each project, go to Settings → Domains → Add the staging domain → Connect to environment: **Preview** → set the branch filter to `main`.
 
@@ -320,16 +320,16 @@ When the split happens, deploy `ChatPushWorkerModule` (and `ChatBridgeWorkerModu
 
 **These differ from the §5.5 chat workers in one way that matters for scaling.** The chat workers each hold a single Supabase Realtime subscription, so extra replicas mostly duplicate a stream. A `@Cron` handler instead fires on **every replica, on every tick**. Multi-instance safety therefore comes from the database, not the topology: each unit of work claims a row in `scheduled_notification_dispatches`, unique on `(entity_type, entity_id, threshold, due_date)`, and only the replica that wins the insert acts. Reminders cannot be double-sent, and auto-absent runs once per event rather than once per replica per hour.
 
-**The report-retention sweep is the exception, and deliberately takes no claim.** The claim exists to stop a _duplicate side effect_ — the same reminder sent twice. Deleting a storage object is idempotent, so a second replica racing the first simply finds the prefix already empty. It needs no dispatch row, and adding one would only make the sweep skip work after a crash.
+**The report-retention sweep is the exception, and deliberately takes no claim.** The claim exists to stop a *duplicate side effect* — the same reminder sent twice. Deleting a storage object is idempotent, so a second replica racing the first simply finds the prefix already empty. It needs no dispatch row, and adding one would only make the sweep skip work after a crash.
 
 Consequences worth knowing before scaling the API service:
 
 - Adding replicas does **not** multiply notifications, and needs no configuration change.
 - The sweeps are self-healing across missed ticks — auto-absent looks back 24 hours, overdue reminders 7 days, and due-soon reminders accept the due date itself as a late catch-up — so a deploy that skips 09:00 delays reminders rather than dropping them. Report retention is self-healing by construction: it re-derives what is expired from each object's stored-at timestamp on every tick, so missed ticks delay a delete rather than skipping it.
-- The claim is taken _before_ sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it.
+- The claim is taken *before* sending. If every delivery for a claim fails it is released and retried next tick; if only some recipients fail the claim is kept and the shortfall is logged, so a partial failure is visible but never re-spams the recipients who did get it.
 - Timing is UTC. No `TZ` is set on the API service, so `EVERY_DAY_AT_9AM` means 09:00 UTC and the sweeps' date arithmetic is UTC-based. Setting `TZ` on the service would shift both together; do it deliberately, not incidentally.
 
-Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short and run at most hourly — but if they are split, they must not run in _both_ places at once unless the dispatch claim is preserved, since that is the only thing preventing duplicate work.
+Splitting these into a standalone Render Background Worker is not currently warranted — the sweeps are short and run at most hourly — but if they are split, they must not run in *both* places at once unless the dispatch claim is preserved, since that is the only thing preventing duplicate work.
 
 ### 5.7 Deploy Hooks (for GitHub Actions)
 
