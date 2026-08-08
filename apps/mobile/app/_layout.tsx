@@ -5,7 +5,7 @@ import { View } from "react-native";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
-import { PreviewSessionProvider } from "@/lib/preview-session";
+import { AuthSessionProvider } from "@/lib/auth-session";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
 function RootLayoutContent() {
@@ -19,12 +19,10 @@ function RootLayoutContent() {
         isInternetReachable={networkState.isInternetReachable ?? null}
       />
       <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
-      <PreviewSessionProvider>
-        <Stack>
-          <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        </Stack>
-      </PreviewSessionProvider>
+      <Stack>
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      </Stack>
     </View>
   );
 }
@@ -32,11 +30,18 @@ function RootLayoutContent() {
 export default function RootLayout() {
   return (
     <FrappThemeProvider>
-      <FrappProvider>
-        <AnalyticsProvider>
-          <RootLayoutContent />
-        </AnalyticsProvider>
-      </FrappProvider>
+      {/*
+        AuthSessionProvider sits outside FrappProvider: the API client reads its
+        resolved chapter id, and the auth session itself talks only to Supabase,
+        so there is no cycle between them.
+      */}
+      <AuthSessionProvider>
+        <FrappProvider>
+          <AnalyticsProvider>
+            <RootLayoutContent />
+          </AnalyticsProvider>
+        </FrappProvider>
+      </AuthSessionProvider>
     </FrappThemeProvider>
   );
 }

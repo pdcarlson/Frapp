@@ -1,19 +1,29 @@
 # Mobile Interaction Smoke Checklist
 
-> Last updated: 2026-03-09  
-> Scope: `apps/mobile` Expo preview workflows
+> Last updated: 2026-08-08  
+> Scope: `apps/mobile` Expo workflows
 
 This checklist prevents dead-end controls in mobile UX.  
 Rule: **if a control looks interactive, it must do something** (navigate, mutate, open, or show explicit disabled reason).
 
 ## 1) Auth flow
 
+Auth is real Supabase auth (#698) — these rows need a build carrying
+`EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` and a real member
+account. Without them the sign-in card reports "Auth provider: Not configured"
+and every row below is expected to fail.
+
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Sign in (`/(auth)/sign-in`) | Continue with email | Creates preview session + routes to `/(tabs)` |
-| Sign in (`/(auth)/sign-in`) | Use magic link | Creates preview session with magic-link mode + routes to `/(tabs)` |
-| Sign in (`/(auth)/sign-in`) | Password / Magic Link mode chips | Toggles selected mode styling and state |
-| Profile (`/(tabs)/profile`) | Sign out of preview session | Clears preview session + routes to sign-in |
+| Sign in (`/(auth)/sign-in`) | Password / Magic Link mode chips | Toggles selected mode styling; password field shows in Password mode only |
+| Sign in (`/(auth)/sign-in`) | Sign in (Password mode) | Authenticates against Supabase + routes to `/(tabs)` |
+| Sign in (`/(auth)/sign-in`) | Sign in, wrong password | Shows the Supabase error inline; stays on the screen |
+| Sign in (`/(auth)/sign-in`) | Email me a link (Magic Link mode) | Confirms "Link sent to …"; tapping the emailed link on the device signs in and routes to `/(tabs)` |
+| Sign in (`/(auth)/sign-in`) | Tap an already-used or expired magic link | Opens the app and shows the reason inline — never a silent return to a blank sign-in form |
+| Profile (`/(tabs)/profile`) | Sign out | Clears the session + routes to sign-in; relaunching the app does not restore it |
+
+Magic-link rows additionally need `frapp://` allowlisted in Supabase Auth →
+URL Configuration (#765), or the link opens the web app instead.
 
 ## 2) Primary tab routes
 

@@ -92,7 +92,9 @@ Verified: `npm ci` in sync, `check-types` 16/16, `lint` 16/16 (0 errors), `nest 
 
 `geist` (a direct `apps/web` dependency) declares a peer `next: ">=13.2.0"`. After bumping both workspace pins to `^16.3.0`, npm installed `16.3.0` **nested** under each app but left the **hoisted** `node_modules/next` at the already-locked `16.2.6` to satisfy that peer — so the vulnerable copy stayed in the tree and `npm audit` was unchanged. Neither `npm dedupe` nor a root `overrides.next` entry moves an existing peer resolution.
 
-The fix is to delete only the stale entries and let npm re-resolve them:
+This is the **same failure mode** as the "Check for a duplicate hoisted copy afterward" rule in the #245 Prevention section above, which #684 hit through `@nestjs/core`'s optional peer. Two independent runs have now been caught by an optional/declared peer silently retaining a vulnerable copy after the direct dependency was bumped; assume it will happen again and check for it every time.
+
+The fix used here was to delete only the stale entries and let npm re-resolve them:
 
 ```sh
 # remove `node_modules/next` and every `@next/swc-*` entry from package-lock.json, then:
@@ -101,21 +103,23 @@ npm install --package-lock-only
 
 That collapses the tree to a **single hoisted `next@16.3.0`** with no nested duplicates, and touches ~445 lines of the lockfile instead of rewriting it.
 
+**Try `npm update <pkg>` first.** The Prevention section's lever was not attempted here — `npm update next` may well have re-resolved the peer on its own, and it is the cheaper, better-documented path. Reach for entry deletion only after `npm update` has been tried and demonstrably left the old copy in place. Note the two are not in conflict: Prevention's warning is that `npm install --package-lock-only` will not re-check an **already-locked version against a changed override range**; here the entries were *removed* first, so npm had nothing to keep and had to resolve them fresh.
+
 ### Do not "fix" this with a full lockfile rebuild
 
-`rm -rf node_modules package-lock.json && npm install` also clears the advisory, and it is what the #245 Prevention note above recommends — but on this repo it **silently breaks every platform except the one that ran it**. npm records only the optional platform binaries matching the current host, so a rebuild on Linux x64 drops:
+`rm -rf node_modules package-lock.json && npm install` also clears the advisory — but on top of the 356-package churn the Prevention section already warns about, it **silently breaks every platform except the one that ran it**. npm records only the optional platform binaries matching the current host, so a rebuild on Linux x64 drops:
 
 * `@next/swc-darwin-arm64` / `-darwin-x64` — the primary dev machines
 * `@next/swc-win32-*`, `@next/swc-linux-arm64-*`
 * 20 of the 24 `@img/sharp-*` variants, including `linuxmusl-arm64`
 
-`npm ci` then succeeds on Linux x64 and CI stays green, while a Mac or ARM checkout fails to load the SWC binary. Prefer the surgical `--package-lock-only` path above; if a full rebuild is ever unavoidable, diff the `@next/swc-*` and `@img/sharp-*` entry counts before and after and restore any platform that disappeared.
+`npm ci` then succeeds on Linux x64 and CI stays green, while a Mac or ARM checkout fails to load the SWC binary. This is a **second, independent reason** not to delete the lockfile, and unlike the churn argument it is not merely a review-burden problem — it ships a broken install to every non-Linux developer while every gate stays green. If a full rebuild is ever unavoidable, diff the `@next/swc-*` and `@img/sharp-*` entry counts before and after and restore any platform that disappeared.
 
 ### Result
 
-`npm audit`: **68 → 65** total (high 25 → 22); `next` no longer appears and the nine advisories above are cleared. Because only the `next` entries were re-resolved, no unrelated dependency moved — `prettier`, `@playwright/test`, and the rest of the tree are byte-identical to `main`, so the visual-regression baselines and formatter output are unchanged.
+Measured on the merged tree (this change on top of #684/#699): `npm audit` **64 → 61** total, high **22 → 19**; `next` no longer appears and the nine advisories above are cleared. Because only the `next` entries were re-resolved, no unrelated dependency moved — `prettier` (3.8.3), `@playwright/test` (1.60.0) and the rest of the tree are byte-identical to `main`, so the visual-regression baselines and formatter output are unchanged. That was confirmed rather than assumed: CI's `web-visual-regression` job hit its browser cache on the unchanged Playwright version and every dashboard baseline matched, so `next@16.3.0` does not alter rendered output.
 
-For contrast, the discarded full rebuild reported 68 → 54. The extra 11 came from unrelated packages whose ranges already permitted patched versions (`concurrently`/`shell-quote`, `multer`, `undici`, and others). Those are each tracked separately — clearing them as an invisible side effect of a `next` bump would put unreviewed dependency movement in a security PR, which is how a regression like the dropped platform binaries ships unnoticed.
+For contrast, the discarded full rebuild reported a larger drop by also moving unrelated packages whose ranges already permitted patched versions — `multer`, `undici`, `concurrently`/`shell-quote` and others. **`multer` and `undici` were the legitimately-tracked ones, and #684/#699 closed them properly in their own reviewed diff**, which is exactly the point: clearing them as an invisible side effect of a `next` bump would have put unreviewed dependency movement into a security PR, and would have collided with that work rather than composing with it.
 
 The one `postcss` high advisory that previously rode in under `next`'s dependency chain now resolves solely through `@expo/metro-config` in the mobile tree — it belongs to the Expo SDK upgrade (#289), not to `next`.
 
