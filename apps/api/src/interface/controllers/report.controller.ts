@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Logger,
   Post,
   Query,
   Res,
@@ -17,7 +18,11 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import type { Response } from 'express';
-import { ReportService } from '../../application/services/report.service';
+import {
+  REPORT_MAX_ROWS,
+  ReportService,
+  type ReportResult,
+} from '../../application/services/report.service';
 import { ReportExportService } from '../../application/services/report-export.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
@@ -36,6 +41,20 @@ import { REPORT_COLUMNS, type ReportKind } from './report-columns';
 
 /** Export formats every /v1/reports route accepts. Anything else is a 400. */
 const REPORT_FORMATS = ['json', 'csv', 'pdf'];
+
+/**
+ * Set when `REPORT_MAX_ROWS` cut a report short.
+ *
+ * Truncation is signalled in headers rather than in the body because the `json`
+ * body is a bare array and the `csv` body is consumed by parsers: wrapping
+ * either in an envelope to carry one boolean would break every existing caller
+ * — `packages/hooks/src/use-reports.ts`, the dashboard, and the generated SDK —
+ * for a condition that a chapter-sized dataset should never reach. The `pdf`
+ * format has an envelope already, so it carries the flag as a field *and*
+ * prints it on the document.
+ */
+const TRUNCATED_HEADER = 'X-Report-Truncated';
+const ROW_LIMIT_HEADER = 'X-Report-Row-Limit';
 
 const FORMAT_QUERY = {
   name: 'format',
@@ -72,6 +91,19 @@ function dateRange(start?: string, end?: string): string | undefined {
   return 'All dates';
 }
 
+/**
+ * The clause that keeps a truncated PDF from passing itself off as complete.
+ * It rides in the header scope line, next to the date range, because that is
+ * the line a reader already checks to learn what the document covers — and
+ * unlike the `Page N of M` footer, it describes what was *matched* rather than
+ * what was printed.
+ */
+function truncationNotice(truncated: boolean): string | undefined {
+  return truncated
+    ? `⚠ Incomplete — capped at the first ${REPORT_MAX_ROWS.toLocaleString('en-US')} rows`
+    : undefined;
+}
+
 @ApiTags('Reports')
 @ApiBearerAuth()
 @ApiExtraModels(ReportExportResponseDto)
@@ -79,6 +111,8 @@ function dateRange(start?: string, end?: string): string | undefined {
 @RequirePermissions(SystemPermissions.REPORTS_EXPORT)
 @Controller('reports')
 export class ReportController {
+  private readonly logger = new Logger(ReportController.name);
+
   constructor(
     private readonly reportService: ReportService,
     private readonly reportExportService: ReportExportService,
@@ -94,12 +128,12 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getAttendanceReport(chapterId, {
+    const result = await this.reportService.getAttendanceReport(chapterId, {
       event_id: dto.event_id,
       start_date: dto.start_date,
       end_date: dto.end_date,
     });
-    return this.respond(chapterId, 'attendance', data, format, res, () =>
+    return this.respond(chapterId, 'attendance', result, format, res, () =>
       scopeLine([
         dateRange(dto.start_date, dto.end_date),
         dto.event_id ? 'Single event' : 'All events',
@@ -117,11 +151,11 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getPointsReport(chapterId, {
+    const result = await this.reportService.getPointsReport(chapterId, {
       user_id: dto.user_id,
       window: dto.window,
     });
-    return this.respond(chapterId, 'points', data, format, res, () =>
+    return this.respond(chapterId, 'points', result, format, res, () =>
       scopeLine([
         `Window: ${dto.window ?? 'all'}`,
         dto.user_id ? 'Single member' : 'All members',
@@ -138,8 +172,8 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getRosterReport(chapterId);
-    return this.respond(chapterId, 'roster', data, format, res, () =>
+    const result = await this.reportService.getRosterReport(chapterId);
+    return this.respond(chapterId, 'roster', result, format, res, () =>
       scopeLine(['Current members']),
     );
   }
@@ -154,12 +188,12 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
-    const data = await this.reportService.getServiceReport(chapterId, {
+    const result = await this.reportService.getServiceReport(chapterId, {
       user_id: dto.user_id,
       start_date: dto.start_date,
       end_date: dto.end_date,
     });
-    return this.respond(chapterId, 'service', data, format, res, () =>
+    return this.respond(chapterId, 'service', result, format, res, () =>
       scopeLine([
         dateRange(dto.start_date, dto.end_date),
         dto.user_id ? 'Single member' : 'All members',
@@ -179,12 +213,13 @@ export class ReportController {
   private async respond<T extends Record<string, any>>(
     chapterId: string,
     kind: ReportKind,
-    data: T[],
+    result: ReportResult<T>,
     format: string | undefined,
     res: Response | undefined,
     subtitle: () => string | undefined,
   ) {
     const columns = REPORT_COLUMNS[kind];
+    const { rows, truncated } = result;
 
     // Reject an unrecognized format rather than quietly serving JSON. The
     // contract advertises an enum, and `format=PDF` silently returning rows
@@ -197,13 +232,25 @@ export class ReportController {
       );
     }
 
+    if (truncated) {
+      // A short report that does not announce itself reads as a complete
+      // record of the chapter, and these get emailed to nationals and
+      // advisors. Log it too: the caller may be a script that drops headers.
+      this.logger.warn(
+        `${kind} report for chapter ${chapterId} hit the ${REPORT_MAX_ROWS}-row ceiling and is incomplete.`,
+      );
+      res?.setHeader(TRUNCATED_HEADER, 'true');
+      res?.setHeader(ROW_LIMIT_HEADER, String(REPORT_MAX_ROWS));
+    }
+
     if (format === 'pdf') {
       return this.reportExportService.exportPdf(
         chapterId,
         kind,
         columns,
-        data,
-        subtitle(),
+        rows,
+        scopeLine([subtitle(), truncationNotice(truncated)]),
+        truncated,
       );
     }
 
@@ -213,9 +260,9 @@ export class ReportController {
         'Content-Disposition',
         `attachment; filename="${kind}-report.csv"`,
       );
-      return toCSV(data, columns);
+      return toCSV(rows, columns);
     }
 
-    return data;
+    return rows;
   }
 }
