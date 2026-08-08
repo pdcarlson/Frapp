@@ -4,12 +4,12 @@ Admins with `reports:export` permission can generate and download reports from t
 
 ## Available Reports
 
-| Report            | Scope                      | Columns                                                                                     |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| **Attendance**    | Per event or date range    | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
+| Report            | Scope                                                                     | Columns                                                                                     |
+| ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Attendance**    | Per event or date range                                                   | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
 | **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
-| **Member roster** | Current members            | Name, email, role(s), join date, point balance                                              |
-| **Service hours** | Per member or chapter-wide | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
+| **Member roster** | Current members                                                           | Name, email, role(s), join date, point balance                                              |
+| **Service hours** | Per member or chapter-wide                                                | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
 
 ## Points report time window
 
@@ -30,11 +30,11 @@ Totals and per-category breakdowns for a given window **equal the leaderboard** 
 The `format` query parameter on each `POST /v1/reports/*` route selects how step 2
 answers:
 
-| `format` | Response |
-| --- | --- |
-| `json` (default) | The report rows, for on-screen preview. |
-| `csv` | An inline `text/csv` body with a `Content-Disposition` attachment header. |
-| `pdf` | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count }` — whose `url` is a **signed download URL valid for 1 hour**. |
+| `format`         | Response                                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` (default) | The report rows, for on-screen preview.                                                                                                             |
+| `csv`            | An inline `text/csv` body with a `Content-Disposition` attachment header.                                                                           |
+| `pdf`            | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count }` — whose `url` is a **signed download URL valid for 1 hour**. |
 
 Only PDF takes the signed-URL path. Rendering a PDF is server-side work that
 produces a stored artifact, so the document is written to the private `reports`
@@ -54,13 +54,24 @@ for reading (`ATTENDANCE: 12, SERVICE: 4`).
 
 ### Retention
 
-**Generated PDFs are stored indefinitely.** The signed URL expires after an hour,
-but the object behind it does not — nothing currently deletes it, and each export
-writes a new object rather than replacing the last. Roster exports in particular
-carry member names, emails, roles, and join dates, so this storage is in scope for
-[`data-retention.md`](data-retention.md): a member who deletes their account still
-has their details inside any report exported before that point. Reaping old
-exports, and sweeping the prefix on account deletion, is tracked in **FRA-338**.
+**Generated PDFs are deleted 24 hours after they are written.** The signed URL
+expires after an hour, so anything past that is already unreachable through the
+API; the extra day covers a stalled download or a retried request without
+keeping the artifact around longer than it is useful. An hourly sweep removes
+expired objects, so an export is reaped within an hour of turning 24h old.
+
+Reports are **derived artifacts** — every one is regenerable from the source
+tables it was rendered from, and nothing in the database references the stored
+object — so deleting one never affects live data. Re-running the export
+produces a new object with a new random key.
+
+Roster exports carry member names, emails, roles, and join dates, which puts
+this storage in scope for [`data-retention.md`](data-retention.md). Account
+deletion therefore does **not** wait for the retention window: it clears the
+report prefix of every chapter the departing member belonged to, immediately
+and before the database scrub. A rendered PDF cannot have one member removed
+from it, so dropping the chapter's exports is the only complete erasure —
+officers simply re-export.
 
 ## PDF Formatting
 

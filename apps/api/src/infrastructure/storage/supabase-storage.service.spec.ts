@@ -101,6 +101,62 @@ describe('SupabaseStorageService', () => {
     });
   });
 
+  describe('listObjects', () => {
+    it('returns each object with its stored-at timestamp', async () => {
+      list.mockResolvedValueOnce({
+        data: [
+          {
+            id: 'id-1',
+            name: 'roster-2026-08-05-uuid.pdf',
+            created_at: '2026-08-05T10:30:00Z',
+          },
+        ],
+        error: null,
+      });
+
+      const objects = await service.listObjects(
+        'reports',
+        'chapters/c/reports',
+      );
+
+      expect(objects).toEqual([
+        {
+          path: 'chapters/c/reports/roster-2026-08-05-uuid.pdf',
+          createdAt: new Date('2026-08-05T10:30:00Z'),
+        },
+      ]);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['unparseable', 'not-a-date'],
+    ])(
+      'reports a %s timestamp as null, not an Invalid Date',
+      async (_label, created_at) => {
+        // An Invalid Date compares false against every cutoff, so an age-based
+        // caller could not tell "too new to reap" from "no idea when".
+        list.mockResolvedValueOnce({
+          data: [{ id: 'id-1', name: 'x.pdf', created_at }],
+          error: null,
+        });
+
+        const objects = await service.listObjects('reports', 'p');
+
+        expect(objects).toEqual([{ path: 'p/x.pdf', createdAt: null }]);
+      },
+    );
+
+    it('treats a missing bucket as an empty folder', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(service.listObjects('reports', 'p')).resolves.toEqual([]);
+    });
+  });
+
   describe('deleteFiles', () => {
     it('removes paths in chunks of at most 100 per call', async () => {
       const paths = Array.from({ length: 150 }, (_, i) => `p/${i}.png`);

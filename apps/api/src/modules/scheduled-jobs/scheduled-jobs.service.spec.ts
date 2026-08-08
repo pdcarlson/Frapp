@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { AttendanceService } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
+import { ReportRetentionService } from '../../application/services/report-retention.service';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { ScheduledJobsService } from './scheduled-jobs.service';
 import { ScheduledJobsRepository } from './scheduled-jobs.repository';
@@ -26,6 +27,8 @@ describe('ScheduledJobsService', () => {
   let findEventsPendingAutoAbsent: jest.Mock;
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
+  let findAllChapterIds: jest.Mock;
+  let sweepExpiredReports: jest.Mock;
 
   const INVOICE = {
     id: 'inv-1',
@@ -57,6 +60,8 @@ describe('ScheduledJobsService', () => {
     findEventsPendingAutoAbsent = jest.fn().mockResolvedValue([]);
     findOpenInvoicesDueBetween = jest.fn().mockResolvedValue([]);
     findIncompleteTasksDueBetween = jest.fn().mockResolvedValue([]);
+    findAllChapterIds = jest.fn().mockResolvedValue([]);
+    sweepExpiredReports = jest.fn().mockResolvedValue({ deleted: 0 });
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -69,11 +74,13 @@ describe('ScheduledJobsService', () => {
             findIncompleteTasksDueBetween,
             claimDispatch,
             releaseDispatch,
+            findAllChapterIds,
           },
         },
         { provide: AttendanceService, useValue: { markAutoAbsent } },
         { provide: NotificationService, useValue: { notifyUser } },
         { provide: ChapterWorkflowsService, useValue: { getDuesGraceDays } },
+        { provide: ReportRetentionService, useValue: { sweepExpiredReports } },
         { provide: MEMBER_REPOSITORY, useValue: { findByUserAndChapter } },
       ],
     }).compile();
@@ -418,6 +425,43 @@ describe('ScheduledJobsService', () => {
         '2026-07-29',
         TOMORROW,
       );
+    });
+  });
+
+  describe('sweepExpiredReports', () => {
+    it('hands every chapter id to the retention service with the sweep clock', async () => {
+      findAllChapterIds.mockResolvedValue(['chap-1', 'chap-2']);
+      sweepExpiredReports.mockResolvedValue({ deleted: 3 });
+
+      const result = await service.sweepExpiredReports(NOW);
+
+      expect(sweepExpiredReports).toHaveBeenCalledWith(
+        ['chap-1', 'chap-2'],
+        NOW,
+      );
+      expect(result).toEqual({ deleted: 3 });
+    });
+
+    it('does not call storage when there are no chapters', async () => {
+      // Storage cannot enumerate chapters, so an empty list is the only
+      // signal there is nothing to walk — listing anyway would be a pointless
+      // round trip on every tick of a fresh project.
+      const result = await service.sweepExpiredReports(NOW);
+
+      expect(sweepExpiredReports).not.toHaveBeenCalled();
+      expect(result).toEqual({ deleted: 0 });
+    });
+
+    it('sweeps nothing when the chapter lookup fails', async () => {
+      // fetchAllPages returns [] on a query error rather than throwing, so a
+      // failed lookup must degrade to "no work this tick", never to a sweep
+      // over a silently truncated chapter list.
+      findAllChapterIds.mockResolvedValue([]);
+
+      await expect(service.sweepExpiredReports(NOW)).resolves.toEqual({
+        deleted: 0,
+      });
+      expect(sweepExpiredReports).not.toHaveBeenCalled();
     });
   });
 });

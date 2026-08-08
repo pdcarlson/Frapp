@@ -68,7 +68,9 @@ export class ReportRetentionService {
     chapterIds: string[],
     now: Date,
   ): Promise<{ deleted: number }> {
-    const cutoff = new Date(now.getTime() - REPORT_RETENTION_HOURS * MS_PER_HOUR);
+    const cutoff = new Date(
+      now.getTime() - REPORT_RETENTION_HOURS * MS_PER_HOUR,
+    );
     let deleted = 0;
 
     for (const chapterId of chapterIds) {
@@ -143,7 +145,9 @@ export class ReportRetentionService {
       // object is the safe read: treating unknown as old would delete an
       // export the officer is still downloading, and the next tick re-checks
       // it for free once metadata is available.
-      .filter((object) => object.createdAt !== null && object.createdAt < cutoff)
+      .filter(
+        (object) => object.createdAt !== null && object.createdAt < cutoff,
+      )
       .map((object) => object.path);
 
     if (expired.length === 0) return 0;

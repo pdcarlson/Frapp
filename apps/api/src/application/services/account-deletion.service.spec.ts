@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadGatewayException, NotFoundException } from '@nestjs/common';
 import { AccountDeletionService } from './account-deletion.service';
 import { AnalyticsService } from './analytics.service';
+import { ReportRetentionService } from './report-retention.service';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
@@ -84,10 +85,11 @@ describe('AccountDeletionService', () => {
       deleteFiles: jest.fn(async () => {
         callOrder.push('deleteFiles');
       }),
-      listFiles: jest.fn(async (_bucket: string, prefix: string) => {
-        callOrder.push('listFiles');
+      listFiles: jest.fn(async (bucket: string, prefix: string) => {
+        callOrder.push(bucket === 'reports' ? 'listReports' : 'listFiles');
         return [`${prefix}/pic.png`];
       }),
+      listObjects: jest.fn(async () => []),
     };
     mockAuthAdmin = {
       deleteAuthUser: jest.fn(async () => {
@@ -109,11 +111,21 @@ describe('AccountDeletionService', () => {
         { provide: STORAGE_PROVIDER, useValue: mockStorage },
         { provide: AUTH_ADMIN_PROVIDER, useValue: mockAuthAdmin },
         { provide: AnalyticsService, useValue: mockAnalytics },
+        // The real service, not a mock: it shares `mockStorage`, so the
+        // report sweep's prefixes and its position relative to the scrub are
+        // asserted against the code that actually runs in production.
+        ReportRetentionService,
       ],
     }).compile();
 
     service = module.get(AccountDeletionService);
   });
+
+  /** Prefixes listed against one bucket, in call order. */
+  const listedPrefixes = (bucket: string): string[] =>
+    mockStorage.listFiles.mock.calls
+      .filter(([called]) => called === bucket)
+      .map(([, prefix]) => prefix);
 
   it('runs the full flow in order: storage purge → anonymize → analytics → auth deletion', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
@@ -134,6 +146,8 @@ describe('AccountDeletionService', () => {
     expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
     expect(callOrder).toEqual([
       'listFiles',
+      'deleteFiles',
+      'listReports',
       'deleteFiles',
       'anonymize',
       'forgetUser',
@@ -165,11 +179,62 @@ describe('AccountDeletionService', () => {
 
     await service.deleteAccount('user-1');
 
-    expect(mockStorage.listFiles).toHaveBeenCalledTimes(2);
-    expect(mockStorage.listFiles).toHaveBeenCalledWith(
-      'profiles',
+    expect(listedPrefixes('profiles')).toEqual([
+      'chapters/chapter-a/profiles/user-1',
       'chapters/chapter-b/profiles/user-1',
+    ]);
+  });
+
+  it('purges generated reports for every chapter the member belonged to', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockMemberRepo.findByUser.mockResolvedValue([
+      membership('chapter-a'),
+      membership('chapter-b'),
+    ]);
+
+    await service.deleteAccount('user-1');
+
+    // A rendered PDF cannot have one member removed from it, so erasure drops
+    // the chapter's whole report prefix — safe because exports are derived
+    // artifacts, regenerable from the source tables.
+    expect(listedPrefixes('reports')).toEqual([
+      'chapters/chapter-a/reports',
+      'chapters/chapter-b/reports',
+    ]);
+    expect(mockStorage.deleteFiles).toHaveBeenCalledWith('reports', [
+      'chapters/chapter-a/reports/pic.png',
+    ]);
+  });
+
+  it('aborts before the scrub when the report purge fails', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockStorage.listFiles.mockImplementation(async (bucket, prefix) => {
+      if (bucket === 'reports') throw new Error('reports listing 500');
+      return [`${prefix}/pic.png`];
+    });
+
+    // Reports carry the same PII as avatars, so a failure to purge them must
+    // abort the flow rather than let it report success over surviving data.
+    await expect(service.deleteAccount('user-1')).rejects.toThrow(
+      BadGatewayException,
     );
+    expect(mockUserRepo.anonymize).not.toHaveBeenCalled();
+    expect(mockAuthAdmin.deleteAuthUser).not.toHaveBeenCalled();
+  });
+
+  it('skips the report delete for a chapter with no exports', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockStorage.listFiles.mockImplementation(async (bucket, prefix) =>
+      bucket === 'reports' ? [] : [`${prefix}/pic.png`],
+    );
+
+    await service.deleteAccount('user-1');
+
+    expect(mockStorage.deleteFiles).not.toHaveBeenCalledWith(
+      'reports',
+      expect.anything(),
+    );
+    expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
   });
 
   it('also purges the avatar_url folder when it lives in a chapter the user has left', async () => {
@@ -215,11 +280,9 @@ describe('AccountDeletionService', () => {
 
     await service.deleteAccount('user-1');
 
-    expect(mockStorage.listFiles).toHaveBeenCalledTimes(1);
-    expect(mockStorage.listFiles).toHaveBeenCalledWith(
-      'profiles',
+    expect(listedPrefixes('profiles')).toEqual([
       'chapters/chapter-a/profiles/user-1',
-    );
+    ]);
   });
 
   it.each([
@@ -241,11 +304,9 @@ describe('AccountDeletionService', () => {
       await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
 
       // Only the membership-derived prefix is swept; the bad value is ignored.
-      expect(mockStorage.listFiles).toHaveBeenCalledTimes(1);
-      expect(mockStorage.listFiles).toHaveBeenCalledWith(
-        'profiles',
+      expect(listedPrefixes('profiles')).toEqual([
         'chapters/chapter-a/profiles/user-1',
-      );
+      ]);
     },
   );
 

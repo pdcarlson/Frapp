@@ -140,10 +140,7 @@ export class SupabaseStorageService implements IStorageProvider {
     return objects.map((object) => object.path);
   }
 
-  async listObjects(
-    bucket: string,
-    prefix: string,
-  ): Promise<StorageObject[]> {
+  async listObjects(bucket: string, prefix: string): Promise<StorageObject[]> {
     assertSafePrefix(prefix);
     // `list` returns names relative to the prefix and only for the immediate
     // folder level — enough for the flat `<prefix>/<filename>` layouts this
