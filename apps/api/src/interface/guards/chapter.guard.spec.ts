@@ -8,6 +8,7 @@ import {
   SUBSCRIPTION_FREE_TIER_KEY,
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
+import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
 describe('ChapterGuard', () => {
@@ -53,6 +54,7 @@ describe('ChapterGuard', () => {
     chapter?: {
       subscription_status: SubscriptionStatus;
       past_due_since?: string | null;
+      enabled_modules?: Record<string, boolean> | null;
     } | null;
     /** Rows returned by the auto-resolve lookup (`.eq(user_id).limit(2)`). */
     memberships?: Array<{
@@ -537,6 +539,131 @@ describe('ChapterGuard', () => {
           guard.canActivate(mockExecutionContext(request)),
         ).resolves.toBe(true);
       });
+    });
+  });
+
+  // #264: the web client hides disabled modules from the sidebar, the Cmd+K
+  // menu, and the slash palette, but a direct API call bypasses all three.
+  // spec/product/modules.md: "Data is preserved — re-enabling restores
+  // access", so this gates writes only.
+  describe('module enforcement', () => {
+    const withModules = (
+      enabled_modules: Record<string, boolean> | null,
+      status: SubscriptionStatus = 'active',
+    ) =>
+      mockSupabaseChain({
+        appUser: { id: 'user-1' },
+        member: { id: 'member-1', role_ids: ['role-1'] },
+        chapter: { subscription_status: status, enabled_modules },
+      });
+
+    /** Stands in for `@RequireModule(key)` on the handler/controller. */
+    const requiresModule = (key: string) =>
+      jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation((metadataKey) =>
+          metadataKey === REQUIRED_MODULE_KEY ? key : undefined,
+        );
+
+    it('rejects a write to an explicitly disabled module', async () => {
+      withModules({ events: false });
+      requiresModule('events');
+      const request = buildRequest({ method: 'POST' });
+
+      await expect(
+        guard.canActivate(mockExecutionContext(request)),
+      ).rejects.toMatchObject({
+        response: { code: 'chapter.module.disabled' },
+        status: 403,
+      });
+    });
+
+    it.each(['POST', 'PATCH', 'PUT', 'DELETE'])(
+      'rejects %s to a disabled module',
+      async (method) => {
+        withModules({ points: false });
+        requiresModule('points');
+
+        await expect(
+          guard.canActivate(mockExecutionContext(buildRequest({ method }))),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+      },
+    );
+
+    // The toggle hides and freezes a surface; it must not strand the
+    // chapter's existing data behind it, or re-enabling could not restore it.
+    it.each(['GET', 'HEAD', 'OPTIONS'])(
+      'allows %s on a disabled module so data stays readable',
+      async (method) => {
+        withModules({ events: false });
+        requiresModule('events');
+
+        await expect(
+          guard.canActivate(mockExecutionContext(buildRequest({ method }))),
+        ).resolves.toBe(true);
+      },
+    );
+
+    it('allows a write when the module is explicitly enabled', async () => {
+      withModules({ events: true });
+      requiresModule('events');
+
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+      ).resolves.toBe(true);
+    });
+
+    // Mirrors the client contract in use-org-config.ts: enabled unless the
+    // chapter explicitly said false. A chapter predating a module has no key
+    // for it and must not be locked out of something it never turned off.
+    it('treats a module absent from enabled_modules as enabled', async () => {
+      withModules({ tasks: false });
+      requiresModule('events');
+
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+      ).resolves.toBe(true);
+    });
+
+    it('treats a null enabled_modules column as all-enabled', async () => {
+      withModules(null);
+      requiresModule('events');
+
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+      ).resolves.toBe(true);
+    });
+
+    it('leaves undecorated routes alone even when modules are disabled', async () => {
+      withModules({ events: false, points: false });
+      jest.spyOn(reflector, 'getAllAndOverride').mockReturnValue(undefined);
+
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+      ).resolves.toBe(true);
+    });
+
+    // Billing state is the more actionable error, and a module toggle is
+    // meaningless while every write is already locked.
+    it('reports the subscription failure first when both would reject', async () => {
+      withModules({ events: false }, 'canceled');
+      requiresModule('events');
+
+      await expect(
+        guard.canActivate(mockExecutionContext(buildRequest({ method: 'POST' }))),
+      ).rejects.toMatchObject({
+        response: { code: 'chapter.subscription.canceled' },
+      });
+    });
+
+    it('selects enabled_modules in the chapter projection', async () => {
+      const { selectArgs } = withModules({ events: true });
+      requiresModule('events');
+
+      await guard.canActivate(
+        mockExecutionContext(buildRequest({ method: 'POST' })),
+      );
+      expect(selectArgs['chapters']?.[0]).toContain('enabled_modules');
     });
   });
 });

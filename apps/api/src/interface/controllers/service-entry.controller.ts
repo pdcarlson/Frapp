@@ -25,6 +25,7 @@ import {
   RequirePermissions,
   RequireAnyOfPermissions,
 } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -39,6 +40,7 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 @ApiTags('Service Entries')
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard)
+@RequireModule('hours')
 @Controller('service-entries')
 export class ServiceEntryController {
   constructor(
