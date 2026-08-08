@@ -28,13 +28,15 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 ### Changes
 
-- **Root `overrides`** (in `package.json`) force patched versions of transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces. The `@xmldom/xmldom` override uses an unbounded floor (`>=0.8.13`) so consumers that declared a higher major (`jsdom@29`, `expo-server-sdk@5`, `plist@3`) retain it. The `undici` override is bounded — `>=6.24.0 <8.0.0` — because undici `8.x` raises its engine to `node>=22.19.0`, which trips `EBADENGINE` and crashes `npm ci` in the `node:20-alpine` Docker base used by `apps/api`. **Only lift the `<8.0.0` cap after** the repo's `engines.node` is bumped to `>=22.19.0`, the `apps/api` Dockerfile base image is moved off `node:20-alpine`, and CI's `setup-node` matrix is updated to match.
+- **Root `overrides`** (in `package.json`) force patched versions of transitive packages without requiring upstream releases. The override pattern is the canonical lever for transitive CVEs in this monorepo — extend it rather than patching individual workspaces. The `@xmldom/xmldom` override uses an unbounded floor (`>=0.8.13`) so consumers that declared a higher major (`jsdom@29`, `expo-server-sdk@5`, `plist@3`) retain it. The `undici` override is bounded — `>=7.29.0 <8.0.0` — because undici `8.x` raises its engine to `node>=22.19.0`, which trips `EBADENGINE` and crashes `npm ci` in the `node:20-alpine` Docker base used by `apps/api`. **Only lift the `<8.0.0` cap after** the repo's `engines.node` is bumped to `>=22.19.0`, the `apps/api` Dockerfile base image is moved off `node:20-alpine`, and CI's `setup-node` matrix is updated to match. The floor was raised from `>=6.24.0` in #699 — see [undici floor](#undici-floor-raised-off-the-vulnerable-7x-band-699) below. Note the floor is only a *lower* bound on an override npm always resolves to the max of, so it does not by itself pick the version; it exists to stop a future resolution from sliding back under the advisory. undici `7.29.0` declares `engines.node >=20.18.1`, which every real runtime here satisfies (Docker `node:20-alpine`, all CI jobs on `node-version: 20`) even though root `engines.node` still reads `>=18`.
 - **`@nestjs/*` patch bumps** in `apps/api/package.json` (`@nestjs/common`, `@nestjs/core`, `@nestjs/platform-express`, `@nestjs/swagger`, `@nestjs/config`, `@nestjs/cli`, `@nestjs/schematics`, `@nestjs/testing`) close the direct-dep high CVEs (NestJS injection, lodash, path-to-regexp, multer). The `vite` and `lodash` advisories cleared via the NestJS / vite transitive bumps that rode along, not via overrides.
 - **`@infisical/cli`** kept pinned at `0.43.40` (matches main). Newer `0.43.80+` declares `tar ^7.5.13` natively but breaks the `apps/api` Docker build during the preinstall (`tar.x` extraction in `node:20-alpine` fails consistently). The two resulting high advisories (`@infisical/cli` and its nested `tar`) are accepted as **dev-only install-time exceptions** — `@infisical/cli` is a root `devDependencies` entry used only by `npm run dev:*` scripts and is excluded from production runtime by the `apps/api` Dockerfile `prod-deps` stage (`npm ci --omit=dev`).
 
 ### Result
 
-`npm audit`: **0 critical, 2 high (dev-only, see above), 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
+`npm audit` **at the time of #245**: **0 critical, 2 high (dev-only, see above), 26 moderate**. All 642 `apps/api` unit tests pass; full monorepo `check-types`, `lint`, and `apps/api` production build are clean.
+
+**Current baseline (re-measured 2026-08-08, at the head of #684/#699): 64 total — 4 critical, 22 high, 38 moderate, 0 low.** The drift since #245 is upstream advisory disclosure against dependencies this repo has not moved, not a regression introduced by a change here. The four criticals are `@xhmikosr/decompress`, `concurrently`, `shell-quote`, and `tar` — `concurrently` is a direct root `devDependencies` entry and is tracked in #730; the rest sit in the Expo/Metro and archive-extraction tooling trees. Treat *this* line as the posture of record, not the #245 line above it.
 
 ### Remaining moderate advisories (deferred, tracked as issues)
 
@@ -46,7 +48,37 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 ### Prevention
 
-When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** over per-workspace upgrades. Pin to the patched range cited in the advisory (e.g., `<=1.3.3` ⇒ override to `^1.4.0`) and re-run `rm package-lock.json && npm install` so the lockfile rebuilds against the new graph — a plain `npm install` will keep the old resolution.
+When `npm audit` flags transitive CVEs, prefer **`overrides` at the repo root** over per-workspace upgrades. Pin to the patched range cited in the advisory (e.g., `<=1.3.3` ⇒ override to `^1.4.0`), then re-resolve with **`npm update <pkg>`**.
+
+**Use `npm update <pkg>` — do not delete the lockfile.** Editing an override does *not* move an already-locked version: npm never re-checks a locked version against a *changed* override range, so `npm install`, `npm install --package-lock-only`, and even a clean `node_modules` rebuild all silently leave the old resolution in place. (Verified in #699: the undici override was narrowed to `>=7.29.0` and all three still resolved 7.26.0.) Deleting `package-lock.json` *does* apply the new override, but it re-resolves every range in the monorepo — measured at **356 unrelated packages** on one run, including `next`, `vite`, `prettier`, `eslint`, `@playwright/test`, and `@supabase/*`. That destroys the revert story and risks formatting, lint, and visual-snapshot failures unrelated to the advisory. `npm update <pkg>` re-resolves the named package against the new constraint and nothing else.
+
+**Check for a duplicate hoisted copy afterward.** An optional peer dependency can reintroduce the vulnerable version under a second path, leaving `npm audit` red even though the direct dependency was bumped. In #684, bumping `@nestjs/platform-express` alone left a second hoisted copy at the old version — pulled in by `@nestjs/core`'s optional peer on `@nestjs/platform-express@^11.0.0` — still carrying the vulnerable `multer`. Bumping the sibling packages in lockstep collapsed it. Confirm with `npm ls <pkg> --all` that exactly one version resolves, and remember `@nestjs/platform-express` pins `multer` **exactly**, so the fixing release must be found by walking versions rather than assuming a range floats.
+
+## multer / body-parser / undici advisory sweep (#684, #699)
+
+A second round of `overrides`/bump triage over the same tree as #245, closing 15 advisories. Both halves land in the same root `package-lock.json`, so they shipped as one diff rather than two PRs racing over the same regenerated file.
+
+### multer and body-parser cleared via a lockstep `@nestjs/*` bump (#684)
+
+`@nestjs/platform-express` pins `multer` **exactly**, not with a caret, so the fixing release had to be found by walking versions: `11.1.24` through `11.1.27` all pin `multer@2.1.1`; **`11.1.28` is the first to pin `2.2.0`**. That clears GHSA-72gw-mp4g-v24j (HIGH, DoS via deeply nested multipart field names) and GHSA-3p4h-7m6x-2hcm (MODERATE, incomplete cleanup of aborted uploads).
+
+Bumping `platform-express` alone was **not** sufficient, and this is the part worth remembering. `@nestjs/core` declares an *optional peer* dependency on `@nestjs/platform-express@^11.0.0`; with `core` still at `11.1.24`, npm satisfied that peer with a second, hoisted `platform-express@11.1.24` that kept the vulnerable `multer@2.1.1` in the tree. `npm audit` stayed red while the direct dependency looked fixed. Bumping `@nestjs/common`, `core`, `platform-express`, and `testing` together to `^11.1.28` collapses that back to a single hoisted copy. (This matches the lockstep set #245 already established for these packages.)
+
+`body-parser` rides the same `express@5.2.1` chain; GHSA-v422-hmwv-36x6 (LOW, size enforcement silently disabled by an invalid `limit`) clears at `2.3.0`, which express's existing `^2.2.1` range already permitted. The Stripe `rawBody: true` path (`apps/api/src/main.ts`, consumed by `stripe-webhook.guard.ts`) is unaffected — body-parser's `verify`-callback contract is unchanged across 2.2.2 → 2.3.0.
+
+The declared floor was moved to `^11.1.28` rather than left at `^11.1.24`. The old range already *permitted* 11.1.28, so `npm ci` would have installed the patched tree either way — but because Nest pins `multer` exactly, any fresh resolution under `^11.1.24` is free to land back on 11.1.24 and silently reintroduce `multer@2.1.1`. The floor is what records the security intent.
+
+### undici floor raised off the vulnerable 7.x band (#699)
+
+The `overrides.undici` range was `>=6.24.0 <8.0.0` — a floor four minors *below* the patched release — so it still resolved `7.26.0`, squarely inside the vulnerable 7.0.0–7.28.0 band, defeating the point of having pinned an override at all. Narrowed to `>=7.29.0 <8.0.0`, clearing 12 advisories including TLS certificate-validation bypass via SOCKS5 ProxyAgent, HTTP header injection via `Set-Cookie` percent-decoding, cross-user cache poisoning, and response-queue poisoning via keep-alive socket reuse. **Four of the twelve have range `<7.29.0`, so `7.28.x` would not have sufficed.**
+
+undici reaches the *production* image (`apps/api` → `expo-server-sdk` → `undici`), not just test tooling, so this floor is load-bearing for the deployed artifact. The `<8.0.0` ceiling is retained for the `node:20-alpine` engine reason recorded above.
+
+### Result
+
+`multer`, `body-parser`, and `undici` are all absent from `npm audit` at the head of this work, with no new advisory introduced (`low` went 1 → 0; `high` 25 → 22). Lockfile drift was held to the 7 intended packages — the four `@nestjs/*`, `multer`, `body-parser`, `undici` — plus two drops, `@nuxt/opencollective` and `consola`, which fall out because newer `@nestjs/core` removed its donation-banner postinstall (also removing a `hasInstallScript` from the production image).
+
+Verified: `npm ci` in sync, `check-types` 16/16, `lint` 16/16 (0 errors), `nest build`, 1479 `apps/api` unit tests, 152 ai-evals, 175 web, 4 landing, plus `check:brand-assets`, `check:migration-safety`, and `check:api-contract`. The API was booted against the local sandbox and served HTTP on the new stack.
 
 > **Two corrections to the above, learned in #291 — read before deleting the lockfile.** Overrides do *not* move an existing **peer** resolution, and a full `rm package-lock.json` rebuild **drops the optional platform binaries for every host except the one that ran it**. Delete just the offending entries and run `npm install --package-lock-only` instead. See "Next.js advisory cleanup" below.
 
