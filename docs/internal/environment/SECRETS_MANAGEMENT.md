@@ -166,7 +166,8 @@ Once the `@infisical/secrets-action` is integrated into the deploy workflow, the
 | Preflight result                       | Meaning                                                                                          | Fix                                                                                       |
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as a repository secret, or as an environment secret on `staging` / `production`    |
-| **Passes**, then injection 401s        | The credentials exist but Infisical rejected them — revoked, rotated, or expired client secret  | Rotate the machine identity's universal-auth client secret and update the GitHub secrets  |
+| **Passes with a whitespace warning**, then 401 | A value carries a stray leading or trailing character — usually a newline picked up when pasting | Re-paste both secrets in GitHub *before* rotating anything in Infisical                    |
+| **Passes** cleanly, then injection 401s | The credentials exist and are well-formed, but Infisical rejected them — revoked, rotated, or expired client secret | Rotate the machine identity's universal-auth client secret and update the GitHub secrets  |
 
 Note that a `Deploy API` run is reported green whenever the `check-changes` path gate skips all four deploy jobs, so a mostly-green run history does **not** mean the injection step works — only runs that touch `apps/api/` or `supabase/migrations/` exercise it. See [issue #696](https://github.com/pdcarlson/Frapp/issues/696), where that distinction hid a 100% injection failure rate for 71 days.
 

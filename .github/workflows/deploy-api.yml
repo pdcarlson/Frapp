@@ -85,6 +85,9 @@ jobs:
             echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
             exit 1
           fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
           echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
 
       - name: Inject staging deploy secrets from Infisical
@@ -144,6 +147,9 @@ jobs:
             echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'production' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
             exit 1
           fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
           echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
 
       - name: Inject production deploy secrets from Infisical
@@ -192,6 +198,9 @@ jobs:
             echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
             exit 1
           fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
           echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
 
       - name: Inject staging deploy secrets from Infisical
@@ -259,6 +268,9 @@ jobs:
             echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'production' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
             exit 1
           fi
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
           echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
 
       - name: Inject production deploy secrets from Infisical
