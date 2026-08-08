@@ -346,6 +346,13 @@ describe("useNotificationPreferencesSync", () => {
   // hold a zone `Intl` cannot resolve. Re-enabling replays the stored window
   // verbatim, so echoing one back now earns a 400 — and since retrying re-reads
   // the same unchanged row, the toggle wedges in the retry state permanently.
+  //
+  // These pin the substitution itself, which was untested. What they cannot pin
+  // is the fail-OPEN choice inside `isSupportedTimeZone`: it only diverges on a
+  // runtime whose `Intl` resolves no zones, and `RUNTIME_RESOLVES_ZONES` is
+  // computed at module load, so reproducing it would mean stubbing `Intl`
+  // before import. On any runtime CI or a real device actually has, fail-open
+  // and fail-closed are indistinguishable here.
   it("substitutes a resolvable zone rather than replaying an unresolvable stored one", async () => {
     mockState.secureStoreToken = "test-token";
 

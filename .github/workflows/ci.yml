@@ -124,6 +124,12 @@ jobs:
       - name: Landing unit tests
         run: npm run test -w apps/landing
 
+      # `@repo/validation` is consumed by the API, web, and mobile, so a
+      # regression in it ships to all three. It had no suite until #687 added
+      # one, and an unrun suite protects nothing.
+      - name: Shared validation package tests
+        run: npm run test -w @repo/validation
+
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 
@@ -360,6 +366,12 @@ jobs:
 
       - name: Type check mobile
         run: npm run check-types -w apps/mobile
+
+      # The mobile suite existed but ran nowhere, so its guards were free to
+      # regress silently — #687 found one that had (reverting the quiet-hours
+      # zone guard left every test green).
+      - name: Mobile unit tests
+        run: npm run test -w apps/mobile
 
   # ── Deploy-gate script unit tests ───────────────────────────────────────
   ci-scripts-tests:

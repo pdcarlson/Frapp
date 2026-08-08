@@ -26,11 +26,13 @@ describe("isSupportedTimeZone", () => {
     expect(isSupportedTimeZone({})).toBe(false);
   });
 
-  it("bounds length so an oversized value cannot reach the column", () => {
-    expect(isSupportedTimeZone("A".repeat(MAX_TIME_ZONE_LENGTH + 1))).toBe(
-      false,
-    );
-  });
+  // Deliberately not asserted here: that the length bound *specifically* is
+  // what rejects an oversized value. No resolvable zone is longer than
+  // MAX_TIME_ZONE_LENGTH, so an over-length string is always unresolvable too
+  // and the bound is not independently observable through this function — a
+  // test claiming otherwise would pass whether or not the guard existed. The
+  // bound that actually protects the column is `@MaxLength` on the DTO, which
+  // apps/api/src/interface/dtos/notification.dto.spec.ts covers.
 
   it("ignores surrounding whitespace", () => {
     expect(isSupportedTimeZone("  America/New_York  ")).toBe(true);
