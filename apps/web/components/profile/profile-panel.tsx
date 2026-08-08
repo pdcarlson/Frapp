@@ -127,16 +127,25 @@ export function ProfilePanel() {
   async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      // Three states, not two. `undefined` means the draft never loaded this
-      // field, and it must stay `undefined` so the PATCH omits it and the server
-      // keeps what it has — collapsing that into `null` would clear the member's
-      // stored zone, which is the same absent-vs-cleared confusion the server
-      // side of this change fixes. Only a value the member actually saw may
-      // become an explicit `null` (blank = clear, so someone holding an
-      // unusable zone can always save their way out of it).
+      // Validate only what the member typed; never re-judge what the server
+      // stored. Two distinct reasons to leave the field alone:
+      //
+      //   - `undefined` — the draft never loaded it. It must stay `undefined` so
+      //     the PATCH omits it, or we would tell the server to clear a zone we
+      //     never showed anyone.
+      //   - unchanged from the server's value — this browser's tzdata can be
+      //     older than the server's, so our verdict on a stored zone can be a
+      //     confident false negative. Blocking on it would abort the whole save
+      //     over a field the member never touched, and "fixing" it would
+      //     overwrite a zone the server considers perfectly valid.
+      //
+      // A value the member actually edited is ours to check (blank = clear, so
+      // someone holding an unusable zone can always save their way out of it).
       const rawTz = settingsDraft.quiet_hours_tz;
+      const serverTz = (settingsQuery.data as UserSettings | undefined)
+        ?.quiet_hours_tz;
       let tz: string | null | undefined;
-      if (rawTz === undefined) {
+      if (rawTz === undefined || rawTz === serverTz) {
         tz = undefined;
       } else {
         tz = normalizeTimeZoneInput(rawTz);

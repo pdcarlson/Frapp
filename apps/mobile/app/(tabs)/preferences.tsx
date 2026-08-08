@@ -10,7 +10,7 @@ import {
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { FrappTokens } from "@repo/theme/tokens";
-import { isSupportedTimeZone } from "@repo/validation";
+import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 import {
   type PreferenceState,
@@ -130,11 +130,24 @@ function QuietHoursCard({
     setDraft(quietHoursWindow);
   }, [quietHoursWindow]);
 
-  const draftIsValid =
-    isValidTimeInput(draft.start.trim()) &&
-    isValidTimeInput(draft.end.trim()) &&
-    draft.tz.trim().length > 0 &&
-    isSupportedTimeZone(draft.tz.trim());
+  // Validate only what the member typed. A stored zone arrives here already
+  // accepted by the server, and this device's tzdata can be older than the
+  // server's — so running our own resolvability check over it produces a
+  // confident false negative (`Europe/Kyiv` on a build that knows only
+  // `Europe/Kiev`). That would strand the member twice over: `commitDraft`
+  // reverts on every blur, so they could not edit their times at all, and the
+  // only way out — retyping a zone this device knows — would overwrite their
+  // correct zone on every other device. Structural checks still apply, because
+  // blank and over-length are wrong on any device.
+  const trimmedTz = draft.tz.trim();
+  const tzEdited = trimmedTz !== quietHoursWindow.tz.trim();
+  const tzIsValid =
+    trimmedTz.length > 0 &&
+    trimmedTz.length <= MAX_TIME_ZONE_LENGTH &&
+    (!tzEdited || isSupportedTimeZone(trimmedTz));
+  const timesAreValid =
+    isValidTimeInput(draft.start.trim()) && isValidTimeInput(draft.end.trim());
+  const draftIsValid = timesAreValid && tzIsValid;
 
   const commitDraft = () => {
     if (!draftIsValid) {
@@ -234,11 +247,13 @@ function QuietHoursCard({
           draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError
         }
       >
-        {!draftIsValid
-          ? "Use 24-hour HH:mm times (e.g. 21:00) and an IANA timezone."
-          : enabled
-            ? "Applies to this account on every device."
-            : "Saved for when you turn quiet hours back on."}
+        {!timesAreValid
+          ? "Use 24-hour HH:mm times (e.g. 21:00)."
+          : !tzIsValid
+            ? "Enter a timezone name like America/Chicago."
+            : enabled
+              ? "Applies to this account on every device."
+              : "Saved for when you turn quiet hours back on."}
       </Text>
     </View>
   );

@@ -80,7 +80,10 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     expect(lastSettingsBody().quiet_hours_tz).not.toBeNull();
   });
 
-  it("sends the stored zone unchanged when the member edits nothing else", async () => {
+  // Omitted, not echoed. Re-sending a value the member never touched is how a
+  // client ends up overwriting the server with its own stale idea of it; the
+  // server already has this zone and nothing here should restate it.
+  it("omits an untouched stored zone so the server keeps its own value", async () => {
     mocks.settingsQuery.data = {
       quiet_hours_start: "22:00",
       quiet_hours_end: "08:00",
@@ -95,7 +98,27 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     await savePreferences();
 
     await waitFor(() => {
-      expect(lastSettingsBody()?.quiet_hours_tz).toBe("America/New_York");
+      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
+    });
+    expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
+  });
+
+  it("sends the edited zone when the member changes it to a valid one", async () => {
+    mocks.settingsQuery.data = {
+      quiet_hours_start: "22:00",
+      quiet_hours_end: "08:00",
+      quiet_hours_tz: "America/New_York",
+      theme: "system",
+    };
+    render(<ProfilePanel />);
+
+    const input = await screen.findByDisplayValue("America/New_York");
+    await userEvent.clear(input);
+    await userEvent.type(input, "Europe/Berlin");
+    await savePreferences();
+
+    await waitFor(() => {
+      expect(lastSettingsBody()?.quiet_hours_tz).toBe("Europe/Berlin");
     });
   });
 
@@ -117,6 +140,33 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     await waitFor(() => {
       expect(lastSettingsBody()?.quiet_hours_tz).toBeNull();
     });
+  });
+
+  // This browser's tzdata can be older than the server's, so our verdict on a
+  // zone we never showed the member being edited is unreliable. Judging it would
+  // abort the whole save over an untouched field — and "fixing" it would
+  // overwrite a zone the server considers valid, on every device.
+  it("does not judge an untouched stored zone this browser cannot resolve", async () => {
+    mocks.settingsQuery.data = {
+      quiet_hours_start: "22:00",
+      quiet_hours_end: "08:00",
+      quiet_hours_tz: "Mars/Olympus",
+      theme: "system",
+    };
+    render(<ProfilePanel />);
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Mars/Olympus")).toBeTruthy();
+    });
+    await savePreferences();
+
+    // The save goes through, and the untouched zone is omitted rather than
+    // cleared or rewritten — the server keeps what it has.
+    await waitFor(() => {
+      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
+    });
+    expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
+    expect(screen.queryByText(/time zone this server recognizes/i)).toBeNull();
   });
 
   it("blocks the save and explains when the zone cannot be resolved", async () => {
