@@ -307,8 +307,14 @@ export function ReportsPage() {
           ? `${reportLabel[kind]} PDF ready — incomplete`
           : `${reportLabel[kind]} PDF ready`,
         variant: payload.truncated ? "destructive" : undefined,
+        // Prefer the server's note over the row cap. A roster truncated by the
+        // transaction read is the right length with wrong balances, so quoting
+        // a row limit it never reached reads as a false positive.
         description: payload.truncated
-          ? `Capped at ${payload.row_limit.toLocaleString()} rows, so this document is not a complete record of the chapter. The download link expires in one hour.`
+          ? `${
+              payload.truncation_note ??
+              `Capped at ${payload.row_limit.toLocaleString()} rows`
+            }, so this document is not a complete record of the chapter. The download link expires in one hour.`
           : `${payload.row_count} row${
               payload.row_count === 1 ? "" : "s"
             } exported. The download link expires in one hour.`,

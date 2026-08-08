@@ -29,6 +29,12 @@ export interface ReportExportEnvelope {
   truncated: boolean;
   /** The ceiling `truncated` refers to. */
   row_limit: number;
+  /**
+   * What was cut, when the row count alone does not say it — a roster whose
+   * point balances were summed from a truncated read is the right length, so
+   * `row_limit` on its own would describe a cut the document never took.
+   */
+  truncation_note?: string;
 }
 
 /** Narrow a report response to the PDF envelope. */

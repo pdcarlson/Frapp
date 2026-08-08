@@ -78,6 +78,18 @@ interface QueryResult<T> {
 const REPORT_PAGE_SIZE = 1000;
 
 /**
+ * Page size for reads whose pages are expensive to produce — currently just
+ * the points RPC, which Postgres re-aggregates on every page.
+ *
+ * Those reads end on a short page rather than paying for a trailing empty one,
+ * and a short page only means "the rows ran out" while the server could have
+ * returned more. So unlike {@link REPORT_PAGE_SIZE} this one *is* an assumption
+ * about `max_rows`, and is held deliberately below it — the same trade
+ * `scheduled-jobs.repository.ts` makes, for the same reason.
+ */
+const REPORT_RPC_PAGE_SIZE = 500;
+
+/**
  * Hard ceiling on the rows one report may return, in every format.
  *
  * Set by the PDF path, which is the expensive one and the reason a bound
@@ -169,7 +181,6 @@ export interface ReportResult<T> {
 interface AttendanceJoinedRow {
   status: string;
   check_in_time: string | null;
-  event_id: string;
   events: { id: string; name: string; start_time: string } | null;
   users: { display_name: string } | null;
 }
@@ -245,13 +256,32 @@ function throwIfError(error: QueryError | null): void {
  */
 async function fetchAllPages<T>(
   page: (from: number, to: number) => PromiseLike<QueryResult<T>>,
-  limit: number = REPORT_MAX_ROWS,
+  {
+    limit = REPORT_MAX_ROWS,
+    pageSize = REPORT_PAGE_SIZE,
+    stopOnShortPage = false,
+  }: {
+    limit?: number;
+    pageSize?: number;
+    /**
+     * End on a *short* page instead of issuing the trailing empty one.
+     *
+     * Only for sources where a page is expensive to produce. The trailing
+     * request is cheap against a table — an indexed range scan returning
+     * nothing — but PostgREST applies `LIMIT`/`OFFSET` *outside* a function
+     * call, so an empty page from an RPC still re-runs the whole function.
+     * Callers that set this must keep `pageSize` below the server's `max_rows`,
+     * because a short page is only unambiguous when the server could have
+     * returned more.
+     */
+    stopOnShortPage?: boolean;
+  } = {},
 ): Promise<ReportResult<T>> {
   const readLimit = limit + 1;
   const rows: T[] = [];
 
   for (let from = 0; from < readLimit; ) {
-    const to = Math.min(from + REPORT_PAGE_SIZE, readLimit) - 1;
+    const to = Math.min(from + pageSize, readLimit) - 1;
     const { data, error } = await page(from, to);
     throwIfError(error);
 
@@ -267,6 +297,7 @@ async function fetchAllPages<T>(
     // hundreds of milliseconds, so a round-trip is a cheap price for not
     // having to be right about a server setting this file cannot read.
     if (batch.length === 0) break;
+    if (stopOnShortPage && batch.length < to - from + 1) break;
     // Advance by what arrived, never by what was asked for: if the server
     // capped the page, the un-returned tail of the requested window has not
     // been read yet and stepping over it would drop those rows outright.
@@ -397,11 +428,20 @@ export class ReportService {
     });
 
     // An RPC result set is subject to `max_rows` exactly like a table read, so
-    // this pages too. `member_name` is the only orderable column the function
-    // returns — it exposes no key — so two members sharing a display name
-    // across a page boundary is an ordering tie this cannot break. That needs
-    // >1000 members in one chapter to reach; carrying `user_id` out of the RPC
-    // is tracked separately (#747).
+    // this pages too — but not on the same terms. PostgREST applies
+    // `LIMIT`/`OFFSET` *outside* the function call, so every page re-runs
+    // `get_points_report` in full: a `GROUP BY` over the chapter's entire
+    // `point_transactions`. The trailing empty request that ends a table read
+    // would therefore double the cost of the report for every chapter under
+    // one page — which is all of them — so this read ends on a short page
+    // instead, with a page size held below `max_rows` to keep "short"
+    // unambiguous.
+    //
+    // `member_name` is also the only orderable column the function returns —
+    // it exposes no key — so two members sharing a display name across a page
+    // boundary is an ordering tie this cannot break. Reaching that needs more
+    // members in one chapter than a page holds; carrying `user_id` out of the
+    // RPC is tracked separately (#747).
     const { rows, truncated } = await fetchAllPages<PointsReportRpcRow>(
       (from, to) =>
         this.supabase
@@ -412,6 +452,7 @@ export class ReportService {
           })
           .order('member_name', { ascending: true })
           .range(from, to) as PromiseLike<QueryResult<PointsReportRpcRow>>,
+      { pageSize: REPORT_RPC_PAGE_SIZE, stopOnShortPage: true },
     );
 
     return {
@@ -467,7 +508,7 @@ export class ReportService {
           .eq('chapter_id', chapterId)
           .order('id', { ascending: true })
           .range(from, to),
-      REPORT_AGGREGATE_MAX_ROWS,
+      { limit: REPORT_AGGREGATE_MAX_ROWS },
     );
 
     const [userPages, transactions] = await Promise.all([
@@ -530,15 +571,21 @@ export class ReportService {
     // the right length carrying *wrong* balances, which no row count reveals.
     // It counts as truncation so the report still declares itself incomplete,
     // but it reports its own ceiling and says which field is wrong: labelling
-    // a complete 300-line roster "capped at 20,000 rows" reads as a false
+    // a complete 300-line roster "capped at 5,000 rows" reads as a false
     // positive, and the reader goes looking for missing members instead of
     // distrusting the balances.
     if (transactions.truncated) {
+      const balanceNote = `point balances are incomplete — summed from the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} transactions`;
       return {
         rows,
         truncated: true,
-        limit: REPORT_AGGREGATE_MAX_ROWS,
-        note: `point balances are incomplete — summed from the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} transactions`,
+        // Both ceilings can bite at once. Reporting only the aggregate one
+        // would leave the roster's own cut unmentioned, so the row limit stays
+        // the headline whenever it applied and the balances ride in the note.
+        limit: membersTruncated ? REPORT_MAX_ROWS : REPORT_AGGREGATE_MAX_ROWS,
+        note: membersTruncated
+          ? `roster capped at ${REPORT_MAX_ROWS.toLocaleString('en-US')} members, and ${balanceNote}`
+          : balanceNote,
       };
     }
     return { rows, truncated: membersTruncated, limit: REPORT_MAX_ROWS };

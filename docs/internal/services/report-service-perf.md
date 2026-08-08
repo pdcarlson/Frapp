@@ -37,6 +37,14 @@ introduced — the ceiling is what keeps it bounded.
 
 Four consequences worth remembering when editing these queries:
 
+- **The points RPC pages on different terms.** PostgREST applies
+  `LIMIT`/`OFFSET` _outside_ a function call, so every page re-runs
+  `get_points_report` in full — a `GROUP BY` over the chapter's whole
+  `point_transactions`. The trailing empty request below would therefore
+  double the cost of the report for every chapter that fits in one page, which
+  is all of them, so that read ends on a _short_ page and uses a page size
+  (`REPORT_RPC_PAGE_SIZE`, 500) held below `max_rows` to keep "short"
+  unambiguous.
 - **The page size is a request, not an assumption.** `fetchAllPages` advances
   by however many rows came back and stops only on an _empty_ page, so a
   server whose `max_rows` is lower than `REPORT_PAGE_SIZE` costs extra

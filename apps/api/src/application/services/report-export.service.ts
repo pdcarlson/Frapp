@@ -46,6 +46,13 @@ export interface ReportExportResult {
   truncated: boolean;
   /** The ceiling `truncated` refers to. */
   row_limit: number;
+  /**
+   * What was cut, when the row count alone does not say it — a roster whose
+   * balances were summed from a truncated read is the right length, so
+   * `row_limit` on its own would describe a cut the document never took.
+   * Absent when the row count is the whole story.
+   */
+  truncation_note?: string;
 }
 
 @Injectable()
@@ -76,6 +83,7 @@ export class ReportExportService {
     subtitle?: string,
     truncated = false,
     rowLimit: number = REPORT_MAX_ROWS,
+    truncationNote?: string,
   ): Promise<ReportExportResult> {
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) throw new NotFoundException('Chapter not found');
@@ -123,6 +131,7 @@ export class ReportExportService {
       row_count: rows.length,
       truncated,
       row_limit: rowLimit,
+      truncation_note: truncationNote,
     };
   }
 

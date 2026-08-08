@@ -57,6 +57,7 @@ describe('ReportController', () => {
     row_count: 1,
     truncated: false,
     row_limit: REPORT_MAX_ROWS,
+    truncation_note: undefined,
   };
 
   beforeEach(async () => {
@@ -300,6 +301,23 @@ describe('ReportController', () => {
       expect(res.setHeader).toHaveBeenCalledWith('X-Report-Truncated', 'true');
     });
 
+    it('carries the note in a header so json/csv callers learn what was cut', async () => {
+      // Without this the only channel explaining "it is the balances, not the
+      // rows" is the PDF body, and a json/csv caller sees a row limit the
+      // report never reached.
+      reportService.getServiceReport.mockResolvedValue(
+        short([], 'point balances are incomplete'),
+      );
+      const res: any = { setHeader: jest.fn() };
+
+      await controller.service(chapterId, {}, 'csv', res);
+
+      expect(res.setHeader).toHaveBeenCalledWith(
+        'X-Report-Truncation-Note',
+        'point balances are incomplete',
+      );
+    });
+
     it('sets no truncation header on a complete report', async () => {
       reportService.getRosterReport.mockResolvedValue(complete([]));
       const res: any = { setHeader: jest.fn() };
@@ -341,6 +359,7 @@ describe('ReportController', () => {
         '2026-01-01 – 2026-05-31 · All events',
         false,
         REPORT_MAX_ROWS,
+        undefined,
       );
     });
 
@@ -357,6 +376,7 @@ describe('ReportController', () => {
         'All dates · Single event',
         false,
         REPORT_MAX_ROWS,
+        undefined,
       );
     });
 
@@ -373,6 +393,7 @@ describe('ReportController', () => {
         'Window: semester · All members',
         false,
         REPORT_MAX_ROWS,
+        undefined,
       );
     });
 
@@ -393,6 +414,7 @@ describe('ReportController', () => {
         'From 2026-03-01 · Single member',
         false,
         REPORT_MAX_ROWS,
+        undefined,
       );
     });
 
@@ -429,6 +451,7 @@ describe('ReportController', () => {
         'Current members · INCOMPLETE — point balances are incomplete — summed from the first 50,000 transactions',
         true,
         50_000,
+        'point balances are incomplete — summed from the first 50,000 transactions',
       );
       expect(res.setHeader).toHaveBeenCalledWith('X-Report-Row-Limit', '50000');
     });
@@ -453,6 +476,7 @@ describe('ReportController', () => {
         `2026-01-01 – 2026-05-31 · All events · INCOMPLETE — capped at the first ${REPORT_MAX_ROWS.toLocaleString('en-US')} rows`,
         true,
         REPORT_MAX_ROWS,
+        undefined,
       );
     });
 

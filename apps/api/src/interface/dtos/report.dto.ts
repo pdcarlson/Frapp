@@ -95,4 +95,13 @@ export class ReportExportResponseDto {
     example: 5000,
   })
   row_limit: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.',
+    example:
+      'point balances are incomplete — summed from the first 50,000 transactions',
+  })
+  truncation_note?: string;
 }

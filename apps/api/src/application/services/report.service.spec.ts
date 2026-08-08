@@ -548,6 +548,53 @@ describe('ReportService', () => {
     });
   });
 
+  describe('the points RPC is paged on different terms', () => {
+    it('issues a single call for a chapter that fits in one page', async () => {
+      // PostgREST applies LIMIT/OFFSET outside the function call, so an empty
+      // trailing page still re-runs get_points_report in full — a GROUP BY
+      // over the chapter's entire point_transactions. Ending on a short page
+      // instead is what keeps the ordinary report from costing double.
+      const rpcChain = makeChain({
+        data: rows(300, (i) => ({
+          member_name: `Member ${i}`,
+          total_points: 1,
+          breakdown_by_category: {},
+        })),
+        error: null,
+      });
+      (mockSupabase.rpc as jest.Mock).mockReturnValue(rpcChain);
+
+      const result = await service.getPointsReport('ch-1', {});
+
+      expect(result.rows).toHaveLength(300);
+      expect(result.truncated).toBe(false);
+      expect(mockSupabase.rpc as jest.Mock).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps paging while pages come back full', async () => {
+      const rpcChain = makeChain({
+        data: rows(1200, (i) => ({
+          member_name: `Member ${String(i).padStart(5, '0')}`,
+          total_points: 1,
+          breakdown_by_category: {},
+        })),
+        error: null,
+      });
+      (mockSupabase.rpc as jest.Mock).mockReturnValue(rpcChain);
+
+      const result = await service.getPointsReport('ch-1', {});
+
+      expect(result.rows).toHaveLength(1200);
+      expect(new Set(result.rows.map((r) => r.member_name)).size).toBe(1200);
+      // 500-row pages: two full, then a short one that ends the read.
+      expect((rpcChain as { ranges: [number, number][] }).ranges).toEqual([
+        [0, 499],
+        [500, 999],
+        [1000, 1499],
+      ]);
+    });
+  });
+
   describe('roster balances truncated by the aggregate ceiling', () => {
     it('reports its own ceiling and names the balances, not the row count', async () => {
       // The roster is complete at one line; only the balances are wrong.
@@ -584,6 +631,39 @@ describe('ReportService', () => {
       expect(result.rows).toHaveLength(1);
       expect(result.truncated).toBe(true);
       expect(result.limit).toBe(REPORT_AGGREGATE_MAX_ROWS);
+      expect(result.note).toContain('point balances are incomplete');
+    });
+
+    it('reports both cuts when the roster and the balances are each truncated', async () => {
+      // Reporting only the aggregate ceiling would leave the roster's own cut
+      // unmentioned, and hand back a limit the row count never reached.
+      const members = makeChain({
+        data: rows(REPORT_MAX_ROWS + 1, (i) => ({
+          user_id: `u-${i}`,
+          role_ids: [],
+          created_at: '2026-01-15T00:00:00Z',
+        })),
+        error: null,
+      });
+      const txns = makeChain({
+        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, () => ({
+          user_id: 'u-0',
+          amount: 1,
+        })),
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
+        if (t === 'members') return members;
+        if (t === 'point_transactions') return txns;
+        return makeChain({ data: [], error: null });
+      });
+
+      const result = await service.getRosterReport('ch-1');
+
+      expect(result.rows).toHaveLength(REPORT_MAX_ROWS);
+      expect(result.truncated).toBe(true);
+      expect(result.limit).toBe(REPORT_MAX_ROWS);
+      expect(result.note).toContain('roster capped at');
       expect(result.note).toContain('point balances are incomplete');
     });
   });

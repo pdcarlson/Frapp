@@ -30,11 +30,11 @@ Totals and per-category breakdowns for a given window **equal the leaderboard** 
 The `format` query parameter on each `POST /v1/reports/*` route selects how step 2
 answers:
 
-| `format`         | Response                                                                                                                                                                  |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `json` (default) | The report rows, for on-screen preview.                                                                                                                                   |
-| `csv`            | An inline `text/csv` body with a `Content-Disposition` attachment header.                                                                                                 |
-| `pdf`            | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count, truncated, row_limit }` — whose `url` is a **signed download URL valid for 1 hour**. |
+| `format`         | Response                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` (default) | The report rows, for on-screen preview.                                                                                                                                                     |
+| `csv`            | An inline `text/csv` body with a `Content-Disposition` attachment header.                                                                                                                   |
+| `pdf`            | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count, truncated, row_limit, truncation_note? }` — whose `url` is a **signed download URL valid for 1 hour**. |
 
 Only PDF takes the signed-URL path. Rendering a PDF is server-side work that
 produces a stored artifact, so the document is written to the private `reports`
@@ -111,11 +111,11 @@ limit that holds everywhere beats three that need explaining.
 
 When a report is cut short, every format says so:
 
-| Format | Signal                                                                                                                                      |
-| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers. The body stays a bare array.                                          |
-| `csv`  | The same two headers. The CSV body is unchanged, so parsers are unaffected.                                                                 |
-| `pdf`  | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line. |
+| Format | Signal                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers, plus `X-Report-Truncation-Note` when the row count alone does not explain the cut. The body stays a bare array. |
+| `csv`  | The same headers. The CSV body is unchanged, so parsers are unaffected.                                                                                                               |
+| `pdf`  | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                                           |
 
 Both headers are named in the API's CORS `exposedHeaders`; without that a
 browser would strip them and the dashboard — the caller most likely to forward
@@ -135,8 +135,9 @@ Three notes on what the numbers mean:
 - A roster's point balances are summed from `point_transactions`, which reads
   under a separate, higher ceiling of 50,000. If _that_ read is cut short the
   roster is not short — its balances are wrong — so it reports `truncated`
-  with **its own** limit and a note naming the balances, rather than a row cap
-  the document never reached.
+  with a note naming the balances rather than a row cap the document never
+  reached. When both ceilings bite at once the note says so and the row limit
+  stays the headline.
 - A paged read is several statements, not a snapshot. Rows written or deleted
   while a large report is being assembled can shift a page boundary, so a
   report is a point-in-time summary rather than a ledger.

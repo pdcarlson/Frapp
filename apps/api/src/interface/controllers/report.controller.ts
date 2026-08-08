@@ -54,6 +54,13 @@ const REPORT_FORMATS = ['json', 'csv', 'pdf'];
  */
 const TRUNCATED_HEADER = 'X-Report-Truncated';
 const ROW_LIMIT_HEADER = 'X-Report-Row-Limit';
+/**
+ * Carries `ReportResult.note` — what was cut, when the row count does not say
+ * it. Without this a roster whose *balances* were truncated would announce
+ * itself with nothing but a row cap the document never reached, which reads as
+ * a false positive on a report of the right length.
+ */
+const TRUNCATION_NOTE_HEADER = 'X-Report-Truncation-Note';
 
 const FORMAT_QUERY = {
   name: 'format',
@@ -263,6 +270,9 @@ export class ReportController {
       );
       res?.setHeader(TRUNCATED_HEADER, 'true');
       res?.setHeader(ROW_LIMIT_HEADER, String(result.limit));
+      if (result.note) {
+        res?.setHeader(TRUNCATION_NOTE_HEADER, result.note);
+      }
     }
 
     if (format === 'pdf') {
@@ -274,6 +284,7 @@ export class ReportController {
         scopeLine([subtitle(), truncationNotice(result)]),
         truncated,
         result.limit,
+        result.note,
       );
     }
 
