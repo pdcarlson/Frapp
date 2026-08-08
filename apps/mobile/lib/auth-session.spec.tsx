@@ -25,10 +25,13 @@ const mockState = vi.hoisted(() => ({
   signInWithOtpCalls: [] as Array<{ email: string }>,
   signOutCalls: 0,
   configured: true,
+  deepLinkUrl: null as string | null,
 }));
 
 vi.mock("expo-secure-store", () => ({
-  getItemAsync: vi.fn(async (key: string) => mockState.secureStore.get(key) ?? null),
+  getItemAsync: vi.fn(
+    async (key: string) => mockState.secureStore.get(key) ?? null,
+  ),
   setItemAsync: vi.fn(async (key: string, value: string) => {
     mockState.secureStore.set(key, value);
   }),
@@ -38,61 +41,64 @@ vi.mock("expo-secure-store", () => ({
 }));
 
 vi.mock("expo-linking", () => ({
-  useURL: vi.fn(() => null),
+  useURL: vi.fn(() => mockState.deepLinkUrl),
   createURL: vi.fn((path: string) => `frapp://${path}`),
 }));
 
 vi.mock("./supabase", async () => {
-  const actual = await vi.importActual<typeof import("./supabase")>("./supabase");
+  const actual =
+    await vi.importActual<typeof import("./supabase")>("./supabase");
+  // One client for the whole file. A factory that built a fresh object per call
+  // would hand the test a different instance than the provider holds, so every
+  // `expect(client.auth.X).toHaveBeenCalled()` would inspect an untouched mock
+  // and quietly pass or fail for the wrong reason.
+  const client = {
+    auth: {
+      getSession: vi.fn(async () => ({
+        data: { session: mockState.initialSession },
+      })),
+      onAuthStateChange: vi.fn((handler: AuthChangeHandler) => {
+        mockState.authChangeHandlers.push(handler);
+        return {
+          data: {
+            subscription: {
+              unsubscribe: vi.fn(() => {
+                mockState.authChangeHandlers =
+                  mockState.authChangeHandlers.filter((h) => h !== handler);
+              }),
+            },
+          },
+        };
+      }),
+      getClaims: vi.fn(async () => ({
+        data: mockState.claims ? { claims: mockState.claims } : null,
+        error: mockState.claimsError,
+      })),
+      signInWithPassword: vi.fn(
+        async (input: { email: string; password: string }) => {
+          mockState.signInWithPasswordCalls.push(input);
+          return mockState.signInWithPasswordResult;
+        },
+      ),
+      signInWithOtp: vi.fn(async (input: { email: string }) => {
+        mockState.signInWithOtpCalls.push(input);
+        return mockState.signInWithOtpResult;
+      }),
+      signOut: vi.fn(async () => {
+        mockState.signOutCalls += 1;
+        return { error: null };
+      }),
+      setSession: vi.fn(async () => ({ data: {}, error: null })),
+      exchangeCodeForSession: vi.fn(async () => ({ data: {}, error: null })),
+      startAutoRefresh: vi.fn(async () => undefined),
+      stopAutoRefresh: vi.fn(async () => undefined),
+    },
+  };
+
   return {
     ...actual,
     isSupabaseConfigured: vi.fn(() => mockState.configured),
-    getSupabaseClient: vi.fn(() =>
-      mockState.configured
-        ? {
-            auth: {
-              getSession: vi.fn(async () => ({
-                data: { session: mockState.initialSession },
-              })),
-              onAuthStateChange: vi.fn((handler: AuthChangeHandler) => {
-                mockState.authChangeHandlers.push(handler);
-                return {
-                  data: {
-                    subscription: {
-                      unsubscribe: vi.fn(() => {
-                        mockState.authChangeHandlers =
-                          mockState.authChangeHandlers.filter((h) => h !== handler);
-                      }),
-                    },
-                  },
-                };
-              }),
-              getClaims: vi.fn(async () => ({
-                data: mockState.claims ? { claims: mockState.claims } : null,
-                error: mockState.claimsError,
-              })),
-              signInWithPassword: vi.fn(
-                async (input: { email: string; password: string }) => {
-                  mockState.signInWithPasswordCalls.push(input);
-                  return mockState.signInWithPasswordResult;
-                },
-              ),
-              signInWithOtp: vi.fn(async (input: { email: string }) => {
-                mockState.signInWithOtpCalls.push(input);
-                return mockState.signInWithOtpResult;
-              }),
-              signOut: vi.fn(async () => {
-                mockState.signOutCalls += 1;
-                return { error: null };
-              }),
-              setSession: vi.fn(async () => ({ data: {}, error: null })),
-              exchangeCodeForSession: vi.fn(async () => ({ data: {}, error: null })),
-              startAutoRefresh: vi.fn(async () => undefined),
-              stopAutoRefresh: vi.fn(async () => undefined),
-            },
-          }
-        : null,
-    ),
+    getSupabaseClient: vi.fn(() => (mockState.configured ? client : null)),
   };
 });
 
@@ -118,7 +124,25 @@ const SESSION = {
   user: { email: "officer@university.edu" },
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  // Re-seat the Map-backed implementations: the hostile-keystore tests replace
+  // them with rejections, and clearAllMocks() clears calls but not
+  // implementations, so without this they leak into whatever runs next.
+  const SecureStore = await import("expo-secure-store");
+  vi.mocked(SecureStore.getItemAsync).mockImplementation(
+    async (key: string) => mockState.secureStore.get(key) ?? null,
+  );
+  vi.mocked(SecureStore.setItemAsync).mockImplementation(
+    async (key: string, value: string) => {
+      mockState.secureStore.set(key, value);
+    },
+  );
+  vi.mocked(SecureStore.deleteItemAsync).mockImplementation(
+    async (key: string) => {
+      mockState.secureStore.delete(key);
+    },
+  );
+
   mockState.secureStore.clear();
   mockState.initialSession = null;
   mockState.claims = null;
@@ -130,6 +154,7 @@ beforeEach(() => {
   mockState.signInWithOtpCalls = [];
   mockState.signOutCalls = 0;
   mockState.configured = true;
+  mockState.deepLinkUrl = null;
 });
 
 afterEach(() => {
@@ -239,7 +264,9 @@ describe("AuthSessionProvider — chapter context", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    await waitFor(() => expect(result.current.chapterId).toBe("chapter-uuid-1"));
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
   });
 
   it("resolves null when the claim is absent (multi-chapter, no selection)", async () => {
@@ -321,6 +348,99 @@ describe("AuthSessionProvider — sign-in", () => {
   });
 });
 
+describe("AuthSessionProvider — magic-link callback", () => {
+  it("exchanges tokens from the URL fragment", async () => {
+    mockState.deepLinkUrl =
+      "frapp://#access_token=deep-link-token&refresh_token=deep-refresh";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    await waitFor(() =>
+      expect(client!.auth.setSession).toHaveBeenCalledWith({
+        access_token: "deep-link-token",
+        refresh_token: "deep-refresh",
+      }),
+    );
+    expect(result.current.callbackError).toBeNull();
+  });
+
+  it("surfaces the reason an expired link failed instead of failing silently", async () => {
+    mockState.deepLinkUrl =
+      "frapp://#error=access_denied&error_description=Email+link+is+invalid+or+has+expired";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+
+    await waitFor(() =>
+      expect(result.current.callbackError).toBe(
+        "Email link is invalid or has expired",
+      ),
+    );
+    expect(result.current.status).toBe("unauthenticated");
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    expect(client!.auth.setSession).not.toHaveBeenCalled();
+  });
+
+  it("clears a stale callback error when a new link is requested", async () => {
+    mockState.deepLinkUrl = "frapp://#error=access_denied";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.callbackError).toBe("access_denied"),
+    );
+
+    await act(async () => {
+      await result.current.sendMagicLink({ email: "officer@university.edu" });
+    });
+
+    expect(result.current.callbackError).toBeNull();
+  });
+
+  it("ignores a plain app-open deep link carrying no auth params", async () => {
+    mockState.deepLinkUrl = "frapp://events";
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.status).toBe("unauthenticated"));
+
+    const { getSupabaseClient } = await import("./supabase");
+    const client = vi.mocked(getSupabaseClient)();
+    expect(client!.auth.setSession).not.toHaveBeenCalled();
+    expect(client!.auth.exchangeCodeForSession).not.toHaveBeenCalled();
+    expect(result.current.callbackError).toBeNull();
+  });
+});
+
+describe("sessionStorageAdapter — hostile keystore", () => {
+  it("does not let a SecureStore write failure break sign-in", async () => {
+    const SecureStore = await import("expo-secure-store");
+    vi.mocked(SecureStore.setItemAsync).mockRejectedValue(
+      new Error("Could not decrypt the item in SecureStore"),
+    );
+
+    // supabase-js awaits these inside _saveSession with no catch, so a rejection
+    // here would surface out of signInWithPassword and lock the member out.
+    await expect(
+      sessionStorageAdapter.setItem("sb-auth", "session"),
+    ).resolves.toBeUndefined();
+    await expect(
+      sessionStorageAdapter.removeItem("sb-auth"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("reads as absent when SecureStore throws", async () => {
+    const SecureStore = await import("expo-secure-store");
+    vi.mocked(SecureStore.getItemAsync).mockRejectedValue(
+      new Error("keystore unavailable"),
+    );
+
+    await expect(sessionStorageAdapter.getItem("sb-auth")).resolves.toBeNull();
+  });
+});
+
 describe("AuthSessionProvider — unconfigured build", () => {
   it("settles unauthenticated instead of throwing when env vars are missing", async () => {
     mockState.configured = false;
@@ -350,7 +470,9 @@ describe("useIsApiAuthenticated", () => {
       { wrapper },
     );
 
-    await waitFor(() => expect(result.current.auth.status).toBe("unauthenticated"));
+    await waitFor(() =>
+      expect(result.current.auth.status).toBe("unauthenticated"),
+    );
     expect(result.current.isApiAuthenticated).toBe(false);
 
     await act(async () => {
@@ -385,7 +507,9 @@ describe("sessionStorageAdapter", () => {
     await sessionStorageAdapter.setItem("sb-auth", "x".repeat(2400));
     await sessionStorageAdapter.setItem("sb-auth", "short");
 
-    await expect(sessionStorageAdapter.getItem("sb-auth")).resolves.toBe("short");
+    await expect(sessionStorageAdapter.getItem("sb-auth")).resolves.toBe(
+      "short",
+    );
     expect(mockState.secureStore.has("sb-auth.1")).toBe(false);
   });
 

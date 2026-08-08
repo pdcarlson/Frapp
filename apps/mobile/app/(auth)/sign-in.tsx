@@ -44,7 +44,8 @@ export default function SignIn() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { isConfigured, sendMagicLink, signInWithPassword } = useAuthSession();
+  const { callbackError, isConfigured, sendMagicLink, signInWithPassword } =
+    useAuthSession();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -180,6 +181,11 @@ export default function SignIn() {
         )}
 
         {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+        {/* A dead magic link lands back here; without this the member cannot
+            tell a broken link from one they never tapped. */}
+        {!authError && callbackError ? (
+          <Text style={styles.errorText}>{callbackError}</Text>
+        ) : null}
         {magicLinkSentTo ? (
           <Text style={styles.successText}>
             Link sent to {magicLinkSentTo}. Open it on this device to finish

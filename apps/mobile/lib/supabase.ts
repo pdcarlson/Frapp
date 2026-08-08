@@ -22,10 +22,14 @@ function chunkKey(key: string, index: number): string {
 }
 
 async function readChunkCount(key: string): Promise<number> {
-  const raw = await SecureStore.getItemAsync(key);
-  if (raw === null) return 0;
-  const count = Number.parseInt(raw, 10);
-  return Number.isInteger(count) && count > 0 ? count : 0;
+  try {
+    const raw = await SecureStore.getItemAsync(key);
+    if (raw === null) return 0;
+    const count = Number.parseInt(raw, 10);
+    return Number.isInteger(count) && count > 0 ? count : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -67,23 +71,37 @@ export const sessionStorageAdapter: SupportedStorage = {
     // An empty string still needs one chunk, or the count would read as "absent".
     if (chunks.length === 0) chunks.push("");
 
-    await SecureStore.setItemAsync(key, "0");
-    for (let index = 0; index < chunks.length; index += 1) {
-      await SecureStore.setItemAsync(chunkKey(key, index), chunks[index]);
-    }
-    await SecureStore.setItemAsync(key, String(chunks.length));
+    // Swallowing a write failure costs the member a re-login on next launch.
+    // Letting it throw costs them the app: supabase-js awaits this inside
+    // `_saveSession` without a catch, so the rejection surfaces out of
+    // `signInWithPassword` and every retry fails identically. A poisoned
+    // Android keystore (lock-screen change, app-data restore) does exactly that.
+    try {
+      await SecureStore.setItemAsync(key, "0");
+      for (let index = 0; index < chunks.length; index += 1) {
+        await SecureStore.setItemAsync(chunkKey(key, index), chunks[index]);
+      }
+      await SecureStore.setItemAsync(key, String(chunks.length));
 
-    // Drop chunks left over from a longer previous value.
-    for (let index = chunks.length; index < previousCount; index += 1) {
-      await SecureStore.deleteItemAsync(chunkKey(key, index));
+      // Drop chunks left over from a longer previous value.
+      for (let index = chunks.length; index < previousCount; index += 1) {
+        await SecureStore.deleteItemAsync(chunkKey(key, index));
+      }
+    } catch {
+      // Leave the count at whatever landed; getItem treats a short read as absent.
     }
   },
 
   async removeItem(key: string): Promise<void> {
     const count = await readChunkCount(key);
-    await SecureStore.deleteItemAsync(key);
-    for (let index = 0; index < count; index += 1) {
-      await SecureStore.deleteItemAsync(chunkKey(key, index));
+    try {
+      await SecureStore.deleteItemAsync(key);
+      for (let index = 0; index < count; index += 1) {
+        await SecureStore.deleteItemAsync(chunkKey(key, index));
+      }
+    } catch {
+      // Same rationale as setItem — `_saveSession` calls removeItem first, so a
+      // throw here would break sign-in rather than just leaving a stale entry.
     }
   },
 };

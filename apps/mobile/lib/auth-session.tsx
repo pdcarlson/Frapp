@@ -33,6 +33,8 @@ type AuthSessionContextValue = {
   chapterId: string | null;
   /** False when `EXPO_PUBLIC_SUPABASE_*` are missing — sign-in cannot work. */
   isConfigured: boolean;
+  /** Why the last magic-link callback failed, if it did. Cleared on retry. */
+  callbackError: string | null;
   signInWithPassword: (input: {
     email: string;
     password: string;
@@ -57,6 +59,7 @@ function readAuthParams(url: string): {
   accessToken: string | null;
   refreshToken: string | null;
   code: string | null;
+  errorDescription: string | null;
 } {
   const hashIndex = url.indexOf("#");
   const queryIndex = url.indexOf("?");
@@ -72,34 +75,54 @@ function readAuthParams(url: string): {
   const read = (name: string) =>
     fragmentParams.get(name) ?? queryParams.get(name);
 
+  const errorDescription = read("error_description") ?? read("error");
+
   return {
     accessToken: read("access_token"),
     refreshToken: read("refresh_token"),
     code: read("code"),
+    // Supabase percent-encodes this and uses '+' for spaces.
+    errorDescription: errorDescription
+      ? errorDescription.replace(/\+/g, " ")
+      : null,
   };
 }
 
+/**
+ * Exchanges a magic-link callback for a session.
+ *
+ * Returns a message when the link itself was rejected. Magic links are
+ * single-use and expire, so a dead link is routine — reporting nothing would
+ * drop the member back on the sign-in screen with no way to tell a broken link
+ * from a link they never tapped.
+ */
 async function createSessionFromUrl(
   supabase: SupabaseClient,
   url: string,
-): Promise<void> {
-  const { accessToken, refreshToken, code } = readAuthParams(url);
+): Promise<string | null> {
+  const { accessToken, refreshToken, code, errorDescription } =
+    readAuthParams(url);
+
+  if (errorDescription) return errorDescription;
+  if (!accessToken && !refreshToken && !code) return null;
 
   try {
     if (accessToken && refreshToken) {
-      await supabase.auth.setSession({
+      const { error } = await supabase.auth.setSession({
         access_token: accessToken,
         refresh_token: refreshToken,
       });
-      return;
+      return error ? error.message : null;
     }
     if (code) {
-      await supabase.auth.exchangeCodeForSession(code);
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      return error ? error.message : null;
     }
-  } catch {
-    // A stale or replayed link is the common case here. Leaving the session
-    // untouched keeps the user on the sign-in screen, which is the correct
-    // outcome; onAuthStateChange reports any real success.
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "That sign-in link could not be used. Request a new one.";
   }
 }
 
@@ -116,6 +139,7 @@ export function AuthSessionProvider({
   );
   const [session, setSession] = useState<Session | null>(null);
   const [chapterId, setChapterId] = useState<string | null>(null);
+  const [callbackError, setCallbackError] = useState<string | null>(null);
 
   const url = Linking.useURL();
   const accessToken = session?.access_token ?? null;
@@ -230,7 +254,15 @@ export function AuthSessionProvider({
   // Magic-link callback: the link opens the app with tokens attached.
   useEffect(() => {
     if (!supabase || !url) return;
-    void createSessionFromUrl(supabase, url);
+
+    let cancelled = false;
+    void createSessionFromUrl(supabase, url).then((message) => {
+      if (!cancelled && message) setCallbackError(message);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [supabase, url]);
 
   const signInWithPassword = useCallback(
@@ -248,6 +280,8 @@ export function AuthSessionProvider({
   const sendMagicLink = useCallback(
     async ({ email }: { email: string }) => {
       if (!supabase) throw new Error(NOT_CONFIGURED_MESSAGE);
+      // A fresh request supersedes whatever the last dead link reported.
+      setCallbackError(null);
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: Linking.createURL("/") },
@@ -283,11 +317,13 @@ export function AuthSessionProvider({
       email: session?.user?.email ?? null,
       chapterId,
       isConfigured: configured,
+      callbackError,
       signInWithPassword,
       sendMagicLink,
       signOut,
     }),
     [
+      callbackError,
       chapterId,
       configured,
       sendMagicLink,
