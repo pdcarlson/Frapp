@@ -126,6 +126,15 @@ exists solely to keep that true: it runs `npm ci`, `npm run check-types` and `np
 (ADR Lever A), which makes them all blind to this regression — so do not "optimize" a build or cache
 step into that job.
 
+**That guarantee stops at the turbo tasks.** `^build` applies to `build`, `lint` and `check-types`
+only; the root `check:*` scripts above are plain node scripts turbo never schedules, so they cannot
+inherit it. `check:api-contract` is cold-clone-safe for a *different* reason — it builds
+`./packages/*` itself before regenerating (`scripts/check-api-contract-drift.mjs`), because its
+OpenAPI export type-checks `apps/api` against those packages and fails with `TS2307` on `@repo/*`
+without them. Do not remove that build on the grounds that turbo or CI already covers it: CI's
+prebuild step is what would mask the regression, exactly as above. `npm audit` and
+`check:migration-safety` need no build at all. Conflating these three cases is what caused #683.
+
 Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.claude/skills/testing/SKILL.md).
 
 ## Claude Code project settings

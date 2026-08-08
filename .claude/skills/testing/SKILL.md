@@ -131,7 +131,9 @@ npm run test -w apps/api -- --testPathPattern="billing"
 
 ### API contract (`check:api-contract`)
 
-Verifies that `openapi.json` and `packages/api-sdk/src/types.ts` are up to date when API source changes. Uses git diff — no NestJS bootstrap required.
+Verifies that `openapi.json` and `packages/api-sdk/src/types.ts` are up to date when API source changes. It **regenerates** both artifacts and fails if the committed copies differ — it is not a git-diff heuristic (that was replaced because it false-positived on contract-neutral controller edits and false-negatived when only one artifact needed updating).
+
+Regenerating **does** bootstrap NestJS, using placeholder credentials — the export only builds the Swagger document and never calls Supabase or Stripe, so no real secrets are needed. It also needs the shared workspace packages built; the script builds `./packages/*` itself, so `npm run check:api-contract` works on a fresh sandbox after `npm install`. Budget more time for it than the other `check:*` scripts.
 
 If this fails after changing API endpoints:
 ```bash

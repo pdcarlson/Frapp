@@ -61,6 +61,11 @@ npm run check-types   # Turbo runs tsc --noEmit across all workspaces
 No manual package build first — `check-types` depends on `^build` in `turbo.json`, so turbo builds
 the shared packages as part of the run. This works on a fresh sandbox straight after `npm install`.
 
+Mind the scope: `^build` applies to the **turbo tasks** (`build`, `lint`, `check-types`) and nothing
+else. The root `check:*` scripts are plain node scripts that turbo never schedules, so this
+paragraph does not transfer to them — see [API contract audit](#api-contract-audit) for how
+`check:api-contract` gets its build.
+
 Check for `any` types, `@ts-ignore`, and untyped function parameters.
 
 ### 4. Lint
@@ -207,7 +212,13 @@ For **transitive CVEs**, prefer the root `overrides` block in [`/package.json`](
 npm run check:api-contract
 ```
 
-This uses git diff to verify `openapi.json` and `types.ts` are updated when API source changes. Run after any controller or DTO change.
+This **regenerates** `openapi.json` and `types.ts` and fails if the committed copies differ, so it
+catches drift that a git-diff heuristic would miss. Run after any controller or DTO change.
+
+Regenerating bootstraps NestJS (with placeholder credentials — it only builds the Swagger document
+and never calls Supabase or Stripe) and needs the shared packages built, which the script does
+itself. So it runs on a fresh sandbox after `npm install`, and takes noticeably longer than the
+other `check:*` scripts.
 
 ### Manual review
 
