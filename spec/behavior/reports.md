@@ -68,9 +68,12 @@ with a new random key.
 Roster exports carry member names, emails, roles, and join dates, which puts this
 storage in scope for [`data-retention.md`](data-retention.md). Account deletion
 therefore does **not** wait for the retention window: it clears the report prefix of
-every chapter the departing member belonged to, immediately and before the database
-scrub. A rendered PDF cannot have one member removed from it, so dropping the
-chapter's exports is the only complete erasure — officers simply re-export.
+every chapter the departing member currently belongs to, before the database scrub.
+A rendered PDF cannot have one member removed from it, so dropping the chapter's
+exports is the only complete erasure — officers simply re-export. That step is
+best-effort and bounded rather than absolute (see
+[`data-retention.md`](data-retention.md) for exactly what it does and does not
+reach); the 24-hour sweep above is the guarantee behind it.
 
 ## PDF Formatting
 

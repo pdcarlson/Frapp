@@ -55,7 +55,10 @@ describe('SupabaseStorageService', () => {
       );
       list
         .mockResolvedValueOnce({ data: firstPage, error: null })
-        .mockResolvedValueOnce({ data: [entry('last.png')], error: null });
+        .mockResolvedValueOnce({ data: [entry('last.png')], error: null })
+        // Paging stops on an EMPTY page, never a short one — a short page is
+        // exactly what a server-side `limit` cap looks like.
+        .mockResolvedValueOnce({ data: [], error: null });
 
       const paths = await service.listFiles(
         'profiles',
@@ -64,18 +67,22 @@ describe('SupabaseStorageService', () => {
 
       expect(paths).toHaveLength(1001);
       expect(paths[1000]).toBe('chapters/c/profiles/u/last.png');
-      expect(list).toHaveBeenCalledTimes(2);
+      expect(list).toHaveBeenCalledTimes(3);
+      // Offset advances by rows actually returned, not by the requested page
+      // size, so a clamped page cannot skip rows.
       expect(list).toHaveBeenLastCalledWith('chapters/c/profiles/u', {
         limit: 1000,
-        offset: 1000,
+        offset: 1001,
       });
     });
 
     it('skips folder placeholder entries (id: null)', async () => {
-      list.mockResolvedValueOnce({
-        data: [entry('real.png'), { id: null, name: 'subfolder' }],
-        error: null,
-      });
+      list
+        .mockResolvedValueOnce({
+          data: [entry('real.png'), { id: null, name: 'subfolder' }],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
 
       const paths = await service.listFiles('profiles', 'p');
 
@@ -103,16 +110,18 @@ describe('SupabaseStorageService', () => {
 
   describe('listObjects', () => {
     it('returns each object with its stored-at timestamp', async () => {
-      list.mockResolvedValueOnce({
-        data: [
-          {
-            id: 'id-1',
-            name: 'roster-2026-08-05-uuid.pdf',
-            created_at: '2026-08-05T10:30:00Z',
-          },
-        ],
-        error: null,
-      });
+      list
+        .mockResolvedValueOnce({
+          data: [
+            {
+              id: 'id-1',
+              name: 'roster-2026-08-05-uuid.pdf',
+              created_at: '2026-08-05T10:30:00Z',
+            },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
 
       const objects = await service.listObjects(
         'reports',
@@ -136,10 +145,12 @@ describe('SupabaseStorageService', () => {
       async (_label, created_at) => {
         // An Invalid Date compares false against every cutoff, so an age-based
         // caller could not tell "too new to reap" from "no idea when".
-        list.mockResolvedValueOnce({
-          data: [{ id: 'id-1', name: 'x.pdf', created_at }],
-          error: null,
-        });
+        list
+          .mockResolvedValueOnce({
+            data: [{ id: 'id-1', name: 'x.pdf', created_at }],
+            error: null,
+          })
+          .mockResolvedValueOnce({ data: [], error: null });
 
         const objects = await service.listObjects('reports', 'p');
 

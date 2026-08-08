@@ -28,6 +28,19 @@ function assertSafePrefix(prefix: string): void {
 }
 
 /**
+ * One row of a storage `list()` response — an object, or a virtual folder.
+ *
+ * Derived from the client rather than imported from `@supabase/storage-js`,
+ * whose type entry point has moved between versions; this follows whatever
+ * the installed client actually returns.
+ */
+type StorageListEntry = NonNullable<
+  Awaited<
+    ReturnType<ReturnType<SupabaseClient['storage']['from']>['list']>
+  >['data']
+>[number];
+
+/**
  * Storage timestamps as a Date, or null when absent or unparseable.
  *
  * The listing is metadata the backend supplies, not something this codebase
@@ -141,14 +154,48 @@ export class SupabaseStorageService implements IStorageProvider {
   }
 
   async listObjects(bucket: string, prefix: string): Promise<StorageObject[]> {
+    // Folders come back with `id: null` and carry no object metadata.
+    return (await this.listEntries(bucket, prefix))
+      .filter((entry) => entry.id !== null)
+      .map((entry) => ({
+        path: `${prefix}/${entry.name}`,
+        createdAt: parseTimestamp(entry.created_at),
+      }));
+  }
+
+  async listFolders(bucket: string, prefix: string): Promise<string[]> {
+    return (await this.listEntries(bucket, prefix))
+      .filter((entry) => entry.id === null)
+      .map((entry) => entry.name);
+  }
+
+  /**
+   * One page-exhausted `list` call, objects and folders both.
+   *
+   * `list` returns names relative to the prefix and only for the immediate
+   * folder level — enough for the flat `<prefix>/<filename>` layouts this
+   * codebase uses (e.g. avatar uploads). Paginate until exhausted so a folder
+   * beyond one page is never silently truncated.
+   *
+   * The offset advances by the number of rows actually returned, and paging
+   * stops only on an empty page — never on a short one. A short-page
+   * termination silently truncates the moment the backend returns fewer rows
+   * than asked for, which it is free to do: `limit` is a ceiling, not a
+   * promise, and a server-side cap below `pageSize` would make *every* first
+   * page read as "end of results". `SWEEP_PAGE_SIZE` in
+   * `scheduled-jobs.repository.ts` documents the same hazard for PostgREST;
+   * here the pattern costs one extra empty request per prefix and removes the
+   * assumption entirely. That matters most for the purges: a truncated list
+   * means a silent partial delete reported as complete erasure.
+   */
+  private async listEntries(
+    bucket: string,
+    prefix: string,
+  ): Promise<StorageListEntry[]> {
     assertSafePrefix(prefix);
-    // `list` returns names relative to the prefix and only for the immediate
-    // folder level — enough for the flat `<prefix>/<filename>` layouts this
-    // codebase uses (e.g. avatar uploads). Paginate until exhausted so a
-    // folder beyond one page is never silently truncated.
     const pageSize = 1000;
-    const objects: StorageObject[] = [];
-    for (let offset = 0; ; offset += pageSize) {
+    const all: StorageListEntry[] = [];
+    for (let offset = 0; ; ) {
       const { data, error } = await this.supabase.storage
         .from(bucket)
         .list(prefix, { limit: pageSize, offset });
@@ -162,15 +209,9 @@ export class SupabaseStorageService implements IStorageProvider {
       if (error && /bucket not found/i.test(error.message)) return [];
       if (error) throw error;
       const entries = data ?? [];
-      objects.push(
-        ...entries
-          .filter((entry) => entry.id !== null) // folders come back with id: null
-          .map((entry) => ({
-            path: `${prefix}/${entry.name}`,
-            createdAt: parseTimestamp(entry.created_at),
-          })),
-      );
-      if (entries.length < pageSize) return objects;
+      if (entries.length === 0) return all;
+      all.push(...entries);
+      offset += entries.length;
     }
   }
 }

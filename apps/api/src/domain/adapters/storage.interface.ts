@@ -60,4 +60,15 @@ export interface IStorageProvider {
    * behavior; kept separate so the path-only callers stay untouched.
    */
   listObjects(bucket: string, prefix: string): Promise<StorageObject[]>;
+  /**
+   * Names of the sub-folders directly under a prefix (no trailing slash, name
+   * only — not prefix-joined).
+   *
+   * The counterpart to `listFiles`, which drops folder rows. Storage folders
+   * are virtual: one exists exactly while some object lives beneath it, so
+   * this enumerates the *occupied* prefixes and a swept-empty folder simply
+   * stops being returned. That is what lets a prefix-walking sweep find its
+   * own work without a database to name the prefixes for it.
+   */
+  listFolders(bucket: string, prefix: string): Promise<string[]>;
 }

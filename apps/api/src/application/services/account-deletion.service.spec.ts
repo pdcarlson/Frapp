@@ -85,11 +85,16 @@ describe('AccountDeletionService', () => {
       deleteFiles: jest.fn(async () => {
         callOrder.push('deleteFiles');
       }),
-      listFiles: jest.fn(async (bucket: string, prefix: string) => {
-        callOrder.push(bucket === 'reports' ? 'listReports' : 'listFiles');
+      // Avatars list by path (age is irrelevant); reports list with metadata.
+      listFiles: jest.fn(async (_bucket: string, prefix: string) => {
+        callOrder.push('listFiles');
         return [`${prefix}/pic.png`];
       }),
-      listObjects: jest.fn(async () => []),
+      listObjects: jest.fn(async (_bucket: string, prefix: string) => {
+        callOrder.push('listReports');
+        return [{ path: `${prefix}/roster.pdf`, createdAt: new Date() }];
+      }),
+      listFolders: jest.fn(async () => []),
     };
     mockAuthAdmin = {
       deleteAuthUser: jest.fn(async () => {
@@ -121,11 +126,15 @@ describe('AccountDeletionService', () => {
     service = module.get(AccountDeletionService);
   });
 
-  /** Prefixes listed against one bucket, in call order. */
+  /** Profile-photo folders swept, in call order. */
   const listedPrefixes = (bucket: string): string[] =>
     mockStorage.listFiles.mock.calls
       .filter(([called]) => called === bucket)
       .map(([, prefix]) => prefix);
+
+  /** Report prefixes swept, in call order. */
+  const listedReportPrefixes = (): string[] =>
+    mockStorage.listObjects.mock.calls.map(([, prefix]) => prefix);
 
   it('runs the full flow in order: storage purge → anonymize → analytics → auth deletion', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
@@ -197,24 +206,47 @@ describe('AccountDeletionService', () => {
     // A rendered PDF cannot have one member removed from it, so erasure drops
     // the chapter's whole report prefix — safe because exports are derived
     // artifacts, regenerable from the source tables.
-    expect(listedPrefixes('reports')).toEqual([
+    expect(listedReportPrefixes()).toEqual([
       'chapters/chapter-a/reports',
       'chapters/chapter-b/reports',
     ]);
     expect(mockStorage.deleteFiles).toHaveBeenCalledWith('reports', [
-      'chapters/chapter-a/reports/pic.png',
+      'chapters/chapter-a/reports/roster.pdf',
     ]);
   });
 
-  it('aborts before the scrub when the report purge fails', async () => {
+  it('does not reach reports in a chapter the member has already left', async () => {
+    // `members` rows are hard-deleted on removal, so a left chapter is simply
+    // absent from findByUser. Documented in spec/behavior/data-retention.md as
+    // covered by the 24h sweep instead — asserted here so the gap stays a
+    // known, bounded one rather than an accidental regression.
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockStorage.listFiles.mockImplementation(async (bucket, prefix) => {
-      if (bucket === 'reports') throw new Error('reports listing 500');
-      return [`${prefix}/pic.png`];
-    });
+    mockMemberRepo.findByUser.mockResolvedValue([membership('chapter-a')]);
 
-    // Reports carry the same PII as avatars, so a failure to purge them must
-    // abort the flow rather than let it report success over surviving data.
+    await service.deleteAccount('user-1');
+
+    expect(listedReportPrefixes()).toEqual(['chapters/chapter-a/reports']);
+  });
+
+  it('completes the deletion when the report purge fails, rather than revoking erasure', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockStorage.listObjects.mockRejectedValue(new Error('reports listing 500'));
+
+    // Reports have their own 24h reaper; profile photos do not. Aborting here
+    // would trade a bounded delay for an unbounded harm — the user could never
+    // complete erasure, and every retry would re-delete their avatars while
+    // leaving the account alive.
+    await expect(service.deleteAccount('user-1')).resolves.toBeUndefined();
+    expect(mockUserRepo.anonymize).toHaveBeenCalledWith('user-1');
+    expect(mockAuthAdmin.deleteAuthUser).toHaveBeenCalledWith('auth-1');
+  });
+
+  it('still aborts before the scrub when the AVATAR purge fails', async () => {
+    mockUserRepo.findById.mockResolvedValue(liveUser);
+    mockStorage.listFiles.mockRejectedValue(new Error('profiles listing 500'));
+
+    // The asymmetry with reports above is the contract: nothing else ever
+    // deletes a profile photo, so this one has to be fatal.
     await expect(service.deleteAccount('user-1')).rejects.toThrow(
       BadGatewayException,
     );
@@ -224,9 +256,7 @@ describe('AccountDeletionService', () => {
 
   it('skips the report delete for a chapter with no exports', async () => {
     mockUserRepo.findById.mockResolvedValue(liveUser);
-    mockStorage.listFiles.mockImplementation(async (bucket, prefix) =>
-      bucket === 'reports' ? [] : [`${prefix}/pic.png`],
-    );
+    mockStorage.listObjects.mockResolvedValue([]);
 
     await service.deleteAccount('user-1');
 

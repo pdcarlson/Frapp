@@ -27,7 +27,6 @@ describe('ScheduledJobsService', () => {
   let findEventsPendingAutoAbsent: jest.Mock;
   let findOpenInvoicesDueBetween: jest.Mock;
   let findIncompleteTasksDueBetween: jest.Mock;
-  let findAllChapterIds: jest.Mock;
   let sweepExpiredReports: jest.Mock;
 
   const INVOICE = {
@@ -60,8 +59,9 @@ describe('ScheduledJobsService', () => {
     findEventsPendingAutoAbsent = jest.fn().mockResolvedValue([]);
     findOpenInvoicesDueBetween = jest.fn().mockResolvedValue([]);
     findIncompleteTasksDueBetween = jest.fn().mockResolvedValue([]);
-    findAllChapterIds = jest.fn().mockResolvedValue([]);
-    sweepExpiredReports = jest.fn().mockResolvedValue({ deleted: 0 });
+    sweepExpiredReports = jest
+      .fn()
+      .mockResolvedValue({ deleted: 0, failed: 0 });
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -74,7 +74,6 @@ describe('ScheduledJobsService', () => {
             findIncompleteTasksDueBetween,
             claimDispatch,
             releaseDispatch,
-            findAllChapterIds,
           },
         },
         { provide: AttendanceService, useValue: { markAutoAbsent } },
@@ -429,39 +428,22 @@ describe('ScheduledJobsService', () => {
   });
 
   describe('sweepExpiredReports', () => {
-    it('hands every chapter id to the retention service with the sweep clock', async () => {
-      findAllChapterIds.mockResolvedValue(['chap-1', 'chap-2']);
-      sweepExpiredReports.mockResolvedValue({ deleted: 3 });
+    it('delegates to the retention service with the sweep clock', async () => {
+      // The work list is storage-derived, so this handler passes only `now`.
+      // Nothing reads the chapters table — a DB error therefore cannot masquerade
+      // as "no chapters to sweep".
+      sweepExpiredReports.mockResolvedValue({ deleted: 3, failed: 0 });
 
       const result = await service.sweepExpiredReports(NOW);
 
-      expect(sweepExpiredReports).toHaveBeenCalledWith(
-        ['chap-1', 'chap-2'],
-        NOW,
-      );
-      expect(result).toEqual({ deleted: 3 });
+      expect(sweepExpiredReports).toHaveBeenCalledWith(NOW);
+      expect(result).toEqual({ deleted: 3, failed: 0 });
     });
 
-    it('does not call storage when there are no chapters', async () => {
-      // Storage cannot enumerate chapters, so an empty list is the only
-      // signal there is nothing to walk — listing anyway would be a pointless
-      // round trip on every tick of a fresh project.
-      const result = await service.sweepExpiredReports(NOW);
+    it('passes the real clock through the cron wrapper', async () => {
+      await service.handleReportRetentionSweep();
 
-      expect(sweepExpiredReports).not.toHaveBeenCalled();
-      expect(result).toEqual({ deleted: 0 });
-    });
-
-    it('sweeps nothing when the chapter lookup fails', async () => {
-      // fetchAllPages returns [] on a query error rather than throwing, so a
-      // failed lookup must degrade to "no work this tick", never to a sweep
-      // over a silently truncated chapter list.
-      findAllChapterIds.mockResolvedValue([]);
-
-      await expect(service.sweepExpiredReports(NOW)).resolves.toEqual({
-        deleted: 0,
-      });
-      expect(sweepExpiredReports).not.toHaveBeenCalled();
+      expect(sweepExpiredReports).toHaveBeenCalledWith(expect.any(Date));
     });
   });
 });

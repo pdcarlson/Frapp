@@ -8,7 +8,10 @@ import {
 } from '../../application/services/attendance.service';
 import { NotificationService } from '../../application/services/notification.service';
 import { ChapterWorkflowsService } from '../../application/services/chapter-workflows.service';
-import { ReportRetentionService } from '../../application/services/report-retention.service';
+import {
+  ReportRetentionService,
+  type ReportSweepResult,
+} from '../../application/services/report-retention.service';
 import {
   ScheduledJobsRepository,
   type DispatchEntityType,
@@ -127,14 +130,16 @@ export class ScheduledJobsService {
    *
    * This is the one sweep here that needs no `scheduled_notification_dispatches`
    * claim. The others guard against a *duplicate side effect* — two replicas
-   * sending the same reminder twice. Deleting an object is idempotent, and a
-   * second replica racing the first simply finds the prefix already empty, so
-   * a plain `@Cron` firing on every instance is safe as-is.
+   * sending the same reminder twice. Deleting a storage object is idempotent:
+   * Supabase's `remove()` reports success for a key that is already gone, so
+   * the replica that loses the race simply deletes nothing. A plain `@Cron`
+   * firing on every instance is safe as-is.
+   *
+   * Thin by design — the service owns the whole sweep because it derives its
+   * work list from storage, not from this repository.
    */
-  async sweepExpiredReports(now: Date): Promise<{ deleted: number }> {
-    const chapterIds = await this.repository.findAllChapterIds();
-    if (chapterIds.length === 0) return { deleted: 0 };
-    return this.reportRetention.sweepExpiredReports(chapterIds, now);
+  async sweepExpiredReports(now: Date): Promise<ReportSweepResult> {
+    return this.reportRetention.sweepExpiredReports(now);
   }
 
   /**

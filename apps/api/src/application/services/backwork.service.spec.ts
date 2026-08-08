@@ -94,6 +94,8 @@ describe('BackworkService', () => {
       downloadFile: jest.fn(),
       deleteFile: jest.fn(),
       listFiles: jest.fn(),
+      listObjects: jest.fn().mockResolvedValue([]),
+      listFolders: jest.fn().mockResolvedValue([]),
       deleteFiles: jest.fn(),
     };
 

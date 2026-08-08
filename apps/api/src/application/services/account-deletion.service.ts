@@ -24,7 +24,10 @@ import {
 import type { User } from '../../domain/entities/user.entity';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
 import { AnalyticsService } from './analytics.service';
-import { ReportRetentionService } from './report-retention.service';
+import {
+  REPORT_RETENTION_HOURS,
+  ReportRetentionService,
+} from './report-retention.service';
 
 /**
  * Individual account deletion (spec/behavior/data-retention.md).
@@ -36,13 +39,14 @@ import { ReportRetentionService } from './report-retention.service';
  *     chapter the user belongs to. Runs first because both need the chapter
  *     memberships (and, for photos, the `avatar_url`) that the scrub destroys
  *     to locate `chapters/<chapterId>/profiles/<userId>/` folders and
- *     `chapters/<chapterId>/reports/` prefixes. A failure here ABORTS the
- *     request (502): no account data has been touched (objects swept before
- *     the failure are already gone — they belonged to the requester, or were
- *     regenerable exports — and the retry re-covers the rest), so the client
- *     simply retries. Proceeding instead would tombstone the row and
- *     permanently strand the objects — the retry would have nothing left to
- *     enumerate.
+ *     `chapters/<chapterId>/reports/` prefixes. A **photo** failure ABORTS the
+ *     request (502): no account data has been touched (folders swept before
+ *     the failure are already empty — they belonged to the requester and the
+ *     retry re-covers the rest), so the client simply retries. Proceeding
+ *     instead would tombstone the row and permanently strand the objects —
+ *     the retry would have nothing left to enumerate. A **report** failure is
+ *     logged and the flow continues; those objects have their own 24h reaper,
+ *     so aborting would revoke erasure over a delay the sweep already bounds.
  *  2. `anonymize_user` RPC — the authoritative, atomic step: tombstones the
  *     users row ("Deleted User" + sentinel email), purges current-state rows,
  *     scrubs card name snapshots in payload and content. It re-runs the full
@@ -145,12 +149,32 @@ export class AccountDeletionService {
     const chapterIds = memberships.map((membership) => membership.chapter_id);
 
     await this.purgeAvatarObjects(user, chapterIds);
+
     // Generated reports are chapter-scoped snapshots — a rendered PDF cannot
     // have one member removed from it — so erasure means dropping the whole
-    // report prefix of every chapter this user belonged to. Safe because
-    // exports are derived artifacts, regenerable from the source tables
+    // report prefix of every chapter this user is in. Safe because exports are
+    // derived artifacts, regenerable from the source tables
     // (spec/behavior/data-retention.md).
-    await this.reportRetention.purgeUserReports(chapterIds);
+    //
+    // Best-effort, unlike the avatar purge above, and the asymmetry is the
+    // point: report objects have an independent backstop and profile photos do
+    // not. The hourly retention sweep deletes every export past 24h whether or
+    // not this ran, so a failure here delays report erasure by at most that
+    // window. Letting it abort instead would trade a bounded delay for three
+    // unbounded harms — the user could never complete a right-to-erasure
+    // request at all; every retry would re-run the avatar purge that already
+    // succeeded, destroying their profile photos while leaving the account
+    // alive; and one chapter's unlistable prefix would block deletion for every
+    // member of that chapter. A storage misconfiguration must not be able to
+    // revoke erasure.
+    try {
+      await this.reportRetention.purgeUserReports(chapterIds);
+    } catch (error) {
+      this.logger.error(
+        `Report purge failed for user ${user.id}; deletion is proceeding and the hourly retention sweep will remove these exports within ${REPORT_RETENTION_HOURS}h — investigate the reports bucket if this repeats`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /**
