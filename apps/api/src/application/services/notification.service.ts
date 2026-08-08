@@ -336,8 +336,15 @@ export class NotificationService {
     >,
   ): Promise<UserSettings> {
     const existing = await this.settingsRepo.findByUser(userId);
+    // `undefined` means "not supplied" and `null` means "clear this". Test the
+    // VALUE, not key presence: `field in data` is always true here, because
+    // class-transformer materializes every declared DTO property as an own key
+    // (undefined when absent). Keying on presence made a theme-only PATCH read
+    // as an explicit clear and wipe the member's whole quiet-hours window.
     const resolve = <K extends keyof typeof data>(field: K) =>
-      field in data ? (data[field] ?? null) : (existing?.[field] ?? null);
+      data[field] !== undefined
+        ? (data[field] ?? null)
+        : (existing?.[field] ?? null);
     return this.settingsRepo.upsert({
       user_id: userId,
       quiet_hours_start: resolve('quiet_hours_start'),

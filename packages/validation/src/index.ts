@@ -673,6 +673,7 @@ export {
 export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
 
 export {
+  canResolveTimeZones,
   isSupportedTimeZone,
   normalizeTimeZoneInput,
   MAX_TIME_ZONE_LENGTH,

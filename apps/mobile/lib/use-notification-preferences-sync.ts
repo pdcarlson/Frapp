@@ -7,7 +7,11 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
-import { isSupportedTimeZone } from "@repo/validation";
+import {
+  canResolveTimeZones,
+  isSupportedTimeZone,
+  MAX_TIME_ZONE_LENGTH,
+} from "@repo/validation";
 import { useIsApiAuthenticated } from "./frapp-client";
 
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
@@ -16,7 +20,6 @@ export const QUIET_HOURS_WINDOW_STORAGE_KEY = "frapp.mobile.quiet-hours-window";
 const DEFAULT_QUIET_HOURS_START = "22:00";
 const DEFAULT_QUIET_HOURS_END = "08:00";
 const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
-const MAX_QUIET_HOURS_TZ_LENGTH = 100;
 
 /**
  * Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss), and
@@ -54,13 +57,19 @@ function normalizeTimeOfDay(value: unknown): string | null {
  * predating server-side validation can hold `Mars/Olympus` or `""`) would 400
  * the toggle and wedge it in the retry state permanently. Fall back to the
  * device zone instead, which is what a member with no usable zone wants anyway.
+ *
+ * Fails **closed** when this runtime cannot check zones: `isSupportedTimeZone`
+ * fails open so a device with no zone data can still edit, but the server never
+ * fails open. Trusting an unverifiable stored value here would replay it into
+ * exactly the 400 this guard exists to avoid.
  */
 function normalizeTimeZone(value: unknown): string {
   if (typeof value !== "string") return resolveDeviceTimeZone();
   const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_QUIET_HOURS_TZ_LENGTH) {
+  if (trimmed.length === 0 || trimmed.length > MAX_TIME_ZONE_LENGTH) {
     return resolveDeviceTimeZone();
   }
+  if (!canResolveTimeZones()) return resolveDeviceTimeZone();
   return isSupportedTimeZone(trimmed) ? trimmed : resolveDeviceTimeZone();
 }
 

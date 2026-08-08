@@ -611,6 +611,34 @@ describe('NotificationService', () => {
       });
     });
 
+    // The test above passes a plain object literal, which is NOT what the
+    // controller hands this method: class-transformer materializes every
+    // declared DTO property as an own key (undefined when the caller omitted
+    // it). Under a `field in data` check that reads as an explicit clear, so a
+    // theme-only PATCH wiped the member's whole quiet-hours window while the
+    // literal-based test stayed green. Reproduce the real shape.
+    it('preserves the window when a DTO instance omits the quiet-hour fields', async () => {
+      mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
+      mockSettingsRepo.upsert.mockResolvedValue(baseSettings);
+
+      const dtoShaped = Object.assign(Object.create(null), {
+        quiet_hours_start: undefined,
+        quiet_hours_end: undefined,
+        quiet_hours_tz: undefined,
+        theme: 'dark' as const,
+      });
+
+      await service.updateSettings('u-1', dtoShaped);
+
+      expect(mockSettingsRepo.upsert).toHaveBeenCalledWith({
+        user_id: 'u-1',
+        quiet_hours_start: '22:00:00',
+        quiet_hours_end: '08:00:00',
+        quiet_hours_tz: 'America/New_York',
+        theme: 'dark',
+      });
+    });
+
     it('should clear quiet-hour fields when null is passed explicitly', async () => {
       mockSettingsRepo.findByUser.mockResolvedValue(baseSettings);
       mockSettingsRepo.upsert.mockResolvedValue({

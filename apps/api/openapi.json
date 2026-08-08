@@ -5877,12 +5877,12 @@
         "properties": {
           "quiet_hours_start": {
             "type": "string",
-            "description": "Quiet hours start (HH:mm format, e.g. 22:00). Pass null to clear.",
+            "description": "Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear.",
             "nullable": true
           },
           "quiet_hours_end": {
             "type": "string",
-            "description": "Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear.",
+            "description": "Quiet hours end (HH:mm format, e.g. 08:00). Pass null or an empty string to clear.",
             "nullable": true
           },
           "quiet_hours_tz": {

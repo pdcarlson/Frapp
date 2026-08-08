@@ -73,6 +73,11 @@ export function ProfilePanel() {
   useEffect(() => {
     if (settingsQuery.data) {
       setSettingsDraft(settingsQuery.data as UserSettings);
+      // The draft is being replaced wholesale — a refetch on window focus can do
+      // this while an error is showing — so the message must go with the value
+      // it was about. Otherwise the field reverts to its stored (valid) zone
+      // while still flagged invalid.
+      setTimeZoneError(null);
     }
   }, [settingsQuery.data]);
 

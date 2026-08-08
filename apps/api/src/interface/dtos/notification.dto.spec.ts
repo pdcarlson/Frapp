@@ -48,6 +48,28 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
     expect(dto.quiet_hours_tz).toBeNull();
   });
 
+  // A padded value must be trimmed on the way in, not just for the check:
+  // validation probes the trimmed form, so storing the raw one would let this
+  // pass here and then throw at delivery — the exact unusable row this
+  // validation exists to prevent.
+  it('trims a padded zone so the stored value is the validated one', async () => {
+    const dto = plainToInstance(UpdateUserSettingsDto, {
+      quiet_hours_tz: '  America/New_York  ',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.quiet_hours_tz).toBe('America/New_York');
+  });
+
+  it('treats a blank quiet_hours_start as a clear, not an error', async () => {
+    const dto = plainToInstance(UpdateUserSettingsDto, {
+      quiet_hours_start: '',
+      quiet_hours_end: '',
+    });
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.quiet_hours_start).toBeNull();
+    expect(dto.quiet_hours_end).toBeNull();
+  });
+
   // Accepted deliberately — see spec/behavior/notifications.md § Quiet Hours.
   // Rows already hold offsets, so rejecting them here would lock those members
   // out of the settings form entirely.

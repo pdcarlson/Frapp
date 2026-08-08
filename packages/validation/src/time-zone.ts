@@ -43,6 +43,20 @@ const RUNTIME_RESOLVES_ZONES = (() => {
 })();
 
 /**
+ * Whether this runtime can check zones at all.
+ *
+ * Callers that validate *typed input* want the fail-open behavior baked into
+ * `isSupportedTimeZone` — a device with no zone data should not block editing.
+ * Callers that decide whether to **replay a stored value back to the server**
+ * want the opposite: the server does not fail open, so trusting an unverifiable
+ * stored zone produces a 400 the client cannot recover from. Those call sites
+ * check this first and substitute a known-good zone instead.
+ */
+export function canResolveTimeZones(): boolean {
+  return RUNTIME_RESOLVES_ZONES;
+}
+
+/**
  * True when `tz` is a zone this system will accept and store — i.e. one the
  * runtime can format with, which is precisely what notification delivery needs.
  */

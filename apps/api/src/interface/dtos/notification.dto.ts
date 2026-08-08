@@ -26,6 +26,21 @@ import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
  * fails with no field-level explanation, which is how unresolvable zones reached
  * stored rows to begin with.
  */
+/**
+ * Trims a string field and maps a now-empty one to `null`.
+ *
+ * Both clients bind these inputs to `""` rather than removing the key, so a
+ * cleared field arrives as an empty string. Treating that as a validation error
+ * rejects the whole payload and takes the member's unrelated edits with it —
+ * and, for someone whose stored value is already unusable, removes the only way
+ * to switch quiet hours off.
+ */
+function normalizeBlankToNull(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed.length === 0 ? null : trimmed;
+}
+
 @ValidatorConstraint({ name: 'supportedTimeZone', async: false })
 export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {
@@ -72,11 +87,12 @@ export class UpdateNotificationPreferenceDto {
 export class UpdateUserSettingsDto {
   @ApiPropertyOptional({
     description:
-      'Quiet hours start (HH:mm format, e.g. 22:00). Pass null to clear.',
+      'Quiet hours start (HH:mm format, e.g. 22:00). Pass null or an empty string to clear.',
     nullable: true,
     type: String,
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(/^\d{2}:\d{2}(:\d{2})?$/, {
@@ -86,11 +102,12 @@ export class UpdateUserSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'Quiet hours end (HH:mm format, e.g. 08:00). Pass null to clear.',
+      'Quiet hours end (HH:mm format, e.g. 08:00). Pass null or an empty string to clear.',
     nullable: true,
     type: String,
   })
   @IsOptional()
+  @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @Matches(/^\d{2}:\d{2}(:\d{2})?$/, {
@@ -105,12 +122,13 @@ export class UpdateUserSettingsDto {
     type: String,
   })
   @IsOptional()
-  // A cleared input is a clear, not a validation error. The web panel binds this
-  // field to `""`, so rejecting blank would leave a member who has a bad stored
-  // zone unable to turn quiet hours off — the one escape hatch they need.
-  @Transform(({ value }) =>
-    typeof value === 'string' && value.trim().length === 0 ? null : value,
-  )
+  // Trim before anything else sees the value: validation probes the trimmed
+  // form, so storing the raw one would let `"America/New_York "` pass here and
+  // then throw at delivery — the unusable stored row this validation exists to
+  // prevent. Blank then falls out as `null`, which is a clear, not an error:
+  // the web panel binds this field to `""`, so rejecting blank would leave a
+  // member holding a bad zone unable to turn quiet hours off.
+  @Transform(({ value }) => normalizeBlankToNull(value))
   @ValidateIf((_, value) => value !== null)
   @IsString()
   @MaxLength(MAX_TIME_ZONE_LENGTH)
