@@ -15,18 +15,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from '@repo/validation';
 
 /**
- * Rejects a `quiet_hours_tz` this system will not accept. The stored value is fed
- * to `Intl.DateTimeFormat` during push delivery, so an unknown zone written here
- * used to cost that member every notification — push and in-app row alike —
- * until someone edited the field. `@MaxLength` alone never caught it.
- *
- * The rule itself lives in `@repo/validation` because the web panel and the
- * mobile preferences screen have to agree with the server about which zones are
- * acceptable: a client that submits what the server rejects produces a save that
- * fails with no field-level explanation, which is how unresolvable zones reached
- * stored rows to begin with.
- */
-/**
  * Trims a string field and maps a now-empty one to `null`.
  *
  * Both clients bind these inputs to `""` rather than removing the key, so a
@@ -41,6 +29,17 @@ function normalizeBlankToNull(value: unknown): unknown {
   return trimmed.length === 0 ? null : trimmed;
 }
 
+/**
+ * Rejects a `quiet_hours_tz` this system will not accept. The stored value is fed
+ * to `Intl.DateTimeFormat` during push delivery, so an unknown zone written here
+ * used to cost that member every notification — push and in-app row alike —
+ * until someone edited the field. `@MaxLength` alone never caught it.
+ *
+ * The rule itself lives in `@repo/validation` so the clients can show a
+ * field-level message instead of surfacing a bare 400. This server-side check is
+ * the authority, though: a client's `Intl` may know fewer zones than the
+ * server's, so clients must never treat their own verdict as final.
+ */
 @ValidatorConstraint({ name: 'supportedTimeZone', async: false })
 export class SupportedTimeZoneConstraint implements ValidatorConstraintInterface {
   validate(value: unknown): boolean {

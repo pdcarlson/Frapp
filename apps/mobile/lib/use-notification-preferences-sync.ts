@@ -7,7 +7,7 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
-import { isSupportedTimeZone } from "@repo/validation";
+import { MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 import { useIsApiAuthenticated } from "./frapp-client";
 
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
@@ -48,23 +48,35 @@ function normalizeTimeOfDay(value: unknown): string | null {
 }
 
 /**
- * A stored zone is only usable if the server would accept it back. Re-enabling
- * quiet hours replays this value verbatim, so echoing an unresolvable one (rows
- * predating server-side validation can hold `Mars/Olympus` or `""`) would 400
- * the toggle and wedge it in the retry state permanently. Fall back to the
- * device zone instead, which is what a member with no usable zone wants anyway.
+ * Repair a stored zone only where this device can be *sure* it is broken.
  *
- * Substitutes only when the zone is *known* bad. On a runtime whose `Intl`
- * cannot resolve zones at all, `isSupportedTimeZone` fails open and everything
- * is accepted — deliberately. Failing closed there looked safer but is worse:
- * unable to tell a good zone from a bad one, it would replace the member's
- * valid, server-validated zone with this device's, and PATCH that back on the
- * next toggle — silently rewriting a setting on every save. Corrupting data we
- * cannot judge is a worse failure than the narrow case it would prevent: a
- * legacy unresolvable row, on such a runtime, still round-trips to a 400.
+ * Re-enabling quiet hours replays this value into a PATCH, and the displayed
+ * window is built from it, so whatever comes back here can be written to the
+ * member's row on every device. That makes the substitution rule a data-safety
+ * decision, not a display one.
+ *
+ * Deliberately does NOT ask `isSupportedTimeZone`. A device's ICU tzdata is
+ * routinely older than the server's, so it can fail to resolve a zone the server
+ * validated and stored — `Europe/Kyiv` (tzdata 2022b) on an Android build that
+ * only knows `Europe/Kiev`, say. `UTC` still resolves there, so the fail-open
+ * branch never fires and the verdict comes back a confident, wrong "invalid".
+ * Substituting on it would show the wrong zone and then PATCH the device's own
+ * zone over the member's, permanently, everywhere, with no error.
+ *
+ * So only device-independent defects are repaired: not a string, blank, or
+ * longer than the column allows. Anything else is the server's to judge — it is
+ * the authority (spec/behavior/notifications.md § Quiet Hours). A legacy row
+ * holding a genuinely unresolvable zone therefore still round-trips to a 400 on
+ * toggle, surfaced as the retry state. That is the accepted cost: a visible
+ * error on an already-broken row beats silent corruption of a correct one.
  */
 function normalizeTimeZone(value: unknown): string {
-  return isSupportedTimeZone(value) ? value.trim() : resolveDeviceTimeZone();
+  if (typeof value !== "string") return resolveDeviceTimeZone();
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_TIME_ZONE_LENGTH) {
+    return resolveDeviceTimeZone();
+  }
+  return trimmed;
 }
 
 const NOTIFICATION_CATEGORY = {

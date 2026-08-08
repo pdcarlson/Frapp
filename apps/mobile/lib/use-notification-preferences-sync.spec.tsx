@@ -5,7 +5,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
-import { isSupportedTimeZone } from "@repo/validation";
+import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 
 const mockState = vi.hoisted(() => ({
   asyncStorageMap: new Map<string, string>(),
@@ -342,20 +342,20 @@ describe("useNotificationPreferencesSync", () => {
     expect(settings.quiet_hours_tz).toBe("America/Chicago");
   });
 
-  // #687: rows written before `quiet_hours_tz` was validated server-side can
-  // hold a zone `Intl` cannot resolve. Re-enabling replays the stored window
-  // verbatim, so echoing one back now earns a 400 — and since retrying re-reads
-  // the same unchanged row, the toggle wedges in the retry state permanently.
+  // #687. The substitution rule here is a data-safety decision, not a display
+  // one: whatever `normalizeTimeZone` returns is shown to the member AND
+  // replayed into the PATCH when quiet hours are toggled back on, so an
+  // over-eager repair overwrites the member's row on every device.
   //
-  // These pin the substitution itself, which was untested. What they cannot pin
-  // is the fail-OPEN choice inside `isSupportedTimeZone`: it only diverges on a
-  // runtime whose `Intl` resolves no zones, and `RUNTIME_RESOLVES_ZONES` is
-  // computed at module load, so reproducing it would mean stubbing `Intl`
-  // before import. On any runtime CI or a real device actually has, fail-open
-  // and fail-closed are indistinguishable here.
-  it("substitutes a resolvable zone rather than replaying an unresolvable stored one", async () => {
+  // The trap is that a device's ICU tzdata is routinely older than the server's,
+  // so asking the device "can you resolve this?" produces confident false
+  // negatives for zones the server accepted (`Europe/Kyiv` on a build that only
+  // knows `Europe/Kiev`). Only device-independent defects may be repaired.
+  it("preserves a stored zone this device cannot resolve, rather than overwriting it", async () => {
     mockState.secureStoreToken = "test-token";
 
+    // Stands in for any zone newer than this runtime's tzdata. It is well
+    // formed and within length, so only the server may judge it.
     const { client, patch, settings } = createStatefulClient({
       quiet_hours_start: "21:00:00",
       quiet_hours_end: "07:00:00",
@@ -372,10 +372,7 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.quietHoursWindow.start).toBe("21:00");
     });
 
-    // The window the member is shown must already be repaired — the stored
-    // value never surfaces.
-    expect(result.current.quietHoursWindow.tz).not.toBe("Mars/Olympus");
-    expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
+    expect(result.current.quietHoursWindow.tz).toBe("Mars/Olympus");
 
     act(() => {
       result.current.setPreference("quietHoursEnabled", false);
@@ -391,19 +388,46 @@ describe("useNotificationPreferencesSync", () => {
       expect(settings.quiet_hours_start).toBe("21:00");
     });
 
-    // The times are preserved; only the unusable zone is replaced.
+    // Replayed untouched. If the server really does reject it, that surfaces as
+    // the retry state — a visible error on an already-broken row, which is the
+    // accepted cost of never corrupting a correct one.
     const body = lastSettingsPatchBody(patch);
     expect(body.quiet_hours_start).toBe("21:00");
     expect(body.quiet_hours_end).toBe("07:00");
-    expect(body.quiet_hours_tz).not.toBe("Mars/Olympus");
-    expect(isSupportedTimeZone(body.quiet_hours_tz)).toBe(true);
+    expect(body.quiet_hours_tz).toBe("Mars/Olympus");
   });
 
-  it("repairs an unresolvable zone coming from the cached window too", async () => {
+  it("repairs a blank stored zone, which no device can mistake for valid", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const { client } = createStatefulClient({
+      quiet_hours_start: "21:00:00",
+      quiet_hours_end: "07:00:00",
+      quiet_hours_tz: "   ",
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.quietHoursWindow.start).toBe("21:00");
+    });
+
+    expect(result.current.quietHoursWindow.tz.trim().length).toBeGreaterThan(0);
+    expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
+  });
+
+  it("repairs an over-length cached zone the column could never hold", async () => {
     mockState.secureStoreToken = null;
     mockState.asyncStorageMap.set(
       QUIET_HOURS_WINDOW_STORAGE_KEY,
-      JSON.stringify({ start: "23:00", end: "06:00", tz: "Mars/Olympus" }),
+      JSON.stringify({
+        start: "23:00",
+        end: "06:00",
+        tz: "A".repeat(MAX_TIME_ZONE_LENGTH + 1),
+      }),
     );
 
     const client = createMockClient();
@@ -417,7 +441,9 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     expect(result.current.quietHoursWindow.start).toBe("23:00");
-    expect(result.current.quietHoursWindow.tz).not.toBe("Mars/Olympus");
+    expect(result.current.quietHoursWindow.tz.length).toBeLessThanOrEqual(
+      MAX_TIME_ZONE_LENGTH,
+    );
     expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
   });
 

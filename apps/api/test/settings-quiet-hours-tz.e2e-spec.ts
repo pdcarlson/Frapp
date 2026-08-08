@@ -114,9 +114,10 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
   // unresolvable cannot save an unrelated preference until they fix or clear
   // the field. Web makes that recoverable rather than opaque — it blocks the
   // submit with a field-level message naming the problem, and blank is a clear
-  // on every field, so clearing the zone is always a way out. Mobile never
-  // replays a known-bad stored zone at all. What none of them may do is send an
-  // unvalidated zone on a save the member thinks is about something else.
+  // on every field, so clearing the zone is always a way out. Mobile repairs
+  // only structurally-broken stored values (blank, over-length) and leaves the
+  // rest to this endpoint, because a device's tzdata can be older than the
+  // server's and "repairing" on that verdict would overwrite a valid zone.
   it('rejects the whole payload when a bad zone rides along with a theme change', async () => {
     await patch({ quiet_hours_tz: 'Mars/Olympus', theme: 'dark' }).expect(400);
     expect(notificationServiceMock.updateSettings).not.toHaveBeenCalled();
