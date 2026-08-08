@@ -37,6 +37,8 @@
     "@repo/theme": "*",
     "@repo/ui": "*",
     "@repo/validation": "*",
+    "@stripe/react-stripe-js": "^6.8.0",
+    "@stripe/stripe-js": "^9.13.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.1",
     "@tanstack/react-query": "^5.90.21",
