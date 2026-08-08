@@ -137,6 +137,17 @@ After any rollback event:
 * **Action**: `ALTER TABLE members DROP COLUMN IF EXISTS custom_role_ids;` — but redeploy the API at the pre-FRA-229 revision **first**: the post-FRA-229 `ChapterGuard` `select`s the column on every request and errors if it is gone.
 * **Note**: Purely additive (`uuid[] not null default '{}'`). Dropping it loses only which members hold which `chapter_custom_roles` — the roles themselves, their capabilities, and all live-role assignments are untouched, and enforcement falls back to exactly the pre-bridge behavior (custom roles present but presentation-only). No backfill is needed on re-apply; assignments would have to be redone by hand.
 
+## Rollback the dashboard-created bucket declarations
+
+* **Migration**: `20260808204500_declare_dashboard_created_buckets.sql`
+* **⚠️ Never delete these buckets.** This is the one bucket migration that does **not** own its buckets. `branding`, `profiles`, `documents`, `backwork` and `chat` were created by hand in the dashboard long before it and already hold live member uploads — logos, profile photos, chapter documents, Backwork resources, chat attachments. The migration only *constrains* rows it did not create, so emptying or deleting a bucket here destroys real chapter data and is never a rollback step (contrast the `reports` and `service` sections below, whose migrations did create their buckets).
+* **What it actually changed**: three columns per bucket — `public → false`, `allowed_mime_types` → that bucket's API-side allowlist, `file_size_limit → 26214400`. Nothing else, and no object was touched.
+* **Action — no deploy required, and no API rollback is ever needed.** Reverse only the column that is causing trouble:
+  * Uploads rejected as the wrong type or too large: `update storage.buckets set allowed_mime_types = null, file_size_limit = null where id = '<bucket>';`
+  * An image or file that used to load over a public URL now 404s: `update storage.buckets set public = true where id = '<bucket>';` — **but treat this as an incident, not a fix.** It means something was reading that bucket without a signed URL, which `spec/architecture/README.md` §7 says nothing should do. Restore availability if you must, then find the reader and move it onto a signed URL.
+* **Note**: The API is indifferent to all three columns — it only ever mints signed URLs, and `IStorageProvider` has no `getPublicUrl` method — so no API revision pairs with this migration in either direction. Re-applying is safe and idempotent at any time: the `on conflict (id) do update` re-asserts all three columns onto whatever rows exist, which is also what makes it self-healing if someone changes a bucket in the dashboard again.
+* **Tightening caveat**: a MIME allowlist constrains only *future* uploads; objects already stored outside the allowlist keep serving. So a rollback is never needed to protect existing files — only to unblock new uploads.
+
 ## Rollback the generated-reports bucket
 
 * **Migration**: `20260805133000_reports_bucket.sql`

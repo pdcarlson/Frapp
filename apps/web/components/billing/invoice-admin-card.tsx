@@ -41,6 +41,7 @@ import {
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
+import { formatCurrency } from "@/lib/currency";
 
 type Invoice = {
   id: string;
@@ -62,13 +63,6 @@ type MemberSummary = {
 };
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function statusVariant(
   status: Invoice["status"],

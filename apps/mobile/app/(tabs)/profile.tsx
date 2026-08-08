@@ -3,7 +3,7 @@ import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
-import { usePreviewSession } from "@/lib/preview-session";
+import { useAuthSession } from "@/lib/auth-session";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 
 const THEME_OPTIONS: Array<{ key: ThemePreference; label: string }> = [
@@ -14,7 +14,7 @@ const THEME_OPTIONS: Array<{ key: ThemePreference; label: string }> = [
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { signOut } = usePreviewSession();
+  const { email, signOut } = useAuthSession();
   const { themePreference, resolvedTheme, setThemePreference, tokens } =
     useFrappTheme();
   const styles = createStyles(tokens);
@@ -31,7 +31,11 @@ export default function ProfileScreen() {
     >
       <InfoCard
         title="Account"
-        body="Display name, photo, and bio are visible in directory and chat."
+        body={
+          email
+            ? `Signed in as ${email}. Display name, photo, and bio are visible in directory and chat.`
+            : "Display name, photo, and bio are visible in directory and chat."
+        }
       />
       <InfoCard
         title="Notifications"
@@ -82,7 +86,7 @@ export default function ProfileScreen() {
         }}
         style={styles.signOutButton}
       >
-        <Text style={styles.signOutText}>Sign out of preview session</Text>
+        <Text style={styles.signOutText}>Sign out</Text>
       </Pressable>
     </ScreenShell>
   );
