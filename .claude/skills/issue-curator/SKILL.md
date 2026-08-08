@@ -108,8 +108,11 @@ spec, the UX, and the runtime — not just whatever prompted the run.
 ### Lens 1 — Engineering gaps
 
 Run the audit playbook ([`/audit`](../audit/SKILL.md)): `npm run check-types`, `npm run lint`,
-`npm audit`, `npm run check:api-contract`, `npm run check:migration-safety`. These run fine on a
-fresh sandbox with no manual package build (`turbo.json` wires them to `^build`). Plus: weak tests
+`npm audit`, `npm run check:api-contract`, `npm run check:migration-safety`. All five run on a fresh
+sandbox with no manual package build, but for three different reasons — do not collapse them:
+`check-types` and `lint` are turbo tasks wired to `^build` in `turbo.json`; `check:api-contract` is a
+root node script that builds `./packages/*` itself before regenerating; `npm audit` and
+`check:migration-safety` need no build at all. `^build` covers **only** the turbo tasks. Plus: weak tests
 on complex logic, N+1/in-memory aggregation, large unsplit modules, auth-guard/RLS gaps, secret
 exposure, CI holes. `npm run lint` is read-only and never edits files, but `npm run check:api-contract`
 regenerates the contract artifacts when API-related files changed — treat those edits as throwaway

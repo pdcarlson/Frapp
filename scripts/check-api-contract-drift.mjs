@@ -16,8 +16,14 @@
  *
  * The export bootstraps NestJS with placeholder credentials (it only builds the
  * Swagger document — it never calls Supabase/Stripe), so no real secrets are
- * required. Shared packages must be built first (the CI job does this; locally
- * run `npx turbo run build --filter='./packages/*'`).
+ * required. It does need the shared workspace packages built, so this script
+ * builds them itself immediately before regenerating. Turbo is
+ * content-addressed, so that is a cache hit (effectively a no-op) whenever they
+ * are already built — as they are in CI, which prebuilds them — and it is what
+ * lets `npm run check:api-contract` work on a cold clone with nothing but
+ * `npm install`. Note that `turbo.json`'s `^build` wiring covers only the turbo
+ * tasks (`build`, `lint`, `check-types`); this script is not one of them, so it
+ * cannot rely on that.
  */
 
 import { execSync } from "node:child_process";
@@ -116,13 +122,23 @@ function main() {
 
   console.log("Regenerating API contract artifacts…");
   try {
+    // The export type-checks `apps/api` against the shared workspace packages,
+    // so their `dist/` output has to exist before ts-node compiles it —
+    // otherwise this fails with TS2307 on `@repo/*`. Building here (rather than
+    // documenting a prerequisite at each of the ~8 places this script is
+    // invoked) is what keeps a cold `npm install && npm run check:api-contract`
+    // working. Turbo caches it, so it costs nothing when packages are current.
+    run("npx turbo run build --filter='./packages/*'");
     run("npm run openapi:export -w apps/api");
     run("npm run generate -w packages/api-sdk");
   } catch (error) {
     console.error("");
     console.error("Failed to regenerate API contract artifacts.");
     console.error(
-      "Ensure shared packages are built: npx turbo run build --filter='./packages/*'",
+      "This script builds ./packages/* itself, so a failure here is normally a",
+    );
+    console.error(
+      "real compile error in apps/api or a shared package — not a missing build.",
     );
     console.error(String(error?.message ?? error));
     process.exit(1);
