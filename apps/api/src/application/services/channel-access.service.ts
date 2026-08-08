@@ -9,10 +9,7 @@ import type { IChatChannelRepository } from '../../domain/repositories/chat.repo
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { ChatChannel } from '../../domain/entities/chat.entity';
-import {
-  ALUMNI_POSTABLE_CHANNEL_TYPES,
-  canAccessChannel,
-} from '@repo/validation';
+import { canAccessChannel, isAlumniPostableChannel } from '@repo/validation';
 import type { ChannelOperation } from '@repo/validation';
 import { RbacService } from './rbac.service';
 
@@ -61,14 +58,20 @@ export class ChannelAccessService {
 
     // Alumni are read-mostly (`spec/behavior/alumni.md`): resolve the lifecycle
     // flag only when it can change the outcome — an authored post into a
-    // channel type alumni are not allowed to write in. Reads, votes, and posts
-    // into always-postable types (DMs, the alumni channel) skip the lookup, so
-    // the chat hot path adds no query for them. Reuses the member row already
-    // fetched above rather than re-querying it.
+    // channel alumni are not allowed to write in. Reads, votes, and posts into
+    // alumni-postable channels (DMs, and ROLE_GATED channels requiring
+    // `alumni:post`) skip the lookup, so the chat hot path adds no query for
+    // them. Must use the same predicate the gate does, or the short-circuit
+    // would skip the lookup on the ROLE_GATED channels that now need it.
+    // Reuses the member row already fetched above rather than re-querying it.
     const alumniRuleCouldApply =
       isChapterMember &&
       operation === 'post' &&
-      !ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type);
+      !isAlumniPostableChannel({
+        type: channel.type,
+        member_ids: channel.member_ids,
+        required_permissions: channel.required_permissions,
+      });
     const isAlumni = alumniRuleCouldApply
       ? await this.rbac.hasAlumniRole(chapterId, member?.role_ids)
       : false;

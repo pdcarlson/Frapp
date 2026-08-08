@@ -432,8 +432,32 @@ describe('ChapterService', () => {
         name: channelDef.name,
         type: channelDef.type,
         is_read_only: channelDef.is_read_only,
+        required_permissions: channelDef.required_permissions
+          ? [...channelDef.required_permissions]
+          : null,
       })),
     );
+  });
+
+  // FRA-321: the seeder used to drop `required_permissions` entirely, leaving
+  // #alumni ROLE_GATED but gating on nothing — which `canAccessChannel` then
+  // read as "any chapter member". Asserted against the persisted payload rather
+  // than the constant so a seeder that silently stops writing the field fails.
+  it('should persist required_permissions for the seeded ROLE_GATED channel', () => {
+    const alumniChannel = DEFAULT_CHANNELS.find(
+      (channelDef) => channelDef.type === 'ROLE_GATED',
+    );
+
+    expect(alumniChannel).toBeDefined();
+    expect(alumniChannel?.required_permissions).toEqual([
+      'members:view',
+      'alumni:post',
+    ]);
+
+    for (const channelDef of DEFAULT_CHANNELS) {
+      if (channelDef.type !== 'ROLE_GATED') continue;
+      expect(channelDef.required_permissions?.length ?? 0).toBeGreaterThan(0);
+    }
   });
 
   it('should fail chapter creation when default channel insert returns an error', async () => {

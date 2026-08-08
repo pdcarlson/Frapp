@@ -260,6 +260,82 @@ describe('ChatService', () => {
         }),
       ).rejects.toThrow(BadRequestException);
     });
+
+    // FRA-321: canAccessChannel denies a ROLE_GATED channel that gates on
+    // nothing, so creating one would strand it. Reject the shape at the door.
+    it.each([undefined, []])(
+      'should reject a ROLE_GATED channel with required_permissions %p',
+      async (required) => {
+        await expect(
+          service.createChannel({
+            chapter_id: 'ch-1',
+            name: 'exec-board',
+            type: 'ROLE_GATED',
+            required_permissions: required,
+          }),
+        ).rejects.toThrow(BadRequestException);
+
+        expect(mockChannelRepo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should create a ROLE_GATED channel that specifies requirements', async () => {
+      mockChannelRepo.create.mockResolvedValue(baseChannel);
+
+      await service.createChannel({
+        chapter_id: 'ch-1',
+        name: 'exec-board',
+        type: 'ROLE_GATED',
+        required_permissions: ['roles:manage'],
+      });
+
+      expect(mockChannelRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'ROLE_GATED',
+          required_permissions: ['roles:manage'],
+        }),
+      );
+    });
+  });
+
+  describe('updateChannel', () => {
+    const roleGated = {
+      ...baseChannel,
+      type: 'ROLE_GATED' as const,
+      required_permissions: ['roles:manage'],
+    };
+
+    it('should reject clearing required_permissions on a ROLE_GATED channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGated);
+
+      await expect(
+        service.updateChannel('chan-1', 'ch-1', { required_permissions: [] }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockChannelRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should leave the stored list intact when the field is omitted', async () => {
+      mockChannelRepo.findById.mockResolvedValue(roleGated);
+      mockChannelRepo.update.mockResolvedValue(roleGated);
+
+      await service.updateChannel('chan-1', 'ch-1', { name: 'renamed' });
+
+      expect(mockChannelRepo.update).toHaveBeenCalledWith('chan-1', 'ch-1', {
+        name: 'renamed',
+      });
+    });
+
+    it('should allow clearing required_permissions on a non-ROLE_GATED channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockChannelRepo.update.mockResolvedValue(baseChannel);
+
+      await service.updateChannel('chan-1', 'ch-1', {
+        required_permissions: [],
+      });
+
+      expect(mockChannelRepo.update).toHaveBeenCalled();
+    });
   });
 
   describe('getOrCreateDm', () => {

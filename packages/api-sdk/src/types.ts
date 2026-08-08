@@ -1665,6 +1665,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/study-sessions/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause the active session (app backgrounded / tab hidden)
+         * @description Credits foreground time up to now and starts the grace clock. The session stays ACTIVE until the geofence pause_grace_minutes window elapses, then auto-expires as PAUSED_EXPIRED.
+         */
+        post: operations["StudySessionController_pause_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/study-sessions/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume a paused session (with lat/lng)
+         * @description Resumes without resetting accumulated foreground minutes. If the grace window already elapsed, returns the session as PAUSED_EXPIRED.
+         */
+        post: operations["StudySessionController_resume_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/study-sessions/stop": {
         parameters: {
             query?: never;
@@ -2517,6 +2557,11 @@ export interface components {
             points_per_interval: number;
             /** @default 15 */
             min_session_minutes: number;
+            /**
+             * @description Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED.
+             * @default 5
+             */
+            pause_grace_minutes: number;
         };
         UpdateGeofenceDto: {
             name?: string;
@@ -2525,6 +2570,8 @@ export interface components {
             minutes_per_point?: number;
             points_per_interval?: number;
             min_session_minutes?: number;
+            /** @description Minutes a backgrounded session may stay paused before it auto-expires as PAUSED_EXPIRED. */
+            pause_grace_minutes?: number;
         };
         StartStudySessionDto: {
             geofence_id: string;
@@ -2532,6 +2579,10 @@ export interface components {
             lng: number;
         };
         StudySessionHeartbeatDto: {
+            lat: number;
+            lng: number;
+        };
+        ResumeStudySessionDto: {
             lat: number;
             lng: number;
         };
@@ -5340,6 +5391,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["StudySessionHeartbeatDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StudySessionController_pause_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StudySessionController_resume_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResumeStudySessionDto"];
             };
         };
         responses: {

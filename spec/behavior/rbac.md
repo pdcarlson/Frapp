@@ -21,6 +21,7 @@ Frapp publishes a **system permissions catalog** — these are the strings the A
 | `channels:create`     | Create chat channels                                   |
 | `channels:manage`     | Edit/delete channels, pin messages, manage permissions |
 | `announcements:post`  | Post in the #announcements channel                     |
+| `alumni:post`         | Channel marker: names a ROLE_GATED channel alumni may write in (read off the channel's `required_permissions`, not the caller's) |
 | `billing:view`        | View subscription and invoice status                   |
 | `billing:manage`      | Manage subscription, create member invoices            |
 | `backwork:upload`     | Upload resources to Backwork                           |
@@ -60,7 +61,7 @@ The same resolution backs `GET /v1/users/me/permissions` (the effective-permissi
 
 A permission answers "may this member do X?"; a **lifecycle rule** answers "is this member still an active participant?". The two are enforced independently, and passing the permission check above does not imply a lifecycle rule allows the action.
 
-The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.md)), which blocks study-hour accrual, event check-in, and posting outside `#alumni` / DMs. It is deliberately not modelled as a permission: the seeded Alumni permission set is `members:view`, exactly what active members hold, so widening or narrowing permissions could not express it — and the study controller's `members:view` requirement is satisfied by alumni, which is why the rule is enforced in the domain services rather than in `PermissionsGuard`. Holding the role is what restricts, so a member who still needs to act operationally should not carry it.
+The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.md)), which blocks study-hour accrual, event check-in, and posting outside `#alumni` / DMs. It is deliberately not modelled as a permission: the seeded Alumni permission set is `members:view` (exactly what active members hold) plus `alumni:post`, which is a *channel* marker rather than a capability — the posting gate tests it against the channel's `required_permissions`, not the caller's — so widening or narrowing the caller's permissions could not express the rule — and the study controller's `members:view` requirement is satisfied by alumni, which is why the rule is enforced in the domain services rather than in `PermissionsGuard`. Holding the role is what restricts, so a member who still needs to act operationally should not carry it.
 
 ## Role Lifecycle
 
@@ -72,7 +73,7 @@ The only lifecycle rule today is the **Alumni** role (see [`alumni.md`](alumni.m
   - **Secretary:** `members:view`, `polls:view_all` (same as Vice President).
   - **Member:** `members:view`, `backwork:upload`, `service:log`, `polls:create`.
   - **New Member:** `members:view`, `backwork:upload`.
-  - **Alumni:** `members:view`.
+  - **Alumni:** `members:view`, `alumni:post`.
 - System roles can be **renamed** and have their **permissions modified**, but cannot be deleted.
   - **Renaming is safe: system roles carry a stable `system_key`.** Each seeded role is created with a rename-proof identifier (`PRESIDENT`, `TREASURER`, `VICE_PRESIDENT`, `SECRETARY`, `MEMBER`, `NEW_MEMBER`, `ALUMNI`) stored in `roles.system_key`, unique per chapter. Every lookup that asks "is this *the* Alumni/President/Member role?" — the Alumni lifecycle restrictions (see [`alumni.md`](alumni.md)), the President notification target, the invite fallback role — resolves on that key, never on `name`. Renaming a system role is therefore a pure relabel: it changes no authorization or lifecycle outcome, and a custom role that takes the freed name inherits nothing.
   - `system_key` is **not writable through the API**. Role create forces it to `null` (custom roles never carry one) and role update strips it, so `roles:manage` can neither mint a role impersonating a seeded one nor detach a key from one.

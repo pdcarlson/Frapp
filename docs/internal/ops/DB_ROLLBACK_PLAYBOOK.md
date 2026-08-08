@@ -73,6 +73,38 @@ After any rollback event:
 * **Note**: Additive table + function only; nothing else references them, so dropping loses only the delivery ledger. Behaviour reverts to the in-memory `Set` — dedup within one process, and a replay after any restart re-applies the event. No backfill on re-apply; the table refills from the next deliveries.
 * **Lighter option — usually the right one**: if the goal is just to unstick a specific event rather than remove the feature, do not drop anything. `update stripe_webhook_events set status = 'failed' where event_id = 'evt_…';` makes it immediately re-claimable on Stripe's next retry, and `select event_id, event_type, status, attempts, last_error from stripe_webhook_events where status <> 'processed' order by claimed_at desc;` lists everything currently stuck or failing.
 
+## Rollback study-session pause + grace window
+
+* **Migration**: `20260807150000_study_session_pause_grace.sql`
+* **Action**: drop both columns; each is referenced only by the study feature.
+  ```sql
+  ALTER TABLE study_sessions  DROP COLUMN IF EXISTS paused_at;
+  ALTER TABLE study_geofences DROP COLUMN IF EXISTS pause_grace_minutes;
+  ```
+  **Redeploy the API at the pre-FRA-232 revision first.** The post-FRA-232 `StudyService` *inserts* `paused_at` on every `startSession` and selects it on every heartbeat, and `createGeofence` inserts `pause_grace_minutes` — with the columns gone, starting a session and creating a study zone both 500 outright. `POST /v1/study-sessions/pause` and `/resume` disappear with that redeploy, and the web study page calls them on every tab hide/show, so roll the web app back in the same window or members see a paused session they cannot resume.
+* **Note**: Additive DDL only (two nullable-or-defaulted columns); no existing column, constraint, index, or policy is altered, and `PAUSED_EXPIRED` was already permitted by the original `status` CHECK, so that constraint is untouched by both apply and rollback. Rolling back **re-opens the hole this migration closed** (FRA-232): with no pause signal the server cannot distinguish "app backgrounded" from "heartbeat in flight" and credits the whole gap between heartbeats as foreground study time, so members earn points for time they were not studying. Prefer a roll-forward fix.
+* **Data caveat**: `paused_at` is live state, not history — dropping it strands any session that is paused *at that moment*. Those rows keep `status = 'ACTIVE'`, so the one-active-session rule blocks the member from starting a new session, and with the column gone nothing can ever expire them. Settle them **before** dropping:
+  ```sql
+  -- Inspect first; then close them out as if the grace window lapsed.
+  SELECT id, user_id, chapter_id, total_foreground_minutes, paused_at
+    FROM study_sessions WHERE paused_at IS NOT NULL AND status = 'ACTIVE';
+  UPDATE study_sessions
+     SET status = 'PAUSED_EXPIRED', end_time = paused_at
+   WHERE paused_at IS NOT NULL AND status = 'ACTIVE';
+  ```
+  The `status = 'ACTIVE'` filter is load-bearing, not defensive: a session that ended as `LOCATION_INVALID` from the paused branch keeps its `paused_at` (nothing clears it, and the row is never re-read because `findActiveByUserAndChapter` filters on `ACTIVE`). Without the filter this statement rewrites those finished sessions to `PAUSED_EXPIRED` and backdates their `end_time` — verified by running the unfiltered form against a live database.
+  Points for those sessions are **not** awarded by this statement — the award runs in application code. Reconcile manually against `point_transactions` if any settled session cleared its zone's `min_session_minutes`.
+  Historical rows already in a terminal state lose nothing: `total_foreground_minutes`, `end_time`, and `status` (including `PAUSED_EXPIRED`) all survive, so past sessions and awarded points stay intact and readable. `pause_grace_minutes` is per-zone config; on re-apply every zone returns to the default 5 and any chapter that had tuned its window must set it again — snapshot `select id, chapter_id, name, pause_grace_minutes from study_geofences` first if any zone has been customized.
+
+## Rollback ROLE_GATED `required_permissions`
+
+* **Migration**: `20260807220000_role_gated_required_permissions.sql`
+* **Action**: there is no DDL to undo — the migration only populates an existing nullable column and replaces one function. To restore the previous read semantics, re-apply the **prior** definition of `public.can_read_chat_message` from `20260803150000_chat_message_actions_membership_rls.sql` verbatim (it is `create or replace`, so re-running that file's function block is the rollback). The backfilled `required_permissions` values can stay: under the old predicate an explicit `{members:view}` behaves the same as the empty list it replaced, since every seeded role holds `members:view`.
+  **Redeploy the API at the pre-FRA-321 revision first**, or the app-layer predicate keeps denying empty-gated channels while the SQL one allows them — the same split this migration exists to prevent, just inverted.
+  To revert only the seeded `#alumni` marker and re-open alumni posting to every ROLE_GATED channel, drop the marker and redeploy the old code: `update chat_channels set required_permissions = array['members:view']::text[] where type = 'ROLE_GATED' and 'alumni:post' = any (required_permissions);`
+* **⚠️ Note**: Rolling back **re-opens the vulnerability** (FRA-321): a ROLE_GATED channel with no `required_permissions` becomes readable by every chapter member, and — because the pre-FRA-321 posting rule keys on channel *type* — writable by alumni, including a chapter's `#exec-board`. Prefer a roll-forward fix. Nothing predating the migration can be lost: no column, constraint, policy, or row is dropped.
+* **Data caveat**: the two `UPDATE`s only touch rows whose `required_permissions` is null or empty, so a chapter that had already configured a channel is never overwritten and re-applying is idempotent. What a drop/re-apply cycle cannot reconstruct is *which* channel was the alumni channel: step 1 matches on `name = 'alumni'`, so a chapter that renamed it gets `{members:view}` from step 2 and loses alumni posting there until an officer with `channels:manage` adds `alumni:post` back. Snapshot `select id, chapter_id, name, type, required_permissions from chat_channels where type = 'ROLE_GATED'` first if any chapter has renamed or hand-tuned a role-gated channel. The Alumni role grant (step 3) is guarded by an `any(permissions)` check and is likewise idempotent; to undo it, `update roles set permissions = array_remove(permissions, 'alumni:post') where system_key = 'ALUMNI';`
+
 ## Rollback system-role `system_key`
 
 * **Migration**: `20260806220000_role_system_key.sql`

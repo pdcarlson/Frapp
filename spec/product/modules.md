@@ -96,7 +96,7 @@
   2. API validates that the user's GPS coordinates are inside the polygon.
   3. App enters dedicated **study mode screen** (timer, location status, progress, streak).
   4. Client sends a heartbeat every 5 minutes with updated GPS (foreground only).
-  5. If the app goes to the background, the session **pauses**. Grace window (default 5 minutes) before auto-expiration.
+  5. If the app goes to the background, the client tells the server and the session **pauses** — time stops accruing at that instant. Grace window (`pause_grace_minutes`, per study zone, default 5 minutes) before it auto-expires as `PAUSED_EXPIRED`, keeping only the minutes studied before the pause.
   6. Server validates each heartbeat (point-in-polygon). Departure or GPS spoofing expires the session.
   7. User stops session. Server calculates `total_foreground_minutes` and awards points via the Points service.
 - **Reward logic:** Chapter-configurable (e.g. 1 point per 30 minutes). Minimum session length required (e.g. 15 minutes).

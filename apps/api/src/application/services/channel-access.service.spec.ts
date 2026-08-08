@@ -182,14 +182,26 @@ describe('ChannelAccessService', () => {
   });
 
   // Alumni are read-mostly (spec/behavior/alumni.md): full read access, but
-  // writes only in the ROLE_GATED #alumni channel and direct conversations.
+  // writes only in direct conversations and ROLE_GATED channels that require
+  // `alumni:post`.
   describe('assertChannelAccess — Alumni posting', () => {
+    // The shape the seeder actually persists (FRA-321). It used to be
+    // `required_permissions: null`, which is now denied outright.
     const alumniChannel: ChatChannel = {
       ...publicChannel,
       id: 'ch-alumni',
       name: 'alumni',
       type: 'ROLE_GATED',
-      required_permissions: null,
+      required_permissions: ['members:view', 'alumni:post'],
+    };
+
+    // A chapter's own role-gated channel: gated, but not an alumni space.
+    const execChannel: ChatChannel = {
+      ...publicChannel,
+      id: 'ch-exec',
+      name: 'exec-board',
+      type: 'ROLE_GATED',
+      required_permissions: ['members:view'],
     };
 
     const dmChannel: ChatChannel = {
@@ -202,6 +214,11 @@ describe('ChannelAccessService', () => {
     beforeEach(() => {
       mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
       mockRbac.hasAlumniRole.mockResolvedValue(true);
+      // The Alumni role's seeded permission set.
+      mockRbac.getEffectivePermissions.mockResolvedValue([
+        'members:view',
+        'alumni:post',
+      ]);
     });
 
     it('lets an alumni member read an operational PUBLIC channel', async () => {
@@ -237,6 +254,26 @@ describe('ChannelAccessService', () => {
       await expect(
         service.assertChannelAccess('ch-alumni', 'chap-1', 'user-1', 'post'),
       ).resolves.toBe(alumniChannel);
+    });
+
+    // FRA-321: the vulnerability. The post gate keyed on channel *type*, so a
+    // chapter's #exec-board was alumni-postable purely for being ROLE_GATED —
+    // and gating it on members:view (the Alumni role's own permission) did not
+    // help. It is now denied because it does not require alumni:post.
+    it('denies an alumni member posting in a ROLE_GATED channel that is not an alumni space', async () => {
+      mockChannelRepo.findById.mockResolvedValue(execChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-exec', 'chap-1', 'user-1', 'post'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('still lets an alumni member read that ROLE_GATED channel', async () => {
+      mockChannelRepo.findById.mockResolvedValue(execChannel);
+
+      await expect(
+        service.assertChannelAccess('ch-exec', 'chap-1', 'user-1', 'read'),
+      ).resolves.toBe(execChannel);
     });
 
     it('allows an alumni member to post in a DM', async () => {

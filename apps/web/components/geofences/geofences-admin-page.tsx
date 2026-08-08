@@ -48,6 +48,7 @@ type Geofence = {
   minutes_per_point: number;
   points_per_interval: number;
   min_session_minutes: number;
+  pause_grace_minutes: number;
   created_at: string;
 };
 
@@ -122,6 +123,7 @@ export function GeofencesAdminPage() {
     minutes_per_point: "30",
     points_per_interval: "1",
     min_session_minutes: "15",
+    pause_grace_minutes: "5",
   });
 
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
@@ -131,12 +133,14 @@ export function GeofencesAdminPage() {
     minutes_per_point: string;
     points_per_interval: string;
     min_session_minutes: string;
+    pause_grace_minutes: string;
   }>({
     name: "",
     coordinates: "",
     minutes_per_point: "",
     points_per_interval: "",
     min_session_minutes: "",
+    pause_grace_minutes: "",
   });
 
   const editTarget = useMemo(
@@ -152,6 +156,7 @@ export function GeofencesAdminPage() {
       minutes_per_point: String(geofence.minutes_per_point ?? 30),
       points_per_interval: String(geofence.points_per_interval ?? 1),
       min_session_minutes: String(geofence.min_session_minutes ?? 15),
+      pause_grace_minutes: String(geofence.pause_grace_minutes ?? 5),
     });
   }
 
@@ -180,6 +185,10 @@ export function GeofencesAdminPage() {
           1,
           Number(createDraft.min_session_minutes),
         ),
+        pause_grace_minutes: Math.max(
+          1,
+          Number(createDraft.pause_grace_minutes),
+        ),
       });
       toast({
         title: "Study zone created",
@@ -192,6 +201,7 @@ export function GeofencesAdminPage() {
         minutes_per_point: "30",
         points_per_interval: "1",
         min_session_minutes: "15",
+        pause_grace_minutes: "5",
       });
     } catch (error) {
       toast({
@@ -231,6 +241,10 @@ export function GeofencesAdminPage() {
           min_session_minutes: Math.max(
             1,
             Number(editDraft.min_session_minutes),
+          ),
+          pause_grace_minutes: Math.max(
+            1,
+            Number(editDraft.pause_grace_minutes),
           ),
         },
       });
@@ -444,6 +458,26 @@ export function GeofencesAdminPage() {
                       }
                     />
                   </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="gf-pause-grace">Pause grace (min)</Label>
+                    <Input
+                      id="gf-pause-grace"
+                      type="number"
+                      min={1}
+                      value={createDraft.pause_grace_minutes}
+                      onChange={(event) =>
+                        setCreateDraft((prev) => ({
+                          ...prev,
+                          pause_grace_minutes: event.target.value,
+                        }))
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      How long a backgrounded session may stay paused before it
+                      expires, counting only the minutes studied before the
+                      pause.
+                    </p>
+                  </div>
                 </div>
               </form>
               <DialogFooter>
@@ -487,7 +521,8 @@ export function GeofencesAdminPage() {
                     <CardDescription>
                       {zone.points_per_interval} pt every{" "}
                       {zone.minutes_per_point} min · min{" "}
-                      {zone.min_session_minutes} min session
+                      {zone.min_session_minutes} min session ·{" "}
+                      {zone.pause_grace_minutes ?? 5} min pause grace
                     </CardDescription>
                   </div>
                   <Badge variant={zone.is_active ? "default" : "outline"}>
@@ -633,6 +668,23 @@ export function GeofencesAdminPage() {
                         setEditDraft((prev) => ({
                           ...prev,
                           min_session_minutes: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label htmlFor="gf-edit-pause-grace">
+                      Pause grace (min)
+                    </Label>
+                    <Input
+                      id="gf-edit-pause-grace"
+                      type="number"
+                      min={1}
+                      value={editDraft.pause_grace_minutes}
+                      onChange={(event) =>
+                        setEditDraft((prev) => ({
+                          ...prev,
+                          pause_grace_minutes: event.target.value,
                         }))
                       }
                     />
