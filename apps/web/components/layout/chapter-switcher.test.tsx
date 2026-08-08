@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
+// A successful switch replaces the document; jsdom's real location.assign
+// throws "not implemented", so stand in for it and assert the destination.
+const assign = vi.fn();
+Object.defineProperty(window, "location", {
+  value: { ...window.location, assign },
+  writable: true,
+});
+
 const { selectChapter, toast, chaptersQuery } = vi.hoisted(() => ({
   selectChapter: vi.fn(async () => true),
   toast: vi.fn(),
@@ -44,6 +52,7 @@ describe("ChapterSwitcher", () => {
   beforeEach(() => {
     selectChapter.mockClear();
     selectChapter.mockResolvedValue(true);
+    assign.mockClear();
     toast.mockClear();
     activeChapterId = "chap-1";
     chaptersQuery.current = { data: [], isSuccess: true };
@@ -77,6 +86,10 @@ describe("ChapterSwitcher", () => {
 
     await waitFor(() => expect(selectChapter).toHaveBeenCalledWith("chap-2"));
     expect(toast).not.toHaveBeenCalled();
+    // Reload into the root: chat's selected channel id and the realtime
+    // subscriptions are keyed to the outgoing chapter, and the current route
+    // may itself be chapter-scoped.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
   });
 
   it("does not re-select the chapter the user is already in", async () => {
@@ -109,6 +122,30 @@ describe("ChapterSwitcher", () => {
         expect.objectContaining({ variant: "destructive" }),
       ),
     );
+    // A failed switch must not navigate — the user is still in the old chapter.
+    expect(assign).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /Switch chapter/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("surfaces a thrown switch and stays put", async () => {
+    selectChapter.mockRejectedValue(new Error("boom"));
+    chaptersQuery.current = {
+      data: [membership("chap-1", "Alpha Chapter"), membership("chap-2", "Beta Chapter")],
+      isSuccess: true,
+    };
+    render(<ChapterSwitcher />);
+
+    openMenu();
+    fireEvent.click(await screen.findByText("Beta Chapter"));
+
+    await waitFor(() =>
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ variant: "destructive" }),
+      ),
+    );
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("offers a recovery path when the persisted chapter is no longer accessible", async () => {

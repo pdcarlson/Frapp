@@ -51,9 +51,10 @@ function renderSelectChapter(qc: QueryClient) {
 }
 
 /**
- * The switch has to land server-side, reissue the token, update the store, and
- * drop the cache — see spec/behavior/multi-tenancy.md. Each test here pins one
- * of those so a future refactor can't quietly drop it.
+ * The switch has to land server-side, reissue the token, and update the store,
+ * in that order — see spec/behavior/multi-tenancy.md. Each test here pins one
+ * step so a future refactor can't quietly drop it. The cache drop that follows
+ * belongs to `FrappProvider`; it is covered in that component's own suite.
  */
 describe("useSelectChapter", () => {
   beforeEach(() => {
@@ -81,23 +82,6 @@ describe("useSelectChapter", () => {
     expect(calls).toEqual(["activate", "refreshSession", "setActiveChapterId"]);
   });
 
-  it("drops cached chapter-scoped data so the previous chapter can't be rendered", async () => {
-    const qc = makeClient();
-    // Two shapes on purpose: a key that carries chapterId and one that does
-    // not. The unscoped kind (["channels"], ["documents"], ["tasks"]) is what
-    // makes a blanket clear necessary — invalidating by chapter id would miss it.
-    qc.setQueryData(["members", "chap-1"], [{ id: "m-1" }]);
-    qc.setQueryData(["channels"], [{ id: "ch-1", name: "general" }]);
-
-    const { result } = renderSelectChapter(qc);
-    await act(async () => {
-      await result.current("chap-2");
-    });
-
-    expect(qc.getQueryData(["members", "chap-1"])).toBeUndefined();
-    expect(qc.getQueryData(["channels"])).toBeUndefined();
-  });
-
   it("leaves the store and the cache alone when activation fails", async () => {
     const qc = makeClient();
     qc.setQueryData(["channels"], [{ id: "ch-1" }]);
@@ -112,7 +96,9 @@ describe("useSelectChapter", () => {
 
     expect(switched).toBe(false);
     // Fail-closed: pointing x-chapter-id at a chapter the un-refreshed token
-    // still disagrees with would 403 every subsequent request.
+    // still disagrees with would 403 every subsequent request. Leaving the
+    // store alone also means FrappProvider never sees a change, so the cache
+    // survives too.
     expect(setActiveChapterId).not.toHaveBeenCalled();
     expect(qc.getQueryData(["channels"])).toEqual([{ id: "ch-1" }]);
   });

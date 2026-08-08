@@ -65,8 +65,32 @@ export function ChapterSwitcher({ className }: ChapterSwitcherProps) {
           description:
             "You're still in your previous chapter. Check your connection and try again.",
         });
+        setSwitchingTo(null);
+        return;
       }
-    } finally {
+      // Full reload into the dashboard root rather than an in-place re-render.
+      //
+      // Dropping the query cache (FrappProvider) handles cached *server* data,
+      // but a chapter id is threaded through client state the cache knows
+      // nothing about: the chat shell holds the selected channel id (which
+      // 404s under the new chapter), and the realtime manager holds live
+      // Supabase subscriptions keyed to the old chapter's channels. Both were
+      // observed breaking an in-place switch. Enumerating that state is the
+      // same losing game as enumerating query keys, and a chapter switch is a
+      // rare, deliberate, whole-context action — so start from a clean slate.
+      //
+      // The root is the destination because the current route may itself be
+      // chapter-scoped (`/events/<id>` from the outgoing chapter).
+      //
+      // `switchingTo` is intentionally left set: the spinner stays up until the
+      // document is replaced, instead of flashing back to the old chapter.
+      window.location.assign("/");
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Couldn't switch chapter",
+        description: "Something went wrong. Please try again.",
+      });
       setSwitchingTo(null);
     }
   }
