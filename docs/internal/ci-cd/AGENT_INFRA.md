@@ -131,9 +131,9 @@ Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.c
 | Key               | Value  | Effect                                                                                                                                                                                                                                                           |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `doneMeansMerged` | `true` | The session is not "done" when code is pushed — it's done when the PR is green and review-clean. Drives the babysit-until-merge loop — the six-step contract in AGENTS.md § "Autonomous PR lifecycle": open PR → subscribe → **arm a durable self-wake** → **triage infra-vs-code** → fix until merge-ready (or a self-contained next step). |
-| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Since PR #667 the list also carries **all Linear MCP tools** (server-level `mcp__Linear` + `mcp__linear`, casings hedged; PR #669 added the Linear connector's UUID namings `mcp__5928a707-…` + `mcp__5b8e7be9-…` after `save_issue` prompted on a claude.ai surface that surfaces connector tools under the toolbox UUID) and a **curated GitHub MCP set** for the babysit loop — reads plus `actions_run_trigger`, comment/thread, and PR create/update writes. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, `delete_file`, and `issue_write` stay unlisted, so merging and direct content writes still prompt. Full rationale: "Applied permission allows" below. |
+| `permissions.allow` | `Workflow` + claude-code-remote scheduling/PR-watch rules | Auto-approves launches of the multi-agent **Workflow** tool (bare tool name = allow all invocations), so `/next ultracode` and other opted-in turns orchestrate fan-outs without a permission prompt breaking autonomy. Also auto-approves the claude-code-remote scheduling and PR-watch tools (`send_later`, `create/update/delete/list_triggers`, `subscribe/unsubscribe_pr_activity`) so unattended sessions can arm check-ins and wait on GitHub/CI without stalling on a prompt — `subscribe_pr_activity` is step 2 of the AGENTS.md babysit loop, so leaving it out would stall the exact path these rules exist for. Each tool is listed under **every observed server naming** (`mcp__Claude_Code_Remote__*` and the connector-UUID prefix `mcp__bf7c680d-…__*`; the PR-watch pair additionally surfaces via the GitHub MCP server as `mcp__github__subscribe/unsubscribe_pr_activity`, so it carries a third spelling): permission rules are exact string matches against the surfaced tool name, an unmatched rule is silently inert, and each listed spelling has been seen live in cloud sessions — re-verify if a connector is ever re-registered. Since PR #667 the list also carries **all Linear MCP tools** (server-level `mcp__Linear` + `mcp__linear`, casings hedged; PR #669 added the connector UUID namings `mcp__5928a707-…` + `mcp__5b8e7be9-…`, which turned out to be inert — on Claude Code web `save_issue` prompts because the harness's own `--allowed-tools` omits it, fixed by a `PreToolUse` hook, see "Applied permission allows") and a **curated GitHub MCP set** for the babysit loop — reads plus `actions_run_trigger`, comment/thread, and PR create/update writes. `merge_pull_request`, `enable_pr_auto_merge`, `push_files`, `create_or_update_file`, `delete_file`, and `issue_write` stay unlisted, so merging and direct content writes still prompt. Full rationale: "Applied permission allows" below. |
 | `skipWorkflowUsageWarning` | `true` | Marks the multi-agent workflow usage warning as accepted. Per the settings schema (an `@internal` key, read out of the 2.1.220 build — re-verify on newer builds): "Until set, auto permission mode prompts before running a workflow." Set so unattended sessions don't stall on that prompt; a launch that prompts anyway on some build falls back to inline checks (see `/next`). |
-| `hooks` | PreToolUse + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate) and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
+| `hooks` | PreToolUse ×2 + SessionStart | Wires [`pre-push-review-gate.sh`](../../../.claude/hooks/pre-push-review-gate.sh) (Bash matcher — the single pre-PR review gate), [`linear-autoallow.sh`](../../../.claude/hooks/linear-autoallow.sh) (`mcp__.*__(save_.*\|get_workspace)` matcher — auto-approves the eight Linear tools the web harness omits from its `--allowed-tools` snapshot; see "Applied permission allows" below), and [`session-start.sh`](../../../.claude/hooks/session-start.sh) (cloud-sandbox bringup). Details: [`AI_CODE_REVIEW_RUNBOOK.md`](AI_CODE_REVIEW_RUNBOOK.md) and the "Claude Code web sandbox" section of [`AGENTS.md`](../../../AGENTS.md). |
 
 Authoring contract for the loop (what an agent must do) lives in [`AGENTS.md`](../../../AGENTS.md) under "Autonomous PR lifecycle". Keep the two in sync when changing either.
 
@@ -246,20 +246,78 @@ allowlist, never by the agent mid-session. What the list carries and why:
 
 - `"mcp__Linear"`, `"mcp__linear"` — server-level allow, both casings hedged against connector
   naming drift. Linear is the work tracker; every routine and `/next` session writes to it, so
-  per-tool prompts were pure babysitting with no security payoff on a solo project. PR #669
-  (2026-08-07, human-authored settings commit, same classifier constraint as above) added the
-  connector's two internal UUIDs as server-level allows —
-  `mcp__5928a707-2591-54b8-b95d-505c9ff3098f` (`mcp_server_id`) and
-  `mcp__5b8e7be9-0594-452e-a220-a8864e03b895` (`toolbox_mcp_server_id`) — after `save_issue`
-  kept prompting on a claude.ai surface where connector tools register under the toolbox UUID
-  instead of the friendly name (the same failure mode the claude-code-remote UUID prefix below
-  covers). Both IDs were read from the session MCP config (`/tmp/mcp-config-<session>.json`
-  query params). Lifecycle is **unverified** (2026-08-07, never observed through a reinstall):
-  the ids look per-connector-installation, so treat them as possibly stale after removing and
-  re-adding the Linear connector — but re-read a fresh session's MCP config and compare before
-  churning entries. Note `mcp_server_id` is a deterministic v5 UUID and may well survive a
-  reinstall; the v4 `toolbox_mcp_server_id` is likelier to rotate. Add newly observed ids
-  alongside existing ones (same posture as the spelling rule below), don't replace on suspicion.
+  per-tool prompts were pure babysitting with no security payoff on a solo project. These rules
+  do stop prompts on surfaces that honor `permissions.allow` for connector tools; on Claude Code
+  **web** they do not, for the reason below.
+- `mcp__5928a707-2591-54b8-b95d-505c9ff3098f` (`mcp_server_id`) and
+  `mcp__5b8e7be9-0594-452e-a220-a8864e03b895` (`toolbox_mcp_server_id`) — added by PR #669
+  (2026-08-07) on the theory that `save_issue` kept prompting because connector tools register
+  under the toolbox UUID rather than the friendly name. On the **web** surface that theory does not
+  hold: Linear surfaces there as `mcp__Linear__*` (confirmed live 2026-08-08), so on that surface
+  these two entries match nothing and cannot be what stops or fails to stop a prompt. They are kept
+  because a UUID naming costs nothing and the claude-code-remote prefix below shows the drift is
+  real on some surfaces — #669's author reported the UUID naming on a claude.ai surface that was
+  never re-examined, so treat "inert" as **surface-specific, not settled**. Before adding more
+  UUIDs, first check which server naming the tools actually carry on the surface that is prompting.
+- **Why `save_issue` prompts on Claude Code web.** The web harness launches the CLI with its own
+  `--allowed-tools` flag, built by the harness rather than from this repo. Read it live:
+
+  ```bash
+  # handles both `--allowed-tools X` and `--allowed-tools=X`; -x avoids pgrep self-match
+  PID=$(pgrep -x -f '^claude --output-format.*' | head -1)
+  tr '\0' '\n' < /proc/$PID/cmdline \
+    | grep -A1 -E '^--allowed-tools(=|$)' | tr ',' '\n' \
+    | sed 's/^--allowed-tools=//' | grep '^mcp__Linear__'
+  ```
+
+  Empty output means the parse broke (flag renamed or reformatted), **not** that Linear lost its
+  allowlist — check the raw `cmdline` before concluding anything.
+
+  As of 2026-08-08 it carries 45 Linear tools and omits **eight**: the seven issue-writing tools
+  `save_issue`, `save_comment`, `save_document`, `save_project`, `save_milestone`,
+  `save_status_update`, `save_release_note` — and `get_workspace`, which is a pure *read* (all 14
+  other `get_*` tools are present). `get_workspace` is the tell: it appeared in the connector's tool
+  roster mid-session, after launch. So the rule is **not** "the harness withholds writes" but *the
+  allowlist is a launch-time snapshot* — anything the connector gains afterwards falls outside it,
+  reads included. The write-shaped pattern across connectors (Gmail keeps `get`/`list`/`search` but
+  loses `create_draft`; Calendar loses `create_event`; Supabase keeps only `search_docs`) is
+  consistent with `tengu_remote_auto_mode_include_destructive_mcp=false` in `~/.claude.json` and
+  probably explains how the snapshot is *built*, but the snapshot's staleness is what bites.
+
+  **What is established vs inferred.** Established by direct observation: the flag's contents; that
+  `permissions.allow` entries for Linear were added across #667 and #669 and prompts continued; that
+  project `PreToolUse` hooks fire and hot-reload mid-session in a web sandbox (sentinel test,
+  2026-08-08). **Inferred, not observed:** *why* `permissions.allow` did not win. Two live
+  candidates, untested against each other — (a) the launch allowlist is treated as exhaustive for
+  connector tools, or (b) project settings are not applying at all here, note
+  `projects."/home/user/Frapp".hasTrustDialogAccepted = false` in `~/.claude.json`. Candidate (b)
+  would mean the whole project `permissions.allow` block is inert on this surface, which is worth
+  ruling out before writing any more permission rules. Do not treat (a) as settled.
+- **The hook.** [`linear-autoallow.sh`](../../../.claude/hooks/linear-autoallow.sh) is a `PreToolUse`
+  hook returning `permissionDecision: "allow"` for exactly the eight omitted tool names, on a server
+  segment that is `Linear`, `linear`, or one of the two connector UUIDs above. `PreToolUse` runs
+  ahead of the permission engine, which is why it is the lever available to us when
+  `permissions.allow` is not winning. It can only ever widen permission, never deny, and is disabled
+  with `FRAPP_NO_LINEAR_AUTOALLOW=1`.
+
+  Two design points worth not undoing. **UUIDs are pinned, not shape-matched:** `save_document`,
+  `save_project`, and `save_issue` are generic enough that another UUID-registered connector could
+  expose the same names, and this repo already talks to one — `bf7c680d-…` is Claude_Code_Remote, so
+  a `[0-9a-f-]{36}` server pattern would have auto-approved *its* writes too. If Linear re-registers
+  under a new UUID the hook goes quiet and prompts return; that is the safe direction, and the fix is
+  to add the new id deliberately. **Every path exits 0:** exit code 2 from a `PreToolUse` hook
+  *blocks* the tool call, and `jq` exits 2 when it cannot write stdout (closed fd, full disk), so the
+  terminal `exit 0` is what keeps a disk-full container from turning this hook into a hard deny on
+  `save_issue`. Stdin is read through `timeout 5 cat` for the same fail-open reason — with fd 0
+  closed, bash can land the command-substitution pipe's read end on fd 0 and `cat` blocks forever.
+
+  **End-to-end effect is UNVERIFIED as of 2026-08-08**: routing is proven by a 25-payload matrix
+  (the eight allows, lowercase and pinned-UUID spellings, plus foreign-UUID, `save_diff_comment`,
+  `save_release`, suffixed-name, newline-injection, malformed-input, closed-stdout, closed-stdin and
+  escape-hatch rejections) and hooks are proven to fire, but no `save_issue` call has yet been made
+  with the hook installed, so it is not yet observed that an `allow` decision overrides a tool's
+  absence from the launch allowlist. If prompts persist after this lands, that is the link that
+  failed — check candidate (b) above next, and re-read the flag before touching `permissions.allow`.
 - GitHub MCP reads: `get_me`, `pull_request_read`, `list_pull_requests`, `search_pull_requests`,
   `actions_get`, `actions_list`, `get_job_logs`, `get_check_run`, `get_commit`, `list_commits`,
   `list_branches`, `get_file_contents`, `issue_read`, `list_issues` (each as `mcp__github__<tool>`).
