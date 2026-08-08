@@ -115,9 +115,27 @@ export class ScheduledJobsService {
     await this.sweepTaskReminders(new Date());
   }
 
+  /**
+   * The only handler here that needs its own catch.
+   *
+   * The other three reach the database through `fetchAllPages`, which absorbs
+   * a query error and returns `[]`, so they cannot reject. This one reaches
+   * *storage*, and a failure listing the bucket root propagates. An unhandled
+   * rejection out of a `@Cron` handler is not a logged blip — Node's default
+   * `--unhandled-rejections=throw` turns it into an uncaught exception and
+   * takes the API process down, hourly. A sweep that cannot start must skip
+   * this tick loudly, not restart the service.
+   */
   @Cron(CronExpression.EVERY_HOUR)
   async handleReportRetentionSweep(): Promise<void> {
-    await this.sweepExpiredReports(new Date());
+    try {
+      await this.sweepExpiredReports(new Date());
+    } catch (error) {
+      this.logger.error(
+        'report retention sweep: could not enumerate the reports bucket; skipping this tick',
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   /**

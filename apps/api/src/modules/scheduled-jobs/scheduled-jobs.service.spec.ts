@@ -445,5 +445,16 @@ describe('ScheduledJobsService', () => {
 
       expect(sweepExpiredReports).toHaveBeenCalledWith(expect.any(Date));
     });
+
+    it('does not let a storage failure escape the cron handler', async () => {
+      // An unhandled rejection out of a @Cron handler is fatal under Node's
+      // default --unhandled-rejections=throw: this sweep reaches storage
+      // directly, so an outage would otherwise restart the API every hour.
+      sweepExpiredReports.mockRejectedValue(new Error('storage down'));
+
+      await expect(
+        service.handleReportRetentionSweep(),
+      ).resolves.toBeUndefined();
+    });
   });
 });
