@@ -47,9 +47,33 @@
 -- a bucket that already holds objects does not retroactively delete anything;
 -- it only constrains future uploads.
 do $$
+declare
+  colliding text;
 begin
   if to_regclass('storage.buckets') is null then
     return;
+  end if;
+
+  -- storage.buckets has a second unique index on `name` (`bname`) beyond the
+  -- primary key on `id`, and the upsert below can only name one conflict
+  -- target. Supabase keeps id = name for every bucket it creates, so the two
+  -- never diverge in practice -- but if some row ever held one of these names
+  -- under a different id, `on conflict (id)` would not catch it and the whole
+  -- five-row insert would abort on a bare "duplicate key value violates unique
+  -- constraint bname". Since a failing migration halts the entire deploy
+  -- pipeline, fail with something an operator can act on instead. Reassigning
+  -- the row is deliberately not attempted: which bucket the objects actually
+  -- live in is ambiguous, and guessing wrong is worse than stopping.
+  select string_agg(format('%s (id: %s)', name, id), ', ' order by name)
+    into colliding
+    from storage.buckets
+   where name in ('branding', 'profiles', 'documents', 'backwork', 'chat')
+     and id <> name;
+
+  if colliding is not null then
+    raise exception
+      'Cannot declare storage buckets: % already use(s) a managed bucket name under a different id. Resolve the bucket naming by hand before re-running this migration.',
+      colliding;
   end if;
 
   insert into storage.buckets (id, name, public, allowed_mime_types, file_size_limit)
