@@ -17,19 +17,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getStripe } from "@/lib/stripe";
+import { formatCurrency } from "@/lib/currency";
 
 export type PayableInvoice = {
   id: string;
   title: string;
   amount: number;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 /**
  * Map a `POST /v1/invoices/:id/payment-intent` failure to member-facing copy.

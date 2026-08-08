@@ -22,6 +22,7 @@ import {
   type PayableInvoice,
 } from "@/components/billing/pay-invoice-dialog";
 import { isStripeConfigured } from "@/lib/stripe";
+import { formatCurrency } from "@/lib/currency";
 
 type BillingStatusPreview = {
   status: string;
@@ -38,13 +39,6 @@ type InvoicePreview = {
   due_date: string;
   user_id: string;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function formatDate(value: string): string {
   const parsed = new Date(value);
@@ -64,7 +58,14 @@ export default function BillingPage() {
   const statusQuery = useBillingStatus();
   const invoicesQuery = useInvoices();
   const currentUserQuery = useCurrentUser();
-  const isLoading = statusQuery.isLoading || invoicesQuery.isLoading;
+  // `currentUserQuery` belongs in this gate: the Pay affordance is gated on
+  // `invoice.user_id === currentUserId`, so rendering the table before the
+  // caller's identity resolves would briefly show a member their own OPEN
+  // invoice with no way to pay it, then pop the button in.
+  const isLoading =
+    statusQuery.isLoading ||
+    invoicesQuery.isLoading ||
+    currentUserQuery.isLoading;
   const usingPreviewData = statusQuery.isError || invoicesQuery.isError;
 
   const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
