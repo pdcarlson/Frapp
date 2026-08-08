@@ -28,6 +28,13 @@ function assertSafePrefix(prefix: string): void {
 }
 
 /**
+ * Runaway guard for the paging loop below. Far above any real folder —
+ * a chapter would need a million exports to reach it — so tripping it means
+ * the backend is not honouring `offset`, not that a folder got large.
+ */
+const MAX_LISTED_OBJECTS = 1_000_000;
+
+/**
  * One row of a storage `list()` response — an object, or a virtual folder.
  *
  * Derived from the client rather than imported from `@supabase/storage-js`,
@@ -196,6 +203,15 @@ export class SupabaseStorageService implements IStorageProvider {
     const pageSize = 1000;
     const all: StorageListEntry[] = [];
     for (let offset = 0; ; ) {
+      // Terminating on an empty page means a backend that ignored `offset`
+      // would hand back a full page forever, so the loop is bounded too. This
+      // runs inside an hourly cron and inside account deletion; failing loudly
+      // at an absurd object count beats hanging either one.
+      if (all.length > MAX_LISTED_OBJECTS) {
+        throw new Error(
+          `Storage listing for ${bucket}/${prefix} exceeded ${MAX_LISTED_OBJECTS} entries; refusing to page further`,
+        );
+      }
       const { data, error } = await this.supabase.storage
         .from(bucket)
         .list(prefix, { limit: pageSize, offset });
