@@ -48,7 +48,14 @@
 -- it only constrains future uploads.
 do $$
 declare
+  -- The bucket set this migration owns, named once. The guard below reads it,
+  -- and the row count after the upsert is checked against it, so this list and
+  -- the `values` list cannot silently drift apart -- adding a bucket to one
+  -- without the other fails loudly on the next apply instead of quietly
+  -- leaving the new bucket unguarded.
+  managed_ids constant text[] := array['branding', 'profiles', 'documents', 'backwork', 'chat'];
   colliding text;
+  declared_count integer;
 begin
   if to_regclass('storage.buckets') is null then
     return;
@@ -67,7 +74,7 @@ begin
   select string_agg(format('%s (id: %s)', name, id), ', ' order by name)
     into colliding
     from storage.buckets
-   where name in ('branding', 'profiles', 'documents', 'backwork', 'chat')
+   where name = any(managed_ids)
      and id <> name;
 
   if colliding is not null then
@@ -159,4 +166,15 @@ begin
     public = excluded.public,
     allowed_mime_types = excluded.allowed_mime_types,
     file_size_limit = excluded.file_size_limit;
+
+  -- Drift check, not paranoia: the guard above and the `values` list are two
+  -- enumerations of the same bucket set, and nothing in SQL couples them. If a
+  -- later edit adds a bucket to one and forgets the other, this fails on the
+  -- next apply rather than leaving the new bucket silently unguarded.
+  get diagnostics declared_count = row_count;
+  if declared_count <> array_length(managed_ids, 1) then
+    raise exception
+      'Bucket declaration drift: upserted % row(s) but managed_ids lists %. Keep managed_ids and the values list in sync.',
+      declared_count, array_length(managed_ids, 1);
+  end if;
 end $$;
