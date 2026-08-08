@@ -492,9 +492,9 @@ export interface ChannelAccessInput {
   operation?: ChannelOperation;
   /**
    * Whether the caller holds the chapter's Alumni role. Alumni are read-mostly:
-   * they keep full read access but may only post in the ROLE_GATED `#alumni`
-   * channel and in direct conversations. Only consulted when
-   * `operation === "post"`; omit (or `false`) for active members.
+   * they keep full read access but may only post in direct conversations and in
+   * ROLE_GATED channels that require `alumni:post` (the seeded `#alumni`). Only
+   * consulted when `operation === "post"`; omit (or `false`) for active members.
    */
   isAlumni?: boolean;
 }
@@ -506,8 +506,40 @@ export interface ChannelAccessInput {
  */
 // Typed on construction so a typo is a compile error, but exposed as a
 // ReadonlySet<string> because `ChannelAccessRecord.type` is widened to string.
+//
+// DM / GROUP_DM are unconditional: a direct conversation is alumni-writable by
+// construction. ROLE_GATED is deliberately NOT in this set — being role-gated
+// says nothing about being *for* alumni, and treating the two as the same thing
+// made every ROLE_GATED channel (e.g. a chapter's `#exec-board`) alumni-postable
+// (FRA-321). A ROLE_GATED channel is alumni-writable only when it explicitly
+// requires `ALUMNI_CHANNEL_PERMISSION`; see `isAlumniPostableChannel`.
 export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
-  new Set<ChatChannelType>(["ROLE_GATED", "DM", "GROUP_DM"]);
+  new Set<ChatChannelType>(["DM", "GROUP_DM"]);
+
+/**
+ * The permission a ROLE_GATED channel must *require* to be alumni-writable.
+ *
+ * This is read off the channel's `required_permissions`, not off the caller's
+ * permissions: it marks the channel as an alumni space. Checking a permission
+ * alumni merely *hold* would not work — the Alumni role also holds
+ * `members:view`, which is exactly the value a chapter would put on a private
+ * `#exec-board`, so that check would re-open the hole it is meant to close.
+ */
+export const ALUMNI_CHANNEL_PERMISSION = "alumni:post";
+
+/**
+ * Whether an Alumni-role member may author content in `channel`.
+ *
+ * Exported so the API can skip the Alumni role lookup on channels where the
+ * rule cannot apply, using the same predicate the gate itself uses.
+ */
+export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
+  if (ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type)) return true;
+  if (channel.type !== "ROLE_GATED") return false;
+  return (channel.required_permissions ?? []).includes(
+    ALUMNI_CHANNEL_PERMISSION,
+  );
+}
 
 /**
  * Decide whether `userId` may access (read / participate in) `channel`.
@@ -516,7 +548,8 @@ export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
  * - PUBLIC: any chapter member.
  * - PRIVATE / DM / GROUP_DM: the user must be in the explicit `member_ids` list.
  * - ROLE_GATED: the user must hold `"*"` or one of `required_permissions`. An
- *   empty/absent requirement list means any chapter member may access it.
+ *   empty/absent requirement list is denied — a role-gated channel that gates on
+ *   nothing is a misconfiguration, not a public channel (FRA-321).
  * - Unknown channel type: denied (guarded default — never falls open).
  *
  * When `operation` is a write (`"post"` or `"vote"`), the read check above must
@@ -525,8 +558,9 @@ export const ALUMNI_POSTABLE_CHANNEL_TYPES: ReadonlySet<string> =
  * predicate stays backward-compatible.
  *
  * When `operation === "post"` and `isAlumni` is set, the caller is additionally
- * limited to the alumni channel and direct conversations — alumni read
- * everywhere they can see but do not author content in operational channels.
+ * limited to direct conversations and ROLE_GATED channels that explicitly
+ * require `alumni:post` — alumni read everywhere they can see but do not author
+ * content in operational channels.
  * `"*"` (President) still bypasses, so a chapter cannot lock itself out.
  * `"vote"` is exempt: participating in a poll is not posting.
  */
@@ -547,9 +581,14 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
         return (channel.member_ids ?? []).includes(userId);
 
       case "ROLE_GATED": {
-        const required = channel.required_permissions ?? [];
-        if (required.length === 0) return true;
         if (permissions.includes("*")) return true;
+        const required = channel.required_permissions ?? [];
+        // An empty requirement list is a misconfiguration, not an invitation:
+        // it used to mean "any chapter member", which made a ROLE_GATED channel
+        // functionally PUBLIC and silently un-gated (FRA-321). Deny instead, and
+        // keep the field populated at both write points (channel create/update
+        // reject an empty list; the seeder always persists one).
+        if (required.length === 0) return false;
         return required.some((permission) => permissions.includes(permission));
       }
 
@@ -571,7 +610,7 @@ export function canAccessChannel(input: ChannelAccessInput): boolean {
     operation === "post" &&
     input.isAlumni &&
     !isPresident &&
-    !ALUMNI_POSTABLE_CHANNEL_TYPES.has(channel.type)
+    !isAlumniPostableChannel(channel)
   ) {
     return false;
   }

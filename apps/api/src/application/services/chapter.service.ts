@@ -167,11 +167,17 @@ export class ChapterService {
       has_completed_onboarding: true,
     });
 
+    // `required_permissions` must be persisted, not defaulted: a ROLE_GATED
+    // channel seeded without one is denied by `canAccessChannel`, and before
+    // that gate closed it fell open to every chapter member instead (FRA-321).
     const defaultChannels = DEFAULT_CHANNELS.map((channelDef) => ({
       chapter_id: chapter.id,
       name: channelDef.name,
       type: channelDef.type,
       is_read_only: channelDef.is_read_only,
+      required_permissions: channelDef.required_permissions
+        ? [...channelDef.required_permissions]
+        : null,
     }));
 
     const { error } = await this.supabase

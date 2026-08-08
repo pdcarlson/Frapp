@@ -713,7 +713,15 @@ const READ_SCENARIOS = [
   { name: "ROLE_GATED is denied without the required permission", uid: F.userCAuth, msg: F.msgRoleGated, expect: false },
   { name: "ROLE_GATED is visible with the required permission", uid: F.userAAuth, msg: F.msgRoleGated, expect: true },
   { name: "ROLE_GATED is visible to a '*' wildcard holder lacking the specific permission", uid: F.userDAuth, msg: F.msgRoleGated, expect: true },
-  { name: "ROLE_GATED with empty required_permissions is visible to any member", uid: F.userCAuth, msg: F.msgRoleGatedOpen, expect: true },
+  // FRA-321: this asserted `true` — a ROLE_GATED channel that gates on nothing
+  // was visible to every chapter member, i.e. functionally PUBLIC. Both the SQL
+  // predicate and canAccessChannel now deny it; the backfill guarantees no
+  // existing row is in that shape and the API rejects creating one.
+  { name: "ROLE_GATED with empty required_permissions is denied (no longer falls open)", uid: F.userCAuth, msg: F.msgRoleGatedOpen, expect: false },
+  // ...but the wildcard still wins, exactly as canAccessChannel has it. Spelling
+  // the deny as a length test placed *before* the wildcard branch would deny a
+  // President here and silently re-introduce SQL/TypeScript drift.
+  { name: "ROLE_GATED with empty required_permissions still admits a '*' wildcard holder", uid: F.userDAuth, msg: F.msgRoleGatedOpen, expect: true },
   { name: "ROLE_GATED denies a chapter-B role id held by a chapter-A member (roles re-scoped by chapter)", uid: F.userEAuth, msg: F.msgRoleGated, expect: false },
   { name: "ROLE_GATED matches an UPPERCASE stored role id (uuid compare, not text)", uid: F.userFAuth, msg: F.msgRoleGated, expect: true },
   { name: "NULL auth.uid() (anon / no JWT) is denied", uid: null, msg: F.msgPublic, expect: false },
@@ -776,12 +784,18 @@ if (readSeeded) {
     `);
 
     // userA: chapter A, in member_ids of PRIVATE/DM/GROUP_DM, holds chat:secret.
-    // userC: chapter A, no privileges, in no member list -> PUBLIC + open gate.
+    // userC: chapter A, no privileges, in no member list -> PUBLIC only.
     // userB: chapter B -> nothing. null uid: no JWT -> nothing.
+    //
+    // FRA-321 moved both non-zero counts down by one, and the row that left each
+    // is the same one: the ROLE_GATED channel with an empty requirement list.
+    // It used to be readable by every chapter member; it is now readable by
+    // none of them (userA holds chat:secret, which the open channel does not
+    // ask for, and neither user holds the wildcard).
     const BLACKBOX = [
-      { name: "member sees every action row in channels they can read", uid: F.userAAuth, expect: 6 },
+      { name: "member sees every action row in channels they can read (all but the empty-gated one)", uid: F.userAAuth, expect: 5 },
       { name: "cross-chapter reader sees none of them (tenant boundary holds at the table)", uid: F.userBAuth, expect: 0 },
-      { name: "chapter member sees only PUBLIC + open ROLE_GATED, not PRIVATE/DM/gated", uid: F.userCAuth, expect: 2 },
+      { name: "chapter member sees only PUBLIC, not PRIVATE/DM/gated (incl. empty-gated)", uid: F.userCAuth, expect: 1 },
       { name: "no JWT (null auth.uid()) sees nothing", uid: null, expect: 0 },
     ];
 
