@@ -171,7 +171,7 @@ export class AccountDeletionService {
       await this.reportRetention.purgeUserReports(chapterIds);
     } catch (error) {
       this.logger.error(
-        `Report purge failed for user ${user.id}; deletion is proceeding and the hourly retention sweep will remove these exports within ${REPORT_RETENTION_HOURS}h — investigate the reports bucket if this repeats`,
+        `Report purge failed for user ${user.id}; deletion is proceeding; the hourly retention sweep normally removes these exports within ~${REPORT_RETENTION_HOURS + 1}h, but it cannot age out an object whose stored-at timestamp is missing and it skips a prefix it cannot read — investigate the reports bucket if this repeats`,
         error instanceof Error ? error.stack : String(error),
       );
     }

@@ -168,6 +168,72 @@ describe('SupabaseStorageService', () => {
     });
   });
 
+  describe('listFolders', () => {
+    // The retention sweep's entire work list comes from this method, so its
+    // contract is load-bearing: folder rows only, names NOT prefix-joined
+    // (unlike listObjects, which does join). A mismatch would be invisible
+    // outside these assertions, since every other caller hand-mocks it.
+    it('returns folder names only, unjoined, and drops object rows', async () => {
+      list
+        .mockResolvedValueOnce({
+          data: [
+            { id: null, name: 'chapter-a' },
+            { id: 'id-1', name: 'stray.pdf' },
+            { id: null, name: 'chapter-b' },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      await expect(service.listFolders('reports', 'chapters')).resolves.toEqual(
+        ['chapter-a', 'chapter-b'],
+      );
+    });
+
+    it('pages past the first full page of folders', async () => {
+      // The sweep lists one folder per chapter that has exported, so this is
+      // the listing most likely to outgrow a page.
+      const page = Array.from({ length: 1000 }, (_, i) => ({
+        id: null,
+        name: `chapter-${i}`,
+      }));
+      list
+        .mockResolvedValueOnce({ data: page, error: null })
+        .mockResolvedValueOnce({
+          data: [{ id: null, name: 'chapter-last' }],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      const folders = await service.listFolders('reports', 'chapters');
+
+      expect(folders).toHaveLength(1001);
+      expect(folders[1000]).toBe('chapter-last');
+    });
+
+    it('treats a missing bucket as no folders', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(service.listFolders('reports', 'chapters')).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('propagates other listing errors', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'internal error' },
+      });
+
+      await expect(
+        service.listFolders('reports', 'chapters'),
+      ).rejects.toBeTruthy();
+    });
+  });
+
   describe('deleteFiles', () => {
     it('removes paths in chunks of at most 100 per call', async () => {
       const paths = Array.from({ length: 150 }, (_, i) => `p/${i}.png`);

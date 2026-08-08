@@ -54,11 +54,20 @@ for reading (`ATTENDANCE: 12, SERVICE: 4`).
 
 ### Retention
 
-**Generated PDFs are deleted 24 hours after they are written.** The signed URL
-expires after an hour, so anything past that is already unreachable through the
-API; the extra day covers a stalled download or a retried request without keeping
-the artifact around longer than it is useful. An hourly sweep removes expired
-objects, so an export is reaped within an hour of turning 24h old.
+**Generated PDFs are deleted about 24 hours after they are written.** The signed
+URL expires after an hour, so anything past that is already unreachable through
+the API; the extra day covers a stalled download or a retried request without
+keeping the artifact around longer than it is useful. An hourly sweep removes
+expired objects, so an export is reaped within an hour of turning 24h old — a
+real ceiling of ~25h, not exactly 24.
+
+The sweep is best-effort, and the two ways it declines to act are deliberate
+rather than incidental. It **skips** a chapter prefix it cannot read, retrying on
+the next tick. It **keeps** an object whose stored-at timestamp storage did not
+report, because treating unknown age as old would delete an export someone is
+still downloading — such an object is never aged out at all, and is removed only
+by an account-deletion purge or by hand. Both cases are logged precisely so
+"reaped nothing" is distinguishable from "nothing to reap".
 
 Reports are **derived artifacts** — every one is regenerable from the source tables
 it was rendered from, and nothing in the database references the stored object — so
@@ -73,7 +82,7 @@ A rendered PDF cannot have one member removed from it, so dropping the chapter's
 exports is the only complete erasure — officers simply re-export. That step is
 best-effort and bounded rather than absolute (see
 [`data-retention.md`](data-retention.md) for exactly what it does and does not
-reach); the 24-hour sweep above is the guarantee behind it.
+reach); the sweep above is what normally closes the gap.
 
 ## PDF Formatting
 

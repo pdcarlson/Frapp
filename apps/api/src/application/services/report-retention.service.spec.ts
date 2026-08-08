@@ -89,11 +89,21 @@ describe('ReportRetentionService', () => {
       ]);
     });
 
-    it('does no listing work when no chapter has ever exported', async () => {
+    it('does no listing work when no chapter has ever exported, but says so', async () => {
+      // The storage layer reports a MISSING bucket as an empty folder, so an
+      // unprovisioned or renamed `reports` bucket arrives here as "no work".
+      // That is the likeliest way this sweep dies, and it must not be silent.
+      const log = jest
+        .spyOn(service['logger'], 'log')
+        .mockImplementation(() => undefined);
+
       const result = await service.sweepExpiredReports(NOW);
 
       expect(result).toEqual({ deleted: 0, failed: 0 });
       expect(mockStorage.listObjects).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledWith(
+        expect.stringContaining('not provisioned'),
+      );
     });
 
     it('deletes only objects past the retention window', async () => {
@@ -243,13 +253,37 @@ describe('ReportRetentionService', () => {
       expect(mockStorage.listObjects).toHaveBeenCalledTimes(2);
     });
 
+    it('attempts every chapter even when an earlier one fails', async () => {
+      // The caller logs and continues rather than retrying, so bailing at the
+      // first bad prefix would permanently skip every chapter after it —
+      // leaving the erased user's PII in chapters nothing revisits.
+      mockStorage.listObjects
+        .mockRejectedValueOnce(new Error('chapter A listing 500'))
+        .mockResolvedValueOnce([aged('chapters/c2/reports/x.pdf', 1)])
+        .mockResolvedValueOnce([aged('chapters/c3/reports/y.pdf', 1)]);
+
+      await expect(
+        service.purgeUserReports(['c1', 'c2', 'c3']),
+      ).rejects.toThrow(/c1/);
+
+      // c2 and c3 were still purged despite c1 blowing up.
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('reports', [
+        'chapters/c2/reports/x.pdf',
+      ]);
+      expect(mockStorage.deleteFiles).toHaveBeenCalledWith('reports', [
+        'chapters/c3/reports/y.pdf',
+      ]);
+    });
+
     it('propagates a failure so the caller can decide', async () => {
-      // The scheduled sweep swallows per-chapter errors; this path does not,
-      // so account deletion can log it against its own retry story.
+      // Reported rather than swallowed, so account deletion can log which
+      // chapters were missed — but only after every chapter was attempted.
       mockStorage.listObjects.mockRejectedValue(new Error('storage down'));
 
+      // Names the chapters that were missed, so the caller's log says which
+      // prefixes still hold the erased user's PII.
       await expect(service.purgeUserReports(['c1'])).rejects.toThrow(
-        'storage down',
+        'Report purge failed for chapter(s): c1',
       );
     });
 

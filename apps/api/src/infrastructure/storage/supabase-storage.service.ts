@@ -28,11 +28,17 @@ function assertSafePrefix(prefix: string): void {
 }
 
 /**
- * Runaway guard for the paging loop below. Far above any real folder —
- * a chapter would need a million exports to reach it — so tripping it means
- * the backend is not honouring `offset`, not that a folder got large.
+ * Runaway guard for the paging loop below.
+ *
+ * Sized to the real invariant, not to the heap: reports live 24h, avatar
+ * folders hold a handful of files, and the widest listing here is one folder
+ * per chapter that has exported. 100k is orders of magnitude above any of
+ * those, so tripping it means the backend stopped honouring `offset`.
+ *
+ * Deliberately well under the point where the retained entries would exhaust
+ * a small container — a bound that only fires after an OOM is not a bound.
  */
-const MAX_LISTED_OBJECTS = 1_000_000;
+const MAX_LISTED_OBJECTS = 100_000;
 
 /**
  * One row of a storage `list()` response — an object, or a virtual folder.
@@ -217,11 +223,13 @@ export class SupabaseStorageService implements IStorageProvider {
         .list(prefix, { limit: pageSize, offset });
       // A bucket that does not exist holds no objects; environments that have
       // never provisioned it (fresh projects, previews) must behave like an
-      // empty folder, not an outage — account deletion aborts on listing
-      // errors and would otherwise be permanently blocked there. This cannot
-      // mask a wrong-project misconfiguration: SUPABASE_URL serves database
-      // and storage from the same project, so a client pointed at the wrong
-      // one fails at the users query long before any storage call.
+      // empty folder, not an outage — the avatar purge aborts account deletion
+      // on listing errors and would otherwise be permanently blocked there.
+      // This cannot mask a wrong-project misconfiguration: SUPABASE_URL serves
+      // database and storage from the same project, so a client pointed at the
+      // wrong one fails at the users query long before any storage call. It
+      // DOES make an unprovisioned bucket look empty to a sweep, which is why
+      // ReportRetentionService logs when it finds no prefixes at all.
       if (error && /bucket not found/i.test(error.message)) return [];
       if (error) throw error;
       const entries = data ?? [];

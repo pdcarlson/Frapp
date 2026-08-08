@@ -47,13 +47,19 @@ export interface ReportSweepResult {
  * - **The scheduled sweep** (`sweepExpiredReports`) bounds storage growth. The
  *   export key carries a random uuid so retries never overwrite, meaning the
  *   object count grows strictly with clicks.
- * - **Account deletion** (`purgeUserReports`) is the erasure guarantee. Roster
+ * - **Account deletion** (`purgeUserReports`) makes erasure prompt. Roster
  *   exports embed member names, emails, roles, and join dates.
  *
- * The two overlap deliberately rather than one deferring to the other: the
- * sweep alone would leave a report exported minutes before an erasure request
- * holding that member's PII for up to `REPORT_RETENTION_HOURS`, and the
- * deletion sweep alone reaches only the chapters that member is currently in.
+ * The two overlap deliberately rather than one deferring to the other, and
+ * **neither is absolute on its own** — a point the specs state plainly rather
+ * than rounding off. The sweep alone would leave a report exported minutes
+ * before an erasure request holding that member's PII for up to
+ * `REPORT_RETENTION_HOURS`; it also keeps objects whose stored-at timestamp
+ * the backend never reported, and skips prefixes it cannot read. The deletion
+ * purge alone reaches only the chapters that member is currently in, and its
+ * caller treats a failure as non-fatal. Together they cover each other's gaps
+ * in the ordinary case; `spec/behavior/data-retention.md` documents the
+ * residue that survives both.
  */
 @Injectable()
 export class ReportRetentionService {
@@ -86,6 +92,20 @@ export class ReportRetentionService {
       REPORTS_BUCKET,
       REPORTS_ROOT_PREFIX,
     );
+
+    // An empty work list is reported, not passed over in silence. The storage
+    // layer treats a missing bucket as an empty folder — deliberately, so a
+    // never-provisioned environment does not break account deletion — which
+    // means an unprovisioned, renamed, or wrongly-configured `reports` bucket
+    // reaches here as "nothing to reap" and would otherwise skip every log
+    // below. That is the single most likely way this sweep stops working, and
+    // it is exactly the case where the bucket grows PII without bound.
+    if (chapterIds.length === 0) {
+      this.logger.log(
+        `report retention sweep: no chapter prefixes under ${REPORTS_BUCKET}/${REPORTS_ROOT_PREFIX} — nothing has been exported, or the bucket is not provisioned`,
+      );
+      return { deleted: 0, failed: 0 };
+    }
 
     let deleted = 0;
     let failed = 0;
@@ -141,13 +161,33 @@ export class ReportRetentionService {
    * exports all carry the departing member's name — so the honest erasure is
    * to drop the chapter's whole report prefix and let officers re-export.
    *
-   * Unlike the scheduled sweep this does **not** swallow failures: account
-   * deletion promises the caller that PII is gone before it reports success,
-   * so a listing or delete error has to surface and abort the flow.
+   * Every chapter is attempted even when an earlier one fails, and the
+   * failures are then raised together. Fail-fast would be actively harmful
+   * here: the caller logs and continues rather than retrying (see
+   * `AccountDeletionService`), so aborting at the first bad prefix would
+   * silently skip every chapter after it — the erased user's PII left sitting
+   * in chapters nothing ever revisited. Attempt-all-then-throw keeps the
+   * failure visible without letting it truncate the work.
    */
   async purgeUserReports(chapterIds: string[]): Promise<void> {
+    const failures: string[] = [];
+
     for (const chapterId of new Set(chapterIds)) {
-      await this.purgeChapterReports(chapterId);
+      try {
+        await this.purgeChapterReports(chapterId);
+      } catch (error) {
+        failures.push(chapterId);
+        this.logger.error(
+          `report purge: chapter ${chapterId} failed`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(
+        `Report purge failed for chapter(s): ${failures.join(', ')}`,
+      );
     }
   }
 
