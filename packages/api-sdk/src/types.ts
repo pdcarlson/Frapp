@@ -2667,7 +2667,7 @@ export interface components {
             truncated: boolean;
             /**
              * @description The row ceiling that "truncated" refers to
-             * @example 20000
+             * @example 5000
              */
             row_limit: number;
         };

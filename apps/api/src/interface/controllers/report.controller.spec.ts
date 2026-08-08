@@ -32,10 +32,16 @@ jest.mock('../../domain/utils/csv', () => ({
 const complete = <T>(rows: T[]): ReportResult<T> => ({
   rows,
   truncated: false,
+  limit: REPORT_MAX_ROWS,
 });
 
 /** A service result the row ceiling cut short. */
-const short = <T>(rows: T[]): ReportResult<T> => ({ rows, truncated: true });
+const short = <T>(rows: T[], note?: string): ReportResult<T> => ({
+  rows,
+  truncated: true,
+  limit: REPORT_MAX_ROWS,
+  note,
+});
 
 describe('ReportController', () => {
   let controller: ReportController;
@@ -334,6 +340,7 @@ describe('ReportController', () => {
         [],
         '2026-01-01 – 2026-05-31 · All events',
         false,
+        REPORT_MAX_ROWS,
       );
     });
 
@@ -349,6 +356,7 @@ describe('ReportController', () => {
         [],
         'All dates · Single event',
         false,
+        REPORT_MAX_ROWS,
       );
     });
 
@@ -364,6 +372,7 @@ describe('ReportController', () => {
         [],
         'Window: semester · All members',
         false,
+        REPORT_MAX_ROWS,
       );
     });
 
@@ -383,6 +392,7 @@ describe('ReportController', () => {
         [],
         'From 2026-03-01 · Single member',
         false,
+        REPORT_MAX_ROWS,
       );
     });
 
@@ -395,6 +405,32 @@ describe('ReportController', () => {
       expect(result).toBe(rows);
       expect(reportExportService.exportPdf).not.toHaveBeenCalled();
       expect(toCSV).not.toHaveBeenCalled();
+    });
+
+    it('prints the aggregate ceiling and its note when balances are what truncated', async () => {
+      // Regression: the notice used to hardcode REPORT_MAX_ROWS, so a
+      // complete roster with incomplete balances printed a row cap it never
+      // hit — a number contradicting the document in front of the reader.
+      reportService.getRosterReport.mockResolvedValue({
+        rows: [],
+        truncated: true,
+        limit: 50_000,
+        note: 'point balances are incomplete — summed from the first 50,000 transactions',
+      });
+      const res: any = { setHeader: jest.fn() };
+
+      await controller.roster(chapterId, 'pdf', res);
+
+      expect(reportExportService.exportPdf).toHaveBeenCalledWith(
+        chapterId,
+        'roster',
+        ROSTER_COLUMNS,
+        [],
+        'Current members · INCOMPLETE — point balances are incomplete — summed from the first 50,000 transactions',
+        true,
+        50_000,
+      );
+      expect(res.setHeader).toHaveBeenCalledWith('X-Report-Row-Limit', '50000');
     });
 
     it('prints the incomplete notice in the PDF scope line', async () => {
@@ -414,8 +450,9 @@ describe('ReportController', () => {
         'attendance',
         ATTENDANCE_COLUMNS,
         [],
-        '2026-01-01 – 2026-05-31 · All events · ⚠ Incomplete — capped at the first 20,000 rows',
+        `2026-01-01 – 2026-05-31 · All events · INCOMPLETE — capped at the first ${REPORT_MAX_ROWS.toLocaleString('en-US')} rows`,
         true,
+        REPORT_MAX_ROWS,
       );
     });
 

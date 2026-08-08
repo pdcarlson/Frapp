@@ -75,6 +75,7 @@ export class ReportExportService {
     rows: Record<string, unknown>[],
     subtitle?: string,
     truncated = false,
+    rowLimit: number = REPORT_MAX_ROWS,
   ): Promise<ReportExportResult> {
     const chapter = await this.chapterRepo.findById(chapterId);
     if (!chapter) throw new NotFoundException('Chapter not found');
@@ -121,7 +122,7 @@ export class ReportExportService {
       storage_path: storagePath,
       row_count: rows.length,
       truncated,
-      row_limit: REPORT_MAX_ROWS,
+      row_limit: rowLimit,
     };
   }
 

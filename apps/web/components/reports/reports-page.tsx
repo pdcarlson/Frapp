@@ -278,11 +278,11 @@ export function ReportsPage() {
    * rows shown here — and stores it privately, handing back a signed URL that
    * expires in an hour.
    *
-   * "Whole query result" is bounded by PostgREST's `max_rows` (1000, see
-   * supabase/config.toml), which the report queries do not page past. A chapter
-   * with more matching rows than that gets a silently short report in every
-   * format, PDF included. Pre-existing and shared with JSON/CSV; tracked in
-   * FRA-342. Deliberately not claimed as complete here.
+   * "Whole query result" is bounded by the API's report row ceiling, which the
+   * queries now page up to rather than stopping at PostgREST's `max_rows`. A
+   * chapter past the ceiling is never silently short: the envelope comes back
+   * with `truncated`, and the toast below says so rather than reporting a row
+   * count that reads as complete. See spec/behavior/reports.md § Row limits.
    */
   async function exportPdf() {
     setPdfPending(true);
@@ -303,10 +303,15 @@ export function ReportsPage() {
         anchor.remove();
       }
       toast({
-        title: `${reportLabel[kind]} PDF ready`,
-        description: `${payload.row_count} row${
-          payload.row_count === 1 ? "" : "s"
-        } exported. The download link expires in one hour.`,
+        title: payload.truncated
+          ? `${reportLabel[kind]} PDF ready — incomplete`
+          : `${reportLabel[kind]} PDF ready`,
+        variant: payload.truncated ? "destructive" : undefined,
+        description: payload.truncated
+          ? `Capped at ${payload.row_limit.toLocaleString()} rows, so this document is not a complete record of the chapter. The download link expires in one hour.`
+          : `${payload.row_count} row${
+              payload.row_count === 1 ? "" : "s"
+            } exported. The download link expires in one hour.`,
       });
     } catch (error) {
       toast({

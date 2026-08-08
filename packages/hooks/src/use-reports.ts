@@ -21,6 +21,14 @@ export interface ReportExportEnvelope {
   filename: string;
   storage_path: string;
   row_count: number;
+  /**
+   * True when the report hit its row ceiling, so the document is not a
+   * complete record of the chapter. `row_count` describes what was printed,
+   * not what matched, so it cannot answer this on its own.
+   */
+  truncated: boolean;
+  /** The ceiling `truncated` refers to. */
+  row_limit: number;
 }
 
 /** Narrow a report response to the PDF envelope. */

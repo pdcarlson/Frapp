@@ -65,42 +65,76 @@ interface QueryResult<T> {
 }
 
 /**
- * Rows fetched per round-trip. PostgREST caps any single response at
- * `max_rows` (1000, `supabase/config.toml`), so asking for more in one request
- * silently gets you 1000 — the exact bug this paging exists to close.
+ * Rows requested per round-trip.
+ *
+ * This is a request size, not an assumption about the server's cap. The loop
+ * advances by however many rows actually came back, so a server whose
+ * `max_rows` is lower than this still reads correctly — it just takes more
+ * trips. That matters because `supabase/config.toml` governs the *local*
+ * stack only; the hosted project's "Max rows" is a dashboard setting this file
+ * cannot see. `scheduled-jobs.repository.ts` reaches the same conclusion from
+ * the other direction, by holding its page size deliberately below the cap.
  */
 const REPORT_PAGE_SIZE = 1000;
 
 /**
  * Hard ceiling on the rows one report may return, in every format.
  *
- * Paging past `max_rows` without a bound would trade a silent-truncation bug
- * for a timeout: a report is rendered synchronously in-process, and FRA-19
- * measured 40,000 rows costing 5.3 MB and ~7.7 s of mostly-synchronous pdf-lib
- * work. This sits at roughly half that. Unlike `max_rows`, hitting it is never
- * silent — `ReportResult.truncated` carries it out to every format.
+ * Set by the PDF path, which is the expensive one and the reason a bound
+ * exists at all: pdf-lib renders synchronously, so its cost is not paid by the
+ * requesting call alone — it blocks the event loop, and Node serves every
+ * other chapter from that same thread. Measured on the local stack rendering a
+ * service report:
+ *
+ * | rows | render | heap |
+ * | --- | --- | --- |
+ * | 1,000 | 0.34 s | 16 MB |
+ * | 5,000 | 1.08 s | 65 MB |
+ * | 10,000 | 2.04 s | 28 MB |
+ * | 20,000 | 4.10 s | 267 MB |
+ *
+ * 5,000 keeps the worst-case stall near a second. 20,000 would mean one
+ * officer's export freezing every other tenant's requests for four seconds and
+ * spiking a quarter-gigabyte — a worse failure than the truncation this
+ * replaces, and one paging would newly make reachable (before it, PostgREST's
+ * 1000-row cap meant the renderer never saw more than the top row of this
+ * table). The same number applies to `json` and `csv`, which are far cheaper,
+ * because one ceiling that holds everywhere beats three that need explaining.
+ *
+ * Unlike `max_rows`, hitting it is never silent — `ReportResult.truncated`
+ * carries it out to every format.
  */
-export const REPORT_MAX_ROWS = 20_000;
+export const REPORT_MAX_ROWS = 5_000;
 
 /**
  * Ceiling on rows read only to aggregate a number that lands in the document
  * — point transactions behind a roster balance, not roster lines themselves.
- * These never reach the renderer, so the bound is about memory rather than
- * render cost, and sits an order of magnitude higher.
+ *
+ * Higher than `REPORT_MAX_ROWS` because these rows never reach the renderer,
+ * but not dramatically so: the pages are read sequentially, each waiting on
+ * the last, so the ceiling is really a latency budget. At 50,000 that is up to
+ * 50 round-trips (~1.2 s by the measurement in the perf notes) before any
+ * rendering starts. Raising it buys correctness for chapters this large at a
+ * cost that lands on every roster export.
+ *
+ * The real fix is to stop streaming transactions into the API and let Postgres
+ * sum them — tracked in #567. This ceiling is what keeps the interim honest.
  */
-const REPORT_AGGREGATE_MAX_ROWS = 200_000;
+export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
 /**
  * How many IDs one `in (...)` filter may carry.
  *
- * Measured, not guessed: against the local Supabase stack, 200 UUIDs (~7.5 KB
- * of URL) is the last size that succeeds and 250 (~9.3 KB) returns `414 URI
- * Too Long` — the familiar 8 KB request-line limit. 100 leaves better than 2×
- * headroom for the `select`, `order`, and column filters sharing the line.
+ * Bounded by measurement, not arithmetic: against the local Supabase stack,
+ * 200 UUIDs (~7.5 KB of URL) succeeded and 250 (~9.3 KB) returned `414 URI Too
+ * Long`. Those two probes bracket the true limit somewhere in 201–249 — they
+ * do not establish 200 as the maximum — and how much of the request line is
+ * left over depends on the `select`, `order`, and column filters sharing it.
+ * 100 sits at well under half the smaller probe, which is the point.
  *
- * This bound is why the roster's member lookup is chunked at all: it read
- * `in (...)` over every member ID in one request, so a chapter of more than
- * roughly 220 members failed the whole report with a 414.
+ * This limit is why the roster's member lookup is chunked at all: it passed
+ * every member ID in a single `in (...)`, so a large chapter failed the whole
+ * report with a 414 — observed here before the chunking was added.
  */
 const ID_CHUNK_SIZE = 100;
 
@@ -114,6 +148,19 @@ const ID_CHUNK_SIZE = 100;
 export interface ReportResult<T> {
   rows: T[];
   truncated: boolean;
+  /**
+   * The ceiling that `truncated` refers to. Carried rather than assumed
+   * because a report can be cut short by more than one limit — a roster is
+   * bounded by `REPORT_MAX_ROWS` rows but its balances are bounded by
+   * `REPORT_AGGREGATE_MAX_ROWS` transactions, and reporting the wrong one
+   * gives an officer a number that contradicts the document in front of them.
+   */
+  limit: number;
+  /**
+   * What was cut, when the row count alone does not say it. Set only where
+   * truncation corrupts a value instead of shortening the list.
+   */
+  note?: string;
 }
 
 interface AttendanceJoinedRow {
@@ -130,7 +177,6 @@ interface UserNameRow {
 }
 
 interface MemberRosterRow {
-  id: string;
   user_id: string;
   role_ids: string[];
   created_at: string;
@@ -143,7 +189,6 @@ interface UserRosterRow {
 }
 
 interface UserAmountRow {
-  id: string;
   user_id: string;
   amount: number;
 }
@@ -154,7 +199,6 @@ interface RoleNameRow {
 }
 
 interface ServiceEntryRow {
-  id: string;
   user_id: string;
   date: string;
   duration_minutes: number;
@@ -179,9 +223,17 @@ function throwIfError(error: QueryError | null): void {
  * report honestly whether {@link REPORT_MAX_ROWS} stopped it early.
  *
  * `page` must apply a **total** order — every caller here sorts on the table's
- * `id`. Offset paging over a non-unique sort key has no guaranteed order
- * between statements, so rows sharing a sort value across a page boundary can
- * come back twice or vanish entirely.
+ * `id`, which is selected for ordering but need not be projected. Offset
+ * paging over a non-unique sort key has no guaranteed order between
+ * statements, so rows sharing a sort value across a page boundary can come
+ * back twice or vanish entirely.
+ *
+ * A total order rules out *that* shuffling; it does not make the read a
+ * snapshot. These are separate statements, so a row inserted or deleted
+ * between two pages still shifts the window and can duplicate or skip one row
+ * at the boundary. Reports are point-in-time summaries rather than ledgers, so
+ * that is accepted rather than solved — a keyset cursor would be the fix if it
+ * ever stops being.
  *
  * One row past the ceiling is requested so `truncated` is an observed fact
  * rather than an inference from a full final page: a result of exactly
@@ -195,21 +247,34 @@ async function fetchAllPages<T>(
   const readLimit = limit + 1;
   const rows: T[] = [];
 
-  for (let from = 0; from < readLimit; from += REPORT_PAGE_SIZE) {
+  for (let from = 0; from < readLimit; ) {
     const to = Math.min(from + REPORT_PAGE_SIZE, readLimit) - 1;
     const { data, error } = await page(from, to);
     throwIfError(error);
 
     const batch = data ?? [];
     rows.push(...batch);
-    // A short page means the data ran out, not that the ceiling was hit.
-    if (batch.length < to - from + 1) break;
+    // Only an empty page proves the rows ran out. Treating any *short* page as
+    // the end would silently truncate the moment the server's `max_rows` sits
+    // below `REPORT_PAGE_SIZE` — the caller would ask for 1000, be handed the
+    // cap, and read that as "no more rows", reinstating the exact bug this
+    // paging exists to close, with `truncated: false` attached to it.
+    // The cost of that guarantee is one extra, empty request per report once
+    // the rows run out. A report is an admin-initiated action already costing
+    // hundreds of milliseconds, so a round-trip is a cheap price for not
+    // having to be right about a server setting this file cannot read.
+    if (batch.length === 0) break;
+    // Advance by what arrived, never by what was asked for: if the server
+    // capped the page, the un-returned tail of the requested window has not
+    // been read yet and stepping over it would drop those rows outright.
+    from += batch.length;
   }
 
   const truncated = rows.length > limit;
   return {
     rows: truncated ? rows.slice(0, limit) : rows,
     truncated,
+    limit,
   };
 }
 
@@ -259,10 +324,8 @@ export class ReportService {
           .from('event_attendance')
           .select(
             `
-        id,
         status,
         check_in_time,
-        event_id,
         events!inner (id, name, start_time),
         users!event_attendance_user_id_fkey (display_name)
       `,
@@ -308,7 +371,7 @@ export class ReportService {
         b.event_date + b.member_name,
       ),
     );
-    return { rows, truncated };
+    return { rows, truncated, limit: REPORT_MAX_ROWS };
   }
 
   async getPointsReport(
@@ -355,6 +418,7 @@ export class ReportService {
         breakdown_by_category: row.breakdown_by_category || {},
       })),
       truncated,
+      limit: REPORT_MAX_ROWS,
     };
   }
 
@@ -365,12 +429,13 @@ export class ReportService {
       await fetchAllPages<MemberRosterRow>((from, to) =>
         this.supabase
           .from('members')
-          .select('id, user_id, role_ids, created_at')
+          .select('user_id, role_ids, created_at')
           .eq('chapter_id', chapterId)
           .order('id', { ascending: true })
           .range(from, to),
       );
-    if (!members.length) return { rows: [], truncated: membersTruncated };
+    if (!members.length)
+      return { rows: [], truncated: membersTruncated, limit: REPORT_MAX_ROWS };
 
     const userIds = members.map((m) => m.user_id);
 
@@ -395,7 +460,7 @@ export class ReportService {
       (from, to) =>
         this.supabase
           .from('point_transactions')
-          .select('id, user_id, amount')
+          .select('user_id, amount')
           .eq('chapter_id', chapterId)
           .order('id', { ascending: true })
           .range(from, to),
@@ -426,24 +491,22 @@ export class ReportService {
       balances.set(uid, (balances.get(uid) ?? 0) + (t.amount ?? 0));
     }
 
-    const roleIds = [...new Set(members.flatMap((m) => m.role_ids ?? []))];
+    // Every role the chapter defines, rather than the subset the roster
+    // mentions: `roles` is already chapter-scoped and a chapter holds a
+    // handful of them, so filtering by ID bought nothing but an `in (...)`
+    // list long enough to need chunking. Unmatched entries in the map are
+    // inert — it is only ever read by a member's own `role_ids`.
     const roleMap = new Map<string, string>();
-    if (roleIds.length > 0) {
-      const rolePages = (await Promise.all(
-        chunkIds(roleIds).map((ids) =>
-          this.supabase
-            .from('roles')
-            .select('id, name')
-            .eq('chapter_id', chapterId)
-            .in('id', ids),
-        ),
-      )) as QueryResult<RoleNameRow>[];
-      for (const pageResult of rolePages) {
-        throwIfError(pageResult.error);
-        for (const r of pageResult.data ?? []) {
-          roleMap.set(r.id, r.name);
-        }
-      }
+    const { rows: roles } = await fetchAllPages<RoleNameRow>((from, to) =>
+      this.supabase
+        .from('roles')
+        .select('id, name')
+        .eq('chapter_id', chapterId)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    for (const r of roles) {
+      roleMap.set(r.id, r.name);
     }
 
     const rows = members.map((m) => {
@@ -462,8 +525,20 @@ export class ReportService {
 
     // A truncated transaction read is not a short roster — it is a roster of
     // the right length carrying *wrong* balances, which no row count reveals.
-    // It counts as truncation so the report still declares itself incomplete.
-    return { rows, truncated: membersTruncated || transactions.truncated };
+    // It counts as truncation so the report still declares itself incomplete,
+    // but it reports its own ceiling and says which field is wrong: labelling
+    // a complete 300-line roster "capped at 20,000 rows" reads as a false
+    // positive, and the reader goes looking for missing members instead of
+    // distrusting the balances.
+    if (transactions.truncated) {
+      return {
+        rows,
+        truncated: true,
+        limit: REPORT_AGGREGATE_MAX_ROWS,
+        note: `point balances are incomplete — summed from the first ${REPORT_AGGREGATE_MAX_ROWS.toLocaleString('en-US')} transactions`,
+      };
+    }
+    return { rows, truncated: membersTruncated, limit: REPORT_MAX_ROWS };
   }
 
   async getServiceReport(
@@ -474,7 +549,7 @@ export class ReportService {
       (from, to) => {
         let query = this.supabase
           .from('service_entries')
-          .select('id, user_id, date, duration_minutes, description, status')
+          .select('user_id, date, duration_minutes, description, status')
           .eq('chapter_id', chapterId);
 
         if (input.user_id) {
@@ -496,7 +571,7 @@ export class ReportService {
           .range(from, to) as PromiseLike<QueryResult<ServiceEntryRow>>;
       },
     );
-    if (!entries.length) return { rows: [], truncated };
+    if (!entries.length) return { rows: [], truncated, limit: REPORT_MAX_ROWS };
 
     const userIds = [...new Set(entries.map((e) => e.user_id))];
     const userPages = (await Promise.all(
@@ -520,6 +595,6 @@ export class ReportService {
       description: e.description,
       status: e.status,
     }));
-    return { rows, truncated };
+    return { rows, truncated, limit: REPORT_MAX_ROWS };
   }
 }

@@ -6882,7 +6882,7 @@
           "row_limit": {
             "type": "number",
             "description": "The row ceiling that \"truncated\" refers to",
-            "example": 20000
+            "example": 5000
           }
         },
         "required": [

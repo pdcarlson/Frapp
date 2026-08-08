@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { REPORT_MAX_ROWS, ReportService } from './report.service';
+import {
+  REPORT_AGGREGATE_MAX_ROWS,
+  REPORT_MAX_ROWS,
+  ReportService,
+} from './report.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { SEMESTER_ARCHIVE_REPOSITORY } from '../../domain/repositories/semester-archive.repository.interface';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -19,7 +23,12 @@ describe('ReportService', () => {
    * assert the service assembled all of them. `ranges` records what was asked
    * for, so page boundaries can be asserted directly.
    */
-  const makeChain = (resolveValue: { data: unknown[]; error: unknown }) => {
+  const makeChain = (resolveValue: {
+    data: unknown[];
+    error: unknown;
+    /** Server-side `max_rows`: caps any one page, like PostgREST does. */
+    maxRowsCap?: number;
+  }) => {
     const chain: Record<string, unknown> = {};
     const ranges: [number, number][] = [];
     let slice: [number, number] | null = null;
@@ -27,8 +36,12 @@ describe('ReportService', () => {
     const settle = () => {
       if (resolveValue.error) return { data: null, error: resolveValue.error };
       const rows = resolveValue.data;
+      if (!slice) return { data: rows, error: null };
+      const page = rows.slice(slice[0], slice[1] + 1);
       return {
-        data: slice ? rows.slice(slice[0], slice[1] + 1) : rows,
+        data: resolveValue.maxRowsCap
+          ? page.slice(0, resolveValue.maxRowsCap)
+          : page,
         error: null,
       };
     };
@@ -389,14 +402,17 @@ describe('ReportService', () => {
       expect(new Set(result.rows.map((r) => r.member_name)).size).toBe(
         PAGE * 2 + 137,
       );
+      // Offsets advance by rows received, and the read ends on an empty page
+      // rather than a short one.
       expect((chain as { ranges: [number, number][] }).ranges).toEqual([
         [0, 999],
         [1000, 1999],
         [2000, 2999],
+        [2137, 3136],
       ]);
     });
 
-    it('stops after one page when the data runs out', async () => {
+    it('stops once a page comes back empty', async () => {
       const chain = makeChain({ data: rows(10, attendanceRow), error: null });
       (mockSupabase.from as jest.Mock).mockReturnValue(chain);
 
@@ -404,7 +420,29 @@ describe('ReportService', () => {
 
       expect((chain as { ranges: [number, number][] }).ranges).toEqual([
         [0, 999],
+        [10, 1009],
       ]);
+    });
+
+    it('reads every row when the server caps pages below the requested size', async () => {
+      // `REPORT_PAGE_SIZE` is a request, not a promise about the server.
+      // `supabase/config.toml` governs the local stack only — the hosted
+      // project's Max rows is a dashboard setting this code cannot see — so a
+      // server capping harder than expected must cost extra trips, never rows.
+      // Treating a short page as "the data ran out" is what would silently
+      // truncate here, with `truncated: false` attached to it.
+      const chain = makeChain({
+        data: rows(1200, attendanceRow),
+        error: null,
+        maxRowsCap: 300,
+      });
+      (mockSupabase.from as jest.Mock).mockReturnValue(chain);
+
+      const result = await service.getAttendanceReport('ch-1', {});
+
+      expect(result.rows).toHaveLength(1200);
+      expect(result.truncated).toBe(false);
+      expect(new Set(result.rows.map((r) => r.member_name)).size).toBe(1200);
     });
 
     it('assembles a service report larger than one page', async () => {
@@ -507,6 +545,46 @@ describe('ReportService', () => {
 
       expect(result.rows).toHaveLength(REPORT_MAX_ROWS);
       expect(result.truncated).toBe(false);
+    });
+  });
+
+  describe('roster balances truncated by the aggregate ceiling', () => {
+    it('reports its own ceiling and names the balances, not the row count', async () => {
+      // The roster is complete at one line; only the balances are wrong.
+      // Reporting REPORT_MAX_ROWS here would print "capped at the first 5,000
+      // rows" on a 1-row document, which reads as a false positive and sends
+      // the reader hunting for missing members instead of distrusting the
+      // numbers.
+      const members = makeChain({
+        data: [
+          { user_id: 'u-1', role_ids: [], created_at: '2026-01-15T00:00:00Z' },
+        ],
+        error: null,
+      });
+      const users = makeChain({
+        data: [{ id: 'u-1', display_name: 'Alice', email: 'a@test.com' }],
+        error: null,
+      });
+      const txns = makeChain({
+        data: rows(REPORT_AGGREGATE_MAX_ROWS + 1, () => ({
+          user_id: 'u-1',
+          amount: 1,
+        })),
+        error: null,
+      });
+      (mockSupabase.from as jest.Mock).mockImplementation((t: string) => {
+        if (t === 'members') return members;
+        if (t === 'users') return users;
+        if (t === 'point_transactions') return txns;
+        return makeChain({ data: [], error: null });
+      });
+
+      const result = await service.getRosterReport('ch-1');
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.truncated).toBe(true);
+      expect(result.limit).toBe(REPORT_AGGREGATE_MAX_ROWS);
+      expect(result.note).toContain('point balances are incomplete');
     });
   });
 

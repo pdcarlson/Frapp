@@ -98,13 +98,16 @@ so text outside that range is folded. The governing rules, in order:
 
 Report queries page through PostgREST's `max_rows` (1000,
 `supabase/config.toml`), so that cap no longer bounds a report. Reports are
-instead capped at **20,000 rows**, and unlike `max_rows` that cap is never
+instead capped at **5,000 rows**, and unlike `max_rows` that cap is never
 silent.
 
-The ceiling exists because a report is rendered synchronously in-process:
-40,000 rows cost 5.3 MB and ~7.7 s of mostly-synchronous pdf-lib work, so an
-unbounded report would trade a silent-truncation bug for a timeout. At the
-ceiling a report reads in roughly 0.5 s and ~10 MB before rendering.
+The ceiling is set by the PDF path, which renders synchronously and therefore
+costs more than the request that asked for it — pdf-lib blocks the event loop,
+and the API serves every other chapter from that same thread. Measured
+rendering a service report: 1,000 rows in 0.34 s, 5,000 in 1.08 s, 20,000 in
+4.10 s and 267 MB of heap. 5,000 keeps the worst-case stall near a second. The
+same ceiling applies to `json` and `csv`, which are much cheaper, because one
+limit that holds everywhere beats three that need explaining.
 
 When a report is cut short, every format says so:
 
@@ -112,19 +115,31 @@ When a report is cut short, every format says so:
 | --- | --- |
 | `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers. The body stays a bare array. |
 | `csv` | The same two headers. The CSV body is unchanged, so parsers are unaffected. |
-| `pdf` | `truncated: true` and `row_limit` in the response envelope, **and** an `⚠ Incomplete — capped at the first 20,000 rows` clause printed in the document's header scope line. |
+| `pdf` | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line. |
 
-A truncated report is also logged as a warning by the API, for callers that
-discard headers.
+Both headers are named in the API's CORS `exposedHeaders`; without that a
+browser would strip them and the dashboard — the caller most likely to forward
+a report — would see a short report as a complete one. A truncated report is
+also logged as a warning by the API, for callers that discard headers.
 
-Two notes on what the numbers mean:
+The in-document clause is deliberately plain ASCII. The standard PDF fonts are
+Latin-1 only, so a warning glyph like `⚠` folds to `?` under the rules in
+[Text degradation](#text-degradation) above and reads as an encoding artefact
+rather than a warning.
+
+Three notes on what the numbers mean:
 
 - The PDF's page counter and the envelope's `row_count` describe what was
   **printed**, not what matched. `truncated` is the only field that answers
   "is this the whole chapter?".
 - A roster's point balances are summed from `point_transactions`, which reads
-  under a separate, higher ceiling. If *that* read is cut short the roster is
-  not short — its balances are wrong — so it sets `truncated` too.
+  under a separate, higher ceiling of 50,000. If *that* read is cut short the
+  roster is not short — its balances are wrong — so it reports `truncated`
+  with **its own** limit and a note naming the balances, rather than a row cap
+  the document never reached.
+- A paged read is several statements, not a snapshot. Rows written or deleted
+  while a large report is being assembled can shift a page boundary, so a
+  report is a point-in-time summary rather than a ledger.
 
 ### Unsupported formats
 

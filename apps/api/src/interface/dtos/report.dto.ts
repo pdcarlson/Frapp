@@ -92,7 +92,7 @@ export class ReportExportResponseDto {
 
   @ApiProperty({
     description: 'The row ceiling that "truncated" refers to',
-    example: 20000,
+    example: 5000,
   })
   row_limit: number;
 }

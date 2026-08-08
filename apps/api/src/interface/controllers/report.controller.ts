@@ -19,7 +19,6 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 import {
-  REPORT_MAX_ROWS,
   ReportService,
   type ReportResult,
 } from '../../application/services/report.service';
@@ -43,7 +42,7 @@ import { REPORT_COLUMNS, type ReportKind } from './report-columns';
 const REPORT_FORMATS = ['json', 'csv', 'pdf'];
 
 /**
- * Set when `REPORT_MAX_ROWS` cut a report short.
+ * Set when a report's row ceiling cut it short.
  *
  * Truncation is signalled in headers rather than in the body because the `json`
  * body is a bare array and the `csv` body is consumed by parsers: wrapping
@@ -76,6 +75,26 @@ const EXPORT_RESPONSE = {
   },
 };
 
+/**
+ * Reject an unrecognized format rather than quietly serving JSON. The contract
+ * advertises an enum, and `format=PDF` silently returning rows instead of a
+ * download envelope is a trap for an external caller with no error to notice.
+ * Matches this endpoint family's existing stance on an unsupported points
+ * `window` (spec/behavior/reports.md).
+ *
+ * Called before the report is read, not while responding: the read is now up
+ * to dozens of sequential round-trips, and doing all of that only to reject
+ * the request as malformed turns a typo into an expensive one — and a cheap
+ * way to keep the API busy.
+ */
+function assertSupportedFormat(format: string | undefined): void {
+  if (format !== undefined && !REPORT_FORMATS.includes(format)) {
+    throw new BadRequestException(
+      `Unsupported format "${format}". Expected one of: ${REPORT_FORMATS.join(', ')}.`,
+    );
+  }
+}
+
 /** Join the non-empty parts of a report's scope line for the PDF header. */
 function scopeLine(parts: (string | undefined)[]): string | undefined {
   const line = parts
@@ -97,11 +116,19 @@ function dateRange(start?: string, end?: string): string | undefined {
  * the line a reader already checks to learn what the document covers — and
  * unlike the `Page N of M` footer, it describes what was *matched* rather than
  * what was printed.
+ *
+ * Deliberately WinAnsi-encodable. The standard PDF fonts cover Latin-1, and
+ * `toWinAnsi` folds anything else — a `⚠` reaches the page as a bare `?`,
+ * which reads as an encoding glitch rather than a warning (see
+ * spec/behavior/reports.md § Text degradation). The em dash survives; the
+ * emphasis has to come from the word.
  */
-function truncationNotice(truncated: boolean): string | undefined {
-  return truncated
-    ? `⚠ Incomplete — capped at the first ${REPORT_MAX_ROWS.toLocaleString('en-US')} rows`
-    : undefined;
+function truncationNotice(result: ReportResult<unknown>): string | undefined {
+  if (!result.truncated) return undefined;
+  return `INCOMPLETE — ${
+    result.note ??
+    `capped at the first ${result.limit.toLocaleString('en-US')} rows`
+  }`;
 }
 
 @ApiTags('Reports')
@@ -128,6 +155,7 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    assertSupportedFormat(format);
     const result = await this.reportService.getAttendanceReport(chapterId, {
       event_id: dto.event_id,
       start_date: dto.start_date,
@@ -151,6 +179,7 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    assertSupportedFormat(format);
     const result = await this.reportService.getPointsReport(chapterId, {
       user_id: dto.user_id,
       window: dto.window,
@@ -172,6 +201,7 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    assertSupportedFormat(format);
     const result = await this.reportService.getRosterReport(chapterId);
     return this.respond(chapterId, 'roster', result, format, res, () =>
       scopeLine(['Current members']),
@@ -188,6 +218,7 @@ export class ReportController {
     @Query('format') format?: string,
     @Res({ passthrough: true }) res?: Response,
   ) {
+    assertSupportedFormat(format);
     const result = await this.reportService.getServiceReport(chapterId, {
       user_id: dto.user_id,
       start_date: dto.start_date,
@@ -221,26 +252,17 @@ export class ReportController {
     const columns = REPORT_COLUMNS[kind];
     const { rows, truncated } = result;
 
-    // Reject an unrecognized format rather than quietly serving JSON. The
-    // contract advertises an enum, and `format=PDF` silently returning rows
-    // instead of a download envelope is a trap for an external caller with no
-    // error to notice. Matches this endpoint family's existing stance on an
-    // unsupported points `window` (spec/behavior/reports.md).
-    if (format !== undefined && !REPORT_FORMATS.includes(format)) {
-      throw new BadRequestException(
-        `Unsupported format "${format}". Expected one of: ${REPORT_FORMATS.join(', ')}.`,
-      );
-    }
-
     if (truncated) {
       // A short report that does not announce itself reads as a complete
       // record of the chapter, and these get emailed to nationals and
       // advisors. Log it too: the caller may be a script that drops headers.
       this.logger.warn(
-        `${kind} report for chapter ${chapterId} hit the ${REPORT_MAX_ROWS}-row ceiling and is incomplete.`,
+        `${kind} report for chapter ${chapterId} is incomplete — ${
+          result.note ?? `hit the ${result.limit}-row ceiling`
+        }.`,
       );
       res?.setHeader(TRUNCATED_HEADER, 'true');
-      res?.setHeader(ROW_LIMIT_HEADER, String(REPORT_MAX_ROWS));
+      res?.setHeader(ROW_LIMIT_HEADER, String(result.limit));
     }
 
     if (format === 'pdf') {
@@ -249,8 +271,9 @@ export class ReportController {
         kind,
         columns,
         rows,
-        scopeLine([subtitle(), truncationNotice(truncated)]),
+        scopeLine([subtitle(), truncationNotice(result)]),
         truncated,
+        result.limit,
       );
     }
 
