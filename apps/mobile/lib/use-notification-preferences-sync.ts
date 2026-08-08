@@ -7,11 +7,7 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
-import {
-  canResolveTimeZones,
-  isSupportedTimeZone,
-  MAX_TIME_ZONE_LENGTH,
-} from "@repo/validation";
+import { isSupportedTimeZone } from "@repo/validation";
 import { useIsApiAuthenticated } from "./frapp-client";
 
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
@@ -58,19 +54,17 @@ function normalizeTimeOfDay(value: unknown): string | null {
  * the toggle and wedge it in the retry state permanently. Fall back to the
  * device zone instead, which is what a member with no usable zone wants anyway.
  *
- * Fails **closed** when this runtime cannot check zones: `isSupportedTimeZone`
- * fails open so a device with no zone data can still edit, but the server never
- * fails open. Trusting an unverifiable stored value here would replay it into
- * exactly the 400 this guard exists to avoid.
+ * Substitutes only when the zone is *known* bad. On a runtime whose `Intl`
+ * cannot resolve zones at all, `isSupportedTimeZone` fails open and everything
+ * is accepted — deliberately. Failing closed there looked safer but is worse:
+ * unable to tell a good zone from a bad one, it would replace the member's
+ * valid, server-validated zone with this device's, and PATCH that back on the
+ * next toggle — silently rewriting a setting on every save. Corrupting data we
+ * cannot judge is a worse failure than the narrow case it would prevent: a
+ * legacy unresolvable row, on such a runtime, still round-trips to a 400.
  */
 function normalizeTimeZone(value: unknown): string {
-  if (typeof value !== "string") return resolveDeviceTimeZone();
-  const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_TIME_ZONE_LENGTH) {
-    return resolveDeviceTimeZone();
-  }
-  if (!canResolveTimeZones()) return resolveDeviceTimeZone();
-  return isSupportedTimeZone(trimmed) ? trimmed : resolveDeviceTimeZone();
+  return isSupportedTimeZone(value) ? value.trim() : resolveDeviceTimeZone();
 }
 
 const NOTIFICATION_CATEGORY = {

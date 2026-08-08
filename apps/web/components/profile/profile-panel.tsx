@@ -127,17 +127,25 @@ export function ProfilePanel() {
   async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      // `normalizeTimeZoneInput` returns null for "cleared" and undefined for
-      // "not a zone we accept". Blank must reach the server as an explicit null:
-      // sending "" (what the input holds) would be rejected, which would leave a
-      // member holding a bad stored zone unable to save anything on this form —
-      // including turning quiet hours off.
-      const tz = normalizeTimeZoneInput(settingsDraft.quiet_hours_tz);
-      if (tz === undefined) {
-        setTimeZoneError(
-          "Enter an IANA time zone name like America/Chicago. A UTC offset such as -05:00 can't follow daylight saving time.",
-        );
-        return;
+      // Three states, not two. `undefined` means the draft never loaded this
+      // field, and it must stay `undefined` so the PATCH omits it and the server
+      // keeps what it has — collapsing that into `null` would clear the member's
+      // stored zone, which is the same absent-vs-cleared confusion the server
+      // side of this change fixes. Only a value the member actually saw may
+      // become an explicit `null` (blank = clear, so someone holding an
+      // unusable zone can always save their way out of it).
+      const rawTz = settingsDraft.quiet_hours_tz;
+      let tz: string | null | undefined;
+      if (rawTz === undefined) {
+        tz = undefined;
+      } else {
+        tz = normalizeTimeZoneInput(rawTz);
+        if (tz === undefined) {
+          setTimeZoneError(
+            "Enter a time zone this server recognizes, like America/Chicago. Named zones are preferred — a fixed offset such as -05:00 works but won't follow daylight saving time.",
+          );
+          return;
+        }
       }
       setTimeZoneError(null);
 

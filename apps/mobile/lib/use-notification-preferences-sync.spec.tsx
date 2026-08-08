@@ -5,6 +5,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
+import { isSupportedTimeZone } from "@repo/validation";
 
 const mockState = vi.hoisted(() => ({
   asyncStorageMap: new Map<string, string>(),
@@ -13,7 +14,9 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
-    getItem: vi.fn(async (key: string) => mockState.asyncStorageMap.get(key) ?? null),
+    getItem: vi.fn(
+      async (key: string) => mockState.asyncStorageMap.get(key) ?? null,
+    ),
     setItem: vi.fn(async (key: string, value: string) => {
       mockState.asyncStorageMap.set(key, value);
     }),
@@ -91,8 +94,10 @@ function createStatefulClient(initial: ServerQuietHours) {
   );
   const client: MockClient = {
     GET: vi.fn(async (path: string) => {
-      if (path === "/v1/settings") return { data: { ...settings }, error: null };
-      if (path === "/v1/notifications/preferences") return { data: [], error: null };
+      if (path === "/v1/settings")
+        return { data: { ...settings }, error: null };
+      if (path === "/v1/notifications/preferences")
+        return { data: [], error: null };
       return { data: null, error: null };
     }),
     PATCH: patch,
@@ -206,7 +211,9 @@ describe("useNotificationPreferencesSync", () => {
   it("PATCHes category 'chat' when toggling DM alerts with auth + chapter", async () => {
     mockState.secureStoreToken = "test-token";
 
-    const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
 
     const { result } = renderHook(() => useNotificationPreferencesSync(), {
@@ -244,7 +251,9 @@ describe("useNotificationPreferencesSync", () => {
   it("PATCHes quiet-hour defaults when the member has never had a window", async () => {
     mockState.secureStoreToken = "test-token";
 
-    const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
 
     mockState.asyncStorageMap.set(
@@ -331,6 +340,78 @@ describe("useNotificationPreferencesSync", () => {
     });
     expect(settings.quiet_hours_end).toBe("07:00");
     expect(settings.quiet_hours_tz).toBe("America/Chicago");
+  });
+
+  // #687: rows written before `quiet_hours_tz` was validated server-side can
+  // hold a zone `Intl` cannot resolve. Re-enabling replays the stored window
+  // verbatim, so echoing one back now earns a 400 — and since retrying re-reads
+  // the same unchanged row, the toggle wedges in the retry state permanently.
+  it("substitutes a resolvable zone rather than replaying an unresolvable stored one", async () => {
+    mockState.secureStoreToken = "test-token";
+
+    const { client, patch, settings } = createStatefulClient({
+      quiet_hours_start: "21:00:00",
+      quiet_hours_end: "07:00:00",
+      quiet_hours_tz: "Mars/Olympus",
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+      expect(result.current.quietHoursWindow.start).toBe("21:00");
+    });
+
+    // The window the member is shown must already be repaired — the stored
+    // value never surfaces.
+    expect(result.current.quietHoursWindow.tz).not.toBe("Mars/Olympus");
+    expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
+
+    act(() => {
+      result.current.setPreference("quietHoursEnabled", false);
+    });
+    await waitFor(() => {
+      expect(settings.quiet_hours_start).toBeNull();
+    });
+
+    act(() => {
+      result.current.setPreference("quietHoursEnabled", true);
+    });
+    await waitFor(() => {
+      expect(settings.quiet_hours_start).toBe("21:00");
+    });
+
+    // The times are preserved; only the unusable zone is replaced.
+    const body = lastSettingsPatchBody(patch);
+    expect(body.quiet_hours_start).toBe("21:00");
+    expect(body.quiet_hours_end).toBe("07:00");
+    expect(body.quiet_hours_tz).not.toBe("Mars/Olympus");
+    expect(isSupportedTimeZone(body.quiet_hours_tz)).toBe(true);
+  });
+
+  it("repairs an unresolvable zone coming from the cached window too", async () => {
+    mockState.secureStoreToken = null;
+    mockState.asyncStorageMap.set(
+      QUIET_HOURS_WINDOW_STORAGE_KEY,
+      JSON.stringify({ start: "23:00", end: "06:00", tz: "Mars/Olympus" }),
+    );
+
+    const client = createMockClient();
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+    });
+
+    expect(result.current.quietHoursWindow.start).toBe("23:00");
+    expect(result.current.quietHoursWindow.tz).not.toBe("Mars/Olympus");
+    expect(isSupportedTimeZone(result.current.quietHoursWindow.tz)).toBe(true);
   });
 
   it("reads a window whose Postgres time carries fractional seconds", async () => {
@@ -461,7 +542,9 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     await waitFor(() => {
-      const persisted = mockState.asyncStorageMap.get(QUIET_HOURS_WINDOW_STORAGE_KEY);
+      const persisted = mockState.asyncStorageMap.get(
+        QUIET_HOURS_WINDOW_STORAGE_KEY,
+      );
       expect(persisted).toBeDefined();
       expect(JSON.parse(persisted ?? "{}")).toEqual({
         start: "21:00",
@@ -624,7 +707,9 @@ describe("useNotificationPreferencesSync", () => {
   });
 
   it("does not call the server when toggling without auth", async () => {
-    const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
 
     const { result } = renderHook(() => useNotificationPreferencesSync(), {
@@ -652,7 +737,9 @@ describe("useNotificationPreferencesSync", () => {
   it("PATCHes /v1/settings with nulls when disabling quiet hours", async () => {
     mockState.secureStoreToken = "test-token";
 
-    const patch = vi.fn().mockResolvedValue({ data: { ok: true }, error: null });
+    const patch = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true }, error: null });
     const client = createMockClient({ PATCH: patch });
 
     mockState.asyncStorageMap.set(
@@ -717,7 +804,8 @@ describe("useNotificationPreferencesSync", () => {
       "quietHoursEnabled",
     ]);
     expect(
-      (result.current.preferences as Record<string, unknown>).digestEmailsEnabled,
+      (result.current.preferences as Record<string, unknown>)
+        .digestEmailsEnabled,
     ).toBeUndefined();
 
     await waitFor(() => {

@@ -311,6 +311,90 @@ describe('NotificationService', () => {
         jest.useRealTimers();
       });
 
+      // Pins `||` over `??` at the tz resolution. A blank stored zone means
+      // "unset", not "invalid" — rows predating validation hold `''`, and `??`
+      // would push that into the formatter to throw and warn on every delivery.
+      it('treats a blank stored zone as unset rather than invalid', async () => {
+        const warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          quiet_hours_tz: '',
+        });
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+        });
+
+        expect(warn).not.toHaveBeenCalled();
+        expect(mockPushProvider.sendToUser).toHaveBeenCalled();
+
+        warn.mockRestore();
+      });
+
+      // The dedupe is specified in spec/behavior/notifications.md ("warns once
+      // per member and zone per process"). Without it a chapter-wide send emits
+      // one line per affected member per delivery, which is how a real signal
+      // turns into the noise that hides the next problem.
+      it('warns once per member and zone, not once per delivery', async () => {
+        const warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue(invalidSettings);
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyUser('u-1', 'ch-1', { title: 'A', body: 'B' });
+        await service.notifyUser('u-1', 'ch-1', { title: 'C', body: 'D' });
+        await service.notifyUser('u-1', 'ch-1', { title: 'E', body: 'F' });
+
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(mockNotificationRepo.create).toHaveBeenCalledTimes(3);
+
+        warn.mockRestore();
+      });
+
+      // The zone is legacy free text, so it can carry newlines that would forge
+      // a second log line out of a quoted field.
+      it('escapes control characters in the logged zone', async () => {
+        const warn = jest
+          .spyOn(Logger.prototype, 'warn')
+          .mockImplementation(() => undefined);
+
+        mockPreferenceRepo.findByUserChapterCategory.mockResolvedValue(
+          basePreference,
+        );
+        mockSettingsRepo.findByUser.mockResolvedValue({
+          ...baseSettings,
+          quiet_hours_tz: 'Bad\nERROR [Auth] forged line',
+        });
+        mockNotificationRepo.create.mockResolvedValue(baseNotification);
+        mockPushTokenRepo.findByUser.mockResolvedValue([basePushToken]);
+
+        await service.notifyUser('u-1', 'ch-1', {
+          title: 'Test',
+          body: 'Body',
+        });
+
+        const logged = warn.mock.calls[0]?.[0] as string;
+        expect(logged).not.toContain('\n');
+        expect(logged).toContain('\\n');
+
+        warn.mockRestore();
+      });
+
       it('does not drop the member from a chapter-wide notify', async () => {
         mockMemberRepo.findByChapter.mockResolvedValue([
           { user_id: 'u-1' },

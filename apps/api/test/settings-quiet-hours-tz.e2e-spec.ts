@@ -106,9 +106,14 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
     expect(notificationServiceMock.updateSettings).not.toHaveBeenCalled();
   });
 
-  // The regression that matters most: a member holding a bad stored zone must
-  // not be locked out of unrelated fields. The clients echo the stored zone back
-  // on every save, so a 400 here would reject their theme change too.
+  // DTO validation is all-or-nothing, so a bad zone rejects the whole payload,
+  // unrelated fields included. That is the intended contract — pinning it here
+  // because it is what makes the client-side rules load-bearing: nothing may
+  // echo an unvalidated stored zone back on an unrelated save. Web validates
+  // before submit and omits the field when the draft has not loaded, mobile
+  // substitutes a known-good zone, and blank is a clear on every field — so a
+  // member holding a bad row can still change their theme or switch quiet
+  // hours off. If any of those regress, this 400 becomes the lockout.
   it('rejects the whole payload when a bad zone rides along with a theme change', async () => {
     await patch({ quiet_hours_tz: 'Mars/Olympus', theme: 'dark' }).expect(400);
     expect(notificationServiceMock.updateSettings).not.toHaveBeenCalled();

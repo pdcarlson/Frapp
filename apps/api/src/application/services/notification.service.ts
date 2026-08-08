@@ -24,6 +24,27 @@ import type {
   UserSettings,
 } from '../../domain/entities/notification.entity';
 
+/** Cap on how much of an offending value reaches a log line. */
+const LOGGED_VALUE_MAX_LENGTH = 64;
+
+/**
+ * Render an untrusted stored value for a log message.
+ *
+ * The values this guards are legacy `quiet_hours_tz` rows written when the
+ * column enforced only `@IsString()` — so one can carry newlines, ANSI escapes,
+ * or enough length to bury the surrounding context. Forging a convincing extra
+ * log entry from inside a quoted field is the concrete risk; `JSON.stringify`
+ * escapes the control characters that would end the line, and the cap bounds
+ * the rest.
+ */
+function summarizeForLog(value: string): string {
+  const clipped =
+    value.length > LOGGED_VALUE_MAX_LENGTH
+      ? `${value.slice(0, LOGGED_VALUE_MAX_LENGTH)}…`
+      : value;
+  return JSON.stringify(clipped);
+}
+
 export type NotifyPayload = {
   title: string;
   body: string;
@@ -224,10 +245,11 @@ export class NotificationService {
     const warnKey = `${userId}:${tz}`;
     if (!this.warnedQuietHoursZones.has(warnKey)) {
       this.warnedQuietHoursZones.add(warnKey);
+      const safeTz = summarizeForLog(tz);
       this.logger.warn(
         fallback
-          ? `Invalid quiet_hours_tz "${tz}" for user ${userId} — falling back to UTC`
-          : `Invalid quiet_hours_tz "${tz}" for user ${userId} and this runtime cannot resolve UTC — skipping quiet-hours enforcement`,
+          ? `Invalid quiet_hours_tz ${safeTz} for user ${userId} — falling back to UTC`
+          : `Invalid quiet_hours_tz ${safeTz} for user ${userId} and this runtime cannot resolve UTC — skipping quiet-hours enforcement`,
       );
     }
 
