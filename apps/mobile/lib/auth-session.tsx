@@ -262,15 +262,19 @@ export function AuthSessionProvider({
       if (supabase) {
         await supabase.auth.signOut();
       }
-    } finally {
-      // Always clear locally. A network-failed signOut that left the token in
-      // SecureStore would keep the SDK sending a Bearer header the user has
-      // already revoked in the UI.
-      await clearAuthToken();
-      setSession(null);
-      setChapterId(null);
-      setStatus("unauthenticated");
+    } catch {
+      // Never propagate. Callers navigate away on return (`profile.tsx`), so a
+      // thrown network error would strand the member on an authenticated screen
+      // while the local session below is already gone.
     }
+
+    // Always clear locally, even when the remote revoke failed — a token left
+    // in SecureStore would keep the SDK sending a Bearer header for a session
+    // the member believes they ended.
+    await clearAuthToken();
+    setSession(null);
+    setChapterId(null);
+    setStatus("unauthenticated");
   }, [supabase]);
 
   const value = useMemo<AuthSessionContextValue>(

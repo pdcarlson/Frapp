@@ -37,7 +37,7 @@ async function readChunkCount(key: string): Promise<number> {
  * back as "no session" (forcing a re-auth) rather than as a torn session that
  * would be parsed as real.
  */
-const secureStoreAdapter: SupportedStorage = {
+export const sessionStorageAdapter: SupportedStorage = {
   async getItem(key: string): Promise<string | null> {
     try {
       const count = await readChunkCount(key);
@@ -112,7 +112,7 @@ export function getSupabaseClient(): SupabaseClient | null {
 
   cachedClient = createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
-      storage: secureStoreAdapter,
+      storage: sessionStorageAdapter,
       persistSession: true,
       autoRefreshToken: true,
       // Native apps never carry a session in a page URL. Magic-link callbacks

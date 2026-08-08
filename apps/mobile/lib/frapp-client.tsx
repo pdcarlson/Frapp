@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createFrappClient } from "@repo/api-sdk";
 import { FrappClientProvider } from "@repo/hooks";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AppState } from "react-native";
-import { readAuthToken, subscribeToAuthToken } from "./auth-token";
+import { useEffect, useMemo, useRef } from "react";
+import { readAuthToken } from "./auth-token";
 import { useAuthSession } from "./auth-session";
 
 export { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
+export { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -51,42 +51,4 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
       </FrappClientProvider>
     </QueryClientProvider>
   );
-}
-
-export function useIsApiAuthenticated() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const refresh = async () => {
-      try {
-        const token = await readAuthToken();
-        if (isMounted) setIsAuthenticated(!!token);
-      } catch {
-        if (isMounted) setIsAuthenticated(false);
-      }
-    };
-
-    void refresh();
-
-    // Sign-in and token refresh both happen while the app is open, so the
-    // AppState listener alone would leave this stale until the next
-    // background/foreground cycle.
-    const unsubscribe = subscribeToAuthToken(() => {
-      void refresh();
-    });
-
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh();
-    });
-
-    return () => {
-      isMounted = false;
-      unsubscribe();
-      subscription.remove();
-    };
-  }, []);
-
-  return isAuthenticated;
 }
