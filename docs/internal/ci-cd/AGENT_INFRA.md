@@ -156,7 +156,7 @@ watching session was never woken — the PR sat silent for ~2h until a human not
 | PR-activity webhook (`subscribe_pr_activity`) | CI **failure**, comments, reviews | success, cancelled, timed-out, merge-conflict — all silent |
 | `CI wake` watchdog comment (`ci-wake.yml`) | success / failure / cancelled / timed-out (and startup_failure/stale) of CI / Docs spec sync / Links on PR runs — comments are webhook events, so they wake subscribed sessions | outages that kill the watchdog run itself; merge-conflict; review-state changes; `skipped`/`neutral`/`action_required` conclusions and superseded runs (deliberately silent) |
 | `PR base sync` wake comment (`pr-base-sync.yml`) | `main` moving while this PR is conflicted with it, or behind it and not auto-updateable — the comment says which and what to do | base moves while the sweep run itself dies; PRs past the sweep's 20-PR cap this round (logged; the sweep processes least-recently-updated first, so deferred PRs rotate to the front of a later sweep); unknown mergeability (skipped fail-safe, deliberately silent) |
-| Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | nothing, **if** Routines are enabled account-side |
+| Scheduled self-wake (`send_later`, re-armed each wake) | anything — the session re-checks PR state via MCP | **the whole layer — it is unavailable on the cloud surface** (`send_later` dead-ends in `-32003`, see below); where the tool works, it misses nothing |
 
 Layered conclusion: the self-wake is the only complete net, the watchdog comment is the fast path
 for CI outcomes, the base-sync comment is the fast path for base moves and merge conflicts, and the
@@ -164,9 +164,16 @@ webhook is the fast path for failures and human comments. Arm them all.
 Sandbox shell access to `api.github.com` is session-dependent (the org-connect 403 was observed
 2026-08-08; a 200 was observed the same day in another session), so background polling of GitHub
 cannot be relied on — treat GitHub as reachable only through MCP tools, only while awake.
-If `send_later` returns `MCP error -32003 … requires approval`, Routines are disabled account-side;
-that is not a permissions-file problem (the allow rules below are honored for other tools) and no
-repo change fixes it — the session must say so to the user and rely on the other two layers.
+If `send_later` returns `MCP error -32003 … requires approval`, **stop — this is unfixable from
+anywhere, do not chase it** (settled 2026-08-08). It is not an account, plan, or Routines problem
+(owner-checked: the Routines page was healthy and scheduled Routines fire normally), and not a
+permissions-file miss. The whole in-session trigger family is affected — even the read-only
+`list_triggers` returns the same error (agent-observed) — and **the owner approving the prompt
+does not help: the approval is converted to a denial** (owner-reported, repeatedly). This matches
+the documented handling of MCP tools flagged as requiring live user interaction on this surface
+("an `allow` result … is converted to a deny"). No repo, settings, or account change fixes it —
+the session must say so once and rely on the other layers (webhook + wake comments); anything
+needing a schedule is a real Routine created in the UI, which works fine.
 
 ### What the watchdog does (`scripts/ci/ci-wake.mjs`)
 
@@ -295,9 +302,12 @@ carries and why:
 
 Also verified: an "always allow" click in one session/surface does not propagate to fresh cloud
 containers — only rules committed to `.claude/settings.json` travel with the repo — and a
-`send_later` / `create_trigger` failure shaped `MCP error -32003 … requires approval` is an
-account-side Routines gate, not a permissions-file miss (allow rules for those tools are already
-present and honored when the gate is open).
+`send_later` / `create_trigger` / `list_triggers` failure shaped
+`MCP error -32003 … requires approval` is a **platform-level dead end on the cloud surface, not a
+permissions-file miss and not an account-side Routines gate** (the earlier "Routines disabled
+account-side" theory was disproven 2026-08-08: the owner's Routines page was healthy, scheduled
+Routines fired normally, and the owner's approval of the prompt was itself converted to a denial —
+see § "Wake coverage" above; do not chase this).
 
 ## Agent dev stack (cloud sessions)
 
