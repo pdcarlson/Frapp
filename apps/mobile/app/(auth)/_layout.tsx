@@ -1,8 +1,8 @@
 import { Redirect, Stack } from "expo-router";
-import { usePreviewSession } from "@/lib/preview-session";
+import { useAuthSession } from "@/lib/auth-session";
 
 export default function AuthLayout() {
-  const { status } = usePreviewSession();
+  const { status } = useAuthSession();
 
   if (status === "hydrating") {
     return null;

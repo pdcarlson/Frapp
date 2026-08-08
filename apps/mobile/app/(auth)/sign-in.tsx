@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
-import { PreviewAuthMethod, usePreviewSession } from "@/lib/preview-session";
+import { AuthMethod, useAuthSession } from "@/lib/auth-session";
 import { useFrappTheme } from "@/lib/theme";
 
 type SessionReadinessRowProps = {
@@ -28,34 +28,66 @@ function SessionReadinessRow({ label, value, tone, styles }: SessionReadinessRow
   );
 }
 
+/**
+ * Supabase auth errors are safe to show verbatim — they are deliberately
+ * non-enumerating ("Invalid login credentials" regardless of whether the email
+ * exists). Anything without a message falls back to generic copy.
+ */
+function toAuthErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return "Sign-in failed. Retry in a moment.";
+}
+
 export default function SignIn() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
-  const { signIn } = usePreviewSession();
-  const [email, setEmail] = useState("officer@university.edu");
-  const [authMode, setAuthMode] = useState<PreviewAuthMethod>("password");
+  const { callbackError, isConfigured, sendMagicLink, signInWithPassword } =
+    useAuthSession();
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<AuthMethod>("password");
   const [submitting, setSubmitting] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [magicLinkSentTo, setMagicLinkSentTo] = useState<string | null>(null);
 
   function isValidEmailAddress(value: string): boolean {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
-  async function handlePreviewSignIn(method: PreviewAuthMethod) {
-    if (!isValidEmailAddress(email.trim())) {
+  async function handleSignIn(method: AuthMethod) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!isValidEmailAddress(normalizedEmail)) {
       setAuthError("Enter a valid chapter email before continuing.");
+      return;
+    }
+    if (method === "password" && password.length === 0) {
+      setAuthError("Enter your password before continuing.");
       return;
     }
 
     setSubmitting(true);
     setAuthError(null);
+    setMagicLinkSentTo(null);
 
     try {
-      await signIn({ email: email.trim().toLowerCase(), method });
-      router.replace("/(tabs)");
-    } catch {
-      setAuthError("Sign-in preview failed. Retry in a moment.");
+      if (method === "password") {
+        await signInWithPassword({ email: normalizedEmail, password });
+        // The session lands via onAuthStateChange; (auth)/_layout also redirects
+        // on `authenticated`, but navigating here avoids a visible flash of the
+        // sign-in form while that propagates.
+        router.replace("/(tabs)");
+        return;
+      }
+
+      await sendMagicLink({ email: normalizedEmail });
+      setMagicLinkSentTo(normalizedEmail);
+    } catch (error) {
+      setAuthError(toAuthErrorMessage(error));
     } finally {
       setSubmitting(false);
     }
@@ -70,7 +102,8 @@ export default function SignIn() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Sign in to your chapter</Text>
         <Text style={styles.cardBody}>
-          Session-ready preview mode validates auth states, persistence, and chapter handoff before full Supabase integration.
+          Use your chapter email. Your chapter is resolved from your account, so
+          there is nothing else to pick.
         </Text>
 
         <Text style={styles.inputLabel}>Chapter email</Text>
@@ -81,7 +114,9 @@ export default function SignIn() {
           placeholderTextColor={tokens.color.text.muted}
           autoCapitalize="none"
           autoComplete="email"
+          autoCorrect={false}
           keyboardType="email-address"
+          textContentType="username"
           style={styles.input}
         />
 
@@ -124,53 +159,73 @@ export default function SignIn() {
           </Pressable>
         </View>
 
-        <Text style={styles.helperText}>
-          In preview mode, this action simulates chapter session handoff.
-        </Text>
+        {authMode === "password" ? (
+          <>
+            <Text style={styles.inputLabel}>Password</Text>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Your password"
+              placeholderTextColor={tokens.color.text.muted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              textContentType="password"
+              style={styles.input}
+            />
+          </>
+        ) : (
+          <Text style={styles.helperText}>
+            We&apos;ll email you a link that signs you in on this device.
+          </Text>
+        )}
+
         {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+        {/* A dead magic link lands back here; without this the member cannot
+            tell a broken link from one they never tapped. */}
+        {!authError && callbackError ? (
+          <Text style={styles.errorText}>{callbackError}</Text>
+        ) : null}
+        {magicLinkSentTo ? (
+          <Text style={styles.successText}>
+            Link sent to {magicLinkSentTo}. Open it on this device to finish
+            signing in.
+          </Text>
+        ) : null}
 
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ disabled: submitting }}
           disabled={submitting}
-          onPress={() => handlePreviewSignIn(authMode)}
+          onPress={() => {
+            void handleSignIn(authMode);
+          }}
           style={[
             styles.primaryButton,
             submitting ? styles.primaryButtonDisabled : null,
           ]}
         >
           <Text style={styles.primaryButtonText}>
-            {submitting ? "Preparing session..." : "Continue with email"}
+            {submitting
+              ? "Signing in..."
+              : authMode === "password"
+                ? "Sign in"
+                : "Email me a link"}
           </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityState={{ disabled: submitting }}
-          disabled={submitting}
-          onPress={() => handlePreviewSignIn("magic_link")}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Use magic link</Text>
         </Pressable>
 
         <View style={styles.readinessCard}>
           <Text style={styles.readinessTitle}>Session readiness</Text>
           <SessionReadinessRow
-            label="Network"
-            value="Connected"
-            tone="ready"
+            label="Auth provider"
+            value={isConfigured ? "Configured" : "Not configured"}
+            tone={isConfigured ? "ready" : "error"}
             styles={styles}
           />
           <SessionReadinessRow
-            label="Email validation"
-            value="Valid format"
+            label="Session storage"
+            value="Device keychain"
             tone="ready"
-            styles={styles}
-          />
-          <SessionReadinessRow
-            label="Storage"
-            value="Provisioning"
-            tone="warning"
             styles={styles}
           />
           <SessionReadinessRow
@@ -180,6 +235,12 @@ export default function SignIn() {
             styles={styles}
           />
         </View>
+        {!isConfigured ? (
+          <Text style={styles.errorText}>
+            EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY are not
+            set for this build, so sign-in is unavailable.
+          </Text>
+        ) : null}
       </View>
     </View>
   );
@@ -282,6 +343,12 @@ function createStyles(tokens: FrappTokens) {
       fontWeight: "600",
       color: tokens.color.feedback.errorText,
     },
+    successText: {
+      marginTop: 10,
+      fontSize: 12,
+      fontWeight: "600",
+      color: tokens.color.feedback.successText,
+    },
     helperText: {
       marginTop: 10,
       fontSize: 12,
@@ -299,20 +366,6 @@ function createStyles(tokens: FrappTokens) {
     },
     primaryButtonText: {
       color: tokens.color.text.inverse,
-      fontWeight: "700",
-      fontSize: 14,
-    },
-    secondaryButton: {
-      marginTop: 10,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      paddingVertical: 12,
-      alignItems: "center",
-      backgroundColor: tokens.color.surface.card,
-    },
-    secondaryButtonText: {
-      color: tokens.color.text.primary,
       fontWeight: "700",
       fontSize: 14,
     },

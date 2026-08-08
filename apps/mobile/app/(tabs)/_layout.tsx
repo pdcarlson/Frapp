@@ -1,6 +1,6 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { usePreviewSession } from "@/lib/preview-session";
+import { useAuthSession } from "@/lib/auth-session";
 import { useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
@@ -24,7 +24,7 @@ const TAB_ICON_NAMES = {
 } as const;
 
 export default function TabLayout() {
-  const { status } = usePreviewSession();
+  const { status } = useAuthSession();
   const { tokens } = useFrappTheme();
 
   if (status === "hydrating") {

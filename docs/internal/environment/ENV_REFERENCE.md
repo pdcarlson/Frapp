@@ -157,9 +157,14 @@ Reads the `EXPO_PUBLIC_*` references:
 
 | Variable | Source | Required |
 |---|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | Supabase client init (future) | ✅ |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase client init (future) | ✅ |
+| `EXPO_PUBLIC_SUPABASE_URL` | `lib/supabase.ts` — Supabase client init | ✅ |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_API_URL` | API client init + `eas.json` | ✅ |
+
+Both Supabase values are read at module scope and are **optional at boot**: when
+either is missing `getSupabaseClient()` returns `null` instead of throwing, so
+`npm run check-types` / `npm run test` and a bare `expo start` still work. Sign-in
+is unavailable in that state and the sign-in screen says so.
 
 ---
 
