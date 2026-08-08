@@ -18,6 +18,14 @@ import { FrappClientProvider } from "./use-frapp-client";
  * response headers and nowhere else. Dropping `response` from the destructure
  * — which is what the code did before — restores a silent-truncation bug that
  * no other test in the repo would notice, so the wiring is pinned here.
+ *
+ * **CI does not run this file yet.** `packages/hooks` has no `test` script,
+ * `turbo.json` defines no `test` task, and every test step in `ci.yml` is
+ * scoped to an app. Enabling one is blocked on #762: twelve tests in this
+ * package are already red on `main`, so a job added today would fail on
+ * arrival. Until that lands these run locally via
+ * `npx vitest run src` in `packages/hooks` — real coverage, not yet enforced,
+ * and worth stating rather than letting the file's existence imply a gate.
  */
 describe("report hooks — truncation signalling", () => {
   let queryClient: QueryClient;
@@ -89,10 +97,19 @@ describe("report hooks — truncation signalling", () => {
     });
   });
 
-  it("treats a malformed row limit as absent rather than NaN", async () => {
+  it.each([
+    ["not-a-number", "unparseable"],
+    ["", "empty — Number() would make this 0"],
+    [" ", "whitespace — Number() would make this 0"],
+    ["-5", "negative — would render 'Capped at -5 rows'"],
+    ["0x10", "hex — Number() would make this 16"],
+    ["1.5", "fractional"],
+  ])("treats a malformed row limit (%p, %s) as absent", async (rawLimit) => {
+    // The API only ever emits a plain positive integer, so this guards
+    // against a proxy rewriting the header rather than against ourselves.
     const mockPost = respondWith({
       "X-Report-Truncated": "true",
-      "X-Report-Row-Limit": "not-a-number",
+      "X-Report-Row-Limit": rawLimit,
     });
 
     const { result } = renderHook(() => usePointsReport(), {
@@ -101,6 +118,7 @@ describe("report hooks — truncation signalling", () => {
 
     const value = await result.current.mutateAsync({ body: {} });
 
+    // Still known to be short — only the number is untrustworthy.
     expect(value.truncation.truncated).toBe(true);
     expect(value.truncation.rowLimit).toBeNull();
   });

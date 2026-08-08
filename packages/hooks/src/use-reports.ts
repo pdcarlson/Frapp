@@ -56,13 +56,14 @@ export interface ReportTruncation {
 
 function readTruncation(response: Response): ReportTruncation {
   const rawLimit = response.headers.get("X-Report-Row-Limit");
-  const rowLimit = rawLimit === null ? Number.NaN : Number(rawLimit);
   return {
     truncated: response.headers.get("X-Report-Truncated") === "true",
-    // A malformed header reads the same as a missing one. `rowLimit` is typed
-    // `number | null`, so letting `NaN` through would put a value in it that
-    // every consumer has to remember is not a number.
-    rowLimit: Number.isFinite(rowLimit) ? rowLimit : null,
+    // Matched as plain decimal digits rather than handed to `Number`, which is
+    // lenient in ways this header should not be: it reads `""` and `" "` as 0,
+    // `"0x10"` as 16, and `"-5"` as -5. The API only ever sends a positive
+    // integer, so anything else is a rewrite in transit and reads as absent —
+    // "Capped at -5 rows" is worse than saying only that the report is short.
+    rowLimit: /^[1-9][0-9]*$/.test(rawLimit ?? "") ? Number(rawLimit) : null,
     note: response.headers.get("X-Report-Truncation-Note"),
   };
 }
