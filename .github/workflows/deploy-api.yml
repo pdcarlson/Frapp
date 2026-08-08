@@ -73,6 +73,20 @@ jobs:
         with:
           node-version: 20
 
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
+
       - name: Inject staging deploy secrets from Infisical
         uses: Infisical/secrets-action@v1.0.12
         with:
@@ -118,6 +132,20 @@ jobs:
         with:
           node-version: 20
 
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'production' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
+
       - name: Inject production deploy secrets from Infisical
         uses: Infisical/secrets-action@v1.0.12
         with:
@@ -152,6 +180,20 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the staging environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'staging' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
+
       - name: Inject staging deploy secrets from Infisical
         uses: Infisical/secrets-action@v1.0.12
         with:
@@ -205,6 +247,20 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured for the production environment. Missing or empty:$MISSING. Set them as repository secrets, or as environment secrets on the 'production' environment — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "Infisical credentials are present; a 401 from the next step means they were rejected (revoked, rotated, or expired), not missing. See issue #696."
+
       - name: Inject production deploy secrets from Infisical
         uses: Infisical/secrets-action@v1.0.12
         with:
