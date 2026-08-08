@@ -13,10 +13,10 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
    *right* one.
 3. **Do not generate one-off narrative markdown** (audits, PR-consolidation writeups, "NOTES",
    "STATUS", thread-resolution maps, migration plans). That kind of file is what this restructure
-   removed. Durable facts go in the canonical doc; ephemeral work goes into **Linear** (file a Triage issue).
-4. **Work status is not a doc.** It lives in **Linear** (team **Frapp Live**), reached via the native
-   Linear MCP — see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md). A new initiative → a Linear **Project**.
-   Don't track status in `docs/` or `spec/`.
+   removed. Durable facts go in the canonical doc; ephemeral work goes into **GitHub Issues** (file a `triage`-labeled issue).
+4. **Work status is not a doc.** It lives in **GitHub Issues**, reached via the GitHub MCP — see
+   [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md). A new initiative → an `[Epic]` parent issue with
+   sub-issues. Don't track status in `docs/` or `spec/`.
 5. **One canonical place per fact.** Elsewhere, link to it (path + heading). If two docs must
    summarize, one paragraph max, then link out.
 
@@ -40,7 +40,7 @@ agents satisfy the docs-sync CI gate. Enforced (in part) by [`scripts/check-docs
 | Security implementation notes / fixes log | `docs/internal/security/` |
 | Visual prototype reference | `docs/internal/design-reference/` |
 | Per-service performance notes | `docs/internal/services/` |
-| Work status / planning | **Linear** (team Frapp Live) — not a doc; see [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) |
+| Work status / planning | **GitHub Issues** — not a doc; see [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) |
 
 ## Satisfying the docs-sync gate (`scripts/check-docs-impact.mjs`)
 
@@ -61,4 +61,4 @@ Root-level files like `AGENTS.md` / `CONTRIBUTING.md` count as outside `docs/`/`
 
 - Folder map: [`docs/README.md`](../README.md)
 - Docs gate behavior: [`ci-cd/DOCS_CI.md`](ci-cd/DOCS_CI.md)
-- Work tracking (Linear): [`ci-cd/LINEAR_PM.md`](ci-cd/LINEAR_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)
+- Work tracking (GitHub Issues): [`ci-cd/GITHUB_PM.md`](ci-cd/GITHUB_PM.md) · ADR-16 in [`../../spec/architecture/README.md`](../../spec/architecture/README.md)

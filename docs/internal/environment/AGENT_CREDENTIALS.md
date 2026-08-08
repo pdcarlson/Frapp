@@ -24,7 +24,7 @@ APIs before proposing changes. Usage policy for `GITHUB_PAT` lives in
 | `RENDER_API_KEY` | Render API |
 | `VERCEL_API_KEY` | Vercel API |
 | `SUPABASE_API_KEY` | Supabase Management API |
-| `LINEAR_API_KEY` | Linear personal API key — **legacy/optional**: no automation uses it anymore. All agents (interactive sessions, `/next`, and the scheduled backlog Routines) reach Linear through the **native Linear MCP** injected by the web environment (see [`../ci-cd/ROUTINES.md`](../ci-cd/ROUTINES.md)). Keep only if a non-MCP script needs Linear's GraphQL API directly (header `Authorization: <key>`, **no** `Bearer`); otherwise revoke it. |
+| `LINEAR_API_KEY` | Linear personal API key — **dead**: Linear was retired 2026-08-08 (work tracking moved to GitHub Issues, see [`../ci-cd/GITHUB_PM.md`](../ci-cd/GITHUB_PM.md) and [#680](https://github.com/pdcarlson/Frapp/issues/680)). Revoke it. |
 
 > **Canonical names & aliases.** The hosted-agent GitHub PAT is `GITHUB_PAT` — **not**
 > `GITHUB_TOKEN` (the GitHub Actions runtime token, which lacks branch-administration

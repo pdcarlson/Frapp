@@ -2,7 +2,7 @@
 
 **`spec/`** is the normative source for product behavior, architecture, environments, and UI
 expectations. It is purely topical and canonical — work tracking and delivery sequencing live in
-**Linear** (team Frapp Live — see [`docs/internal/ci-cd/LINEAR_PM.md`](../docs/internal/ci-cd/LINEAR_PM.md)),
+**GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)),
 not here. Developer workflows and runbooks live under **`docs/`** — start at
 [`docs/README.md`](../docs/README.md) and [`docs/guides/README.md`](../docs/guides/README.md).
 
@@ -29,8 +29,8 @@ Documentation-placement conventions: [`docs/internal/DOCUMENTATION_CONVENTIONS.m
 
 ## Active work
 
-Initiatives that build on this spec — currently the **chat-rework** project plus Analytics, Pricing &
-billing, and Agent-infrastructure — are tracked in **Linear** as Projects (team **Frapp Live**), not
-here. See [`docs/internal/ci-cd/LINEAR_PM.md`](../docs/internal/ci-cd/LINEAR_PM.md) for the model and
-how agents reach it (native Linear MCP). Status (shipped / queued) lives in Linear; this index
-intentionally carries no status table.
+Initiatives that build on this spec — currently the **chat-rework** effort plus Analytics, Pricing &
+billing, and Agent-infrastructure — are tracked in **GitHub Issues** as `[Epic]` parent issues with
+sub-issues, not here. See [`docs/internal/ci-cd/GITHUB_PM.md`](../docs/internal/ci-cd/GITHUB_PM.md)
+for the model and how agents reach it (GitHub MCP). Status (shipped / queued) lives in the tracker;
+this index intentionally carries no status table.

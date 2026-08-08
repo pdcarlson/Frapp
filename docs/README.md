@@ -1,6 +1,6 @@
 # Documentation index
 
-Developer guides and operator runbooks. Product and architecture truth lives in **[`spec/`](../spec/README.md)**; work tracking lives in **Linear** (team Frapp Live — see [`internal/ci-cd/LINEAR_PM.md`](internal/ci-cd/LINEAR_PM.md)).
+Developer guides and operator runbooks. Product and architecture truth lives in **[`spec/`](../spec/README.md)**; work tracking lives in **GitHub Issues** (see [`internal/ci-cd/GITHUB_PM.md`](internal/ci-cd/GITHUB_PM.md)).
 
 ## Folders
 

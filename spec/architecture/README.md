@@ -665,7 +665,7 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 
 ### ADR-16: Project management — retire the in-repo backlog, adopt Linear as canonical (2026-06-01)
 
-**Decision:** Adopt **Linear** as Frapp's canonical project-management system and **retire the in-repo markdown backlog** (`docs/backlog/`) and its "GitHub issues mirror the backlog; repo wins" doctrine. Linear becomes the source of truth for planning and work status; **GitHub issues remain the executable layer**, linked two-way to Linear via Linear's GitHub integration (PRs/branches link by issue ID; `Closes`/`Fixes`/`Resolves ABC-123` auto-transitions the Linear issue on merge; comments/status/assignee sync both ways). All three actors reach it: **Claude Code and Cursor via Linear's hosted MCP server** (`https://mcp.linear.app/mcp`, OAuth 2.1), **GitHub via the native integration**, and **automations via Linear's GraphQL API** (`https://api.linear.app/graphql`). This **reverses** the decision recorded in `docs/backlog/_meta/conventions.md` ("no GitHub Projects board; the backlog is the single source of truth"). The integration design, state/label mapping, ownership boundary, and provisioning runbook live in [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md).
+**Decision:** Adopt **Linear** as Frapp's canonical project-management system and **retire the in-repo markdown backlog** (`docs/backlog/`) and its "GitHub issues mirror the backlog; repo wins" doctrine. Linear becomes the source of truth for planning and work status; **GitHub issues remain the executable layer**, linked two-way to Linear via Linear's GitHub integration (PRs/branches link by issue ID; `Closes`/`Fixes`/`Resolves ABC-123` auto-transitions the Linear issue on merge; comments/status/assignee sync both ways). All three actors reach it: **Claude Code and Cursor via Linear's hosted MCP server** (`https://mcp.linear.app/mcp`, OAuth 2.1), **GitHub via the native integration**, and **automations via Linear's GraphQL API** (`https://api.linear.app/graphql`). This **reverses** the decision recorded in `docs/backlog/_meta/conventions.md` ("no GitHub Projects board; the backlog is the single source of truth"). The integration design, state/label mapping, ownership boundary, and provisioning runbook lived in `docs/internal/ci-cd/LINEAR_PM.md` (deleted 2026-08-08 with the Linear retirement — see amendment 5; successor: [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md), history in git).
 
 **Rationale:** The flat-file backlog is diff-able and agent-readable but a poor *human* PM surface — no board, no prioritization UI, manual `/triage` reconciliation, and it goes stale as fast as the code. GitHub Projects was rejected before and is **unreachable from the cloud agent** (no Projects MCP tool; no `gh` CLI in the web sandbox). Linear is the one option **all three actors can natively use**: an official remote MCP server usable by both Claude and Cursor, best-in-class two-way GitHub sync, and first-class AI-agent support. It gives the human a real board without cutting agents off from status.
 
@@ -686,8 +686,8 @@ The chosen path is Path D + Path C from #401. Path A (per-session Supabase branc
 #### ADR-16 amendment — cut-over executed (2026-06-02)
 
 The cut-over (originally tracked as the rails-only follow-up) has shipped. This amendment records the
-choices made; the original decision above stands. Details + policy:
-[`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md).
+choices made; the original decision above stands. Details + policy lived in
+`docs/internal/ci-cd/LINEAR_PM.md` (now [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md) — amendment 5).
 
 - **Access model corrected to native MCP only.** Both Claude Code and Cursor reach Linear through the
   **native Linear MCP** (the web environment injects it for cloud Claude; Cursor is natively integrated).
@@ -731,7 +731,7 @@ The capability probe (amendment 1) has run and corrects three things in amendmen
 - **Sync:** treat Linear↔GitHub as kept in sync by the integration (issues open in Linear, close via PRs);
   the "strictly unidirectional" framing in amendment 1 is relaxed to that workflow description.
 - **Estimates/Triage:** team uses Fibonacci estimates and **requires an explicit Priority to leave Triage**
-  (promotions set Priority). See [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
+  (promotions set Priority). See `LINEAR_PM.md` (now [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md) — amendment 5)
   and [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md) *(then `CURSOR_AUTOMATIONS.md`)*.
 
 #### ADR-16 amendment 3 — the 250 cap binds on *active* (Started+Unstarted), not Backlog (2026-06-03)
@@ -749,8 +749,9 @@ Todo) — explicitly **not Backlog, Completed, or Canceled**
   **not** the open-`suggestion` set (which includes Backlog and reads ~250+ even when active is ~2) — else
   it needlessly refuses to file. The Backlog stays lean by **choice** (signal quality for `/next`), not by
   platform limit. Auto-archive (am. 2) still tidies the board but is **not** load-bearing for the cap.
-- Policy + the corrected guard: [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)
-  → *Free-tier cap and auto-archive*.
+- Policy + the corrected guard lived in `LINEAR_PM.md` § *Free-tier cap and auto-archive* —
+  retired with Linear (amendment 5; original text in git history). GitHub Issues has no
+  active-issue cap: see [`GITHUB_PM.md` § No platform caps](../../docs/internal/ci-cd/GITHUB_PM.md#no-platform-caps).
 
 #### ADR-16 amendment 4 — backlog automations move to Claude Code Routines; Cursor retired (2026-08-03)
 
@@ -773,7 +774,7 @@ staggered daily cadence.
   advisors, CI — through the MCPs the environment injects); a per-issue **Agent brief**
   (`depth:` / `model:` / `ultracode:`, defaulting to `depth:deep`) that the curator writes, triage
   backfills, and `/next` honors when scaling verification and review depth (policy:
-  [`LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md#agent-briefs-depth--model--ultracode));
+  `LINEAR_PM.md`, now [`GITHUB_PM.md` → Agent briefs](../../docs/internal/ci-cd/GITHUB_PM.md#agent-briefs-depth--model--ultracode));
   a triage board-health report each run; and a bounded **self-maintenance contract** — each routine
   verifies its own config against the live workspace and may open a **docs-only PR restricted to its
   own skill files and runbook**, the routines' only permitted repo write.
@@ -783,6 +784,35 @@ staggered daily cadence.
 - Legacy `<!-- cursor-suggestion: … -->` dedup markers in existing issue bodies stay valid (dedup
   matches on the `fp=` string); new filings embed `agent-suggestion`, and old bodies upgrade
   opportunistically when refreshed.
+
+#### ADR-16 amendment 5 — Linear retired; GitHub Issues becomes canonical (2026-08-08)
+
+**Decision:** retire Linear entirely and make **GitHub Issues** on `pdcarlson/Frapp` the canonical
+tracker. Owner-approved 2026-08-08, conditional on a viability test that passed: GitHub issue
+writes from a **fresh** cloud sandbox ran prompt-free (owner-observed — the only valid instrument
+for permission behavior), because the cloud harness pre-approves the whole GitHub MCP
+(`mcp__github__*` in its `--allowed-tools`). Linear's write tools, by contrast, prompted in every
+cloud session, and three shipped workarounds (#667 server-level allows, #669 connector-UUID
+allows, #676 PreToolUse auto-allow hook) failed — each with an invalid verification claim, since
+an agent cannot observe permission prompts. Decision record, probe table, and migration mapping:
+[#680](https://github.com/pdcarlson/Frapp/issues/680).
+
+- **This reverses amendment 4's "issues are born in Linear, never GitHub" rule**: issues are now
+  born on GitHub with the `triage` label. Board states become label conventions
+  (`triage`/`P1`–`P4`/`in-progress`/`in-review` + native `state_reason` on close); epics use
+  native sub-issues; `Fixes #N` closes work on merge with no sync layer at all.
+- **Migration shape:** all 206 open GitHub issues were already 1:1 twins of open Linear issues
+  (the June import + one-way GitHub→Linear sync); the 60 Linear-born issues without twins were
+  recreated on GitHub; priority labels were applied across the open set. Nothing was closed by
+  the migration.
+- **Carried over unchanged:** the `suggestion` ownership boundary and pre-write label gate, the
+  Agent brief, the `fp=` dedup markers, the conservative net-new budget, the three Routines
+  (renamed **Issue Curator** / **Issue Triage** / PR Follow-ups; skills at
+  `.claude/skills/issue-curator/`, `.claude/skills/issue-triage/`), and the `/next` claim
+  protocol (claims are still comments; GitHub comments are append-only and server-timestamped).
+  Amendment 3's 250-active cap accounting is moot — GitHub has no cap.
+- Policy doc: [`GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md) (replaces `LINEAR_PM.md`);
+  runbook: [`ROUTINES.md`](../../docs/internal/ci-cd/ROUTINES.md).
 
 ### ADR-17: Secret scanning — gitleaks pre-commit + CI gate (2026-06-03)
 

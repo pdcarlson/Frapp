@@ -39,7 +39,7 @@ Each topic lives in its own file. Cross-cutting concerns (visual themeing, error
 | AI features (corpus scope, citations, non-goals)     | [`ai.md`](ai.md)                           |
 | Chapter config endpoints                             | [`chapter-config.md`](chapter-config.md)   |
 
-Each topic file is canonical behavior. Delivery of the chat-rework chunks (which is shipped vs. queued) is tracked in **Linear** (team Frapp Live — see [`docs/internal/ci-cd/LINEAR_PM.md`](../../docs/internal/ci-cd/LINEAR_PM.md)), not in this spec.
+Each topic file is canonical behavior. Delivery of the chat-rework chunks (which is shipped vs. queued) is tracked in **GitHub Issues** (see [`docs/internal/ci-cd/GITHUB_PM.md`](../../docs/internal/ci-cd/GITHUB_PM.md)), not in this spec.
 
 ---
 
