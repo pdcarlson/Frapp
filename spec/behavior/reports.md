@@ -4,12 +4,12 @@ Admins with `reports:export` permission can generate and download reports from t
 
 ## Available Reports
 
-| Report            | Scope                      | Columns                                                                                     |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| **Attendance**    | Per event or date range    | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
+| Report            | Scope                                                                     | Columns                                                                                     |
+| ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Attendance**    | Per event or date range                                                   | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
 | **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
-| **Member roster** | Current members            | Name, email, role(s), join date, point balance                                              |
-| **Service hours** | Per member or chapter-wide | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
+| **Member roster** | Current members                                                           | Name, email, role(s), join date, point balance                                              |
+| **Service hours** | Per member or chapter-wide                                                | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
 
 ## Points report time window
 
@@ -30,11 +30,11 @@ Totals and per-category breakdowns for a given window **equal the leaderboard** 
 The `format` query parameter on each `POST /v1/reports/*` route selects how step 2
 answers:
 
-| `format` | Response |
-| --- | --- |
-| `json` (default) | The report rows, for on-screen preview. |
-| `csv` | An inline `text/csv` body with a `Content-Disposition` attachment header. |
-| `pdf` | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count }` — whose `url` is a **signed download URL valid for 1 hour**. |
+| `format`         | Response                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` (default) | The report rows, for on-screen preview.                                                                                                                                   |
+| `csv`            | An inline `text/csv` body with a `Content-Disposition` attachment header.                                                                                                 |
+| `pdf`            | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count, truncated, row_limit }` — whose `url` is a **signed download URL valid for 1 hour**. |
 
 Only PDF takes the signed-URL path. Rendering a PDF is server-side work that
 produces a stored artifact, so the document is written to the private `reports`
@@ -111,11 +111,11 @@ limit that holds everywhere beats three that need explaining.
 
 When a report is cut short, every format says so:
 
-| Format | Signal |
-| --- | --- |
-| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers. The body stays a bare array. |
-| `csv` | The same two headers. The CSV body is unchanged, so parsers are unaffected. |
-| `pdf` | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line. |
+| Format | Signal                                                                                                                                      |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers. The body stays a bare array.                                          |
+| `csv`  | The same two headers. The CSV body is unchanged, so parsers are unaffected.                                                                 |
+| `pdf`  | `truncated: true` and `row_limit` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line. |
 
 Both headers are named in the API's CORS `exposedHeaders`; without that a
 browser would strip them and the dashboard — the caller most likely to forward
@@ -133,7 +133,7 @@ Three notes on what the numbers mean:
   **printed**, not what matched. `truncated` is the only field that answers
   "is this the whole chapter?".
 - A roster's point balances are summed from `point_transactions`, which reads
-  under a separate, higher ceiling of 50,000. If *that* read is cut short the
+  under a separate, higher ceiling of 50,000. If _that_ read is cut short the
   roster is not short — its balances are wrong — so it reports `truncated`
   with **its own** limit and a note naming the balances, rather than a row cap
   the document never reached.

@@ -6,20 +6,28 @@ Every report read pages through PostgREST's `max_rows` (1000,
 `supabase/config.toml`) in 1000-row requests, up to `REPORT_MAX_ROWS` (5,000).
 Before paging, each query simply stopped at 1000 and said nothing.
 
-**The ceiling is set by rendering, not by reading.** Reading is cheap: a
-20,000-row service report costs ~0.5 s and ~10 MB of heap across 21
-round-trips. Rendering is not, and it is synchronous — pdf-lib blocks the
+**The ceiling is set by rendering, not by reading.** Reading is cheap: at the
+5,000-row ceiling a service report is 6 round-trips (five full pages and the
+empty one that ends the read) and well under a second; reading 20,000 rows was
+measured at ~0.5 s and ~10 MB before the ceiling was lowered, so the read has
+never been the binding constraint. Rendering is, and it is synchronous — pdf-lib blocks the
 event loop, so the cost is paid by every other tenant's requests, not just the
 one that asked. Measured on the local stack (Supabase CLI 2.110.0 / PG17)
 rendering a service report to PDF:
 
-| rows | render | PDF size | heap |
-| --- | --- | --- | --- |
-| 1,000 | 0.34 s | 0.13 MB | 16 MB |
-| 2,500 | 0.51 s | 0.33 MB | 19 MB |
-| 5,000 | 1.08 s | 0.65 MB | 65 MB |
-| 10,000 | 2.04 s | 1.30 MB | 28 MB |
-| 20,000 | 4.10 s | 2.61 MB | 267 MB |
+| rows   | render | PDF size | heap   |
+| ------ | ------ | -------- | ------ |
+| 1,000  | 0.34 s | 0.13 MB  | 16 MB  |
+| 2,500  | 0.51 s | 0.33 MB  | 19 MB  |
+| 5,000  | 1.08 s | 0.65 MB  | 65 MB  |
+| 10,000 | 2.04 s | 1.30 MB  | 28 MB  |
+| 20,000 | 4.10 s | 2.61 MB  | 267 MB |
+
+Render time is the reliable column and is close to linear (~0.2 ms/row). The
+heap column is a single sample taken without a forced collection, so it is
+indicative rather than exact — it is non-monotonic between 5,000 and 10,000
+because GC happened to run mid-measurement. Treat it as "a few tens of MB up
+to 10,000 rows, sharply worse at 20,000", not as a per-row figure.
 
 5,000 keeps the worst-case event-loop stall near a second. Raising it is not a
 free knob: 20,000 would freeze the whole API for four seconds and spike a
@@ -30,7 +38,7 @@ introduced — the ceiling is what keeps it bounded.
 Four consequences worth remembering when editing these queries:
 
 - **The page size is a request, not an assumption.** `fetchAllPages` advances
-  by however many rows came back and stops only on an *empty* page, so a
+  by however many rows came back and stops only on an _empty_ page, so a
   server whose `max_rows` is lower than `REPORT_PAGE_SIZE` costs extra
   round-trips instead of silently losing rows. This matters because
   `supabase/config.toml` governs the local stack only — the hosted project's
@@ -50,7 +58,7 @@ Four consequences worth remembering when editing these queries:
   rather than solved; a keyset cursor would be the fix if it stops being.
 - **`in (...)` lists are chunked at 100 IDs.** Measured on the same stack, 200
   UUIDs (~7.5 KB of URL) succeeded and 250 (~9.3 KB) returned `414 URI Too
-  Long` — bracketing the real limit somewhere between, which is why the chunk
+Long` — bracketing the real limit somewhere between, which is why the chunk
   sits well under the lower probe rather than at it. Unchunked, the roster's
   member lookup passed every member ID in one request and failed a large
   chapter's report outright.

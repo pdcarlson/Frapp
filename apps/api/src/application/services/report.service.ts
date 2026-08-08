@@ -93,6 +93,9 @@ const REPORT_PAGE_SIZE = 1000;
  * | 10,000 | 2.04 s | 28 MB |
  * | 20,000 | 4.10 s | 267 MB |
  *
+ * (Render time is the dependable column, near-linear at ~0.2 ms/row. The heap
+ * figures are single unforced samples — indicative, not exact.)
+ *
  * 5,000 keeps the worst-case stall near a second. 20,000 would mean one
  * officer's export freezing every other tenant's requests for four seconds and
  * spiking a quarter-gigabyte — a worse failure than the truncation this
