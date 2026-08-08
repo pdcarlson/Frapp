@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
-import { useBillingStatus, useInvoices } from "@repo/hooks";
+import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,12 @@ import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { InvoiceAdminCard } from "@/components/billing/invoice-admin-card";
+import {
+  PayInvoiceDialog,
+  type PayableInvoice,
+} from "@/components/billing/pay-invoice-dialog";
+import { isStripeConfigured } from "@/lib/stripe";
+import { formatCurrency } from "@/lib/currency";
 
 type BillingStatusPreview = {
   status: string;
@@ -31,14 +37,8 @@ type InvoicePreview = {
   amount: number;
   status: string;
   due_date: string;
+  user_id: string;
 };
-
-function formatCurrency(cents: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(cents / 100);
-}
 
 function formatDate(value: string): string {
   const parsed = new Date(value);
@@ -52,9 +52,20 @@ export default function BillingPage() {
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "paid" | "overdue">("all");
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<string[]>([]);
+  const [payingInvoice, setPayingInvoice] = useState<PayableInvoice | null>(
+    null,
+  );
   const statusQuery = useBillingStatus();
   const invoicesQuery = useInvoices();
-  const isLoading = statusQuery.isLoading || invoicesQuery.isLoading;
+  const currentUserQuery = useCurrentUser();
+  // `currentUserQuery` belongs in this gate: the Pay affordance is gated on
+  // `invoice.user_id === currentUserId`, so rendering the table before the
+  // caller's identity resolves would briefly show a member their own OPEN
+  // invoice with no way to pay it, then pop the button in.
+  const isLoading =
+    statusQuery.isLoading ||
+    invoicesQuery.isLoading ||
+    currentUserQuery.isLoading;
   const usingPreviewData = statusQuery.isError || invoicesQuery.isError;
 
   const billingStatus = statusQuery.data as BillingStatusPreview | undefined;
@@ -83,6 +94,24 @@ export default function BillingPage() {
   const openCount = visibleInvoices.filter((invoice) => invoice.status === "OPEN").length;
   const overdueCount = visibleInvoices.filter((invoice) => invoice.status === "OVERDUE").length;
   const paidCount = visibleInvoices.filter((invoice) => invoice.status === "PAID").length;
+
+  // A treasurer's table legitimately contains other members' invoices — the
+  // list endpoint returns the whole chapter to anyone holding `billing:view`
+  // and only the caller's own rows to everyone else. So the pay affordance is
+  // gated on ownership, not merely on status; the API's 403 is the real
+  // enforcement, this just avoids offering a button that cannot work.
+  const currentUserId = (currentUserQuery.data as { id?: string } | undefined)
+    ?.id;
+  const stripeReady = isStripeConfigured();
+
+  function canPay(invoice: InvoicePreview): boolean {
+    return (
+      stripeReady &&
+      invoice.status === "OPEN" &&
+      !!currentUserId &&
+      invoice.user_id === currentUserId
+    );
+  }
 
   function handleInvoiceAction(actionLabel: string) {
     toast({
@@ -265,6 +294,7 @@ export default function BillingPage() {
                   <TableHead>Amount</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Due Date</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -300,6 +330,22 @@ export default function BillingPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                    <TableCell className="text-right">
+                      {canPay(invoice) ? (
+                        <Button
+                          size="sm"
+                          onClick={() =>
+                            setPayingInvoice({
+                              id: invoice.id,
+                              title: invoice.title,
+                              amount: invoice.amount,
+                            })
+                          }
+                        >
+                          Pay
+                        </Button>
+                      ) : null}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -309,6 +355,14 @@ export default function BillingPage() {
       </Card>
 
       <InvoiceAdminCard />
+
+      <PayInvoiceDialog
+        invoice={payingInvoice}
+        open={payingInvoice !== null}
+        onOpenChange={(next) => {
+          if (!next) setPayingInvoice(null);
+        }}
+      />
     </div>
   );
 }

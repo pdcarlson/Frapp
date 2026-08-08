@@ -158,6 +158,12 @@ The roster is live: the web client subscribes to Supabase Realtime Postgres chan
 
 A subscription summary card sits above an `InvoiceAdminCard` that lists every member invoice with inline status transitions (DRAFT → OPEN → PAID / VOID), a dedicated OVERDUE filter backed by `/v1/invoices/overdue`, and a Create-invoice dialog. The admin section is gated behind `billing:manage` via `<Can>`; members see only their own invoices in the table above.
 
+**Paying dues.** Each row in the Member Invoices table carries a **Pay** action, shown only when the invoice is `OPEN`, its `user_id` is the signed-in member's, and a Stripe publishable key is configured. The ownership condition matters because `GET /v1/invoices` returns the *whole chapter* to a `billing:view` holder — a treasurer sees other members' rows and must not be offered a Pay button on them (the API's 403 is the actual enforcement; the gate is what stops us offering an action that cannot work). Pay opens a Stripe Elements sheet (`PayInvoiceDialog`) confirming against the `client_secret` from `POST /v1/invoices/:id/payment-intent`, with 3-D Secure kept in-page via `redirect: "if_required"`.
+
+**The webhook is the source of truth for PAID.** A successful client-side confirmation means the money moved, not that the invoice settled — `payment_intent.succeeded` → `apply_invoice_payment` is what writes PAID. So the dialog re-reads the invoice until the server reports PAID and only then claims success; if the webhook has not landed by then it says *"payment received, confirmation pending"* rather than showing a PAID the server has not agreed to. Failures map to the endpoint's real responses: 400 (no longer OPEN), 403 (not yours), 409 (already completed, or an attempt already in flight — the two are distinguished by the server's own wording), 503 (provider unavailable).
+
+Without `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` the Pay affordance simply does not render, so local dev, CI, and the build prerender are unaffected. **Mobile has no pay surface yet** — `apps/mobile` has no authenticated session at all, so it cannot call this endpoint (tracked as #767, blocked on #698).
+
 ---
 
 ## Settings (`/settings`)
