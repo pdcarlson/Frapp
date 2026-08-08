@@ -2660,6 +2660,16 @@ export interface components {
             storage_path: string;
             /** @description Number of data rows in the document */
             row_count: number;
+            /**
+             * @description True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.
+             * @example false
+             */
+            truncated: boolean;
+            /**
+             * @description The row ceiling that "truncated" refers to
+             * @example 20000
+             */
+            row_limit: number;
         };
         AttendanceReportDto: {
             /** @description Filter by event ID */

@@ -91,11 +91,18 @@ export const REPORT_MAX_ROWS = 20_000;
 const REPORT_AGGREGATE_MAX_ROWS = 200_000;
 
 /**
- * How many IDs one `in (...)` filter may carry. Keeps the generated query
- * string comfortably inside the smallest proxy limit these requests pass
- * through: 500 UUIDs is roughly 19 KB of URL.
+ * How many IDs one `in (...)` filter may carry.
+ *
+ * Measured, not guessed: against the local Supabase stack, 200 UUIDs (~7.5 KB
+ * of URL) is the last size that succeeds and 250 (~9.3 KB) returns `414 URI
+ * Too Long` — the familiar 8 KB request-line limit. 100 leaves better than 2×
+ * headroom for the `select`, `order`, and column filters sharing the line.
+ *
+ * This bound is why the roster's member lookup is chunked at all: it read
+ * `in (...)` over every member ID in one request, so a chapter of more than
+ * roughly 220 members failed the whole report with a 414.
  */
-const ID_CHUNK_SIZE = 500;
+const ID_CHUNK_SIZE = 100;
 
 /**
  * A report's rows plus whether {@link REPORT_MAX_ROWS} cut them short.

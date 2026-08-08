@@ -6873,6 +6873,16 @@
           "row_count": {
             "type": "number",
             "description": "Number of data rows in the document"
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.",
+            "example": false
+          },
+          "row_limit": {
+            "type": "number",
+            "description": "The row ceiling that \"truncated\" refers to",
+            "example": 20000
           }
         },
         "required": [
@@ -6881,7 +6891,9 @@
           "expires_in",
           "filename",
           "storage_path",
-          "row_count"
+          "row_count",
+          "truncated",
+          "row_limit"
         ]
       },
       "AttendanceReportDto": {

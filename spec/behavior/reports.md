@@ -60,7 +60,7 @@ writes a new object rather than replacing the last. Roster exports in particular
 carry member names, emails, roles, and join dates, so this storage is in scope for
 [`data-retention.md`](data-retention.md): a member who deletes their account still
 has their details inside any report exported before that point. Reaping old
-exports, and sweeping the prefix on account deletion, is tracked in **FRA-338**.
+exports, and sweeping the prefix on account deletion, is tracked in **#694**.
 
 ## PDF Formatting
 
@@ -96,12 +96,35 @@ so text outside that range is folded. The governing rules, in order:
 
 ### Row limits
 
-Report queries are not paged, so they are capped by PostgREST's `max_rows`
-(1000, `supabase/config.toml`). A report matching more rows than that is
-**silently short in every format**, PDF included — the document's page counter
-and the response's `row_count` describe what was returned, not what matched.
-Tracked in FRA-342; do not treat an exported report as a complete record of a
-chapter larger than the cap until it is fixed.
+Report queries page through PostgREST's `max_rows` (1000,
+`supabase/config.toml`), so that cap no longer bounds a report. Reports are
+instead capped at **20,000 rows**, and unlike `max_rows` that cap is never
+silent.
+
+The ceiling exists because a report is rendered synchronously in-process:
+40,000 rows cost 5.3 MB and ~7.7 s of mostly-synchronous pdf-lib work, so an
+unbounded report would trade a silent-truncation bug for a timeout. At the
+ceiling a report reads in roughly 0.5 s and ~10 MB before rendering.
+
+When a report is cut short, every format says so:
+
+| Format | Signal |
+| --- | --- |
+| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers. The body stays a bare array. |
+| `csv` | The same two headers. The CSV body is unchanged, so parsers are unaffected. |
+| `pdf` | `truncated: true` and `row_limit` in the response envelope, **and** an `⚠ Incomplete — capped at the first 20,000 rows` clause printed in the document's header scope line. |
+
+A truncated report is also logged as a warning by the API, for callers that
+discard headers.
+
+Two notes on what the numbers mean:
+
+- The PDF's page counter and the envelope's `row_count` describe what was
+  **printed**, not what matched. `truncated` is the only field that answers
+  "is this the whole chapter?".
+- A roster's point balances are summed from `point_transactions`, which reads
+  under a separate, higher ceiling. If *that* read is cut short the roster is
+  not short — its balances are wrong — so it sets `truncated` too.
 
 ### Unsupported formats
 
