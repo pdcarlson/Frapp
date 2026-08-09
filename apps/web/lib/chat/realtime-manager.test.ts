@@ -1,8 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { chatRealtime, type BackfillFetcher } from "./realtime-manager";
-import type { RawChatMessage } from "./types";
+import {
+  chatRealtime,
+  POLL_DEGRADE_AFTER_MS,
+  POLL_INTERVAL_MS,
+  type BackfillFetcher,
+  type ConnectionStatus,
+} from "./realtime-manager";
+import {
+  chatMessagesKey,
+  type ChannelCache,
+  type RawChatMessage,
+} from "./types";
 
 type SubscribeStatus =
   | "SUBSCRIBED"
@@ -122,5 +132,174 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
 
     expect(backfill).toHaveBeenCalledTimes(2);
     expect(backfill).toHaveBeenLastCalledWith("channel-1", "msg-newest");
+  });
+});
+
+describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+  let status: ConnectionStatus;
+  let unsubStatus: () => void;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.localStorage.clear();
+    channels = new Map();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    supabase = {
+      channel: vi.fn((topic: string) => {
+        const ch = makeFakeChannel(topic);
+        channels.set(topic, ch);
+        return ch;
+      }),
+      removeChannel: vi.fn(),
+    } as unknown as SupabaseClient;
+
+    chatRealtime.configure({ queryClient, supabase, backfill });
+    status = "live";
+    unsubStatus = chatRealtime.subscribeStatus((s) => {
+      status = s;
+    });
+  });
+
+  afterEach(() => {
+    unsubStatus();
+    chatRealtime.destroy();
+    queryClient.clear();
+    window.localStorage.clear();
+    vi.useRealTimers();
+  });
+
+  /** The live channel for a topic — `openChannel` replaces it on every retry. */
+  function current(channelId: string): FakeChannel {
+    const ch = channels.get(`chat:channel:${channelId}`);
+    if (!ch) throw new Error(`no fake channel for ${channelId}`);
+    return ch;
+  }
+
+  test("a disconnect longer than the degrade window starts polling at the spec'd cadence", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    expect(status).toBe("reconnecting");
+
+    // Just inside the window: still only reconnecting, no REST traffic.
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS - 1);
+    expect(status).toBe("reconnecting");
+    expect(backfill).not.toHaveBeenCalled();
+
+    // Crossing it degrades to polling and polls immediately.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(status).toBe("polling");
+    expect(backfill).toHaveBeenCalledTimes(1);
+    expect(backfill).toHaveBeenLastCalledWith("channel-1", null);
+
+    // ...then once per interval for as long as Realtime stays down.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(backfill).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(backfill).toHaveBeenCalledTimes(3);
+    expect(status).toBe("polling");
+  });
+
+  test("a reconnect inside the degrade window never starts polling", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS / 2);
+    current("channel-1").trigger("SUBSCRIBED");
+    expect(status).toBe("live");
+
+    // One backfill from the SUBSCRIBED gate, and nothing from a poll loop
+    // that was disarmed before it could fire.
+    expect(backfill).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS * 3);
+    expect(backfill).toHaveBeenCalledTimes(1);
+    expect(status).toBe("live");
+  });
+
+  test("polled messages land in the cache and do not duplicate when Realtime returns", async () => {
+    const row: RawChatMessage = {
+      id: "msg-1",
+      channel_id: "channel-1",
+      sender_id: "user-1",
+      created_at: "2026-01-01T00:00:00.000Z",
+      client_message_id: "client-1",
+    };
+    // Every fetch — polled or post-reconnect — replays the same row.
+    backfill.mockResolvedValue([row]);
+
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(status).toBe("polling");
+
+    // Poll it in twice, then let the reconnect backfill deliver it a third time.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    current("channel-1").trigger("SUBSCRIBED");
+    await vi.advanceTimersByTimeAsync(0);
+
+    const cache = queryClient.getQueryData<ChannelCache>(
+      chatMessagesKey("channel-1"),
+    );
+    // Three deliveries of one row collapse to a single entry, keyed by the
+    // server id (`mergeServerRow` → `byId[serverKey]`), not repeated three times.
+    expect(cache).toBeDefined();
+    expect(cache!.order).toEqual(["msg-1"]);
+    expect(Object.keys(cache!.byId)).toHaveLength(1);
+    expect(backfill.mock.calls.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("polling stops once Realtime reconnects", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(status).toBe("polling");
+
+    current("channel-1").trigger("SUBSCRIBED");
+    expect(status).toBe("live");
+
+    const afterReconnect = backfill.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+    expect(backfill).toHaveBeenCalledTimes(afterReconnect);
+  });
+
+  test("going offline suspends polling, and coming back re-arms it", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(status).toBe("polling");
+    const beforeOffline = backfill.mock.calls.length;
+
+    window.dispatchEvent(new Event("offline"));
+    expect(status).toBe("offline");
+
+    // No REST attempts while the browser reports no network.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+    expect(backfill).toHaveBeenCalledTimes(beforeOffline);
+
+    // Back online: channels reopen, and a still-dead Realtime degrades again.
+    window.dispatchEvent(new Event("online"));
+    expect(status).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(status).toBe("polling");
+    expect(backfill.mock.calls.length).toBeGreaterThan(beforeOffline);
+  });
+
+  test("destroy() tears the poll loop down", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    const atDestroy = backfill.mock.calls.length;
+    expect(atDestroy).toBeGreaterThan(0);
+
+    chatRealtime.destroy();
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
+    expect(backfill).toHaveBeenCalledTimes(atDestroy);
   });
 });
