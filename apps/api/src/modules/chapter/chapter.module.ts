@@ -12,9 +12,10 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import { AuthModule } from '../auth/auth.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, ActivationModule],
   controllers: [ChapterController],
   providers: [
     AuthSyncInterceptor,

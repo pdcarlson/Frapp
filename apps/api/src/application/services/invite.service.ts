@@ -16,6 +16,7 @@ import type { IRoleRepository } from '../../domain/repositories/role.repository.
 import { Invite } from '../../domain/entities/invite.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 
 @Injectable()
 export class InviteService {
@@ -24,6 +25,7 @@ export class InviteService {
     @Inject(MEMBER_REPOSITORY) private readonly memberRepo: IMemberRepository,
     @Inject(ROLE_REPOSITORY) private readonly roleRepo: IRoleRepository,
     private readonly notificationService: NotificationService,
+    private readonly activation: ActivationService,
   ) {}
 
   private prepareInviteData(
@@ -51,7 +53,13 @@ export class InviteService {
     // Free tier: inviting members is not billing-gated (Chunk 03). The chat +
     // members wedge is available to every chapter regardless of subscription.
     const data = this.prepareInviteData(chapterId, createdBy, role);
-    return this.inviteRepo.create(data);
+    const invite = await this.inviteRepo.create(data);
+    // Funnel step 2 (#267). Recorded after the write so an invite that failed
+    // to persist never counts as one the chapter created.
+    await this.activation.record(chapterId, 'activation-first-invite-created', {
+      batch_size: 1,
+    });
+    return invite;
   }
 
   async createBatch(
@@ -64,7 +72,11 @@ export class InviteService {
       this.prepareInviteData(chapterId, createdBy, role),
     );
 
-    return this.inviteRepo.createMany(inviteData);
+    const invites = await this.inviteRepo.createMany(inviteData);
+    await this.activation.record(chapterId, 'activation-first-invite-created', {
+      batch_size: invites.length,
+    });
+    return invites;
   }
 
   async redeem(
@@ -103,6 +115,15 @@ export class InviteService {
       chapter_id: invite.chapter_id,
       role_ids: targetRole ? [targetRole.id] : [],
     });
+
+    // Funnel step 3 (#267) — the chapter's first *successful* redemption, which
+    // is the point where it stops being one founder and starts being a chapter.
+    // Placed after `markUsedAtomically` and the member insert so an expired,
+    // already-claimed, or duplicate-membership attempt never counts.
+    await this.activation.record(
+      invite.chapter_id,
+      'activation-first-invite-redeemed',
+    );
 
     try {
       await this.notificationService.notifyChapter(invite.chapter_id, {

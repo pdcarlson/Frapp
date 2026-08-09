@@ -20,11 +20,17 @@ import { SupabaseStorageService } from '../../infrastructure/storage/supabase-st
 import { NotificationModule } from '../notification/notification.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { RbacModule } from '../rbac/rbac.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
   // `channels:manage` for the spec'd moderation path.
-  imports: [NotificationModule, ChannelAccessModule, RbacModule],
+  imports: [
+    NotificationModule,
+    ChannelAccessModule,
+    RbacModule,
+    ActivationModule,
+  ],
   controllers: [ChatController],
   providers: [
     ChatService,

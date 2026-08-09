@@ -21,6 +21,7 @@ import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/strip
 import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 import { FinancialInvoiceService } from './financial-invoice.service';
 
 /** One row of the fake `stripe_webhook_events` table (FRA-23). */
@@ -115,6 +116,7 @@ describe('BillingService', () => {
   let mockFinancialInvoiceService: jest.Mocked<
     Pick<FinancialInvoiceService, 'applyStripePaymentSuccess'>
   >;
+  let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let webhookEventStore: Map<string, WebhookEventRow>;
   let mockWebhookEventRepo: IStripeWebhookEventRepository;
 
@@ -196,6 +198,8 @@ describe('BillingService', () => {
       applyStripePaymentSuccess: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockActivation = { record: jest.fn().mockResolvedValue(true) };
+
     webhookEventStore = new Map();
     mockWebhookEventRepo = createWebhookEventRepo(webhookEventStore);
 
@@ -215,6 +219,7 @@ describe('BillingService', () => {
           provide: FinancialInvoiceService,
           useValue: mockFinancialInvoiceService,
         },
+        { provide: ActivationService, useValue: mockActivation },
       ],
     }).compile();
 
@@ -265,6 +270,29 @@ describe('BillingService', () => {
         successUrl: 'http://localhost:3000/success',
         cancelUrl: 'http://localhost:3000/cancel',
       });
+      // Activation funnel step 6 (#267).
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        'ch-1',
+        'activation-checkout-started',
+      );
+    });
+
+    it('does not record checkout-started when Stripe fails to issue a session (#267)', async () => {
+      mockChapterRepo.findById.mockResolvedValue(baseChapter);
+      mockBillingProvider.createCheckoutSession.mockRejectedValue(
+        new Error('stripe down'),
+      );
+
+      await expect(
+        service.createCheckoutSession({
+          chapterId: 'ch-1',
+          customerEmail: 'admin@example.com',
+          successUrl: 'http://localhost:3000/success',
+          cancelUrl: 'http://localhost:3000/cancel',
+        }),
+      ).rejects.toThrow();
+
+      expect(mockActivation.record).not.toHaveBeenCalled();
     });
 
     it('should create a Stripe customer if chapter has none', async () => {
@@ -914,6 +942,32 @@ describe('BillingService', () => {
         stripe_customer_id: 'cus_123',
         last_stripe_webhook_at: new Date(event.created * 1000).toISOString(),
       });
+      // Activation funnel step 7 (#267) — the conversion itself.
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        CHECKOUT_CHAPTER_ID,
+        'activation-checkout-completed',
+      );
+    });
+
+    it('does not record a conversion for a checkout on a non-existent chapter (#267)', async () => {
+      const event: WebhookEvent = {
+        id: 'evt_missing_chapter',
+        type: 'checkout.session.completed',
+        created: Date.now(),
+        data: {
+          object: {
+            metadata: { chapter_id: CHECKOUT_CHAPTER_ID },
+            subscription: 'sub_123',
+            customer: 'cus_123',
+          },
+        },
+      };
+
+      mockChapterRepo.findById.mockResolvedValue(null);
+
+      await service.handleWebhookEvent(event);
+
+      expect(mockActivation.record).not.toHaveBeenCalled();
     });
 
     it('should skip duplicate events (idempotency)', async () => {
@@ -1878,6 +1932,7 @@ describe('BillingService', () => {
             provide: FinancialInvoiceService,
             useValue: mockFinancialInvoiceService,
           },
+          { provide: ActivationService, useValue: mockActivation },
         ],
       }).compile();
       return module.get(BillingService);

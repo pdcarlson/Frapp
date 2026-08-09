@@ -162,6 +162,11 @@ Supabase Realtime (preferred)
 2. Merge into the local message list (deduplicate by ID)
 3. This ensures no messages are lost during the disconnect window
 
+Polling reuses that same gap-recovery fetch on a timer rather than a second
+code path, so a message delivered by both a poll and the reconnect backfill
+merges to one entry. Implementation: `apps/web/lib/chat/realtime-manager.ts`
+(`POLL_DEGRADE_AFTER_MS`, `POLL_INTERVAL_MS`, `ConnectionStatus === "polling"`).
+
 ### 3.3 Message Ordering
 
 Messages are ordered by `created_at` (server timestamp). Optimistic messages use the client's local time but are re-sorted when the server response arrives with the canonical timestamp. This prevents ordering issues when clocks are slightly off.
@@ -268,6 +273,17 @@ When two admins edit the same resource simultaneously:
 ---
 
 ## 6. Supabase Realtime Connection Management
+
+> **§3.2 is normative for the polling fallback.** The sketch below shows the
+> connection lifecycle; where the two sections differ, §3.2 wins. In particular
+> the degrade trigger is **any channel non-live for >10s** (not an exhausted
+> reconnect-attempt budget), and the banner copy is §3.2's
+> *"Real-time updates paused. Polling for new messages."*
+>
+> Implemented in `apps/web/lib/chat/realtime-manager.ts` — `POLL_DEGRADE_AFTER_MS`
+> / `POLL_INTERVAL_MS`, surfaced through the `"polling"` `ConnectionStatus`.
+> Reconnect backoff keeps running underneath the poll loop, so recovery is
+> automatic and polling stops on the next `SUBSCRIBED`.
 
 ### Connection Lifecycle
 
