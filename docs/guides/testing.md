@@ -216,14 +216,27 @@ Two conventions make the tests meaningful rather than decorative:
   The report fixture gives both chapters a member in common, same-named roles with different ids,
   and attendance whose `marked_by` is never the attendee — so a query that loses `!inner`, or that
   embeds `users` through the wrong foreign key, returns *wrong rows* rather than merely fewer.
+- **Seed past whatever boundary the code is supposed to handle.** A limit that is never crossed is
+  a limit that is never tested. The report fixture deliberately exceeds two: `max_rows` (1,000) with
+  1,100 service entries, and `ID_CHUNK_SIZE` (100) with 123 members. Both counts are exported
+  constants, so a spec asserts against the boundary rather than a magic number.
 - **Fixtures own their teardown and are run-tagged.** `seedReportFixture` returns a `cleanup()` and
   calls it itself if seeding throws halfway. Chapter deletes cascade to everything except `users`,
   which are found by a per-run tag in their email — so two concurrent runs on one stack don't
   delete each other's rows.
 
-Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report
-specs were checked that way: swapping the `users` FK hint to `marked_by` fails 2, removing `!inner`
-fails 3, and defeating the paging loop fails 1 (1,000 rows returned against 1,100 seeded).
+Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report specs
+were checked that way, against `report.service.ts`:
+
+| Mutation | Tests that fail |
+| --- | --- |
+| `users!event_attendance_user_id_fkey` → `…_marked_by_fkey` | 2 |
+| `events!inner (…)` → `events (…)` | 3 |
+| `fetchAllPages` stops after one page | 1 (1,000 rows returned against 1,100 seeded) |
+| `chunkIds` returns only its first chunk | 1 |
+
+The last one is why the fixture seeds 123 members. At the 3 members it originally had, the chunking
+test passed under that mutation — it asserted a real property against data too small to exhibit it.
 
 ## 7. Coverage expectations
 

@@ -21,16 +21,27 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  */
 export const PAGED_SERVICE_ENTRY_COUNT = 1_100;
 
+/**
+ * Extra members seeded into the primary chapter beyond the three named ones.
+ *
+ * Must exceed `ID_CHUNK_SIZE` (100) in `report.service.ts` so the roster's user
+ * lookup spans more than one `in (...)` request. That chunking exists because
+ * passing every member id in a single filter produced a `414 URI Too Long`, and
+ * the unit mock's `.in()` discards its argument entirely — so a regression that
+ * dropped every chunk after the first stays green there. Crossing the boundary
+ * here is what makes the chunked lookup actually tested.
+ */
+export const BULK_MEMBER_COUNT = 120;
+
+/** Members in the primary chapter: the three named ones plus the bulk fill. */
+export const PRIMARY_MEMBER_COUNT = 3 + BULK_MEMBER_COUNT;
+
 /** Rows per insert round-trip while seeding. Keeps request bodies sane. */
 const INSERT_CHUNK = 500;
 
 export interface SeededChapter {
   id: string;
   name: string;
-  /** Members seeded into this chapter, in insertion order. */
-  users: SeededUser[];
-  roleIds: string[];
-  eventIds: string[];
 }
 
 export interface SeededUser {
@@ -46,8 +57,12 @@ export interface ReportFixture {
   other: SeededChapter;
   /** Member of **both** chapters — the strongest isolation probe. */
   sharedUser: SeededUser;
+  /** Member of `primary` only. */
+  primaryOnlyUser: SeededUser;
   /** The officer who recorded attendance; never an attendee himself. */
   markedByUser: SeededUser;
+  /** Member of `other` only — must never appear in a `primary` report. */
+  otherOnlyUser: SeededUser;
   /** Event in `primary` used for the `event_id` filter assertions. */
   primaryFilterEventId: string;
   cleanup: () => Promise<void>;
@@ -123,8 +138,31 @@ export async function seedReportFixture(
   const cleanup = async (): Promise<void> => {
     // Chapters first: their cascades remove the rows that reference users, so
     // the user delete below cannot trip a foreign key.
-    await supabase.from('chapters').delete().in('id', [primaryId, otherId]);
-    await supabase.from('users').delete().like('email', `${runTag}-%`);
+    const { error: chapterError } = await supabase
+      .from('chapters')
+      .delete()
+      .in('id', [primaryId, otherId]);
+    const { error: userError } = await supabase
+      .from('users')
+      .delete()
+      .like('email', `${runTag}-%`);
+
+    // Surfaced rather than swallowed. A teardown that fails silently leaves a
+    // chapter and its ~1,200 rows behind on a stack that other runs share, and
+    // the run still reports green — so the leak is only discovered later, as
+    // unexplained rows. Warn instead of throwing: this runs in `afterAll`, and
+    // failing there would mask whichever real assertion the run was reporting.
+    for (const [label, error] of [
+      ['chapters', chapterError],
+      ['users', userError],
+    ] as const) {
+      if (error) {
+        console.warn(
+          `[integration] fixture cleanup: deleting ${label} failed — ${error.message}. ` +
+            `Rows tagged '${runTag}' may remain in the local stack.`,
+        );
+      }
+    }
   };
 
   try {
@@ -156,6 +194,26 @@ export async function seedReportFixture(
       { user_id: otherOnly.id, chapter_id: otherId, role_ids: [] },
     ]);
     assertOk('insert members', memberError);
+
+    // Fill the primary chapter past `ID_CHUNK_SIZE` so the roster's user
+    // lookup is split across more than one `in (...)` request. Inserted in
+    // bulk rather than through `makeUser` to keep this to two round-trips.
+    const bulkUsers = Array.from({ length: BULK_MEMBER_COUNT }, (_, i) => ({
+      id: randomUUID(),
+      supabase_auth_id: randomUUID(),
+      email: `${runTag}-bulk-${i}@example.test`,
+      display_name: `Bulk Member ${i}`,
+    }));
+    await insertChunked(supabase, 'users', bulkUsers);
+    await insertChunked(
+      supabase,
+      'members',
+      bulkUsers.map((u) => ({
+        user_id: u.id,
+        chapter_id: primaryId,
+        role_ids: [],
+      })),
+    );
 
     const primaryEventA = randomUUID();
     const primaryEventB = randomUUID();
@@ -281,22 +339,12 @@ export async function seedReportFixture(
     await insertChunked(supabase, 'service_entries', serviceRows);
 
     return {
-      primary: {
-        id: primaryId,
-        name: `${runTag} Primary`,
-        users: [sharedUser, primaryOnly, markedByUser],
-        roleIds: [primaryRoleId],
-        eventIds: [primaryEventA, primaryEventB],
-      },
-      other: {
-        id: otherId,
-        name: `${runTag} Other`,
-        users: [sharedUser, otherOnly],
-        roleIds: [otherRoleId],
-        eventIds: [otherEvent],
-      },
+      primary: { id: primaryId, name: `${runTag} Primary` },
+      other: { id: otherId, name: `${runTag} Other` },
       sharedUser,
+      primaryOnlyUser: primaryOnly,
       markedByUser,
+      otherOnlyUser: otherOnly,
       primaryFilterEventId: primaryEventB,
       cleanup,
     };

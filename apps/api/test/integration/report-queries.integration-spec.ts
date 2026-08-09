@@ -20,6 +20,7 @@ import type { ISemesterArchiveRepository } from '../../src/domain/repositories/s
 import { createServiceRoleClient, describeIntegration } from './stack';
 import {
   PAGED_SERVICE_ENTRY_COUNT,
+  PRIMARY_MEMBER_COUNT,
   seedReportFixture,
   type ReportFixture,
 } from './report-fixture';
@@ -66,12 +67,12 @@ describeIntegration('Report queries against live PostgREST', () => {
       expect(rows).toHaveLength(3);
 
       const names = rows.map((r) => r.member_name);
-      expect(names).toContain('Shared Member');
-      expect(names).toContain('Primary Only');
+      expect(names).toContain(fixture.sharedUser.displayName);
+      expect(names).toContain(fixture.primaryOnlyUser.displayName);
       // The crux. `marked_by` points at this user on every seeded row, so if
       // the embed's FK hint were swapped to `event_attendance_marked_by_fkey`
       // the query would still succeed and every name would be his.
-      expect(names).not.toContain('Recording Officer');
+      expect(names).not.toContain(fixture.markedByUser.displayName);
 
       expect(rows.map((r) => r.event_name)).not.toContain(
         'Other Chapter Meeting',
@@ -87,7 +88,9 @@ describeIntegration('Report queries against live PostgREST', () => {
       // The shared member attended an event in *both* chapters at the same
       // hour. `!inner` on `events.chapter_id` is the only thing separating
       // them — this is the assertion that deleting those six characters breaks.
-      const sharedRows = rows.filter((r) => r.member_name === 'Shared Member');
+      const sharedRows = rows.filter(
+        (r) => r.member_name === fixture.sharedUser.displayName,
+      );
       expect(sharedRows).toHaveLength(1);
       expect(sharedRows[0].event_name).toBe('Primary Chapter Meeting');
     });
@@ -142,7 +145,9 @@ describeIntegration('Report queries against live PostgREST', () => {
     it('sums only the queried chapter for a member who earns in both', async () => {
       const { rows } = await service.getPointsReport(fixture.primary.id, {});
 
-      const shared = rows.find((r) => r.member_name === 'Shared Member');
+      const shared = rows.find(
+        (r) => r.member_name === fixture.sharedUser.displayName,
+      );
       // 10 + 20 here, 100 in the control chapter. An unscoped RPC returns 130 —
       // a wrong number, not a missing row.
       expect(shared?.total_points).toBe(30);
@@ -152,10 +157,13 @@ describeIntegration('Report queries against live PostgREST', () => {
       });
 
       expect(
-        rows.find((r) => r.member_name === 'Primary Only')?.total_points,
+        rows.find((r) => r.member_name === fixture.primaryOnlyUser.displayName)
+          ?.total_points,
       ).toBe(5);
       // Seeded with no transactions in this chapter.
-      expect(rows.map((r) => r.member_name)).not.toContain('Other Only');
+      expect(rows.map((r) => r.member_name)).not.toContain(
+        fixture.otherOnlyUser.displayName,
+      );
     });
 
     it('accepts .order() and .range() on the RPC result set', async () => {
@@ -172,7 +180,7 @@ describeIntegration('Report queries against live PostgREST', () => {
         user_id: fixture.sharedUser.id,
       });
       expect(rows).toHaveLength(1);
-      expect(rows[0].member_name).toBe('Shared Member');
+      expect(rows[0].member_name).toBe(fixture.sharedUser.displayName);
     });
   });
 
@@ -183,9 +191,11 @@ describeIntegration('Report queries against live PostgREST', () => {
       );
 
       expect(truncated).toBe(false);
-      expect(rows).toHaveLength(3);
+      expect(rows).toHaveLength(PRIMARY_MEMBER_COUNT);
 
-      const shared = rows.find((r) => r.name === 'Shared Member');
+      const shared = rows.find(
+        (r) => r.name === fixture.sharedUser.displayName,
+      );
       // Both chapters define a role literally named "Treasurer" with different
       // ids, so resolving from the wrong chapter's map yields the same string.
       // What it could not survive is the id lookup missing entirely, which
@@ -194,7 +204,9 @@ describeIntegration('Report queries against live PostgREST', () => {
       expect(shared?.point_balance).toBe(30);
       expect(shared?.email).toBe(fixture.sharedUser.email);
 
-      expect(rows.map((r) => r.name)).not.toContain('Other Only');
+      expect(rows.map((r) => r.name)).not.toContain(
+        fixture.otherOnlyUser.displayName,
+      );
     });
 
     it('chunks the member lookup rather than overflowing the query string', async () => {
@@ -202,7 +214,14 @@ describeIntegration('Report queries against live PostgREST', () => {
       // produced a 414. The mock's `.in()` ignores its argument, so a dropped
       // chunk stays green there; here a dropped chunk means a member with a
       // blank name and email.
+      //
+      // The fixture seeds past `ID_CHUNK_SIZE` (100) deliberately — with a
+      // roster that fits in one chunk this assertion would hold no matter what
+      // the chunking did, which is the state this test was written out of.
+      expect(PRIMARY_MEMBER_COUNT).toBeGreaterThan(100);
+
       const { rows } = await service.getRosterReport(fixture.primary.id);
+      expect(rows).toHaveLength(PRIMARY_MEMBER_COUNT);
       for (const row of rows) {
         expect(row.name).not.toBe('');
         expect(row.email).not.toBe('');
@@ -248,9 +267,11 @@ describeIntegration('Report queries against live PostgREST', () => {
         user_id: fixture.sharedUser.id,
       });
       expect(byUser.rows).toHaveLength(PAGED_SERVICE_ENTRY_COUNT / 2);
-      expect(byUser.rows.every((r) => r.member_name === 'Shared Member')).toBe(
-        true,
-      );
+      expect(
+        byUser.rows.every(
+          (r) => r.member_name === fixture.sharedUser.displayName,
+        ),
+      ).toBe(true);
 
       const outsideWindow = await service.getServiceReport(fixture.primary.id, {
         start_date: '2026-06-01',
