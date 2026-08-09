@@ -11,6 +11,7 @@ import type {
   ChapterDirectoryRequest,
   ChapterDocument,
   ChapterDuesConfig,
+  ChapterServiceConfig,
   ChapterWorkflow,
   ChannelReadReceipt,
   ChatChannel,
@@ -35,6 +36,7 @@ import type {
   ScheduledNotificationDispatch,
   SemesterArchive,
   ServiceEntry,
+  ServiceLeaderboardRow,
   StripeWebhookEvent,
   StudyGeofence,
   StudySession,
@@ -104,6 +106,7 @@ export interface Database {
       chapter_custom_fields: TableDefinition<ChapterCustomField>;
       chapter_workflows: TableDefinition<ChapterWorkflow>;
       chapter_dues_config: TableDefinition<ChapterDuesConfig>;
+      chapter_service_config: TableDefinition<ChapterServiceConfig>;
       chapter_directory: TableDefinition<ChapterDirectoryEntry>;
       chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
@@ -161,6 +164,19 @@ export interface Database {
           p_points: number;
         };
         Returns: ServiceEntry[];
+      };
+      /**
+       * `20260809120000` — ranked APPROVED service time per member. Date
+       * bounds are inclusive and compare against `date`, not `created_at`;
+       * both are nullable for an all-time ranking.
+       */
+      get_service_leaderboard: {
+        Args: {
+          p_chapter_id: string;
+          p_start_date?: string | null;
+          p_end_date?: string | null;
+        };
+        Returns: ServiceLeaderboardRow[];
       };
       /** `20260603140000` — `returns setof event_attendance`. */
       check_in_event: {

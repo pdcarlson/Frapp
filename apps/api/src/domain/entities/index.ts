@@ -24,5 +24,6 @@ export * from './chapter-audit-log.entity';
 export * from './chapter-directory.entity';
 export * from './chapter-workflow.entity';
 export * from './chapter-dues-config.entity';
+export * from './chapter-service-config.entity';
 export * from './chat-notification-preference.entity';
 export * from './scheduled-notification-dispatch.entity';

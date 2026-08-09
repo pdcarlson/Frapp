@@ -8,7 +8,11 @@ import {
 } from '@nestjs/common';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
-import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
+import type {
+  ServiceEntry,
+  ServiceEntryFilters,
+  ServiceLeaderboardRow,
+} from '../../domain/entities/service-entry.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -19,9 +23,7 @@ import {
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
-
-/** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
-const DEFAULT_MINUTES_PER_POINT = 60;
+import { ChapterServiceConfigService } from './chapter-service-config.service';
 
 const SERVICE_BUCKET = 'service';
 
@@ -83,6 +85,7 @@ export class ServiceEntryService {
     private readonly storageProvider: IStorageProvider,
     private readonly notificationService: NotificationService,
     private readonly chapterWorkflows: ChapterWorkflowsService,
+    private readonly chapterServiceConfig: ChapterServiceConfigService,
   ) {}
 
   async requestProofUploadUrl(input: RequestProofUploadUrlInput): Promise<{
@@ -230,6 +233,53 @@ export class ServiceEntryService {
     return this.serviceEntryRepo.findByUser(chapterId, userId);
   }
 
+  /**
+   * Admin queue read with optional status / date-range / member filters
+   * (spec/behavior/service-hours.md → Visibility). Filtering happens in SQL, so
+   * a chapter with years of history doesn't stream every row into Node to throw
+   * most of them away.
+   */
+  async findByChapterFiltered(
+    chapterId: string,
+    filters: ServiceEntryFilters,
+  ): Promise<ServiceEntry[]> {
+    this.assertValidDateRange(filters.startDate, filters.endDate);
+    return this.serviceEntryRepo.findByChapterFiltered(chapterId, filters);
+  }
+
+  /**
+   * Chapter-wide leaderboard of approved service time, visible to any member
+   * who can view the roster (spec: "Members see ... a chapter-wide service
+   * leaderboard").
+   */
+  async leaderboard(
+    chapterId: string,
+    range: { startDate?: string; endDate?: string } = {},
+  ): Promise<ServiceLeaderboardRow[]> {
+    this.assertValidDateRange(range.startDate, range.endDate);
+    return this.serviceEntryRepo.leaderboard(chapterId, range);
+  }
+
+  /**
+   * Rejects unparseable or inverted ranges up front. Postgres would accept an
+   * inverted range happily and return zero rows, which reads as "this member
+   * logged nothing" rather than "your filter is backwards".
+   */
+  private assertValidDateRange(startDate?: string, endDate?: string): void {
+    for (const [label, value] of [
+      ['start_date', startDate],
+      ['end_date', endDate],
+    ] as const) {
+      if (value !== undefined && Number.isNaN(new Date(value).getTime())) {
+        throw new BadRequestException(`${label} must be a valid ISO date`);
+      }
+    }
+
+    if (startDate && endDate && startDate > endDate) {
+      throw new BadRequestException('start_date must not be after end_date');
+    }
+  }
+
   async create(input: CreateServiceEntryInput): Promise<ServiceEntry> {
     const { date, duration_minutes, description } = input;
 
@@ -308,9 +358,18 @@ export class ServiceEntryService {
       throw new BadRequestException('Points already awarded for this entry');
     }
 
-    const pointsToAward = Math.floor(
-      entry.duration_minutes / DEFAULT_MINUTES_PER_POINT,
-    );
+    // Chapter policy (Settings → Service): how many minutes of approved
+    // service earn one SERVICE point. An unconfigured chapter reports the
+    // default 60, which is the rate this service hardcoded before the rate
+    // became configurable — so behavior is unchanged until a chapter opts in.
+    // Read at approval time, not at submission, so raising the rate mid-review
+    // applies to everything still in the queue.
+    const minutesPerPoint =
+      await this.chapterServiceConfig.getMinutesPerPoint(chapterId);
+
+    // Sub-rate durations floor to 0 and approve with no ledger row, per the
+    // spec's "(Sub-rate durations approve with no ledger row.)"
+    const pointsToAward = Math.floor(entry.duration_minutes / minutesPerPoint);
 
     // Approve the entry and award its SERVICE points atomically: a single DB
     // transaction (compare-and-set on status/points_awarded) so a partial
