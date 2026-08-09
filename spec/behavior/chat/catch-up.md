@@ -116,9 +116,20 @@ audience test handles that channel correctly: if the only members who can read i
 holding all three, all three signals qualify; if a treasurer holding only `billing:view` can read
 it, the tasks and service sections drop for that channel and the dues section stays.
 
-Resolving the audience is a membership-and-roles query the API already has (`RbacService`), and it
-is per-chapter and per-channel — which is the point. Entitlement is a property of who is actually in
-the room, not of how the channel was declared.
+Resolving the audience composes two queries the API already has: the roster
+(`MemberService.findByChapter`) and per-member permissions
+(`RbacService.getEffectivePermissions`, or `flattenPermissionSets` over the chapter's roles for a
+bulk pass). There is no single "audience of channel X" helper today. It is per-chapter and
+per-channel — which is the point. Entitlement is a property of who is actually in the room, not of
+how the channel was declared.
+
+**The check is point-in-time, but the row is forever.** Entitlement is evaluated when the card is
+posted; the `chat_messages` row stays readable afterwards under whatever access rules apply *then*.
+Widening a channel's `required_permissions`, or moving a member into a role that can read it,
+retroactively exposes every officer card already sitting in its history. Nothing in the current
+schema expires or re-checks a posted card. An officers-channel implementation of open question 1
+has to accept that (a channel whose audience only ever widens deliberately) or plan for it —
+shorter-lived cards, or figures coarse enough that staleness defuses them.
 
 Getting this backwards is a known bug class in this
 repo — `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` documents the same mistake, warning that
