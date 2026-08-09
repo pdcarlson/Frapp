@@ -4262,6 +4262,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Case-insensitive substring match on the document title",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -4274,7 +4283,121 @@
             "bearer": []
           }
         ],
-        "summary": "List documents (optional folder filter)",
+        "summary": "List documents (optional folder and title search)",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders": {
+      "get": {
+        "operationId": "ChapterDocumentController_listFolders_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List document folders in display order",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "operationId": "ChapterDocumentController_createFolder_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateDocumentFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create a document folder",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/documents/folders/{id}": {
+      "patch": {
+        "operationId": "ChapterDocumentController_updateFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDocumentFolderDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Rename or reorder a document folder",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "delete": {
+        "operationId": "ChapterDocumentController_deleteFolder_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Delete a folder (its documents move to the root level)",
         "tags": [
           "Documents"
         ]
@@ -6767,6 +6890,35 @@
           "storage_path",
           "title"
         ]
+      },
+      "CreateDocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Folder name (unique within the chapter)"
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "Display position. Defaults to the end of the list."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "UpdateDocumentFolderDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New folder name. Renaming re-files every document in the folder."
+          },
+          "sort_order": {
+            "type": "number",
+            "description": "New display position"
+          }
+        }
       },
       "CreatePollDto": {
         "type": "object",

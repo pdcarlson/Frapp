@@ -6,6 +6,7 @@ import type {
   ChapterDocumentFilter,
 } from '../../../domain/repositories/chapter-document.repository.interface';
 import type { ChapterDocument } from '../../../domain/entities/chapter-document.entity';
+import { escapeLikePattern } from '../supabase.utils';
 
 @Injectable()
 export class SupabaseChapterDocumentRepository implements IChapterDocumentRepository {
@@ -45,6 +46,10 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       }
     }
 
+    if (filter?.search) {
+      query = query.ilike('title', `%${escapeLikePattern(filter.search)}%`);
+    }
+
     const { data, error } = await query.order('created_at', {
       ascending: false,
     });
@@ -77,6 +82,19 @@ export class SupabaseChapterDocumentRepository implements IChapterDocumentReposi
       .update({ folder: null } as never)
       .eq('chapter_id', chapterId)
       .eq('folder', folder);
+    if (error) throw error;
+  }
+
+  async renameFolder(
+    fromFolder: string,
+    toFolder: string,
+    chapterId: string,
+  ): Promise<void> {
+    const { error } = await this.supabase
+      .from('chapter_documents')
+      .update({ folder: toFolder } as never)
+      .eq('chapter_id', chapterId)
+      .eq('folder', fromFolder);
     if (error) throw error;
   }
 }
