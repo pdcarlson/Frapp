@@ -8,7 +8,11 @@ import {
 } from '@nestjs/common';
 import { SERVICE_ENTRY_REPOSITORY } from '../../domain/repositories/service-entry.repository.interface';
 import type { IServiceEntryRepository } from '../../domain/repositories/service-entry.repository.interface';
-import type { ServiceEntry } from '../../domain/entities/service-entry.entity';
+import type {
+  ServiceEntry,
+  ServiceEntryFilters,
+  ServiceLeaderboardRow,
+} from '../../domain/entities/service-entry.entity';
 import {
   STORAGE_PROVIDER,
   type IStorageProvider,
@@ -19,9 +23,7 @@ import {
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
 import { isUnsafeStoragePath } from '../../domain/utils/storage-path';
-
-/** Default: 1 point per 60 minutes of service. Chapter-configurable in future. */
-const DEFAULT_MINUTES_PER_POINT = 60;
+import { ChapterServiceConfigService } from './chapter-service-config.service';
 
 const SERVICE_BUCKET = 'service';
 
@@ -83,6 +85,7 @@ export class ServiceEntryService {
     private readonly storageProvider: IStorageProvider,
     private readonly notificationService: NotificationService,
     private readonly chapterWorkflows: ChapterWorkflowsService,
+    private readonly chapterServiceConfig: ChapterServiceConfigService,
   ) {}
 
   async requestProofUploadUrl(input: RequestProofUploadUrlInput): Promise<{
@@ -222,12 +225,84 @@ export class ServiceEntryService {
     return entry;
   }
 
-  async findByChapter(chapterId: string): Promise<ServiceEntry[]> {
-    return this.serviceEntryRepo.findByChapter(chapterId);
+  /**
+   * Admin queue read with optional status / date-range / member filters
+   * (spec/behavior/service-hours.md → Visibility). Filtering happens in SQL, so
+   * a chapter with years of history doesn't stream every row into Node to throw
+   * most of them away.
+   */
+  async findByChapterFiltered(
+    chapterId: string,
+    filters: ServiceEntryFilters,
+  ): Promise<ServiceEntry[]> {
+    this.assertValidDateRange(filters.startDate, filters.endDate);
+    return this.serviceEntryRepo.findByChapterFiltered(chapterId, filters);
   }
 
-  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
-    return this.serviceEntryRepo.findByUser(chapterId, userId);
+  /**
+   * Chapter-wide leaderboard of approved service time, visible to any member
+   * who can view the roster (spec: "Members see ... a chapter-wide service
+   * leaderboard").
+   */
+  async leaderboard(
+    chapterId: string,
+    range: { startDate?: string; endDate?: string } = {},
+  ): Promise<ServiceLeaderboardRow[]> {
+    this.assertValidDateRange(range.startDate, range.endDate);
+    return this.serviceEntryRepo.leaderboard(chapterId, range);
+  }
+
+  /**
+   * Rejects malformed or inverted ranges up front. Postgres would accept an
+   * inverted range happily and return zero rows, which reads as "this member
+   * logged nothing" rather than "your filter is backwards".
+   *
+   * The format is pinned to `YYYY-MM-DD` rather than "anything `new Date()`
+   * accepts", for two reasons:
+   *
+   *  - `Date` accepts `2026-02-30` and silently rolls it to March 2, but the
+   *    `date` column does not — an unpinned check would pass it through to
+   *    PostgREST and surface as a 500 instead of a 400.
+   *  - Comparing the bounds needs a total order. Zero-padded ISO dates compare
+   *    correctly as strings, but a legacy spelling like `2026-3-1` does not
+   *    (`'2026-3-1' > '2026-12-01'` is true), which would 400 a perfectly
+   *    valid March-to-December range. Both bounds are parsed and compared as
+   *    timestamps instead.
+   */
+  private assertValidDateRange(startDate?: string, endDate?: string): void {
+    const parsed: Record<'start_date' | 'end_date', number | null> = {
+      start_date: null,
+      end_date: null,
+    };
+
+    for (const [label, value] of [
+      ['start_date', startDate],
+      ['end_date', endDate],
+    ] as const) {
+      if (value === undefined) continue;
+
+      const time = Date.parse(`${value}T00:00:00Z`);
+      // The round-trip is what rejects a real-looking but nonexistent day:
+      // `2026-02-30` parses, then serializes back as `2026-03-02`.
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+        Number.isNaN(time) ||
+        new Date(time).toISOString().slice(0, 10) !== value
+      ) {
+        throw new BadRequestException(
+          `${label} must be a valid YYYY-MM-DD date`,
+        );
+      }
+      parsed[label] = time;
+    }
+
+    if (
+      parsed.start_date !== null &&
+      parsed.end_date !== null &&
+      parsed.start_date > parsed.end_date
+    ) {
+      throw new BadRequestException('start_date must not be after end_date');
+    }
   }
 
   async create(input: CreateServiceEntryInput): Promise<ServiceEntry> {
@@ -308,9 +383,18 @@ export class ServiceEntryService {
       throw new BadRequestException('Points already awarded for this entry');
     }
 
-    const pointsToAward = Math.floor(
-      entry.duration_minutes / DEFAULT_MINUTES_PER_POINT,
-    );
+    // Chapter policy (Settings → Service): how many minutes of approved
+    // service earn one SERVICE point. An unconfigured chapter reports the
+    // default 60, which is the rate this service hardcoded before the rate
+    // became configurable — so behavior is unchanged until a chapter opts in.
+    // Read at approval time, not at submission, so raising the rate mid-review
+    // applies to everything still in the queue.
+    const minutesPerPoint =
+      await this.chapterServiceConfig.getMinutesPerPoint(chapterId);
+
+    // Sub-rate durations floor to 0 and approve with no ledger row, per the
+    // spec's "(Sub-rate durations approve with no ledger row.)"
+    const pointsToAward = Math.floor(entry.duration_minutes / minutesPerPoint);
 
     // Approve the entry and award its SERVICE points atomically: a single DB
     // transaction (compare-and-set on status/points_awarded) so a partial

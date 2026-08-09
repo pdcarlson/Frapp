@@ -41,6 +41,7 @@ describe('ChapterController', () => {
       create: jest.fn(),
       listForUser: jest.fn(),
       findById: jest.fn(),
+      findByIdWithLogoUrl: jest.fn(),
       update: jest.fn(),
       requestLogoUploadUrl: jest.fn(),
       confirmLogoUpload: jest.fn(),
@@ -112,15 +113,24 @@ describe('ChapterController', () => {
   });
 
   describe('getCurrent', () => {
-    it('should call chapterService.findById with correct parameters', async () => {
+    it('should return the chapter with its signed logo_url', async () => {
       const chapterId = 'chapter-1';
-      const expectedResult = { id: chapterId, name: 'Test Chapter' } as any;
+      const expectedResult = {
+        id: chapterId,
+        name: 'Test Chapter',
+        logo_url: 'https://signed-download.url',
+      } as any;
 
-      chapterService.findById.mockResolvedValue(expectedResult);
+      chapterService.findByIdWithLogoUrl.mockResolvedValue(expectedResult);
 
       const result = await controller.getCurrent(chapterId);
 
-      expect(chapterService.findById).toHaveBeenCalledWith(chapterId);
+      // The plain findById is deliberately not used here: the branding bucket
+      // is private, so a payload without a signed URL renders no logo.
+      expect(chapterService.findByIdWithLogoUrl).toHaveBeenCalledWith(
+        chapterId,
+      );
+      expect(chapterService.findById).not.toHaveBeenCalled();
       expect(result).toEqual(expectedResult);
     });
   });

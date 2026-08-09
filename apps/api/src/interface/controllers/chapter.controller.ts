@@ -98,9 +98,11 @@ export class ChapterController {
   @Get('current')
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
-  @ApiOperation({ summary: 'Get current chapter' })
+  @ApiOperation({
+    summary: 'Get current chapter (includes a signed logo_url when one is set)',
+  })
   async getCurrent(@CurrentChapterId() chapterId: string) {
-    return this.chapterService.findById(chapterId);
+    return this.chapterService.findByIdWithLogoUrl(chapterId);
   }
 
   @Patch('current')

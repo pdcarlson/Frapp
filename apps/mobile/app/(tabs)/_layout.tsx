@@ -1,6 +1,8 @@
 import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { ChapterHeaderTitle } from "@/components/chapter-header-title";
 import { useAuthSession } from "@/lib/auth-session";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
@@ -26,6 +28,9 @@ const TAB_ICON_NAMES = {
 export default function TabLayout() {
   const { status } = useAuthSession();
   const { tokens } = useFrappTheme();
+  // Inside the tab group the member is always in a chapter, so branding is
+  // safe to read here — the auth stack sits outside and stays Frapp-branded.
+  const { accent } = useChapterBranding();
 
   if (status === "hydrating") {
     return null;
@@ -38,7 +43,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: tokens.color.brand.royalBlue,
+        tabBarActiveTintColor: accent,
         tabBarInactiveTintColor: tokens.color.text.muted,
         tabBarStyle: {
           height: 62,
@@ -55,7 +60,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          headerTitle: "Frapp",
+          headerTitle: ({ style }) => <ChapterHeaderTitle style={style} />,
           tabBarIcon: ({ color, focused }) =>
             tabIcon(
               focused ? TAB_ICON_NAMES.home.active : TAB_ICON_NAMES.home.inactive,
@@ -67,6 +72,9 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: "Chat",
+          headerTitle: ({ style }) => (
+            <ChapterHeaderTitle label="Chat" style={style} />
+          ),
           tabBarIcon: ({ color, focused }) =>
             tabIcon(
               focused ? TAB_ICON_NAMES.chat.active : TAB_ICON_NAMES.chat.inactive,
