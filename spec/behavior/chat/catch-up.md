@@ -34,22 +34,31 @@ The **permission gate** is *who may be shown the figure*, not how the server obt
 runs server-side under `service_role` and can read anything; the gate is the disclosure rule, and it
 is derived from what that viewer could obtain for themselves through the API. That distinction
 matters because **two** of these endpoints — tasks and service entries — narrow their results
-*inside the handler*, below a class-level `@RequirePermissions(members:view)`, so reading the
-decorator alone gives the wrong answer. (`/invoices/overdue` is the honest case: it declares
-`billing:view` on the route, and `PermissionsGuard` merges route- and class-level lists.)
+*inside the handler*, below a `members:view` decorator, so reading the decorator alone gives the
+wrong answer. (`/invoices/overdue` is the honest case: it declares `billing:view` on the route, and
+`PermissionsGuard` merges route- and class-level lists.)
 
-Each gate below is therefore the *additional* permission beyond the class-level `members:view` that
-every one of these routes already requires. Every **seeded** role holds `members:view`, so on
-default configuration the gate column is the whole answer.
+Where that `members:view` is declared differs per controller and is worth knowing before you go
+looking for it: `TaskController` carries it at the **class** level, while `ServiceEntryController`
+carries `@UseGuards(ChapterGuard)` + `@RequireModule('hours')` on the class and declares
+`@UseGuards(PermissionsGuard)` + `@RequirePermissions(MEMBERS_VIEW)` on the **route**. Both end up
+requiring it; only one shows it on the class.
+
+Each gate below is therefore the *additional* permission beyond the `members:view` floor every one
+of these routes already enforces. Every **seeded** role holds `members:view`, so on default
+configuration the gate column is the whole answer.
 
 Chapters can define custom roles with arbitrary permission sets, and `memberHasAnyPermission` is
 exact-string matching plus `*` — there is no implicit grant. Two consequences an implementation must
-handle rather than assume away: a role holding `tasks:manage` but not `members:view` would be shown
-a figure it could not fetch itself, and a chapter with a role lacking `members:view` (a "Pledge" or
-"Inactive" role) fails the entitlement test for *every* signal in `#general`, so that chapter gets
-no pulse at all. **That is correct behavior, not a bug** — the alternative is disclosing to a role
-the chapter deliberately restricted — but it means the two-signal floor described below is a
-default-configuration statement, not a guarantee.
+handle rather than assume away: a member holding `tasks:manage` but not `members:view` would be
+shown a figure they could not fetch themselves, and a chapter with a **member** lacking
+`members:view` (someone in a "Pledge" or "Inactive" role) fails the entitlement test for *every*
+signal in `#general`, so that chapter gets no pulse at all. **That is correct behavior, not a bug**
+— the alternative is disclosing to someone the chapter deliberately restricted — but it means the
+two-signal floor described below is a default-configuration statement, not a guarantee.
+
+Note that entitlement is evaluated over **members who exist**, not roles that are defined. A
+declared-but-unassigned role has no holders and so cannot suppress a signal.
 
 | Signal | Source | Who may be shown it | Module gate |
 | --- | --- | --- | --- |
@@ -87,17 +96,31 @@ is entitled to it.
 
 ### Deciding entitlement correctly
 
-For a `ROLE_GATED` channel the test is **not** "does `required_permissions` contain the permission".
-`canAccessChannel` resolves a `ROLE_GATED` read as
-`required.some((permission) => permissions.includes(permission))` — **any-of**. The audience is
-bounded by the list's *broadest* entry, not its narrowest. The correct test is:
+**Resolve the channel's actual audience and check every member in it.** That is the whole rule, and
+it is deliberately the same sentence as the principle above rather than a shortcut derived from it:
 
-> Every entry in `required_permissions` must itself imply the signal's permission (holders of `*`
-> are always entitled, so the wildcard never widens the audience beyond the entitled set).
+> Include signal `P` only if **every member who can currently read the channel** holds `P` or `*`.
 
-A channel declared `['billing:view', 'members:view']` therefore does **not** qualify for the dues
-signal, even though `billing:view` appears in the list: every seeded role holds `members:view`, so
-the channel is readable chapter-wide. Getting this backwards is a known bug class in this
+Do **not** try to decide this by inspecting `required_permissions` alone. `canAccessChannel`
+resolves a `ROLE_GATED` read as `required.some((permission) => permissions.includes(permission))` —
+**any-of** — so the audience is bounded by the list's *broadest* entry, not its narrowest, and the
+obvious `required_permissions.includes('billing:view')` check is exactly backwards. A channel
+declared `['billing:view', 'members:view']` must **not** receive the dues signal: every seeded role
+holds `members:view`, so it is readable chapter-wide.
+
+Nor is the inverse — "every entry in `required_permissions` must equal `P`" — usable. Permissions
+are exact strings with no implicit grant (`memberHasAnyPermission` is set membership plus `*`), so
+that test admits only `[P]` or `['*']`, and would disqualify a sensible officers channel declared
+`['tasks:manage','service:approve','billing:view']` from carrying *any* of those three signals. The
+audience test handles that channel correctly: if the only members who can read it are officers
+holding all three, all three signals qualify; if a treasurer holding only `billing:view` can read
+it, the tasks and service sections drop for that channel and the dues section stays.
+
+Resolving the audience is a membership-and-roles query the API already has (`RbacService`), and it
+is per-chapter and per-channel — which is the point. Entitlement is a property of who is actually in
+the room, not of how the channel was declared.
+
+Getting this backwards is a known bug class in this
 repo — `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` documents the same mistake, warning that
 `members:view` is "exactly the value a chapter would put on a private `#exec-board`".
 
@@ -141,10 +164,15 @@ A section is dropped — never rendered as a zero — when any of these hold:
 Rules 3 and 4 are separate on purpose, and the pair is the easiest thing here to get wrong. Rule 4
 is why a quiet week produces no section rather than a `0`. Rule 3 is why a *broken* week also
 produces no section — and the two must not be conflated in the other direction either: a failed read
-is logged as a failure, while a zero is not. "0 invoices overdue" and "could not read invoices" must
-never reach the same rendering *or* the same log line. This is the posture the report-retention
-sweep takes in [`../../../docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md)
-— a sweep that silently reaps nothing must not look like a healthy one.
+is logged as a failure, while a zero is not.
+
+The two rules deliberately share one *rendering* — the section is absent either way, and the reader
+is never shown "0 invoices overdue" or an "Invoices unavailable" row. They must not share an
+**operational** signal: a failed read logs a warning naming the signal, a zero logs nothing. The
+observability side is where "quiet week" and "broken query" are told apart, and it is the only place
+they can be. This is the posture the report-retention sweep takes in
+[`../../../docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md) — a sweep that
+silently reaps nothing must not look like a healthy one.
 
 **If no section qualifies, no card is posted.** With rule 4 in place this falls out naturally: a
 brand-new chapter, or a genuinely quiet week, produces nothing. A recurring "nothing to report" card
@@ -216,9 +244,21 @@ the viewer can act. The destination screen still enforces its own permissions.
 
 ### Dismissal
 
-Per-user dismissal rides `chat_message_actions`, which is already per-user and unique on
-`(message_id, user_id, action_type)` — a `dismiss` action, upserted like a poll vote (ADR-07). No
-new table. Dismissal is per user per card, not a chapter-wide mute; a chapter-wide off switch is the
+Per-user dismissal wants `chat_message_actions`: already per-user, unique on
+`(message_id, user_id, action_type)`, upsertable like a poll vote (ADR-07), no new table.
+
+**But it is not private, and that matters here.** That table's `SELECT` policy is
+`auth.role() = 'authenticated' AND can_read_chat_message(message_id)`, so every member who can read
+the channel can read every action row on the message — `user_id` and `action_type` included — and
+the web client already holds a global Realtime subscription on the table, so each dismissal
+broadcasts live. "Who dismissed the chapter-health card" would become chapter-public and
+attributable by name. That is the opposite of the posture [`README.md`](./README.md) takes for
+personal gestures, where bookmarks are private to the bookmarker, not visible even to admins.
+
+By this document's own rule — the row is the payload, and renderer-side hiding is not a control —
+that has to be decided, not assumed. See open question 4.
+
+Dismissal is per user per card either way, not a chapter-wide mute; a chapter-wide off switch is the
 module toggle.
 
 ## Success metrics
@@ -246,13 +286,18 @@ it lands with the surface it measures, not before.
 
 1. **Officer channel — the one that gates the artifact's value.** Three of the five signals
    (tasks, service, dues) are officer-gated, and no seeded channel can carry them, so the `#general`
-   pulse is a two-signal card. Options: seed a `ROLE_GATED` officers channel at onboarding whose
-   `required_permissions` are *all* officer-level; DM the officer sections to permission-holders; or
-   accept a two-signal pulse. This decision should be made before #821 is promoted.
+   pulse is at most a two-signal card. Options: seed a `ROLE_GATED` officers channel at onboarding
+   (the audience test above then decides per signal, so a channel readable only by members holding
+   all three carries all three); DM the officer sections to permission-holders; or accept a
+   two-signal pulse. This decision should be made before #821 is promoted.
 2. **Cadence.** Weekly is proposed. Daily is too noisy for a digest; monthly is too slow to act on.
 3. **Surface parity.** Mobile has no chat timeline at all today (see #253) — `apps/mobile` reads no
    `chat_messages` anywhere. So mobile parity is not "add a renderer"; it is blocked on the mobile
    chat surface existing. Ship web-only first, or hold?
+4. **Is a dismissal private?** `chat_message_actions` makes every dismissal readable by the whole
+   channel (see above), which conflicts with how bookmarks are treated. Options: accept it as public
+   (dismissing a digest is low-stakes); add a private store; or drop dismissal from v1 and rely on
+   the metrics to tell us whether it is needed. Dropping it is the cheapest and loses least.
 
 ## Implementation follow-ups
 
