@@ -107,7 +107,10 @@ import in the visual-regression environment.
 The ACL repair and the container resolution both live in
 [`scripts/lib/local-postgres-acl.sh`](../../../scripts/lib/local-postgres-acl.sh), shared with the
 cloud sandbox's [`cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so the two bootstrap
-paths cannot drift. Sandbox-specific failures (network policy, image registry, sentinels) are in
+paths cannot drift. Its behaviour is pinned by
+[`local-postgres-acl.test.sh`](../../../scripts/lib/local-postgres-acl.test.sh) — hermetic (docker
+is stubbed, no daemon or database needed), run it with
+`bash scripts/lib/local-postgres-acl.test.sh`. **No CI job runs it yet.** Sandbox-specific failures (network policy, image registry, sentinels) are in
 [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#when-bringup-fails--stop-and-report).
 
 ## Related docs
