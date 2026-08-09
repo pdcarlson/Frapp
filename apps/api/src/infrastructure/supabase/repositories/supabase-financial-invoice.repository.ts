@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IFinancialInvoiceRepository } from '../../../domain/repositories/financial-invoice.repository.interface';
@@ -101,17 +100,12 @@ export class SupabaseFinancialInvoiceRepository implements IFinancialInvoiceRepo
     paymentIntentId: string | null,
     chargeId: string | null,
   ): Promise<FinancialInvoice | null> {
-    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
-    // generated table Row types do not satisfy PostgREST's schema constraint.
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
-      'apply_invoice_payment',
-      {
-        p_invoice_id: id,
-        p_chapter_id: chapterId,
-        p_payment_intent_id: paymentIntentId,
-        p_charge_id: chargeId,
-      },
-    )) as PostgrestResponse<FinancialInvoice>;
+    const { data, error } = await this.supabase.rpc('apply_invoice_payment', {
+      p_invoice_id: id,
+      p_chapter_id: chapterId,
+      p_payment_intent_id: paymentIntentId,
+      p_charge_id: chargeId,
+    });
     if (error) throw error;
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;

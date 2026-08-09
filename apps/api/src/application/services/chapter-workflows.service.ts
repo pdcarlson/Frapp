@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import type { WorkflowEntry } from '@repo/org-archetypes';
 
 /**
@@ -49,7 +49,7 @@ export class ChapterWorkflowsService {
   private readonly logger = new Logger(ChapterWorkflowsService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     @Inject(ORG_WORKFLOWS_SEED)
     private readonly workflowsSeed: readonly WorkflowEntry[],
   ) {}

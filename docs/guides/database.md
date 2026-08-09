@@ -82,6 +82,13 @@ npx supabase db reset
 
 - `spec/architecture/README.md` (data model)
 - Domain entity & repository interfaces in the API
+- `apps/api/src/infrastructure/supabase/database.types.ts` — add a
+  `TableDefinition<YourRow>` entry so queries against the new table are
+  type-checked. The file is hand-maintained and composed from the domain
+  entities; **do not** overwrite it with `supabase gen types` output. See
+  [`.claude/skills/api-development/SKILL.md`](../../.claude/skills/api-development/SKILL.md)
+  → "Keeping `database.types.ts` in sync" for the two constraints that make
+  the typing actually bind.
 - Any relevant behavior under `spec/behavior/`
 
 ## 5. RLS and security

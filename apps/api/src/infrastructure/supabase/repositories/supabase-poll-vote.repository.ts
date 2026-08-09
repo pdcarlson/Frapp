@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type {
@@ -52,12 +51,10 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     if (messageIds.length === 0) {
       return [];
     }
-    // `rpc` args are not inferred for `FrappSupabaseClient` because generated
-    // table Row types do not satisfy PostgREST's `Record<string, unknown>` schema constraint.
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
+    const { data, error } = await this.supabase.rpc(
       'get_poll_vote_option_totals',
       { p_message_ids: messageIds },
-    )) as PostgrestResponse<PollVoteOptionTotalRow>;
+    );
     if (error) throw error;
     return (data ?? []).map((row) => ({
       message_id: row.message_id,
@@ -73,10 +70,10 @@ export class SupabasePollVoteRepository implements IPollVoteRepository {
     if (messageIds.length === 0) {
       return [];
     }
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
+    const { data, error } = await this.supabase.rpc(
       'get_poll_user_votes_for_messages',
       { p_message_ids: messageIds, p_user_id: userId },
-    )) as PostgrestResponse<PollUserVoteRow>;
+    );
     if (error) throw error;
     return data ?? [];
   }

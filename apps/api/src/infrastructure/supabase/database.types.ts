@@ -53,7 +53,7 @@ export type Json =
   | Json[];
 
 type TableDefinition<Row> = {
-  Row: Row;
+  Row: { [K in keyof Row]: Row[K] };
   Insert: Record<string, unknown>;
   Update: Record<string, unknown>;
   Relationships: {
@@ -192,7 +192,7 @@ export interface Database {
         Args: {
           p_invoice_id: string;
           p_chapter_id: string;
-          p_payment_intent_id: string;
+          p_payment_intent_id: string | null;
           p_charge_id: string | null;
         };
         Returns: FinancialInvoice[];
