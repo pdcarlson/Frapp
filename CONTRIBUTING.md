@@ -45,12 +45,12 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | Check                | What it validates                                                                                  |
 | -------------------- | -------------------------------------------------------------------------------------------------- |
 | `packages-build`     | Shared packages compile                                                                            |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`**, matches Render compile |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing + `@repo/validation` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                   |
 | `api-tests`          | API Jest unit tests                                                                                |
 | `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                                      |
 | `migration-safety`   | Migration filename validation + promotion docs                                                     |
-| `mobile-validate`    | Mobile app lint + typecheck                                                                        |
+| `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
 | `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)                    |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 

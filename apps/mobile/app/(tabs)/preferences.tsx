@@ -10,6 +10,7 @@ import {
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { FrappTokens } from "@repo/theme/tokens";
+import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 import {
@@ -25,28 +26,6 @@ type PreferenceRow = {
 };
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
-
-/**
- * The API stores `quiet_hours_tz` as a free-text string, and push delivery feeds it
- * straight to `Intl.DateTimeFormat`, which throws on an unknown zone. Reject a bad
- * zone at the input rather than writing one the server cannot format with.
- *
- * Fails open when the runtime cannot validate zones at all, so a device with a
- * stripped-down `Intl` never blocks editing.
- */
-function isSupportedTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: "UTC" });
-  } catch {
-    return true;
-  }
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Must agree with the hook's normalizer, including the range check — otherwise a
@@ -73,7 +52,8 @@ const PREFERENCE_ROWS: PreferenceRow[] = [
   {
     key: "dmAlertsEnabled",
     title: "Direct message alerts",
-    description: "Allow immediate push notifications for chapter direct messages.",
+    description:
+      "Allow immediate push notifications for chapter direct messages.",
   },
   {
     key: "eventRemindersEnabled",
@@ -153,11 +133,24 @@ function QuietHoursCard({
     setDraft(quietHoursWindow);
   }, [quietHoursWindow]);
 
-  const draftIsValid =
-    isValidTimeInput(draft.start.trim()) &&
-    isValidTimeInput(draft.end.trim()) &&
-    draft.tz.trim().length > 0 &&
-    isSupportedTimeZone(draft.tz.trim());
+  // Validate only what the member typed. A stored zone arrives here already
+  // accepted by the server, and this device's tzdata can be older than the
+  // server's — so running our own resolvability check over it produces a
+  // confident false negative (`Europe/Kyiv` on a build that knows only
+  // `Europe/Kiev`). That would strand the member twice over: `commitDraft`
+  // reverts on every blur, so they could not edit their times at all, and the
+  // only way out — retyping a zone this device knows — would overwrite their
+  // correct zone on every other device. Structural checks still apply, because
+  // blank and over-length are wrong on any device.
+  const trimmedTz = draft.tz.trim();
+  const tzEdited = trimmedTz !== quietHoursWindow.tz.trim();
+  const tzIsValid =
+    trimmedTz.length > 0 &&
+    trimmedTz.length <= MAX_TIME_ZONE_LENGTH &&
+    (!tzEdited || isSupportedTimeZone(trimmedTz));
+  const timesAreValid =
+    isValidTimeInput(draft.start.trim()) && isValidTimeInput(draft.end.trim());
+  const draftIsValid = timesAreValid && tzIsValid;
 
   const commitDraft = () => {
     if (!draftIsValid) {
@@ -201,7 +194,9 @@ function QuietHoursCard({
           <Text style={styles.quietHoursFieldLabel}>Start</Text>
           <TextInput
             value={draft.start}
-            onChangeText={(value) => setDraft((current) => ({ ...current, start: value }))}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, start: value }))
+            }
             onBlur={commitDraft}
             placeholder="22:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -216,7 +211,9 @@ function QuietHoursCard({
           <Text style={styles.quietHoursFieldLabel}>End</Text>
           <TextInput
             value={draft.end}
-            onChangeText={(value) => setDraft((current) => ({ ...current, end: value }))}
+            onChangeText={(value) =>
+              setDraft((current) => ({ ...current, end: value }))
+            }
             onBlur={commitDraft}
             placeholder="08:00"
             placeholderTextColor={tokens.color.text.muted}
@@ -233,7 +230,9 @@ function QuietHoursCard({
         <Text style={styles.quietHoursFieldLabel}>Timezone</Text>
         <TextInput
           value={draft.tz}
-          onChangeText={(value) => setDraft((current) => ({ ...current, tz: value }))}
+          onChangeText={(value) =>
+            setDraft((current) => ({ ...current, tz: value }))
+          }
           onBlur={commitDraft}
           placeholder="America/New_York"
           placeholderTextColor={tokens.color.text.muted}
@@ -244,12 +243,18 @@ function QuietHoursCard({
         />
       </View>
 
-      <Text style={draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError}>
-        {!draftIsValid
-          ? "Use 24-hour HH:mm times (e.g. 21:00) and an IANA timezone."
-          : enabled
-            ? "Applies to this account on every device."
-            : "Saved for when you turn quiet hours back on."}
+      <Text
+        style={
+          draftIsValid ? styles.quietHoursHint : styles.quietHoursHintError
+        }
+      >
+        {!timesAreValid
+          ? "Use 24-hour HH:mm times (e.g. 21:00)."
+          : !tzIsValid
+            ? "Enter a timezone name like America/Chicago."
+            : enabled
+              ? "Applies to this account on every device."
+              : "Saved for when you turn quiet hours back on."}
       </Text>
     </View>
   );
@@ -341,7 +346,8 @@ export default function PreferencesScreen() {
       <View style={styles.themeCard}>
         <Text style={styles.themeLabel}>Theme override</Text>
         <Text style={styles.themeDescription}>
-          System is the default. Manual override persists locally for reliable preview testing.
+          System is the default. Manual override persists locally for reliable
+          preview testing.
         </Text>
         <View style={styles.themeOptionRow}>
           {THEME_OPTIONS.map((themeOption) => {
@@ -429,7 +435,11 @@ export default function PreferencesScreen() {
             ? "Preference writes failed. Toggle a preference again to re-attempt."
             : "AsyncStorage cache mirrors the latest toggle state for offline reads."
         }
-        meta={persistenceFailed ? "Local storage write failed" : "Last verified just now"}
+        meta={
+          persistenceFailed
+            ? "Local storage write failed"
+            : "Last verified just now"
+        }
       />
     </ScreenShell>
   );

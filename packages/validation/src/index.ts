@@ -256,7 +256,10 @@ export const CreateCustomRoleSchema = z.object({
   key: z
     .string()
     .min(1)
-    .regex(/^[a-z0-9_]+$/, "key must be lowercase letters, numbers, underscores"),
+    .regex(
+      /^[a-z0-9_]+$/,
+      "key must be lowercase letters, numbers, underscores",
+    ),
   label: z.string().min(1),
   rank: z.number().int().nonnegative().optional(),
   capabilities: z.array(z.string()).optional(),
@@ -338,15 +341,10 @@ export const CreateCustomFieldSchema = z
     options: CustomFieldOptionsSchema.optional(),
     sort: z.number().int().nonnegative().optional(),
   })
-  .refine(
-    (v) =>
-      v.type !== "select" ||
-      (v.options?.choices?.length ?? 0) > 0,
-    {
-      message: "A select field requires a non-empty options.choices list",
-      path: ["options", "choices"],
-    },
-  );
+  .refine((v) => v.type !== "select" || (v.options?.choices?.length ?? 0) > 0, {
+    message: "A select field requires a non-empty options.choices list",
+    path: ["options", "choices"],
+  });
 
 /** Body for `PATCH /custom-fields/:id` (`key` and `type` are immutable). */
 export const UpdateCustomFieldSchema = z.object({
@@ -734,14 +732,15 @@ export {
   ContentFreePropertyError,
   FORBIDDEN_ANALYTICS_PROPERTY_KEYS,
 } from "./analytics";
-export type {
-  AnalyticsEvent,
-  AnalyticsProperties,
-} from "./analytics";
+export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
 
 // ── Activation funnel (issue #267) ───────────────────────────────────────────
-export {
-  ACTIVATION_MILESTONES,
-  activationMilestoneStep,
-} from "./analytics";
+export { ACTIVATION_MILESTONES, activationMilestoneStep } from "./analytics";
 export type { ActivationMilestone } from "./analytics";
+
+// ── Time zones (issue #687) ──────────────────────────────────────────────────
+export {
+  isSupportedTimeZone,
+  normalizeTimeZoneInput,
+  MAX_TIME_ZONE_LENGTH,
+} from "./time-zone";

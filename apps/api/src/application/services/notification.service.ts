@@ -24,6 +24,27 @@ import type {
   UserSettings,
 } from '../../domain/entities/notification.entity';
 
+/** Cap on how much of an offending value reaches a log line. */
+const LOGGED_VALUE_MAX_LENGTH = 64;
+
+/**
+ * Render an untrusted stored value for a log message.
+ *
+ * The values this guards are legacy `quiet_hours_tz` rows written when the
+ * column enforced only `@IsString()` — so one can carry newlines, ANSI escapes,
+ * or enough length to bury the surrounding context. Forging a convincing extra
+ * log entry from inside a quoted field is the concrete risk; `JSON.stringify`
+ * escapes the control characters that would end the line, and the cap bounds
+ * the rest.
+ */
+function summarizeForLog(value: string): string {
+  const clipped =
+    value.length > LOGGED_VALUE_MAX_LENGTH
+      ? `${value.slice(0, LOGGED_VALUE_MAX_LENGTH)}…`
+      : value;
+  return JSON.stringify(clipped);
+}
+
 export type NotifyPayload = {
   title: string;
   body: string;
@@ -35,6 +56,13 @@ export type NotifyPayload = {
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
+
+  /**
+   * `user:zone` pairs already reported by `resolveQuietHoursFormatter`. Bounded
+   * by the number of members holding an unusable stored zone, which the DTO
+   * validation now stops growing.
+   */
+  private readonly warnedQuietHoursZones = new Set<string>();
 
   constructor(
     @Inject(NOTIFICATION_REPOSITORY)
@@ -69,7 +97,10 @@ export class NotificationService {
 
     const settings = await this.settingsRepo.findByUser(userId);
     let effectivePriority = payload.priority ?? 'NORMAL';
-    if (effectivePriority !== 'URGENT' && this.isInQuietHours(settings)) {
+    if (
+      effectivePriority !== 'URGENT' &&
+      this.isInQuietHours(settings, userId)
+    ) {
       effectivePriority = 'SILENT';
     }
 
@@ -121,20 +152,23 @@ export class NotificationService {
     );
   }
 
-  private isInQuietHours(settings: UserSettings | null): boolean {
+  private isInQuietHours(
+    settings: UserSettings | null,
+    userId: string,
+  ): boolean {
     if (!settings?.quiet_hours_start || !settings?.quiet_hours_end) {
       return false;
     }
 
-    const tz = settings.quiet_hours_tz ?? 'UTC';
+    // `||`, not `??`: a blank stored zone means "unset", not "invalid". Rows
+    // written before the field was validated can hold `''`, and `??` would send
+    // that through the formatter to throw and warn on every single delivery.
+    const tz = settings.quiet_hours_tz || 'UTC';
     const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: tz,
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
+    const formatter = this.resolveQuietHoursFormatter(tz, userId);
+    if (!formatter) {
+      return false;
+    }
     const parts = formatter.formatToParts(now);
     const hour =
       parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10) % 24;
@@ -157,6 +191,69 @@ export class NotificationService {
       return currentMinutes >= startMinutes || currentMinutes < endMinutes;
     }
     return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
+
+  /**
+   * `Intl.DateTimeFormat` throws `RangeError` on an unknown IANA zone, and this
+   * runs *before* `notificationRepo.create` — so an uncaught throw costs the
+   * member the push **and** the in-app row, silently, since `notifyChapter`
+   * swallows the rejection through `Promise.allSettled`. Rows predating the
+   * `quiet_hours_tz` DTO validation can still carry such a zone, so degrade
+   * instead of throwing: a time-shifted quiet window is a far smaller failure
+   * than a member whose notifications simply stop.
+   *
+   * Returns `null` only when the runtime cannot resolve `UTC` either — an ICU
+   * build that can't do zones at all. Quiet hours are then skipped rather than
+   * costing the member the notification, keeping this method total.
+   *
+   * The warning is emitted after the fallback resolves, once per (user, zone)
+   * per process — see the comments inline.
+   */
+  private resolveQuietHoursFormatter(
+    tz: string,
+    userId: string,
+  ): Intl.DateTimeFormat | null {
+    const options: Intl.DateTimeFormatOptions = {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    };
+
+    try {
+      return new Intl.DateTimeFormat('en-CA', { ...options, timeZone: tz });
+    } catch {
+      // Fall through — the zone is unusable; report it once we know what we
+      // actually fell back to, so the log never claims a UTC fallback that
+      // itself failed.
+    }
+
+    let fallback: Intl.DateTimeFormat | null = null;
+    try {
+      fallback = new Intl.DateTimeFormat('en-CA', {
+        ...options,
+        timeZone: 'UTC',
+      });
+    } catch {
+      fallback = null;
+    }
+
+    // The offending row cannot repair itself, and this runs per delivery — for a
+    // chapter-wide send that is one line per affected member, every time. Warn
+    // once per (user, zone) per process so the signal survives without becoming
+    // the noise that hides the next problem.
+    const warnKey = `${userId}:${tz}`;
+    if (!this.warnedQuietHoursZones.has(warnKey)) {
+      this.warnedQuietHoursZones.add(warnKey);
+      const safeTz = summarizeForLog(tz);
+      this.logger.warn(
+        fallback
+          ? `Invalid quiet_hours_tz ${safeTz} for user ${userId} — falling back to UTC`
+          : `Invalid quiet_hours_tz ${safeTz} for user ${userId} and this runtime cannot resolve UTC — skipping quiet-hours enforcement`,
+      );
+    }
+
+    return fallback;
   }
 
   async listNotifications(
@@ -261,8 +358,15 @@ export class NotificationService {
     >,
   ): Promise<UserSettings> {
     const existing = await this.settingsRepo.findByUser(userId);
+    // `undefined` means "not supplied" and `null` means "clear this". Test the
+    // VALUE, not key presence: `field in data` is always true here, because
+    // class-transformer materializes every declared DTO property as an own key
+    // (undefined when absent). Keying on presence made a theme-only PATCH read
+    // as an explicit clear and wipe the member's whole quiet-hours window.
     const resolve = <K extends keyof typeof data>(field: K) =>
-      field in data ? (data[field] ?? null) : (existing?.[field] ?? null);
+      data[field] !== undefined
+        ? (data[field] ?? null)
+        : (existing?.[field] ?? null);
     return this.settingsRepo.upsert({
       user_id: userId,
       quiet_hours_start: resolve('quiet_hours_start'),

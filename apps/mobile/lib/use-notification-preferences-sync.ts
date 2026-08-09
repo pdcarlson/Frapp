@@ -7,6 +7,7 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
+import { MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
@@ -15,7 +16,6 @@ export const QUIET_HOURS_WINDOW_STORAGE_KEY = "frapp.mobile.quiet-hours-window";
 const DEFAULT_QUIET_HOURS_START = "22:00";
 const DEFAULT_QUIET_HOURS_END = "08:00";
 const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
-const MAX_QUIET_HOURS_TZ_LENGTH = 100;
 
 /**
  * Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss), and
@@ -47,10 +47,33 @@ function normalizeTimeOfDay(value: unknown): string | null {
   return `${hours}:${minutes}`;
 }
 
+/**
+ * Repair a stored zone only where this device can be *sure* it is broken.
+ *
+ * Re-enabling quiet hours replays this value into a PATCH, and the displayed
+ * window is built from it, so whatever comes back here can be written to the
+ * member's row on every device. That makes the substitution rule a data-safety
+ * decision, not a display one.
+ *
+ * Deliberately does NOT ask `isSupportedTimeZone`. A device's ICU tzdata is
+ * routinely older than the server's, so it can fail to resolve a zone the server
+ * validated and stored — `Europe/Kyiv` (tzdata 2022b) on an Android build that
+ * only knows `Europe/Kiev`, say. `UTC` still resolves there, so the fail-open
+ * branch never fires and the verdict comes back a confident, wrong "invalid".
+ * Substituting on it would show the wrong zone and then PATCH the device's own
+ * zone over the member's, permanently, everywhere, with no error.
+ *
+ * So only device-independent defects are repaired: not a string, blank, or
+ * longer than the column allows. Anything else is the server's to judge — it is
+ * the authority (spec/behavior/notifications.md § Quiet Hours). A legacy row
+ * holding a genuinely unresolvable zone therefore still round-trips to a 400 on
+ * toggle, surfaced as the retry state. That is the accepted cost: a visible
+ * error on an already-broken row beats silent corruption of a correct one.
+ */
 function normalizeTimeZone(value: unknown): string {
   if (typeof value !== "string") return resolveDeviceTimeZone();
   const trimmed = value.trim();
-  if (trimmed.length === 0 || trimmed.length > MAX_QUIET_HOURS_TZ_LENGTH) {
+  if (trimmed.length === 0 || trimmed.length > MAX_TIME_ZONE_LENGTH) {
     return resolveDeviceTimeZone();
   }
   return trimmed;
@@ -146,7 +169,9 @@ function sameQuietHoursWindow(
  * `null` means "the server hasn't told us yet"; a boolean is a real answer.
  * Quiet hours are *derived* state — enabled iff a full window is stored.
  */
-function settingsToQuietHoursEnabled(settings: ServerSettings | undefined): boolean | null {
+function settingsToQuietHoursEnabled(
+  settings: ServerSettings | undefined,
+): boolean | null {
   if (!settings) return null;
   return settingsToQuietHoursWindow(settings) !== null;
 }
@@ -192,7 +217,8 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   const updateSettings = useUpdateUserSettings();
   const updatePreference = useUpdateNotificationPreference();
 
-  const [preferences, setPreferences] = useState<PreferenceState>(DEFAULT_PREFERENCES);
+  const [preferences, setPreferences] =
+    useState<PreferenceState>(DEFAULT_PREFERENCES);
   const [isHydrated, setIsHydrated] = useState(false);
   const [hydrationRecovered, setHydrationRecovered] = useState(false);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
@@ -203,9 +229,8 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   // Disabling quiet hours nulls the window out server-side, so the member's custom
   // times only survive an off -> on cycle if we remember them here. `null` means we
   // have never seen a real window, and only then are the 22:00/08:00 defaults right.
-  const [rememberedWindow, setRememberedWindow] = useState<QuietHoursWindow | null>(
-    null,
-  );
+  const [rememberedWindow, setRememberedWindow] =
+    useState<QuietHoursWindow | null>(null);
   const fallbackWindow = useMemo(defaultQuietHoursWindow, []);
   const quietHoursWindow = rememberedWindow ?? fallbackWindow;
 
@@ -242,7 +267,9 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
 
     async function hydrateWindow() {
       try {
-        const persisted = await AsyncStorage.getItem(QUIET_HOURS_WINDOW_STORAGE_KEY);
+        const persisted = await AsyncStorage.getItem(
+          QUIET_HOURS_WINDOW_STORAGE_KEY,
+        );
         if (!persisted || !isMounted) return;
         const parsed = toQuietHoursWindow(JSON.parse(persisted) as unknown);
         if (!parsed) return;

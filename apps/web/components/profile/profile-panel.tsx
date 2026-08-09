@@ -9,6 +9,7 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
+import { normalizeTimeZoneInput } from "@repo/validation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -61,6 +62,7 @@ export function ProfilePanel() {
   const [profileDraft, setProfileDraft] = useState<CurrentUser>({});
   const [settingsDraft, setSettingsDraft] = useState<UserSettings>({});
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [timeZoneError, setTimeZoneError] = useState<string | null>(null);
 
   useEffect(() => {
     if (userQuery.data) {
@@ -71,6 +73,11 @@ export function ProfilePanel() {
   useEffect(() => {
     if (settingsQuery.data) {
       setSettingsDraft(settingsQuery.data as UserSettings);
+      // The draft is being replaced wholesale — a refetch on window focus can do
+      // this while an error is showing — so the message must go with the value
+      // it was about. Otherwise the field reverts to its stored (valid) zone
+      // while still flagged invalid.
+      setTimeZoneError(null);
     }
   }, [settingsQuery.data]);
 
@@ -97,7 +104,7 @@ export function ProfilePanel() {
         graduation_year:
           profileDraft.graduation_year === null
             ? null
-            : profileDraft.graduation_year ?? undefined,
+            : (profileDraft.graduation_year ?? undefined),
         current_city: profileDraft.current_city ?? undefined,
         current_company: profileDraft.current_company ?? undefined,
       });
@@ -120,10 +127,41 @@ export function ProfilePanel() {
   async function handleSettingsSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
+      // Validate only what the member typed; never re-judge what the server
+      // stored. Two distinct reasons to leave the field alone:
+      //
+      //   - `undefined` — the draft never loaded it. It must stay `undefined` so
+      //     the PATCH omits it, or we would tell the server to clear a zone we
+      //     never showed anyone.
+      //   - unchanged from the server's value — this browser's tzdata can be
+      //     older than the server's, so our verdict on a stored zone can be a
+      //     confident false negative. Blocking on it would abort the whole save
+      //     over a field the member never touched, and "fixing" it would
+      //     overwrite a zone the server considers perfectly valid.
+      //
+      // A value the member actually edited is ours to check (blank = clear, so
+      // someone holding an unusable zone can always save their way out of it).
+      const rawTz = settingsDraft.quiet_hours_tz;
+      const serverTz = (settingsQuery.data as UserSettings | undefined)
+        ?.quiet_hours_tz;
+      let tz: string | null | undefined;
+      if (rawTz === undefined || rawTz === serverTz) {
+        tz = undefined;
+      } else {
+        tz = normalizeTimeZoneInput(rawTz);
+        if (tz === undefined) {
+          setTimeZoneError(
+            "Enter a time zone name this server recognizes, like America/Chicago. A fixed offset such as -05:00 is not accepted.",
+          );
+          return;
+        }
+      }
+      setTimeZoneError(null);
+
       await updateSettings.mutateAsync({
         quiet_hours_start: settingsDraft.quiet_hours_start ?? undefined,
         quiet_hours_end: settingsDraft.quiet_hours_end ?? undefined,
-        quiet_hours_tz: settingsDraft.quiet_hours_tz ?? undefined,
+        quiet_hours_tz: tz,
         theme: settingsDraft.theme,
       });
       toast({
@@ -303,18 +341,28 @@ export function ProfilePanel() {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="quiet-tz">Timezone offset</Label>
+                <Label htmlFor="quiet-tz">Timezone</Label>
                 <Input
                   id="quiet-tz"
                   value={settings.quiet_hours_tz ?? ""}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    setTimeZoneError(null);
                     setSettingsDraft((prev) => ({
                       ...prev,
                       quiet_hours_tz: event.target.value,
-                    }))
-                  }
+                    }));
+                  }}
                   placeholder="e.g. America/Chicago"
+                  aria-invalid={timeZoneError ? true : undefined}
+                  aria-describedby={
+                    timeZoneError ? "quiet-tz-error" : undefined
+                  }
                 />
+                {timeZoneError ? (
+                  <p id="quiet-tz-error" className="text-sm text-destructive">
+                    {timeZoneError}
+                  </p>
+                ) : null}
               </div>
             </div>
             <div className="grid gap-2 sm:max-w-xs">
@@ -354,8 +402,8 @@ export function ProfilePanel() {
         <CardHeader>
           <CardTitle>Tutorial</CardTitle>
           <CardDescription>
-            Replay the onboarding tour. It&apos;ll reopen on your next
-            dashboard visit.
+            Replay the onboarding tour. It&apos;ll reopen on your next dashboard
+            visit.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -393,8 +441,8 @@ export function ProfilePanel() {
         <CardHeader>
           <CardTitle>Session</CardTitle>
           <CardDescription>
-            Sign out of this device. Signing in again refreshes your
-            permission set.
+            Sign out of this device. Signing in again refreshes your permission
+            set.
           </CardDescription>
         </CardHeader>
         <CardContent>
