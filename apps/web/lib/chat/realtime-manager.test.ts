@@ -96,17 +96,14 @@ function makeFakeSupabase(): {
   supabase: SupabaseClient;
   /** Newest channel created per bare topic, including superseded ones. */
   channels: Map<string, FakeChannel>;
-  registry: Map<string, FakeChannel>;
-  created: () => number;
 } {
   const channels = new Map<string, FakeChannel>();
+  /** Live registry, mirroring `RealtimeClient.channels`. */
   const registry = new Map<string, FakeChannel>();
-  let created = 0;
   const supabase = {
     channel: vi.fn((topic: string) => {
       const existing = registry.get(topic);
       if (existing) return existing;
-      created += 1;
       const ch = makeFakeChannel(topic, () => {
         if (registry.get(topic) === ch) registry.delete(topic);
       });
@@ -121,7 +118,7 @@ function makeFakeSupabase(): {
       return status;
     }),
   } as unknown as SupabaseClient;
-  return { supabase, channels, registry, created: () => created };
+  return { supabase, channels };
 }
 
 describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
