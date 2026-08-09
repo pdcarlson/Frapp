@@ -140,6 +140,19 @@ export class DuesConfigDto {
   scholarship_pool_cents?: number;
 }
 
+export class ServiceConfigDto {
+  @ApiPropertyOptional({
+    description:
+      'Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.',
+    minimum: 1,
+    example: 60,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minutes_per_point?: number;
+}
+
 export class PatchChapterConfigDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -179,6 +192,12 @@ export class PatchChapterConfigDto {
   @ValidateNested()
   @Type(() => DuesConfigDto)
   dues?: DuesConfigDto;
+
+  @ApiPropertyOptional({ type: () => ServiceConfigDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ServiceConfigDto)
+  service?: ServiceConfigDto;
 
   @ApiPropertyOptional({ type: () => WorkflowConfigDto, isArray: true })
   @IsOptional()

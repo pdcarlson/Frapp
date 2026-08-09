@@ -18,6 +18,11 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$ROOT"
 # shellcheck source=scripts/lib/cloud-sandbox-common.sh
 . "$ROOT/scripts/lib/cloud-sandbox-common.sh"
+# Match cs_log's prefix so the ACL lib's lines are indistinguishable from this script's.
+# The lib reads this at call time, so the order relative to the source below does not matter.
+FRAPP_ACL_LOG_PREFIX='[cloud-sandbox]'
+# shellcheck source=scripts/lib/local-postgres-acl.sh
+. "$ROOT/scripts/lib/local-postgres-acl.sh"
 
 DONE_SENTINEL="$ROOT/.cloud-sandbox-up.done"
 FAILED_SENTINEL="$ROOT/.cloud-sandbox-up.failed"
@@ -91,97 +96,6 @@ write_env_local() {
   fi
 }
 
-# Repair the local Postgres default ACLs so the API can actually read its own tables.
-#
-# The pinned supabase/postgres image (17.6.x) ships a default ACL for role `postgres` in
-# schema `public` that grants anon / authenticated / service_role only `Dxtm` (TRUNCATE,
-# REFERENCES, TRIGGER, MAINTAIN) on tables — the DML bits `arwd` (SELECT/INSERT/UPDATE/DELETE)
-# are missing. Sequences are crippled the same way (`w` only, missing `rU`). `supabase db push`
-# applies migrations as `postgres`, so every table it creates inherits that ACL and the API's
-# first query dies with `42501 permission denied for table chapters` while /health reports
-# `degraded`. The `supabase_admin` default ACL is correct (`arwdDxtm`) but irrelevant — the CLI
-# does not create objects as that role. A full `supabase db reset --local` reproduces it, so
-# this is the image's shipped state, not drift in one session's database.
-#
-# Two halves, both required and both idempotent:
-#   * GRANT ... ON ALL TABLES/SEQUENCES repairs the objects the migrations just created.
-#   * ALTER DEFAULT PRIVILEGES repairs the objects later migrations will create, so a session
-#     that adds a migration does not have to re-run this by hand.
-#
-# Function EXECUTE is deliberately NOT granted, and this is the one line here that must not be
-# "tidied" into symmetry with the table grants. Nine migrations under supabase/migrations/
-# (anonymize_user, confirm_task_completion, approve_service_entry, the stripe_webhook_events
-# RPCs, …) explicitly `revoke execute … from public/anon/authenticated` and then grant it to
-# service_role alone. A blanket `GRANT EXECUTE ON ALL FUNCTIONS` would silently undo all nine.
-# Functions are also not affected by the defect in the first place: they fall back to
-# PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
-#
-# Local stack only. Hosted Supabase projects ship correct default grants, which is why this
-# lives in sandbox tooling and NOT in supabase/migrations/ — as a migration it would be a
-# no-op at best and a privilege change on hosted projects at worst.
-repair_local_acls() {
-  local sql db_url container
-  sql="
-grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
-grant usage, select on all sequences in schema public to anon, authenticated, service_role;
-alter default privileges for role postgres in schema public
-  grant select, insert, update, delete on tables to anon, authenticated, service_role;
-alter default privileges for role postgres in schema public
-  grant usage, select on sequences to anon, authenticated, service_role;
-"
-
-  # Preferred path: the host psql against the URL the CLI reports, so the port stays in one
-  # place (supabase/config.toml) rather than being duplicated here. `command -v` is tested
-  # first so a host without psql does not pay for a Supabase CLI round-trip it will discard.
-  #
-  # -X is load-bearing, not hygiene. psql applies `-v ON_ERROR_STOP=1` BEFORE reading
-  # ~/.psqlrc, so an rc file wins: with `\set AUTOCOMMIT off` in it, all four statements run
-  # inside an implicit transaction that is rolled back at disconnect while psql still exits 0.
-  # The repair would silently no-op, the success sentinel would land, and the API would still
-  # fail with 42501 — the exact failure this function exists to prevent. Verified locally.
-  if command -v psql >/dev/null 2>&1; then
-    db_url=$(cs_supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"')
-    if [ -n "$db_url" ]; then
-      if printf '%s' "$sql" | psql "$db_url" -X -v ON_ERROR_STOP=1 -q -f - >&2; then
-        return 0
-      fi
-      cs_log "WARN: psql ACL repair failed; retrying inside the database container."
-    fi
-  fi
-
-  # Fallback: psql inside the db container. `supabase start` guarantees that container,
-  # whereas the host psql is incidental to the sandbox base image.
-  #
-  # Anchored to THIS project. `--filter name=` is an unanchored regex, so a bare
-  # `supabase_db_` also matches another repo's stack on a machine running two of them, and
-  # `head -1` would then silently repair the wrong database and report success. The CLI names
-  # the container after the project (the directory name unless supabase/config.toml sets
-  # project_id), so try the exact name first and only accept a loose match when it is
-  # unambiguous.
-  container=$(docker ps --filter "name=^supabase_db_$(basename "$ROOT")$" \
-    --format '{{.Names}}' 2>/dev/null | head -1)
-  if [ -z "$container" ]; then
-    local loose
-    loose=$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' 2>/dev/null)
-    if [ "$(printf '%s\n' "$loose" | grep -c .)" -eq 1 ]; then
-      container="$loose"
-    elif [ -n "$loose" ]; then
-      cs_log "ERROR: several supabase_db_* containers are running and none matches this"
-      cs_log "       project ($(basename "$ROOT")); refusing to guess which to repair:"
-      printf '%s\n' "$loose" | sed 's/^/[cloud-sandbox]   /' >&2
-      return 1
-    fi
-  fi
-  if [ -z "$container" ]; then
-    cs_log "ERROR: no running supabase_db_* container found for the ACL repair."
-    return 1
-  fi
-
-  cs_log "Repairing via container ${container}."
-  printf '%s' "$sql" \
-    | docker exec -i "$container" psql -U postgres -d postgres -X -v ON_ERROR_STOP=1 -q -f - >&2
-}
-
 cs_ensure_docker_daemon || fail "Docker daemon did not start."
 cs_docker_login_if_creds
 
@@ -226,7 +140,11 @@ write_env_local || fail "Could not write apps/api/.env.local from 'supabase stat
 # SUPABASE_URL) — strictly worse than the 42501 this repairs, where the API at least boots.
 # Failing here now degrades to "boots, queries denied" rather than "cannot start".
 cs_log "Repairing local Postgres default ACLs..."
-repair_local_acls || fail "Could not repair local Postgres default ACLs (see the log above)."
+# cs_supabase is passed as the CLI to consult for DB_URL; the lib only invokes it when the
+# host has psql, so a psql-less machine never pays for the round-trip. The parse itself lives
+# in the lib rather than here, so both bootstrap paths cannot drift on CLI output format.
+frapp_repair_local_acls "$ROOT" cs_supabase \
+  || fail "Could not repair local Postgres default ACLs (see the log above)."
 
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"
 cs_log "Cloud sandbox ready. Boot the API with: npm run start:dev -w apps/api"

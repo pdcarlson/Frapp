@@ -95,6 +95,43 @@ export class ChapterService {
     return chapter;
   }
 
+  /**
+   * `findById` plus a signed URL for the chapter logo.
+   *
+   * The `branding` bucket is private, so `logo_path` on its own renders
+   * nothing — a client has no way to sign it. Mirrors the download-URL
+   * resolution in `ChapterDocumentService.findById`.
+   *
+   * A storage failure resolves `logo_url` to null rather than throwing: the
+   * logo is decoration on a payload that also carries name, subscription
+   * status, and config, and failing the whole chapter read over an
+   * unreachable asset would blank the caller's entire shell.
+   */
+  async findByIdWithLogoUrl(
+    id: string,
+  ): Promise<Chapter & { logo_url: string | null }> {
+    const chapter = await this.findById(id);
+    return { ...chapter, logo_url: await this.resolveLogoUrl(chapter) };
+  }
+
+  private async resolveLogoUrl(chapter: Chapter): Promise<string | null> {
+    if (!chapter.logo_path) return null;
+
+    try {
+      return await this.storageProvider.getSignedDownloadUrl(
+        BRANDING_BUCKET,
+        chapter.logo_path,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not sign logo for chapter ${chapter.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
   async listForUser(userId: string): Promise<ChapterMembershipSummary[]> {
     const memberships = await this.memberRepo.findByUser(userId);
     if (!memberships.length) {

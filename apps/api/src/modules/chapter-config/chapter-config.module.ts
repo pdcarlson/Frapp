@@ -6,6 +6,7 @@ import {
   ChapterWorkflowsService,
   ORG_WORKFLOWS_SEED,
 } from '../../application/services/chapter-workflows.service';
+import { ChapterServiceConfigService } from '../../application/services/chapter-service-config.service';
 import { CustomRoleService } from '../../application/services/custom-role.service';
 import { CustomRoleController } from '../../interface/controllers/custom-role.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
@@ -22,6 +23,7 @@ import { ActivationModule } from '../activation/activation.module';
   providers: [
     ChapterConfigService,
     ChapterWorkflowsService,
+    ChapterServiceConfigService,
     // Seed catalog as a value provider — see the token's doc comment.
     { provide: ORG_WORKFLOWS_SEED, useValue: WORKFLOWS_SEED },
     CustomRoleService,
@@ -30,6 +32,7 @@ import { ActivationModule } from '../activation/activation.module';
   exports: [
     ChapterConfigService,
     ChapterWorkflowsService,
+    ChapterServiceConfigService,
     CustomRoleService,
     CustomFieldService,
   ],

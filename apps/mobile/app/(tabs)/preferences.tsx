@@ -11,6 +11,7 @@ import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { FrappTokens } from "@repo/theme/tokens";
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { ThemePreference, useFrappTheme } from "@/lib/theme";
 import {
   type PreferenceState,
@@ -73,6 +74,7 @@ type PreferenceToggleRowProps = {
   value: boolean;
   onValueChange: (value: boolean) => void;
   tokens: FrappTokens;
+  accent: string;
   styles: ReturnType<typeof createStyles>;
 };
 
@@ -82,6 +84,7 @@ function PreferenceToggleRow({
   value,
   onValueChange,
   tokens,
+  accent,
   styles,
 }: PreferenceToggleRowProps) {
   return (
@@ -97,9 +100,7 @@ function PreferenceToggleRow({
           false: tokens.color.surface.border,
           true: tokens.color.feedback.infoBorderStrong,
         }}
-        thumbColor={
-          value ? tokens.color.brand.royalBlue : tokens.color.surface.card
-        }
+        thumbColor={value ? accent : tokens.color.surface.card}
       />
     </View>
   );
@@ -111,6 +112,7 @@ type QuietHoursCardProps = {
   quietHoursWindow: QuietHoursWindow;
   onWindowChange: (next: QuietHoursWindow) => void;
   tokens: FrappTokens;
+  accent: string;
   styles: ReturnType<typeof createStyles>;
 };
 
@@ -120,6 +122,7 @@ function QuietHoursCard({
   quietHoursWindow,
   onWindowChange,
   tokens,
+  accent,
   styles,
 }: QuietHoursCardProps) {
   const [draft, setDraft] = useState<QuietHoursWindow>(quietHoursWindow);
@@ -182,9 +185,7 @@ function QuietHoursCard({
             false: tokens.color.surface.border,
             true: tokens.color.feedback.infoBorderStrong,
           }}
-          thumbColor={
-            enabled ? tokens.color.brand.royalBlue : tokens.color.surface.card
-          }
+          thumbColor={enabled ? accent : tokens.color.surface.card}
         />
       </View>
 
@@ -262,6 +263,7 @@ function QuietHoursCard({
 export default function PreferencesScreen() {
   const { tokens, themePreference, resolvedTheme, setThemePreference } =
     useFrappTheme();
+  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const {
     preferences,
@@ -324,6 +326,7 @@ export default function PreferencesScreen() {
         quietHoursWindow={quietHoursWindow}
         onWindowChange={setQuietHoursWindow}
         tokens={tokens}
+        accent={accent}
         styles={styles}
       />
 
@@ -335,6 +338,7 @@ export default function PreferencesScreen() {
           value={preferences[row.key]}
           onValueChange={(value) => setPreference(row.key, value)}
           tokens={tokens}
+          accent={accent}
           styles={styles}
         />
       ))}

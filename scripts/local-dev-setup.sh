@@ -14,6 +14,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Shared with scripts/cloud-sandbox-up.sh: the Postgres default-ACL repair and the
+# supabase_db_* container resolution. Deliberately NOT scripts/lib/cloud-sandbox-common.sh,
+# which pins a Supabase CLI version and exports telemetry vars at source time — this script
+# uses `npx supabase` on purpose. The lib reads the prefix at call time, so the order relative
+# to the source below does not matter.
+FRAPP_ACL_LOG_PREFIX='[local-dev-setup]'
+# shellcheck source=scripts/lib/local-postgres-acl.sh
+. "$ROOT/scripts/lib/local-postgres-acl.sh"
+
 QUICK=false
 RESET_SUPABASE=false
 RESET_SUPABASE_DATA=false
@@ -88,12 +97,19 @@ supabase_stop_for_reset() {
 }
 
 # If the local supabase_db_* container logged PG major-version / data-dir errors, nudge toward --reset-supabase-data.
+#
+# Resolution goes through the shared resolver rather than `--filter name=supabase_db_ | head -n1`.
+# That filter is an unanchored regex, so on a machine running two Supabase stacks it also matches
+# the other project's container, and `head -n1` would then read ITS logs and print a confident
+# "Postgres data directory / engine major-version mismatch" hint — pointing the developer at
+# --reset-supabase-data, which wipes a perfectly healthy local database. Includes stopped
+# containers on purpose: a container that failed to start is the whole subject of this check.
 maybe_hint_postgres_volume_mismatch() {
   if ! docker info >/dev/null 2>&1; then
     return 0
   fi
   local cname log_tail
-  cname="$(docker ps -a --filter "name=supabase_db_" --format '{{.Names}}' 2>/dev/null | head -n1)" || true
+  cname=$(frapp_resolve_supabase_db_container "$ROOT" true) || return 0
   [[ -n "${cname}" ]] || return 0
   log_tail="$(docker logs "${cname}" 2>&1 | tail -n 100)" || true
   if printf '%s\n' "${log_tail}" | grep -qE 'incompatible with server|initialized by PostgreSQL version'; then
@@ -171,6 +187,35 @@ fi
 echo "Applying local migrations..."
 npx supabase db push --local
 
+# Immediately AFTER `db push`, because the repair fixes the tables those migrations just
+# created. The pinned supabase/postgres image ships schema `public` without DML grants for
+# anon / authenticated / service_role, so without this the API's very first query is
+# `42501 permission denied for table chapters` and /health reports `degraded` — on a bootstrap
+# that otherwise looks completely successful. Same repair the cloud sandbox runs; see
+# scripts/lib/local-postgres-acl.sh for why it is here and not in supabase/migrations/.
+#
+# Fatal, matching cloud-sandbox-up.sh: a bootstrap that prints "Local stack is ready" over a
+# database the API cannot read is worse than one that stops and says why.
+if [[ -n "${FRAPP_SKIP_ACL_REPAIR:-}" ]]; then
+  log "Skipping the Postgres ACL repair (FRAPP_SKIP_ACL_REPAIR set)."
+  log_err "NOTE: without it the API's first query may fail with 42501 permission denied."
+else
+  log "Repairing local Postgres default ACLs..."
+  if ! frapp_repair_local_acls "$ROOT" npx supabase; then
+    # Two different causes reach here and the remedies differ, so do not collapse them into
+    # "the repair failed": the common one on a multi-project machine is that this project's
+    # container could not be identified at all, which the lib has already listed above.
+    log_err "ERROR: could not repair local Postgres default ACLs (see the log above)."
+    log_err "Either the repair itself failed, or this project's supabase_db_* container could"
+    log_err "not be identified — the lines above say which."
+    log_err "The rest of the stack is up; only the grants are missing, so the API will boot"
+    log_err "and then fail queries with 42501 permission denied."
+    log_err "Re-run after resolving it, or set FRAPP_SKIP_ACL_REPAIR=1 to finish the bootstrap"
+    log_err "without the repair. Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
+    exit 1
+  fi
+fi
+
 if [[ "${QUICK}" == "false" ]]; then
   echo "Running typecheck and migration safety check..."
   npm run check-types
@@ -188,7 +233,7 @@ echo ""
 echo "First time on this machine: npx infisical login"
 echo "Populate Infisical 'local' env (Supabase keys, etc.): docs/internal/SECRETS_MANAGEMENT.md"
 echo ""
-echo "Separate terminals, no Infisical, mobile, URLs: docs/internal/LOCAL_DEV.md"
+echo "Separate terminals, no Infisical, mobile, URLs: docs/internal/environment/LOCAL_DEV.md"
 echo ""
 echo "Supabase Studio: http://127.0.0.1:54323"
 echo ""

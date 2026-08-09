@@ -2,7 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
-import { ServiceEntry } from '../../../domain/entities/service-entry.entity';
+import {
+  ServiceEntry,
+  ServiceEntryFilters,
+  ServiceLeaderboardRow,
+} from '../../../domain/entities/service-entry.entity';
 
 @Injectable()
 export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
@@ -22,25 +26,43 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return data;
   }
 
-  async findByChapter(chapterId: string): Promise<ServiceEntry[]> {
-    const { data, error } = await this.supabase
+  async findByChapterFiltered(
+    chapterId: string,
+    filters: ServiceEntryFilters,
+  ): Promise<ServiceEntry[]> {
+    let query = this.supabase
       .from('service_entries')
       .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
+      .eq('chapter_id', chapterId);
+
+    // Each filter is applied only when supplied, so an empty filter set
+    // degrades to the same query findByChapter runs.
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.userId) query = query.eq('user_id', filters.userId);
+    // Bounds are inclusive and compare against `date` (the day the service
+    // happened), not created_at — a range means what the officer picking it
+    // expects.
+    if (filters.startDate) query = query.gte('date', filters.startDate);
+    if (filters.endDate) query = query.lte('date', filters.endDate);
+
+    const { data, error } = await query.order('created_at', {
+      ascending: false,
+    });
     if (error) throw error;
     return data || [];
   }
 
-  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
-    const { data, error } = await this.supabase
-      .from('service_entries')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+  async leaderboard(
+    chapterId: string,
+    range: { startDate?: string; endDate?: string },
+  ): Promise<ServiceLeaderboardRow[]> {
+    const { data, error } = await this.supabase.rpc('get_service_leaderboard', {
+      p_chapter_id: chapterId,
+      p_start_date: range.startDate ?? null,
+      p_end_date: range.endDate ?? null,
+    });
     if (error) throw error;
-    return data || [];
+    return data ?? [];
   }
 
   async create(data: Partial<ServiceEntry>): Promise<ServiceEntry> {

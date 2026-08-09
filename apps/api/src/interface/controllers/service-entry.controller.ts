@@ -10,12 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiQuery,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ServiceEntryService } from '../../application/services/service-entry.service';
 import { RbacService } from '../../application/services/rbac.service';
 import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
@@ -32,8 +27,10 @@ import {
 } from '../decorators/current-user.decorator';
 import {
   CreateServiceEntryDto,
+  ListServiceEntriesQueryDto,
   RequestProofUploadUrlDto,
   ReviewServiceEntryDto,
+  ServiceLeaderboardQueryDto,
 } from '../dtos/service-entry.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
@@ -52,15 +49,10 @@ export class ServiceEntryController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
   @ApiOperation({ summary: 'List service entries (own or all for admins)' })
-  @ApiQuery({
-    name: 'userId',
-    required: false,
-    description: 'Filter by user (admins with service:approve only)',
-  })
   async list(
     @CurrentChapterId() chapterId: string,
     @CurrentUser('id') userId: string,
-    @Query('userId') filterUserId?: string,
+    @Query() query: ListServiceEntriesQueryDto,
   ) {
     const isAdmin = await this.rbacService.memberHasAnyPermission(
       chapterId,
@@ -68,13 +60,37 @@ export class ServiceEntryController {
       [SystemPermissions.SERVICE_APPROVE],
     );
 
-    if (filterUserId && isAdmin) {
-      return this.serviceEntryService.findByUser(chapterId, filterUserId);
-    }
-    if (isAdmin && !filterUserId) {
-      return this.serviceEntryService.findByChapter(chapterId);
-    }
-    return this.serviceEntryService.findByUser(chapterId, userId);
+    // Non-admins only ever see their own history, so their read is pinned to
+    // their own id before any filter is applied — `userId` in the query string
+    // can never widen it. Status and date filters still apply to that
+    // narrowed set.
+    return this.serviceEntryService.findByChapterFiltered(chapterId, {
+      status: query.status,
+      startDate: query.start_date,
+      endDate: query.end_date,
+      userId: isAdmin ? query.userId : userId,
+    });
+  }
+
+  // Declared before `@Get(':id')`: Nest matches routes in declaration order,
+  // so the param route would otherwise swallow `/leaderboard` and try to load
+  // an entry with that id.
+  @Get('leaderboard')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+  @ApiOperation({
+    summary: 'Chapter-wide service leaderboard (approved hours)',
+    description:
+      'Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.',
+  })
+  async leaderboard(
+    @CurrentChapterId() chapterId: string,
+    @Query() query: ServiceLeaderboardQueryDto,
+  ) {
+    return this.serviceEntryService.leaderboard(chapterId, {
+      startDate: query.start_date,
+      endDate: query.end_date,
+    });
   }
 
   @Get(':id')
