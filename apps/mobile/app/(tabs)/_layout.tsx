@@ -60,7 +60,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Home",
-          headerTitle: () => <ChapterHeaderTitle />,
+          headerTitle: ({ style }) => <ChapterHeaderTitle style={style} />,
           tabBarIcon: ({ color, focused }) =>
             tabIcon(
               focused ? TAB_ICON_NAMES.home.active : TAB_ICON_NAMES.home.inactive,
@@ -72,7 +72,9 @@ export default function TabLayout() {
         name="chat"
         options={{
           title: "Chat",
-          headerTitle: () => <ChapterHeaderTitle label="Chat" />,
+          headerTitle: ({ style }) => (
+            <ChapterHeaderTitle label="Chat" style={style} />
+          ),
           tabBarIcon: ({ color, focused }) =>
             tabIcon(
               focused ? TAB_ICON_NAMES.chat.active : TAB_ICON_NAMES.chat.inactive,
