@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ForbiddenException } from '@nestjs/common';
 import {
   ContentFreePropertyError,
+  hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
 } from '@repo/validation';
 import { AnalyticsService } from './analytics.service';
@@ -249,6 +250,120 @@ describe('AnalyticsService', () => {
       });
 
       // Privacy-safe default: don't emit when opt-out state is unknown.
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('trackForChapter (chapter-keyed funnel events, #267)', () => {
+    it('keys the event by the hashed chapter id, never the raw one', async () => {
+      const { client } = makeSupabaseMock({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      await service.trackForChapter(
+        'activation-checkout-completed',
+        'chapter-1',
+        { step: 7 },
+      );
+
+      expect(provider.capture).toHaveBeenCalledWith({
+        name: 'activation-checkout-completed',
+        distinctId: hashChapterIdForAnalytics(SALT, 'chapter-1'),
+        properties: { step: 7 },
+      });
+      // The raw chapter id must not appear anywhere in the payload.
+      expect(JSON.stringify(provider.capture.mock.calls[0][0])).not.toContain(
+        'chapter-1',
+      );
+    });
+
+    it('honours the per-chapter opt-out', async () => {
+      const { client } = makeSupabaseMock({
+        data: { analytics_opt_out: true },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      await service.trackForChapter(
+        'activation-first-chat-message',
+        'chapter-1',
+      );
+
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the opt-out lookup errors', async () => {
+      const { client } = makeSupabaseMock({ error: new Error('db down') });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      await service.trackForChapter(
+        'activation-first-chat-message',
+        'chapter-1',
+      );
+
+      expect(provider.capture).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when analytics is unconfigured (no salt)', async () => {
+      const { client, from } = makeSupabaseMock({ data: null, error: null });
+      const service = await buildService({ supabase: client, provider });
+
+      await service.trackForChapter(
+        'activation-onboarding-submitted',
+        'chapter-1',
+      );
+
+      expect(provider.capture).not.toHaveBeenCalled();
+      expect(from).not.toHaveBeenCalled();
+    });
+
+    it('swallows a provider failure', async () => {
+      const { client } = makeSupabaseMock({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      provider.capture.mockRejectedValue(new Error('provider down'));
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      await expect(
+        service.trackForChapter('activation-checkout-started', 'chapter-1'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('throws on a content/PII payload instead of leaking it', async () => {
+      const { client } = makeSupabaseMock({
+        data: { analytics_opt_out: false },
+        error: null,
+      });
+      const service = await buildService({
+        salt: SALT,
+        supabase: client,
+        provider,
+      });
+
+      await expect(
+        service.trackForChapter('activation-checkout-started', 'chapter-1', {
+          email: 'treasurer@example.com',
+        }),
+      ).rejects.toBeInstanceOf(ContentFreePropertyError);
       expect(provider.capture).not.toHaveBeenCalled();
     });
   });

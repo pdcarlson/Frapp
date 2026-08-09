@@ -7,9 +7,10 @@ import { INVITE_REPOSITORY } from '../../domain/repositories/invite.repository.i
 import { ChapterModule } from '../chapter/chapter.module';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationModule } from '../notification/notification.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [ChapterModule, AuthModule, NotificationModule],
+  imports: [ChapterModule, AuthModule, NotificationModule, ActivationModule],
   controllers: [InviteController],
   providers: [
     InviteService,

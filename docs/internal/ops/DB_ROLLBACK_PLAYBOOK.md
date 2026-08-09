@@ -66,6 +66,14 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the activation funnel table
+
+* **Migration**: `20260809001500_chapter_activation_milestones.sql`
+* **Action**: `DROP TABLE IF EXISTS chapter_activation_milestones;`
+* **Order**: Unusually, **no coordinated redeploy is required**. `ActivationService.record` wraps its whole body in a catch and every one of the seven call sites ignores the result, so a missing table degrades to "no milestones recorded, one logged error per action" rather than a failed checkout, invite, or message send. Redeploy the API at the pre-#267 revision if you want the log noise to stop.
+* **Note**: Additive table only; nothing else references it, so dropping loses just the funnel ledger. **The loss is not recoverable by re-applying** — the table records *when a chapter first did something*, and that history cannot be reconstructed after the fact (the source events are spread across `chapters`, `invites`, `chat_messages` and Stripe, and none of them record "this was the first"). If the concern is a single wrong row rather than the feature, delete that row instead: the next matching action will re-record the milestone naturally.
+* **Lighter option**: to stop emission without touching the schema, unset `POSTHOG_API_KEY` — the no-op provider takes over and the rows keep accruing for later analysis.
+
 ## Rollback durable Stripe webhook idempotency
 
 * **Migration**: `20260805150000_stripe_webhook_events.sql`

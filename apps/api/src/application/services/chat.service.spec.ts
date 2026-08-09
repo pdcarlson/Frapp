@@ -35,6 +35,7 @@ import type {
   MessageReaction,
 } from '../../domain/entities/chat.entity';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 import { RbacService } from './rbac.service';
 import { ChannelAccessService } from './channel-access.service';
 
@@ -51,6 +52,7 @@ describe('ChatService', () => {
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
   let mockMemberRepo: { findByUserAndChapter: jest.Mock };
+  let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
     hasAlumniRole: jest.Mock;
@@ -175,6 +177,8 @@ describe('ChatService', () => {
       findByUserAndChapter: jest.fn(),
     };
 
+    mockActivation = { record: jest.fn().mockResolvedValue(true) };
+
     mockRbac = {
       getEffectivePermissions: jest.fn(),
       // Active (non-alumni) member by default; alumni posting is covered in
@@ -220,6 +224,7 @@ describe('ChatService', () => {
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
+        { provide: ActivationService, useValue: mockActivation },
         // ChatService now authorizes through the shared ChannelAccessService;
         // wire a real one over the same mocked channel/member/rbac so the
         // existing PRIVATE / ROLE_GATED rejection tests still exercise the
@@ -573,6 +578,42 @@ describe('ChatService', () => {
       });
 
       expect(result).toEqual({ message: baseMessage, deduplicated: false });
+    });
+
+    it('records the first-chat-message activation milestone (#267)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Hello world',
+      });
+
+      expect(mockActivation.record).toHaveBeenCalledWith(
+        'ch-1',
+        'activation-first-chat-message',
+        { kind: 'text' },
+      );
+    });
+
+    it('does not count a server-originated post as the chapter\u2019s first message (#267)', async () => {
+      mockChannelRepo.findById.mockResolvedValue(baseChannel);
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      // The onboarding welcome post travels this path. If it counted, every
+      // chapter would show as having chatted the instant it was created.
+      await service.sendMessage({
+        chapter_id: 'ch-1',
+        channel_id: 'ch-chan-1',
+        sender_id: 'user-1',
+        content: 'Welcome to your chapter.',
+        kind: 'system_audit',
+        system_originated: true,
+      });
+
+      expect(mockActivation.record).not.toHaveBeenCalled();
     });
 
     it('passes client_message_id, kind, and payload into the insert', async () => {

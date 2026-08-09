@@ -4,6 +4,7 @@ import type {
   BackworkProfessor,
   BackworkResource,
   Chapter,
+  ChapterActivationMilestone,
   ChapterAuditLog,
   ChapterCustomField,
   ChapterCustomRole,
@@ -111,6 +112,7 @@ export interface Database {
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
+      chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
     };
     Views: Record<string, never>;
     Functions: {

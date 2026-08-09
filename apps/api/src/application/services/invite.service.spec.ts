@@ -19,6 +19,7 @@ import type { Role } from '../../domain/entities/role.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 
 describe('InviteService', () => {
   let service: InviteService;
@@ -28,6 +29,7 @@ describe('InviteService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
+  let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
 
   beforeEach(async () => {
     mockInviteRepo = {
@@ -65,6 +67,8 @@ describe('InviteService', () => {
       notifyChapter: jest.fn().mockResolvedValue(undefined),
     };
 
+    mockActivation = { record: jest.fn().mockResolvedValue(true) };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         InviteService,
@@ -72,6 +76,7 @@ describe('InviteService', () => {
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
         { provide: ROLE_REPOSITORY, useValue: mockRoleRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: ActivationService, useValue: mockActivation },
       ],
     }).compile();
 
@@ -142,6 +147,33 @@ describe('InviteService', () => {
     );
     expect(mockInviteRepo.createMany).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(3);
+    // Activation funnel step 2 (#267) — a batch is still one milestone.
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      'ch-1',
+      'activation-first-invite-created',
+      { batch_size: 3 },
+    );
+  });
+
+  it('records the invite-created activation milestone on a single invite (#267)', async () => {
+    mockInviteRepo.create.mockResolvedValue({
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: '2099-01-01',
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2024-01-01',
+    });
+
+    await service.create('ch-1', 'user-1', 'Member');
+
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      'ch-1',
+      'activation-first-invite-created',
+      { batch_size: 1 },
+    );
   });
 
   it('should redeem valid invite', async () => {
@@ -196,6 +228,29 @@ describe('InviteService', () => {
       role_ids: [memberRole.id],
     });
     expect(result).toEqual({ chapterId: 'ch-1', memberId: 'member-1' });
+    // Activation funnel step 3 (#267) — recorded only on a successful join.
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      'ch-1',
+      'activation-first-invite-redeemed',
+    );
+  });
+
+  it('does not record a redemption milestone when the invite is expired (#267)', async () => {
+    mockInviteRepo.findByToken.mockResolvedValue({
+      id: 'inv-1',
+      token: 'test-uuid',
+      chapter_id: 'ch-1',
+      role: 'Member',
+      expires_at: '2020-01-01',
+      created_by: 'user-1',
+      used_at: null,
+      created_at: '2019-01-01',
+    });
+
+    await expect(service.redeem('test-uuid', 'user-2')).rejects.toThrow(
+      GoneException,
+    );
+    expect(mockActivation.record).not.toHaveBeenCalled();
   });
 
   it('should fall back to Member role when invite role not found', async () => {
