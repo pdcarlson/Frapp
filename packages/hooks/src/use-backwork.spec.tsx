@@ -19,6 +19,11 @@ import { FrappClientProvider } from "./use-frapp-client";
 describe("useBackwork hooks", () => {
 const BACKWORK_KEY = ["backwork"];
 const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
+// `useBackworkResources` is chapter-scoped (`enabled: !!chapterId`), so the
+// provider has to supply one or its query never runs. The mutation
+// invalidations stay chapter-less on purpose — the hooks invalidate the bare
+// `["backwork"]` prefix, which matches `["backwork", chapterId, filters]` too.
+const CHAPTER_ID = "chapter-abc";
 
   let queryClient: QueryClient;
 
@@ -36,6 +41,7 @@ const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
     const Wrapper = ({ children }: { children: React.ReactNode }) => (
       <FrappClientProvider
         client={mockClient as ReturnType<typeof createFrappClient>}
+        chapterId={CHAPTER_ID}
       >
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       </FrappClientProvider>

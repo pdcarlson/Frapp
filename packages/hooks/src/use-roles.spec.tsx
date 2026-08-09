@@ -5,6 +5,13 @@ import React from "react";
 import { useRoles, useCreateRole } from "./use-roles";
 import { FrappClientProvider } from "./use-frapp-client";
 
+const CHAPTER_ID = "chapter-abc";
+// The role hooks are chapter-scoped: they read `useActiveChapterId()`, gate the
+// queries on `enabled: !!chapterId`, and invalidate `["roles", chapterId]`. A
+// provider without a chapter id leaves that null, so the queries never run and
+// the mutations invalidate a key these assertions would not match.
+const ROLES_QUERY_KEY = ["roles", CHAPTER_ID];
+
 const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
@@ -13,6 +20,7 @@ const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
           typeof import("@repo/api-sdk").createFrappClient
         >
       }
+      chapterId={CHAPTER_ID}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
@@ -117,7 +125,7 @@ describe("useCreateRole", () => {
 
     await waitFor(() => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["roles"],
+        queryKey: ROLES_QUERY_KEY,
       });
     });
   });
@@ -146,7 +154,7 @@ describe("useCreateRole", () => {
 
     await waitFor(() => {
       expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
-        queryKey: ["roles"],
+        queryKey: ROLES_QUERY_KEY,
       });
     });
   });

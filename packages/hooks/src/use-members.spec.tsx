@@ -3,12 +3,18 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useMembers, useMemberSearch } from "./use-members";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 const MEMBERS_ENDPOINT = "/v1/members";
+const CHAPTER_ID = "chapter-abc";
 
+// The member hooks read both exports of this module — `useFrappClient` for the
+// transport and `useActiveChapterId` for the per-chapter query key and the
+// `enabled` gate. A factory that returns only the former makes every import of
+// the other throw, so both belong here.
 vi.mock("./use-frapp-client", () => ({
   useFrappClient: vi.fn(),
+  useActiveChapterId: vi.fn(),
 }));
 
 function createWrapper(queryClient: QueryClient) {
@@ -22,6 +28,7 @@ function createWrapper(queryClient: QueryClient) {
 describe("useMembers", () => {
   let queryClient: QueryClient;
   const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -32,6 +39,7 @@ describe("useMembers", () => {
       },
     });
     vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
   });
 
   it("returns members when the API request succeeds", async () => {
@@ -94,6 +102,7 @@ describe("useMembers", () => {
 describe("useMemberSearch", () => {
   let queryClient: QueryClient;
   const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -104,6 +113,7 @@ describe("useMemberSearch", () => {
       },
     });
     vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
   });
 
   it("returns members matching the query when the API request succeeds", async () => {
