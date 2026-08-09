@@ -5,6 +5,7 @@ import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { useMemo, useState } from "react";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 type LeaderboardWindow = "all-time" | "semester" | "month";
@@ -41,7 +42,8 @@ const LEADERBOARD_ROWS_BY_WINDOW: Record<
 
 export default function PointsDetailsScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
   const [selectedWindow, setSelectedWindow] =
     useState<LeaderboardWindow>("all-time");
   const leaderboardRows = useMemo(
@@ -139,7 +141,7 @@ export default function PointsDetailsScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: FrappTokens, accent: string) {
   return StyleSheet.create({
     windowCard: {
       borderRadius: tokens.radius.lg,
@@ -223,7 +225,7 @@ function createStyles(tokens: FrappTokens) {
     pointsCell: {
       fontSize: 13,
       fontWeight: "700",
-      color: tokens.color.brand.royalBlue,
+      color: accent,
     },
     backButton: {
       borderRadius: tokens.radius.md,

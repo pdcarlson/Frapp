@@ -6,11 +6,13 @@ import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { exportEventToCalendar } from "@/lib/calendar-export";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
   const [calendarState, setCalendarState] = useState<
     "ready" | "exporting" | "exported" | "failed"
   >("ready");
@@ -114,7 +116,7 @@ export default function EventDetailsScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: FrappTokens, accent: string) {
   return StyleSheet.create({
     summaryCard: {
       borderRadius: tokens.radius.lg,
@@ -144,7 +146,7 @@ function createStyles(tokens: FrappTokens) {
     primaryButton: {
       marginTop: 4,
       borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
+      backgroundColor: accent,
       paddingVertical: 12,
       alignItems: "center",
     },

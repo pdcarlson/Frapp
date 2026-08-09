@@ -173,7 +173,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get current chapter */
+        /** Get current chapter (includes a signed logo_url when one is set) */
         get: operations["ChapterController_getCurrent_v1"];
         put?: never;
         post?: never;
