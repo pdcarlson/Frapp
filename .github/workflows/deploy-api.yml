@@ -314,6 +314,55 @@ jobs:
           echo "::error::Production health check failed after 6 attempts (2 min)."
           exit 1
 
+  # ── Deploy outcome: alert on failure, state plainly when nothing deployed ──
+  # Terminal reporting job. Exists because a `workflow_run` failure lands on no
+  # commit and no PR, and a run that skips every deploy job still reports GREEN.
+  # Together those hid a 100% deploy failure rate for 71 days (#763): 44 of 44
+  # executing runs failed while the Actions list read "mostly healthy", because
+  # the other 46 runs were green-because-empty.
+  #
+  # Writes a step summary + annotation saying whether this run DEPLOYED or
+  # DECLINED to deploy, and upserts/closes a single tracking issue so that
+  # "alert issue open" means "the deploy path is broken right now".
+  deploy-outcome:
+    needs:
+      [
+        check-changes,
+        migrate-staging,
+        migrate-production,
+        deploy-staging,
+        deploy-production,
+      ]
+    # always(): reporting on failed and skipped jobs is the entire point.
+    # Gated on check-changes having actually run, so a CI-failed run stays with
+    # skip-on-failure below and this never fires on a run that was never eligible.
+    if: always() && needs.check-changes.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # The ONLY job here with any write scope. Kept job-scoped deliberately so
+      # the workflow-level `contents: read` stays exactly as narrow as it was
+      # for every other job.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # deploy-alert.mjs is dependency-free (global fetch + node:fs on the
+      # runner's preinstalled Node) — no setup-node, no npm ci, matching
+      # ci-wake.yml's deliberately minimal action surface.
+      - name: Report deploy outcome and alert on failure
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_NEEDS: ${{ toJSON(needs) }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: node scripts/ci/deploy-alert.mjs
+
   # ── Skip notification (CI failed) ──────────────────────────────────────
   skip-on-failure:
     if: github.event.workflow_run.conclusion != 'success'
