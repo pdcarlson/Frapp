@@ -95,6 +95,24 @@ drifts (often a few pixels vs. committed Linux baselines), refresh from
 falls back to passthrough when the vars are missing, so the module is safe to
 import in the visual-regression environment.
 
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bootstrap that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. `supabase db push` applies migrations as `postgres`, so every table inherits it. **Not** cleared by `supabase db reset --local`: a reset rebuilds from the same template, reintroducing the defect and dropping the repair | **Already handled by `local-dev-setup.sh`** — it repairs the ACLs right after `db push`. **Re-run `bash scripts/local-dev-setup.sh --quick` after any `supabase db reset --local`**, which is the usual way this reappears. Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
+| `local-dev-setup.sh` reports a Postgres **data directory / engine major-version mismatch** and suggests `--reset-supabase-data`, but your database is fine | You were running a second Supabase stack, and the hint read *that* container's logs | Fixed — resolution requires an **exact** name match for this project and never substitutes another stack, not even when it is the only one running. If you instead see `No container named supabase_db_<project> for this project`, that is the guard working: this project's container does not exist, so no version diagnosis is offered. Stop the unrelated stack, or fix why this project's container is missing |
+| `No container named supabase_db_<project> for this project` during the ACL repair | This project's container is absent or named differently, and other stacks are present | Start this project's stack, or set `project_id` in `supabase/config.toml` — the resolver reads it (falling back to the directory name), so a `project_id` gives this project an unambiguous container name. The CLI only applies a new `project_id` on the next `supabase start`, so stop and restart the stack after changing it |
+| The bootstrap exits at *Repairing local Postgres default ACLs* and you need to finish anyway | Container could not be identified, or the repair failed | Set `FRAPP_SKIP_ACL_REPAIR=1` to complete the bootstrap without it. The stack still comes up; only the grants are missing, so the API boots and then fails queries with `42501`. Apply the repair by hand afterwards (see [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#manual--fallback-bringup) for the SQL) |
+
+The ACL repair and the container resolution both live in
+[`scripts/lib/local-postgres-acl.sh`](../../../scripts/lib/local-postgres-acl.sh), shared with the
+cloud sandbox's [`cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so the two bootstrap
+paths cannot drift. Its behaviour is pinned by
+[`local-postgres-acl.test.sh`](../../../scripts/lib/local-postgres-acl.test.sh) — hermetic (docker
+is stubbed, no daemon or database needed), run it with
+`bash scripts/lib/local-postgres-acl.test.sh`. **No CI job runs it yet.** Sandbox-specific failures (network policy, image registry, sentinels) are in
+[`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#when-bringup-fails--stop-and-report).
+
 ## Related docs
 
 - [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web sandbox (primary dev env)
