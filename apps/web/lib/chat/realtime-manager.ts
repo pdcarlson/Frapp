@@ -160,6 +160,10 @@ class ChatRealtimeManager {
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
     this.stopPolling();
+    // Must reset here, not in stopPolling: a backfill that never settles would
+    // otherwise leave the flag latched on this module singleton, and the next
+    // configure() would come up with polling permanently short-circuited.
+    this.pollInFlight = false;
     this.ctx = null;
   }
 
@@ -453,9 +457,29 @@ class ChatRealtimeManager {
     }, POLL_DEGRADE_AFTER_MS);
   }
 
+  /**
+   * Any channel not yet receiving live rows — including a first join still in
+   * flight. This is the *polling* trigger: a join that never lands starves the
+   * user exactly like a mid-session drop does.
+   */
   private anyChannelDegraded(): boolean {
     for (const state of this.channels.values()) {
       if (state.status !== "live") return true;
+    }
+    return false;
+  }
+
+  /**
+   * Any channel that was attached and lost it. This is the *display* trigger,
+   * and deliberately excludes `"joining"`: a normal channel switch is a fresh
+   * join that resolves in well under a second, and flashing "Reconnecting…"
+   * every time the user clicks a channel is noise, not information. A join
+   * that genuinely stalls is still caught — after `POLL_DEGRADE_AFTER_MS` the
+   * poll loop starts and the banner appears then.
+   */
+  private anyChannelReconnecting(): boolean {
+    for (const state of this.channels.values()) {
+      if (state.status === "reconnecting") return true;
     }
     return false;
   }
@@ -554,11 +578,11 @@ class ChatRealtimeManager {
   private computeStatus(): ConnectionStatus {
     if (this.offline) return "offline";
     if (this.channels.size === 0) return "live";
-    if (!this.anyChannelDegraded()) return "live";
-    // Still degraded, but the poll loop is running — messages are arriving,
-    // just late. That is a materially different thing to tell the user than
+    // Degraded, and the poll loop is running — messages are arriving, just
+    // late. That is a materially different thing to tell the user than
     // "reconnecting", where nothing is arriving at all.
-    return this.polling ? "polling" : "reconnecting";
+    if (this.polling) return "polling";
+    return this.anyChannelReconnecting() ? "reconnecting" : "live";
   }
 
   private emitStatus(): void {

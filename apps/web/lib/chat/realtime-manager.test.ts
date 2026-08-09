@@ -315,6 +315,40 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)
     expect(backfill).toHaveBeenCalledTimes(2);
   });
 
+  test("a fresh join stays quiet in the UI but still arms the degrade timer", async () => {
+    // Switching channels is a fresh join; flashing "Reconnecting…" every time
+    // the user clicks a channel would be noise.
+    chatRealtime.subscribe("channel-1");
+    expect(status).toBe("live");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS - 1);
+    expect(status).toBe("live");
+
+    // A join that genuinely stalls is still caught — by the poll loop.
+    await vi.advanceTimersByTimeAsync(1);
+    expect(status).toBe("polling");
+    expect(backfill).toHaveBeenCalledWith("channel-1", null);
+  });
+
+  test("a poll left hanging at destroy() does not wedge the next session", async () => {
+    // The manager is a module singleton, so a latched in-flight flag would
+    // survive teardown and silently disable polling forever.
+    backfill.mockImplementationOnce(() => new Promise<RawChatMessage[]>(() => {}));
+
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(backfill).toHaveBeenCalledTimes(1); // hung, never settles
+
+    chatRealtime.destroy();
+
+    // Fresh mount over the same singleton, Realtime still down.
+    chatRealtime.configure({ queryClient, supabase, backfill });
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(backfill).toHaveBeenCalledTimes(2);
+  });
+
   test("destroy() tears the poll loop down", async () => {
     chatRealtime.subscribe("channel-1");
     current("channel-1").trigger("CHANNEL_ERROR");
