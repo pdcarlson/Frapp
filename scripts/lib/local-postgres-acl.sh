@@ -48,14 +48,16 @@ frapp_acl_log() {
 #
 # Function EXECUTE is deliberately NOT granted, and this is the one line here that must not be
 # "tidied" into symmetry with the table grants. Ten migrations under supabase/migrations/
-# (anonymize_user, confirm_task_completion, approve_service_entry, check_in_event,
-# transfer_presidency, apply_invoice_payment, the stripe_webhook_events RPCs, …) explicitly
-# `revoke execute … from public/anon/authenticated` and then re-grant it to a named role —
-# service_role in most cases, `authenticated` in two and `supabase_auth_admin` in one. A
-# blanket `GRANT EXECUTE ON ALL FUNCTIONS` would silently undo every one of those revokes.
-# (Counts verified by grep against supabase/migrations/; if you change them, re-check.)
-# Functions are also not affected by the defect in the first place: they fall back to
-# PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
+# (confirm_task_completion, approve_service_entry, check_in_event, transfer_presidency,
+# active_chapter_jwt_claim, apply_invoice_payment, anonymize_user, chat_message_actions RLS,
+# stripe_webhook_events, role_gated_required_permissions) revoke EXECUTE from `public` and
+# `anon` — eight of them from `authenticated` as well — and then re-grant it only to named
+# roles: `service_role` in nine, `supabase_auth_admin` in one, and `authenticated` in the two
+# that deliberately allow a direct client call. A blanket
+# `GRANT EXECUTE ON ALL FUNCTIONS … TO anon, authenticated, service_role` would undo every one
+# of those revokes at once. (Enumerated by grep against supabase/migrations/; re-check if you
+# edit this.) Functions are also not affected by the defect in the first place: they fall back
+# to PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
 #
 # Local stack only. Hosted Supabase projects ship correct default grants, which is why this
 # lives in bootstrap tooling and NOT in supabase/migrations/ — as a migration it would be a

@@ -72,9 +72,9 @@ npx supabase db push --local
 #    Not needed if you ran scripts/local-dev-setup.sh above — it does this for you.
 . scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" npx supabase
 
-# 5. Start apps — default (with Infisical — see docs/internal/LOCAL_DEV.md):
+# 5. Start apps — default (with Infisical — see docs/internal/environment/LOCAL_DEV.md):
 npm run dev:stack
-# Per-app, no Infisical, Turbo caveats: docs/internal/LOCAL_DEV.md
+# Per-app, no Infisical, Turbo caveats: docs/internal/environment/LOCAL_DEV.md
 ```
 
 ### Environment Variables

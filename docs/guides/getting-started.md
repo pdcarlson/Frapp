@@ -36,8 +36,10 @@ local Postgres default ACLs**, then optional typecheck and migration-safety chec
 The ACL repair is not optional and will stop the bootstrap if it fails: the pinned
 `supabase/postgres` image ships schema `public` without DML grants for the API's roles, so
 without it the stack comes up and every query dies with `42501 permission denied`. If you
-need to finish the bootstrap anyway, set `FRAPP_SKIP_ACL_REPAIR=1`. Details and the manual
-SQL: [`docs/internal/environment/LOCAL_DEV.md#troubleshooting`](../internal/environment/LOCAL_DEV.md#troubleshooting).
+need to finish the bootstrap anyway, set `FRAPP_SKIP_ACL_REPAIR=1`. Symptoms and remedies:
+[`LOCAL_DEV.md#troubleshooting`](../internal/environment/LOCAL_DEV.md#troubleshooting); the
+manual SQL lives once, in
+[`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md#manual--fallback-bringup).
 
 - **`--quick`** — Skips post-install checks (typecheck, migration-safety).
 - **`--reset-supabase`** — Runs `supabase stop` for **this project only** (good for stuck or exited containers); **keeps** Docker volumes.
