@@ -404,3 +404,36 @@ there is nothing to restore. Dropping `deleted_at` also drops the tombstone
 `deleted_at = null` while keeping their scrubbed "Deleted User" fields. That is
 safe: the function re-runs its full scrub on every call by design (no tombstone
 early-return), so re-running it on such a row simply re-stamps the marker.
+
+## Rollback chapter document folders (20260809120000)
+
+Additive DDL: one new table, no changes to any existing table (#274).
+
+```sql
+DROP TABLE IF EXISTS chapter_document_folders;
+```
+
+**Order matters**: drop the table only alongside (or after) deploying an API
+build without #274. `ChapterDocumentService.listFolders` / `createFolder` /
+`updateFolder` / `deleteFolder` all query it, and `confirmUpload` writes to it
+on every upload that names a folder — so with the table gone, the current build
+returns a 500 on document *upload*, not just on the folder routes.
+
+**No data loss on the documents themselves.** `chapter_documents.folder` is the
+free-text column it has always been and this migration never touches it: the
+folders table is a *sidecar* holding the name and `sort_order`. Dropping it
+loses only the ordering officers configured and any folder that was created but
+never filled — every document keeps its folder name and stays filterable by
+`GET /v1/documents?folder=`, which is exactly the pre-#274 behavior.
+
+**Re-applying is safe and self-healing.** The migration's backfill re-derives
+one row per `distinct (chapter_id, folder)` from `chapter_documents`, so folders
+in active use come back on their own; it is `ON CONFLICT DO NOTHING`, so
+re-running it against a populated table inserts nothing and cannot fail. What
+does *not* come back is `sort_order` (every re-derived folder returns at `0`,
+ordering by name) and any empty folder, which has no document to be derived
+from. If either matters, snapshot before dropping:
+
+```sql
+SELECT chapter_id, name, sort_order FROM chapter_document_folders ORDER BY 1, 3, 2;
+```
