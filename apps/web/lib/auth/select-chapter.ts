@@ -20,6 +20,10 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
  * 3. Update the local store, which drives the `x-chapter-id` fallback header
  *    and every React Query cache key.
  *
+ * Dropping the cached data of the outgoing chapter is step 4, and it lives in
+ * `FrappProvider` rather than here — see the comment there for why it cannot
+ * correctly be done in this callback.
+ *
  * See spec/behavior/multi-tenancy.md.
  */
 export function useSelectChapter() {
