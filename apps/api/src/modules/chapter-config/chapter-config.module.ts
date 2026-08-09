@@ -10,8 +10,10 @@ import { CustomRoleService } from '../../application/services/custom-role.servic
 import { CustomRoleController } from '../../interface/controllers/custom-role.controller';
 import { CustomFieldService } from '../../application/services/custom-field.service';
 import { CustomFieldController } from '../../interface/controllers/custom-field.controller';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
+  imports: [ActivationModule],
   controllers: [
     ChapterConfigController,
     CustomRoleController,
