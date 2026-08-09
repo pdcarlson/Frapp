@@ -131,7 +131,7 @@
 
 ## Activity Feed
 
-- Unified feed on the home screen showing recent chapter activity: new events, Backwork uploads, point milestones, new members, latest announcement.
+- Unified feed on the **mobile** Home tab showing recent chapter activity: new events, Backwork uploads, point milestones, new members, latest announcement. Web has no home screen — its chat catch-up surfaces a separate, action-oriented pulse card instead ([`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md)).
 - Read-only aggregation from existing data sources.
 
 ## Global Search

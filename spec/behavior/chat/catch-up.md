@@ -10,13 +10,13 @@ The contract below is written so an implementation PR can be reviewed against it
 
 ## The artifact
 
-A **pulse card**: one server-originated chat message, `kind: "pulse"`, summarizing 3–5 chapter-health
+A **pulse card**: one server-originated chat message, `kind: "pulse"`, summarizing chapter-health
 signals with one action per signal. It is a *read-only aggregation* over data the chapter already
-has — no new table, no new store, the same rule
-[`../activity-feed.md`](../activity-feed.md) states.
+has — no new table, no new store, the same rule [`../activity-feed.md`](../activity-feed.md) states
+for the activity aggregation.
 
-It is deliberately **not** a dashboard rebuilt inside a message. A pulse card answers "what needs
-me this week?", not "show me everything".
+It is deliberately **not** a dashboard rebuilt inside a message. A pulse card answers "what needs me
+this week?", not "show me everything".
 
 ### Why `pulse` and not `health`
 
@@ -28,16 +28,34 @@ the wrong side of a distinction that spec already maintains. `pulse` is unambigu
 
 ## Signals
 
-Five signals, all backed by endpoints that exist today. A card renders a **subset** — see
-composition below — never all five unconditionally.
+Five signals, all derived from data that exists today.
 
-| Signal | Source | Permission gate | Module gate |
+The **permission gate** is *who may be shown the figure*, not how the server obtains it. The sweep
+runs server-side under `service_role` and can read anything; the gate is the disclosure rule, and it
+is derived from what that viewer could obtain for themselves through the API. That distinction
+matters because three of these endpoints narrow their results **inside the handler**, below a
+route-level `@RequirePermissions(members:view)` — reading the decorator alone gives the wrong answer.
+
+| Signal | Source | Who may be shown it | Module gate |
 | --- | --- | --- | --- |
 | Events in the next 7 days | `GET /v1/events` | `members:view` | `events` |
 | Members who joined since the last pulse | `GET /v1/members` | `members:view` | — (always on) |
-| Open tasks past their due date | `GET /v1/tasks` | `members:view` | `tasks` |
-| Service-hour entries awaiting approval | `GET /v1/service-entries` | `members:view` to see the queue, `service:approve` to act | `service` |
+| Open tasks past their due date, chapter-wide | `GET /v1/tasks` | **`tasks:manage`** | `tasks` |
+| Service-hour entries awaiting approval, chapter-wide | `GET /v1/service-entries` | **`service:approve`** | **`hours`** |
 | Dues invoices past due | `GET /v1/invoices/overdue` | `billing:view` | `dues` |
+
+The three bolded gates are the non-obvious ones, and each is load-bearing:
+
+- **Tasks.** `task.controller.ts` resolves `isAdmin` from `tasks:manage` and
+  `task.service.ts` returns `findByAssignee(chapterId, userId)` for everyone else — a plain member
+  can only ever see their own tasks, never a chapter-wide overdue count.
+- **Service hours.** `service-entry.controller.ts` does the same against `service:approve`, with the
+  comment "Non-admins only ever see their own history". The approval *queue* therefore requires
+  `service:approve` to see at all, not merely to act on.
+- **Module key.** The Service Hours module is `hours` in `MODULE_CATALOG`, enforced as
+  `@RequireModule('hours')`. `service` is an *archetype* key and a nav-item id, not a module key —
+  and `isModuleEnabled` is `enabledModules?.[key] !== false`, so a key that does not exist reads as
+  **enabled**. Gating on `service` fails open and silently, which is worse than failing loudly.
 
 Points are deliberately excluded. The points leaderboard is already a first-class surface and a
 standing `points` card kind; restating it weekly adds noise without adding an action.
@@ -46,23 +64,54 @@ standing `points` card kind; restating it weekly adds noise without adding an ac
 
 **The payload is the security boundary, not the renderer.** A `chat_messages` row is readable by
 everyone who passes `canAccessChannel` for its channel, so a card that *contains* a figure has
-disclosed that figure to the channel's whole audience regardless of what any client chooses to
-draw. Per-viewer filtering in a renderer is not a control.
+disclosed that figure to the channel's whole audience regardless of what any client chooses to draw.
+Per-viewer filtering in a renderer is not a control.
 
-Therefore a pulse card includes a signal only when **every member who can read the target channel**
-is entitled to it:
+A pulse card therefore includes a signal only when **every member who can read the target channel**
+is entitled to it.
 
-- In `#general` (all members), only the `members:view` signals qualify — events, new members,
-  overdue tasks.
-- The `billing:view` signal qualifies only in a `ROLE_GATED` channel whose `required_permissions`
-  imply it.
+### Deciding entitlement correctly
 
-Consequence worth stating plainly: the always-present channels are `#general`, `#announcements`
-(member-read), `#chapter-audit` (member-read) and DMs — **none of them is officer-only**. A chapter
-that has not created a role-gated officers channel therefore gets the member-safe pulse and nothing
-else. The dues signal is not silently downgraded into a public channel; it is omitted. Giving
-officer figures a guaranteed home is an open question below, not something an implementation should
-improvise.
+For a `ROLE_GATED` channel the test is **not** "does `required_permissions` contain the permission".
+`canAccessChannel` resolves a `ROLE_GATED` read as
+`required.some((permission) => permissions.includes(permission))` — **any-of**. The audience is
+bounded by the list's *broadest* entry, not its narrowest. The correct test is:
+
+> Every entry in `required_permissions` must itself imply the signal's permission (holders of `*`
+> are always entitled, so the wildcard never widens the audience beyond the entitled set).
+
+A channel declared `['billing:view', 'members:view']` therefore does **not** qualify for the dues
+signal, even though `billing:view` appears in the list: every seeded role holds `members:view`, so
+the channel is readable chapter-wide. Getting this backwards is a known bug class in this
+repo — `ALUMNI_CHANNEL_PERMISSION` in `@repo/validation` documents the same mistake, warning that
+`members:view` is "exactly the value a chapter would put on a private `#exec-board`".
+
+### There is no officer channel
+
+`DEFAULT_CHANNELS` seeds **four** channels on every chapter: `#general` (`PUBLIC`),
+`#announcements` (`PUBLIC`, read-only), `#chapter-audit` (`PUBLIC`, read-only), and `#alumni`
+(`ROLE_GATED`, `required_permissions: ['members:view', 'alumni:post']`). Plus DMs.
+
+**None of them is officer-only**, and `#alumni` is a trap: it is the only seeded `ROLE_GATED`
+channel, so an implementation that picks a target by `type === 'ROLE_GATED'` will find it in every
+chapter — and by the any-of rule above its audience is every member holding `members:view`, *plus*
+former members in the Alumni role. It must never carry the officer signals.
+
+The consequence is the central open question below, not something an implementation should
+improvise around: **in a chapter that has created no role-gated officers channel, three of the five
+signals have nowhere to go**, and the pulse in `#general` is a two-signal card (events, new
+members). The officer signals are omitted, never downgraded into a public channel.
+
+## Target channel
+
+The pulse posts to **`#general`**, one card per chapter per cycle.
+
+This is stated because every other rule here is conditioned on it, and the alternatives are actively
+wrong: `#announcements` pushes to every member by default and is `is_read_only`, which would make a
+weekly digest a weekly mandatory push whose CTAs sit in a channel nobody can reply in; and posting
+one card per accessible channel would multiply the `pulse-posted` count and break the primary
+metric below. If open question 1 is resolved by seeding an officers channel, the officer-gated
+signals move there as a **second** card, and this section is what gets amended.
 
 ## Composition
 
@@ -71,29 +120,47 @@ A section is dropped — never rendered as a zero — when any of these hold:
 1. Its module is disabled for the chapter (`chapters.enabled_modules`).
 2. The channel's audience is not entitled to it (above).
 3. Reading it failed.
+4. It read successfully and the count is zero.
 
-Rule 3 is the one that is easy to get wrong. "0 invoices overdue" and "could not read invoices" must
-never render identically: a card that reports calm because a query threw is worse than no card. A
-failed read omits the section and logs; it does not print a zero. This is the same posture the
-report-retention sweep takes in [`../../../docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md)
+Rules 3 and 4 are separate on purpose, and the pair is the easiest thing here to get wrong. Rule 4
+is why a quiet week produces no section rather than a `0`. Rule 3 is why a *broken* week also
+produces no section — and the two must not be conflated in the other direction either: a failed read
+is logged as a failure, while a zero is not. "0 invoices overdue" and "could not read invoices" must
+never reach the same rendering *or* the same log line. This is the posture the report-retention
+sweep takes in [`../../../docs/internal/ops/DEPLOYMENT.md`](../../../docs/internal/ops/DEPLOYMENT.md)
 — a sweep that silently reaps nothing must not look like a healthy one.
 
-**If no section qualifies, no card is posted.** A weekly "nothing to report" card is how an artifact
-trains its audience to ignore it, and a brand-new chapter would otherwise receive an empty pulse
-before it has any data at all.
+**If no section qualifies, no card is posted.** With rule 4 in place this falls out naturally: a
+brand-new chapter, or a genuinely quiet week, produces nothing. A recurring "nothing to report" card
+is how an artifact trains its audience to ignore it.
 
-### The plain-text fallback is mandatory
+### The plain-text fallback, and where it actually comes from
 
-`MessageRenderer` (`apps/web/components/chat/renderers/index.tsx`) routes unknown kinds to
-`TextRenderer` on purpose, so a kind that ships server-first never blanks the timeline — and mobile
-has no registry entry for a new kind at all. The card's `content` string is therefore the **actual
-user-visible message** on every surface that has not shipped the renderer yet, exactly as
-`event.service.ts` documents for event cards. It carries a readable sentence summarizing the same
-sections, not a placeholder:
+The card's `content` string carries a readable sentence summarizing the same sections:
 
 ```text
 This week: 2 events, 3 tasks overdue, 1 new member.
 ```
+
+It is **not** optional, but the mechanism is not the one a reader might assume.
+`MessageRenderer` has a `default:` branch routing unknown kinds to `TextRenderer`, and that is a
+real guard — but on web it is **unreachable for a genuinely new kind**, because
+`apps/web/lib/chat/types.ts` carries its own copy of the kind list behind `coerceKind`
+(`find(k => k === kind) ?? "text"`), applied in `normalizeRow` before any renderer runs. An
+unrecognized kind is rewritten to `text` upstream, so the row renders as its `content` — the same
+user-visible outcome, by a different path.
+
+That matters because **`CHAT_MESSAGE_KINDS` is declared in three places** and adding a kind means
+adding it to all three:
+
+| Declaration | Consumed by |
+| --- | --- |
+| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in the API DTO |
+| `packages/validation/src/index.ts` | `z.enum(...)` in `SendChatMessageSchema` |
+| `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` |
+
+Miss the second and the send is rejected. Miss the third and the web renderer never fires no matter
+how correct it is — the row arrives already rewritten to `text`.
 
 ## Posting
 
@@ -103,10 +170,12 @@ Server-originated, using the mechanism the `event` / `task` / `points` cards alr
 `chat_messages.kind` is an unconstrained `text` column.
 
 Cadence is weekly, posted by a sweep in `apps/api/src/modules/scheduled-jobs/` following the
-existing `@Cron` handlers. Those run on the server clock: there is no chapter-level timezone in the
-schema (`quiet_hours_tz` is per-user, on `user_settings`), so a chapter-local posting time depends
-on [#739](https://github.com/pdcarlson/Frapp/issues/739). Until that lands, a fixed weekly UTC tick
-is the honest behavior and should be documented as such rather than described as "Monday morning".
+existing `@Cron` handlers and their per-chapter failure isolation. Those run on the server clock in
+UTC: there is no chapter-level timezone in the schema (`quiet_hours_tz` is per-user, on
+`user_settings`), so a chapter-local posting time depends on
+[#739](https://github.com/pdcarlson/Frapp/issues/739). Until that lands the honest behavior is a
+fixed weekly UTC tick, and it should be documented as such rather than described as "Monday
+morning".
 
 ## Actions
 
@@ -121,15 +190,15 @@ into paid ops modules" this artifact exists to create:
 | Overdue dues | Review invoices | `/billing` |
 | New members | View directory | `/members` |
 
-A CTA points at a route the viewer may not be able to act in (the queue is visible at
-`members:view`, approving needs `service:approve`). That is the existing behavior of every nav
-entry and needs no new gate; the destination screen enforces its own permissions.
+Because a section is only ever shown to viewers entitled to its figure, a CTA always leads somewhere
+the viewer can act. The destination screen still enforces its own permissions.
 
 ### Dismissal
 
-Per-user dismissal rides `chat_message_actions`, which is already per-user and indexed on
-`(message_id, user_id)` — a `dismiss` action, upserted like a poll vote. No new table. Dismissal is
-per user per card, not a chapter-wide mute; a chapter-wide off switch is the module toggle.
+Per-user dismissal rides `chat_message_actions`, which is already per-user and unique on
+`(message_id, user_id, action_type)` — a `dismiss` action, upserted like a poll vote (ADR-07). No
+new table. Dismissal is per user per card, not a chapter-wide mute; a chapter-wide off switch is the
+module toggle.
 
 ## Success metrics
 
@@ -144,8 +213,8 @@ content-free scalars only:
 | `pulse-dismissed` | A viewer dismisses a card | `sections` |
 
 These are **not** activation-funnel milestones and must not be written to
-`chapter_activation_milestones`: that table's unique `(chapter_id, milestone)` key encodes
-"first time ever", which is the wrong shape for a recurring artifact.
+`chapter_activation_milestones`: that table's unique `(chapter_id, milestone)` key encodes "first
+time ever", which is the wrong shape for a recurring artifact.
 
 The question they answer: does a pulse card change officer behavior, or is it wallpaper?
 CTA-click-through per posted card is the primary signal; a dismissal rate that climbs week over week
@@ -154,13 +223,15 @@ it lands with the surface it measures, not before.
 
 ## Open questions for the owner
 
-1. **Officer channel.** There is no default officer-only channel, so the `billing:view` signal has
-   no guaranteed home (above). Options: seed a `ROLE_GATED` officers channel at onboarding, DM the
-   pulse to permission-holders, or accept that dues never appears in the pulse.
-2. **Cadence.** Weekly is proposed. Daily is almost certainly too noisy for a five-signal digest;
-   monthly is too slow to be actionable.
-3. **Surface parity.** Web renders the card and mobile falls back to `content` until a mobile
-   renderer ships — acceptable for a first cut, or should both land together?
+1. **Officer channel — the one that gates the artifact's value.** Three of the five signals
+   (tasks, service, dues) are officer-gated, and no seeded channel can carry them, so the `#general`
+   pulse is a two-signal card. Options: seed a `ROLE_GATED` officers channel at onboarding whose
+   `required_permissions` are *all* officer-level; DM the officer sections to permission-holders; or
+   accept a two-signal pulse. This decision should be made before #821 is promoted.
+2. **Cadence.** Weekly is proposed. Daily is too noisy for a digest; monthly is too slow to act on.
+3. **Surface parity.** Mobile has no chat timeline at all today (see #253) — `apps/mobile` reads no
+   `chat_messages` anywhere. So mobile parity is not "add a renderer"; it is blocked on the mobile
+   chat surface existing. Ship web-only first, or hold?
 
 ## Implementation follow-ups
 
@@ -168,10 +239,10 @@ Tracked separately so this spec can be accepted independently of any build:
 
 - [#821](https://github.com/pdcarlson/Frapp/issues/821) — pulse aggregation service + weekly sweep (API).
 - [#822](https://github.com/pdcarlson/Frapp/issues/822) — `pulse` card renderer (web).
-- [#823](https://github.com/pdcarlson/Frapp/issues/823) — `pulse` card renderer (mobile).
+- [#823](https://github.com/pdcarlson/Frapp/issues/823) — `pulse` card rendering on mobile.
 
 ## See also
 
 - [`README.md`](./README.md#message-kinds-and-actions) — the kind registry this adds to.
 - [`integrations.md`](./integrations.md) — slash-command catalog and renderer registry.
-- [`../activity-feed.md`](../activity-feed.md) — the aggregation this artifact re-homes.
+- [`../activity-feed.md`](../activity-feed.md) — the separate read-only activity aggregation.

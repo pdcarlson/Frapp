@@ -174,7 +174,13 @@ This pack defines approved copy for high-frequency state messages so members and
 | Offline | `Alumni directory unavailable offline` | `Reconnect to load alumni records and filters.` |
 | No chapter selected | `Alumni directory` | `Select an active chapter to browse alumni records.` |
 
-## Home / activity feed (dashboard)
+## Home / activity feed (mobile Home tab)
+
+> The web dashboard home screen this section was written for was removed in the chat-first redesign;
+> the copy below applies to the mobile Home tab. The web chat catch-up card has its own state rules
+> — a section that fails to read is **omitted**, never shown as a zero or a generic error row — see
+> [`spec/behavior/chat/catch-up.md`](../../../spec/behavior/chat/catch-up.md). Do not apply the
+> `Activity feed unavailable` copy below to the pulse card.
 
 | State | Title | Description |
 |---|---|---|
