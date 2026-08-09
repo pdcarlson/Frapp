@@ -14,9 +14,12 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 - Chapters can set a custom accent color (hex string, e.g. `#8B0000` for crimson). It is stored on the `chapters` table.
 - The accent color is applied to: primary buttons, links, active tab indicators, the chat self-bubble, mention pills, and highlights throughout the app — for that chapter's members only. On mobile that means the active tab tint, primary buttons, and in-chapter highlights.
-- Default accent color (if none set): the Frapp brand accent token, which is mode-dependent — `#7A5A2F` (deep bronze) in light mode and `#D6B988` (bone-bronze) in dark. `@repo/theme` owns both values; this file does not restate them.
-- **WCAG enforcement:** the accent color must meet WCAG AA contrast (4.5:1) against the background it is drawn on. The API validates on save and rejects colors that fail — but **only against the light-mode background**, so a stored accent is not automatically safe everywhere. Crimson is the worked example: it clears AA on white and fails badly on the native dark surface.
+- Two different "defaults" are in play, and they are not interchangeable:
+  - **Stored default** — the `chapters.accent_color` column defaults to Frapp's Royal Blue `#2563EB`, so that is what an uncustomized chapter actually holds.
+  - **Render fallback** — what a client paints when the stored accent is absent, malformed, or illegible on the surface at hand. This is the `@repo/theme` brand accent token, and it is *mode-dependent*: bronze in light, bone-bronze in dark. `@repo/theme` owns those values; this file does not restate them.
+- **WCAG enforcement:** the accent color must meet WCAG AA contrast (4.5:1) against the background it is drawn on. The API validates on save and rejects colors that fail — but **only against the light-mode background**, so a stored accent is not automatically safe everywhere. Crimson (`#8B0000`) is the worked example: 10.0:1 on white, 1.7:1 on the native dark card.
 - Because of that, **clients re-validate per surface** rather than trusting the stored value. `resolveChapterAccentColor` (`@repo/theme/accent`) takes the background and the mode's own fallback accent, and substitutes the fallback when the chapter's accent fails. A failing color surfaces an inline warning in the editor and falls back to safe tokens rather than hard-failing the edit.
+- Note this bites the stored default too: `#2563EB` is 5.2:1 on white but 3.2:1 on the dark card, so in dark mode an uncustomized chapter renders the fallback token rather than Royal Blue. That is the intended outcome — legibility wins over exactness.
 
 ## Brand Boundaries
 
