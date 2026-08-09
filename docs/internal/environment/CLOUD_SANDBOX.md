@@ -134,6 +134,13 @@ It never touches function `EXECUTE`. Nine migrations explicitly revoke EXECUTE f
 would undo all nine; functions are also unaffected by the defect to begin with. See the
 `42501` row under [When bringup fails](#when-bringup-fails--stop-and-report).
 
+The repair itself is not sandbox-specific — the defect is the image's shipped state, so the
+laptop path hits it identically. It therefore lives in
+[`scripts/lib/local-postgres-acl.sh`](../../../scripts/lib/local-postgres-acl.sh) and is called
+by both this script and [`local-dev-setup.sh`](../../../scripts/local-dev-setup.sh). That lib is
+deliberately free of `cs_*` dependencies so the laptop path can source it without inheriting the
+sandbox's pinned Supabase CLI.
+
 Knobs, all optional:
 
 | Variable | Default | Effect |
@@ -247,7 +254,7 @@ every session), so skim the log even when bringup succeeds.
 | Auto-bringup never starts (no `.done`/`.failed`, no log) | Marker absent and `FRAPP_CLOUD_SANDBOX` unset | Set `FRAPP_CLOUD_SANDBOX=1` (or confirm the setup script ran to write the marker) |
 | Log ends mid-step with no `.done`/`.failed` (e.g. frozen at "Starting Docker daemon") | A prior bringup was killed when the session paused/was reclaimed, leaving a stale `/tmp/cloud-sandbox-up.lock` | Self-heals — the SessionStart hook clears the stale lock and relaunches next session. To force it now: `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` |
 | `Error: No matching Supabase CLI binary package found for linux-x64` (from `supabase/dist/supabase.js`), then a sentinel reading `'supabase start' failed (toolchain)` | The Supabase v2 CLI ships its binary as a platform-specific **optionalDependency** (`@supabase/cli-<platform>`). If that optional install is skipped, the launcher finds no binary and throws — and npx caches the broken tree under `~/.npm/_npx`, so it stays broken all session | **Repo fix, not an env change** — already handled: both scripts go through `cs_supabase`, which installs a pinned CLI into `.cache/supabase-cli/` and probes it by running `--version`. If it recurs, delete `.cache/supabase-cli/` to force a clean reinstall |
-| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `repair_local_acls` runs after `db push`, granting table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (the lock cleanup keeps a resumed session from launching a second concurrent bringup). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bringup that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. Migrations are applied as `postgres`, so every table inherits it. The **defect** is not cleared by `supabase db reset --local` — a reset rebuilds from the same template and reintroduces it (and drops the repair) | **Already handled at bringup** — `frapp_repair_local_acls` (shared with the laptop path via `scripts/lib/local-postgres-acl.sh`) runs after `db push`, granting table/sequence DML and fixing the schema's default privileges for future migrations. **Re-run `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` after any `supabase db reset --local`**, which is the usual way this reappears mid-session (the lock cleanup keeps a resumed session from launching a second concurrent bringup). Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
 
 Env var and network changes **apply to new sessions only** — the user must start a fresh
 session for them to take effect.
@@ -282,10 +289,12 @@ Stripe vars. (Source `scripts/lib/cloud-sandbox-common.sh` and call `cs_supabase
 install-on-first-use behaviour instead of managing that path by hand.) For migration
 validation without Docker at all, use the PGlite harness (`npm run check:pglite-migrations`).
 
-**Do not skip the ACL repair when stepping through by hand** — it lives only inside
-`cloud-sandbox-up.sh`, and without it the API's first query is `42501 permission denied for
-table chapters`. Re-running `rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh`
-is the easiest way to apply it; the equivalent SQL, which must be run as `postgres` (with
+**Do not skip the ACL repair when stepping through by hand** — without it the API's first query
+is `42501 permission denied for table chapters`. Re-running
+`rm -rf /tmp/cloud-sandbox-up.lock && bash scripts/cloud-sandbox-up.sh` is the easiest way to
+apply it. To call it directly, source
+[`scripts/lib/local-postgres-acl.sh`](../../../scripts/lib/local-postgres-acl.sh) and run
+`frapp_repair_local_acls "$PWD"`; the equivalent SQL, which must be run as `postgres` (with
 `psql -X`, so a personal `~/.psqlrc` cannot roll it back) and must **not** grant function
 `EXECUTE`:
 

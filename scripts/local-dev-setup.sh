@@ -14,6 +14,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Shared with scripts/cloud-sandbox-up.sh: the Postgres default-ACL repair and the
+# supabase_db_* container resolution. Deliberately NOT scripts/lib/cloud-sandbox-common.sh,
+# which pins a Supabase CLI version and exports telemetry vars at source time — this script
+# uses `npx supabase` on purpose. Prefix must be set before the source; the lib fixes it then.
+FRAPP_ACL_LOG_PREFIX='[local-dev-setup]'
+# shellcheck source=scripts/lib/local-postgres-acl.sh
+. "$ROOT/scripts/lib/local-postgres-acl.sh"
+
 QUICK=false
 RESET_SUPABASE=false
 RESET_SUPABASE_DATA=false
@@ -88,12 +96,19 @@ supabase_stop_for_reset() {
 }
 
 # If the local supabase_db_* container logged PG major-version / data-dir errors, nudge toward --reset-supabase-data.
+#
+# Resolution goes through the shared resolver rather than `--filter name=supabase_db_ | head -n1`.
+# That filter is an unanchored regex, so on a machine running two Supabase stacks it also matches
+# the other project's container, and `head -n1` would then read ITS logs and print a confident
+# "Postgres data directory / engine major-version mismatch" hint — pointing the developer at
+# --reset-supabase-data, which wipes a perfectly healthy local database. Includes stopped
+# containers on purpose: a container that failed to start is the whole subject of this check.
 maybe_hint_postgres_volume_mismatch() {
   if ! docker info >/dev/null 2>&1; then
     return 0
   fi
   local cname log_tail
-  cname="$(docker ps -a --filter "name=supabase_db_" --format '{{.Names}}' 2>/dev/null | head -n1)" || true
+  cname=$(frapp_resolve_supabase_db_container "$ROOT" true) || return 0
   [[ -n "${cname}" ]] || return 0
   log_tail="$(docker logs "${cname}" 2>&1 | tail -n 100)" || true
   if printf '%s\n' "${log_tail}" | grep -qE 'incompatible with server|initialized by PostgreSQL version'; then
@@ -101,6 +116,13 @@ maybe_hint_postgres_volume_mismatch() {
     log_err "A volume-preserving stop/restart will not fix this. Run: bash scripts/local-dev-setup.sh --reset-supabase-data"
     echo "" >&2
   fi
+}
+
+# The local database URL, for the ACL repair's preferred (host psql) path. Passed to
+# frapp_repair_local_acls by NAME so this `npx` round-trip is skipped entirely on a machine
+# without psql, where the lib falls back to running psql inside the db container anyway.
+local_acl_db_url() {
+  npx supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"'
 }
 
 print_supabase_start_failure_hints() {
@@ -170,6 +192,23 @@ fi
 
 echo "Applying local migrations..."
 npx supabase db push --local
+
+# Immediately AFTER `db push`, because the repair fixes the tables those migrations just
+# created. The pinned supabase/postgres image ships schema `public` without DML grants for
+# anon / authenticated / service_role, so without this the API's very first query is
+# `42501 permission denied for table chapters` and /health reports `degraded` — on a bootstrap
+# that otherwise looks completely successful. Same repair the cloud sandbox runs; see
+# scripts/lib/local-postgres-acl.sh for why it is here and not in supabase/migrations/.
+#
+# Fatal, matching cloud-sandbox-up.sh: a bootstrap that prints "Local stack is ready" over a
+# database the API cannot read is worse than one that stops and says why.
+log "Repairing local Postgres default ACLs..."
+if ! frapp_repair_local_acls "$ROOT" local_acl_db_url; then
+  log_err "ERROR: could not repair local Postgres default ACLs (see the log above)."
+  log_err "The stack is up, but the API's first query will fail with 42501 permission denied."
+  log_err "Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
+  exit 1
+fi
 
 if [[ "${QUICK}" == "false" ]]; then
   echo "Running typecheck and migration safety check..."

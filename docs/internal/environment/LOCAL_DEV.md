@@ -95,6 +95,20 @@ drifts (often a few pixels vs. committed Linux baselines), refresh from
 falls back to passthrough when the vars are missing, so the module is safe to
 import in the visual-regression environment.
 
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| API logs `42501 permission denied for table <name>` and `/health` reports `{"database":"error"}` / `degraded`, on a bootstrap that otherwise succeeded | The pinned `supabase/postgres` image (17.6.x) ships a default ACL for role `postgres` in schema `public` granting `anon`/`authenticated`/`service_role` only `Dxtm` — the DML bits `arwd` are missing. `supabase db push` applies migrations as `postgres`, so every table inherits it. **Not** cleared by `supabase db reset --local`: a reset rebuilds from the same template, reintroducing the defect and dropping the repair | **Already handled by `local-dev-setup.sh`** — it repairs the ACLs right after `db push`. **Re-run `bash scripts/local-dev-setup.sh --quick` after any `supabase db reset --local`**, which is the usual way this reappears. Confirm with `select defaclacl from pg_default_acl where pg_get_userbyid(defaclrole)='postgres' and defaclnamespace::regnamespace::text='public' and defaclobjtype='r';` — healthy shows `anon=arwdDxtm/postgres`, broken shows `anon=Dxtm/postgres`. The repair deliberately never grants function `EXECUTE` (the RPC migrations lock that down explicitly) |
+| `local-dev-setup.sh` reports a Postgres **data directory / engine major-version mismatch** and suggests `--reset-supabase-data`, but your database is fine | You are running a second Supabase stack for another project, and the hint read that container's logs | Fixed — container resolution is anchored to this project and refuses to guess when several `supabase_db_*` containers are present. If you see the refusal message instead of a hint, that is the guard working; stop the unrelated stack to get the real diagnosis |
+| `Several supabase_db_* containers are present and none matches this project` during the ACL repair | Same ambiguity, on the repair path rather than the hint path | Stop the other project's stack, or set `project_id` in `supabase/config.toml` so this project's container gets a distinct name |
+
+The ACL repair and the container resolution both live in
+[`scripts/lib/local-postgres-acl.sh`](../../../scripts/lib/local-postgres-acl.sh), shared with the
+cloud sandbox's [`cloud-sandbox-up.sh`](../../../scripts/cloud-sandbox-up.sh) so the two bootstrap
+paths cannot drift. Sandbox-specific failures (network policy, image registry, sentinels) are in
+[`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md#when-bringup-fails--stop-and-report).
+
 ## Related docs
 
 - [`CLOUD_SANDBOX.md`](./CLOUD_SANDBOX.md) — Claude Code web sandbox (primary dev env)
