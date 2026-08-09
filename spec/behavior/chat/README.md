@@ -147,10 +147,16 @@ Each user's last-read timestamp per channel is tracked in a `channel_read_receip
 | `dues` | Dues reminder card |
 | `points` | Points award notification |
 | `hours` | Service hours log confirmation |
-| `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata |
+| `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
+| `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md). Specified, not yet built (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
 | `announcement` | Broadcast announcement |
+
+The live enum is `CHAT_MESSAGE_KINDS` in `apps/api/src/domain/entities/chat.entity.ts`; rows marked
+above as specified-not-built are absent from it. `chat_messages.kind` carries no CHECK constraint, so
+adding a kind is a code change rather than a migration. Unknown kinds fall back to the plain-text
+renderer by design, so every rich kind must also write a readable `content` string.
 
 `chat_message_actions` records per-user actions on messages (reactions, RSVPs, votes, payment confirmations). Indexed on `(message_id, user_id)` for per-message aggregation and `(user_id, action_type, created_at desc)` for user history.
 

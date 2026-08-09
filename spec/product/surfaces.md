@@ -17,7 +17,7 @@ The admin console (`apps/web`). Next.js App Router, Tailwind, ShadCN UI.
 
 **Screens:**
 
-- **Dashboard home** — Chapter health at a glance: active members, upcoming events, subscription status, recent activity feed.
+- **Chat** — The post-sign-in landing (`/chat`). There is no standalone dashboard home: `/` and `/dashboard` both redirect here. Chapter health at a glance is re-homed as an inline chat artifact, the pulse card — see [`spec/behavior/chat/catch-up.md`](../behavior/chat/catch-up.md).
 - **Members** — Searchable member directory with profile cards (name, role, points, join date, bio). Role assignment, invite generation, remove/deactivate.
 - **Roles & Permissions** — View/create/edit roles with open-ended permissions; assign display order and color; manage system role permissions. Presidency transfer UI.
 - **Billing** — Subscription status, invoices, payment history (Stripe Customer Portal link).
