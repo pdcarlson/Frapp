@@ -40,6 +40,7 @@ import type {
 import { allowsInThreadReplies } from '@repo/validation';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
+import { ActivationService } from './activation.service';
 
 const MAX_PINNED_MESSAGES = 50;
 const MAX_GROUP_DM_MEMBERS = 10;
@@ -175,6 +176,7 @@ export class ChatService {
     private readonly supabase: FrappSupabaseClient,
     private readonly notificationService: NotificationService,
     private readonly channelAccess: ChannelAccessService,
+    private readonly activation: ActivationService,
   ) {}
 
   // ── Channels ─────────────────────────────────────────────────────────
@@ -453,6 +455,20 @@ export class ChatService {
     }
 
     await this.broadcastNewMessage(message);
+
+    // Funnel step 4 (#267): the chapter's first *human* message. Server-
+    // originated posts are excluded — the onboarding welcome message would
+    // otherwise mark every chapter as having chatted the moment it was
+    // created, which is the one thing this step must not report. The
+    // deduplicated path returns above, so a client retry cannot count twice
+    // either.
+    if (input.system_originated !== true) {
+      await this.activation.record(
+        input.chapter_id,
+        'activation-first-chat-message',
+        { kind },
+      );
+    }
 
     return { message, deduplicated };
   }

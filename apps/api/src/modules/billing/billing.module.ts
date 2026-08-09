@@ -14,9 +14,10 @@ import { ROLE_REPOSITORY } from '../../domain/repositories/role.repository.inter
 import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import { NotificationModule } from '../notification/notification.module';
 import { FinancialInvoiceModule } from '../financial-invoice/financial-invoice.module';
+import { ActivationModule } from '../activation/activation.module';
 
 @Module({
-  imports: [NotificationModule, FinancialInvoiceModule],
+  imports: [NotificationModule, FinancialInvoiceModule, ActivationModule],
   controllers: [BillingController, WebhookController],
   providers: [
     BillingService,

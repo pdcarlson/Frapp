@@ -189,6 +189,86 @@ export function hashUserIdForAnalytics(salt: string, userId: string): string {
   return hmacSha256Hex(salt, userId);
 }
 
+/**
+ * Derive the pseudonymous analytics key for a *chapter*.
+ *
+ * Funnel events are grouped by chapter (a chapter, not a user, is what
+ * activates), so the provider needs a stable per-chapter key — but a raw
+ * `chapter_id` is an identifier, and `spec/behavior/observability.md` already
+ * fixes the rule for identifiers crossing an external boundary: *"`user_id` and
+ * `chapter_id` are sent as HMAC-SHA256 hashes using the same per-environment
+ * salt as the analytics pipeline."* This is that hash.
+ *
+ * Same salt and same construction as {@link hashUserIdForAnalytics} on purpose:
+ * a chapter hashed here and the same chapter hashed at the error-reporting
+ * boundary produce the same digest, so an operator can correlate a chapter
+ * across providers without either one ever holding the raw id. User ids and
+ * chapter ids are UUIDs drawn from disjoint tables, so sharing the salt cannot
+ * collide one namespace onto the other.
+ *
+ * @throws if `salt` or `chapterId` is empty — same reasoning as the user hash.
+ */
+export function hashChapterIdForAnalytics(
+  salt: string,
+  chapterId: string,
+): string {
+  if (!salt) {
+    throw new Error(
+      'Analytics salt is required to key a chapter pseudonymously',
+    );
+  }
+  if (!chapterId) {
+    throw new Error('chapterId is required to derive an analytics key');
+  }
+  return hmacSha256Hex(salt, chapterId);
+}
+
+// ── Activation funnel ────────────────────────────────────────────────────────
+
+/**
+ * The free-to-paid activation funnel (issue #267), in order.
+ *
+ * One vocabulary serves two consumers deliberately: each string is used
+ * verbatim as both the `milestone` value stored in `chapter_activation_
+ * milestones` and the analytics event name sent to the provider. A mapping
+ * table between the two would be a second thing to keep in sync, and the
+ * failure mode of it drifting is a funnel that silently stops matching.
+ *
+ * Ordering is the funnel's own — index is the step number, so conversion
+ * between any two steps is `count(step N+1) / count(step N)`. The steps are
+ * *not* strictly sequential for every chapter (a chapter can enable a paid
+ * module before anyone redeems an invite), which is precisely what the funnel
+ * is for measuring; the order encodes the intended path, not a state machine.
+ *
+ * Names are kebab-case to match the existing event examples on
+ * {@link AnalyticsEvent} (`opened-channel`, `ran-slash-command`).
+ *
+ * Canonical behavior: `spec/behavior/observability.md` (#activation-funnel).
+ */
+export const ACTIVATION_MILESTONES = [
+  /** The onboarding wizard was submitted and the chapter row exists. */
+  'activation-onboarding-submitted',
+  /** The chapter issued its first invite (link or batch). */
+  'activation-first-invite-created',
+  /** Someone other than the founder joined by redeeming an invite. */
+  'activation-first-invite-redeemed',
+  /** The first human-authored message was posted in any channel. */
+  'activation-first-chat-message',
+  /** A `tier: "paid"` module was switched on for the first time. */
+  'activation-first-paid-module-enabled',
+  /** A Stripe checkout session was created (intent to pay). */
+  'activation-checkout-started',
+  /** Stripe confirmed the checkout and the subscription went active. */
+  'activation-checkout-completed',
+] as const;
+
+export type ActivationMilestone = (typeof ACTIVATION_MILESTONES)[number];
+
+/** Step number (1-based) of a milestone within the funnel, for ordering. */
+export function activationMilestoneStep(milestone: ActivationMilestone): number {
+  return ACTIVATION_MILESTONES.indexOf(milestone) + 1;
+}
+
 // ── Payload hygiene ──────────────────────────────────────────────────────────
 
 /**
