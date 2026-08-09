@@ -11,6 +11,7 @@ import type {
   ChapterDirectoryEntry,
   ChapterDirectoryRequest,
   ChapterDocument,
+  ChapterDocumentFolder,
   ChapterDuesConfig,
   ChapterWorkflow,
   ChannelReadReceipt,
@@ -98,6 +99,7 @@ export interface Database {
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
       chapter_documents: TableDefinition<ChapterDocument>;
+      chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;

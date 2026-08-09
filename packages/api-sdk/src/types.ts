@@ -1763,7 +1763,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List documents (optional folder filter) */
+        /** List documents (optional folder and title search) */
         get: operations["ChapterDocumentController_list_v1"];
         put?: never;
         /** Confirm upload with metadata */
@@ -1772,6 +1772,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List document folders in display order */
+        get: operations["ChapterDocumentController_listFolders_v1"];
+        put?: never;
+        /** Create a document folder */
+        post: operations["ChapterDocumentController_createFolder_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/documents/folders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a folder (its documents move to the root level) */
+        delete: operations["ChapterDocumentController_deleteFolder_v1"];
+        options?: never;
+        head?: never;
+        /** Rename or reorder a document folder */
+        patch: operations["ChapterDocumentController_updateFolder_v1"];
         trace?: never;
     };
     "/v1/documents/{id}": {
@@ -2601,6 +2637,18 @@ export interface components {
             description?: string;
             /** @description Folder name (one level, flat structure) */
             folder?: string;
+        };
+        CreateDocumentFolderDto: {
+            /** @description Folder name (unique within the chapter) */
+            name: string;
+            /** @description Display position. Defaults to the end of the list. */
+            sort_order?: number;
+        };
+        UpdateDocumentFolderDto: {
+            /** @description New folder name. Renaming re-files every document in the folder. */
+            name?: string;
+            /** @description New display position */
+            sort_order?: number;
         };
         CreatePollDto: {
             /** @description Poll question */
@@ -5514,6 +5562,8 @@ export interface operations {
         parameters: {
             query?: {
                 folder?: string;
+                /** @description Case-insensitive substring match on the document title */
+                search?: string;
             };
             header?: never;
             path?: never;
@@ -5543,6 +5593,86 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_listFolders_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_createFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDocumentFolderDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_deleteFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ChapterDocumentController_updateFolder_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentFolderDto"];
+            };
+        };
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
