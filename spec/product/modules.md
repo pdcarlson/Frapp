@@ -249,7 +249,14 @@ Every paid module ships with: slash command(s), rich renderer, system channel, a
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).
 
-Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+Disabling a paid module: removes its slash commands from the chat palette (`filterSlashCommands`), hides its dashboard nav item (module-gated `ProtectedNavItem` reading `useOrgConfig().isModuleEnabled`), hides its entry from the Cmd+K command menu (which resolves each command's module from `DASHBOARD_NAV_BY_HREF` so the two surfaces cannot drift), and mutes its system channel (no new messages, unread badge suppressed). A module is treated as enabled unless `enabled_modules[key]` is explicitly `false`. Data is preserved — re-enabling restores access.
+
+**Server-side enforcement.** Hiding a surface is not the same as closing it: a direct API call bypasses every client-side gate above. Controllers for paid modules therefore carry `@RequireModule(key)` (`apps/api/src/interface/decorators/module.decorator.ts`), and `ChapterGuard` rejects **writes** to a disabled module with `403 chapter.module.disabled`. Two rules follow from the guarantee that data is preserved:
+
+- **Reads are never gated.** The toggle hides and freezes a surface; it must not strand the chapter's existing data behind it, or re-enabling could not restore access.
+- **Enabled unless explicitly `false`**, matching the client's `isModuleEnabled` contract — a chapter created before a module existed has no key for it and must not be locked out of something it never turned off.
+
+Free always-on modules (chat, members, announcements, audit-log, chapter-settings) are never gated, since they cannot be toggled off. Billing and member-invoice routes are also ungated: paying dues is the recovery path for a locked chapter, so it stays reachable — the same reason `/billing` carries no `module` key in the dashboard nav.
 
 > The toggle UI lists the modules present in `MODULE_CATALOG` today. `meetings`, `vault`, and `ai` are catalogued above for roadmap/scoping but are not yet in the toggle set; they join Settings → Modules when those features ship.
 
