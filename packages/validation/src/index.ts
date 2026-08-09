@@ -726,6 +726,7 @@ export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;
 // ── Pseudonymous analytics (issue #464) ──────────────────────────────────────
 export {
   hashUserIdForAnalytics,
+  hashChapterIdForAnalytics,
   hmacSha256Hex,
   assertContentFreeProperties,
   ContentFreePropertyError,
@@ -733,6 +734,11 @@ export {
 } from "./analytics";
 export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
 
+// ── Activation funnel (issue #267) ───────────────────────────────────────────
+export { ACTIVATION_MILESTONES, activationMilestoneStep } from "./analytics";
+export type { ActivationMilestone } from "./analytics";
+
+// ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
   isSupportedTimeZone,
   normalizeTimeZoneInput,

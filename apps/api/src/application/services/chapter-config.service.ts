@@ -1,12 +1,32 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,
+  MODULE_CATALOG,
 } from '@repo/org-archetypes';
+import { isModuleEnabled } from '@repo/validation';
 import { derivePalette } from '@repo/chapter-theme';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
+import { ActivationService } from './activation.service';
+
+/**
+ * Paid module keys, read from the catalog rather than a second hand-kept list —
+ * a module that changes tier must not silently drop out of the activation
+ * funnel (#267).
+ *
+ * Resolved on call rather than at module load: several specs `jest.mock`
+ * `@repo/org-archetypes` down to the two helpers they need, and a top-level
+ * read of `MODULE_CATALOG` turns any such partial mock into a module-graph
+ * crash in suites that never touch modules at all. The catalog is ~25 frozen
+ * entries and this runs only on a PATCH that changes `enabled_modules`.
+ */
+function paidModuleKeys(): readonly string[] {
+  return MODULE_CATALOG.filter((entry) => entry.tier === 'paid').map(
+    (entry) => entry.key,
+  );
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -29,8 +49,15 @@ function deepMerge(base: unknown, patch: unknown): unknown {
   return result;
 }
 
-/** Dues config returned by `getConfig` and persisted by `patchConfig`. */
-export interface DuesConfig {
+/**
+ * Dues config returned by `getConfig` and persisted by `patchConfig`.
+ *
+ * A `type` rather than an `interface` on purpose: PostgREST's insert/upsert
+ * payloads are constrained to `Record<string, unknown>`, and only type
+ * aliases get an implicit index signature — an interface does not, so an
+ * interface here would not be assignable to an upsert.
+ */
+export type DuesConfig = {
   cadence: string;
   active_amount_cents: number;
   new_member_amount_cents: number;
@@ -40,7 +67,7 @@ export interface DuesConfig {
   late_fee_cents: number;
   grace_days: number;
   scholarship_pool_cents: number;
-}
+};
 
 const DUES_FIELDS = [
   'cadence',
@@ -78,7 +105,8 @@ export class ChapterConfigService {
   private readonly logger = new Logger(ChapterConfigService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
+    private readonly activation: ActivationService,
   ) {}
 
   async getConfig(chapterId: string) {
@@ -95,9 +123,7 @@ export class ChapterConfigService {
     }
 
     // Merge archetype defaults with chapter-specific overrides
-    const archetypeKey: string =
-      ((chapter as Record<string, unknown>)['org_archetype'] as string) ??
-      'ifc';
+    const archetypeKey: string = chapter.org_archetype ?? 'ifc';
     const archetype = getArchetype(archetypeKey);
     const seed = buildChapterConfigFromArchetype(archetypeKey);
 
@@ -155,26 +181,16 @@ export class ChapterConfigService {
       },
       enabled_modules: {
         ...seed.modules,
-        ...(((chapter as Record<string, unknown>)['enabled_modules'] as Record<
-          string,
-          boolean
-        >) ?? {}),
+        ...(chapter.enabled_modules ?? {}),
       },
       vocabulary: {
         ...seed.vocabulary,
-        ...(((chapter as Record<string, unknown>)['vocabulary'] as Record<
-          string,
-          string
-        >) ?? {}),
+        ...(chapter.vocabulary ?? {}),
       },
-      branding: (chapter as Record<string, unknown>)['branding'] ?? {},
-      theme_palette:
-        (chapter as Record<string, unknown>)['theme_palette'] ?? {},
-      beta_config: (chapter as Record<string, unknown>)['beta_config'] ?? {},
-      analytics_opt_out:
-        ((chapter as Record<string, unknown>)['analytics_opt_out'] as
-          | boolean
-          | undefined) ?? false,
+      branding: chapter.branding ?? {},
+      theme_palette: chapter.theme_palette ?? {},
+      beta_config: chapter.beta_config ?? {},
+      analytics_opt_out: chapter.analytics_opt_out ?? false,
       workflows,
       dues,
       role_pack: archetype.rolePack,
@@ -216,10 +232,23 @@ export class ChapterConfigService {
     }
     // JSON columns are patched, not replaced: a partial payload deep-merges
     // onto the existing value so untouched keys are preserved.
+    // Funnel step 5 (#267) — capture *which* paid modules flip off→on in this
+    // patch. Computed here, where both sides of the merge are in hand, but not
+    // emitted until the write below actually lands. `isModuleEnabled` is the
+    // shared "enabled unless explicitly false" rule, so a chapter that simply
+    // has no key for a module (created before the module existed) doesn't read
+    // as a transition on the next unrelated patch.
+    let newlyEnabledPaidModules: string[] = [];
     if (dto.enabled_modules !== undefined) {
       const merged = deepMerge(existing.enabled_modules, dto.enabled_modules);
       diff['enabled_modules'] = { from: existing.enabled_modules, to: merged };
       update['enabled_modules'] = merged;
+
+      const before = existing.enabled_modules as Record<string, boolean>;
+      const after = merged as Record<string, boolean>;
+      newlyEnabledPaidModules = paidModuleKeys().filter(
+        (key) => !isModuleEnabled(before, key) && isModuleEnabled(after, key),
+      );
     }
     if (dto.vocabulary !== undefined) {
       const merged = deepMerge(existing.vocabulary, dto.vocabulary);
@@ -374,6 +403,21 @@ export class ChapterConfigService {
     // ChatBridgeWorker which subscribes to `chapter_audit_log` INSERTs and
     // posts the `system_audit` message itself. Each audit-writing service no
     // longer needs to call into chat.
+
+    // Funnel step 5 (#267), now that the update and its audit row have landed.
+    // A patch can enable several paid modules at once; the milestone is "the
+    // chapter started using paid features", so it records once and names the
+    // module alphabetically-first only to keep the property deterministic.
+    if (newlyEnabledPaidModules.length > 0) {
+      await this.activation.record(
+        chapterId,
+        'activation-first-paid-module-enabled',
+        {
+          module: [...newlyEnabledPaidModules].sort()[0] ?? null,
+          modules_enabled: newlyEnabledPaidModules.length,
+        },
+      );
+    }
 
     // Recompute theme palette if branding colors changed. Use the merged
     // branding colors so a partial color patch keeps the untouched channel.

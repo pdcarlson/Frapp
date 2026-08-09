@@ -1,6 +1,9 @@
 import { createHmac } from 'node:crypto';
 import {
+  ACTIVATION_MILESTONES,
+  activationMilestoneStep,
   assertContentFreeProperties,
+  hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
   hmacSha256Hex,
 } from '@repo/validation';
@@ -136,6 +139,66 @@ describe('analytics keying util', () => {
       expect(() =>
         assertContentFreeProperties({ name: 'app-opened', distinctId: 'abc' }),
       ).not.toThrow();
+    });
+  });
+
+  describe('hashChapterIdForAnalytics', () => {
+    it('returns a 64-char lowercase hex digest', () => {
+      expect(hashChapterIdForAnalytics('salt', 'chapter-1')).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+    });
+
+    it('never returns the raw chapter id', () => {
+      const digest = hashChapterIdForAnalytics('salt', 'chapter-1');
+      expect(digest).not.toContain('chapter-1');
+    });
+
+    // observability.md promises "the same per-environment salt as the analytics
+    // pipeline", so a chapter hashed here must equal the same chapter hashed at
+    // any other boundary using that salt — otherwise operators cannot correlate.
+    it('agrees with the raw HMAC under the same salt', () => {
+      expect(hashChapterIdForAnalytics('salt', 'chapter-1')).toBe(
+        nodeHmac('salt', 'chapter-1'),
+      );
+    });
+
+    it('throws when the salt is empty', () => {
+      expect(() => hashChapterIdForAnalytics('', 'chapter-1')).toThrow(/salt/i);
+    });
+
+    it('throws when the chapter id is empty', () => {
+      expect(() => hashChapterIdForAnalytics('salt', '')).toThrow(/chapterId/);
+    });
+  });
+
+  describe('activation funnel vocabulary (#267)', () => {
+    it('has seven milestones, all kebab-case and unique', () => {
+      expect(ACTIVATION_MILESTONES).toHaveLength(7);
+      expect(new Set(ACTIVATION_MILESTONES).size).toBe(7);
+      for (const milestone of ACTIVATION_MILESTONES) {
+        expect(milestone).toMatch(/^[a-z][a-z0-9-]*$/);
+      }
+    });
+
+    // Every name is also a DB `milestone` value constrained by a CHECK, so an
+    // edit here without the matching migration would be rejected at write time.
+    it('numbers steps 1..7 in declaration order', () => {
+      expect(
+        ACTIVATION_MILESTONES.map((m) => activationMilestoneStep(m)),
+      ).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    });
+
+    it('carries no property that the content/PII guard would reject', () => {
+      for (const milestone of ACTIVATION_MILESTONES) {
+        expect(() =>
+          assertContentFreeProperties({
+            name: milestone,
+            distinctId: 'abc',
+            properties: { step: activationMilestoneStep(milestone) },
+          }),
+        ).not.toThrow();
+      }
     });
   });
 });

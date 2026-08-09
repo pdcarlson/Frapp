@@ -246,9 +246,46 @@ When adding a table or column:
 2. Write SQL in `supabase/migrations/<timestamp>_my_change_name.sql`
 3. Enable RLS: `ALTER TABLE my_table ENABLE ROW LEVEL SECURITY;` (all tables must have RLS)
 4. Apply locally: `npx supabase db push --local`
-5. Update `database.types.ts`: `npx supabase gen types typescript --local > apps/api/src/infrastructure/supabase/database.types.ts`
+5. Add the row type to `apps/api/src/infrastructure/supabase/database.types.ts` — see "Keeping `database.types.ts` in sync" below. **Do not** pipe `supabase gen types` over this file; it is hand-maintained.
 6. Update [`docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`](../../../docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md) with rollback strategy
 7. Filename format: `{14-digit timestamp}_{snake_case}.sql`
+
+### Keeping `database.types.ts` in sync
+
+`database.types.ts` is **hand-maintained**, not generated. It composes the
+`Database` interface out of the domain entities rather than restating every
+column, so `supabase gen types typescript --local > …` would overwrite that
+structure and detach the schema types from `domain/entities`. Use the
+generator's output as a *reference* to diff against if you like, but edit the
+file by hand.
+
+Adding a table means two edits, sometimes three:
+
+1. A row interface in `apps/api/src/domain/entities/`, exported from the
+   barrel (`index.ts`).
+2. A `TableDefinition<YourRow>` entry under `Database['public']['Tables']`.
+3. For an RPC, an entry under `Functions` with its `Args` and `Returns`.
+   `returns setof <table>` maps to `YourEntity[]`; function parameters are
+   nullable in Postgres, so a `text` parameter the caller may omit is
+   `string | null`.
+
+Two constraints worth knowing before you fight the compiler:
+
+* **`Row` is written as `{ [K in keyof Row]: Row[K] }`, deliberately.**
+  PostgREST constrains every row to `Record<string, unknown>`, and a
+  TypeScript `interface` gets no implicit index signature. Passing the
+  entity directly makes `Database` silently fail postgrest-js's
+  `GenericSchema` constraint — at which point the client degrades to
+  permissive typing and *every* query stops being checked, with no error to
+  tell you. The mapped type flattens the interface into an anonymous object
+  type, which does get the index signature.
+* **Insert/upsert payload types must be type aliases, not interfaces**, for
+  the same reason. `DuesConfig` in `chapter-config.service.ts` carries a
+  comment to this effect.
+
+Consumers only get the checking if they declare the injected client as
+`FrappSupabaseClient`; annotating it as the bare `SupabaseClient` from
+`@supabase/supabase-js` erases the schema types at the injection site.
 
 ---
 

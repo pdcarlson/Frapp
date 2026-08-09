@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IMemberRepository } from '../../../domain/repositories/member.repository.interface';
@@ -86,17 +85,12 @@ export class SupabaseMemberRepository implements IMemberRepository {
     targetMemberId: string,
     presidentRoleId: string,
   ): Promise<boolean> {
-    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
-    // generated table Row types do not satisfy PostgREST's schema constraint.
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
-      'transfer_presidency',
-      {
-        p_chapter_id: chapterId,
-        p_current_member_id: currentMemberId,
-        p_target_member_id: targetMemberId,
-        p_president_role_id: presidentRoleId,
-      },
-    )) as PostgrestResponse<Member>;
+    const { data, error } = await this.supabase.rpc('transfer_presidency', {
+      p_chapter_id: chapterId,
+      p_current_member_id: currentMemberId,
+      p_target_member_id: targetMemberId,
+      p_president_role_id: presidentRoleId,
+    });
     if (error) throw error;
     // The RPC returns both updated member rows on success, or zero rows when the
     // current member no longer holds the President role in the chapter (race lost

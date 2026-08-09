@@ -58,6 +58,69 @@ Records with `failures > 0` are emitted at `warn` and clean ones at `log`, so a 
 
 A send in which every token is invalid still emits a record: a push that reaches nobody must not be indistinguishable from having nothing to send.
 
+## Product Analytics — Activation Funnel
+
+The metrics above describe whether the service is healthy. This section describes whether the *product* is working: where a chapter stalls on its way from signing up to paying. Free chat is the wedge and paid ops modules are the monetization path (see [`../product/positioning.md`](../product/positioning.md)), so the gap between any two steps below is the question module gating and pricing decisions are answered with.
+
+Seven milestones are recorded **server-side**. Client-only analytics is not sufficient here: these events gate real product decisions, and a blocked SDK, a closed tab mid-checkout, or a Stripe webhook that arrives with no browser attached would each silently remove a step.
+
+| # | Milestone / event name | Recorded when | Extra properties |
+| --- | --- | --- | --- |
+| 1 | `activation-onboarding-submitted` | The onboarding wizard creates the chapter | `archetype` |
+| 2 | `activation-first-invite-created` | The chapter issues its first invite (link or batch) | `batch_size` |
+| 3 | `activation-first-invite-redeemed` | Someone joins by redeeming an invite | — |
+| 4 | `activation-first-chat-message` | The first **human** message is posted in any channel | `kind` |
+| 5 | `activation-first-paid-module-enabled` | A `tier: "paid"` module is switched on for the first time | `module`, `modules_enabled` |
+| 6 | `activation-checkout-started` | Stripe issues a checkout session | — |
+| 7 | `activation-checkout-completed` | Stripe confirms the checkout and the subscription activates | — |
+
+Every event also carries `step` (its number above), and each name is used **verbatim** as both the analytics event name and the stored `milestone` value — there is no mapping table between the two to drift.
+
+### Once per chapter, decided by the database
+
+Each milestone is stored at most once per chapter in `chapter_activation_milestones`, whose unique `(chapter_id, milestone)` key is what defines "first". The API attempts an insert on every candidate action; only a **winning** insert emits the analytics event. Three consequences worth stating:
+
+- A Stripe webhook redelivery, a retried request, or two members posting the "first" message concurrently cannot double-count a step.
+- Conversion stays queryable in plain SQL with no analytics provider configured — which matters because the provider-side automation is itself provisioned per environment.
+- Steps are *not* a state machine. A chapter may enable a paid module before anyone redeems an invite; the ordering encodes the intended path, and measuring departures from it is the point.
+
+Milestone 4 excludes server-originated posts. The onboarding welcome message travels the same path, and counting it would mark every chapter as having chatted the instant it was created.
+
+### Identifiers
+
+Funnel events are keyed by **`hmac_sha256(salt, chapter_id)`** as the `distinct_id` — not by a user pseudonym, and never by a raw id.
+
+A chapter is what activates, and its steps are performed by different people: the founder submits onboarding, a second member redeems the first invite, a treasurer starts checkout, and Stripe's webhook completes it with no user in context at all. Keyed by user those are four unrelated pseudonyms, and a provider-side funnel would report a near-zero conversion that is purely an artifact of the keying.
+
+The salt is the same per-environment secret used for user pseudonyms and for the Error Tracking hashes above, so a chapter is correlatable across boundaries without any provider holding the raw id. The per-chapter analytics opt-out ([`data-retention.md`](data-retention.md#analytics-events-pseudonymous)) applies to these events unchanged.
+
+### Querying conversion
+
+`chapter_activation_milestones` answers the funnel directly:
+
+```sql
+-- Chapters reaching each step, and conversion from the step before it.
+with counts as (
+  select milestone, count(distinct chapter_id) as chapters
+  from chapter_activation_milestones
+  where occurred_at >= now() - interval '90 days'
+  group by milestone
+)
+select milestone, chapters,
+       round(100.0 * chapters / max(chapters) over (), 1) as pct_of_signups
+from counts;
+```
+
+```sql
+-- Where a single chapter stopped.
+select milestone, occurred_at
+from chapter_activation_milestones
+where chapter_id = '…'
+order by occurred_at;
+```
+
+Recording is best-effort and never fails the action that triggered it: the call sites are a checkout, an invite, and a message send, and telemetry that can break a payment is worse than missing telemetry. A lost event costs one data point; the durable row is written first, so a provider outage does not cost the record.
+
 ## Alerting
 
 Configurable alerts (via the monitoring provider) for:

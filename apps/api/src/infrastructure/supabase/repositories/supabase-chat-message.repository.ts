@@ -72,10 +72,7 @@ export class SupabaseChatMessageRepository implements IChatMessageRepository {
         .maybeSingle();
       if (pivotError) throw pivotError;
       if (pivot) {
-        query = query.gt(
-          'created_at',
-          (pivot as { created_at: string }).created_at,
-        );
+        query = query.gt('created_at', pivot.created_at);
       }
     }
 
