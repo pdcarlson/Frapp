@@ -26,8 +26,10 @@ const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
 // hooks currently pass — the bare `["backwork"]` prefix, which still matches
 // `["backwork", chapterId, filters]`. That is a description of today's code,
 // not an endorsement: `useBackworkResource`, `useDepartments` and
-// `useProfessors` omit chapterId from their keys entirely and have no
-// `enabled` gate, which #784 tracks. If those keys gain a chapter, the
+// `useProfessors` omit chapterId from their keys entirely, which #784 tracks
+// (that issue is scoped to keys and their paired invalidations, not to
+// `enabled` gates — of the three, only `useBackworkResource` gates at all, and
+// on its id rather than the chapter). If those keys gain a chapter, the
 // matching invalidations have to gain one too or they stop prefix-matching.
 const CHAPTER_ID = "chapter-abc";
 
