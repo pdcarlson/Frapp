@@ -15,7 +15,6 @@ describe('ActivationService', () => {
   beforeEach(async () => {
     mockRepo = {
       recordFirst: jest.fn().mockResolvedValue(true),
-      findByChapter: jest.fn().mockResolvedValue([]),
     };
 
     mockAnalytics = {
@@ -109,18 +108,5 @@ describe('ActivationService', () => {
     // The row was still written — a provider outage must not cost the record,
     // which is the durable half of the funnel.
     expect(mockRepo.recordFirst).toHaveBeenCalled();
-  });
-
-  it('returns a chapter milestone timeline', async () => {
-    mockRepo.findByChapter.mockResolvedValue([
-      {
-        id: 'm-1',
-        chapter_id: 'ch-1',
-        milestone: 'activation-onboarding-submitted',
-        occurred_at: '2026-08-01T00:00:00Z',
-      },
-    ]);
-
-    await expect(service.findByChapter('ch-1')).resolves.toHaveLength(1);
   });
 });

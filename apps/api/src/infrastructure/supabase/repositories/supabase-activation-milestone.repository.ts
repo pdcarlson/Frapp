@@ -3,7 +3,6 @@ import type { ActivationMilestone } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import type { IActivationMilestoneRepository } from '../../../domain/repositories/activation-milestone.repository.interface';
-import type { ChapterActivationMilestone } from '../../../domain/entities/chapter-activation-milestone.entity';
 
 @Injectable()
 export class SupabaseActivationMilestoneRepository implements IActivationMilestoneRepository {
@@ -39,18 +38,5 @@ export class SupabaseActivationMilestoneRepository implements IActivationMilesto
 
     if (error) throw error;
     return (data ?? []).length > 0;
-  }
-
-  async findByChapter(
-    chapterId: string,
-  ): Promise<ChapterActivationMilestone[]> {
-    const { data, error } = await this.supabase
-      .from('chapter_activation_milestones')
-      .select()
-      .eq('chapter_id', chapterId)
-      .order('occurred_at', { ascending: true });
-
-    if (error) throw error;
-    return data ?? [];
   }
 }

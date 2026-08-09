@@ -115,6 +115,7 @@ export class BillingService {
       );
     }
 
+    let checkoutUrl: string;
     try {
       if (!chapter.stripe_customer_id) {
         const customerId = await this.billingProvider.createCustomer(
@@ -126,24 +127,12 @@ export class BillingService {
         });
       }
 
-      const checkoutUrl = await this.billingProvider.createCheckoutSession({
+      checkoutUrl = await this.billingProvider.createCheckoutSession({
         chapterId: input.chapterId,
         customerEmail: input.customerEmail,
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
       });
-
-      // Funnel step 6 (#267): intent to pay. Recorded only once Stripe has
-      // actually issued the session — a provider failure throws below and must
-      // not read as a chapter that reached checkout. This is the step whose
-      // gap against step 7 measures checkout abandonment, so counting
-      // never-rendered sessions would understate it.
-      await this.activation.record(
-        input.chapterId,
-        'activation-checkout-started',
-      );
-
-      return checkoutUrl;
     } catch (error) {
       this.logger.error(
         `Failed to create checkout session for chapter ${input.chapterId}`,
@@ -153,6 +142,24 @@ export class BillingService {
         'Billing service is temporarily unavailable',
       );
     }
+
+    // Funnel step 6 (#267): intent to pay. Recorded only once Stripe has
+    // actually issued the session — a provider failure throws above and must
+    // not read as a chapter that reached checkout. This is the step whose gap
+    // against step 7 measures checkout abandonment, so counting never-rendered
+    // sessions would understate it.
+    //
+    // Deliberately *outside* the try: `record` swallows its own failures today,
+    // but if that ever stopped being true, a telemetry error inside this catch
+    // would turn a successfully-created Stripe session into a 503 and orphan
+    // it, while the treasurer retries into a second session. Telemetry does not
+    // belong inside a payment path's error handling.
+    await this.activation.record(
+      input.chapterId,
+      'activation-checkout-started',
+    );
+
+    return checkoutUrl;
   }
 
   async createPortalSession(input: CreatePortalInput): Promise<string> {

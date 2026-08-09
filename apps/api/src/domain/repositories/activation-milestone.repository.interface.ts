@@ -1,5 +1,4 @@
 import type { ActivationMilestone } from '@repo/validation';
-import type { ChapterActivationMilestone } from '../entities/chapter-activation-milestone.entity';
 
 export const ACTIVATION_MILESTONE_REPOSITORY =
   'ACTIVATION_MILESTONE_REPOSITORY';
@@ -21,7 +20,4 @@ export interface IActivationMilestoneRepository {
     chapterId: string,
     milestone: ActivationMilestone,
   ): Promise<boolean>;
-
-  /** Every milestone a chapter has reached, oldest first. */
-  findByChapter(chapterId: string): Promise<ChapterActivationMilestone[]>;
 }

@@ -8,7 +8,6 @@ import {
   ACTIVATION_MILESTONE_REPOSITORY,
   type IActivationMilestoneRepository,
 } from '../../domain/repositories/activation-milestone.repository.interface';
-import type { ChapterActivationMilestone } from '../../domain/entities/chapter-activation-milestone.entity';
 import { AnalyticsService } from './analytics.service';
 
 /**
@@ -65,9 +64,11 @@ export class ActivationService {
 
       // Only first occurrences are emitted, so the provider sees at most one
       // event per chapter per step and the funnel needs no de-duplication.
+      // `step` is spread last so a caller cannot shadow the funnel's own
+      // ordering with a property of the same name.
       await this.analytics.trackForChapter(milestone, chapterId, {
-        step: activationMilestoneStep(milestone),
         ...properties,
+        step: activationMilestoneStep(milestone),
       });
 
       return true;
@@ -81,12 +82,5 @@ export class ActivationService {
       );
       return false;
     }
-  }
-
-  /** Milestones a chapter has reached, oldest first. */
-  async findByChapter(
-    chapterId: string,
-  ): Promise<ChapterActivationMilestone[]> {
-    return this.milestones.findByChapter(chapterId);
   }
 }
