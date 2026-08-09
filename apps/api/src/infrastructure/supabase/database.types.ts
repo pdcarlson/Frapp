@@ -4,6 +4,7 @@ import type {
   BackworkProfessor,
   BackworkResource,
   Chapter,
+  ChapterActivationMilestone,
   ChapterCustomRole,
   ChapterDocument,
   ChannelReadReceipt,
@@ -90,6 +91,7 @@ export interface Database {
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
+      chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
     };
     Views: Record<string, never>;
     Functions: {

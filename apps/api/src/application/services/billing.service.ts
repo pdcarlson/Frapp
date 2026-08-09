@@ -31,6 +31,7 @@ import { STRIPE_WEBHOOK_EVENT_REPOSITORY } from '../../domain/repositories/strip
 import type { IStripeWebhookEventRepository } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 import { SystemRoleKeys } from '../../domain/constants/permissions';
 import { NotificationService } from './notification.service';
+import { ActivationService } from './activation.service';
 
 export interface CreateCheckoutInput {
   chapterId: string;
@@ -86,6 +87,7 @@ export class BillingService {
     private readonly webhookEventRepo: IStripeWebhookEventRepository,
     private readonly notificationService: NotificationService,
     private readonly financialInvoiceService: FinancialInvoiceService,
+    private readonly activation: ActivationService,
   ) {}
 
   async getChapterBillingStatus(chapterId: string) {
@@ -124,12 +126,24 @@ export class BillingService {
         });
       }
 
-      return await this.billingProvider.createCheckoutSession({
+      const checkoutUrl = await this.billingProvider.createCheckoutSession({
         chapterId: input.chapterId,
         customerEmail: input.customerEmail,
         successUrl: input.successUrl,
         cancelUrl: input.cancelUrl,
       });
+
+      // Funnel step 6 (#267): intent to pay. Recorded only once Stripe has
+      // actually issued the session — a provider failure throws below and must
+      // not read as a chapter that reached checkout. This is the step whose
+      // gap against step 7 measures checkout abandonment, so counting
+      // never-rendered sessions would understate it.
+      await this.activation.record(
+        input.chapterId,
+        'activation-checkout-started',
+      );
+
+      return checkoutUrl;
     } catch (error) {
       this.logger.error(
         `Failed to create checkout session for chapter ${input.chapterId}`,
@@ -314,6 +328,13 @@ export class BillingService {
       stripe_customer_id: session.customer ?? chapter.stripe_customer_id,
       last_stripe_webhook_at: this.eventCreatedAt(event),
     });
+
+    // Funnel step 7 (#267) — the conversion this whole funnel exists to
+    // measure. The stale-webhook and non-existent-chapter guards above have
+    // already returned, and the milestone table's unique key absorbs Stripe's
+    // redeliveries, so a chapter converts exactly once no matter how many times
+    // Stripe replays the event.
+    await this.activation.record(chapterId, 'activation-checkout-completed');
 
     this.logger.log(`Chapter ${chapterId} activated via checkout`);
   }

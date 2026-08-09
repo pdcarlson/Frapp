@@ -5,6 +5,7 @@ import { derivePalette } from '@repo/chapter-theme';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import { ChapterService } from './chapter.service';
+import { ActivationService } from './activation.service';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
 
@@ -31,6 +32,7 @@ export class ChapterOnboardingService {
   constructor(
     private readonly chapterService: ChapterService,
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly activation: ActivationService,
   ) {}
 
   async onboard(userId: string, dto: ChapterOnboardingDto): Promise<Chapter> {
@@ -75,6 +77,16 @@ export class ChapterOnboardingService {
       university: dto.university,
       config,
     });
+
+    // Step 1 of the activation funnel (#267). Recorded here rather than in
+    // ChapterService.create so it counts *wizard* completions specifically —
+    // the flow the funnel is measuring — and not chapters created by any other
+    // caller (tests, seeds, future admin tooling).
+    await this.activation.record(
+      chapter.id,
+      'activation-onboarding-submitted',
+      { archetype: seed.archetype },
+    );
 
     // Best-effort: a failed welcome / directory-request write must not roll
     // back an otherwise successfully created chapter.

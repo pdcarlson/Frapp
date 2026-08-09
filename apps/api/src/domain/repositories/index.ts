@@ -18,3 +18,4 @@ export * from './chapter-document.repository.interface';
 export * from './poll-vote.repository.interface';
 export * from './semester-archive.repository.interface';
 export * from './stripe-webhook-event.repository.interface';
+export * from './activation-milestone.repository.interface';
