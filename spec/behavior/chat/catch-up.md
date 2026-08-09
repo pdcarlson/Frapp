@@ -33,8 +33,15 @@ Five signals, all derived from data that exists today.
 The **permission gate** is *who may be shown the figure*, not how the server obtains it. The sweep
 runs server-side under `service_role` and can read anything; the gate is the disclosure rule, and it
 is derived from what that viewer could obtain for themselves through the API. That distinction
-matters because three of these endpoints narrow their results **inside the handler**, below a
-route-level `@RequirePermissions(members:view)` — reading the decorator alone gives the wrong answer.
+matters because **two** of these endpoints — tasks and service entries — narrow their results
+*inside the handler*, below a class-level `@RequirePermissions(members:view)`, so reading the
+decorator alone gives the wrong answer. (`/invoices/overdue` is the honest case: it declares
+`billing:view` on the route, and `PermissionsGuard` merges route- and class-level lists.)
+
+Each gate below is therefore the *additional* permission beyond the class-level `members:view` that
+every one of these routes already requires. Every seeded role holds `members:view`, so on default
+configuration the gate column is the whole answer; a custom role granting `tasks:manage` without
+`members:view` would be shown a figure it could not fetch itself.
 
 | Signal | Source | Who may be shown it | Module gate |
 | --- | --- | --- | --- |
@@ -153,14 +160,14 @@ user-visible outcome, by a different path.
 That matters because **`CHAT_MESSAGE_KINDS` is declared in three places** and adding a kind means
 adding it to all three:
 
-| Declaration | Consumed by |
-| --- | --- |
-| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in the API DTO |
-| `packages/validation/src/index.ts` | `z.enum(...)` in `SendChatMessageSchema` |
-| `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` |
+| Declaration | Consumed by | Symptom if missed |
+| --- | --- | --- |
+| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in `chat.dto.ts` — **the live send gate** | API rejects the send, loudly |
+| `packages/validation/src/index.ts` | `SendChatMessageSchema`. Currently referenced by nothing but its own `z.infer` — it is the shared contract for non-Nest consumers, not an active gate | Nothing fails today; the shared contract silently diverges |
+| `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` | Row arrives rewritten to `text`, so the renderer never fires no matter how correct it is |
 
-Miss the second and the send is rejected. Miss the third and the web renderer never fires no matter
-how correct it is — the row arrives already rewritten to `text`.
+The middle row is the dangerous one precisely *because* nothing fails: skipping it ships a divergence
+that only bites a future consumer.
 
 ## Posting
 

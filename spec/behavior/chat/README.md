@@ -161,8 +161,8 @@ migration — but it is a change in **three** places, and missing any one fails 
 
 | Declaration | Consumed by | Symptom if missed |
 | --- | --- | --- |
-| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in the API DTO | API rejects the send |
-| `packages/validation/src/index.ts` | `z.enum(...)` in `SendChatMessageSchema` | Schema rejects the send |
+| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in `chat.dto.ts` — the live send gate | API rejects the send |
+| `packages/validation/src/index.ts` | `SendChatMessageSchema`; currently unreferenced, kept as the shared contract for non-Nest consumers | Nothing fails today — the shared contract silently diverges |
 | `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` | Row is silently rewritten to `text`, so the renderer never fires |
 
 Unknown kinds degrade to plain text — on web via that `coerceKind` rewrite, which runs *before*
