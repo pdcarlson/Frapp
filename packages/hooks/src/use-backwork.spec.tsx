@@ -20,9 +20,15 @@ describe("useBackwork hooks", () => {
 const BACKWORK_KEY = ["backwork"];
 const BACKWORK_DEPARTMENTS_KEY = ["backwork", "departments"];
 // `useBackworkResources` is chapter-scoped (`enabled: !!chapterId`), so the
-// provider has to supply one or its query never runs. The mutation
-// invalidations stay chapter-less on purpose — the hooks invalidate the bare
-// `["backwork"]` prefix, which matches `["backwork", chapterId, filters]` too.
+// provider has to supply one or its query never runs.
+//
+// The invalidation assertions below stay chapter-less because that is what the
+// hooks currently pass — the bare `["backwork"]` prefix, which still matches
+// `["backwork", chapterId, filters]`. That is a description of today's code,
+// not an endorsement: `useBackworkResource`, `useDepartments` and
+// `useProfessors` omit chapterId from their keys entirely and have no
+// `enabled` gate, which #784 tracks. If those keys gain a chapter, the
+// matching invalidations have to gain one too or they stop prefix-matching.
 const CHAPTER_ID = "chapter-abc";
 
   let queryClient: QueryClient;

@@ -12,7 +12,11 @@ const CHAPTER_ID = "chapter-abc";
 // the mutations invalidate a key these assertions would not match.
 const ROLES_QUERY_KEY = ["roles", CHAPTER_ID];
 
-const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
+const createWrapper = (
+  queryClient: QueryClient,
+  mockClient: unknown,
+  chapterId: string | null = CHAPTER_ID,
+) => {
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <FrappClientProvider
       client={
@@ -20,7 +24,7 @@ const createWrapper = (queryClient: QueryClient, mockClient: unknown) => {
           typeof import("@repo/api-sdk").createFrappClient
         >
       }
-      chapterId={CHAPTER_ID}
+      chapterId={chapterId}
     >
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </FrappClientProvider>
@@ -82,6 +86,26 @@ describe("useRoles", () => {
 
     expect(mockGet).toHaveBeenCalledWith("/v1/roles");
     expect(result.current.error).toEqual(mockError);
+  });
+
+  // Pins the `enabled: !!chapterId` gate. Without it the hook would fetch
+  // during the window before a chapter is selected — no x-chapter-id header,
+  // so an unscoped or 403 response cached under ["roles", null]. Every other
+  // test here supplies a chapter, so this is the only one that can catch a
+  // dropped gate.
+  it("does not fetch before a chapter is active", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+
+    const { result } = renderHook(() => useRoles(), {
+      wrapper: createWrapper(queryClient, { GET: mockGet }, null),
+    });
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    expect(result.current.isPending).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });
 

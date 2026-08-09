@@ -8,11 +8,15 @@ import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 const MEMBERS_ENDPOINT = "/v1/members";
 const CHAPTER_ID = "chapter-abc";
 
-// The member hooks read both exports of this module — `useFrappClient` for the
+// The member hooks read two exports of this module — `useFrappClient` for the
 // transport and `useActiveChapterId` for the per-chapter query key and the
-// `enabled` gate. A factory that returns only the former makes every import of
-// the other throw, so both belong here.
-vi.mock("./use-frapp-client", () => ({
+// `enabled` gate. Spread the real module rather than listing exports: a bare
+// factory replaces the module wholesale, so the day a hook reaches for a third
+// export every test here fails with a stack pointing at use-members.ts instead
+// of at this mock. That is exactly how these specs broke when
+// `useActiveChapterId` was introduced.
+vi.mock("./use-frapp-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./use-frapp-client")>()),
   useFrappClient: vi.fn(),
   useActiveChapterId: vi.fn(),
 }));
@@ -96,6 +100,30 @@ describe("useMembers", () => {
 
     expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
     expect(result.current.error).toBe(mockError);
+  });
+
+  // Pins the `enabled: !!chapterId` gate. `activeChapterId` is null during
+  // first paint and chapter-store rehydration, and the SDK omits the
+  // x-chapter-id header when it is falsy — so a dropped gate means an
+  // unscoped/403 request cached under ["members", null] on every hard reload.
+  it("does not fetch before a chapter is active", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+    mockUseActiveChapterId.mockReturnValue(null);
+
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMembers(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    expect(result.current.isPending).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });
 

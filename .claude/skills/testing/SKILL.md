@@ -213,7 +213,9 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    The same job also runs the two shared packages web consumes:
    `npm run test -w packages/hooks` and `npm run test -w packages/ui`. Run those
    too when you touch `packages/**` — the job's path filter covers that glob, so
-   a change there gates on all three suites
+   a change there exercises all three suites. Note `web-tests` is **not** a
+   required check (ADR-15), so a red run reports without blocking the merge —
+   check it yourself
 7. `npm run test -w @repo/validation` → `CI / lint-and-typecheck` (Vitest; the
    package is consumed by the API, web, and mobile, so a regression here reaches
    all three). Not covered by items 1–2: the root has no `test` script and

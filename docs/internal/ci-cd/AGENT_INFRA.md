@@ -48,7 +48,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/ui` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
