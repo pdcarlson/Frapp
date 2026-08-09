@@ -238,6 +238,74 @@ describe('ChapterService', () => {
     await expect(service.findById('ch-1')).rejects.toThrow('Chapter not found');
   });
 
+  describe('findByIdWithLogoUrl', () => {
+    function chapterWith(logoPath: string | null): Chapter {
+      return {
+        id: 'ch-1',
+        name: 'Alpha',
+        university: 'State U',
+        stripe_customer_id: null,
+        subscription_status: 'active',
+        subscription_id: null,
+        past_due_since: null,
+        last_stripe_webhook_at: null,
+        accent_color: '#8B0000',
+        logo_path: logoPath,
+        donation_url: null,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+      };
+    }
+
+    it('signs the logo out of the private branding bucket', async () => {
+      mockChapterRepo.findById.mockResolvedValue(
+        chapterWith('chapters/ch-1/branding/logo.png'),
+      );
+
+      const result = await service.findByIdWithLogoUrl('ch-1');
+
+      expect(mockStorageProvider.getSignedDownloadUrl).toHaveBeenCalledWith(
+        'branding',
+        'chapters/ch-1/branding/logo.png',
+      );
+      expect(result.logo_url).toBe('https://signed-download.url');
+      expect(result.name).toBe('Alpha');
+    });
+
+    it('returns a null logo_url without calling storage when unset', async () => {
+      mockChapterRepo.findById.mockResolvedValue(chapterWith(null));
+
+      const result = await service.findByIdWithLogoUrl('ch-1');
+
+      expect(result.logo_url).toBeNull();
+      expect(mockStorageProvider.getSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('degrades to a null logo_url when signing fails', async () => {
+      // The logo is decoration on a payload that also carries name and
+      // subscription status; a storage outage must not blank the shell.
+      mockChapterRepo.findById.mockResolvedValue(
+        chapterWith('chapters/ch-1/branding/logo.png'),
+      );
+      mockStorageProvider.getSignedDownloadUrl.mockRejectedValue(
+        new Error('storage unreachable'),
+      );
+
+      const result = await service.findByIdWithLogoUrl('ch-1');
+
+      expect(result.logo_url).toBeNull();
+      expect(result.name).toBe('Alpha');
+    });
+
+    it('propagates a missing chapter as NotFoundException', async () => {
+      mockChapterRepo.findById.mockResolvedValue(null);
+
+      await expect(service.findByIdWithLogoUrl('ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   it('should create chapter with default roles', async () => {
     const chapter: Chapter = {
       id: 'ch-1',
