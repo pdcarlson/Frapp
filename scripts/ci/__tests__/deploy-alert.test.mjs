@@ -213,7 +213,9 @@ test("the run summary distinguishes a no-op from a deploy at a glance", () => {
     runUrl: "https://example.test/run/1",
     apiChanged: false,
     migrationsChanged: false,
+    gateSucceeded: true,
   });
+  assert.match(summary, /\| API paths changed \| no \|/);
   assert.match(summary, /NO-OP — nothing deployed/);
   assert.match(summary, /#763/);
   // Every job's result is spelled out so no inference from skipped jobs is needed.
@@ -231,10 +233,52 @@ test("the failed summary names the failing job and the commit", () => {
     runUrl: "https://example.test/run/1",
     apiChanged: true,
     migrationsChanged: false,
+    gateSucceeded: true,
   });
   assert.match(summary, /FAILED — nothing deployed/);
   assert.match(summary, /deploy-staging/);
   assert.match(summary, /4de96af/);
+});
+
+test("a failed gate reports the path flags as unknown, never as 'no'", async () => {
+  // The gate's outputs are empty when it fails, which is NOT the same as "no
+  // paths changed" — rendering the absent output as `no` states an unmeasured
+  // value as fact.
+  const needs = noOpNeeds();
+  needs["check-changes"].result = "failure";
+  needs["check-changes"].outputs = {};
+
+  let summary = "";
+  await runDeployAlert({
+    token: "t",
+    repo: "o/r",
+    needs,
+    runUrl: "https://example.test/run/4",
+    headBranch: "main",
+    headSha: "4de96af",
+    fetchImpl: makeFetchStub({ issues: [] }).fetchImpl,
+    writeSummary: (text) => {
+      summary = text;
+    },
+    logger: silentLogger,
+  });
+
+  assert.match(summary, /\| API paths changed \| unknown \|/);
+  assert.match(summary, /\| Migration paths changed \| unknown \|/);
+  assert.doesNotMatch(summary, /paths changed \| no \|/);
+});
+
+test("findAlertIssues pins the sort order it depends on", async () => {
+  // raiseAlert reopens the FIRST match as "most recent"; that must not rely on
+  // an unstated API default.
+  const paths = [];
+  const fetchImpl = async (url) => {
+    paths.push(url);
+    return jsonResponse(200, []);
+  };
+  await findAlertIssues({ token: "t", repo: "o/r", fetchImpl });
+  assert.match(paths[0], /sort=created/);
+  assert.match(paths[0], /direction=desc/);
 });
 
 // ── findAlertIssues ─────────────────────────────────────────────────────────

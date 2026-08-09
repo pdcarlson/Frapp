@@ -138,12 +138,18 @@ export function buildRunSummary({
   runUrl,
   apiChanged,
   migrationsChanged,
+  gateSucceeded,
 }) {
   const badge = {
     failed: "❌ **FAILED — nothing deployed**",
     deployed: "✅ **DEPLOYED**",
     "no-op": "⏭️ **NO-OP — nothing deployed**",
   }[outcome];
+
+  // When the gate job itself did not succeed, its outputs are empty — which is
+  // NOT the same as "no paths changed". Reporting the absent output as "no"
+  // would state an unmeasured value as fact.
+  const changed = (value) => (gateSucceeded ? (value ? "yes" : "no") : "unknown");
 
   const lines = [
     "## Deploy API outcome",
@@ -156,8 +162,8 @@ export function buildRunSummary({
     "| --- | --- |",
     `| Ref | \`${headBranch ?? "unknown"}\` |`,
     `| Commit | \`${headSha ?? "unknown"}\` |`,
-    `| API paths changed | ${apiChanged ? "yes" : "no"} |`,
-    `| Migration paths changed | ${migrationsChanged ? "yes" : "no"} |`,
+    `| API paths changed | ${changed(apiChanged)} |`,
+    `| Migration paths changed | ${changed(migrationsChanged)} |`,
     "",
     "### Job results",
     "",
@@ -276,9 +282,12 @@ export async function findAlertIssues({ token, repo, fetchImpl }) {
     const { ok, data } = await ghRequest({
       token,
       fetchImpl,
+      // sort/direction are pinned explicitly: raiseAlert treats the first match
+      // as the most recent one to reopen, and that must not depend on an
+      // unstated API default.
       path:
         `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(ALERT_ISSUE_LOOKUP_LABEL)}` +
-        `&per_page=100&page=${page}`,
+        `&sort=created&direction=desc&per_page=100&page=${page}`,
     });
     if (!ok || !Array.isArray(data)) break;
     for (const issue of data) {
@@ -446,6 +455,7 @@ export async function runDeployAlert({
       runUrl,
       apiChanged,
       migrationsChanged,
+      gateSucceeded: jobResults[GATE_JOB_NAME] === "success",
     }),
   );
 
