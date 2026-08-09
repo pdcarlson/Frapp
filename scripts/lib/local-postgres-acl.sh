@@ -133,8 +133,12 @@ _frapp_db_url_is_local() {
     *) host="${hostport%%:*}" ;;
   esac
 
+  # `127.[0-9]*`, not `127.*`: a leading-digit DNS label is legal (RFC 1123), so
+  # `127.evil.example.com` is a perfectly resolvable off-box hostname that a `127.*` glob
+  # would wave through — the exact looks-local-connects-elsewhere case this function exists
+  # to close.
   case "${host}" in
-    localhost | "[::1]" | ::1 | 0.0.0.0 | 127.*) return 0 ;;
+    localhost | "[::1]" | ::1 | 0.0.0.0 | 127.[0-9]*) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -274,7 +278,10 @@ frapp_repair_local_acls() {
     # project's stack while this function claims to have repaired $project_root. Both in-repo
     # callers `cd "$ROOT"` first, so this is belt-and-braces — but the signature promises a
     # project-scoped repair and this is what makes that true.
-    db_url=$(cd "${project_root}" 2>/dev/null && "$@" status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"' || true)
+    # `cd` is silenced, not just error-suppressed: with CDPATH set it echoes the resolved
+    # directory to stdout, which the command substitution would splice onto the front of the
+    # URL. Only reachable with a relative project_root, which no current caller passes.
+    db_url=$(cd "${project_root}" >/dev/null 2>&1 && "$@" status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"' || true)
 
     # "Local stack only" is otherwise enforced by comments alone, and the blast radius of
     # getting it wrong is a permanent ALTER DEFAULT PRIVILEGES on a hosted project granting
