@@ -96,6 +96,49 @@ _frapp_docker_ps() {
   esac
 }
 
+# Is this connection string unambiguously pointed at a loopback address?
+#
+#   _frapp_db_url_is_local <db_url>   → 0 local, 1 anything else
+#
+# A substring test for `@127.0.0.1:` is not enough, because libpq lets the URI host be
+# overridden after the fact. All three of these were verified to connect off-box while looking
+# local, so they are rejected outright rather than modelled:
+#   * `?host=` / `?hostaddr=` query parameters take precedence over the host in the URI
+#   * a comma-separated host list is a failover set, and libpq moves to the next entry when
+#     the first refuses — which is exactly the state the repair runs in when the stack is down
+# Parses the host properly instead of pattern-matching the whole string: strip the scheme,
+# take the authority, drop userinfo at the LAST `@` (a password may contain one), then handle
+# bracketed IPv6 before stripping the port.
+_frapp_db_url_is_local() {
+  local url="$1"
+  local rest authority hostport host query
+
+  case "${url}" in
+    *\?*)
+      query="${url#*\?}"
+      case "${query}" in
+        *host=* | *hostaddr=*) return 1 ;;
+      esac
+      ;;
+  esac
+
+  rest="${url#*://}"
+  authority="${rest%%/*}"
+  authority="${authority%%\?*}"
+  hostport="${authority##*@}"
+
+  case "${hostport}" in
+    *,*) return 1 ;;
+    \[*) host="${hostport%%\]*}]" ;;
+    *) host="${hostport%%:*}" ;;
+  esac
+
+  case "${host}" in
+    localhost | "[::1]" | ::1 | 0.0.0.0 | 127.*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # This project's Supabase container name, as the CLI would name it.
 #
 # The CLI uses `project_id` from supabase/config.toml when set, and the directory basename
@@ -103,13 +146,29 @@ _frapp_docker_ps() {
 # `project_id` precisely to escape the two-stacks ambiguity below, and a resolver that only
 # ever computed the basename would make that advice permanently break resolution instead of
 # fixing it. Accepts either quote style; falls back to the basename when unset or unreadable.
+#
+# TOP-LEVEL key only. `project_id` is not a unique name in this file — `[auth.third_party.*]`
+# and `[remotes.<alias>]` both legitimately carry one, and the CLI reads neither as the
+# project name. A scan that took the first match anywhere would compute a container name for
+# some other project entirely: with a `[auth.third_party.firebase] project_id = "Frapp"` block
+# it resolved to another checkout's live container and reported a successful repair. TOML
+# requires bare top-level keys to precede any table header, so stopping at the first `[` is
+# exactly the CLI's own scope.
 frapp_supabase_db_container_name() {
   local project_root="$1"
   local cfg="${project_root}/supabase/config.toml"
   local name=""
 
   if [ -r "${cfg}" ]; then
-    name=$(sed -n 's/^[[:space:]]*project_id[[:space:]]*=[[:space:]]*["'"'"']\([^"'"'"']*\)["'"'"'].*/\1/p' "${cfg}" | head -n1)
+    name=$(awk '
+      /^[[:space:]]*\[/ { exit }
+      /^[[:space:]]*project_id[[:space:]]*=/ {
+        if (match($0, /["'"'"'][^"'"'"']*["'"'"']/)) {
+          print substr($0, RSTART + 1, RLENGTH - 2)
+          exit
+        }
+      }
+    ' "${cfg}")
   fi
   [ -n "${name}" ] || name=$(basename "${project_root}")
 
@@ -144,8 +203,23 @@ frapp_supabase_db_container_name() {
 frapp_resolve_supabase_db_container() {
   local project_root="$1"
   local include_stopped="${2:-false}"
-  local expected exact loose candidate
+  local expected exact loose candidate labelled
 
+  # Primary: ask the CLI what it created. Every container it starts is stamped with
+  # `com.supabase.cli.workdir=<project root>`, so matching on that identifies this project's
+  # stack from Docker's own records — no config parsing, no name reconstruction, nothing this
+  # lib could get wrong. `name=supabase_db_` then picks the database container out of the
+  # eleven the label covers. Label filters are exact-match in Docker, not regex.
+  labelled=$(_frapp_docker_ps "${include_stopped}" \
+    --filter "label=com.supabase.cli.workdir=${project_root}" \
+    --filter 'name=supabase_db_' --format '{{.Names}}')
+  if [ -n "${labelled}" ] && [ "$(printf '%s\n' "${labelled}" | grep -c .)" -eq 1 ]; then
+    printf '%s\n' "${labelled}"
+    return 0
+  fi
+
+  # Fallback for containers started by a CLI old enough not to stamp the label, or from a
+  # different path spelling (a symlinked checkout). Still exact-match on the name only.
   expected=$(frapp_supabase_db_container_name "${project_root}")
 
   exact=$(_frapp_docker_ps "${include_stopped}" --filter "name=^${expected}$" --format '{{.Names}}')
@@ -195,7 +269,12 @@ frapp_repair_local_acls() {
   # place (supabase/config.toml) rather than being duplicated here. `command -v` is tested
   # first so a host without psql does not pay for a Supabase CLI round-trip it will discard.
   if [ "$#" -gt 0 ] && command -v psql >/dev/null 2>&1; then
-    db_url=$("$@" status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"' || true)
+    # Run the CLI IN the project root. `supabase status` resolves its project from the working
+    # directory, so invoking it wherever the caller happens to stand would report a different
+    # project's stack while this function claims to have repaired $project_root. Both in-repo
+    # callers `cd "$ROOT"` first, so this is belt-and-braces — but the signature promises a
+    # project-scoped repair and this is what makes that true.
+    db_url=$(cd "${project_root}" 2>/dev/null && "$@" status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"' || true)
 
     # "Local stack only" is otherwise enforced by comments alone, and the blast radius of
     # getting it wrong is a permanent ALTER DEFAULT PRIVILEGES on a hosted project granting
@@ -203,15 +282,11 @@ frapp_repair_local_acls() {
     # report the local stack today, so this rejects nothing that works now — it is here so a
     # later edit (say, falling back to $DATABASE_URL when status comes back empty) cannot
     # quietly turn a bootstrap helper into a production privilege change.
-    case "${db_url}" in
-      *@127.0.0.1:* | *@localhost:* | *@\[::1\]:* | *@0.0.0.0:*) ;;
-      "") ;;
-      *)
-        frapp_acl_log "WARN: refusing to repair ACLs over a non-loopback database URL."
-        frapp_acl_log "      This repair is for local stacks only; falling back to the container path."
-        db_url=""
-        ;;
-    esac
+    if [ -n "${db_url}" ] && ! _frapp_db_url_is_local "${db_url}"; then
+      frapp_acl_log "WARN: refusing to repair ACLs over a non-loopback database URL."
+      frapp_acl_log "      This repair is for local stacks only; falling back to the container path."
+      db_url=""
+    fi
 
     if [ -n "${db_url}" ]; then
       if printf '%s' "${FRAPP_LOCAL_ACL_SQL}" | psql "${db_url}" -X -v ON_ERROR_STOP=1 -q -f - >&2; then
