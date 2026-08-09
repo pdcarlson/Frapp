@@ -211,6 +211,44 @@ describe('ChapterDocumentService', () => {
       expect(mockFolderRepo.create).not.toHaveBeenCalled();
     });
 
+    it('should not fail the upload when a concurrent upload created the folder', async () => {
+      // Both uploads read "absent" and both insert; one loses the unique
+      // index. The folder exists either way, which is all ensureFolder
+      // promised — the upload must not 500 over it.
+      mockFolderRepo.findByName
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(baseFolder);
+      mockFolderRepo.create.mockRejectedValue({ code: '23505' });
+      mockDocumentRepo.create.mockResolvedValue(baseDocument);
+
+      const result = await service.confirmUpload({
+        chapter_id: 'ch-1',
+        title: 'Bylaws 2025',
+        folder: 'Governance',
+        storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+        uploaded_by: 'user-1',
+      });
+
+      expect(result).toEqual(baseDocument);
+      expect(mockDocumentRepo.create).toHaveBeenCalled();
+    });
+
+    it('should still fail the upload if the folder genuinely cannot be read back', async () => {
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockFolderRepo.create.mockRejectedValue({ code: '23505' });
+
+      await expect(
+        service.confirmUpload({
+          chapter_id: 'ch-1',
+          title: 'Bylaws 2025',
+          folder: 'Governance',
+          storage_path: 'chapters/ch-1/documents/doc-1/bylaws.pdf',
+          uploaded_by: 'user-1',
+        }),
+      ).rejects.toEqual(expect.objectContaining({ code: '23505' }));
+      expect(mockDocumentRepo.create).not.toHaveBeenCalled();
+    });
+
     it('should treat a whitespace-only folder as no folder', async () => {
       mockDocumentRepo.create.mockResolvedValue({
         ...baseDocument,
@@ -448,6 +486,29 @@ describe('ChapterDocumentService', () => {
         expect(mockFolderRepo.create).not.toHaveBeenCalled();
       },
     );
+
+    it('should report a lost unique-index race as a conflict, not a 500', async () => {
+      // The pre-check is advisory; a concurrent create slips between it and
+      // the insert, and the index is the real arbiter.
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockFolderRepo.create.mockRejectedValue({ code: '23505' });
+
+      await expect(service.createFolder('ch-1', 'Governance')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('should not swallow unrelated repository errors', async () => {
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockFolderRepo.create.mockRejectedValue({
+        code: '08006',
+        message: 'connection failure',
+      });
+
+      await expect(service.createFolder('ch-1', 'Governance')).rejects.toEqual(
+        expect.objectContaining({ code: '08006' }),
+      );
+    });
   });
 
   describe('updateFolder', () => {
@@ -528,6 +589,50 @@ describe('ChapterDocumentService', () => {
       await expect(
         service.updateFolder('folder-1', 'ch-1', { name: '   ' }),
       ).rejects.toThrow(BadRequestException);
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('should treat a no-op patch as a no-op, not an error', async () => {
+      // Every UpdateDocumentFolderDto field is optional, so `{}` is a valid
+      // body. An empty PostgREST update matches no row and fails `.single()`
+      // with PGRST116, which would surface as a 500.
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+
+      const result = await service.updateFolder('folder-1', 'ch-1', {});
+
+      expect(result).toEqual(baseFolder);
+      expect(mockFolderRepo.update).not.toHaveBeenCalled();
+      expect(mockDocumentRepo.renameFolder).not.toHaveBeenCalled();
+    });
+
+    it('should re-file documents before renaming the folder row', async () => {
+      const calls: string[] = [];
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockDocumentRepo.renameFolder.mockImplementation(async () => {
+        calls.push('documents');
+      });
+      mockFolderRepo.update.mockImplementation(async () => {
+        calls.push('folder');
+        return { ...baseFolder, name: 'Bylaws' };
+      });
+
+      await service.updateFolder('folder-1', 'ch-1', { name: 'Bylaws' });
+
+      expect(calls).toEqual(['documents', 'folder']);
+    });
+
+    it('should leave the rename retryable when re-filing documents fails', async () => {
+      // The row keeps the old name, so a retry still sees a real rename and
+      // re-runs both steps. Renaming the row first would make the retry a
+      // no-op and strand the documents permanently.
+      mockFolderRepo.findById.mockResolvedValue(baseFolder);
+      mockFolderRepo.findByName.mockResolvedValue(null);
+      mockDocumentRepo.renameFolder.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        service.updateFolder('folder-1', 'ch-1', { name: 'Bylaws' }),
+      ).rejects.toThrow('db down');
       expect(mockFolderRepo.update).not.toHaveBeenCalled();
     });
   });

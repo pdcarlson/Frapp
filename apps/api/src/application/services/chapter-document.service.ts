@@ -209,11 +209,23 @@ export class ChapterDocumentService {
       );
     }
 
-    return this.folderRepo.create({
-      chapter_id: chapterId,
-      name: folderName,
-      sort_order: sortOrder ?? (await this.nextSortOrder(chapterId)),
-    });
+    try {
+      return await this.folderRepo.create({
+        chapter_id: chapterId,
+        name: folderName,
+        sort_order: sortOrder ?? (await this.nextSortOrder(chapterId)),
+      });
+    } catch (error) {
+      // The check above is advisory — the unique index is the real arbiter, and
+      // a concurrent create slips between the two. Report the race as the
+      // conflict it is rather than a 500.
+      if (isUniqueViolation(error)) {
+        throw new ConflictException(
+          `A folder named "${folderName}" already exists`,
+        );
+      }
+      throw error;
+    }
   }
 
   async updateFolder(
@@ -234,7 +246,9 @@ export class ChapterDocumentService {
       throw new BadRequestException('Folder name must not be empty');
     }
 
-    if (rename !== undefined && rename !== folder.name) {
+    const isRename = rename !== undefined && rename !== folder.name;
+
+    if (isRename) {
       const conflict = await this.folderRepo.findByName(rename, chapterId);
       if (conflict) {
         throw new ConflictException(
@@ -243,23 +257,30 @@ export class ChapterDocumentService {
       }
     }
 
-    const updated = await this.folderRepo.update(id, chapterId, {
-      ...(rename !== undefined ? { name: rename } : {}),
+    const patch = {
+      ...(isRename ? { name: rename } : {}),
       ...(changes.sort_order !== undefined
         ? { sort_order: changes.sort_order }
         : {}),
-    });
+    };
 
-    // Documents reference a folder by name, so a rename has to re-file them —
-    // otherwise they would be stranded under a folder that no longer exists.
-    // Second, because the unique constraint is what proves the new name is
-    // free; doing it first could re-file documents into a name the folder
-    // update then rejects.
-    if (rename !== undefined && rename !== folder.name) {
+    // A PATCH that changes nothing is a no-op, not an error. Every field of
+    // UpdateDocumentFolderDto is optional, so `{}` is a valid body — and an
+    // empty PostgREST update matches no row, failing `.single()` with PGRST116
+    // and surfacing as a 500.
+    if (Object.keys(patch).length === 0) return folder;
+
+    // Re-file the documents *before* renaming the folder row, so a failure
+    // between the two is self-healing: the row still holds the old name, so
+    // retrying the same rename re-runs both steps and converges. Renaming the
+    // row first would leave documents under a name no folder claims, and the
+    // retry would then see `rename === folder.name`, skip the re-file, and
+    // strand them permanently.
+    if (isRename) {
       await this.documentRepo.renameFolder(folder.name, rename, chapterId);
     }
 
-    return updated;
+    return this.folderRepo.update(id, chapterId, patch);
   }
 
   async deleteFolder(id: string, chapterId: string): Promise<void> {
@@ -282,11 +303,23 @@ export class ChapterDocumentService {
     const existing = await this.folderRepo.findByName(name, chapterId);
     if (existing) return existing;
 
-    return this.folderRepo.create({
-      chapter_id: chapterId,
-      name,
-      sort_order: await this.nextSortOrder(chapterId),
-    });
+    try {
+      return await this.folderRepo.create({
+        chapter_id: chapterId,
+        name,
+        sort_order: await this.nextSortOrder(chapterId),
+      });
+    } catch (error) {
+      // Two uploads naming the same new folder at once both read "absent" and
+      // both insert; one loses the unique index. The loser's folder now exists,
+      // which is all this method promised — failing the *upload* over it would
+      // be gratuitous.
+      if (isUniqueViolation(error)) {
+        const raced = await this.folderRepo.findByName(name, chapterId);
+        if (raced) return raced;
+      }
+      throw error;
+    }
   }
 
   private async nextSortOrder(chapterId: string): Promise<number> {
@@ -302,6 +335,15 @@ export class ChapterDocumentService {
  * Without the trim, `"Governance"` and `" Governance"` are different folders
  * that render identically, and the unique constraint cannot tell them apart.
  */
+/** Postgres `unique_violation` (23505), as surfaced by PostgREST. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === '23505'
+  );
+}
+
 function normalizeFolderName(folder: string | null | undefined): string | null {
   if (folder === null || folder === undefined) return null;
   const trimmed = folder.trim();
