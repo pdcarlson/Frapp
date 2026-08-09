@@ -41,6 +41,9 @@ export interface ChapterCustomField {
  * A member's value for a custom field, joined with the field definition and
  * already filtered to the fields the requesting viewer may see (Chunk 09 — the
  * member directory renders these, enforcing `visibility` server-side).
+ *
+ * This is a **read projection**, not a table row — see
+ * `MemberCustomFieldValueRow` below for the persisted shape.
  */
 export interface MemberCustomFieldValue {
   field_id: string;
@@ -49,4 +52,26 @@ export interface MemberCustomFieldValue {
   type: CustomFieldType;
   visibility: CustomFieldVisibility;
   value: string | null;
+}
+
+/**
+ * The persisted row in `member_custom_field_values`
+ * (`20260531120000_member_custom_field_values.sql`).
+ *
+ * Distinct from the `MemberCustomFieldValue` projection above, which carries
+ * the joined field definition instead of the storage columns.
+ *
+ * `chapter_id` is redundant with the member's own chapter, but deliberately
+ * so: it participates in both composite foreign keys
+ * (`(member_id, chapter_id)` and `(field_id, chapter_id)`), which is what
+ * closes the cross-chapter pairing hole at the database level.
+ */
+export interface MemberCustomFieldValueRow {
+  id: string;
+  chapter_id: string;
+  member_id: string;
+  field_id: string;
+  value: string | null;
+  created_at: string;
+  updated_at: string;
 }
