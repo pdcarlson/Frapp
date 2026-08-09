@@ -27,6 +27,8 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { DASHBOARD_NAV_BY_HREF } from "@/components/layout/nav-config";
+import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray } from "@/lib/utils";
 
 type DashboardCommandMenuProps = {
@@ -34,7 +36,11 @@ type DashboardCommandMenuProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-const navigationCommands = [
+/**
+ * Exported so tests can assert every href still resolves in `nav-config`.
+ * An href that doesn't resolve silently loses its module gate (#264).
+ */
+export const navigationCommands = [
   { icon: MessagesSquare, label: "Go to Chat", shortcut: "G C", href: "/chat" },
   { icon: Sparkles, label: "Go to Profile", shortcut: "G P", href: "/profile" },
   { icon: Users, label: "Go to Members", shortcut: "G M", href: "/members" },
@@ -202,13 +208,28 @@ export function DashboardCommandMenu({
     [hasMinQuery, searchResults.data],
   );
 
+  // Module gating for the command palette (#264). The sidebar hides nav items
+  // for disabled modules via ProtectedNavItem; without this the Cmd+K menu
+  // stayed a way to reach the same disabled surfaces.
+  const orgConfig = useOrgConfig();
+  const isModuleEnabled = orgConfig.data?.isModuleEnabled;
+
   const filteredNavigation = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return navigationCommands;
-    return navigationCommands.filter((command) =>
-      command.label.toLowerCase().includes(q),
-    );
-  }, [query]);
+    return navigationCommands.filter((command) => {
+      // Resolve each command's module from nav-config rather than repeating
+      // the map here, so this menu cannot drift from the sidebar again.
+      const moduleKey = DASHBOARD_NAV_BY_HREF[command.href]?.module;
+      // Fail-safe, matching ProtectedNavItem: `isModuleEnabled` is undefined
+      // while the chapter config loads, and nothing is hidden until it
+      // resolves. Showing a link is harmless — the route itself is gated.
+      if (moduleKey && isModuleEnabled && !isModuleEnabled(moduleKey)) {
+        return false;
+      }
+      if (!q) return true;
+      return command.label.toLowerCase().includes(q);
+    });
+  }, [query, isModuleEnabled]);
 
   return (
     <CommandDialog
