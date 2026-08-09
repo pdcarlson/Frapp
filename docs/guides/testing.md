@@ -7,10 +7,19 @@ This guide documents how we test the Frapp API using Jest and NestJS testing uti
 We use three main test layers:
 
 - **Unit tests** — services, guards, interceptors (mocking repositories and Supabase)
-- **Integration tests** — hitting real endpoints in a running API against local Supabase
+- **Integration tests** — service queries issued against a **real** PostgREST on the local Supabase
+  stack (see §6a)
 - **E2E tests** — supertest-based flows (e.g. auth → create chapter → add member)
 
-All tests live under `apps/api/src/**` for unit tests and `apps/api/test/**` for E2E.
+All tests live under `apps/api/src/**` for unit tests and `apps/api/test/**` for E2E and
+integration.
+
+The three layers answer different questions, and the middle one exists because of a defect the
+other two structurally cannot catch. Unit and E2E specs both mock the Supabase client, so they
+prove how a response is *mapped* but never whether PostgREST would accept the request that
+produced it. #746 was an ambiguous embed that made `POST /v1/reports/attendance` return 500 in
+every environment since the initial schema, with a green suite throughout. Integration tests are
+where request *shape* is proven.
 
 ## 2. Jest setup
 
@@ -20,8 +29,10 @@ Jest is configured in `apps/api/package.json` with scripts:
 - `npm run test:watch` — watch mode
 - `npm run test:e2e` — E2E tests (uses `test/jest-e2e.json`)
 - `npm run test:ai-evals` — adversarial AI evals (uses `test/ai-evals/jest-ai-evals.json`)
+- `npm run test:integration` — live-PostgREST integration tests (uses
+  `test/integration/jest-integration.json`); **not run in CI** — see §6a
 
-All three suites run in CI in the **`api-tests`** job (`.github/workflows/ci.yml`) — it runs
+All three CI suites run in the **`api-tests`** job (`.github/workflows/ci.yml`) — it runs
 `npm run test -w apps/api`, then `npm run test:e2e -w apps/api`, then
 `npm run test:ai-evals -w apps/api`. `api-tests` is a merge-blocking required check (see
 `scripts/configure-branch-protection.mjs`), so all three gate PRs to `main`/`production` without a
@@ -169,6 +180,50 @@ describe("Health (e2e)", () => {
   });
 });
 ```
+
+## 6a. Live-PostgREST integration suite (#749)
+
+`apps/api/test/integration/` holds specs that talk to a **real** Supabase stack instead of a mock.
+Run them with:
+
+```bash
+npm run test:integration -w apps/api
+```
+
+They need a local stack (`scripts/cloud-sandbox-up.sh` in a cloud session,
+`scripts/local-dev-setup.sh` on a laptop — see
+[`CLOUD_SANDBOX.md`](../internal/environment/CLOUD_SANDBOX.md)). Without one they **skip cleanly**
+rather than failing: `test/integration/global-setup.ts` probes PostgREST once before any worker
+starts and records the answer in an env var that `describeIntegration()` reads. The probe issues a
+real service-role read rather than a liveness ping, so a stack that answers but has no DML grants
+for `service_role` (the #703/#725 state) also skips instead of failing 12 tests with a confusing
+error.
+
+**These do not run in CI, deliberately.** CI has no PostgREST — `pglite-migrations` applies
+migrations to Postgres-in-WASM, and `api-tests` is hermetic. Adding the suite to a CI job without a
+stack would produce a permanently-skipped green check, which reads as coverage that isn't there.
+Standing up a full Supabase stack in CI is its own piece of work.
+
+**What belongs here:** assertions only a real server can answer — that embeds resolve, that FK
+hints name the right relationship, that a filter is applied server-side, that paging survives the
+server's `max_rows`. **What doesn't:** response mapping, error branches, business rules. Those are
+cheaper and clearer as unit tests, and this suite is the slow one.
+
+Two conventions make the tests meaningful rather than decorative:
+
+- **Seed two chapters with overlapping data** (`test/integration/report-fixture.ts`). A fixture
+  where the chapters share nothing cannot distinguish a chapter-scoped query from an unscoped one.
+  The report fixture gives both chapters a member in common, same-named roles with different ids,
+  and attendance whose `marked_by` is never the attendee — so a query that loses `!inner`, or that
+  embeds `users` through the wrong foreign key, returns *wrong rows* rather than merely fewer.
+- **Fixtures own their teardown and are run-tagged.** `seedReportFixture` returns a `cleanup()` and
+  calls it itself if seeding throws halfway. Chapter deletes cascade to everything except `users`,
+  which are found by a per-run tag in their email — so two concurrent runs on one stack don't
+  delete each other's rows.
+
+Verify a new spec has teeth by breaking the code it covers and confirming it fails. The report
+specs were checked that way: swapping the `users` FK hint to `marked_by` fails 2, removing `!inner`
+fails 3, and defeating the paging loop fails 1 (1,000 rows returned against 1,100 seeded).
 
 ## 7. Coverage expectations
 
