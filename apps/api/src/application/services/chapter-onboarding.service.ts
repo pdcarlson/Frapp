@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { buildChapterConfigFromArchetype } from '@repo/org-archetypes';
 import { derivePalette } from '@repo/chapter-theme';
 import { LEGAL_POLICY_VERSION } from '@repo/validation';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { ChapterService } from './chapter.service';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
@@ -30,7 +30,7 @@ export class ChapterOnboardingService {
 
   constructor(
     private readonly chapterService: ChapterService,
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async onboard(userId: string, dto: ChapterOnboardingDto): Promise<Chapter> {

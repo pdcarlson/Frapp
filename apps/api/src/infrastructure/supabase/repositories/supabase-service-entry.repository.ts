@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IServiceEntryRepository } from '../../../domain/repositories/service-entry.repository.interface';
@@ -79,18 +78,13 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     reviewComment: string | null,
     points: number,
   ): Promise<ServiceEntry | null> {
-    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
-    // generated table Row types do not satisfy PostgREST's schema constraint.
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
-      'approve_service_entry',
-      {
-        p_entry_id: id,
-        p_chapter_id: chapterId,
-        p_reviewer_id: reviewerId,
-        p_review_comment: reviewComment,
-        p_points: points,
-      },
-    )) as PostgrestResponse<ServiceEntry>;
+    const { data, error } = await this.supabase.rpc('approve_service_entry', {
+      p_entry_id: id,
+      p_chapter_id: chapterId,
+      p_reviewer_id: reviewerId,
+      p_review_comment: reviewComment,
+      p_points: points,
+    });
     if (error) throw error;
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;

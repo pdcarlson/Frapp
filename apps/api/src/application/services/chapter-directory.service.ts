@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 
 const SEARCH_LIMIT = 20;
 
 @Injectable()
 export class ChapterDirectoryService {
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async search(q: string, university?: string) {
