@@ -1,12 +1,20 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
+import { TaskStatus } from '../../domain/entities';
 
-/** Entity families the dispatch log dedups. */
-export type DispatchEntityType = 'INVOICE' | 'TASK' | 'EVENT';
-
-/** Work thresholds, one dispatch row per (entity, threshold, due date). */
-export type DispatchThreshold = 'DUE_SOON' | 'OVERDUE' | 'AUTO_ABSENT';
+// Re-exported from the entity so the sweep signatures and the typed
+// `scheduled_notification_dispatches` row can never drift apart. Kept as
+// named exports here because `scheduled-jobs.service.ts` imports them from
+// this module.
+export type {
+  DispatchEntityType,
+  DispatchThreshold,
+} from '../../domain/entities';
+import type {
+  DispatchEntityType,
+  DispatchThreshold,
+} from '../../domain/entities';
 
 /** Postgres unique-violation. A losing claim, not an error. */
 const UNIQUE_VIOLATION = '23505';
@@ -72,7 +80,7 @@ export class ScheduledJobsRepository {
   private readonly logger = new Logger(ScheduledJobsRepository.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   /**
@@ -152,7 +160,11 @@ export class ScheduledJobsRepository {
         this.supabase
           .from('tasks')
           .select('id, chapter_id, assignee_id, created_by, title, due_date')
-          .in('status', ['TODO', 'IN_PROGRESS', 'OVERDUE'])
+          .in('status', [
+            TaskStatus.TODO,
+            TaskStatus.IN_PROGRESS,
+            TaskStatus.OVERDUE,
+          ])
           .gte('due_date', dueOnOrAfter)
           .lte('due_date', dueOnOrBefore)
           .order('id', { ascending: true })

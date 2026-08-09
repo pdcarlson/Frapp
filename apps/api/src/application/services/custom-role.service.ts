@@ -7,8 +7,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
+import { PostgrestError } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import type { ChapterCustomRole } from '../../domain/entities/chapter-custom-role.entity';
 import { WILDCARD } from '../../domain/constants/permissions';
 import type {
@@ -45,7 +46,7 @@ export class CustomRoleService {
   private readonly logger = new Logger(CustomRoleService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
   ) {}
 
   async findByChapter(chapterId: string): Promise<ChapterCustomRole[]> {

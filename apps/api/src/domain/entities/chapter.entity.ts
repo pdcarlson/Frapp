@@ -42,4 +42,9 @@ export interface Chapter {
   legal_accepted_at?: string | null;
   legal_policy_version?: string | null;
   legal_accepted_by?: string | null;
+  // #464: per-chapter opt-out for the pseudonymous analytics pipeline
+  // (20260530180000, spec/behavior/data-retention.md). `not null default
+  // false` in the database — optional here only because the narrower
+  // projections don't select it, same as the columns above.
+  analytics_opt_out?: boolean;
 }

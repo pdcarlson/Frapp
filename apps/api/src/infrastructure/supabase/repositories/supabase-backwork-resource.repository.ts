@@ -7,6 +7,11 @@ import type {
   BackworkResourceFilter,
 } from '../../../domain/repositories/backwork.repository.interface';
 import { BackworkResource } from '../../../domain/entities/backwork.entity';
+import type {
+  AssignmentType,
+  DocumentVariant,
+  Semester,
+} from '../../../domain/entities/backwork.entity';
 
 @Injectable()
 export class SupabaseBackworkResourceRepository implements IBackworkResourceRepository {
@@ -50,14 +55,27 @@ export class SupabaseBackworkResourceRepository implements IBackworkResourceRepo
     if (filters?.year) {
       query = query.eq('year', filters.year);
     }
+    // `semester`, `assignment_type` and `document_variant` are enum columns,
+    // but `BackworkResourceFilter` types them as plain strings because they
+    // arrive as unvalidated `@Query` params on `GET /v1/backwork/resources`.
+    // Narrowing them here keeps behavior identical — an out-of-range value
+    // still just matches no rows, as it does today. Validating them at the
+    // controller (so a bad value 400s instead of returning an empty list) is a
+    // behavior change, tracked separately in #787.
     if (filters?.semester) {
-      query = query.eq('semester', filters.semester);
+      query = query.eq('semester', filters.semester as Semester);
     }
     if (filters?.assignment_type) {
-      query = query.eq('assignment_type', filters.assignment_type);
+      query = query.eq(
+        'assignment_type',
+        filters.assignment_type as AssignmentType,
+      );
     }
     if (filters?.document_variant) {
-      query = query.eq('document_variant', filters.document_variant);
+      query = query.eq(
+        'document_variant',
+        filters.document_variant as DocumentVariant,
+      );
     }
     if (filters?.search) {
       const safePattern = escapeFilterValue(`%${filters.search}%`);

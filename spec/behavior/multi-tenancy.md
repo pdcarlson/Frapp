@@ -15,6 +15,20 @@ Two consequences follow from tokens being immutable once issued:
 - **The claim only changes when a token is issued.** Changing the active chapter must be followed by `supabase.auth.refreshSession()`, or the previous claim stands until the token expires (`jwt_expiry`, currently 3600s). Revoking a membership likewise only drops the claim at the next issuance — layer 1 still rejects the request, because membership is re-validated per request against the resolved chapter.
 - **The hook is enabled per environment.** Local enables it in `supabase/config.toml`; hosted projects enable it in the dashboard (Authentication → Hooks) or via the Management API. Where it is not enabled the claim is simply absent and the header fallback carries context, so the two can be rolled out in either order.
 
+**Changing the active chapter from a client.** On web, `useSelectChapter` (`apps/web/lib/auth/select-chapter.ts`) is the only sanctioned path, and it does four things in this order:
+
+1. `POST /v1/chapters/:id/activate` — persists the selection, so the next issued token carries the new claim.
+2. `supabase.auth.refreshSession()` — issues that token.
+3. Write the persisted client store, which supplies the `x-chapter-id` fallback header.
+
+The order is load-bearing. Writing the store before the token is reissued puts the header ahead of the claim, and every subsequent request is rejected with `chapter.context.mismatch` until the old token expires — so the helper leaves the store untouched whenever step 1 or 2 fails, and the caller reports the failure rather than showing a half-switched client.
+
+A fourth step follows, and it deliberately lives in `FrappProvider` rather than in the helper: **when the active chapter changes, the client query cache is dropped wholesale.** Only some chapter-scoped query keys embed the chapter id, so without this the outgoing chapter's rows stay cached and render under the incoming chapter's context — a cross-chapter leak in the client, even though the API itself would reject the equivalent request. It has to run *after* React commits the new chapter id: clearing the cache makes mounted observers refetch, and a clear that races the commit sends those refetches out under the outgoing chapter and repopulates what it just emptied. An effect keyed on the chapter id runs after commit, and covers every path that changes chapters rather than one helper.
+
+Users with more than one membership switch from the dashboard sidebar (`ChapterSwitcher`). The control is hidden for single-chapter users, whose chapter auto-resolves server-side. When the persisted chapter is no longer a live membership — revoked, or a stale id left by another account on the same browser — the same control surfaces the chapters the user can still reach, instead of leaving them pinned to a context the API rejects with no way out.
+
+**A switch from that control completes with a full page load into the dashboard root**, rather than an in-place re-render. The query cache is only the server-data half of the problem: a chapter id is also threaded through client state the cache does not own — the chat shell's selected channel id, and the realtime manager's live Supabase subscriptions, both keyed to the outgoing chapter's channels. Enumerating that state is the same losing game as enumerating query keys. The root is the destination because the current route may itself be chapter-scoped. A *failed* switch never navigates: the user stays in the chapter they were already in and is told the switch didn't happen.
+
 **Edge cases:**
 
 - **Chapter context is per-request** (non-sticky). Each request carries the chapter context via the JWT claim (primary) or the `x-chapter-id` header (fallback), resolved by the API middleware per request. Single-chapter users have their sole chapter auto-resolved server-side. Multi-chapter users must supply the context explicitly — requests missing context return `400 Bad Request` (`chapter.context.required`); requests targeting a chapter the user is not a member of return `403 Forbidden` (`chapter.context.invalid`).

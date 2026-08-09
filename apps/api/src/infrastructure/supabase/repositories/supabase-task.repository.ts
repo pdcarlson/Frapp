@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { PostgrestResponse, SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { ITaskRepository } from '../../../domain/repositories/task.repository.interface';
@@ -76,12 +75,10 @@ export class SupabaseTaskRepository implements ITaskRepository {
     id: string,
     chapterId: string,
   ): Promise<Task | null> {
-    // `rpc` args/return are not inferred for `FrappSupabaseClient` because
-    // generated table Row types do not satisfy PostgREST's schema constraint.
-    const { data, error } = (await (this.supabase as SupabaseClient).rpc(
-      'confirm_task_completion',
-      { p_task_id: id, p_chapter_id: chapterId },
-    )) as PostgrestResponse<Task>;
+    const { data, error } = await this.supabase.rpc('confirm_task_completion', {
+      p_task_id: id,
+      p_chapter_id: chapterId,
+    });
     if (error) throw error;
     const rows = data ?? [];
     return rows.length > 0 ? rows[0] : null;

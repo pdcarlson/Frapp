@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { SupabaseClient } from '@supabase/supabase-js';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import {
   buildChapterConfigFromArchetype,
   getArchetype,
@@ -49,8 +49,15 @@ function deepMerge(base: unknown, patch: unknown): unknown {
   return result;
 }
 
-/** Dues config returned by `getConfig` and persisted by `patchConfig`. */
-export interface DuesConfig {
+/**
+ * Dues config returned by `getConfig` and persisted by `patchConfig`.
+ *
+ * A `type` rather than an `interface` on purpose: PostgREST's insert/upsert
+ * payloads are constrained to `Record<string, unknown>`, and only type
+ * aliases get an implicit index signature — an interface does not, so an
+ * interface here would not be assignable to an upsert.
+ */
+export type DuesConfig = {
   cadence: string;
   active_amount_cents: number;
   new_member_amount_cents: number;
@@ -60,7 +67,7 @@ export interface DuesConfig {
   late_fee_cents: number;
   grace_days: number;
   scholarship_pool_cents: number;
-}
+};
 
 const DUES_FIELDS = [
   'cadence',
@@ -98,7 +105,7 @@ export class ChapterConfigService {
   private readonly logger = new Logger(ChapterConfigService.name);
 
   constructor(
-    @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
+    @Inject(SUPABASE_CLIENT) private readonly supabase: FrappSupabaseClient,
     private readonly activation: ActivationService,
   ) {}
 
@@ -116,9 +123,7 @@ export class ChapterConfigService {
     }
 
     // Merge archetype defaults with chapter-specific overrides
-    const archetypeKey: string =
-      ((chapter as Record<string, unknown>)['org_archetype'] as string) ??
-      'ifc';
+    const archetypeKey: string = chapter.org_archetype ?? 'ifc';
     const archetype = getArchetype(archetypeKey);
     const seed = buildChapterConfigFromArchetype(archetypeKey);
 
@@ -176,26 +181,16 @@ export class ChapterConfigService {
       },
       enabled_modules: {
         ...seed.modules,
-        ...(((chapter as Record<string, unknown>)['enabled_modules'] as Record<
-          string,
-          boolean
-        >) ?? {}),
+        ...(chapter.enabled_modules ?? {}),
       },
       vocabulary: {
         ...seed.vocabulary,
-        ...(((chapter as Record<string, unknown>)['vocabulary'] as Record<
-          string,
-          string
-        >) ?? {}),
+        ...(chapter.vocabulary ?? {}),
       },
-      branding: (chapter as Record<string, unknown>)['branding'] ?? {},
-      theme_palette:
-        (chapter as Record<string, unknown>)['theme_palette'] ?? {},
-      beta_config: (chapter as Record<string, unknown>)['beta_config'] ?? {},
-      analytics_opt_out:
-        ((chapter as Record<string, unknown>)['analytics_opt_out'] as
-          | boolean
-          | undefined) ?? false,
+      branding: chapter.branding ?? {},
+      theme_palette: chapter.theme_palette ?? {},
+      beta_config: chapter.beta_config ?? {},
+      analytics_opt_out: chapter.analytics_opt_out ?? false,
       workflows,
       dues,
       role_pack: archetype.rolePack,

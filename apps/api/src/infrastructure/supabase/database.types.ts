@@ -5,19 +5,27 @@ import type {
   BackworkResource,
   Chapter,
   ChapterActivationMilestone,
+  ChapterAuditLog,
+  ChapterCustomField,
   ChapterCustomRole,
+  ChapterDirectoryEntry,
+  ChapterDirectoryRequest,
   ChapterDocument,
+  ChapterDuesConfig,
+  ChapterWorkflow,
   ChannelReadReceipt,
   ChatChannel,
   ChatChannelCategory,
   ChatMessage,
   ChatMessageAction,
+  ChatNotificationPreference,
   Event,
   EventAttendance,
   FinancialInvoice,
   FinancialTransaction,
   Invite,
   Member,
+  MemberCustomFieldValueRow,
   MessageReaction,
   Notification,
   NotificationPreference,
@@ -25,6 +33,7 @@ import type {
   PollVote,
   PushToken,
   Role,
+  ScheduledNotificationDispatch,
   SemesterArchive,
   ServiceEntry,
   StripeWebhookEvent,
@@ -34,6 +43,7 @@ import type {
   User,
   UserSettings,
 } from '../../domain/entities';
+import type { StripeWebhookClaimOutcome } from '../../domain/repositories/stripe-webhook-event.repository.interface';
 
 export type Json =
   | string
@@ -44,7 +54,7 @@ export type Json =
   | Json[];
 
 type TableDefinition<Row> = {
-  Row: Row;
+  Row: { [K in keyof Row]: Row[K] };
   Insert: Record<string, unknown>;
   Update: Record<string, unknown>;
   Relationships: {
@@ -91,6 +101,15 @@ export interface Database {
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
+      chapter_audit_log: TableDefinition<ChapterAuditLog>;
+      chapter_custom_fields: TableDefinition<ChapterCustomField>;
+      chapter_workflows: TableDefinition<ChapterWorkflow>;
+      chapter_dues_config: TableDefinition<ChapterDuesConfig>;
+      chapter_directory: TableDefinition<ChapterDirectoryEntry>;
+      chapter_directory_requests: TableDefinition<ChapterDirectoryRequest>;
+      chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
+      member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
+      scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
       chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
     };
     Views: Record<string, never>;
@@ -108,6 +127,96 @@ export interface Database {
         Returns: {
           message_id: string;
           option_index: number;
+        }[];
+      };
+      /**
+       * `20250226120000`, re-signed by `20260604140000`: the old
+       * `p_window text` overload is dropped, so this is the only signature.
+       * `p_since` is an exclusive lower bound on `created_at`; null is
+       * all-time.
+       */
+      get_points_report: {
+        Args: {
+          p_chapter_id: string;
+          p_user_id?: string | null;
+          p_since?: string | null;
+        };
+        Returns: {
+          member_name: string;
+          /** `bigint` in SQL; PostgREST serializes it as a JSON number. */
+          total_points: number;
+          breakdown_by_category: Record<string, number>;
+        }[];
+      };
+      /** `20260602210000` — `returns setof tasks`. */
+      confirm_task_completion: {
+        Args: { p_task_id: string; p_chapter_id: string };
+        Returns: Task[];
+      };
+      /** `20260603120000` — `returns setof service_entries`. */
+      approve_service_entry: {
+        Args: {
+          p_entry_id: string;
+          p_chapter_id: string;
+          p_reviewer_id: string;
+          p_review_comment: string | null;
+          p_points: number;
+        };
+        Returns: ServiceEntry[];
+      };
+      /** `20260603140000` — `returns setof event_attendance`. */
+      check_in_event: {
+        Args: {
+          p_event_id: string;
+          p_user_id: string;
+          p_chapter_id: string;
+          p_check_in_time: string;
+          p_point_value: number;
+          p_event_name: string;
+        };
+        Returns: EventAttendance[];
+      };
+      /**
+       * `20260604120000` — `returns setof members`. Returns both updated rows
+       * on success, or zero rows when the caller no longer holds President.
+       */
+      transfer_presidency: {
+        Args: {
+          p_chapter_id: string;
+          p_current_member_id: string;
+          p_target_member_id: string;
+          p_president_role_id: string;
+        };
+        Returns: Member[];
+      };
+      /** `20260803120000` — `returns setof financial_invoices`. */
+      apply_invoice_payment: {
+        Args: {
+          p_invoice_id: string;
+          p_chapter_id: string;
+          p_payment_intent_id: string | null;
+          p_charge_id: string | null;
+        };
+        Returns: FinancialInvoice[];
+      };
+      /** `20260803140000` — `returns setof users`. */
+      anonymize_user: {
+        Args: { p_user_id: string; p_rescan_cards?: boolean };
+        Returns: User[];
+      };
+      /**
+       * `20260805150000`. `claim_outcome` is `text` in SQL, narrowed here to
+       * the three literals the function body can actually return.
+       */
+      claim_stripe_webhook_event: {
+        Args: {
+          p_event_id: string;
+          p_event_type: string;
+          p_stale_seconds: number;
+        };
+        Returns: {
+          claim_outcome: StripeWebhookClaimOutcome;
+          claim_attempts: number;
         }[];
       };
     };
