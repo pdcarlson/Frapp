@@ -27,8 +27,8 @@ interface FakeChannel {
   on: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
   send: ReturnType<typeof vi.fn>;
-  unsubscribe: ReturnType<typeof vi.fn>;
-  teardown: ReturnType<typeof vi.fn>;
+  unsubscribe: ReturnType<typeof vi.fn> & (() => Promise<string>);
+  teardown: ReturnType<typeof vi.fn> & (() => void);
   track: ReturnType<typeof vi.fn>;
   /** Prefixed `realtime:` exactly as the real client does. */
   topic: string;
