@@ -3,6 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { components } from "@repo/api-sdk";
+import { isModuleEnabled } from "@repo/validation";
 import type { ChapterDuesConfig, PatchChapterConfig } from "@repo/validation";
 
 /**
@@ -61,7 +62,10 @@ export function useOrgConfig() {
     staleTime: 5 * 60 * 1000,
     select: (data): OrgConfigWithHelpers => ({
       ...data,
-      isModuleEnabled: (key: string) => data.enabled_modules?.[key] !== false,
+      // Shared with the API's ChapterGuard so a module the UI treats as off is
+      // exactly the set the server rejects writes for (#264).
+      isModuleEnabled: (key: string) =>
+        isModuleEnabled(data.enabled_modules, key),
     }),
   });
 }

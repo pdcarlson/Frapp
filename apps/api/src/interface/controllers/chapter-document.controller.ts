@@ -19,6 +19,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -33,6 +34,7 @@ import {
 @ApiBearerAuth()
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.MEMBERS_VIEW)
+@RequireModule('documents')
 @Controller('documents')
 export class ChapterDocumentController {
   constructor(
