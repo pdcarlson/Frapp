@@ -174,7 +174,14 @@ Vercel scopes env vars to **Production** and **Preview**. The `main` branch trig
 | ------------------------------- | -------------------------------- | ----------------------------------- |
 | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<PROD_REF>.supabase.co` | `https://<STAGING_REF>.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `<prod anon key>`                | `<staging anon key>`                |
-| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live/v1`      | `https://api-staging.frapp.live/v1` |
+| `NEXT_PUBLIC_API_URL`           | `https://api.frapp.live`         | `https://api-staging.frapp.live`    |
+
+> ⚠️ **`NEXT_PUBLIC_API_URL` is the bare origin — no `/v1`.** The SDK's generated
+> paths already include it, so a value ending in `/v1` yields `/v1/v1/...` and
+> 404s every dashboard request. This table previously showed the `/v1` form, so
+> **check the value currently set in Vercel for both environments** and drop the
+> suffix if it is there. It is a build-time inlined variable: changing it
+> requires a redeploy to take effect.
 
 #### `frapp-landing` (Marketing Site)
 
