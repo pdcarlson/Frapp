@@ -129,6 +129,8 @@ class ChatRealtimeManager {
   /** The 5s poll loop itself. Non-null exactly while `polling` is true. */
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
+  /** Guards against overlapping poll passes on a slow connection. */
+  private pollInFlight = false;
 
   configure(ctx: ManagerContext): void {
     this.ctx = ctx;
@@ -492,12 +494,22 @@ class ChatRealtimeManager {
    */
   private async pollOnce(): Promise<void> {
     if (!this.ctx || this.offline) return;
-    const pending: Promise<void>[] = [];
-    for (const state of this.channels.values()) {
-      if (state.status !== "live") pending.push(this.runBackfill(state.channelId));
+    // A degraded connection is exactly where a fetch can outlive the interval;
+    // skipping the tick beats stacking requests on a link already in trouble.
+    if (this.pollInFlight) return;
+    this.pollInFlight = true;
+    try {
+      const pending: Promise<void>[] = [];
+      for (const state of this.channels.values()) {
+        if (state.status !== "live") {
+          pending.push(this.runBackfill(state.channelId));
+        }
+      }
+      // `runBackfill` swallows its own errors, so this never rejects.
+      await Promise.all(pending);
+    } finally {
+      this.pollInFlight = false;
     }
-    // `runBackfill` swallows its own errors, so this never rejects.
-    await Promise.all(pending);
   }
 
   private async runBackfill(channelId: string): Promise<void> {

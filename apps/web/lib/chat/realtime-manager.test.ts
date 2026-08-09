@@ -291,6 +291,30 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)
     expect(backfill.mock.calls.length).toBeGreaterThan(beforeOffline);
   });
 
+  test("a slow poll does not stack requests on the next tick", async () => {
+    let release!: (rows: RawChatMessage[]) => void;
+    backfill.mockImplementationOnce(
+      () =>
+        new Promise<RawChatMessage[]>((resolve) => {
+          release = resolve;
+        }),
+    );
+
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("CHANNEL_ERROR");
+    await vi.advanceTimersByTimeAsync(POLL_DEGRADE_AFTER_MS);
+    expect(backfill).toHaveBeenCalledTimes(1); // in flight, unresolved
+
+    // Two intervals elapse while the first fetch is still hanging.
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2);
+    expect(backfill).toHaveBeenCalledTimes(1);
+
+    // Once it settles, the loop resumes on the next tick.
+    release([]);
+    await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS);
+    expect(backfill).toHaveBeenCalledTimes(2);
+  });
+
   test("destroy() tears the poll loop down", async () => {
     chatRealtime.subscribe("channel-1");
     current("channel-1").trigger("CHANNEL_ERROR");
