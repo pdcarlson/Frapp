@@ -4,10 +4,6 @@
  *
  * Named `…Entry` rather than `ChapterDirectory` because a row is one
  * organization-at-one-school, not the directory itself.
- *
- * The table also carries a `search_vector tsvector` column that is
- * `GENERATED ALWAYS … STORED`. It is deliberately absent from this interface:
- * it is never selected by name and can never be written.
  */
 export interface ChapterDirectoryEntry {
   id: string;
@@ -27,6 +23,20 @@ export interface ChapterDirectoryEntry {
   /** Provenance tag for the row, e.g. `nic_2024`, `seed`, `manual`. */
   source: string;
   created_at: string;
+  /**
+   * `GENERATED ALWAYS … STORED` tsvector over the identity columns, backing
+   * the onboarding autocomplete. No caller selects it (nobody wants the raw
+   * lexemes) and it can never be written, but it is declared so this
+   * interface describes the table as it actually is: `.eq`/`.order` are
+   * checked against `keyof Row`, so an undeclared column is a compile error
+   * at those call sites.
+   *
+   * Note this does *not* check `ChapterDirectoryService.search`, the one
+   * place that names the column: `textSearch` carries a permissive
+   * `(column: string, …)` overload alongside the `keyof Row` one, so that
+   * call site resolves to the untyped overload either way.
+   */
+  search_vector: string;
 }
 
 export type ChapterDirectoryRequestStatus = 'pending' | 'imported' | 'rejected';
