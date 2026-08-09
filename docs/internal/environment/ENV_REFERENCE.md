@@ -49,6 +49,7 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `STRIPE_SECRET_KEY` | **Same as staging** — use your real Stripe test-mode key (`sk_test_...`) so you can test billing flows locally. Copy from Stripe dashboard → Developers → API keys → Secret key (test mode). | ← same `sk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Secret key (live mode: `sk_live_...`) |
 | `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/billing/webhook` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
 | `STRIPE_PRICE_ID` | **Same as staging** — use the same test-mode Price ID. Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`). | ← same `price_...` as local | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (production `price_...`) |
+| `STRIPE_PUBLISHABLE_KEY` | **Same as staging** — the test-mode publishable key (`pk_test_...`). Copy from Stripe dashboard → Developers → API keys → Publishable key (test mode). | ← same `pk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Publishable key (live mode: `pk_live_...`) |
 | `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
 | `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
 
@@ -99,6 +100,7 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/web |
 | `NEXT_PUBLIC_API_URL` | `${API_URL}` | apps/web |
 | `NEXT_PUBLIC_APP_URL` | `${APP_URL}` | apps/landing |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/web |
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
 | `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
@@ -140,6 +142,7 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
 | `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/stripe.ts` | ❌ — optional; Stripe **publishable** key (`pk_…`) for the member dues payment sheet. When unset, `getStripe()` returns `null` and no Pay affordance renders — local dev, CI, and the production build prerender all run without it. Publishable by design (it is safe in a client bundle); the secret key stays API-only as `STRIPE_SECRET_KEY`. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
 
 ### apps/landing (Next.js — Vercel)
@@ -154,9 +157,14 @@ Reads the `EXPO_PUBLIC_*` references:
 
 | Variable | Source | Required |
 |---|---|---|
-| `EXPO_PUBLIC_SUPABASE_URL` | Supabase client init (future) | ✅ |
-| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase client init (future) | ✅ |
+| `EXPO_PUBLIC_SUPABASE_URL` | `lib/supabase.ts` — Supabase client init | ✅ |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_API_URL` | API client init + `eas.json` | ✅ |
+
+Both Supabase values are read at module scope and are **optional at boot**: when
+either is missing `getSupabaseClient()` returns `null` instead of throwing, so
+`npm run check-types` / `npm run test` and a bare `expo start` still work. Sign-in
+is unavailable in that state and the sign-in screen says so.
 
 ---
 

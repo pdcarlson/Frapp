@@ -2660,6 +2660,21 @@ export interface components {
             storage_path: string;
             /** @description Number of data rows in the document */
             row_count: number;
+            /**
+             * @description True when the report hit the row ceiling, so the document is not a complete record of the chapter. row_count reports what was printed, not what matched.
+             * @example false
+             */
+            truncated: boolean;
+            /**
+             * @description The row ceiling that "truncated" refers to
+             * @example 5000
+             */
+            row_limit: number;
+            /**
+             * @description What was cut, when the row count alone does not say it — a roster whose point balances were summed from a truncated read is the right length, so row_limit on its own would describe a cut the document never took. Absent when the row count is the whole story.
+             * @example point balances are incomplete — summed from the first 50,000 transactions
+             */
+            truncation_note?: string;
         };
         AttendanceReportDto: {
             /** @description Filter by event ID */

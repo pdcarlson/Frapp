@@ -71,6 +71,8 @@ describe('ServiceEntryService', () => {
       deleteFile: jest.fn().mockResolvedValue(undefined),
       deleteFiles: jest.fn().mockResolvedValue(undefined),
       listFiles: jest.fn().mockResolvedValue([]),
+      listObjects: jest.fn().mockResolvedValue([]),
+      listFolders: jest.fn().mockResolvedValue([]),
     };
 
     mockNotificationService = {

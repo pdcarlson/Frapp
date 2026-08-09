@@ -14,7 +14,7 @@
 | API            | NestJS 11, TypeScript (strict)               | `apps/api`. REST + WebSocket gateway.                                                                                 |
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
 | Auth           | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                    |
-| Storage        | Supabase Storage                             | Private buckets for Backwork and chat files. Signed URLs.                                                             |
+| Storage        | Supabase Storage                             | Seven private buckets (§7), all declared in migrations. Signed URLs only — no public access.                          |
 | Realtime       | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status.                               |
 | Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
 | Push           | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                      |
@@ -285,8 +285,19 @@ The `InviteService.redeem` flow performs deterministic validation checks (invite
 - **`service`** (private) — Service hour proof uploads. Paths: `chapters/{chapter_id}/service/{entry_id}/{filename}`.
 - **`documents`** (private) — Chapter organizational documents. Paths: `chapters/{chapter_id}/documents/{document_id}/{filename}`.
 - **`branding`** (private) — Chapter branding assets (logo). Paths: `chapters/{chapter_id}/branding/logo.{ext}`.
+- **`reports`** (private) — Server-rendered report PDFs. Paths: `chapters/{chapter_id}/reports/{kind}-{YYYY-MM-DD}-{uuid}.pdf`. Written only by the API's renderer — no signed upload URL is ever minted for it.
 
-**Access control:** All buckets are private. All access goes through API-generated signed URLs (upload and download). No public access.
+**Access control:** All buckets are private. All access goes through API-generated signed URLs (upload and download). No public access. `IStorageProvider` (`apps/api/src/domain/adapters/storage.interface.ts`) has no `getPublicUrl` method, so the API cannot express a public read even by accident.
+
+**Declaration (IaC).** All seven buckets are declared in `supabase/migrations/`, so a fresh project, a preview branch, or a restore reproduces them with the same privacy and limits:
+
+| Bucket | Migration |
+| -- | -- |
+| `service` | `20260803231500_service_proof_bucket.sql` |
+| `reports` | `20260805133000_reports_bucket.sql` |
+| `branding`, `profiles`, `documents`, `backwork`, `chat` | `20260808204500_declare_dashboard_created_buckets.sql` |
+
+Each declaration pins `public = false`, an `allowed_mime_types` list, and `file_size_limit` (26214400 = 25MB, matching `supabase/config.toml`). The MIME list mirrors that bucket's API-side allowlist and is **load-bearing, not documentation**: a signed upload URL cannot pin a content type — the uploader sets its own header on the PUT — so the API's check gates only URL *issuance*, and these bucket columns are the only thing enforced on the upload itself. Without them a member with upload permission can store `text/html` under a valid key and be served attacker-controlled markup from the storage origin. Add the bucket declaration in the same change set as any new bucket; never create one from the dashboard alone.
 
 **Upload flow:** API generates a signed upload URL; client uploads directly to Supabase Storage. API generates a signed download URL; client fetches directly.
 

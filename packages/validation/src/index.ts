@@ -378,6 +378,31 @@ export const PatchChapterConfigSchema = z.object({
   analytics_opt_out: z.boolean().optional(),
 });
 
+// ── Module enablement predicate (issue #264) ─────────────────────────────────
+
+/**
+ * Single source of truth for "is this module on for this chapter?".
+ *
+ * Deliberately shared rather than reimplemented per surface: the web nav, the
+ * Cmd+K palette, the chat slash-command palette, and the API's `ChapterGuard`
+ * all answer this question, and a disagreement between the client and the
+ * server means either a surface the user can see but not use, or a write the
+ * UI hides but the API still accepts.
+ *
+ * A module is enabled unless the chapter explicitly turned it off. Absence is
+ * not disablement — a chapter created before a module existed has no key for
+ * it, and must not be locked out of something it never disabled.
+ *
+ * @param enabledModules the chapter's `enabled_modules` map, if loaded
+ * @param key a `MODULE_CATALOG` key, e.g. `"events"`
+ */
+export function isModuleEnabled(
+  enabledModules: Record<string, boolean> | null | undefined,
+  key: string,
+): boolean {
+  return enabledModules?.[key] !== false;
+}
+
 // ── Chat message schemas (Chunk 02; hot-path moved to NestJS in #416)
 // Originally shared with the Deno Edge Functions; kept dependency-light
 // (zod only) so any future Deno consumer can still import this file
@@ -537,6 +562,42 @@ export function isAlumniPostableChannel(channel: ChannelAccessRecord): boolean {
   return (channel.required_permissions ?? []).includes(
     ALUMNI_CHANNEL_PERMISSION,
   );
+}
+
+/**
+ * Whether `channel` accepts in-thread replies.
+ *
+ * Read-only channels (`#announcements`, `#chapter-audit`) are broadcast
+ * surfaces. Per `spec/behavior/chat/README.md` § Announcements: "Announcement
+ * messages cannot be replied to in-thread (read-only channel for non-admins)."
+ * A reply would turn a one-way broadcast into a conversation the channel's
+ * whole point is to not have — note the rationale is the one-way model, *not*
+ * hidden nesting: replies here are Discord-style reply-with-quote rendered in
+ * the main timeline (§ Reply threads), so nothing is ever tucked out of sight.
+ *
+ * Two deliberate properties:
+ *
+ * - **Keyed off `is_read_only`, not the channel name.** The same flag already
+ *   decides *who* may post (`canAccessChannel`), so one flag governs broadcast
+ *   semantics end to end. A name match would silently stop enforcing the moment
+ *   a chapter renamed its announcements channel, and would miss `#chapter-audit`
+ *   and any chapter-created read-only channel.
+ * - **Unconditional on permissions.** `canAccessChannel` decides who may author a
+ *   top-level announcement; this decides that nobody threads one — holders of
+ *   `announcements:post` and of the `"*"` wildcard included. The rule is a
+ *   property of the channel, not of the caller, so this deliberately takes no
+ *   permissions argument. Do not add one: a `"*"` escape hatch here reopens
+ *   exactly the hole the predicate exists to close.
+ *
+ * Takes a whole `ChannelAccessRecord` rather than just the field it reads, for
+ * the same reason `isAlumniPostableChannel` does: a `Pick<…, "is_read_only">`
+ * is an all-optional type, so a caller handing over a projection that never
+ * selected the column would type-check and read as replyable. Requiring the
+ * full record makes the caller prove it loaded a real channel — this predicate
+ * must fail closed, and an omitted field is the one way it could fail open.
+ */
+export function allowsInThreadReplies(channel: ChannelAccessRecord): boolean {
+  return !channel.is_read_only;
 }
 
 /**

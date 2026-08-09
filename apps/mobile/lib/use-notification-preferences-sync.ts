@@ -8,7 +8,7 @@ import {
   useUserSettings,
 } from "@repo/hooks";
 import { MAX_TIME_ZONE_LENGTH } from "@repo/validation";
-import { useIsApiAuthenticated } from "./frapp-client";
+import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
 export const QUIET_HOURS_WINDOW_STORAGE_KEY = "frapp.mobile.quiet-hours-window";

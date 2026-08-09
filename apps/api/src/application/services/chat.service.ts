@@ -37,6 +37,7 @@ import type {
   ChatMessageKind,
   ChannelType,
 } from '../../domain/entities/chat.entity';
+import { allowsInThreadReplies } from '@repo/validation';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 
@@ -351,7 +352,9 @@ export class ChatService {
    * - Authorizes via the shared `canAccessChannel` predicate with
    *   `operation: "post"` so read-only channels (#announcements,
    *   #chapter-audit) gate on the `announcements:post` permission.
-   * - Cross-channel reply links are rejected before the insert.
+   * - Cross-channel reply links are rejected before the insert, as are
+   *   in-thread replies in a read-only channel — a broadcast is not a thread,
+   *   regardless of the sender's permissions.
    * - Idempotent on `client_message_id`: a retried POST with the same
    *   `(channel_id, sender_id, client_message_id)` triple returns the
    *   existing row with `deduplicated: true` instead of inserting again
@@ -386,6 +389,16 @@ export class ChatService {
     );
 
     if (input.reply_to_id) {
+      // A read-only channel is a broadcast surface, so nothing in it is
+      // threadable — not for a holder of `announcements:post`, not for the
+      // President's `"*"`. Checked before the lookup below: the channel already
+      // answers this, so a threaded announcement never costs a query.
+      if (!allowsInThreadReplies(channel)) {
+        throw new BadRequestException(
+          'Messages in a read-only channel cannot be replied to in-thread',
+        );
+      }
+
       const replyTo = await this.messageRepo.findById(input.reply_to_id);
       if (!replyTo || replyTo.channel_id !== input.channel_id) {
         throw new BadRequestException(

@@ -4,12 +4,12 @@ Admins with `reports:export` permission can generate and download reports from t
 
 ## Available Reports
 
-| Report            | Scope                      | Columns                                                                                     |
-| ----------------- | -------------------------- | ------------------------------------------------------------------------------------------- |
-| **Attendance**    | Per event or date range    | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
+| Report            | Scope                                                                     | Columns                                                                                     |
+| ----------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Attendance**    | Per event or date range                                                   | Member name, event name, date, status (PRESENT/ABSENT/EXCUSED/LATE), check-in time          |
 | **Points**        | Per member or chapter-wide; optional time window (all / semester / month) | Member name, total points, breakdown by category (ATTENDANCE, SERVICE, STUDY, MANUAL, FINE) |
-| **Member roster** | Current members            | Name, email, role(s), join date, point balance                                              |
-| **Service hours** | Per member or chapter-wide | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
+| **Member roster** | Current members                                                           | Name, email, role(s), join date, point balance                                              |
+| **Service hours** | Per member or chapter-wide                                                | Member name, date, duration, description, status (APPROVED/PENDING/REJECTED)                |
 
 ## Points report time window
 
@@ -30,11 +30,11 @@ Totals and per-category breakdowns for a given window **equal the leaderboard** 
 The `format` query parameter on each `POST /v1/reports/*` route selects how step 2
 answers:
 
-| `format` | Response |
-| --- | --- |
-| `json` (default) | The report rows, for on-screen preview. |
-| `csv` | An inline `text/csv` body with a `Content-Disposition` attachment header. |
-| `pdf` | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count }` — whose `url` is a **signed download URL valid for 1 hour**. |
+| `format`         | Response                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` (default) | The report rows, for on-screen preview.                                                                                                                                                     |
+| `csv`            | An inline `text/csv` body with a `Content-Disposition` attachment header.                                                                                                                   |
+| `pdf`            | A JSON envelope — `{ url, expires_at, expires_in, filename, storage_path, row_count, truncated, row_limit, truncation_note? }` — whose `url` is a **signed download URL valid for 1 hour**. |
 
 Only PDF takes the signed-URL path. Rendering a PDF is server-side work that
 produces a stored artifact, so the document is written to the private `reports`
@@ -54,13 +54,35 @@ for reading (`ATTENDANCE: 12, SERVICE: 4`).
 
 ### Retention
 
-**Generated PDFs are stored indefinitely.** The signed URL expires after an hour,
-but the object behind it does not — nothing currently deletes it, and each export
-writes a new object rather than replacing the last. Roster exports in particular
-carry member names, emails, roles, and join dates, so this storage is in scope for
-[`data-retention.md`](data-retention.md): a member who deletes their account still
-has their details inside any report exported before that point. Reaping old
-exports, and sweeping the prefix on account deletion, is tracked in **FRA-338**.
+**Generated PDFs are deleted about 24 hours after they are written.** The signed
+URL expires after an hour, so anything past that is already unreachable through
+the API; the extra day covers a stalled download or a retried request without
+keeping the artifact around longer than it is useful. An hourly sweep removes
+expired objects, so an export is reaped within an hour of turning 24h old — a
+real ceiling of ~25h, not exactly 24.
+
+The sweep is best-effort, and the two ways it declines to act are deliberate
+rather than incidental. It **skips** a chapter prefix it cannot read, retrying on
+the next tick. It **keeps** an object whose stored-at timestamp storage did not
+report, because treating unknown age as old would delete an export someone is
+still downloading — such an object is never aged out at all, and is removed only
+by an account-deletion purge or by hand. Both cases are logged precisely so
+"reaped nothing" is distinguishable from "nothing to reap".
+
+Reports are **derived artifacts** — every one is regenerable from the source tables
+it was rendered from, and nothing in the database references the stored object — so
+deleting one never affects live data. Re-running the export produces a new object
+with a new random key.
+
+Roster exports carry member names, emails, roles, and join dates, which puts this
+storage in scope for [`data-retention.md`](data-retention.md). Account deletion
+therefore does **not** wait for the retention window: it clears the report prefix of
+every chapter the departing member currently belongs to, before the database scrub.
+A rendered PDF cannot have one member removed from it, so dropping the chapter's
+exports is the only complete erasure — officers simply re-export. That step is
+best-effort and bounded rather than absolute (see
+[`data-retention.md`](data-retention.md) for exactly what it does and does not
+reach); the sweep above is what normally closes the gap.
 
 ## PDF Formatting
 
@@ -96,12 +118,67 @@ so text outside that range is folded. The governing rules, in order:
 
 ### Row limits
 
-Report queries are not paged, so they are capped by PostgREST's `max_rows`
-(1000, `supabase/config.toml`). A report matching more rows than that is
-**silently short in every format**, PDF included — the document's page counter
-and the response's `row_count` describe what was returned, not what matched.
-Tracked in FRA-342; do not treat an exported report as a complete record of a
-chapter larger than the cap until it is fixed.
+Report queries page through PostgREST's `max_rows` (1000,
+`supabase/config.toml`), so that cap no longer bounds a report. Reports are
+instead capped at **5,000 rows**, and unlike `max_rows` that cap is never
+silent.
+
+The ceiling is set by the PDF path, which renders synchronously and therefore
+costs more than the request that asked for it — pdf-lib blocks the event loop,
+and the API serves every other chapter from that same thread. Measured
+rendering a service report: 1,000 rows in 0.34 s, 5,000 in 1.08 s, 20,000 in
+4.10 s and 267 MB of heap. 5,000 keeps the worst-case stall near a second. The
+same ceiling applies to `json` and `csv`, which are much cheaper, because one
+limit that holds everywhere beats three that need explaining.
+
+When a report is cut short, every format says so:
+
+| Format | Signal                                                                                                                                                                                |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `json` | `X-Report-Truncated: true` and `X-Report-Row-Limit` response headers, plus `X-Report-Truncation-Note` when the row count alone does not explain the cut. The body stays a bare array. |
+| `csv`  | The same headers. The CSV body is unchanged, so parsers are unaffected.                                                                                                               |
+| `pdf`  | `truncated: true`, `row_limit`, and `truncation_note` in the response envelope, **and** an `INCOMPLETE — …` clause printed in the document's header scope line.                       |
+
+The note header is flattened to plain ASCII — Node rejects a header value
+containing typographic punctuation outright, so an unsanitized note would fail
+the request rather than warn about it. Only the header copy is flattened, so
+the `json`/`csv` warnings read in ASCII; the PDF carries the note in its
+envelope instead and keeps the original typography in both the document and
+its download toast.
+
+All three headers are named in the API's CORS `exposedHeaders`, and the
+dashboard reads them: the report hooks return the truncation flags alongside
+the rows, the preview toast says the report is incomplete instead of quoting a
+row count, and downloading the CSV — which is serialized from that preview —
+warns again at the moment the file leaves the app. Exposing headers nobody
+reads would have been decoration. A truncated report is also logged as a
+warning by the API, for callers that discard headers.
+
+**The CSV bytes themselves carry no marker**, unlike the PDF, which prints
+`INCOMPLETE — …` into the document. Keeping the CSV body clean is deliberate —
+it is consumed by parsers, and a preamble row would break them — but it means
+a downloaded CSV, once detached from the app, no longer says it is short. The
+warnings above sit either side of that gap rather than closing it.
+
+The in-document clause is deliberately plain ASCII. The standard PDF fonts are
+Latin-1 only, so a warning glyph like `⚠` folds to `?` under the rules in
+[Text degradation](#text-degradation) above and reads as an encoding artefact
+rather than a warning.
+
+Three notes on what the numbers mean:
+
+- The PDF's page counter and the envelope's `row_count` describe what was
+  **printed**, not what matched. `truncated` is the only field that answers
+  "is this the whole chapter?".
+- A roster's point balances are summed from `point_transactions`, which reads
+  under a separate, higher ceiling of 50,000. If _that_ read is cut short the
+  roster is not short — its balances are wrong — so it reports `truncated`
+  with a note naming the balances rather than a row cap the document never
+  reached. When both ceilings bite at once the note says so and the row limit
+  stays the headline.
+- A paged read is several statements, not a snapshot. Rows written or deleted
+  while a large report is being assembled can shift a page boundary, so a
+  report is a point-in-time summary rather than a ledger.
 
 ### Unsupported formats
 

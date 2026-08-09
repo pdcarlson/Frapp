@@ -55,7 +55,10 @@ describe('SupabaseStorageService', () => {
       );
       list
         .mockResolvedValueOnce({ data: firstPage, error: null })
-        .mockResolvedValueOnce({ data: [entry('last.png')], error: null });
+        .mockResolvedValueOnce({ data: [entry('last.png')], error: null })
+        // Paging stops on an EMPTY page, never a short one — a short page is
+        // exactly what a server-side `limit` cap looks like.
+        .mockResolvedValueOnce({ data: [], error: null });
 
       const paths = await service.listFiles(
         'profiles',
@@ -64,18 +67,22 @@ describe('SupabaseStorageService', () => {
 
       expect(paths).toHaveLength(1001);
       expect(paths[1000]).toBe('chapters/c/profiles/u/last.png');
-      expect(list).toHaveBeenCalledTimes(2);
+      expect(list).toHaveBeenCalledTimes(3);
+      // Offset advances by rows actually returned, not by the requested page
+      // size, so a clamped page cannot skip rows.
       expect(list).toHaveBeenLastCalledWith('chapters/c/profiles/u', {
         limit: 1000,
-        offset: 1000,
+        offset: 1001,
       });
     });
 
     it('skips folder placeholder entries (id: null)', async () => {
-      list.mockResolvedValueOnce({
-        data: [entry('real.png'), { id: null, name: 'subfolder' }],
-        error: null,
-      });
+      list
+        .mockResolvedValueOnce({
+          data: [entry('real.png'), { id: null, name: 'subfolder' }],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
 
       const paths = await service.listFiles('profiles', 'p');
 
@@ -98,6 +105,132 @@ describe('SupabaseStorageService', () => {
       });
 
       await expect(service.listFiles('profiles', 'p')).rejects.toBeTruthy();
+    });
+  });
+
+  describe('listObjects', () => {
+    it('returns each object with its stored-at timestamp', async () => {
+      list
+        .mockResolvedValueOnce({
+          data: [
+            {
+              id: 'id-1',
+              name: 'roster-2026-08-05-uuid.pdf',
+              created_at: '2026-08-05T10:30:00Z',
+            },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      const objects = await service.listObjects(
+        'reports',
+        'chapters/c/reports',
+      );
+
+      expect(objects).toEqual([
+        {
+          path: 'chapters/c/reports/roster-2026-08-05-uuid.pdf',
+          createdAt: new Date('2026-08-05T10:30:00Z'),
+        },
+      ]);
+    });
+
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['unparseable', 'not-a-date'],
+    ])(
+      'reports a %s timestamp as null, not an Invalid Date',
+      async (_label, created_at) => {
+        // An Invalid Date compares false against every cutoff, so an age-based
+        // caller could not tell "too new to reap" from "no idea when".
+        list
+          .mockResolvedValueOnce({
+            data: [{ id: 'id-1', name: 'x.pdf', created_at }],
+            error: null,
+          })
+          .mockResolvedValueOnce({ data: [], error: null });
+
+        const objects = await service.listObjects('reports', 'p');
+
+        expect(objects).toEqual([{ path: 'p/x.pdf', createdAt: null }]);
+      },
+    );
+
+    it('treats a missing bucket as an empty folder', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(service.listObjects('reports', 'p')).resolves.toEqual([]);
+    });
+  });
+
+  describe('listFolders', () => {
+    // The retention sweep's entire work list comes from this method, so its
+    // contract is load-bearing: folder rows only, names NOT prefix-joined
+    // (unlike listObjects, which does join). A mismatch would be invisible
+    // outside these assertions, since every other caller hand-mocks it.
+    it('returns folder names only, unjoined, and drops object rows', async () => {
+      list
+        .mockResolvedValueOnce({
+          data: [
+            { id: null, name: 'chapter-a' },
+            { id: 'id-1', name: 'stray.pdf' },
+            { id: null, name: 'chapter-b' },
+          ],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      await expect(service.listFolders('reports', 'chapters')).resolves.toEqual(
+        ['chapter-a', 'chapter-b'],
+      );
+    });
+
+    it('pages past the first full page of folders', async () => {
+      // The sweep lists one folder per chapter that has exported, so this is
+      // the listing most likely to outgrow a page.
+      const page = Array.from({ length: 1000 }, (_, i) => ({
+        id: null,
+        name: `chapter-${i}`,
+      }));
+      list
+        .mockResolvedValueOnce({ data: page, error: null })
+        .mockResolvedValueOnce({
+          data: [{ id: null, name: 'chapter-last' }],
+          error: null,
+        })
+        .mockResolvedValueOnce({ data: [], error: null });
+
+      const folders = await service.listFolders('reports', 'chapters');
+
+      expect(folders).toHaveLength(1001);
+      expect(folders[1000]).toBe('chapter-last');
+    });
+
+    it('treats a missing bucket as no folders', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'Bucket not found' },
+      });
+
+      await expect(service.listFolders('reports', 'chapters')).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('propagates other listing errors', async () => {
+      list.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'internal error' },
+      });
+
+      await expect(
+        service.listFolders('reports', 'chapters'),
+      ).rejects.toBeTruthy();
     });
   });
 
