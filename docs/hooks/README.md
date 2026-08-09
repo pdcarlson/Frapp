@@ -80,6 +80,12 @@ From `packages/hooks` run:
 - `npm exec --workspace packages/hooks vitest run src/use-members.spec.tsx` for focused `useMembers` coverage
 - `npx vitest run` for the full hooks package suite
 
+From the repo root, `npm run test -w packages/hooks` runs the whole suite — this
+is the command CI uses. The `web-tests` job in
+[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/ui`) and
+is path-gated on `packages/**`, so a change to this package gates on these tests
+before merge.
+
 ## Testing Additions
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.

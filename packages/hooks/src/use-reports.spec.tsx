@@ -19,13 +19,10 @@ import { FrappClientProvider } from "./use-frapp-client";
  * — which is what the code did before — restores a silent-truncation bug that
  * no other test in the repo would notice, so the wiring is pinned here.
  *
- * **CI does not run this file yet.** `packages/hooks` has no `test` script,
- * `turbo.json` defines no `test` task, and every test step in `ci.yml` is
- * scoped to an app. Enabling one is blocked on #762: twelve tests in this
- * package are already red on `main`, so a job added today would fail on
- * arrival. Until that lands these run locally via
- * `npx vitest run src` in `packages/hooks` — real coverage, not yet enforced,
- * and worth stating rather than letting the file's existence imply a gate.
+ * CI runs this file: the `web-tests` job in `ci.yml` invokes
+ * `npm run test -w packages/hooks`, which its `packages/**` path filter already
+ * gates on. That was wired in #766, which also cleared the red tests that had
+ * blocked it.
  */
 describe("report hooks — truncation signalling", () => {
   let queryClient: QueryClient;

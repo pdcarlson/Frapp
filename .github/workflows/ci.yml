@@ -249,6 +249,16 @@ jobs:
       - name: Run web unit tests
         run: npm run test -w apps/web
 
+      # The shared packages consumed by apps/web. They live here rather than in
+      # their own job because the `changes` filter above already covers
+      # `packages/**`, so they gate on exactly the right paths without adding a
+      # branch-protection entry. Both suites were previously unrun anywhere.
+      - name: Run shared hooks package tests
+        run: npm run test -w packages/hooks
+
+      - name: Run shared UI package tests
+        run: npm run test -w packages/ui
+
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
     runs-on: ubuntu-latest
