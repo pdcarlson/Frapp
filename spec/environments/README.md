@@ -52,7 +52,7 @@ bash scripts/local-dev-setup.sh
 # bash scripts/local-dev-setup.sh --reset-supabase-data
 ```
 
-The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see below). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
+The script runs `npm install`, `npx supabase start`, `npx supabase db push --local`, the local Postgres default-ACL repair (fatal if it fails; `FRAPP_SKIP_ACL_REPAIR=1` overrides), optional validation, then prints **`npm run dev:stack`** (and pointers to [`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)). It does **not** start `dockerd` (the Claude Code cloud sandbox does — see below). It does **not** stop unrelated Docker containers—only this project’s Supabase CLI stack. If `supabase start` fails in an interactive shell, it may prompt once to run `supabase stop` and retry (volumes preserved).
 
 **Manual sequence** (equivalent):
 
@@ -66,7 +66,13 @@ npx supabase start
 # 3. Apply database migrations (--local targets the local Supabase instance)
 npx supabase db push --local
 
-# 4. Start apps — default (with Infisical — see docs/internal/LOCAL_DEV.md):
+# 4. Repair the local Postgres default ACLs. The pinned supabase/postgres image ships
+#    schema `public` without DML grants for anon/authenticated/service_role, so skipping
+#    this leaves every API query failing with `42501 permission denied for table ...`.
+#    Not needed if you ran scripts/local-dev-setup.sh above — it does this for you.
+. scripts/lib/local-postgres-acl.sh && frapp_repair_local_acls "$PWD" npx supabase
+
+# 5. Start apps — default (with Infisical — see docs/internal/LOCAL_DEV.md):
 npm run dev:stack
 # Per-app, no Infisical, Turbo caveats: docs/internal/LOCAL_DEV.md
 ```

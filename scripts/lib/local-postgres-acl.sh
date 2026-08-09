@@ -13,9 +13,15 @@
 # sourcing it from the laptop path would silently pull the sandbox's pinned-CLI machinery
 # into a script that intentionally uses `npx supabase`. Whether those two converge is an
 # open decision tracked separately, not something this repair should settle by accident.
+#
+# Portability: no bash arrays and no `"${arr[@]}"` expansion anywhere below. Expanding an
+# empty array under `set -u` is an unbound-variable error before bash 4.4, and that error is
+# fatal inside a command substitution regardless of any `|| true` around it — which would
+# turn "resolve a container" into an unexplained bootstrap abort on a stock macOS bash 3.2.
 
-# Log prefix. Callers set this BEFORE sourcing so these lines are indistinguishable from
-# their own output; the default only matters if the lib is sourced standalone in a test.
+# Log prefix, looked up at CALL time (not at source time), so callers may set it before or
+# after sourcing. Keep it free of `/` and `&` — it is only ever printed, never used as a
+# sed replacement, but it does end up in printf format arguments' data positions.
 : "${FRAPP_ACL_LOG_PREFIX:=[local-postgres-acl]}"
 
 frapp_acl_log() {
@@ -41,95 +47,137 @@ frapp_acl_log() {
 #     that adds a migration does not have to re-run this by hand.
 #
 # Function EXECUTE is deliberately NOT granted, and this is the one line here that must not be
-# "tidied" into symmetry with the table grants. Nine migrations under supabase/migrations/
-# (anonymize_user, confirm_task_completion, approve_service_entry, the stripe_webhook_events
-# RPCs, …) explicitly `revoke execute … from public/anon/authenticated` and then grant it to
-# service_role alone. A blanket `GRANT EXECUTE ON ALL FUNCTIONS` would silently undo all nine.
+# "tidied" into symmetry with the table grants. Ten migrations under supabase/migrations/
+# (anonymize_user, confirm_task_completion, approve_service_entry, check_in_event,
+# transfer_presidency, apply_invoice_payment, the stripe_webhook_events RPCs, …) explicitly
+# `revoke execute … from public/anon/authenticated` and then re-grant it to a named role —
+# service_role in most cases, `authenticated` in two and `supabase_auth_admin` in one. A
+# blanket `GRANT EXECUTE ON ALL FUNCTIONS` would silently undo every one of those revokes.
+# (Counts verified by grep against supabase/migrations/; if you change them, re-check.)
 # Functions are also not affected by the defect in the first place: they fall back to
 # PostgreSQL's PUBLIC EXECUTE default, so there is nothing here to repair.
 #
 # Local stack only. Hosted Supabase projects ship correct default grants, which is why this
 # lives in bootstrap tooling and NOT in supabase/migrations/ — as a migration it would be a
 # no-op at best and a privilege change on hosted projects at worst.
-FRAPP_LOCAL_ACL_SQL="
+#
+# SINGLE-quoted on purpose. Under double quotes bash expands `$`, backticks and `\` at source
+# time, and this file is explicitly the place the repair gets extended — the moment someone
+# adds the idiomatic guarded form (`do $$ begin … end $$;`), bash substitutes its own PID for
+# each `$$` and psql sees `do 12345 begin … end 12345;`. That surfaces only as "ACL repair
+# failed", with nothing hinting the SQL was rewritten before it was sent.
+FRAPP_LOCAL_ACL_SQL='
 grant select, insert, update, delete on all tables in schema public to anon, authenticated, service_role;
 grant usage, select on all sequences in schema public to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public
   grant select, insert, update, delete on tables to anon, authenticated, service_role;
 alter default privileges for role postgres in schema public
   grant usage, select on sequences to anon, authenticated, service_role;
-"
+'
+
+# `docker ps`, optionally including stopped containers, never failing the caller.
+#
+#   _frapp_docker_ps <include_stopped> <docker ps args...>
+#
+# Exists so the -a toggle does not need an array (see the portability note at the top).
+#
+# `include_stopped` accepts the common truthy spellings rather than only the literal `true`.
+# CLOUD_SANDBOX.md invites sourcing this lib and calling it by hand, and a caller passing `1`
+# or `yes` and silently getting running-only is precisely the confidently-wrong-answer failure
+# this file exists to avoid. Anything unrecognised still means false, which is the safe default.
+_frapp_docker_ps() {
+  local include_stopped="$1"
+  shift
+  case "${include_stopped}" in
+    true | TRUE | 1 | yes | YES | -a) docker ps -a "$@" 2>/dev/null || true ;;
+    *) docker ps "$@" 2>/dev/null || true ;;
+  esac
+}
+
+# This project's Supabase container name, as the CLI would name it.
+#
+# The CLI uses `project_id` from supabase/config.toml when set, and the directory basename
+# otherwise. Reading config.toml is not a nicety: LOCAL_DEV.md tells a developer to set
+# `project_id` precisely to escape the two-stacks ambiguity below, and a resolver that only
+# ever computed the basename would make that advice permanently break resolution instead of
+# fixing it. Accepts either quote style; falls back to the basename when unset or unreadable.
+frapp_supabase_db_container_name() {
+  local project_root="$1"
+  local cfg="${project_root}/supabase/config.toml"
+  local name=""
+
+  if [ -r "${cfg}" ]; then
+    name=$(sed -n 's/^[[:space:]]*project_id[[:space:]]*=[[:space:]]*["'"'"']\([^"'"'"']*\)["'"'"'].*/\1/p' "${cfg}" | head -n1)
+  fi
+  [ -n "${name}" ] || name=$(basename "${project_root}")
+
+  printf '%s' "supabase_db_${name}"
+}
 
 # Resolve THIS project's Supabase database container.
 #
 #   frapp_resolve_supabase_db_container <project_root> [include_stopped]
 #
-#   stdout : the container name, and only on success
-#   return : 0 exactly one match · 1 none found · 2 ambiguous (candidates logged)
+#   stdout : the container name, and only on an exact match for THIS project
+#   return : 0 exact match · 1 not found · 2 not found, but other stacks are present (logged)
 #
 # `--filter name=` is an unanchored regex, not an exact match: a bare `supabase_db_` also
 # matches another repo's stack on a machine running two of them, and `head -1` would then
-# silently act on the wrong database while reporting success. The CLI names the container
-# after the project (the directory name unless supabase/config.toml sets project_id), so try
-# the exact name first and only accept a loose match when it is unambiguous.
+# hand back the wrong container. The anchored pattern is still a regex, so a project name
+# containing a metacharacter (`my.app` matching `myXapp`) could over-match; the string
+# comparison after the filter is what makes the match exact regardless.
 #
-# The anchored pattern is still a regex, so a project directory containing a metacharacter
-# (`my.app` matching `myXapp`) could in principle over-match. The string comparison after the
-# filter is what makes the match exact regardless.
+# It NEVER falls back to "some other supabase_db_* container is running, use that one". An
+# earlier revision did, when exactly one candidate existed, and both callers turn that into
+# damage: the repair would run GRANT / ALTER DEFAULT PRIVILEGES inside an unrelated project's
+# database and report success while this project stayed broken, and the version-mismatch hint
+# would read a foreign container's logs and recommend --reset-supabase-data — wiping THIS
+# project's healthy volumes. Both are the wrong-container class of bug this resolver exists to
+# prevent, so a near-miss now fails loudly (rc 2, candidates logged as context) rather than
+# guessing. The candidates are logged, never returned.
 #
 # `include_stopped` selects `docker ps -a`. The ACL repair wants running containers only; the
 # Postgres version-mismatch hint specifically wants exited ones, since a container that failed
 # to start is the entire subject of that check.
-#
-# Every command below tolerates its own failure explicitly (`|| true`, `if` blocks rather than
-# `&&` lists). local-dev-setup.sh sources this under `set -euo pipefail`, where a bare
-# `[ x = y ] && cmd` that evaluates false returns 1 and kills the whole bootstrap.
 frapp_resolve_supabase_db_container() {
   local project_root="$1"
   local include_stopped="${2:-false}"
-  local expected exact loose match_count match
-  local ps_args=()
+  local expected exact loose candidate
 
-  expected="supabase_db_$(basename "${project_root}")"
-  if [ "${include_stopped}" = "true" ]; then
-    ps_args+=(-a)
-  fi
+  expected=$(frapp_supabase_db_container_name "${project_root}")
 
-  exact=$(docker ps "${ps_args[@]}" --filter "name=^${expected}$" --format '{{.Names}}' 2>/dev/null || true)
-  while IFS= read -r match; do
-    if [ "${match}" = "${expected}" ]; then
-      printf '%s\n' "${expected}"
-      return 0
-    fi
-  done <<<"${exact}"
-
-  loose=$(docker ps "${ps_args[@]}" --filter 'name=supabase_db_' --format '{{.Names}}' 2>/dev/null || true)
-  match_count=$(printf '%s\n' "${loose}" | grep -c . || true)
-
-  if [ "${match_count}" -eq 1 ]; then
-    printf '%s\n' "${loose}"
+  exact=$(_frapp_docker_ps "${include_stopped}" --filter "name=^${expected}$" --format '{{.Names}}')
+  if printf '%s\n' "${exact}" | grep -Fxq -- "${expected}"; then
+    printf '%s\n' "${expected}"
     return 0
   fi
 
-  if [ "${match_count}" -gt 1 ]; then
-    frapp_acl_log "Several supabase_db_* containers are present and none matches this project"
-    frapp_acl_log "($(basename "${project_root}")); refusing to guess which one is meant:"
-    printf '%s\n' "${loose}" | sed "s/^/${FRAPP_ACL_LOG_PREFIX}   /" >&2
-    return 2
+  loose=$(_frapp_docker_ps "${include_stopped}" --filter 'name=supabase_db_' --format '{{.Names}}')
+  if [ -z "${loose}" ]; then
+    return 1
   fi
 
-  return 1
+  # Wording stays neutral between the two callers: one is about to repair ACLs, the other is
+  # only deciding whether to offer a hint, and a repair-flavoured message printed under a
+  # failed `supabase start` reads as a second, unrelated error.
+  frapp_acl_log "No container named ${expected} for this project; not substituting another"
+  frapp_acl_log "project's stack. Present instead:"
+  printf '%s\n' "${loose}" | while IFS= read -r candidate; do
+    if [ -n "${candidate}" ]; then
+      frapp_acl_log "  ${candidate}"
+    fi
+  done
+  return 2
 }
 
 # Apply the repair.
 #
-#   frapp_repair_local_acls <project_root> [db_url_resolver_fn]
+#   frapp_repair_local_acls <project_root> [supabase_cli_command...]
 #
-# `db_url_resolver_fn` is the NAME of a caller-defined function that echoes the local
-# database URL (typically from `supabase status -o env`). Passing a name rather than the URL
-# keeps the resolution lazy: on a host without psql the CLI round-trip is never paid for, and
-# each caller keeps its own Supabase CLI (pinned `cs_supabase` vs. `npx supabase`) without
-# this lib having to know which. Omit it to go straight to the container path.
+# The CLI command (`cs_supabase`, or `npx supabase`) is passed as trailing words rather than
+# a resolved URL so the `status -o env` round-trip stays lazy — a host without psql never pays
+# for a call it would discard — while the parse itself lives here once instead of being copied
+# into both bootstrap scripts. Omit it to go straight to the container path.
 #
 # -X is load-bearing, not hygiene. psql applies `-v ON_ERROR_STOP=1` BEFORE reading ~/.psqlrc,
 # so an rc file wins: with `\set AUTOCOMMIT off` in it, all four statements run inside an
@@ -138,14 +186,31 @@ frapp_resolve_supabase_db_container() {
 # 42501 — the exact failure this function exists to prevent. Verified locally.
 frapp_repair_local_acls() {
   local project_root="$1"
-  local db_url_resolver="${2:-}"
+  shift
   local db_url container rc
 
   # Preferred path: the host psql against the URL the CLI reports, so the port stays in one
   # place (supabase/config.toml) rather than being duplicated here. `command -v` is tested
   # first so a host without psql does not pay for a Supabase CLI round-trip it will discard.
-  if [ -n "${db_url_resolver}" ] && command -v psql >/dev/null 2>&1; then
-    db_url=$("${db_url_resolver}" || true)
+  if [ "$#" -gt 0 ] && command -v psql >/dev/null 2>&1; then
+    db_url=$("$@" status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"' || true)
+
+    # "Local stack only" is otherwise enforced by comments alone, and the blast radius of
+    # getting it wrong is a permanent ALTER DEFAULT PRIVILEGES on a hosted project granting
+    # anon/authenticated DML across the whole public schema. `supabase status` can only ever
+    # report the local stack today, so this rejects nothing that works now — it is here so a
+    # later edit (say, falling back to $DATABASE_URL when status comes back empty) cannot
+    # quietly turn a bootstrap helper into a production privilege change.
+    case "${db_url}" in
+      *@127.0.0.1:* | *@localhost:* | *@\[::1\]:* | *@0.0.0.0:*) ;;
+      "") ;;
+      *)
+        frapp_acl_log "WARN: refusing to repair ACLs over a non-loopback database URL."
+        frapp_acl_log "      This repair is for local stacks only; falling back to the container path."
+        db_url=""
+        ;;
+    esac
+
     if [ -n "${db_url}" ]; then
       if printf '%s' "${FRAPP_LOCAL_ACL_SQL}" | psql "${db_url}" -X -v ON_ERROR_STOP=1 -q -f - >&2; then
         return 0
@@ -156,12 +221,13 @@ frapp_repair_local_acls() {
 
   # Fallback: psql inside the db container. `supabase start` guarantees that container,
   # whereas a host psql is incidental to whatever machine this is.
+  #
   # `&& rc=0 || rc=$?` rather than a bare assignment followed by `rc=$?`: under `set -e` a
   # command substitution that exits non-zero aborts the caller outright, which would turn
   # "no container found" into a silent bootstrap death instead of the message below.
   container=$(frapp_resolve_supabase_db_container "${project_root}" false) && rc=0 || rc=$?
   if [ "${rc}" -ne 0 ]; then
-    # rc 2 has already logged the ambiguous candidates; rc 1 needs its own line.
+    # rc 2 has already logged the candidates it refused; rc 1 needs its own line.
     if [ "${rc}" -eq 1 ]; then
       frapp_acl_log "ERROR: no running supabase_db_* container found for the ACL repair."
     fi

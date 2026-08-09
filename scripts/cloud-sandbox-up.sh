@@ -19,7 +19,7 @@ cd "$ROOT"
 # shellcheck source=scripts/lib/cloud-sandbox-common.sh
 . "$ROOT/scripts/lib/cloud-sandbox-common.sh"
 # Match cs_log's prefix so the ACL lib's lines are indistinguishable from this script's.
-# Must be set BEFORE the source: the lib fixes its prefix at source time.
+# The lib reads this at call time, so the order relative to the source below does not matter.
 FRAPP_ACL_LOG_PREFIX='[cloud-sandbox]'
 # shellcheck source=scripts/lib/local-postgres-acl.sh
 . "$ROOT/scripts/lib/local-postgres-acl.sh"
@@ -96,15 +96,6 @@ write_env_local() {
   fi
 }
 
-# The local database URL, for the ACL repair's preferred (host psql) path. Handed to
-# frapp_repair_local_acls by NAME rather than by value so the CLI round-trip is only paid
-# for on a host that actually has psql to use it. The repair itself — the SQL, why function
-# EXECUTE is never granted, and the container fallback — lives in
-# scripts/lib/local-postgres-acl.sh, shared with scripts/local-dev-setup.sh.
-cs_acl_db_url() {
-  cs_supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"'
-}
-
 cs_ensure_docker_daemon || fail "Docker daemon did not start."
 cs_docker_login_if_creds
 
@@ -149,7 +140,10 @@ write_env_local || fail "Could not write apps/api/.env.local from 'supabase stat
 # SUPABASE_URL) — strictly worse than the 42501 this repairs, where the API at least boots.
 # Failing here now degrades to "boots, queries denied" rather than "cannot start".
 cs_log "Repairing local Postgres default ACLs..."
-frapp_repair_local_acls "$ROOT" cs_acl_db_url \
+# cs_supabase is passed as the CLI to consult for DB_URL; the lib only invokes it when the
+# host has psql, so a psql-less machine never pays for the round-trip. The parse itself lives
+# in the lib rather than here, so both bootstrap paths cannot drift on CLI output format.
+frapp_repair_local_acls "$ROOT" cs_supabase \
   || fail "Could not repair local Postgres default ACLs (see the log above)."
 
 printf '%s\n' "$(date -u +%FT%TZ)" >"$DONE_SENTINEL"

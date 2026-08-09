@@ -17,7 +17,8 @@ cd "$ROOT"
 # Shared with scripts/cloud-sandbox-up.sh: the Postgres default-ACL repair and the
 # supabase_db_* container resolution. Deliberately NOT scripts/lib/cloud-sandbox-common.sh,
 # which pins a Supabase CLI version and exports telemetry vars at source time — this script
-# uses `npx supabase` on purpose. Prefix must be set before the source; the lib fixes it then.
+# uses `npx supabase` on purpose. The lib reads the prefix at call time, so the order relative
+# to the source below does not matter.
 FRAPP_ACL_LOG_PREFIX='[local-dev-setup]'
 # shellcheck source=scripts/lib/local-postgres-acl.sh
 . "$ROOT/scripts/lib/local-postgres-acl.sh"
@@ -118,13 +119,6 @@ maybe_hint_postgres_volume_mismatch() {
   fi
 }
 
-# The local database URL, for the ACL repair's preferred (host psql) path. Passed to
-# frapp_repair_local_acls by NAME so this `npx` round-trip is skipped entirely on a machine
-# without psql, where the lib falls back to running psql inside the db container anyway.
-local_acl_db_url() {
-  npx supabase status -o env 2>/dev/null | sed -n 's/^DB_URL=//p' | tr -d '"'
-}
-
 print_supabase_start_failure_hints() {
   log_err "Common causes:"
   log_err "  - Stuck or exited containers: bash scripts/local-dev-setup.sh --reset-supabase (keeps volumes)"
@@ -202,12 +196,24 @@ npx supabase db push --local
 #
 # Fatal, matching cloud-sandbox-up.sh: a bootstrap that prints "Local stack is ready" over a
 # database the API cannot read is worse than one that stops and says why.
-log "Repairing local Postgres default ACLs..."
-if ! frapp_repair_local_acls "$ROOT" local_acl_db_url; then
-  log_err "ERROR: could not repair local Postgres default ACLs (see the log above)."
-  log_err "The stack is up, but the API's first query will fail with 42501 permission denied."
-  log_err "Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
-  exit 1
+if [[ -n "${FRAPP_SKIP_ACL_REPAIR:-}" ]]; then
+  log "Skipping the Postgres ACL repair (FRAPP_SKIP_ACL_REPAIR set)."
+  log_err "NOTE: without it the API's first query may fail with 42501 permission denied."
+else
+  log "Repairing local Postgres default ACLs..."
+  if ! frapp_repair_local_acls "$ROOT" npx supabase; then
+    # Two different causes reach here and the remedies differ, so do not collapse them into
+    # "the repair failed": the common one on a multi-project machine is that this project's
+    # container could not be identified at all, which the lib has already listed above.
+    log_err "ERROR: could not repair local Postgres default ACLs (see the log above)."
+    log_err "Either the repair itself failed, or this project's supabase_db_* container could"
+    log_err "not be identified — the lines above say which."
+    log_err "The rest of the stack is up; only the grants are missing, so the API will boot"
+    log_err "and then fail queries with 42501 permission denied."
+    log_err "Re-run after resolving it, or set FRAPP_SKIP_ACL_REPAIR=1 to finish the bootstrap"
+    log_err "without the repair. Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
+    exit 1
+  fi
 fi
 
 if [[ "${QUICK}" == "false" ]]; then

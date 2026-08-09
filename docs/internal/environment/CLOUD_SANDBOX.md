@@ -129,9 +129,10 @@ nothing in the env file depends on the grants. Running it earlier meant a failed
 aborted before `.env.local` existed, leaving the API unable to boot at all — strictly worse
 than the `42501` being repaired, where the API boots and only queries fail.
 
-It never touches function `EXECUTE`. Nine migrations explicitly revoke EXECUTE from
-`public`/`anon`/`authenticated` and grant it to `service_role` alone, and a blanket grant
-would undo all nine; functions are also unaffected by the defect to begin with. See the
+It never touches function `EXECUTE`. Ten migrations explicitly revoke EXECUTE from
+`public`/`anon`/`authenticated` and re-grant it to a named role (`service_role` in most,
+`authenticated` in two, `supabase_auth_admin` in one), and a blanket grant would undo every
+one of them; functions are also unaffected by the defect to begin with. See the
 `42501` row under [When bringup fails](#when-bringup-fails--stop-and-report).
 
 The repair itself is not sandbox-specific — the defect is the image's shipped state, so the
