@@ -148,7 +148,7 @@ Reads the `NEXT_PUBLIC_*` references:
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
-| `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
+| `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` (SDK base URL), `lib/providers/network-provider.tsx` (health poll — `/health` is the one route outside `/v1`) | ✅ |
 | `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/stripe.ts` | ❌ — optional; Stripe **publishable** key (`pk_…`) for the member dues payment sheet. When unset, `getStripe()` returns `null` and no Pay affordance renders — local dev, CI, and the production build prerender all run without it. Publishable by design (it is safe in a client bundle); the secret key stays API-only as `STRIPE_SECRET_KEY`. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
