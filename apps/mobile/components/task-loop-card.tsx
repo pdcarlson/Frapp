@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 export type TaskLoopState = "synced" | "pending" | "retry" | "cached";
@@ -22,7 +23,8 @@ export function TaskLoopCard({
   actionHint,
 }: TaskLoopCardProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
   const loopStateStyles = createLoopStateStyles(tokens);
   const stateStyle = loopStateStyles[state];
 
@@ -64,7 +66,8 @@ export function FeedSummaryCard({
   period,
 }: FeedSummaryCardProps) {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
 
   return (
     <View style={styles.summaryCard}>
@@ -112,7 +115,7 @@ function createLoopStateStyles(tokens: FrappTokens) {
   } as const;
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: FrappTokens, accent: string) {
   return StyleSheet.create({
     card: {
       borderRadius: tokens.radius.lg,
@@ -165,7 +168,7 @@ function createStyles(tokens: FrappTokens) {
       marginTop: 2,
       fontSize: tokens.type.meta,
       fontWeight: "600",
-      color: tokens.color.brand.royalBlue,
+      color: accent,
     },
     summaryCard: {
       borderRadius: tokens.radius.xl,

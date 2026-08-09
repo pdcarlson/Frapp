@@ -4,6 +4,7 @@ import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { FrappTokens } from "@repo/theme/tokens";
 import { ScreenShell } from "@/components/screen-shell";
+import { useChapterBranding } from "@/lib/chapter-branding";
 import { useFrappTheme } from "@/lib/theme";
 
 type MessageState = "sent" | "sending" | "retry";
@@ -58,7 +59,8 @@ function MessageBubble({
 
 export default function ChatThreadScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
   const messageStateStyles = createMessageStateStyles(tokens);
   const [pendingActions, setPendingActions] = useState(2);
   const [retryCount, setRetryCount] = useState(2);
@@ -205,7 +207,7 @@ function createMessageStateStyles(tokens: FrappTokens) {
   } as const;
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: FrappTokens, accent: string) {
   return StyleSheet.create({
     threadSummaryCard: {
       borderRadius: tokens.radius.lg,
@@ -321,7 +323,7 @@ function createStyles(tokens: FrappTokens) {
     sendButton: {
       flex: 1,
       borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
+      backgroundColor: accent,
       paddingVertical: 10,
       alignItems: "center",
     },

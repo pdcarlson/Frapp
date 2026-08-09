@@ -329,7 +329,7 @@
             "bearer": []
           }
         ],
-        "summary": "Get current chapter",
+        "summary": "Get current chapter (includes a signed logo_url when one is set)",
         "tags": [
           "Chapters"
         ]
