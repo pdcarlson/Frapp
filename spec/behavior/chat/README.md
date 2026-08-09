@@ -119,7 +119,8 @@ Chat is not a module — it is the spine of the app, and every other capability 
 
 - The `#announcements` channel is special: only members with `announcements:post` permission can send messages. All members can read.
 - Posting to `#announcements` triggers a push notification to all chapter members (respecting their notification preferences).
-- Announcement messages cannot be replied to in-thread (read-only channel for non-admins).
+- Announcement messages cannot be replied to in-thread. The rule is a property of the **channel**, not the caller: it is keyed off `is_read_only` (so it covers `#chapter-audit` and any chapter-created read-only channel, and survives a chapter renaming its announcements channel), and it holds regardless of permissions — a member with `announcements:post`, and the President's `*`, are refused a threaded reply just the same. `announcements:post` governs who may author a **top-level** announcement; nobody threads one. Enforced by `allowsInThreadReplies` in `@repo/validation`, called from `ChatService.sendMessage`.
+- **Which status a rejected reply gets depends on who is asking**, because channel access is authorized first. A member *without* `announcements:post` is refused by the channel-access gate before the reply is ever inspected, so they get **403** ("You do not have access to this channel") — the same answer they get for a top-level post. Only a caller who *may* post there (`announcements:post`, or `*`) reaches the reply rule, and they get **400** ("Messages in a read-only channel cannot be replied to in-thread"), matching the cross-channel `reply_to_id` rejection described above. A client that wants to explain "this channel doesn't take replies" must therefore key off the 400, and must not assume a 403 here means the reply specifically was the problem.
 
 ## Slash Commands and Integrations
 
