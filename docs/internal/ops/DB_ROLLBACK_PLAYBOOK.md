@@ -413,6 +413,43 @@ there is nothing to restore. Dropping `deleted_at` also drops the tombstone
 safe: the function re-runs its full scrub on every call by design (no tombstone
 early-return), so re-running it on such a row simply re-stamps the marker.
 
+## Rollback service-hours config + leaderboard (20260809124500)
+
+Purely additive DDL — one table, one index, one read-only function (#273).
+Nothing existing is altered, so a schema rollback loses only what the migration
+itself introduced:
+
+```sql
+DROP FUNCTION IF EXISTS get_service_leaderboard(uuid, date, date);
+DROP INDEX IF EXISTS idx_service_entries_chapter_status_date;
+DROP TABLE IF EXISTS chapter_service_config;
+```
+
+**Order matters for the function and the table**: drop them only alongside (or
+after) deploying an API build without #273. `ServiceEntryService.approve` reads
+`chapter_service_config` on every approval and
+`GET /v1/service-entries/leaderboard` calls the function, so dropping either
+while the current build is serving turns those into 500s. The read path
+tolerates a *failed* read (it falls back to the default rate and logs a
+warning), but not a missing relation on the leaderboard route.
+
+**Data caveat — rolling back silently changes point awards.** Any chapter that
+configured a non-default rate loses it: approvals revert to 60 minutes per
+point. Points already awarded are **not** recomputed (the ledger is
+append-only and the system never auto-reverses — see
+`spec/behavior/service-hours.md` → Edge Cases), so pre-rollback awards keep
+whatever rate produced them. Capture the rates before dropping if you intend to
+restore them:
+
+```sql
+SELECT chapter_id, minutes_per_point FROM chapter_service_config
+ WHERE minutes_per_point <> 60;
+```
+
+Dropping `idx_service_entries_chapter_status_date` is always safe — it is a
+pure performance index, and the older `idx_service_entries_chapter` still
+covers chapter-scoped reads.
+
 ## Rollback chapter document folders (20260809120000)
 
 Additive DDL: one new table, no changes to any existing table (#274).

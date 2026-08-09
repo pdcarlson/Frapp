@@ -3509,10 +3509,44 @@
         "operationId": "ServiceEntryController_list_v1",
         "parameters": [
           {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "description": "Filter by review status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            }
+          },
+          {
+            "name": "start_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-05-31",
+              "type": "string"
+            }
+          },
+          {
             "name": "userId",
             "required": false,
             "in": "query",
-            "description": "Filter by user (admins with service:approve only)",
+            "description": "Filter by member (admins with service:approve only)",
             "schema": {
               "type": "string"
             }
@@ -3557,6 +3591,48 @@
           }
         ],
         "summary": "Log a service entry",
+        "tags": [
+          "Service Entries"
+        ]
+      }
+    },
+    "/v1/service-entries/leaderboard": {
+      "get": {
+        "description": "Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.",
+        "operationId": "ServiceEntryController_leaderboard_v1",
+        "parameters": [
+          {
+            "name": "start_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive lower bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-01-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "end_date",
+            "required": false,
+            "in": "query",
+            "description": "Inclusive upper bound on the service date (YYYY-MM-DD)",
+            "schema": {
+              "example": "2026-05-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Chapter-wide service leaderboard (approved hours)",
         "tags": [
           "Service Entries"
         ]
@@ -5408,6 +5484,17 @@
           }
         }
       },
+      "ServiceConfigDto": {
+        "type": "object",
+        "properties": {
+          "minutes_per_point": {
+            "type": "number",
+            "description": "Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.",
+            "minimum": 1,
+            "example": 60
+          }
+        }
+      },
       "WorkflowConfigDto": {
         "type": "object",
         "properties": {
@@ -5450,6 +5537,9 @@
           },
           "dues": {
             "$ref": "#/components/schemas/DuesConfigDto"
+          },
+          "service": {
+            "$ref": "#/components/schemas/ServiceConfigDto"
           },
           "workflows": {
             "type": "array",

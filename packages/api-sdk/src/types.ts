@@ -1439,6 +1439,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/service-entries/leaderboard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Chapter-wide service leaderboard (approved hours)
+         * @description Members ranked by total APPROVED service minutes, highest first. Optional inclusive date window filters on the service date; omitting both gives all-time.
+         */
+        get: operations["ServiceEntryController_leaderboard_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/service-entries/{id}": {
         parameters: {
             query?: never;
@@ -2168,6 +2188,13 @@ export interface components {
             /** @description Scholarship pool in cents */
             scholarship_pool_cents?: number;
         };
+        ServiceConfigDto: {
+            /**
+             * @description Minutes of approved service that earn one SERVICE point (default 60). Must be at least 1 — a rate of 0 would divide by zero when awarding.
+             * @example 60
+             */
+            minutes_per_point?: number;
+        };
         WorkflowConfigDto: {
             /** @description Workflow key from the chapter catalog */
             key?: string;
@@ -2186,6 +2213,7 @@ export interface components {
             branding?: components["schemas"]["BrandingDto"];
             beta_config?: components["schemas"]["BetaConfigDto"];
             dues?: components["schemas"]["DuesConfigDto"];
+            service?: components["schemas"]["ServiceConfigDto"];
             workflows?: components["schemas"]["WorkflowConfigDto"][];
             /** @description When true, disables pseudonymous product analytics for this chapter (data-retention.md #analytics-events-pseudonymous). */
             analytics_opt_out?: boolean;
@@ -5063,7 +5091,13 @@ export interface operations {
     ServiceEntryController_list_v1: {
         parameters: {
             query?: {
-                /** @description Filter by user (admins with service:approve only) */
+                /** @description Filter by review status */
+                status?: "PENDING" | "APPROVED" | "REJECTED";
+                /** @description Inclusive lower bound on the service date (YYYY-MM-DD) */
+                start_date?: string;
+                /** @description Inclusive upper bound on the service date (YYYY-MM-DD) */
+                end_date?: string;
+                /** @description Filter by member (admins with service:approve only) */
                 userId?: string;
             };
             header?: never;
@@ -5094,6 +5128,28 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ServiceEntryController_leaderboard_v1: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the service date (YYYY-MM-DD) */
+                start_date?: string;
+                /** @description Inclusive upper bound on the service date (YYYY-MM-DD) */
+                end_date?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

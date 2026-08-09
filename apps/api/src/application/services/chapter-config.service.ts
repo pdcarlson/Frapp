@@ -9,6 +9,12 @@ import {
 import { isModuleEnabled } from '@repo/validation';
 import { derivePalette } from '@repo/chapter-theme';
 import type { PatchChapterConfigDto } from '../../interface/dtos/chapter-config.dto';
+import {
+  SERVICE_CONFIG_DEFAULTS,
+  SERVICE_CONFIG_FIELDS,
+  SERVICE_CONFIG_SELECT,
+  type ServiceConfig,
+} from './chapter-service-config.service';
 import { ActivationService } from './activation.service';
 
 /**
@@ -170,6 +176,18 @@ export class ChapterConfigService {
       ...((duesRow as Partial<DuesConfig> | null) ?? {}),
     };
 
+    // Service-hours policy is the same singleton shape (chapter_service_config,
+    // PK = chapter_id); an unconfigured chapter falls back to the table default.
+    const { data: serviceRow } = await this.supabase
+      .from('chapter_service_config')
+      .select(SERVICE_CONFIG_SELECT)
+      .eq('chapter_id', chapterId)
+      .maybeSingle();
+    const service: ServiceConfig = {
+      ...SERVICE_CONFIG_DEFAULTS,
+      ...((serviceRow as Partial<ServiceConfig> | null) ?? {}),
+    };
+
     return {
       id: chapterId,
       org_archetype: archetypeKey,
@@ -193,6 +211,7 @@ export class ChapterConfigService {
       analytics_opt_out: chapter.analytics_opt_out ?? false,
       workflows,
       dues,
+      service,
       role_pack: archetype.rolePack,
     };
   }
@@ -337,10 +356,28 @@ export class ChapterConfigService {
       }
     }
 
+    // Service-hours policy is the same singleton merge as dues.
+    let serviceUpsert: (ServiceConfig & { chapter_id: string }) | null = null;
+    if (dto.service !== undefined) {
+      const current = existing.service;
+      const next: ServiceConfig = { ...current };
+      for (const key of SERVICE_CONFIG_FIELDS) {
+        const incoming = (dto.service as Partial<ServiceConfig>)[key];
+        if (incoming !== undefined) {
+          (next as unknown as Record<string, unknown>)[key] = incoming;
+        }
+      }
+      if (SERVICE_CONFIG_FIELDS.some((key) => next[key] !== current[key])) {
+        serviceUpsert = { chapter_id: chapterId, ...next };
+        diff['service'] = { from: current, to: next };
+      }
+    }
+
     if (
       Object.keys(update).length === 0 &&
       workflowUpserts.length === 0 &&
-      duesUpsert === null
+      duesUpsert === null &&
+      serviceUpsert === null
     ) {
       return existing;
     }
@@ -376,6 +413,20 @@ export class ChapterConfigService {
       if (duesError) {
         this.logger.error('Failed to update chapter dues config', duesError);
         throw duesError;
+      }
+    }
+
+    if (serviceUpsert) {
+      const { error: serviceError } = await this.supabase
+        .from('chapter_service_config')
+        .upsert(serviceUpsert, { onConflict: 'chapter_id' });
+
+      if (serviceError) {
+        this.logger.error(
+          'Failed to update chapter service config',
+          serviceError,
+        );
+        throw serviceError;
       }
     }
 

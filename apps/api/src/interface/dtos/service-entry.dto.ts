@@ -46,6 +46,66 @@ export class RequestProofUploadUrlDto {
   content_type: string;
 }
 
+/**
+ * Filters for the admin service-entry queue. Every field is optional; the
+ * unfiltered call is the previous behavior.
+ *
+ * Non-admins never reach these — the controller narrows their read to their
+ * own entries before any filter is applied — so a member cannot use
+ * `userId` to read someone else's history.
+ */
+export class ListServiceEntriesQueryDto {
+  @ApiPropertyOptional({
+    description: 'Filter by review status',
+    enum: ['PENDING', 'APPROVED', 'REJECTED'],
+  })
+  @IsOptional()
+  @IsIn(['PENDING', 'APPROVED', 'REJECTED'])
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+
+  @ApiPropertyOptional({
+    description: 'Inclusive lower bound on the service date (YYYY-MM-DD)',
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsString()
+  start_date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Inclusive upper bound on the service date (YYYY-MM-DD)',
+    example: '2026-05-31',
+  })
+  @IsOptional()
+  @IsString()
+  end_date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Filter by member (admins with service:approve only)',
+  })
+  @IsOptional()
+  @IsString()
+  userId?: string;
+}
+
+/** Optional date window for the service leaderboard; omitted means all-time. */
+export class ServiceLeaderboardQueryDto {
+  @ApiPropertyOptional({
+    description: 'Inclusive lower bound on the service date (YYYY-MM-DD)',
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsString()
+  start_date?: string;
+
+  @ApiPropertyOptional({
+    description: 'Inclusive upper bound on the service date (YYYY-MM-DD)',
+    example: '2026-05-31',
+  })
+  @IsOptional()
+  @IsString()
+  end_date?: string;
+}
+
 export class ReviewServiceEntryDto {
   @ApiProperty({ enum: ['APPROVED', 'REJECTED'] })
   @IsIn(['APPROVED', 'REJECTED'])
