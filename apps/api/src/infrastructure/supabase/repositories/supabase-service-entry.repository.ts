@@ -26,27 +26,6 @@ export class SupabaseServiceEntryRepository implements IServiceEntryRepository {
     return data;
   }
 
-  async findByChapter(chapterId: string): Promise<ServiceEntry[]> {
-    const { data, error } = await this.supabase
-      .from('service_entries')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  }
-
-  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
-    const { data, error } = await this.supabase
-      .from('service_entries')
-      .select('*')
-      .eq('chapter_id', chapterId)
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return data || [];
-  }
-
   async findByChapterFiltered(
     chapterId: string,
     filters: ServiceEntryFilters,

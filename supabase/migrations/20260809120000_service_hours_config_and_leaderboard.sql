@@ -87,3 +87,29 @@ begin
   order by total_minutes desc, u.display_name asc;
 end;
 $$;
+
+-- Postgres grants EXECUTE on a new function to PUBLIC by default, and Supabase's
+-- default privileges additionally grant it straight to anon/authenticated — which
+-- is how the existing read RPCs ended up broadly callable (#678). Under
+-- `security invoker` those callers hit RLS and get zero rows rather than a leak,
+-- but there is no reason to ship a new function with the same default: the API is
+-- the only intended caller, and it connects as service_role. All three are
+-- revoked, not just PUBLIC. Mirrors approve_service_entry (20260603120000).
+revoke execute on function get_service_leaderboard(uuid, date, date) from public;
+
+-- anon/authenticated/service_role are Supabase-managed roles, absent in bare
+-- Postgres substrates (e.g. PGlite in CI), so guard each on role existence to
+-- keep the migration portable.
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke execute on function get_service_leaderboard(uuid, date, date) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke execute on function get_service_leaderboard(uuid, date, date) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function get_service_leaderboard(uuid, date, date) to service_role;
+  end if;
+end
+$$;

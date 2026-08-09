@@ -225,14 +225,6 @@ export class ServiceEntryService {
     return entry;
   }
 
-  async findByChapter(chapterId: string): Promise<ServiceEntry[]> {
-    return this.serviceEntryRepo.findByChapter(chapterId);
-  }
-
-  async findByUser(chapterId: string, userId: string): Promise<ServiceEntry[]> {
-    return this.serviceEntryRepo.findByUser(chapterId, userId);
-  }
-
   /**
    * Admin queue read with optional status / date-range / member filters
    * (spec/behavior/service-hours.md → Visibility). Filtering happens in SQL, so
@@ -261,21 +253,54 @@ export class ServiceEntryService {
   }
 
   /**
-   * Rejects unparseable or inverted ranges up front. Postgres would accept an
+   * Rejects malformed or inverted ranges up front. Postgres would accept an
    * inverted range happily and return zero rows, which reads as "this member
    * logged nothing" rather than "your filter is backwards".
+   *
+   * The format is pinned to `YYYY-MM-DD` rather than "anything `new Date()`
+   * accepts", for two reasons:
+   *
+   *  - `Date` accepts `2026-02-30` and silently rolls it to March 2, but the
+   *    `date` column does not — an unpinned check would pass it through to
+   *    PostgREST and surface as a 500 instead of a 400.
+   *  - Comparing the bounds needs a total order. Zero-padded ISO dates compare
+   *    correctly as strings, but a legacy spelling like `2026-3-1` does not
+   *    (`'2026-3-1' > '2026-12-01'` is true), which would 400 a perfectly
+   *    valid March-to-December range. Both bounds are parsed and compared as
+   *    timestamps instead.
    */
   private assertValidDateRange(startDate?: string, endDate?: string): void {
+    const parsed: Record<'start_date' | 'end_date', number | null> = {
+      start_date: null,
+      end_date: null,
+    };
+
     for (const [label, value] of [
       ['start_date', startDate],
       ['end_date', endDate],
     ] as const) {
-      if (value !== undefined && Number.isNaN(new Date(value).getTime())) {
-        throw new BadRequestException(`${label} must be a valid ISO date`);
+      if (value === undefined) continue;
+
+      const time = Date.parse(`${value}T00:00:00Z`);
+      // The round-trip is what rejects a real-looking but nonexistent day:
+      // `2026-02-30` parses, then serializes back as `2026-03-02`.
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(value) ||
+        Number.isNaN(time) ||
+        new Date(time).toISOString().slice(0, 10) !== value
+      ) {
+        throw new BadRequestException(
+          `${label} must be a valid YYYY-MM-DD date`,
+        );
       }
+      parsed[label] = time;
     }
 
-    if (startDate && endDate && startDate > endDate) {
+    if (
+      parsed.start_date !== null &&
+      parsed.end_date !== null &&
+      parsed.start_date > parsed.end_date
+    ) {
       throw new BadRequestException('start_date must not be after end_date');
     }
   }

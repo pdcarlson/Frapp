@@ -57,8 +57,6 @@ describe('ServiceEntryService', () => {
   beforeEach(async () => {
     mockServiceEntryRepo = {
       findById: jest.fn(),
-      findByChapter: jest.fn(),
-      findByUser: jest.fn(),
       findByChapterFiltered: jest.fn(),
       leaderboard: jest.fn(),
       create: jest.fn(),
@@ -137,31 +135,6 @@ describe('ServiceEntryService', () => {
       await expect(service.findById('se-1', 'ch-1')).rejects.toThrow(
         'Service entry not found',
       );
-    });
-  });
-
-  describe('findByChapter', () => {
-    it('should return all entries for chapter', async () => {
-      mockServiceEntryRepo.findByChapter.mockResolvedValue([baseEntry]);
-
-      const result = await service.findByChapter('ch-1');
-
-      expect(mockServiceEntryRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(result).toEqual([baseEntry]);
-    });
-  });
-
-  describe('findByUser', () => {
-    it('should return entries for user', async () => {
-      mockServiceEntryRepo.findByUser.mockResolvedValue([baseEntry]);
-
-      const result = await service.findByUser('ch-1', 'user-1');
-
-      expect(mockServiceEntryRepo.findByUser).toHaveBeenCalledWith(
-        'ch-1',
-        'user-1',
-      );
-      expect(result).toEqual([baseEntry]);
     });
   });
 
@@ -933,11 +906,30 @@ describe('ServiceEntryService', () => {
       expect(mockServiceEntryRepo.findByChapterFiltered).not.toHaveBeenCalled();
     });
 
-    it('rejects an unparseable date', async () => {
+    it.each([
+      ['unparseable text', 'not-a-date'],
+      // `new Date('2026-02-30')` silently rolls to March 2, but the `date`
+      // column rejects it — without the round-trip check this reached
+      // PostgREST and came back a 500.
+      ['a nonexistent calendar day', '2026-02-30'],
+      ['an unpadded legacy spelling', '2026-3-1'],
+      ['a full timestamp', '2026-03-01T00:00:00Z'],
+    ])('rejects %s', async (_label, startDate) => {
       await expect(
-        service.findByChapterFiltered('ch-1', { startDate: 'not-a-date' }),
-      ).rejects.toThrow('start_date must be a valid ISO date');
+        service.findByChapterFiltered('ch-1', { startDate }),
+      ).rejects.toThrow('start_date must be a valid YYYY-MM-DD date');
       expect(mockServiceEntryRepo.findByChapterFiltered).not.toHaveBeenCalled();
+    });
+
+    it('accepts a same-day range (both bounds inclusive)', async () => {
+      mockServiceEntryRepo.findByChapterFiltered.mockResolvedValue([]);
+
+      await service.findByChapterFiltered('ch-1', {
+        startDate: '2026-03-01',
+        endDate: '2026-03-01',
+      });
+
+      expect(mockServiceEntryRepo.findByChapterFiltered).toHaveBeenCalled();
     });
   });
 
