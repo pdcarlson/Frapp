@@ -42,11 +42,15 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
   };
 
   beforeAll(async () => {
-    // Deliberately NOT AppModule: the global ChapterGuard would demand chapter
-    // context this user-scoped route does not use, and a 500 from that guard
-    // would mask the 400 this test exists to prove. Mounting the real controller
-    // with the real ValidationPipe keeps both links under test — the @Body()
-    // DTO binding and the pipe — which is exactly what the DTO unit spec cannot
+    // Deliberately NOT AppModule: booting it would pull in every module's
+    // Supabase providers and the global throttler (the one APP_GUARD) for a
+    // route that needs neither, and a failure from that wiring would mask the
+    // 400 this test exists to prove. NotificationController is guarded only by
+    // SupabaseAuthGuard — there is no ChapterGuard on it, which is why its one
+    // chapter-scoped route verifies membership by hand in the service — so the
+    // stub below replaces exactly that guard and nothing else. Mounting the real
+    // controller with the real ValidationPipe keeps both links under test: the
+    // @Body() DTO binding and the pipe, which is what the DTO unit spec cannot
     // reach.
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [NotificationController],

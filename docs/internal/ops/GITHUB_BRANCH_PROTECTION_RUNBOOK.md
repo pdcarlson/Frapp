@@ -79,7 +79,7 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `api-tests`          | API Jest unit tests                                                                             |
 | `api-contract-check` | openapi.json + api-sdk freshness                                                                |
 | `migration-safety`   | Migration filename + docs validation                                                            |
-| `mobile-validate`    | Mobile lint + typecheck                                                                         |
+| `mobile-validate`    | Mobile lint + typecheck + Vitest unit tests                                                     |
 | `ci-scripts-tests`   | `node --test` unit tests for deploy-gate scripts under `scripts/ci/`                            |
 
 **Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.

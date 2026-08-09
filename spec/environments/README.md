@@ -150,12 +150,12 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | Job                  | What it validates                                                                                    | Blocker?   |
 | -------------------- | ---------------------------------------------------------------------------------------------------- | ---------- |
 | `packages-build`     | Shared packages compile                                                                              | Yes        |
-| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity) | Yes        |
+| `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing and `@repo/validation` unit tests | Yes        |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
 | `api-tests`          | API Jest unit tests (377+ tests)                                                                     | Yes (hard) |
 | `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness                                                      | Yes        |
 | `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
-| `mobile-validate`    | Mobile app lint + typecheck                                                                          | Yes        |
+| `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
 | `ci-scripts-tests`   | CI scripts unit/integration tests                                                                    | Yes        |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
