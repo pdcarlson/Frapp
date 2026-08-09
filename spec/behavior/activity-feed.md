@@ -1,11 +1,15 @@
 # Activity Feed
 
-> **Surface note.** The standalone *web* home screen this feed was written for was removed in the
-> chat-first redesign: `/dashboard` redirects to `/chat`, and `/` does too once a Supabase session
-> exists. The aggregation itself is unchanged and still live on the **mobile Home tab**
-> (`apps/mobile/app/(tabs)/index.tsx`).
+> **Surface note — this aggregation is specified but built nowhere today.**
 >
-> It is *not* the source of the web chat catch-up card. The pulse card
+> The *web* home screen it was written for was removed in the chat-first redesign: `/dashboard`
+> redirects to `/chat`, and `/` does too once a Supabase session exists. The **mobile** Home tab
+> (`apps/mobile/app/(tabs)/index.tsx`) is titled "Activity Feed" but is a 48-line static prototype
+> with hardcoded values and no data access at all — part of the preview shell tracked in
+> [#253](https://github.com/pdcarlson/Frapp/issues/253). So the spec below describes intended
+> behavior, not shipped behavior, on either surface.
+>
+> It is also *not* the source of the web chat catch-up card. The pulse card
 > ([`chat/catch-up.md`](chat/catch-up.md)) is a **separate** aggregation that reuses the
 > read-only-view rule below but not this list: three of its five signals (tasks, service approvals,
 > dues) are absent here, and points — an item below — is explicitly excluded from it. Do not build

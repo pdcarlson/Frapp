@@ -39,9 +39,17 @@ decorator alone gives the wrong answer. (`/invoices/overdue` is the honest case:
 `billing:view` on the route, and `PermissionsGuard` merges route- and class-level lists.)
 
 Each gate below is therefore the *additional* permission beyond the class-level `members:view` that
-every one of these routes already requires. Every seeded role holds `members:view`, so on default
-configuration the gate column is the whole answer; a custom role granting `tasks:manage` without
-`members:view` would be shown a figure it could not fetch itself.
+every one of these routes already requires. Every **seeded** role holds `members:view`, so on
+default configuration the gate column is the whole answer.
+
+Chapters can define custom roles with arbitrary permission sets, and `memberHasAnyPermission` is
+exact-string matching plus `*` — there is no implicit grant. Two consequences an implementation must
+handle rather than assume away: a role holding `tasks:manage` but not `members:view` would be shown
+a figure it could not fetch itself, and a chapter with a role lacking `members:view` (a "Pledge" or
+"Inactive" role) fails the entitlement test for *every* signal in `#general`, so that chapter gets
+no pulse at all. **That is correct behavior, not a bug** — the alternative is disclosing to a role
+the chapter deliberately restricted — but it means the two-signal floor described below is a
+default-configuration statement, not a guarantee.
 
 | Signal | Source | Who may be shown it | Module gate |
 | --- | --- | --- | --- |
@@ -106,8 +114,9 @@ former members in the Alumni role. It must never carry the officer signals.
 
 The consequence is the central open question below, not something an implementation should
 improvise around: **in a chapter that has created no role-gated officers channel, three of the five
-signals have nowhere to go**, and the pulse in `#general` is a two-signal card (events, new
-members). The officer signals are omitted, never downgraded into a public channel.
+signals have nowhere to go**, and the pulse in `#general` is at most a two-signal card (events, new
+members) — fewer if the chapter has a custom role without `members:view`, per the note above. The
+officer signals are omitted, never downgraded into a public channel.
 
 ## Target channel
 
@@ -146,8 +155,13 @@ is how an artifact trains its audience to ignore it.
 The card's `content` string carries a readable sentence summarizing the same sections:
 
 ```text
-This week: 2 events, 3 tasks overdue, 1 new member.
+This week: 2 events, 1 new member.
 ```
+
+That example is the **`#general`** card, so it carries only the two `members:view` signals. An
+officer-channel card would add the gated sections. Getting this wrong in the `content` string is the
+same disclosure bug as getting it wrong in the payload — `content` *is* payload, and on most
+surfaces it is the only part the reader sees.
 
 It is **not** optional, but the mechanism is not the one a reader might assume.
 `MessageRenderer` has a `default:` branch routing unknown kinds to `TextRenderer`, and that is a

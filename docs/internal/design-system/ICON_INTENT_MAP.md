@@ -20,7 +20,7 @@ Use this map to keep icon choices consistent and avoid ad hoc substitutions.
 
 | Semantic intent | Icon |
 |---|---|
-| Overview | `LayoutDashboard` |
+| Overview | `LayoutDashboard` — reserved; unused since the dashboard home screen was removed |
 | Members | `Users` |
 | Events | `CalendarDays` |
 | Points | `Star` |

@@ -3,15 +3,10 @@
 ## Overview
 The Frapp Admin Dashboard (`apps/web`) is the central operating system for Greek Life chapter operations. It provides an interface for chapter admins to manage events, members, points, billing, and other core functions.
 
-## Home Page (`/`)
-The main landing page for the admin dashboard provides an overview card indicating that the foundation is active.
+## Entry point (`/`)
+`/` is the **unauthenticated landing page** — headline, highlight cards, and live sign-in / sign-up / join CTAs. Once a Supabase session exists it redirects to `/chat`. `/dashboard` and the `(dashboard)` route-group index redirect to `/chat` unconditionally.
 
-### Components
-- **Card, CardHeader, CardTitle, CardDescription:** These components structure the introductory messaging for the dashboard.
-- **Buttons (In Progress):** Currently, authentication workflows and internal routing are being rolled out. As such, the "Sign in" and "Dashboard routes" buttons are currently disabled with accessibility aria-labels attached. 
-
-## Roadmap
-As new administrative workflows are completed, the initial placeholder page will be expanded to support full navigation.
+There is no dashboard home screen. The standalone `/home` overview was removed in the chat-first redesign; chapter health at a glance is re-homed as an inline chat artifact, the pulse card — see [`spec/behavior/chat/catch-up.md`](../../spec/behavior/chat/catch-up.md). Post-sign-in navigation is the sidebar described below, not a landing dashboard.
 
 ### Offline Support and Testing
 The admin dashboard includes an `OfflineBanner` component to gracefully handle network degradation and offline scenarios. The component logic is fully covered by unit tests configured using `vitest` and `@testing-library/react`.

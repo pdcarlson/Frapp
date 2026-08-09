@@ -148,7 +148,7 @@ Each user's last-read timestamp per channel is tracked in a `channel_read_receip
 | `points` | Points award notification |
 | `hours` | Service hours log confirmation — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
-| `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md). Specified, not yet built (#821) |
+| `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
 | `announcement` | Broadcast announcement |
