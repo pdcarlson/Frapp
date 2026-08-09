@@ -26,6 +26,8 @@ description: >
 | API unit tests | `npm run test -w apps/api` |
 | API E2E tests (mocked Supabase, no live services) | `npm run test:e2e -w apps/api` |
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
+| Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
+| Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
@@ -205,10 +207,16 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `npm run test:e2e -w apps/api` — run it too when API wiring changes)
 6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
    Playwright visual tests under `tests/visual/**` are excluded by
-   `apps/web/vitest.config.ts` and run separately — see item 9)
-7. `npm run check:api-contract` → `CI / api-contract-check`
-8. `npm run check:migration-safety` → `CI / migration-safety`
-9. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
+   `apps/web/vitest.config.ts` and run separately — see item 11)
+7. `npm run test -w @repo/validation` → `CI / lint-and-typecheck` (Vitest; the
+   package is consumed by the API, web, and mobile, so a regression here reaches
+   all three). Not covered by items 1–2: the root has no `test` script and
+   `turbo.json` declares no `test` task, so nothing else runs it.
+8. `npm run test -w apps/mobile` → `CI / mobile-validate` (Vitest; likewise not
+   reached by the mobile lint or typecheck steps)
+9. `npm run check:api-contract` → `CI / api-contract-check`
+10. `npm run check:migration-safety` → `CI / migration-safety`
+11. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
    match the job's single-worker Playwright run; see
