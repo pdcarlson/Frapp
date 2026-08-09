@@ -4,12 +4,14 @@ import type {
   BackworkProfessor,
   BackworkResource,
   Chapter,
+  ChapterActivationMilestone,
   ChapterAuditLog,
   ChapterCustomField,
   ChapterCustomRole,
   ChapterDirectoryEntry,
   ChapterDirectoryRequest,
   ChapterDocument,
+  ChapterDocumentFolder,
   ChapterDuesConfig,
   ChapterServiceConfig,
   ChapterWorkflow,
@@ -99,6 +101,7 @@ export interface Database {
       service_entries: TableDefinition<ServiceEntry>;
       tasks: TableDefinition<Task>;
       chapter_documents: TableDefinition<ChapterDocument>;
+      chapter_document_folders: TableDefinition<ChapterDocumentFolder>;
       semester_archives: TableDefinition<SemesterArchive>;
       chapter_custom_roles: TableDefinition<ChapterCustomRole>;
       stripe_webhook_events: TableDefinition<StripeWebhookEvent>;
@@ -112,6 +115,7 @@ export interface Database {
       chat_notification_preferences: TableDefinition<ChatNotificationPreference>;
       member_custom_field_values: TableDefinition<MemberCustomFieldValueRow>;
       scheduled_notification_dispatches: TableDefinition<ScheduledNotificationDispatch>;
+      chapter_activation_milestones: TableDefinition<ChapterActivationMilestone>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -166,7 +170,7 @@ export interface Database {
         Returns: ServiceEntry[];
       };
       /**
-       * `20260809120000` — ranked APPROVED service time per member. Date
+       * `20260809124500` — ranked APPROVED service time per member. Date
        * bounds are inclusive and compare against `date`, not `created_at`;
        * both are nullable for an all-time ranking.
        */

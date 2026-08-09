@@ -1,4 +1,11 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RequestDocumentUploadUrlDto {
@@ -35,4 +42,38 @@ export class ConfirmDocumentUploadDto {
   @IsString()
   @MaxLength(100)
   folder?: string;
+}
+
+export class CreateDocumentFolderDto {
+  @ApiProperty({ description: 'Folder name (unique within the chapter)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name: string;
+
+  @ApiPropertyOptional({
+    description: 'Display position. Defaults to the end of the list.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sort_order?: number;
+}
+
+export class UpdateDocumentFolderDto {
+  @ApiPropertyOptional({
+    description:
+      'New folder name. Renaming re-files every document in the folder.',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'New display position' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sort_order?: number;
 }

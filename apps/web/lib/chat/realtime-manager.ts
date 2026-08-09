@@ -12,9 +12,15 @@
  *     to whichever subscribed channel cache holds the message. Reactions on
  *     not-yet-loaded messages are intentionally dropped; backfill recovers
  *     them.
- *   - Aggregates per-channel subscribe status into `"live" | "reconnecting" |
- *     "offline"` for the UI "Reconnecting…" pill, with exponential backoff
- *     (1→2→4→8→16→30s capped) on `CHANNEL_ERROR`/`TIMED_OUT`.
+ *   - Aggregates per-channel subscribe status into `"live" | "polling" |
+ *     "reconnecting" | "offline"` for the UI "Reconnecting…" pill, with
+ *     exponential backoff (1→2→4→8→16→30s capped) on
+ *     `CHANNEL_ERROR`/`TIMED_OUT`.
+ *   - Degrades to a REST polling fallback when any subscribed channel has been
+ *     non-live for longer than `POLL_DEGRADE_AFTER_MS`, re-running the same
+ *     backfill every `POLL_INTERVAL_MS` until Realtime recovers
+ *     (`spec/ui/resilience.md` §3.2). Reconnect backoff keeps running
+ *     underneath, so polling is a stopgap, never a replacement.
  *   - For every channel attach — both the initial join and every reconnect —
  *     **resubscribe first** (so any live row between backfill and re-attach
  *     goes through the same idempotent merge), **then** REST-backfill since
@@ -48,10 +54,20 @@ import {
   type RawChatMessageAction,
 } from "./types";
 
-export type ConnectionStatus = "live" | "reconnecting" | "offline";
+export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
 const BACKOFF_STEPS_MS = [1000, 2000, 4000, 8000, 16000, 30000] as const;
 const LAST_SEEN_PREFIX = "chat:lastSeen:";
+
+/**
+ * How long a channel may sit non-live before we stop waiting on Realtime and
+ * start pulling messages over REST. `spec/ui/resilience.md` §3.2: "Disconnected
+ * (>10s) → switch to polling mode".
+ */
+export const POLL_DEGRADE_AFTER_MS = 10_000;
+
+/** Poll cadence once degraded — spec §3.2: "Poll every 5s for new messages". */
+export const POLL_INTERVAL_MS = 5_000;
 
 function readLastSeen(channelId: string): string | null {
   if (typeof window === "undefined") return null;
@@ -108,6 +124,13 @@ class ChatRealtimeManager {
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private offline = false;
   private typingTickHandle: ReturnType<typeof setInterval> | null = null;
+  /** Armed while a channel is non-live; firing promotes us into polling. */
+  private pollDegradeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The 5s poll loop itself. Non-null exactly while `polling` is true. */
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private polling = false;
+  /** Guards against overlapping poll passes on a slow connection. */
+  private pollInFlight = false;
 
   configure(ctx: ManagerContext): void {
     this.ctx = ctx;
@@ -136,6 +159,11 @@ class ChatRealtimeManager {
     }
     if (this.typingTickHandle) clearInterval(this.typingTickHandle);
     this.typingTickHandle = null;
+    this.stopPolling();
+    // Must reset here, not in stopPolling: a backfill that never settles would
+    // otherwise leave the flag latched on this module singleton, and the next
+    // configure() would come up with polling permanently short-circuited.
+    this.pollInFlight = false;
     this.ctx = null;
   }
 
@@ -162,6 +190,11 @@ class ChatRealtimeManager {
     // callback is the single gate for both initial join and reconnect, so the
     // Postgres Changes listener is always attached before the REST backfill
     // request goes out. See ADR-05.
+    //
+    // Do emit, though: the channel is now "joining", and that is what arms the
+    // degrade timer. A join that never lands is exactly the case polling has to
+    // cover, and without this the timer would only ever arm on a *drop*.
+    this.emitStatus();
   }
 
   unsubscribe(channelId: string): void {
@@ -399,6 +432,110 @@ class ChatRealtimeManager {
     }
   }
 
+  // ─── polling fallback (spec/ui/resilience.md §3.2) ──────────────────────
+
+  /**
+   * Reconciles the polling state machine with the current channel statuses.
+   * Called from `emitStatus`, so every status transition runs it exactly once.
+   *
+   * Deliberately does **not** emit — `emitStatus` is its only caller and
+   * computes the status right after, so emitting here would recurse.
+   */
+  private syncPollingState(): void {
+    // Offline is its own UI state and REST would fail anyway, so polling stands
+    // down until the browser says we have a network again.
+    const degraded = !this.offline && this.anyChannelDegraded();
+    if (!degraded) {
+      this.stopPolling();
+      return;
+    }
+    // Already polling, or already counting down to it.
+    if (this.polling || this.pollDegradeTimer) return;
+    this.pollDegradeTimer = setTimeout(() => {
+      this.pollDegradeTimer = null;
+      this.startPolling();
+    }, POLL_DEGRADE_AFTER_MS);
+  }
+
+  /**
+   * Any channel not yet receiving live rows — including a first join still in
+   * flight. This is the *polling* trigger: a join that never lands starves the
+   * user exactly like a mid-session drop does.
+   */
+  private anyChannelDegraded(): boolean {
+    for (const state of this.channels.values()) {
+      if (state.status !== "live") return true;
+    }
+    return false;
+  }
+
+  /**
+   * Any channel that was attached and lost it. This is the *display* trigger,
+   * and deliberately excludes `"joining"`: a normal channel switch is a fresh
+   * join that resolves in well under a second, and flashing "Reconnecting…"
+   * every time the user clicks a channel is noise, not information. A join
+   * that genuinely stalls is still caught — after `POLL_DEGRADE_AFTER_MS` the
+   * poll loop starts and the banner appears then.
+   */
+  private anyChannelReconnecting(): boolean {
+    for (const state of this.channels.values()) {
+      if (state.status === "reconnecting") return true;
+    }
+    return false;
+  }
+
+  private startPolling(): void {
+    if (this.pollTimer) return;
+    this.polling = true;
+    // Poll immediately: we have already waited out the degrade window, and
+    // making the user wait another full interval for the first result would
+    // put the worst case at 15s of silence.
+    void this.pollOnce();
+    this.pollTimer = setInterval(() => {
+      void this.pollOnce();
+    }, POLL_INTERVAL_MS);
+    // Flip the UI to the degraded banner.
+    this.emitStatus();
+  }
+
+  private stopPolling(): void {
+    if (this.pollDegradeTimer) {
+      clearTimeout(this.pollDegradeTimer);
+      this.pollDegradeTimer = null;
+    }
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+    this.polling = false;
+  }
+
+  /**
+   * One poll pass over every channel still waiting on Realtime. Reuses
+   * `runBackfill`, so merges go through the same id-keyed `mergeServerRow`
+   * path and the same last-seen cursor the reconnect backfill uses — a row
+   * that arrives by poll and again by Realtime collapses to one message.
+   */
+  private async pollOnce(): Promise<void> {
+    if (!this.ctx || this.offline) return;
+    // A degraded connection is exactly where a fetch can outlive the interval;
+    // skipping the tick beats stacking requests on a link already in trouble.
+    if (this.pollInFlight) return;
+    this.pollInFlight = true;
+    try {
+      const pending: Promise<void>[] = [];
+      for (const state of this.channels.values()) {
+        if (state.status !== "live") {
+          pending.push(this.runBackfill(state.channelId));
+        }
+      }
+      // `runBackfill` swallows its own errors, so this never rejects.
+      await Promise.all(pending);
+    } finally {
+      this.pollInFlight = false;
+    }
+  }
+
   private async runBackfill(channelId: string): Promise<void> {
     if (!this.ctx) return;
     try {
@@ -440,17 +577,16 @@ class ChatRealtimeManager {
 
   private computeStatus(): ConnectionStatus {
     if (this.offline) return "offline";
-    let anyReconnecting = false;
-    let anyChannel = false;
-    for (const state of this.channels.values()) {
-      anyChannel = true;
-      if (state.status !== "live") anyReconnecting = true;
-    }
-    if (!anyChannel) return "live";
-    return anyReconnecting ? "reconnecting" : "live";
+    if (this.channels.size === 0) return "live";
+    // Degraded, and the poll loop is running — messages are arriving, just
+    // late. That is a materially different thing to tell the user than
+    // "reconnecting", where nothing is arriving at all.
+    if (this.polling) return "polling";
+    return this.anyChannelReconnecting() ? "reconnecting" : "live";
   }
 
   private emitStatus(): void {
+    this.syncPollingState();
     const status = this.computeStatus();
     for (const cb of this.statusListeners) cb(status);
   }

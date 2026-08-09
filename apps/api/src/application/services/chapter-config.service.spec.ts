@@ -23,6 +23,13 @@ jest.mock('@repo/org-archetypes', () => ({
     dues: {},
   })),
   getArchetype: jest.fn((key: string) => ({ key, rolePack: 'ifc_standard' })),
+  // Enough of the real catalog to exercise the activation funnel's paid-module
+  // detection (#267): one always-on free module and two paid ones.
+  MODULE_CATALOG: [
+    { key: 'chat', tier: 'free', alwaysOn: true },
+    { key: 'events', tier: 'paid', alwaysOn: false },
+    { key: 'dues', tier: 'paid', alwaysOn: false },
+  ],
 }));
 jest.mock('@repo/chapter-theme', () => ({
   derivePalette: jest.fn(() => ({ palette: { '--side-bg': '#1F1A15' } })),
@@ -31,6 +38,7 @@ jest.mock('@repo/chapter-theme', () => ({
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterConfigService } from './chapter-config.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
+import { ActivationService } from './activation.service';
 
 const CHAPTER_ID = 'ch-1';
 
@@ -45,12 +53,13 @@ type WorkflowRow = { key: string; enabled: boolean; threshold: number | null };
 function makeSupabase(
   workflowRows: WorkflowRow[],
   duesRow: Record<string, unknown> | null = null,
+  enabledModules: Record<string, boolean> = {},
   serviceRow: Record<string, unknown> | null = null,
 ) {
   const chapterRow = {
     id: CHAPTER_ID,
     org_archetype: 'ifc',
-    enabled_modules: {},
+    enabled_modules: enabledModules,
     vocabulary: {},
     branding: {},
     theme_palette: {},
@@ -135,11 +144,25 @@ function makeSupabase(
   };
 }
 
+/**
+ * Shared across the file: `buildService` is module-scope, so the activation
+ * mock is too. Reset in `beforeEach` so per-test assertions on the paid-module
+ * milestone don't see a previous test's calls.
+ */
+const mockActivation: jest.Mocked<Pick<ActivationService, 'record'>> = {
+  record: jest.fn().mockResolvedValue(true),
+};
+
+beforeEach(() => {
+  mockActivation.record.mockClear();
+});
+
 async function buildService(supabase: { from: jest.Mock }) {
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       ChapterConfigService,
       { provide: SUPABASE_CLIENT, useValue: supabase },
+      { provide: ActivationService, useValue: mockActivation },
     ],
   }).compile();
   return module.get(ChapterConfigService);
@@ -402,7 +425,7 @@ describe('ChapterConfigService — service hours', () => {
     it('falls back to the 60 min/point default when the chapter has no row', async () => {
       // An absent row is the unconfigured state, not an error: it must report
       // the same rate the API awarded before the rate became configurable.
-      const supabase = makeSupabase([], null, null);
+      const supabase = makeSupabase([], null, {}, null);
       const service = await buildService(supabase);
 
       const config = await service.getConfig(CHAPTER_ID);
@@ -411,7 +434,7 @@ describe('ChapterConfigService — service hours', () => {
     });
 
     it('returns the chapter override when a row exists', async () => {
-      const supabase = makeSupabase([], null, { minutes_per_point: 30 });
+      const supabase = makeSupabase([], null, {}, { minutes_per_point: 30 });
       const service = await buildService(supabase);
 
       const config = await service.getConfig(CHAPTER_ID);
@@ -422,7 +445,7 @@ describe('ChapterConfigService — service hours', () => {
 
   describe('patchConfig', () => {
     it('upserts the rate and audits the change', async () => {
-      const supabase = makeSupabase([], null, null);
+      const supabase = makeSupabase([], null, {}, null);
       const service = await buildService(supabase);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -442,7 +465,7 @@ describe('ChapterConfigService — service hours', () => {
     });
 
     it('is a no-op when the rate already matches', async () => {
-      const supabase = makeSupabase([], null, { minutes_per_point: 30 });
+      const supabase = makeSupabase([], null, {}, { minutes_per_point: 30 });
       const service = await buildService(supabase);
 
       await service.patchConfig(CHAPTER_ID, 'user-1', {
@@ -452,5 +475,83 @@ describe('ChapterConfigService — service hours', () => {
       expect(supabase.serviceUpsert).not.toHaveBeenCalled();
       expect(supabase.auditInsert).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('ChapterConfigService — activation funnel (#267)', () => {
+  it('records the milestone when a paid module flips off -> on', async () => {
+    const supabase = makeSupabase([], null, { events: false });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { events: true },
+    });
+
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'activation-first-paid-module-enabled',
+      { module: 'events', modules_enabled: 1 },
+    );
+  });
+
+  it('names the alphabetically-first module when a patch enables several', async () => {
+    const supabase = makeSupabase([], null, { events: false, dues: false });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { events: true, dues: true },
+    });
+
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      CHAPTER_ID,
+      'activation-first-paid-module-enabled',
+      { module: 'dues', modules_enabled: 2 },
+    );
+  });
+
+  it('ignores a free module being toggled', async () => {
+    const supabase = makeSupabase([], null, { chat: false });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { chat: true },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+
+  it('ignores a paid module that was already on', async () => {
+    const supabase = makeSupabase([], null, { events: true });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { events: true },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+
+  // `isModuleEnabled` treats an absent key as enabled, so a chapter created
+  // before a module existed must not look like it just turned it on.
+  it('ignores a paid module with no prior key', async () => {
+    const supabase = makeSupabase([], null, {});
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { events: true },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
+  });
+
+  it('does not record when a paid module is turned off', async () => {
+    const supabase = makeSupabase([], null, { events: true });
+    const service = await buildService(supabase);
+
+    await service.patchConfig(CHAPTER_ID, 'user-1', {
+      enabled_modules: { events: false },
+    });
+
+    expect(mockActivation.record).not.toHaveBeenCalled();
   });
 });

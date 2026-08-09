@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { SupabaseClient } from '@supabase/supabase-js';
 import {
   assertContentFreeProperties,
+  hashChapterIdForAnalytics,
   hashUserIdForAnalytics,
   type AnalyticsProperties,
 } from '@repo/validation';
@@ -205,6 +206,52 @@ export class AnalyticsService {
     }
 
     await this.track(eventName, userId, options);
+  }
+
+  /**
+   * Record a chapter-scoped event keyed by the **chapter's** pseudonym rather
+   * than a user's (#267 — the activation funnel).
+   *
+   * The funnel measures chapters, not people, and its steps are performed by
+   * different people: the founder submits onboarding, a second member redeems
+   * the first invite, a treasurer starts checkout, and Stripe's webhook
+   * completes it with no user in context at all. Keyed by user, those are four
+   * unrelated `distinctId`s and a provider-side funnel never connects them —
+   * it would report a ~0% conversion that is purely an artifact of the keying.
+   * Keyed by chapter, the seven milestones form one ordered sequence per
+   * chapter, which is exactly what a funnel query consumes.
+   *
+   * The chapter id is hashed with the same salt as user ids (see
+   * `hashChapterIdForAnalytics`), so no raw identifier reaches the provider
+   * here either. The per-chapter opt-out applies unchanged — and applies
+   * *strictly*, since a chapter-scoped event always has a chapter to check.
+   *
+   * Best-effort like {@link track}: never throws for a delivery or lookup
+   * failure. A content/PII payload still throws, for the same reason it does
+   * there — that is an authoring bug, not a runtime condition.
+   */
+  async trackForChapter(
+    eventName: string,
+    chapterId: string,
+    properties?: AnalyticsProperties,
+  ): Promise<void> {
+    if (!this.salt) return;
+
+    const event = assertContentFreeProperties({
+      name: eventName,
+      distinctId: hashChapterIdForAnalytics(this.salt, chapterId),
+      properties,
+    });
+
+    try {
+      if (!(await this.isChapterAnalyticsEnabled(chapterId))) return;
+      await this.provider.capture(event);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to capture chapter analytics event "${eventName}"`,
+        error as Error,
+      );
+    }
   }
 
   /**

@@ -26,6 +26,7 @@ jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
 import { Test, TestingModule } from '@nestjs/testing';
 import { ChapterOnboardingService } from './chapter-onboarding.service';
 import { ChapterService } from './chapter.service';
+import { ActivationService } from './activation.service';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { Chapter } from '../../domain/entities/chapter.entity';
 import type { ChapterOnboardingDto } from '../../interface/dtos/chapter-onboarding.dto';
@@ -58,12 +59,14 @@ describe('ChapterOnboardingService', () => {
     eq: jest.Mock;
     maybeSingle: jest.Mock;
   };
+  let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let messageInsert: jest.Mock;
   let requestInsert: jest.Mock;
   let from: jest.Mock;
 
   beforeEach(async () => {
     chapterService = { create: jest.fn().mockResolvedValue(makeChapter()) };
+    mockActivation = { record: jest.fn().mockResolvedValue(true) };
 
     channelQuery = {
       select: jest.fn().mockReturnThis(),
@@ -87,6 +90,7 @@ describe('ChapterOnboardingService', () => {
         ChapterOnboardingService,
         { provide: ChapterService, useValue: chapterService },
         { provide: SUPABASE_CLIENT, useValue: { from } },
+        { provide: ActivationService, useValue: mockActivation },
       ],
     }).compile();
 
@@ -130,6 +134,16 @@ describe('ChapterOnboardingService', () => {
     });
     // A derived theme palette is persisted when colors are supplied.
     expect(payload.config.theme_palette).toBeDefined();
+  });
+
+  it('records the onboarding-submitted activation milestone (#267)', async () => {
+    await service.onboard('user-1', directoryDto);
+
+    expect(mockActivation.record).toHaveBeenCalledWith(
+      'ch-1',
+      'activation-onboarding-submitted',
+      { archetype: 'nphc' },
+    );
   });
 
   it('stamps Terms/Privacy acceptance from the session actor + server clock', async () => {

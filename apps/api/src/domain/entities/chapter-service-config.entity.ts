@@ -1,6 +1,6 @@
 /**
  * A chapter's service-hours policy (Settings → Service), persisted to
- * `chapter_service_config` (`20260809120000_service_hours_config_and_leaderboard.sql`).
+ * `chapter_service_config` (`20260809124500_service_hours_config_and_leaderboard.sql`).
  *
  * Keyed by `chapter_id` — the primary key is the chapter, so there is exactly
  * one row per chapter and no separate `id` column, mirroring

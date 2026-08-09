@@ -23,7 +23,7 @@ export const SERVICE_CONFIG_SELECT = SERVICE_CONFIG_FIELDS.join(', ');
 
 /**
  * Used when a chapter has no `chapter_service_config` row yet. Mirrors the
- * table's column default (migration 20260809120000), which is itself the rate
+ * table's column default (migration 20260809124500), which is itself the rate
  * `ServiceEntryService` hardcoded before the rate became configurable — so an
  * unconfigured chapter awards points exactly as it always did, and no backfill
  * was needed.
