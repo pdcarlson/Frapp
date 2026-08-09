@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -28,6 +29,8 @@ import { SystemPermissions } from '../../domain/constants/permissions';
 import {
   RequestDocumentUploadUrlDto,
   ConfirmDocumentUploadDto,
+  CreateDocumentFolderDto,
+  UpdateDocumentFolderDto,
 } from '../dtos/chapter-document.dto';
 
 @ApiTags('Documents')
@@ -74,17 +77,81 @@ export class ChapterDocumentController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List documents (optional folder filter)' })
+  @ApiOperation({
+    summary: 'List documents (optional folder and title search)',
+  })
   @ApiQuery({ name: 'folder', required: false })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Case-insensitive substring match on the document title',
+  })
   async list(
     @CurrentChapterId() chapterId: string,
     @Query('folder') folder?: string,
+    @Query('search') search?: string,
   ) {
-    const filter =
+    const folderFilter =
       folder !== undefined
         ? { folder: folder === '' || folder === 'null' ? null : folder }
         : undefined;
+    const searchFilter = search?.trim() ? { search: search.trim() } : undefined;
+    const filter =
+      folderFilter || searchFilter
+        ? { ...folderFilter, ...searchFilter }
+        : undefined;
     return this.chapterDocumentService.findByChapter(chapterId, filter);
+  }
+
+  // Folder routes are declared before `:id` on purpose — Nest matches in
+  // declaration order, so `@Get(':id')` above would swallow `/documents/folders`
+  // and try to load a document whose id is the literal string "folders".
+
+  @Get('folders')
+  @ApiOperation({ summary: 'List document folders in display order' })
+  async listFolders(@CurrentChapterId() chapterId: string) {
+    return this.chapterDocumentService.listFolders(chapterId);
+  }
+
+  @Post('folders')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Create a document folder' })
+  async createFolder(
+    @CurrentChapterId() chapterId: string,
+    @Body() dto: CreateDocumentFolderDto,
+  ) {
+    return this.chapterDocumentService.createFolder(
+      chapterId,
+      dto.name,
+      dto.sort_order,
+    );
+  }
+
+  @Patch('folders/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({ summary: 'Rename or reorder a document folder' })
+  async updateFolder(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateDocumentFolderDto,
+  ) {
+    return this.chapterDocumentService.updateFolder(id, chapterId, {
+      name: dto.name,
+      sort_order: dto.sort_order,
+    });
+  }
+
+  @Delete('folders/:id')
+  @RequirePermissions(SystemPermissions.CHAPTER_DOCS_MANAGE)
+  @ApiOperation({
+    summary: 'Delete a folder (its documents move to the root level)',
+  })
+  async deleteFolder(
+    @CurrentChapterId() chapterId: string,
+    @Param('id') id: string,
+  ) {
+    await this.chapterDocumentService.deleteFolder(id, chapterId);
+    return { success: true };
   }
 
   @Get(':id')
