@@ -1,5 +1,4 @@
 import { renderHook, act } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const { activateMutate, refreshSession, setActiveChapterId, calls } = vi.hoisted(
@@ -36,25 +35,14 @@ vi.mock("@/lib/stores/chapter-store", () => ({
 
 const { useSelectChapter } = await import("./select-chapter");
 
-function makeClient() {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-}
-
-function renderSelectChapter(qc: QueryClient) {
-  return renderHook(() => useSelectChapter(), {
-    wrapper: ({ children }: { children: React.ReactNode }) => (
-      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    ),
-  });
-}
-
 /**
  * The switch has to land server-side, reissue the token, and update the store,
  * in that order — see spec/behavior/multi-tenancy.md. Each test here pins one
- * step so a future refactor can't quietly drop it. The cache drop that follows
- * belongs to `FrappProvider`; it is covered in that component's own suite.
+ * step so a future refactor can't quietly drop it.
+ *
+ * Dropping the outgoing chapter's cached data is step 4 and deliberately lives
+ * in `FrappProvider`, keyed on the store write this hook performs; it is
+ * covered by that component's own suite.
  */
 describe("useSelectChapter", () => {
   beforeEach(() => {
@@ -65,8 +53,7 @@ describe("useSelectChapter", () => {
   });
 
   it("activates server-side, refreshes the session, then updates the store", async () => {
-    const qc = makeClient();
-    const { result } = renderSelectChapter(qc);
+    const { result } = renderHook(() => useSelectChapter());
 
     let switched: boolean | undefined;
     await act(async () => {
@@ -82,12 +69,9 @@ describe("useSelectChapter", () => {
     expect(calls).toEqual(["activate", "refreshSession", "setActiveChapterId"]);
   });
 
-  it("leaves the store and the cache alone when activation fails", async () => {
-    const qc = makeClient();
-    qc.setQueryData(["channels"], [{ id: "ch-1" }]);
+  it("leaves the store alone when activation fails", async () => {
     activateMutate.mockRejectedValueOnce(new Error("network"));
-
-    const { result } = renderSelectChapter(qc);
+    const { result } = renderHook(() => useSelectChapter());
 
     let switched: boolean | undefined;
     await act(async () => {
@@ -96,19 +80,14 @@ describe("useSelectChapter", () => {
 
     expect(switched).toBe(false);
     // Fail-closed: pointing x-chapter-id at a chapter the un-refreshed token
-    // still disagrees with would 403 every subsequent request. Leaving the
-    // store alone also means FrappProvider never sees a change, so the cache
-    // survives too.
+    // still disagrees with would 403 every subsequent request. Not writing the
+    // store is also what keeps the cache intact, since the drop is keyed on it.
     expect(setActiveChapterId).not.toHaveBeenCalled();
-    expect(qc.getQueryData(["channels"])).toEqual([{ id: "ch-1" }]);
   });
 
-  it("leaves the store and the cache alone when the session refresh fails", async () => {
-    const qc = makeClient();
-    qc.setQueryData(["channels"], [{ id: "ch-1" }]);
+  it("leaves the store alone when the session refresh fails", async () => {
     refreshSession.mockRejectedValueOnce(new Error("offline"));
-
-    const { result } = renderSelectChapter(qc);
+    const { result } = renderHook(() => useSelectChapter());
 
     let switched: boolean | undefined;
     await act(async () => {
@@ -116,7 +95,7 @@ describe("useSelectChapter", () => {
     });
 
     expect(switched).toBe(false);
+    expect(calls).toEqual(["activate"]);
     expect(setActiveChapterId).not.toHaveBeenCalled();
-    expect(qc.getQueryData(["channels"])).toEqual([{ id: "ch-1" }]);
   });
 });
