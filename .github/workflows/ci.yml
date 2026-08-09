@@ -254,17 +254,20 @@ jobs:
       # `packages/**`, so they run on the right paths without adding a
       # branch-protection entry. Both suites were previously unrun anywhere.
       #
-      # `if: always()` because these are independent suites, not follow-on
+      # `if: !cancelled()` because these are independent suites, not follow-on
       # phases: without it a red apps/web test skips both and hides two more
-      # failures until the next push. Note this job is deliberately NOT a
-      # required check (ADR-15 / spec/architecture/README.md), so a red run here
-      # reports but does not block merge.
+      # failures until the next push. Not `always()` — this workflow sets
+      # `cancel-in-progress`, and `always()` keeps running after a cancellation,
+      # so every superseded run would still pay for both suites. Note this job
+      # is deliberately NOT a required check (ADR-15 /
+      # spec/architecture/README.md), so a red run here reports but does not
+      # block merge.
       - name: Run shared hooks package tests
-        if: always()
+        if: ${{ !cancelled() }}
         run: npm run test -w packages/hooks
 
       - name: Run shared UI package tests
-        if: always()
+        if: ${{ !cancelled() }}
         run: npm run test -w packages/ui
 
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
