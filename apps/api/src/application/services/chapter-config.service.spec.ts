@@ -45,6 +45,7 @@ type WorkflowRow = { key: string; enabled: boolean; threshold: number | null };
 function makeSupabase(
   workflowRows: WorkflowRow[],
   duesRow: Record<string, unknown> | null = null,
+  serviceRow: Record<string, unknown> | null = null,
 ) {
   const chapterRow = {
     id: CHAPTER_ID,
@@ -59,6 +60,7 @@ function makeSupabase(
 
   const workflowUpsert = jest.fn().mockReturnValue({ error: null });
   const duesUpsert = jest.fn().mockReturnValue({ error: null });
+  const serviceUpsert = jest.fn().mockReturnValue({ error: null });
   const auditInsert = jest.fn().mockResolvedValue({ error: null });
   const chapterUpdate = jest.fn();
 
@@ -104,13 +106,33 @@ function makeSupabase(
       );
       return builder;
     }
+    if (table === 'chapter_service_config') {
+      const builder: Record<string, jest.Mock> = {};
+      builder.select = jest.fn().mockReturnValue(builder);
+      builder.eq = jest.fn().mockReturnValue({
+        maybeSingle: jest
+          .fn()
+          .mockResolvedValue({ data: serviceRow, error: null }),
+      });
+      builder.upsert = jest.fn((rows: unknown, opts: unknown) =>
+        serviceUpsert(rows, opts),
+      );
+      return builder;
+    }
     if (table === 'chapter_audit_log') {
       return { insert: auditInsert };
     }
     return {};
   });
 
-  return { from, workflowUpsert, duesUpsert, auditInsert, chapterUpdate };
+  return {
+    from,
+    workflowUpsert,
+    duesUpsert,
+    serviceUpsert,
+    auditInsert,
+    chapterUpdate,
+  };
 }
 
 async function buildService(supabase: { from: jest.Mock }) {
@@ -371,6 +393,64 @@ describe('ChapterConfigService — analytics opt-out', () => {
       expect(supabase.chapterUpdate).not.toHaveBeenCalled();
       expect(supabase.auditInsert).not.toHaveBeenCalled();
       expect(result.id).toBe(CHAPTER_ID);
+    });
+  });
+});
+
+describe('ChapterConfigService — service hours', () => {
+  describe('getConfig', () => {
+    it('falls back to the 60 min/point default when the chapter has no row', async () => {
+      // An absent row is the unconfigured state, not an error: it must report
+      // the same rate the API awarded before the rate became configurable.
+      const supabase = makeSupabase([], null, null);
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.service).toEqual({ minutes_per_point: 60 });
+    });
+
+    it('returns the chapter override when a row exists', async () => {
+      const supabase = makeSupabase([], null, { minutes_per_point: 30 });
+      const service = await buildService(supabase);
+
+      const config = await service.getConfig(CHAPTER_ID);
+
+      expect(config.service).toEqual({ minutes_per_point: 30 });
+    });
+  });
+
+  describe('patchConfig', () => {
+    it('upserts the rate and audits the change', async () => {
+      const supabase = makeSupabase([], null, null);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        service: { minutes_per_point: 45 },
+      });
+
+      expect(supabase.serviceUpsert).toHaveBeenCalledTimes(1);
+      expect(supabase.serviceUpsert).toHaveBeenCalledWith(
+        { chapter_id: CHAPTER_ID, minutes_per_point: 45 },
+        { onConflict: 'chapter_id' },
+      );
+      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(auditRow.diff.service).toEqual({
+        from: { minutes_per_point: 60 },
+        to: { minutes_per_point: 45 },
+      });
+    });
+
+    it('is a no-op when the rate already matches', async () => {
+      const supabase = makeSupabase([], null, { minutes_per_point: 30 });
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        service: { minutes_per_point: 30 },
+      });
+
+      expect(supabase.serviceUpsert).not.toHaveBeenCalled();
+      expect(supabase.auditInsert).not.toHaveBeenCalled();
     });
   });
 });

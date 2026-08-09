@@ -17,6 +17,7 @@ import {
   ChapterWorkflowsService,
   WORKFLOW_HOURS_RECEIPT,
 } from './chapter-workflows.service';
+import { ChapterServiceConfigService } from './chapter-service-config.service';
 
 describe('ServiceEntryService', () => {
   let service: ServiceEntryService;
@@ -27,6 +28,9 @@ describe('ServiceEntryService', () => {
   >;
   let mockChapterWorkflows: jest.Mocked<
     Pick<ChapterWorkflowsService, 'getWorkflow'>
+  >;
+  let mockChapterServiceConfig: jest.Mocked<
+    Pick<ChapterServiceConfigService, 'getMinutesPerPoint'>
   >;
 
   const receiptWorkflow = (enabled: boolean) => ({
@@ -55,6 +59,8 @@ describe('ServiceEntryService', () => {
       findById: jest.fn(),
       findByChapter: jest.fn(),
       findByUser: jest.fn(),
+      findByChapterFiltered: jest.fn(),
+      leaderboard: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       approveAtomic: jest.fn(),
@@ -86,6 +92,12 @@ describe('ServiceEntryService', () => {
       getWorkflow: jest.fn().mockResolvedValue(receiptWorkflow(false)),
     };
 
+    // Default: the pre-existing hardcoded rate, so every approval case that
+    // predates configurable rates keeps asserting the same point math.
+    mockChapterServiceConfig = {
+      getMinutesPerPoint: jest.fn().mockResolvedValue(60),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ServiceEntryService,
@@ -93,6 +105,10 @@ describe('ServiceEntryService', () => {
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: ChapterWorkflowsService, useValue: mockChapterWorkflows },
+        {
+          provide: ChapterServiceConfigService,
+          useValue: mockChapterServiceConfig,
+        },
       ],
     }).compile();
 
@@ -811,6 +827,159 @@ describe('ServiceEntryService', () => {
         service.approve('se-1', 'ch-1', 'admin-1', null),
       ).rejects.toThrow('db transaction failed');
       expect(mockNotificationService.notifyUser).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('approve — chapter-configurable rate', () => {
+    const approvedFor = (entry: ServiceEntry) => ({
+      ...entry,
+      status: 'APPROVED' as const,
+      reviewed_by: 'admin-1',
+      review_comment: null,
+      points_awarded: true,
+    });
+
+    it('awards on the chapter rate, not the 60-minute default', async () => {
+      // 90 minutes at 30 min/point = 3 points; the old hardcoded rate would
+      // have awarded 1.
+      const entry = { ...baseEntry, duration_minutes: 90 };
+      mockChapterServiceConfig.getMinutesPerPoint.mockResolvedValue(30);
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue(approvedFor(entry));
+
+      await service.approve('se-1', 'ch-1', 'admin-1', null);
+
+      expect(mockChapterServiceConfig.getMinutesPerPoint).toHaveBeenCalledWith(
+        'ch-1',
+      );
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        null,
+        3,
+      );
+    });
+
+    it('floors sub-rate durations to zero points and still approves', async () => {
+      // 45 minutes at 60 min/point rounds down to no ledger row, per the spec's
+      // "Sub-rate durations approve with no ledger row".
+      const entry = { ...baseEntry, duration_minutes: 45 };
+      mockChapterServiceConfig.getMinutesPerPoint.mockResolvedValue(60);
+      mockServiceEntryRepo.findById.mockResolvedValue(entry);
+      mockServiceEntryRepo.approveAtomic.mockResolvedValue({
+        ...approvedFor(entry),
+        points_awarded: false,
+      });
+
+      const result = await service.approve('se-1', 'ch-1', 'admin-1', null);
+
+      expect(mockServiceEntryRepo.approveAtomic).toHaveBeenCalledWith(
+        'se-1',
+        'ch-1',
+        'admin-1',
+        null,
+        0,
+      );
+      expect(result.status).toBe('APPROVED');
+    });
+
+    it('keeps the award idempotent — an already-awarded entry never reaches the RPC', async () => {
+      // The rate lookup must not weaken the existing guard: a second approval
+      // is rejected before any points are recomputed.
+      mockChapterServiceConfig.getMinutesPerPoint.mockResolvedValue(15);
+      mockServiceEntryRepo.findById.mockResolvedValue({
+        ...baseEntry,
+        points_awarded: true,
+      });
+
+      await expect(
+        service.approve('se-1', 'ch-1', 'admin-1', null),
+      ).rejects.toThrow('Points already awarded for this entry');
+      expect(mockServiceEntryRepo.approveAtomic).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findByChapterFiltered', () => {
+    it('passes status, date range, and member through to the repository', async () => {
+      mockServiceEntryRepo.findByChapterFiltered.mockResolvedValue([baseEntry]);
+
+      const result = await service.findByChapterFiltered('ch-1', {
+        status: 'PENDING',
+        startDate: '2026-01-01',
+        endDate: '2026-05-31',
+        userId: 'user-1',
+      });
+
+      expect(mockServiceEntryRepo.findByChapterFiltered).toHaveBeenCalledWith(
+        'ch-1',
+        {
+          status: 'PENDING',
+          startDate: '2026-01-01',
+          endDate: '2026-05-31',
+          userId: 'user-1',
+        },
+      );
+      expect(result).toEqual([baseEntry]);
+    });
+
+    it('rejects an inverted date range instead of silently returning nothing', async () => {
+      await expect(
+        service.findByChapterFiltered('ch-1', {
+          startDate: '2026-05-31',
+          endDate: '2026-01-01',
+        }),
+      ).rejects.toThrow('start_date must not be after end_date');
+      expect(mockServiceEntryRepo.findByChapterFiltered).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unparseable date', async () => {
+      await expect(
+        service.findByChapterFiltered('ch-1', { startDate: 'not-a-date' }),
+      ).rejects.toThrow('start_date must be a valid ISO date');
+      expect(mockServiceEntryRepo.findByChapterFiltered).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('leaderboard', () => {
+    const row = {
+      user_id: 'user-1',
+      member_name: 'Alex Rivera',
+      total_minutes: 240,
+      entry_count: 3,
+    };
+
+    it('returns the aggregated ranking for an all-time window', async () => {
+      mockServiceEntryRepo.leaderboard.mockResolvedValue([row]);
+
+      const result = await service.leaderboard('ch-1');
+
+      expect(mockServiceEntryRepo.leaderboard).toHaveBeenCalledWith('ch-1', {});
+      expect(result).toEqual([row]);
+    });
+
+    it('forwards an explicit date window', async () => {
+      mockServiceEntryRepo.leaderboard.mockResolvedValue([]);
+
+      await service.leaderboard('ch-1', {
+        startDate: '2026-01-01',
+        endDate: '2026-05-31',
+      });
+
+      expect(mockServiceEntryRepo.leaderboard).toHaveBeenCalledWith('ch-1', {
+        startDate: '2026-01-01',
+        endDate: '2026-05-31',
+      });
+    });
+
+    it('rejects an inverted date range', async () => {
+      await expect(
+        service.leaderboard('ch-1', {
+          startDate: '2026-06-01',
+          endDate: '2026-01-01',
+        }),
+      ).rejects.toThrow('start_date must not be after end_date');
+      expect(mockServiceEntryRepo.leaderboard).not.toHaveBeenCalled();
     });
   });
 
