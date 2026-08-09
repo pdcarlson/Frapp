@@ -27,6 +27,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import {
   AttendanceReportDto,
@@ -171,6 +172,7 @@ function truncationNotice(result: ReportResult<unknown>): string | undefined {
 @ApiExtraModels(ReportExportResponseDto)
 @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
 @RequirePermissions(SystemPermissions.REPORTS_EXPORT)
+@RequireModule('reports')
 @Controller('reports')
 export class ReportController {
   private readonly logger = new Logger(ReportController.name);

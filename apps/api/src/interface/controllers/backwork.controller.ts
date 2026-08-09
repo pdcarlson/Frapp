@@ -23,6 +23,7 @@ import {
   RequireAnyOfPermissions,
   RequirePermissions,
 } from '../decorators/permissions.decorator';
+import { RequireModule } from '../decorators/module.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -41,6 +42,7 @@ import {
   SystemPermissions.BACKWORK_UPLOAD,
   SystemPermissions.BACKWORK_ADMIN,
 )
+@RequireModule('backwork')
 @Controller('backwork')
 export class BackworkController {
   constructor(private readonly backworkService: BackworkService) {}

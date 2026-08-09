@@ -20,6 +20,8 @@ import {
   SUBSCRIPTION_FREE_TIER_KEY,
   SUBSCRIPTION_GRACE_BLOCKED_KEY,
 } from '../decorators/subscription.decorator';
+import { REQUIRED_MODULE_KEY } from '../decorators/module.decorator';
+import { isModuleEnabled } from '@repo/validation';
 import type { SubscriptionStatus } from '../../domain/entities/chapter.entity';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -75,11 +77,12 @@ export class ChapterGuard implements CanActivate {
 
     const { data: chapter } = await this.supabase
       .from('chapters')
-      .select('subscription_status, past_due_since')
+      .select('subscription_status, past_due_since, enabled_modules')
       .eq('id', chapterId)
       .single<{
         subscription_status: SubscriptionStatus;
         past_due_since: string | null;
+        enabled_modules: Record<string, boolean> | null;
       }>();
 
     if (!chapter) {
@@ -97,6 +100,11 @@ export class ChapterGuard implements CanActivate {
       chapter.subscription_status,
       chapter.past_due_since,
     );
+
+    // After the subscription check: a lapsed chapter's billing state is the
+    // more actionable error, and a module toggle is meaningless while every
+    // write is already locked.
+    this.enforceModule(context, request.method, chapter.enabled_modules);
 
     return true;
   }
@@ -249,6 +257,42 @@ export class ChapterGuard implements CanActivate {
         code: 'chapter.subscription.required',
         message:
           'Chapter subscription is not active; complete checkout to use this feature.',
+      });
+    }
+  }
+
+  /**
+   * Server-side half of the module gate (#264). The web client hides disabled
+   * modules from the sidebar, the Cmd+K menu, and the slash-command palette,
+   * but a direct API call bypasses all three — so the write is rejected here
+   * regardless of client.
+   *
+   * Two deliberate asymmetries with `enforceSubscription`:
+   *
+   * - **Writes only.** `spec/product/modules.md` promises "Data is preserved —
+   *   re-enabling restores access", so reads of a disabled module's data keep
+   *   working; the toggle freezes a surface, it does not strand data.
+   * - **Enabled unless explicitly `false`**, via the shared `isModuleEnabled`
+   *   predicate in `@repo/validation` — the same one the web surfaces use, so
+   *   the client's idea of "off" cannot drift from the server's.
+   */
+  private enforceModule(
+    context: ExecutionContext,
+    method: string,
+    enabledModules: Record<string, boolean> | null,
+  ): void {
+    if (READ_METHODS.has(method.toUpperCase())) return;
+
+    const moduleKey = this.reflector.getAllAndOverride<string | undefined>(
+      REQUIRED_MODULE_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!moduleKey) return;
+
+    if (!isModuleEnabled(enabledModules, moduleKey)) {
+      throw new ForbiddenException({
+        code: 'chapter.module.disabled',
+        message: `The "${moduleKey}" module is disabled for this chapter. Re-enable it in Settings → Modules to make changes.`,
       });
     }
   }
