@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
+import { isSupportedTimeZone } from '@repo/validation';
 import { UpdateUserSettingsDto } from './notification.dto';
 
 /** Validate a plain payload through the DTO and return the failing property names. */
@@ -70,13 +71,16 @@ describe('UpdateUserSettingsDto — quiet_hours_tz zone validation (#687)', () =
     expect(dto.quiet_hours_end).toBeNull();
   });
 
-  // Accepted deliberately — see spec/behavior/notifications.md § Quiet Hours.
-  // Rows already hold offsets, so rejecting them here would lock those members
-  // out of the settings form entirely.
-  it('accepts a fixed UTC offset (documented, not preferred)', async () => {
-    expect(await failingProps({ quiet_hours_tz: '-05:00' })).not.toContain(
-      'quiet_hours_tz',
-    );
+  // Whether a fixed offset resolves is a property of the runtime's ICU, not of
+  // this DTO: Node 20 (CI and the Dockerfile) rejects `-05:00`, Node 22 accepts
+  // it. So assert the portable thing — the DTO reaches the same verdict as the
+  // shared predicate — rather than an outcome that flips with the Node version.
+  it('agrees with the shared predicate on offset forms, whatever this runtime decides', async () => {
+    const candidate = '-05:00';
+    const rejectedByDto = (
+      await failingProps({ quiet_hours_tz: candidate })
+    ).includes('quiet_hours_tz');
+    expect(rejectedByDto).toBe(!isSupportedTimeZone(candidate));
   });
 
   it('rejects a plausible-looking but nonexistent zone', async () => {

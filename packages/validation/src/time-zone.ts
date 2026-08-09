@@ -14,14 +14,16 @@
  * It is deliberately *not* "must be a DST-aware IANA name". Requiring an IANA
  * name would not buy that anyway: `UTC`, `EST`, and `Etc/GMT+5` are all real
  * IANA identifiers that never observe DST. Narrowing to zones that do follow DST
- * would also start rejecting values already sitting in stored rows — including
- * the fixed offsets the web panel spent a long time inviting — which is the
+ * would also start rejecting values already sitting in stored rows, which is the
  * lockout this module exists to prevent. Tightening that further needs a
  * backfill and a zone picker; it is tracked separately.
  *
- * A fixed offset (`-05:00`) is therefore accepted but is a poor choice: it never
- * shifts, so a quiet-hours window set with one drifts by an hour for the part of
- * the year the member observes DST. Clients should steer people to named zones.
+ * **Fixed offsets (`-05:00`) are not portable and must not be relied on.**
+ * Whether `Intl` resolves them depends on the runtime's ICU: Node 20 — what the
+ * Dockerfile and CI run — rejects them; Node 22 accepts them. The old web panel
+ * labelled this field "Timezone offset", so stored rows can hold one; on the
+ * deployment runtime those are simply unresolvable, which the delivery guard
+ * handles by degrading to UTC. Steer people to named zones.
  */
 
 /** Longest value the `user_settings.quiet_hours_tz` column is allowed to carry. */

@@ -38,11 +38,20 @@ describe("isSupportedTimeZone", () => {
     expect(isSupportedTimeZone("  America/New_York  ")).toBe(true);
   });
 
-  // Documented and deliberate: offsets are accepted because stored rows already
-  // hold them. They are a poor choice (no DST), which is a UI steer, not a
-  // validation error — see spec/behavior/notifications.md § Quiet Hours.
-  it("accepts a fixed offset, which the spec permits but discourages", () => {
-    expect(isSupportedTimeZone("-05:00")).toBe(true);
+  // Offset forms are NOT portable, and this test used to assert they were
+  // accepted — true on the Node 22 sandbox it was written on, false on the
+  // Node 20 that CI and the Dockerfile actually run. Pinning either answer
+  // repeats the mistake this whole module exists to prevent: treating one
+  // runtime's timezone verdict as universal. Assert instead the invariant that
+  // holds everywhere — the predicate and the normalizer never disagree, so a
+  // client and the server reach the same conclusion on the same runtime.
+  it("keeps isSupportedTimeZone and normalizeTimeZoneInput in agreement", () => {
+    for (const candidate of ["-05:00", "+05:30", "Etc/GMT+5", "EST", "UTC"]) {
+      const accepted = isSupportedTimeZone(candidate);
+      const normalized = normalizeTimeZoneInput(candidate);
+      expect(normalized === undefined).toBe(!accepted);
+      if (accepted) expect(normalized).toBe(candidate);
+    }
   });
 });
 

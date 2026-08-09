@@ -151,7 +151,7 @@ export function ProfilePanel() {
         tz = normalizeTimeZoneInput(rawTz);
         if (tz === undefined) {
           setTimeZoneError(
-            "Enter a time zone this server recognizes, like America/Chicago. Named zones are preferred — a fixed offset such as -05:00 works but won't follow daylight saving time.",
+            "Enter a time zone name this server recognizes, like America/Chicago. A fixed offset such as -05:00 is not accepted.",
           );
           return;
         }

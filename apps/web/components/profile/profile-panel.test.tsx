@@ -166,7 +166,9 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
       expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
     });
     expect(lastSettingsBody()).toHaveProperty("quiet_hours_tz", undefined);
-    expect(screen.queryByText(/time zone this server recognizes/i)).toBeNull();
+    expect(
+      screen.queryByText(/time zone name this server recognizes/i),
+    ).toBeNull();
   });
 
   it("blocks the save and explains when the zone cannot be resolved", async () => {
@@ -184,7 +186,7 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     await savePreferences();
 
     expect(
-      await screen.findByText(/time zone this server recognizes/i),
+      await screen.findByText(/time zone name this server recognizes/i),
     ).toBeTruthy();
     expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-invalid")).toBe("true");
