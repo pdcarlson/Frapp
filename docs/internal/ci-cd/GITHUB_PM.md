@@ -90,6 +90,13 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 - **`triage`**, **`in-progress`**, **`in-review`** are the state labels above.
 - **`routine-state`** marks routine infrastructure issues (cross-run state stores, never work) —
   excluded from `/next` candidacy and from every routine's triage/grooming scope.
+- **`scope:production`** marks work that only becomes relevant once a production environment
+  exists. Added 2026-08-10 on the owner's decision to defer production and make staging the
+  near-term goal. These issues are **parked by choice, not blocked and not stale**: routines must
+  not mark them `stale`, must not raise their priority for age, and must not re-file duplicates of
+  them. `frapp-prod` being paused, the production Render service being suspended, and `frapp-web`
+  having no production deployment are all intentional states, not findings. Revisit when
+  production becomes a goal; see #814 for the decision record.
 - Legacy labels from the pre-Linear era (`bug`, `Improvement`, `release:*`) persist on old issues;
   `release:*` still drives version bumps ([`AGENT_INFRA.md`](AGENT_INFRA.md)). Don't extend the
   legacy set to new issues.
