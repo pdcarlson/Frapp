@@ -95,6 +95,9 @@ These are only used by GitHub Actions. Leave them empty in the `local` environme
 | `API_HEALTHCHECK_URL` | _(leave empty)_ | `https://api-staging.frapp.live/health` | `https://api.frapp.live/health` |
 | `SUPABASE_PROJECT_REF` | _(leave empty)_ | Copy from Supabase staging dashboard → Settings → General → Reference ID (looks like `abcdefghijklmnop`) | Copy from Supabase production dashboard → Settings → General → Reference ID |
 | `SUPABASE_ACCESS_TOKEN` | _(leave empty)_ | Go to https://supabase.com/dashboard/account/tokens → Generate token → copy it. **Same token for both staging and production** — it's an account-level token. | _(same token as staging)_ |
+| `SUPABASE_DB_PASSWORD` | _(leave empty)_ | The **frapp-staging** database password (Supabase dashboard → project → database settings; reset it there if unknown). | The **frapp-prod** database password — a *different* value from staging. |
+
+> **`SUPABASE_DB_PASSWORD` is required, not optional.** The Supabase CLI pinned in `deploy-api.yml` cannot initialise its `cli_login_postgres` login role — it issues that role's password with an already-expired validity window and fails with `permission denied to alter role`, which reads like a permissions problem but is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), tracked here as #835). With `SUPABASE_DB_PASSWORD` set, `supabase link` / `db push` connect directly and skip login-role initialisation. Without it, **every** migration job fails. Unlike `SUPABASE_ACCESS_TOKEN`, this value is per-project — staging and production have different passwords.
 
 ---
 
@@ -198,9 +201,9 @@ is unavailable in that state and the sign-in screen says so.
 
 | Secret | Where to get it |
 |---|---|
-| `INFISICAL_MACHINE_IDENTITY_ID` | Infisical → Organization Settings → Machine Identities → Client ID |
-| `INFISICAL_CLIENT_SECRET` | Infisical → Machine Identity → Universal Auth → Client Secret |
-| `INFISICAL_PROJECT_ID` | Infisical → Project Settings → Project ID |
+| `INFISICAL_MACHINE_IDENTITY_ID` | Infisical → Access Control → Machine Identities → open the identity → **Universal Auth** panel → **Client ID**. ⚠️ **Not** the identity's own **ID** shown on its Details page — those are two different UUIDs on two different screens, and this secret's name points at the wrong one. Pasting the Details-page ID produces `401 Invalid credentials` with no other symptom. |
+| `INFISICAL_CLIENT_SECRET` | Same **Universal Auth** panel → **Add Client Secret**. The value is shown once, at creation — if it was not saved, issue a new one rather than hunting for the old. |
+| `INFISICAL_PROJECT_ID` | Infisical → Project Settings → Project ID. Not read by `deploy-api.yml`, which hardcodes `project-slug: frapp-live-ej-ls`. |
 
 **Current deploy workflow state:**
 

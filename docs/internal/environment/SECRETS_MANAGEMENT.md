@@ -82,6 +82,7 @@ For each environment, add the canonical values from the table in [`ENV_REFERENCE
 | `API_HEALTHCHECK_URL`       | `https://api-staging.frapp.live/health`            |
 | `SUPABASE_PROJECT_REF`      | Staging project reference ID                       |
 | `SUPABASE_ACCESS_TOKEN`     | From https://supabase.com/dashboard/account/tokens |
+| `SUPABASE_DB_PASSWORD`      | Staging database password (per-project — production differs). **Required for migrations**; see [`ENV_REFERENCE.md`](./ENV_REFERENCE.md#cd-secrets-deploy-workflows-only) |
 
 Repeat for `production` with production values, and `local` with local values.
 
@@ -138,17 +139,21 @@ In **all three environments**, add these references (they're the same in every e
 
 Add these secrets to GitHub repository settings (Settings → Secrets → Actions):
 
-**Infisical bootstrap (permanent):**
+**Infisical bootstrap (permanent) — repository scope:**
 
-| Secret                          | Value                                           |
-| ------------------------------- | ----------------------------------------------- |
-| `INFISICAL_MACHINE_IDENTITY_ID` | From Infisical Machine Identity → Client ID     |
-| `INFISICAL_CLIENT_SECRET`       | From Infisical Machine Identity → Client Secret |
-| `INFISICAL_PROJECT_ID`          | From Infisical → Project Settings → Project ID  |
+These three are **repository secrets**, not environment secrets. One machine identity serves both `staging` and `production` (the workflow selects the environment via `env-slug`, not via credentials), so a single repository-scoped pair is correct and environment-scoped copies would only create two places to get it wrong. Confirmed by the repository owner on 2026-08-10: neither the `staging` nor the `production` GitHub environment holds any secrets of its own.
+
+| Secret                          | Value                                                                       |
+| ------------------------------- | --------------------------------------------------------------------------- |
+| `INFISICAL_MACHINE_IDENTITY_ID` | The identity's **Universal Auth → Client ID** — see the warning below        |
+| `INFISICAL_CLIENT_SECRET`       | From the same Universal Auth panel → **Add Client Secret** (shown once)      |
+| `INFISICAL_PROJECT_ID`          | From Infisical → Project Settings → Project ID                              |
+
+> ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 
 **Transitional (until Infisical GitHub Action injection is wired):**
 
-The deploy workflow (`deploy-api.yml`) currently uses `${{ secrets.* }}` for these. They should be set as **GitHub environment-scoped secrets** (staging and production environments) or synced via the Infisical GitHub Actions integration:
+The deploy workflow (`deploy-api.yml`) injects these from Infisical at runtime via `Infisical/secrets-action`, so they do **not** need to exist as GitHub secrets at all. Keep them in Infisical, scoped per environment there. (Earlier revisions of this document called for GitHub environment-scoped copies; that contradicted the repository-scope rule above and is no longer accurate — see #772.)
 
 | Secret                   | Staging value                           | Production value                |
 | ------------------------ | --------------------------------------- | ------------------------------- |
@@ -167,7 +172,16 @@ Once the `@infisical/secrets-action` is integrated into the deploy workflow, the
 | -------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
 | **Fails**, naming the secret           | `INFISICAL_MACHINE_IDENTITY_ID` and/or `INFISICAL_CLIENT_SECRET` is unset or empty in this scope | Add it as a repository secret, or as an environment secret on `staging` / `production`    |
 | **Passes with a whitespace warning**, then 401 | A value carries a stray leading or trailing character — usually a newline picked up when pasting | Re-paste both secrets in GitHub *before* rotating anything in Infisical                    |
-| **Passes** cleanly, then injection 401s | The credentials exist and are well-formed, but Infisical rejected them — revoked, rotated, or expired client secret | Rotate the machine identity's universal-auth client secret and update the GitHub secrets  |
+| **Passes** cleanly, then injection 401s | The credentials exist and are well-formed, but Infisical rejected them | **Check whether they ever worked before rotating** — see below |
+
+**When the preflight passes and injection still 401s, read the Infisical dashboard before touching anything.** Open the machine identity and look at two fields:
+
+| What you see                                                              | What it means                                                     | Fix                                                                                              |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Last Logged In** has a date, client secret shows **uses > 0**           | It genuinely worked once and has since been revoked or expired    | Issue a new client secret and update `INFISICAL_CLIENT_SECRET`                                    |
+| **Last Logged In: —** and client secret **Number of Uses: 0**             | This pair has **never** authenticated — nothing was ever rotated  | The stored Client ID is wrong (most likely the identity's Details-page ID). Set both secrets from the Universal Auth panel |
+
+#696 was the second case: the identity had recorded no successful login since it was created, so nothing had been revoked and rotating the secret alone would not have helped. Which value was wrong could not be confirmed after the fact — GitHub secrets are write-only — but the remedy is the same either way: set **both** secrets from the Universal Auth panel in one pass, rather than replacing only the one you suspect. Also confirm the identity is attached to the project (`Projects` section on its Details page) and that its trusted-IP ranges permit GitHub runners.
 
 Note that a `Deploy API` run is reported green whenever the `check-changes` path gate skips all four deploy jobs, so a mostly-green run history does **not** mean the injection step works — only runs that touch `apps/api/` or `supabase/migrations/` exercise it. See [issue #696](https://github.com/pdcarlson/Frapp/issues/696), where that distinction hid a 100% injection failure rate for 71 days.
 
