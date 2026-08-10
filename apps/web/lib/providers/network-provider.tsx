@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { normalizeApiBaseUrl } from "@repo/api-sdk";
 
 export type ConnectionState = "ONLINE" | "DEGRADED" | "OFFLINE";
 
@@ -18,16 +19,19 @@ const NetworkContext = createContext<NetworkContextValue>({
   isOffline: false,
 });
 
+/*
+ * `/health` is the one route that is not under `/v1`, so the poll needs the
+ * bare origin. That is the same normalization the SDK applies to its own
+ * baseUrl, so it comes from the shared helper rather than a second local copy
+ * of the rule — the two drifting apart is what let a doubled `/v1` 404 every
+ * data request while this health poll kept reporting ONLINE.
+ */
 function getHealthCheckUrl() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   if (!apiUrl) {
     return null;
   }
-  const normalizedApiUrl = apiUrl.replace(/\/$/, "");
-  if (normalizedApiUrl.endsWith("/v1")) {
-    return `${normalizedApiUrl.slice(0, -3)}/health`;
-  }
-  return `${normalizedApiUrl}/health`;
+  return `${normalizeApiBaseUrl(apiUrl)}/health`;
 }
 
 const DEGRADED_THRESHOLD = 3;

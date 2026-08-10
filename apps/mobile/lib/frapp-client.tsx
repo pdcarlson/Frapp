@@ -36,8 +36,8 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
   const client = useMemo(
     () =>
       createFrappClient({
-        baseUrl:
-          process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001/v1",
+        // Bare origin — the generated SDK paths already carry `/v1`.
+        baseUrl: process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:3001",
         getAuthToken: readAuthToken,
         getChapterId: () => chapterIdRef.current,
       }),
