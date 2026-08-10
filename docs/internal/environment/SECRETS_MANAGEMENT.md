@@ -102,38 +102,74 @@ In **all three environments**, add these references (they're the same in every e
 
 ### 5. Configure Secret Syncs
 
-#### Vercel Syncs (4 syncs)
+#### How a sync decides what it pushes
 
-1. Infisical → Integrations → Add Sync → Vercel
-2. Authenticate with Vercel
-3. Create syncs:
+A sync's payload is defined by exactly two things: the source **environment** and the source
+**secret path**. Infisical's sync editor exposes no per-key include/exclude filter — the Source
+step offers Environment and Secret Path and nothing else, and its own help text states that "the
+environment + path together define the set of secrets this sync will push out."
 
-| #   | Infisical env | Vercel project | Vercel scope |
-| --- | ------------- | -------------- | ------------ |
-| 1   | staging       | frapp-web      | Preview      |
-| 2   | production    | frapp-web      | Production   |
-| 3   | staging       | frapp-landing  | Preview      |
-| 4   | production    | frapp-landing  | Production   |
+The **Customize key names** option under Sync Options is not a filter despite sounding like one.
+It applies a prefix/suffix so Infisical can recognise which keys at the *destination* it manages,
+leaving unmatched destination keys untouched. It does not narrow what gets sent.
 
-#### Render Syncs (2 syncs)
+Every sync below is configured at path `/`, so **each one pushes every secret in its source
+environment to its destination.** Narrowing a sync means splitting the secret store into paths and
+repointing the sync — there is no filter to switch on. See the "Blast radius" note below.
 
-1. Infisical → Integrations → Add Sync → Render
-2. Create syncs:
+#### Live syncs (6 total)
 
-| #   | Infisical env | Render service    |
-| --- | ------------- | ----------------- |
-| 5   | staging       | frapp-api-staging |
-| 6   | production    | frapp-api-prod    |
+| Name                        | Infisical env | Path | Destination         | Destination scope |
+| --------------------------- | ------------- | ---- | ------------------- | ----------------- |
+| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
+| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
+| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | production        |
+| `vercel-landing-staging`    | Staging       | `/`  | `frapp-landing`     | preview           |
+| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | production        |
+| `vercel-web-staging`        | Staging       | `/`  | `frapp-web`         | preview           |
 
-#### GitHub Actions (1 sync)
+To inspect or edit one: Infisical → Integrations → **Secret Syncs**. To create one from scratch on a
+fresh org, first authenticate the provider under **App Connections** (Vercel, Render), then
+**Add Sync** and pick the source environment, path, and destination scope shown above.
 
-1. Infisical → Integrations → Add → GitHub Actions
-2. Configure OIDC-based authentication
-3. The deploy workflow uses GitHub's `environment:` feature to scope secrets per job
+#### GitHub Actions is not a sync
 
-| #   | Infisical env        | GitHub environment            |
-| --- | -------------------- | ----------------------------- |
-| 7   | staging + production | Repository (via OIDC per job) |
+There is no GitHub Actions sync — the Secret Syncs list holds exactly the six above. `deploy-api.yml`
+**pulls** at job time instead, via `Infisical/secrets-action@v1.0.12` with `method: "universal"`,
+authenticating with the `INFISICAL_MACHINE_IDENTITY_ID` and `INFISICAL_CLIENT_SECRET` repository
+secrets. This is universal auth, not OIDC.
+
+Each injection step selects its source with `env-slug`. Note the production slug is **`prod`**, not
+`production` — the Infisical environment slug and the GitHub environment name differ.
+
+Because the action exports every secret in the resolved environment as a job env var, **adding a
+secret to the right Infisical environment is sufficient to make it available to CI** — no workflow
+change is needed.
+
+#### Blast radius
+
+Since all six syncs read path `/`, each pushes backend-only secrets toward destinations that never
+consume them. Only these variables are actually read in application source:
+
+| Vercel project  | Variables read in source                                                                                                                  |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `frapp-web`     | `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_LANDING_URL`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL` |
+| `frapp-landing` | `NEXT_PUBLIC_APP_URL`                                                                                                                       |
+
+Everything else in the environment — database passwords, service-role keys, Stripe secrets, deploy
+hook URLs — is pushed toward those projects without being used by them.
+
+Whether it *arrives* differs by environment, and the distinction matters:
+
+* The two **production** Vercel syncs report Synced, so those values do land in the `frapp-web` and
+  `frapp-landing` production environments.
+* The two **staging** Vercel syncs fail before delivering. They target a Vercel git branch named
+  `preview`, which does not exist in this repository — branches are `main` and `production` — and
+  abort with `Branch "preview" not found in the connected Git repository`. The breakage is
+  accidentally protective: the staging Vercel projects are not receiving these secrets. Re-confirmed
+  on 2026-08-10, when adding `SUPABASE_DB_PASSWORD` re-triggered both syncs and both failed again.
+
+Scoping the syncs down, and fixing the `preview` branch targeting, are both tracked in **#834**.
 
 ### 6. Configure GitHub
 
