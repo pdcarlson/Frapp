@@ -19,13 +19,17 @@ import { FrappClientProvider } from "./use-frapp-client";
  * — which is what the code did before — restores a silent-truncation bug that
  * no other test in the repo would notice, so the wiring is pinned here.
  *
- * **CI does not run this file yet.** `packages/hooks` has no `test` script,
- * `turbo.json` defines no `test` task, and every test step in `ci.yml` is
- * scoped to an app. Enabling one is blocked on #762: twelve tests in this
- * package are already red on `main`, so a job added today would fail on
- * arrival. Until that lands these run locally via
- * `npx vitest run src` in `packages/hooks` — real coverage, not yet enforced,
- * and worth stating rather than letting the file's existence imply a gate.
+ * CI now runs this file: the `web-tests` job in `ci.yml` invokes
+ * `npm run test -w packages/hooks`, reached via that job's `packages/**` path
+ * filter. Enabling it needed two things that had blocked it — the stale
+ * chapter-scoping specs (#766) and the `dist/` collection trap (#762), where a
+ * `tsc` build emits CommonJS spec twins that Vitest 4 no longer excludes by
+ * default. The latter is handled by the `include` in `vitest.config.ts`, which
+ * pins collection to `src`; don't remove it.
+ *
+ * `web-tests` reports but does not block: it is deliberately not a required
+ * status check (ADR-15, `spec/architecture/README.md`), so a red run here has
+ * to be read, not relied on to stop a merge.
  */
 describe("report hooks — truncation signalling", () => {
   let queryClient: QueryClient;

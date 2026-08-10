@@ -48,8 +48,9 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 
 | Item                | Location / notes                                                                                                                                      |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest; `api-docker-build` runs `apps/api/Dockerfile`) |
+| CI                  | `.github/workflows/ci.yml` — parallel jobs (`lint-and-typecheck` includes `nest build` for `apps/api` + landing and `@repo/validation` unit tests; `api-tests` runs `apps/api` Jest unit + E2E suites (`test` then `test:e2e`); `web-tests` runs `apps/web` Vitest plus the `packages/hooks` and `packages/ui` suites; `api-docker-build` runs `apps/api/Dockerfile`) |
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
+| Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
@@ -271,6 +272,48 @@ no comment at all — CI runs on the updated head and the CI wake announces its 
 GITHUB_TOKEN-pushes-trigger-no-CI constraint is GitHub's documented recursion guard
 (docs-verified knowledge, 2026-08-07; not yet observed in this repo — confirm on the first
 post-merge firing with the PAT configured).
+
+### Deploy visibility (`scripts/ci/deploy-alert.mjs`)
+
+`Deploy API` failed **44 of 44 executing runs** between 2026-05-30 and 2026-08-08 and nobody
+noticed for 71 days ([#763](https://github.com/pdcarlson/Frapp/issues/763); the credential defect
+itself is [#696](https://github.com/pdcarlson/Frapp/issues/696)). Three things compounded, and the
+first and third are what the `deploy-outcome` job fixes:
+
+1. **A skipped run is a green run.** The `check-changes` path gate skips all four migrate/deploy
+   jobs when a push touches neither `apps/api/`, `packages/validation/`,
+   `packages/typescript-config/` nor `supabase/migrations/`. 46 of the last 90 runs were
+   green-because-empty, so the Actions list read "mostly healthy" while the deploy path was
+   100% dead.
+2. **`workflow_run` failures land on no commit and no PR** the way `CI` does — nothing turns red
+   anywhere a human normally looks. (Unfixed by design: this is how `workflow_run` works.)
+3. **No notification of any kind.** A failed staging migration was indistinguishable from a quiet
+   afternoon.
+
+The terminal `deploy-outcome` job `needs` every prior job and runs `if: always()`, so it sees the
+whole run's shape. Per run it does two things:
+
+- **Says what happened.** A step summary and a `::notice::`/`::error::` annotation state plainly
+  whether the run **deployed** something, **failed**, or **declined to deploy**, with a per-job
+  result table — so a green run no longer requires opening four skipped jobs to learn it deployed
+  nothing. `cancelled` and `timed_out` count as failures, not as benign.
+- **Raises or clears one alert issue.** On failure it upserts a single tracking issue titled
+  *"Deploy API is failing — pushes are not reaching the environment"* (`routine-state`, `area:ci`,
+  `P1`): created if absent, reopened if closed, otherwise commented — never a fresh issue per
+  failure, because alert spam is how alerting gets muted. A later **successful** deploy closes it
+  as `completed`. So an open alert issue means "the deploy path is broken right now".
+
+A **no-op run never closes an open alert** — skipping every job proves nothing about whether
+deploys work, and no-op runs are the majority. `routine-state` is what keeps `/next` from claiming
+the alert as backlog work (§0.2 treats that label as never-claimable).
+
+Channel choice matches the two sibling watchdogs: GitHub itself, via a dependency-free `.mjs` on
+`GITHUB_TOKEN` with an injectable `fetch`. `Deploy API` is push-driven with no PR to comment on,
+so an issue is the equivalent of their PR comment — no new service and no new token. The job holds
+the workflow's only write scope, job-scoped, leaving every other job on `contents: read`. Like the
+other watchdogs it is best-effort and **exits 0 on every handled outcome**: the underlying deploy
+job is already red, and a watchdog that reds the run creates the noise it exists to remove. If the
+issues API is unreachable the summary and annotation still land.
 
 ### Applied permission allows
 

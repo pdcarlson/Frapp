@@ -28,6 +28,8 @@ description: >
 | Web unit tests (Vitest / jsdom) | `npm run test -w apps/web` |
 | Mobile unit tests (Vitest) | `npm run test -w apps/mobile` |
 | Shared validation tests (Vitest) | `npm run test -w @repo/validation` |
+| Shared hooks tests (Vitest / jsdom) | `npm run test -w packages/hooks` |
+| Shared UI tests (Vitest) | `npm run test -w packages/ui` |
 | Single test file | `npm run test -w apps/api -- --testPathPattern=<pattern>` |
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
@@ -207,7 +209,13 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `npm run test:e2e -w apps/api` — run it too when API wiring changes)
 6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
    Playwright visual tests under `tests/visual/**` are excluded by
-   `apps/web/vitest.config.ts` and run separately — see item 11)
+   `apps/web/vitest.config.ts` and run separately — see item 11).
+   The same job also runs the two shared packages web consumes:
+   `npm run test -w packages/hooks` and `npm run test -w packages/ui`. Run those
+   too when you touch `packages/**` — the job's path filter covers that glob, so
+   a change there exercises all three suites. Note `web-tests` is **not** a
+   required check (ADR-15), so a red run reports without blocking the merge —
+   check it yourself
 7. `npm run test -w @repo/validation` → `CI / lint-and-typecheck` (Vitest; the
    package is consumed by the API, web, and mobile, so a regression here reaches
    all three). Not covered by items 1–2: the root has no `test` script and

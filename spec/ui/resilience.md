@@ -367,6 +367,27 @@ useEffect(() => {
 }, [channelId]);
 ```
 
+> **Reopening a topic requires a completed teardown.** The sketch above is a
+> mount/unmount pair; a *reopen* on the same topic is the sharp case.
+> `supabase.channel(topic)` returns the **existing** instance while one is still
+> registered under `realtime:<topic>`, and `removeChannel()` is async — worse,
+> it only calls `teardown()` (the step that unregisters the channel) when
+> `unsubscribe()` resolves `"ok"`. So re-creating a channel before its
+> predecessor has finished leaving hands back the old, already-subscribed
+> instance, and `.on('postgres_changes', …)` on it **throws**
+> (`cannot add …callbacks for <topic> after subscribe()`); a `leaving`/`errored`
+> leftover throws nothing but never delivers a row.
+>
+> The implementation therefore frees the topic — `unsubscribe()` **and** an
+> unconditional `teardown()` — before every attach, tags attaches with an epoch
+> so overlapping reopens cannot interleave, and contains attach failures in the
+> reconnect backoff rather than letting them reach a React render pass. See
+> `releaseTopic` / `attachChannel` in `apps/web/lib/chat/realtime-manager.ts`.
+>
+> The topic string itself must stay `chat:channel:<id>`: the push worker reads
+> presence on the same topic (§ ADR-10, `spec/architecture/README.md`), so
+> re-keying it to dodge a collision would silently disable push suppression.
+
 ---
 
 ## 7. Image and File Upload Resilience
