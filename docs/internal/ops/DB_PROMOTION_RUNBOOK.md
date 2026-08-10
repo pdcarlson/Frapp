@@ -64,6 +64,26 @@ Post-apply production checks:
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
 
+## 2026-08-10: Staging migration backlog cleared — two blockers behind the #696 credential
+
+On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully against `frapp-staging` ([run 31318329969 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/31318329969)), applying **38** migrations in one push and taking `schema_migrations` from 2 rows to 39. Post-apply state: public tables 29 → 44, public functions 1 → 15, storage buckets 0 → 7 (`backwork, branding, chat, documents, profiles, reports, service`). The dated sections below covering 2026-03 through 2026-08 were all applied to staging in that single run, not on their own dates — treat their "after `db push`" checks as first verified on 2026-08-10.
+
+Fixing the invalid Infisical credential (#696) was necessary but **not sufficient**. Two further blockers only became visible once injection worked, and both will recur on the first **production** migration:
+
+* **`SUPABASE_DB_PASSWORD` is mandatory.** The pinned Supabase CLI cannot initialise its `cli_login_postgres` login role — it sets that role's password with an already-expired `valid until`, failing as `42501: permission denied to alter role`. Reads like a privilege problem; is a CLI bug ([supabase/cli#5091](https://github.com/supabase/cli/issues/5091), pin tracked in #835). Setting `SUPABASE_DB_PASSWORD` in the Infisical environment makes the CLI connect directly and skip the broken path. It is **not yet set for production** (#832).
+* **Migration-history reconciliation.** `db push` refused with `Remote migration versions not found in local migrations directory`. Staging's `schema_migrations` carried `20260228000000_enable_rls_on_remaining_tables`, a version that has never existed in this repository on any branch. Its recorded `statements` column showed four `alter table … enable row level security` calls (`users`, `chapters`, `push_tokens`, `user_settings`) — a hand-applied February hotfix. The current `00000000000000_initial_schema.sql` already enables RLS on all four, so the row was redundant and was deleted.
+
+**On-call note — reconciling a foreign migration row.** When `db push` reports a remote version missing locally, the CLI suggests `supabase migration repair --status reverted <version>`. **Do not run it blind.** First read what the row actually did:
+
+```sql
+select version, name, array_to_string(statements, E'\n;;\n') as sql_text
+from supabase_migrations.schema_migrations where version = '<version>';
+```
+
+Postgres stores the executed SQL, so a migration absent from git is still fully recoverable from the database. Only once you have confirmed its effects are either redundant with the repo or intentionally superseded should you remove the row (`delete from supabase_migrations.schema_migrations where version = '<version>';`, which is what `repair --status reverted` does). Record the `version` and `name` first — re-inserting them is the rollback. If the row's SQL is **not** represented in `supabase/migrations/`, stop: the correct fix is a new migration capturing it, not deleting the evidence.
+
+This class of drift is invisible to CI today; detection is tracked in #833.
+
 ## 2026-08-09: Activation funnel — `chapter_activation_milestones` (#267)
 * **Migration**: `20260809001500_chapter_activation_milestones.sql`
 * **Purpose**: Records the first time a chapter reaches each of the seven free-to-paid activation milestones (onboarding submitted → first invite → first redemption → first chat message → first paid module → checkout started → checkout completed), per `spec/behavior/observability.md` § Product Analytics — Activation Funnel. The unique `(chapter_id, milestone)` key *is* the "first" semantics: the API attempts an insert on every candidate action and only a winning insert emits the analytics event, so Stripe redeliveries and client retries cannot double-count. It also keeps conversion queryable in plain SQL when no `POSTHOG_API_KEY` is set.
