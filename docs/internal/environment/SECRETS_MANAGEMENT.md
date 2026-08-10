@@ -141,7 +141,7 @@ Add these secrets to GitHub repository settings (Settings → Secrets → Action
 
 **Infisical bootstrap (permanent) — repository scope:**
 
-These three are **repository secrets**, not environment secrets. One machine identity serves both `staging` and `production` (the workflow selects the environment via `env-slug`, not via credentials), so a single repository-scoped pair is correct and environment-scoped copies would only create two places to get it wrong. Verified 2026-08-10: the `staging` and `production` GitHub environments hold **no** secrets of their own.
+These three are **repository secrets**, not environment secrets. One machine identity serves both `staging` and `production` (the workflow selects the environment via `env-slug`, not via credentials), so a single repository-scoped pair is correct and environment-scoped copies would only create two places to get it wrong. Confirmed by the repository owner on 2026-08-10: neither the `staging` nor the `production` GitHub environment holds any secrets of its own.
 
 | Secret                          | Value                                                                       |
 | ------------------------------- | --------------------------------------------------------------------------- |
@@ -181,7 +181,7 @@ Once the `@infisical/secrets-action` is integrated into the deploy workflow, the
 | **Last Logged In** has a date, client secret shows **uses > 0**           | It genuinely worked once and has since been revoked or expired    | Issue a new client secret and update `INFISICAL_CLIENT_SECRET`                                    |
 | **Last Logged In: —** and client secret **Number of Uses: 0**             | This pair has **never** authenticated — nothing was ever rotated  | The stored Client ID is wrong (most likely the identity's Details-page ID). Set both secrets from the Universal Auth panel |
 
-The second case is what #696 turned out to be, and no amount of rotating fixes it: a valid secret paired with a wrong Client ID 401s exactly like a revoked one. Also confirm the identity is attached to the project (`Projects` section on its Details page) and that its trusted-IP ranges permit GitHub runners.
+#696 was the second case: the identity had recorded no successful login since it was created, so nothing had been revoked and rotating the secret alone would not have helped. Which value was wrong could not be confirmed after the fact — GitHub secrets are write-only — but the remedy is the same either way: set **both** secrets from the Universal Auth panel in one pass, rather than replacing only the one you suspect. Also confirm the identity is attached to the project (`Projects` section on its Details page) and that its trusted-IP ranges permit GitHub runners.
 
 Note that a `Deploy API` run is reported green whenever the `check-changes` path gate skips all four deploy jobs, so a mostly-green run history does **not** mean the injection step works — only runs that touch `apps/api/` or `supabase/migrations/` exercise it. See [issue #696](https://github.com/pdcarlson/Frapp/issues/696), where that distinction hid a 100% injection failure rate for 71 days.
 

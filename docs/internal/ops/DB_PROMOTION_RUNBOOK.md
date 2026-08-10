@@ -66,7 +66,9 @@ Post-apply production checks:
 
 ## 2026-08-10: Staging migration backlog cleared — two blockers behind the #696 credential
 
-On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully against `frapp-staging` ([run 31318329969 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/31318329969)), applying **38** migrations in one push and taking `schema_migrations` from 2 rows to 39. Post-apply state: public tables 29 → 44, public functions 1 → 15, storage buckets 0 → 7 (`backwork, branding, chat, documents, profiles, reports, service`). The dated sections below covering 2026-03 through 2026-08 were all applied to staging in that single run, not on their own dates — treat their "after `db push`" checks as first verified on 2026-08-10.
+On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully against `frapp-staging` ([run 31318329969 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/31318329969)), applying **38** migrations in a single push. `schema_migrations` went from 1 row to 39 — it held 2 before the foreign row described below was removed. Post-apply state: public tables 29 → 44, public functions 1 → 15, storage buckets 0 → 7 (`backwork, branding, chat, documents, profiles, reports, service`).
+
+**Every dated section below except the initial schema** was applied to staging in that one run, not on its own date — staging's history contained nothing but `00000000000000_initial_schema`. Treat their "after `db push`" checks as first verified on 2026-08-10, and note that production has had no successful CI migration either (#832).
 
 Fixing the invalid Infisical credential (#696) was necessary but **not sufficient**. Two further blockers only became visible once injection worked, and both will recur on the first **production** migration:
 
@@ -80,7 +82,7 @@ select version, name, array_to_string(statements, E'\n;;\n') as sql_text
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-Postgres stores the executed SQL, so a migration absent from git is still fully recoverable from the database. Only once you have confirmed its effects are either redundant with the repo or intentionally superseded should you remove the row (`delete from supabase_migrations.schema_migrations where version = '<version>';`, which is what `repair --status reverted` does). Record the `version` and `name` first — re-inserting them is the rollback. If the row's SQL is **not** represented in `supabase/migrations/`, stop: the correct fix is a new migration capturing it, not deleting the evidence.
+Postgres stores the executed SQL, so a migration absent from git is still fully recoverable from the database. Only once you have confirmed its effects are either redundant with the repo or intentionally superseded should you remove the row (`delete from supabase_migrations.schema_migrations where version = '<version>';` — equivalent in effect to `repair --status reverted`, and what was used here). Record the `version` and `name` first — re-inserting them is the rollback. If the row's SQL is **not** represented in `supabase/migrations/`, stop: the correct fix is a new migration capturing it, not deleting the evidence.
 
 This class of drift is invisible to CI today; detection is tracked in #833.
 
