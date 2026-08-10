@@ -20,32 +20,105 @@ type SubscribeStatus =
   | "TIMED_OUT"
   | "CLOSED";
 
+/** Mirrors `CHANNEL_STATES` in @supabase/realtime-js. */
+type FakeChannelState = "closed" | "errored" | "joined" | "joining" | "leaving";
+
 interface FakeChannel {
   on: ReturnType<typeof vi.fn>;
   subscribe: ReturnType<typeof vi.fn>;
   send: ReturnType<typeof vi.fn>;
-  unsubscribe: ReturnType<typeof vi.fn>;
+  unsubscribe: ReturnType<typeof vi.fn> & (() => Promise<string>);
+  teardown: ReturnType<typeof vi.fn> & (() => void);
+  track: ReturnType<typeof vi.fn>;
+  /** Prefixed `realtime:` exactly as the real client does. */
   topic: string;
+  state: FakeChannelState;
   trigger: (status: SubscribeStatus) => void;
 }
 
-function makeFakeChannel(topic: string): FakeChannel {
+/**
+ * A fake that reproduces the two library behaviours #783 turns on:
+ *
+ *   - `on("postgres_changes" | "presence", …)` throws once the channel is
+ *     `joined` or `joining` (`RealtimeChannel.on`); and
+ *   - `subscribe()` moves it to `joining` immediately.
+ *
+ * The previous fake accepted `on()` unconditionally, which is why a suite of
+ * ten tests never noticed the manager was recreating channels unsafely.
+ */
+function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
   let captured: ((status: SubscribeStatus) => void) | null = null;
   const channel: FakeChannel = {
-    topic,
-    on: vi.fn(() => channel),
+    topic: `realtime:${topic}`,
+    state: "closed",
+    on: vi.fn((type: string) => {
+      if (
+        (type === "postgres_changes" || type === "presence") &&
+        (channel.state === "joined" || channel.state === "joining")
+      ) {
+        throw new Error(
+          `cannot add \`${type}\` callbacks for ${channel.topic} after \`subscribe()\`.`,
+        );
+      }
+      return channel;
+    }),
     subscribe: vi.fn((cb?: (status: SubscribeStatus) => void) => {
       if (cb) captured = cb;
+      channel.state = "joining";
       return channel;
     }),
     send: vi.fn(),
-    unsubscribe: vi.fn(),
+    track: vi.fn(),
+    unsubscribe: vi.fn(async () => {
+      channel.state = "leaving";
+      return "ok";
+    }),
+    // Only teardown unregisters the channel — same as the real client.
+    teardown: vi.fn(() => {
+      channel.state = "closed";
+      onTeardown();
+    }),
     trigger: (status) => {
       if (!captured) throw new Error("subscribe callback not captured");
+      channel.state = status === "SUBSCRIBED" ? "joined" : "errored";
       captured(status);
     },
   };
   return channel;
+}
+
+/**
+ * A fake Supabase client with a real channel registry: `channel(topic)` hands
+ * back the live instance for an already-registered topic instead of minting a
+ * fresh one (`RealtimeClient.channel`).
+ */
+function makeFakeSupabase(): {
+  supabase: SupabaseClient;
+  /** Newest channel created per bare topic, including superseded ones. */
+  channels: Map<string, FakeChannel>;
+} {
+  const channels = new Map<string, FakeChannel>();
+  /** Live registry, mirroring `RealtimeClient.channels`. */
+  const registry = new Map<string, FakeChannel>();
+  const supabase = {
+    channel: vi.fn((topic: string) => {
+      const existing = registry.get(topic);
+      if (existing) return existing;
+      const ch = makeFakeChannel(topic, () => {
+        if (registry.get(topic) === ch) registry.delete(topic);
+      });
+      registry.set(topic, ch);
+      channels.set(topic, ch);
+      return ch;
+    }),
+    getChannels: vi.fn(() => [...registry.values()]),
+    removeChannel: vi.fn(async (ch: FakeChannel) => {
+      const status = await ch.unsubscribe();
+      if (status === "ok") ch.teardown();
+      return status;
+    }),
+  } as unknown as SupabaseClient;
+  return { supabase, channels };
 }
 
 describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
@@ -61,14 +134,7 @@ describe("ChatRealtimeManager — subscribe-then-backfill gate", () => {
     > &
       BackfillFetcher;
     queryClient = new QueryClient();
-    supabase = {
-      channel: vi.fn((topic: string) => {
-        const ch = makeFakeChannel(topic);
-        channels.set(topic, ch);
-        return ch;
-      }),
-      removeChannel: vi.fn(),
-    } as unknown as SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
 
     chatRealtime.configure({
       queryClient,
@@ -152,14 +218,7 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)
     > &
       BackfillFetcher;
     queryClient = new QueryClient();
-    supabase = {
-      channel: vi.fn((topic: string) => {
-        const ch = makeFakeChannel(topic);
-        channels.set(topic, ch);
-        return ch;
-      }),
-      removeChannel: vi.fn(),
-    } as unknown as SupabaseClient;
+    ({ supabase, channels } = makeFakeSupabase());
 
     chatRealtime.configure({ queryClient, supabase, backfill });
     status = "live";
@@ -359,5 +418,112 @@ describe("ChatRealtimeManager — polling fallback (spec/ui/resilience.md §3.2)
     chatRealtime.destroy();
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 4);
     expect(backfill).toHaveBeenCalledTimes(atDestroy);
+  });
+});
+
+describe("ChatRealtimeManager — channel reopen (#783)", () => {
+  let backfill: ReturnType<typeof vi.fn> & BackfillFetcher;
+  let queryClient: QueryClient;
+  let channels: Map<string, FakeChannel>;
+  let supabase: SupabaseClient;
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    backfill = vi.fn(async (): Promise<RawChatMessage[]> => []) as ReturnType<
+      typeof vi.fn
+    > &
+      BackfillFetcher;
+    queryClient = new QueryClient();
+    ({ supabase, channels } = makeFakeSupabase());
+    chatRealtime.configure({ queryClient, supabase, backfill });
+  });
+
+  afterEach(() => {
+    chatRealtime.destroy();
+    queryClient.clear();
+    window.localStorage.clear();
+  });
+
+  function current(channelId: string): FakeChannel {
+    const ch = channels.get(`chat:channel:${channelId}`);
+    if (!ch) throw new Error(`no fake channel for ${channelId}`);
+    return ch;
+  }
+
+  test("re-subscribing while the previous channel is still unregistering does not throw", async () => {
+    chatRealtime.subscribe("channel-1");
+    const first = current("channel-1");
+    first.trigger("SUBSCRIBED");
+    expect(first.state).toBe("joined");
+
+    // Exactly what `use-chat-channel`'s effect does when its deps change:
+    // cleanup then re-run, with the removal still in flight. Before the fix
+    // this handed back `first` and `.on("postgres_changes", …)` threw straight
+    // out of `subscribe()` — into React's commit phase, unmounting the shell.
+    chatRealtime.unsubscribe("channel-1");
+    expect(() => chatRealtime.subscribe("channel-1")).not.toThrow();
+
+    await vi.waitFor(() => expect(current("channel-1")).not.toBe(first));
+    expect(first.teardown).toHaveBeenCalled();
+
+    // The replacement is a genuinely fresh instance that got its binding.
+    const second = current("channel-1");
+    expect(second).not.toBe(first);
+    expect(second.on).toHaveBeenCalledWith(
+      "postgres_changes",
+      expect.objectContaining({ table: "chat_messages" }),
+      expect.any(Function),
+    );
+    second.trigger("SUBSCRIBED");
+    expect(second.state).toBe("joined");
+  });
+
+  test("the reopened channel keeps the topic the push worker reads presence on", async () => {
+    // ADR-10: `chat:channel:<id>` is a cross-service contract — re-keying the
+    // topic to dodge the collision would silently disable push suppression.
+    chatRealtime.subscribe("channel-1");
+    const first = current("channel-1");
+    first.trigger("SUBSCRIBED");
+    chatRealtime.unsubscribe("channel-1");
+    chatRealtime.subscribe("channel-1");
+
+    await vi.waitFor(() => expect(current("channel-1")).not.toBe(first));
+    const topics = (supabase.channel as unknown as ReturnType<typeof vi.fn>).mock
+      .calls.map((c) => c[0] as string)
+      .filter((t) => t.startsWith("chat:channel:"));
+    expect(new Set(topics)).toEqual(new Set(["chat:channel:channel-1"]));
+  });
+
+  test("an attach that throws cannot escape into the caller's render pass", async () => {
+    chatRealtime.subscribe("channel-1");
+    current("channel-1").trigger("SUBSCRIBED");
+
+    const channelFn = supabase.channel as unknown as ReturnType<typeof vi.fn>;
+    channelFn.mockImplementationOnce(() => {
+      throw new Error("realtime exploded");
+    });
+
+    // Criterion 2: a failed or racing resubscribe must not unmount the shell.
+    chatRealtime.unsubscribe("channel-1");
+    expect(() => chatRealtime.subscribe("channel-1")).not.toThrow();
+    await vi.waitFor(() => expect(channelFn).toHaveBeenCalled());
+  });
+
+  test("the global actions channel survives a destroy/configure cycle", async () => {
+    const firstActions = channels.get("chat:actions:global");
+    expect(firstActions).toBeDefined();
+
+    // `ChatProvider`'s effect deps include `apiClient`/`userId`, so this is an
+    // ordinary re-auth: destroy() removes the actions channel fire-and-forget
+    // and configure() immediately recreates it on the same topic.
+    chatRealtime.destroy();
+    expect(() =>
+      chatRealtime.configure({ queryClient, supabase, backfill }),
+    ).not.toThrow();
+
+    await vi.waitFor(() =>
+      expect(channels.get("chat:actions:global")).not.toBe(firstActions),
+    );
+    expect(firstActions!.teardown).toHaveBeenCalled();
   });
 });
