@@ -144,13 +144,30 @@ Each user's last-read timestamp per channel is tracked in a `channel_read_receip
 | `event` | Event RSVP card (created by `/event` slash command) |
 | `task` | Task assignment card |
 | `poll` | Poll (inline vote) |
-| `dues` | Dues reminder card |
+| `dues` | Dues reminder card — in the enum, but still renders the placeholder `ComingSoonCard` |
 | `points` | Points award notification |
-| `hours` | Service hours log confirmation |
-| `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata |
+| `hours` | Service hours log confirmation — in the enum, but still renders the placeholder `ComingSoonCard` |
+| `audio` | Voice memo (mobile-native): recorded, uploaded to Storage, sent with waveform metadata — **specified, not yet in `CHAT_MESSAGE_KINDS`** |
+| `pulse` | Chapter-health catch-up card — see [catch-up.md](./catch-up.md) — **specified, not yet in `CHAT_MESSAGE_KINDS`** (#821) |
 | `system_audit` | System-generated audit message (posted to #chapter-audit, or to a DM on invite-accept) |
 | `loading` | Client-side placeholder while NestJS RPC completes a heavy command |
 | `announcement` | Broadcast announcement |
+
+Rows marked *specified, not yet in `CHAT_MESSAGE_KINDS`* are absent from the enum; rows marked
+*placeholder* are in the enum but render `ComingSoonCard`. Everything else is built.
+
+`chat_messages.kind` carries no CHECK constraint, so adding a kind is a code change rather than a
+migration — but it is a change in **three** places, and missing any one fails differently:
+
+| Declaration | Consumed by | Symptom if missed |
+| --- | --- | --- |
+| `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in `chat.dto.ts` — the live send gate | API rejects the send |
+| `packages/validation/src/index.ts` | `SendChatMessageSchema`; currently unreferenced, kept as the shared contract for non-Nest consumers | Nothing fails today — the shared contract silently diverges |
+| `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` | Row is silently rewritten to `text`, so the renderer never fires |
+
+Unknown kinds degrade to plain text — on web via that `coerceKind` rewrite, which runs *before*
+`MessageRenderer`'s `default:` branch is ever reached. Either way the `content` string is what the
+user sees, so every rich kind must write a readable one.
 
 `chat_message_actions` records per-user actions on messages (reactions, RSVPs, votes, payment confirmations). Indexed on `(message_id, user_id)` for per-message aggregation and `(user_id, action_type, created_at desc)` for user history.
 

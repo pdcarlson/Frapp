@@ -43,7 +43,7 @@ When a new member joins a chapter (via invite token), they see a guided walkthro
 4. **Backwork** — Find study materials uploaded by chapter members.
 5. **Study Hours** — Earn points by studying at approved locations.
 6. **Profile Setup** — Set display name, upload a profile photo, write a short bio.
-7. **Done** — CTA to the home feed.
+7. **Done** — CTA into chat, the landing surface on both web (`/chat`) and mobile. There is no web home screen; see [`chat/README.md`](chat/README.md).
 
 ### Behavior
 

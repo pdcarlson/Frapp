@@ -252,7 +252,7 @@ A dismissible card (on `/chat` or as a banner in `#general`) nudges officers tow
 | Reports | Report-type selector, date-range picker, generate + download CSV + download PDF | Form + preview |
 | Polls | Poll list, create-poll form, results bar chart | List + chart |
 
-The standalone `/home` overview dashboard was removed in the chat-first product; the post-sign-in landing is `/chat` (a chat catch-up). Chapter health and quick actions are re-homed as inline chat artifacts.
+The standalone `/home` overview dashboard was removed in the chat-first product; the post-sign-in landing is `/chat` (a chat catch-up). Chapter health and quick actions are re-homed as inline chat artifacts — the pulse card, specified in [`spec/behavior/chat/catch-up.md`](../../behavior/chat/catch-up.md).
 
 ---
 
