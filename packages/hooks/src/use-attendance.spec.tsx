@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFrappClient } from "@repo/api-sdk";
 import { useAttendance, useCheckIn } from "./use-attendance";
@@ -93,13 +93,20 @@ describe("useAttendance", () => {
       GET: mockGet,
     };
 
-    renderHook(() => useAttendance(""), {
+    const { result } = renderHook(() => useAttendance(""), {
       wrapper: createWrapper(mockClient),
     });
 
-    await waitFor(() => {
-      expect(mockGet).not.toHaveBeenCalled();
+    // Flush pending microtasks, then assert synchronously. Wrapping a negative
+    // assertion in `waitFor` would resolve on the first poll and could never
+    // observe a later call — it passes even if the request fires a tick after
+    // mount.
+    await act(async () => {
+      await Promise.resolve();
     });
+
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(mockGet).not.toHaveBeenCalled();
   });
 });
 
