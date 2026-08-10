@@ -3,12 +3,22 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useMembers, useMemberSearch } from "./use-members";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 const MEMBERS_ENDPOINT = "/v1/members";
+const CHAPTER_ID = "chapter-abc";
 
-vi.mock("./use-frapp-client", () => ({
+// The member hooks read two exports of this module — `useFrappClient` for the
+// transport and `useActiveChapterId` for the per-chapter query key and the
+// `enabled` gate. Spread the real module rather than listing exports: a bare
+// factory replaces the module wholesale, so the day a hook reaches for a third
+// export every test here fails with a stack pointing at use-members.ts instead
+// of at this mock. That is exactly how these specs broke when
+// `useActiveChapterId` was introduced.
+vi.mock("./use-frapp-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./use-frapp-client")>()),
   useFrappClient: vi.fn(),
+  useActiveChapterId: vi.fn(),
 }));
 
 function createWrapper(queryClient: QueryClient) {
@@ -22,6 +32,7 @@ function createWrapper(queryClient: QueryClient) {
 describe("useMembers", () => {
   let queryClient: QueryClient;
   const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -32,6 +43,7 @@ describe("useMembers", () => {
       },
     });
     vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
   });
 
   it("returns members when the API request succeeds", async () => {
@@ -89,11 +101,36 @@ describe("useMembers", () => {
     expect(mockGet).toHaveBeenCalledWith(MEMBERS_ENDPOINT);
     expect(result.current.error).toBe(mockError);
   });
+
+  // Pins the `enabled: !!chapterId` gate. `activeChapterId` is null during
+  // first paint and chapter-store rehydration, and the SDK omits the
+  // x-chapter-id header when it is falsy — so a dropped gate means an
+  // unscoped/403 request cached under ["members", null] on every hard reload.
+  it("does not fetch before a chapter is active", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+    mockUseActiveChapterId.mockReturnValue(null);
+
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMembers(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.fetchStatus).toBe("idle");
+    });
+
+    expect(result.current.isPending).toBe(true);
+    expect(mockGet).not.toHaveBeenCalled();
+  });
 });
 
 describe("useMemberSearch", () => {
   let queryClient: QueryClient;
   const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
 
   beforeEach(() => {
     queryClient = new QueryClient({
@@ -104,6 +141,7 @@ describe("useMemberSearch", () => {
       },
     });
     vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
   });
 
   it("returns members matching the query when the API request succeeds", async () => {

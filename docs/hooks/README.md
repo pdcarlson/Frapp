@@ -80,6 +80,23 @@ From `packages/hooks` run:
 - `npm exec --workspace packages/hooks vitest run src/use-members.spec.tsx` for focused `useMembers` coverage
 - `npx vitest run` for the full hooks package suite
 
+From the repo root, `npm run test -w packages/hooks` runs the whole suite — this
+is the command CI uses. The `web-tests` job in
+[`ci.yml`](../../.github/workflows/ci.yml) runs it (alongside `packages/ui`),
+reached via that job's `packages/**` path filter.
+
+`web-tests` **reports but does not block.** It is deliberately not a required
+status check (ADR-15 — see
+[`spec/architecture/README.md`](../../spec/architecture/README.md)), so a red run
+here will not stop a merge; read it rather than relying on it as a gate. The
+required-check list lives in
+[`scripts/configure-branch-protection.mjs`](../../scripts/configure-branch-protection.mjs).
+
+Collection is pinned to `src` by `packages/hooks/vitest.config.ts`. That is
+load-bearing: `npm run build` compiles the specs to `dist/` as CommonJS, and
+Vitest 4 no longer excludes `dist` by default, so an unscoped run collects the
+twins and fails (#762).
+
 ## Testing Additions
 
 - **`useCreateRole`**: Added test case in `use-roles.spec.tsx` ensuring that creating a role with only the required fields properly maps the request body and executes the correct query invalidation behavior.

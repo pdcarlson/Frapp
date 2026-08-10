@@ -50,8 +50,16 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `STRIPE_WEBHOOK_SECRET` | **Same as staging** — use your real Stripe webhook signing secret. For local testing, run `stripe listen --forward-to localhost:3001/v1/billing/webhook` and use the `whsec_...` it prints. | Copy from Stripe dashboard → Developers → Webhooks → staging endpoint → Signing secret | Copy from Stripe dashboard → Developers → Webhooks → production endpoint → Signing secret |
 | `STRIPE_PRICE_ID` | **Same as staging** — use the same test-mode Price ID. Copy from Stripe dashboard → Products → your product → Pricing → Price ID (`price_...`). | ← same `price_...` as local | Copy from Stripe dashboard → Products → your product → Pricing → Price ID (production `price_...`) |
 | `STRIPE_PUBLISHABLE_KEY` | **Same as staging** — the test-mode publishable key (`pk_test_...`). Copy from Stripe dashboard → Developers → API keys → Publishable key (test mode). | ← same `pk_test_...` key as local | Copy from Stripe dashboard → Developers → API keys → Publishable key (live mode: `pk_live_...`) |
-| `API_URL` | `http://localhost:3001/v1` | `https://api-staging.frapp.live/v1` | `https://api.frapp.live/v1` |
+| `API_URL` | `http://localhost:3001` | `https://api-staging.frapp.live` | `https://api.frapp.live` |
 | `APP_URL` | `http://localhost:3000` | `https://app.staging.frapp.live` | `https://app.frapp.live` |
+
+> ⚠️ **`API_URL` is the bare origin — no `/v1`, no trailing slash.** The generated
+> OpenAPI contract carries the version in the path (`/v1/users/me`, and so on;
+> only `/health` sits outside it) and declares no `servers` entry, so the SDK
+> concatenates `API_URL` + path. Setting `http://localhost:3001/v1` produces
+> `/v1/v1/users/me` and **404s every request**. `createFrappClient` strips a
+> trailing `/v1` defensively so a stale deployed value degrades to a no-op, but
+> do not rely on that — set the bare origin.
 
 ### API-Only Settings
 
@@ -140,7 +148,7 @@ Reads the `NEXT_PUBLIC_*` references:
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | `lib/supabase/client.ts`, `server.ts` | ✅ |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase/client.ts`, `server.ts` | ✅ |
-| `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` | ✅ |
+| `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` (SDK base URL), `lib/providers/network-provider.tsx` (health poll — `/health` is the one route outside `/v1`) | ✅ |
 | `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/stripe.ts` | ❌ — optional; Stripe **publishable** key (`pk_…`) for the member dues payment sheet. When unset, `getStripe()` returns `null` and no Pay affordance renders — local dev, CI, and the production build prerender all run without it. Publishable by design (it is safe in a client bundle); the secret key stays API-only as `STRIPE_SECRET_KEY`. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
