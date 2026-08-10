@@ -4,10 +4,13 @@ import { normalizeApiBaseUrl } from "@repo/api-sdk";
 /**
  * `normalizeApiBaseUrl` lives in `@repo/api-sdk`, but its tests live here.
  *
- * CI runs no `@repo/*` package suite except `@repo/validation` (`ci.yml`), and
- * `packages/api-sdk` has no test runner at all — so a suite added there would
+ * `packages/api-sdk` has no test runner and no CI job. CI does run the
+ * `@repo/validation`, `packages/hooks` and `packages/ui` suites — the latter two
+ * added by #819 — but not this package, so a suite placed beside the code would
  * never execute, which is the defect #762 / #766 / #775 exist to fix. The web
  * suite does run, and web is the consumer whose every request this governs.
+ * Once `packages/api-sdk` has a `test` task wired into CI (#775), these belong
+ * back beside the function they cover.
  *
  * What it guards: `openapi.json` declares no `servers` entry and carries the
  * version in the path, so the SDK concatenates baseUrl + path. A baseUrl
