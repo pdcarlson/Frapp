@@ -32,6 +32,16 @@
  *
  * Channels are ref-counted, so the sidebar can pre-subscribe for unread
  * counts without the timeline tearing the subscription down.
+ *
+ * Topic reuse is the sharp edge here. `supabase.channel(topic)` returns the
+ * **existing** instance while one is still registered under that topic, and
+ * `removeChannel()` is async — so re-creating a channel before its predecessor
+ * finished leaving hands back the old, already-subscribed instance, and
+ * `.on("postgres_changes", …)` on it throws. Every attach therefore goes
+ * through `releaseTopic` first (see `attachChannel`). The topic string itself
+ * is a cross-service contract — the push worker reads presence on the same
+ * `chat:channel:<id>` topic (ADR-10) — so it must stay stable; freeing the
+ * topic, not re-keying it, is the fix.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -115,12 +125,20 @@ interface PerChannelState {
   retryTimer: ReturnType<typeof setTimeout> | null;
   typingUsers: Map<string, number>; // userId → expires-at ms
   typingLastEmit: number;
+  /**
+   * Ticket for the in-flight attach. Freeing an occupied topic is async, so two
+   * reopens can overlap; only the holder of the newest ticket is allowed to
+   * install a channel. See `attachChannel`.
+   */
+  attachSeq: number;
 }
 
 class ChatRealtimeManager {
   private ctx: ManagerContext | null = null;
   private channels = new Map<string, PerChannelState>();
   private actionsChannel: RealtimeChannel | null = null;
+  /** `attachSeq`'s equivalent for the single global actions channel. */
+  private actionsAttachSeq = 0;
   private statusListeners = new Set<(status: ConnectionStatus) => void>();
   private offline = false;
   private typingTickHandle: ReturnType<typeof setInterval> | null = null;
@@ -183,6 +201,7 @@ class ChatRealtimeManager {
       retryTimer: null,
       typingUsers: new Map(),
       typingLastEmit: 0,
+      attachSeq: 0,
     };
     this.channels.set(channelId, state);
     this.openChannel(state);
@@ -274,14 +293,121 @@ class ChatRealtimeManager {
     }, 1500);
   }
 
+  /**
+   * Is anything still registered under this topic?
+   *
+   * `RealtimeClient.channel(topic)` hands back the *existing* instance whenever
+   * one is, so this is the difference between minting a fresh channel and
+   * silently getting the old one back.
+   */
+  private isTopicOccupied(topic: string): boolean {
+    if (!this.ctx) return false;
+    const realtimeTopic = `realtime:${topic}`;
+    return this.ctx.supabase
+      .getChannels()
+      .some((channel) => channel.topic === realtimeTopic);
+  }
+
+  /**
+   * Frees a topic so the next `supabase.channel(topic)` mints a genuinely new
+   * instance.
+   *
+   * `removeChannel()` only calls `teardown()` — the step that actually
+   * unregisters the channel — when `unsubscribe()` resolves `"ok"`. Tearing
+   * down unconditionally is what makes this airtight, and it closes two
+   * distinct failures at once:
+   *
+   *   - a reused `joined`/`joining` instance makes
+   *     `.on("postgres_changes", …)` **throw**, which is what took the
+   *     dashboard shell down (#783); and
+   *   - a reused `leaving`/`errored` instance throws nothing but never
+   *     delivers a row, so the channel looks attached and stays silent.
+   *
+   * `unsubscribe()` resolves rather than rejects and is bounded by the client's
+   * own timeout, so this cannot wedge a reattach — and the poll fallback
+   * covers the gap if it does take the full timeout.
+   */
+  private async releaseTopic(topic: string): Promise<void> {
+    const supabase = this.ctx?.supabase;
+    if (!supabase) return;
+    const realtimeTopic = `realtime:${topic}`;
+    // `getChannels()` returns the client's live array and teardown mutates it,
+    // so iterate a snapshot.
+    for (const channel of [...supabase.getChannels()]) {
+      if (channel.topic !== realtimeTopic) continue;
+      try {
+        await channel.unsubscribe();
+      } catch {
+        // Already gone, or the socket is down — teardown below is what counts.
+      }
+      try {
+        channel.teardown();
+      } catch {
+        // Already torn down.
+      }
+    }
+  }
+
+  /**
+   * True while `seq` is still the newest attach for `state` and that state is
+   * still the live one for its channel id. Guards every resumption point after
+   * an `await`, so a superseded or torn-down attach installs nothing.
+   */
+  private isCurrentAttach(state: PerChannelState, seq: number): boolean {
+    return (
+      this.ctx !== null &&
+      state.attachSeq === seq &&
+      this.channels.get(state.channelId) === state
+    );
+  }
+
+  /**
+   * Fire-and-forget entry point. Every caller is a React effect, a timer or a
+   * DOM event handler — none of them can await, and a rejection escaping into
+   * a commit phase is exactly how this unmounted the shell.
+   */
   private openChannel(state: PerChannelState): void {
+    void this.attachChannel(state);
+  }
+
+  private async attachChannel(state: PerChannelState): Promise<void> {
+    if (!this.ctx) return;
+    const topic = `chat:channel:${state.channelId}`;
+    const seq = (state.attachSeq += 1);
+    // The previous instance is unusable from here on: either we are about to
+    // tear it down, or a newer attach will.
+    state.channel = null;
+
+    try {
+      // Only pay for a teardown when the topic is actually taken. A first join
+      // is the common case and stays fully synchronous, so `state.channel` is
+      // live before `subscribe()` returns.
+      if (this.isTopicOccupied(topic)) {
+        await this.releaseTopic(topic);
+        if (!this.isCurrentAttach(state, seq)) return;
+      }
+      this.installChannel(state, topic);
+    } catch {
+      // Never let an attach failure reach the caller's render pass. It is just
+      // a connection we do not have yet — hand it to the existing backoff.
+      if (!this.isCurrentAttach(state, seq)) return;
+      state.channel = null;
+      state.status = "reconnecting";
+      this.scheduleReconnect(state);
+      this.emitStatus();
+    }
+  }
+
+  /**
+   * Binds listeners and subscribes. Runs with no `await` inside, so the channel
+   * is installed on `state` atomically with respect to `unsubscribe()` and
+   * `destroy()`.
+   */
+  private installChannel(state: PerChannelState, topic: string): void {
     if (!this.ctx) return;
     const { supabase } = this.ctx;
-    if (state.channel) {
-      void supabase.removeChannel(state.channel);
-    }
 
-    const channel = supabase.channel(`chat:channel:${state.channelId}`, {
+    const channel = supabase.channel(topic, {
       config: { broadcast: { self: false }, presence: { key: "" } },
     });
 
@@ -328,6 +454,10 @@ class ChatRealtimeManager {
     state.channel = channel;
     const viewerId = this.ctx?.viewerId ?? null;
     channel.subscribe((subscribeStatus) => {
+      // A channel we have since replaced can still deliver a late status —
+      // notably `CLOSED` from its own teardown, which would otherwise book a
+      // reconnect against the channel that superseded it.
+      if (state.channel !== channel) return;
       if (subscribeStatus === "SUBSCRIBED") {
         state.status = "live";
         state.backoffStep = 0;
@@ -380,10 +510,38 @@ class ChatRealtimeManager {
     }, delay);
   }
 
+  /**
+   * `destroy()` removes the actions channel fire-and-forget and `configure()`
+   * re-creates it on the same topic immediately after, so a remount races its
+   * own teardown exactly like `openChannel` did. `ChatProvider`'s effect deps
+   * include `apiClient`/`userId`, so this re-fires on ordinary re-auth.
+   */
   private ensureActionsChannel(): void {
     if (!this.ctx) return;
     if (this.actionsChannel) return;
-    const channel = this.ctx.supabase.channel("chat:actions:global");
+    void this.attachActionsChannel();
+  }
+
+  private async attachActionsChannel(): Promise<void> {
+    if (!this.ctx) return;
+    const topic = "chat:actions:global";
+    const seq = (this.actionsAttachSeq += 1);
+    try {
+      if (this.isTopicOccupied(topic)) {
+        await this.releaseTopic(topic);
+        if (!this.ctx || this.actionsAttachSeq !== seq) return;
+      }
+      this.installActionsChannel(topic);
+    } catch {
+      // Reactions fall back to the per-channel backfill, so a failure here
+      // degrades one feature — it must never propagate out of `configure()`.
+      this.actionsChannel = null;
+    }
+  }
+
+  private installActionsChannel(topic: string): void {
+    if (!this.ctx) return;
+    const channel = this.ctx.supabase.channel(topic);
     channel.on(
       "postgres_changes",
       {
