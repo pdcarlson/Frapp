@@ -146,6 +146,7 @@ next session — not instructions, which would just transplant a stale plan.
 - Regenerate API contract after controller/DTO changes: `npm run openapi:export -w apps/api && npm run generate -w packages/api-sdk`.
 - `INFISICAL_API_KEY` in some VMs may not read `local`; use `.env.local` + Supabase status there if needed.
 - Mobile needs Expo Go; not for headless VMs.
+- **React is pinned to an exact `19.1.0` in every workspace, plus a root `overrides` entry. Do not widen it to a caret range.** React Native 0.81.5 bundles `react-native-renderer` 19.1.0, which asserts *exact* version equality with `react` at runtime. Its peer range (`^19.1.0`) does not express that, so npm accepts a newer React without warning, hoists it to the root, and `apps/mobile` dies on first render with "Invalid hook call" / "Incompatible React versions". Nothing but booting the app on a device catches it.
 - Branch protection uses `enforce_admins: true`.
 - `npx supabase db push --local` is idempotent.
 
