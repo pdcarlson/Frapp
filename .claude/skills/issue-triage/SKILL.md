@@ -38,6 +38,12 @@ fallback.** The label roster and shared routine config live in
 > body with `search_issues` (`fields: ["number","title","body"]`), which returns HTML comments
 > intact**, edit that, and confirm the marker survives in what you send back. Verified 2026-08-11
 > against #618/#619. The same hazard applies to every routine that re-bodies an issue.
+>
+> `search_issues` is a **semantic** search, not a fetch-by-number, so it can miss or mis-rank the
+> issue you want. Query it with distinctive words from the target's own title, then **check that a
+> returned item's `number` is the issue you intend** before using its body. If the target does not
+> come back, **skip the body edit and say so** — leave a comment instead. Never fall back to
+> `issue_read` to source a rewrite; that is the failure this paragraph exists to prevent.
 
 ## Ownership: organize freely, destroy narrowly
 
