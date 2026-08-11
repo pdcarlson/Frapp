@@ -359,10 +359,14 @@ npx eas login
 
 # Initialize EAS project (creates project on expo.dev)
 npx eas init
-
-# Update app.json with the project ID from eas init output
-# Replace YOUR_EAS_PROJECT_ID and YOUR_EXPO_ACCOUNT
 ```
+
+`eas init` writes `extra.eas.projectId` and `owner` into `app.json` itself. Those
+keys are deliberately absent from the committed `app.json`: a placeholder `owner`
+makes `expo start` try to resolve an Expo account that does not exist, and it
+aborts the dev server with `CommandError: Interactive prompt was cancelled`.
+Leave them out until a real EAS project exists, and do not commit them back as
+placeholders.
 
 ### 6.2 Testing on Your Phone (Quickest Path)
 

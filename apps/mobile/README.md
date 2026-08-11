@@ -15,7 +15,7 @@ This app cannot be tested in a headless cloud VM — it requires Expo Go on a ph
 
 ## Environment
 
-Create `.env.local` with the required variables. See [`docs/internal/ENV_REFERENCE.md`](../../docs/internal/ENV_REFERENCE.md) for the complete list and values per environment.
+Create `.env.local` with the required variables. See [`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md) for the complete list and values per environment, and [`docs/internal/mobile/MOBILE_TESTING.md`](../../docs/internal/mobile/MOBILE_TESTING.md) for the full device-run walkthrough.
 
 ## Common commands
 
