@@ -59,6 +59,10 @@ issue if anything looks off):
 - **Ownership / lifecycle:** `suggestion` · `stale`
 - **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
   `area:docs` · `area:product` · `area:ux` · `area:research`
+- **Scope:** `scope:production` — work that only becomes relevant once a production environment
+  exists. Parked **by choice**, not blocked and not stale: routines must not mark these `stale`,
+  must not raise their priority for age, and must not re-file duplicates of them. Full definition
+  and rationale: [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy).
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work — skipped by `/next` and by this file's routines)
 - Legacy (`bug`, `Improvement`, `release:*`) persists on old issues; don't extend it.
 
