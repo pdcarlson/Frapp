@@ -25,7 +25,9 @@ batches — the main job, since `/next` ranks by priority — and epic-attach on
 previously filed items against reality, sweeps recent (and progressively older) PRs for
 human-action and deferred items — "Flagged for review" sections, agent-stated TODOs, unresolved
 review threads — researches how each gets done, files them into the **`triage`** inbox
-(`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers), and
+(`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers),
+audits the `fp=human/…` blocker issues any agent session may file under the AGENTS.md
+proven-blocker hard rule, and
 republishes the **"PR Follow-ups — Human Action List"** tracking issue; running it on Monday
 *before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. The
 routine prompts are thin — the real rules live in the skill files, which the routine session loads
