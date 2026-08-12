@@ -174,11 +174,24 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   **Agent brief**.
 - **`fp=` dedup markers are the routines' mechanism, per-namespace:** the curator embeds
   `<!-- agent-suggestion: v1 fp=<area>/<slug> file=<path> -->`; the PR Follow-ups harvester embeds
-  `<!-- agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N> -->` (its namespace is what partitions
-  lifecycle ownership between the two). Ad-hoc filings (`/next` follow-ups, review deferrals)
-  need no marker.
+  `<!-- agent-suggestion: v1 fp=pr-followup/<slug> pr=#<N> -->`; human-action blockers (filed by
+  *any* session, see below) embed `<!-- agent-suggestion: v1 fp=human/<slug> source=<...> -->`
+  (namespaces partition lifecycle ownership — PR Follow-ups owns both `pr-followup/` and
+  `human/`). Ad-hoc filings (`/next` follow-ups, review deferrals) need no marker.
 - **Search before filing** (`search_issues`, open **and** closed) — refresh a near-match instead
   of duplicating it. This applies to every filing path, marker or not.
+- **Human-action blockers (owner mandate 2026-08-12):** when an agent has *proven* a step needs
+  the human (environment config, missing credential/account, dashboard-only step, purchase — and
+  no better-provisioned agent session could do it either), it must file the blocker — title
+  **`[human] <imperative action>`**, labels `triage` + `suggestion` + one `area:<x>` + a
+  priority, body opening with `**Human action required — hold in triage; not for /next.**`, plus
+  the attempt, the failure output as proof, the exact steps for the human, and an
+  `fp=human/<slug>` marker. These stay in Triage (the hold exception — never promoted, never
+  started by `/next`); the PR Follow-ups routine owns the `fp=human/` namespace — it lists every
+  open item on the weekly Human Action List and closes them on proof (which is why `suggestion`
+  is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
+  doesn't get a promotable twin. Full rule:
+  [`AGENTS.md`](../../../AGENTS.md#filing-follow-up-work-as-github-issues).
 
 ## Ownership boundary (organize broadly, destroy narrowly)
 
@@ -189,7 +202,10 @@ Unchanged in substance from the Linear era. The backlog routines split writes in
   read (`issue_read get_labels`), else SKIP. Human-filed work is never closed or re-bodied by a
   routine.
 - **Organizational writes** — priority labels, `area:*`, `Blocked by #N` lines, promoting
-  Triage → Backlog — are the triage routine's job **on any `triage` item**, whoever filed it. A
+  Triage → Backlog — are the triage routine's job **on any `triage` item**, whoever filed it.
+  **Exception:** human-action holds (`[human]`/`[pr-followup][human]` titles or the
+  `**Human action required — hold in triage` body opener) are never promoted — they get
+  priority/estimate only and stay in Triage (see "Filing an issue" above). A
   **human-set priority is never overwritten**; routines correct obviously-wrong priorities only on
   `suggestion`-owned issues. Epics and planning structure are read-only to routines.
 
