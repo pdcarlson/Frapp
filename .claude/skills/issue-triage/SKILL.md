@@ -103,7 +103,9 @@ runs walk the whole Backlog):
   epic it doesn't fit, you may detach it.
 - **Estimate:** optional `Estimate:` body line when scope is clear.
 - **Stale / dups:** add `stale` to obvious aging `suggestion`s the curator missed; close/dedup
-  only `suggestion`-owned issues, and only with proof.
+  only `suggestion`-owned issues, and only with proof. Never mark a **`scope:production`** issue
+  `stale` or age-bump its priority — those are parked by owner decision (see the label roster in
+  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)).
 - **Ownership:** on human/planning issues, only fill an *absent* priority — never re-bucket,
   re-prioritize, close, or re-body them. Don't restructure epics.
 
