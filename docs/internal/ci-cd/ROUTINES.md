@@ -25,7 +25,9 @@ batches — the main job, since `/next` ranks by priority — and epic-attach on
 previously filed items against reality, sweeps recent (and progressively older) PRs for
 human-action and deferred items — "Flagged for review" sections, agent-stated TODOs, unresolved
 review threads — researches how each gets done, files them into the **`triage`** inbox
-(`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers), and
+(`[pr-followup]` / `[pr-followup][human]`, `suggestion`-labeled, `fp=pr-followup/…` markers),
+audits the `fp=human/…` blocker issues any agent session may file under the AGENTS.md
+proven-blocker hard rule, and
 republishes the **"PR Follow-ups — Human Action List"** tracking issue; running it on Monday
 *before* #1–2 means that same morning's curator/triage passes maintain and rank what it filed. The
 routine prompts are thin — the real rules live in the skill files, which the routine session loads
@@ -59,6 +61,10 @@ issue if anything looks off):
 - **Ownership / lifecycle:** `suggestion` · `stale`
 - **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
   `area:docs` · `area:product` · `area:ux` · `area:research`
+- **Scope:** `scope:production` — work that only becomes relevant once a production environment
+  exists. Parked **by choice**, not blocked and not stale: routines must not mark these `stale`,
+  must not raise their priority for age, and must not re-file duplicates of them. Full definition
+  and rationale: [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy).
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work — skipped by `/next` and by this file's routines)
 - **Scope:** `scope:production` — work parked until a production environment exists (owner
   decision 2026-08-10; see [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and

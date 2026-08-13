@@ -46,7 +46,11 @@ All secrets for the Frapp project are centrally managed in [Infisical](https://i
 | Identities   | 5     | 1 (admin)                      |
 | Projects     | 3     | 1 (Frapp)                      |
 | Environments | 3     | 3 (local, staging, production) |
-| Integrations | 10    | 7                              |
+| Integrations | 10    | 6 secret syncs — see §5        |
+
+The integration count is derived from the sync inventory in §5, not tracked independently — this row
+and `ENV_REFERENCE.md` previously disagreed (7 vs 6) because both counted by hand. Infisical's own
+billing/usage view is authoritative if you need the number for a plan decision.
 
 ## Initial Setup
 
@@ -119,14 +123,35 @@ repointing the sync — there is no filter to switch on. See the "Blast radius" 
 
 #### Live syncs (6 total)
 
-| Name                        | Infisical env | Path | Destination         | Destination scope |
-| --------------------------- | ------------- | ---- | ------------------- | ----------------- |
-| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           |
-| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           |
-| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | production        |
-| `vercel-landing-staging`    | Staging       | `/`  | `frapp-landing`     | preview           |
-| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | production        |
-| `vercel-web-staging`        | Staging       | `/`  | `frapp-web`         | preview           |
+**Dashboard state last verified: 2026-08-12.** This table is a convenience copy of live
+dashboard configuration and goes stale silently. Treat a disagreement between this table and the
+Infisical/Vercel dashboards as the table being wrong, and re-stamp the date when you correct it.
+See "Verifying this section against reality" below.
+
+| Name                        | Infisical env | Path | Destination         | Vercel/Render env | Git branch filter |
+| --------------------------- | ------------- | ---- | ------------------- | ----------------- | ----------------- |
+| `render-api-production`     | Production    | `/`  | `frapp-api-prod`    | Service           | n/a               |
+| `render-api-staging`        | Staging       | `/`  | `frapp-api-staging` | Service           | n/a               |
+| `vercel-landing-production` | Production    | `/`  | `frapp-landing`     | Production        | none              |
+| `vercel-landing-staging`    | Staging       | `/`  | `frapp-landing`     | Preview           | `main` — unverified, see below |
+| `vercel-web-production`     | Production    | `/`  | `frapp-web`         | Production        | none              |
+| `vercel-web-staging`        | Staging       | `/`  | `frapp-web`         | Preview           | `main` (read 2026-08-12) |
+
+**Read the last two columns carefully — they are different things that have both been called
+"preview."** The *Vercel env* column is Vercel's own environment name (`Production` or `Preview`);
+`Preview` there is correct and permanent. The *git branch filter* is a separate field naming a
+repository branch. Conflating the two has already cost one investigation.
+
+The branch filter is the field that keeps going wrong. A Vercel Preview env var is keyed on
+`(environment, git branch)`, so a sync pointed at a branch that does not exist writes rows no
+deployment will ever read — or fails outright, depending on how Vercel validates that day. Both
+staging syncs originally targeted a branch literally named `preview`, which has never existed in this
+repository (branches are `main` and `production`). Never set that value again.
+
+`vercel-web-staging` was read in the Infisical UI on 2026-08-12 and targets `main`, which is correct —
+`main` is the branch staging deploys from. **`vercel-landing-staging` was not opened that day**; its
+`main` value is inferred from the two syncs having been repointed together and is the first thing to
+confirm if landing's env vars ever look stale.
 
 To inspect or edit one: Infisical → Integrations → **Secret Syncs**. To create one from scratch on a
 fresh org, first authenticate the provider under **App Connections** (Vercel, Render), then
@@ -159,17 +184,63 @@ consume them. Only these variables are actually read in application source:
 Everything else in the environment — database passwords, service-role keys, Stripe secrets, deploy
 hook URLs — is pushed toward those projects without being used by them.
 
-Whether it *arrives* differs by environment, and the distinction matters:
+**The Vercel syncs deliver — including the staging ones.** On 2026-08-12 the `frapp-web`
+environment-variable list was read directly, and both its `Preview` and `Production` scopes held the
+full backend store: `SUPABASE_DB_PASSWORD`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`,
+`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RENDER_DEPLOY_HOOK_URL`.
 
-* The two **production** Vercel syncs report Synced, so those values do land in the `frapp-web` and
-  `frapp-landing` production environments.
-* The two **staging** Vercel syncs fail before delivering. They target a Vercel git branch named
-  `preview`, which does not exist in this repository — branches are `main` and `production` — and
-  abort with `Branch "preview" not found in the connected Git repository`. The breakage is
-  accidentally protective: the staging Vercel projects are not receiving these secrets. Re-confirmed
-  on 2026-08-10, when adding `SUPABASE_DB_PASSWORD` re-triggered both syncs and both failed again.
+`frapp-landing` was **not** inspected variable-by-variable that day, so treat its contents as
+expected-but-unconfirmed. The expectation is well founded — it is fed by two syncs with the same
+`/` path from the same environments — but it is an inference, not a reading. Confirm it before
+relying on it, and see the verification steps below.
 
-Scoping the syncs down, and fixing the `preview` branch targeting, are both tracked in **#834**.
+Staging is not spared, and this is the part that is easy to miss: the staging syncs write to
+`Preview` scope filtered to branch `main`, and `main` is exactly what staging deploys from. So the
+`frapp-web` staging deployment receives every backend credential as a server-side env var. None of
+them reach browsers — Next.js only inlines `NEXT_PUBLIC_*` into the client bundle — but any SSRF or
+RCE in the staging web app reads through to the staging database and the Supabase account.
+
+`SUPABASE_ACCESS_TOKEN` deserves separate mention: it is a Supabase **Management API** token, scoped
+to the account rather than one project, and therefore strictly more powerful than
+`SUPABASE_SERVICE_ROLE_KEY`. It is the first thing to rotate if any of this is ever believed
+compromised.
+
+An earlier misreading is worth recording so it is not repeated. Because the staging syncs once failed
+with `Branch "preview" not found in the connected Git repository`, this document previously claimed
+the breakage was "accidentally protective" and that staging received nothing. That was wrong. The
+failure predated the repoint to `main`; afterwards the full store landed. A sync that reports Failed
+today tells you nothing about what it delivered before it broke — **check the destination, not the
+sync status.**
+
+A third generation of rows also existed: a Mar-7 batch scoped to the dead `preview` branch, left
+behind by the original misconfiguration. Those were inert (no deployment reads a nonexistent branch)
+but, unlike the current rows, were **not** marked Sensitive, so their values were readable in the
+Vercel dashboard. They were deleted from both `frapp-web` and `frapp-landing` on 2026-08-12.
+
+Narrowing the syncs so the frontend projects stop receiving backend credentials is the remaining work
+and is tracked in **#834**. The lever is a secret-path split (for example a frontend-only path that
+the Vercel syncs read while Render and CI keep reading `/`) — there is no per-key filter, per "How a
+sync decides what it pushes" above. Note the ordering: narrow the source path *first*, then delete
+the leftover destination rows. Deleting first just invites the next sync to rewrite them.
+
+#### Verifying this section against reality
+
+Prose in this repo has been wrong about this twice. Before relying on any claim above, spend two
+minutes confirming it:
+
+1. **Infisical → Integrations → Secret Syncs.** For each sync read the source environment, the
+   secret path, the destination scope, and the git branch. The branch is the field that has caused
+   every incident so far.
+2. **Vercel → project → Settings → Environment Variables.** Read what actually arrived. Group the
+   rows by scope and by "Added" date — distinct dates mean distinct write generations, and old
+   generations linger long after the config that created them is gone. A row scoped to a branch that
+   no longer exists is inert but still readable.
+3. Anything not marked **Sensitive** has a dashboard-readable value. Vercel flags these "Needs
+   Attention"; the warning is about dashboard visibility, not about a detected leak.
+
+Vercel's per-variable **Rotate Variable** button replaces only Vercel's copy. It does not rotate
+anything at Supabase or Stripe, the old credential stays valid, and the next sync overwrites your new
+value. Real rotation is provider first, then Infisical — never Vercel.
 
 ### 6. Configure GitHub
 
