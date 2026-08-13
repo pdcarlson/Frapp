@@ -66,6 +66,12 @@ issue if anything looks off):
   must not raise their priority for age, and must not re-file duplicates of them. Full definition
   and rationale: [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy).
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work — skipped by `/next` and by this file's routines)
+- **Scope:** `scope:production` — work parked until a production environment exists (owner
+  decision 2026-08-10; see [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and
+  the [decision record on #814](https://github.com/pdcarlson/Frapp/issues/814#issuecomment-5245093672) —
+  the decision lives in that comment, not #814's rebuilt-each-run body). Parked by choice, not
+  blocked: routines must **not** mark these `stale`,
+  raise their priority for age, or re-file duplicates of them.
 - Legacy (`bug`, `Improvement`, `release:*`) persists on old issues; don't extend it.
 
 Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); writes go through
