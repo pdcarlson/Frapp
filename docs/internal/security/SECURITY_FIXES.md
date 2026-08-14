@@ -124,15 +124,30 @@ The one advisory chain the #831 sweep above could not clear in-range: `@sentry/n
 
 v10's headline change is *"bump to OpenTelemetry v2"*, with `@sentry/nestjs` switching to OTel core instrumentation. Its removals — `BaseClient`, `hasTracingEnabled`, the `logger`/`Logger` export, the `_experiments.enableLogs`/`beforeSendLog`/`autoFlushOnFeedback` options, and browser-side FID collection — are **none of them reachable from this repo**, whose entire Sentry surface is five files: `Sentry.init` in `main.ts`, the `ErrorEvent` type in `sentry-scrubbing.ts` and its spec, and `withScope`/`captureException`/`captureMessage` in `all-exceptions.filter.ts` and its spec. Peer ranges (`@nestjs/* ^8 || ^9 || ^10 || ^11` against this repo's 11.1.28) and `engines.node >= 18` both already held.
 
-One v10 behavior change *does* land here, and it tightens rather than loosens the posture: **from v10.4.0 the SDK keys user-IP inference off the top-level `sendDefaultPii`**, which `main.ts` sets to `false`. Server-side IP inference is therefore off by construction, which is what `spec/behavior/observability.md` § Error Tracking asks for and what the scrubber's IP pseudonymization assumes.
+One v10 behavior change *does* land here, and it is worth stating precisely because the previous comment in `main.ts` described it wrongly. In v10, `sendDefaultPii: false` is **not** a "collect nothing" switch — it resolves through `defaultPiiToCollectionOptions` to a *key-based filter*. Verified by calling the SDK's own `filterKeyValueData` with the resolved options:
+
+| Field | Result under `sendDefaultPii: false` |
+| --- | --- |
+| `authorization`, `cookie` headers | `[Filtered]` |
+| `?token=…` and other sensitive-*named* params | `[Filtered]` |
+| request bodies | not collected (`httpBodies: []`) |
+| client IP | not inferred (`userInfo: false`) |
+| `x-custom-note: "contact member@example.com"` | **passes through verbatim** |
+| `?email=member@example.com` | **passes through verbatim** |
+
+The filter matches on *key names*, so values under innocuously-named keys survive it. That is exactly the gap `redactFreeText` exists to close, and it is why `beforeSend` — not this flag — is the real enforcement point. The IP and body halves are genuinely off, so the net posture is at least as strong as v9's; the mechanism is just not the one the old comment claimed.
 
 ### The coverage gap this exposed
 
 Before this change, **nothing in the repo exercised the real SDK.** `sentry-scrubbing.spec.ts` calls `scrubSentryEvent` as a plain function and `all-exceptions.filter.spec.ts` opens with `jest.mock('@sentry/nestjs')` — correct for what each tests, but between them no test would notice an SDK upgrade that silently stopped invoking `beforeSend`. Every existing Sentry test would have stayed green while the API shipped unscrubbed events.
 
-`sentry-integration.spec.ts` closes that: it initializes the real SDK with `main.ts`'s options and the production scrubber as `beforeSend`, captures through both entry points the exception filter uses, and asserts the scrubber ran. It is hermetic by construction — a stubbed `transport` plus an `.invalid` DSN mean no envelope can leave the process on any runner.
+`sentry-integration.spec.ts` closes that, and the **options come from `buildSentryOptions()`** — the same function `main.ts` calls, extracted in this PR for exactly that reason. `main.ts` ends in `void bootstrap()`, so it cannot be imported to inspect; without the extraction the spec had to re-declare the options, which made its assertions tautologies that read back the test's own literals. Now, deleting `beforeSend` or flipping `sendDefaultPii` in production fails the suite. All three cases are mutation-verified: replacing the scrubber with the identity function, flipping `sendDefaultPii`, and dropping `beforeSend` each turn the suite red.
 
-Writing it surfaced a wrinkle worth knowing before anyone extends these tests: the SDK's `ContextLines` integration attaches the **source lines** around every stack frame, so a PII-shaped string written as a literal in a test file is echoed back into the event from disk and will defeat a "this value appears nowhere in the payload" assertion — while proving nothing about the scrubber. That test assembles its email and uuid at runtime for exactly this reason. Those frame-context fields pass through `scrubException` unredacted (it rebuilds frames by spread, deleting only `vars`), which is a denylist in a module that is otherwise deliberately allowlist-shaped — tracked separately in #889.
+It is hermetic by construction — a stubbed `transport` plus an `.invalid` DSN mean no envelope can leave the process on any runner — and it runs with `defaultIntegrations: false` and no `tracesSampleRate`. Both matter: `hasSpansEnabled` is a nullish check, so `tracesSampleRate: 0` still counts as *enabled* and pulls in ~28 OpenTelemetry auto-instrumentations, which subscribe to a worker-global `diagnostics_channel` that `Sentry.close()` never unsubscribes. Left on, the file fails `jest --detectLeaks`; as written, the observability specs pass it.
+
+**Scope, stated plainly: this covers error events only.** The SDK routes just those to `beforeSend`; transaction events go to `beforeSendTransaction`, which the API does not set, so they reach Sentry without passing through the scrubber at all. That is pre-existing (v9 split the hooks identically), not introduced here, and it is **not** fixable by pointing `beforeSendTransaction` at `scrubSentryEvent` — `spans` is absent from `EVENT_KEY_ALLOWLIST`, so doing so would silently ship span-less traces. Tracked in **#896**.
+
+Writing the spec surfaced a second wrinkle worth knowing before anyone extends these tests: the SDK's `ContextLines` integration attaches the **source lines** around every stack frame, so a PII-shaped literal in a test file is echoed back into the event from disk. This defeats "value appears nowhere in the payload" assertions *and* silently satisfies "payload contains `[redacted:…]`" ones — an earlier draft of this file asserted the latter against `JSON.stringify(event)` and passed with the scrubber replaced by the identity function. The fix is to assert against `exception.values[0].value` rather than the serialized event. Those frame-context fields pass through `scrubException` unredacted (it rebuilds frames by spread, deleting only `vars`), a denylist in a module that is otherwise deliberately allowlist-shaped — tracked separately in **#889**.
 
 ## Next.js advisory cleanup (issue #291)
 

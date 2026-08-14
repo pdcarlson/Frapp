@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nestjs';
 import type { ErrorEvent } from '@sentry/nestjs';
+import { buildSentryOptions } from './sentry-options';
 import { scrubSentryEvent } from './sentry-scrubbing';
 
 /**
@@ -9,25 +10,33 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * calls `scrubSentryEvent` as a plain function, and
  * `all-exceptions.filter.spec.ts` opens with `jest.mock('@sentry/nestjs')`. Both
  * are the right shape for what they test, but between them nothing ever asks the
- * installed SDK whether `main.ts`'s `Sentry.init` options are still honoured —
- * so a major-version bump could silently stop invoking `beforeSend` and every
- * existing test would stay green while the API quietly shipped unscrubbed PII.
+ * installed SDK whether the API's `Sentry.init` options are still honoured — so
+ * a major-version bump could silently stop invoking `beforeSend` and every
+ * existing test would stay green while the API shipped unscrubbed PII.
  *
- * That gap is exactly what the v9 → v10 bump put at risk, so this closes it: it
- * initializes the SDK the way `main.ts` does, captures through the same two
- * entry points `all-exceptions.filter.ts` uses, and asserts the scrubber ran on
- * what came out.
+ * The options come from {@link buildSentryOptions}, the same function `main.ts`
+ * calls. That is deliberate and load-bearing: an earlier draft of this file
+ * re-declared the options locally, which made `expect(sendDefaultPii).toBe(false)`
+ * a tautology — it only read back the literal the test itself had passed, and
+ * would have stayed green while production flipped to `true`.
  *
- * The transport is stubbed rather than the network being blocked, so the test is
- * hermetic by construction — there is no DSN that could resolve and no envelope
- * that could leave the process, on any machine or CI runner.
+ * Two things are overridden, both for hermeticity rather than convenience:
+ *
+ *  - **`transport`** — a stub, so no envelope can leave the process and the
+ *    `.invalid` DSN is never resolved, on any machine or CI runner.
+ *  - **tracing** — `tracesSampleRate` is *removed* rather than set to `0`,
+ *    because `hasSpansEnabled` is a nullish check and `0` still counts as
+ *    enabled. Leaving it on loads ~28 OpenTelemetry auto-instrumentations
+ *    (Postgres, Redis, Kafka, Prisma…) inside a unit test; they subscribe to a
+ *    worker-global `diagnostics_channel` that `Sentry.close()` does not
+ *    unsubscribe, which shows up as a `--detectLeaks` failure. `beforeSend` is
+ *    client-level, so dropping them costs this file nothing.
  */
 
 /** Well-formed but deliberately unroutable — `.invalid` is reserved (RFC 2606). */
 const FIXTURE_DSN = 'https://fixturekey@o0.ingest.example.invalid/1';
 const SALT = 'test-salt-for-integration';
-/** Split so the assembled uuid never appears as a literal — see the PII test. */
-const USER_UUID_PARTS = ['3f2a1b4c', '5d6e', '4f70', '8a9b', '0c1d2e3f4a5b'];
+const USER_UUID = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
 
 describe('Sentry SDK integration', () => {
   const originalSalt = process.env.ANALYTICS_HMAC_SALT;
@@ -37,16 +46,24 @@ describe('Sentry SDK integration', () => {
   beforeAll(() => {
     process.env.ANALYTICS_HMAC_SALT = SALT;
 
+    const { tracesSampleRate: _drop, ...production } =
+      buildSentryOptions(FIXTURE_DSN);
+
     Sentry.init({
-      dsn: FIXTURE_DSN,
-      environment: 'test',
-      tracesSampleRate: 0,
-      sendDefaultPii: false,
-      // The same composition as `main.ts`: the production scrubber is the
-      // `beforeSend`, so this asserts the real pipeline rather than a stand-in.
-      beforeSend: (event) => {
-        const scrubbed = scrubSentryEvent(event);
-        if (scrubbed) captured.push(scrubbed);
+      ...production,
+      // See the file docblock: the default set registers subscribers on a
+      // worker-global `diagnostics_channel` that `Sentry.close()` never
+      // unsubscribes, which Jest reports as a leaked test environment.
+      // `beforeSend` is client-level, so none of this file's assertions
+      // depend on an integration being present.
+      defaultIntegrations: false,
+      beforeSend: (event, hint) => {
+        // Delegate to whatever production configured, then record the result,
+        // so this observes the real scrubber rather than substituting for it.
+        const scrubbed = production.beforeSend?.(event, hint) ?? event;
+        if (scrubbed && !(scrubbed instanceof Promise)) {
+          captured.push(scrubbed as ErrorEvent);
+        }
         return scrubbed;
       },
       transport: () => ({
@@ -66,13 +83,23 @@ describe('Sentry SDK integration', () => {
     else process.env.ANALYTICS_HMAC_SALT = originalSalt;
   });
 
-  it('initializes a client from the options main.ts passes', () => {
-    const client = Sentry.getClient();
-    expect(client).toBeDefined();
-    expect(client?.getOptions().environment).toBe('test');
-    // The switch the whole PII posture hangs on — if a future major flips this
-    // default, the SDK starts collecting IPs and bodies before `beforeSend`.
-    expect(client?.getOptions().sendDefaultPii).toBe(false);
+  describe('production options', () => {
+    it('wires the scrubber as beforeSend', () => {
+      // Asserted on the builder's output, not on what this file passed to
+      // init — deleting `beforeSend` from `sentry-options.ts` fails here.
+      expect(buildSentryOptions(FIXTURE_DSN).beforeSend).toBe(scrubSentryEvent);
+    });
+
+    it('disables the SDK-level PII collection switch', () => {
+      // Same reasoning: this reads production config. Under v10 the flag is a
+      // key-based filter rather than a collection switch, so it is a floor and
+      // not the whole PII story — `beforeSend` is. See #896.
+      expect(buildSentryOptions(FIXTURE_DSN).sendDefaultPii).toBe(false);
+    });
+
+    it('builds a client the SDK accepts', () => {
+      expect(Sentry.getClient()).toBeDefined();
+    });
   });
 
   it('routes captureException through beforeSend and applies scope tags', async () => {
@@ -92,44 +119,49 @@ describe('Sentry SDK integration', () => {
     });
   });
 
-  it('routes captureMessage through beforeSend and preserves level and user', async () => {
+  it('routes captureMessage through beforeSend, preserving text, level and user', async () => {
     const pseudonym = 'a'.repeat(64);
+    const text = 'Auth failure spike: 12 failures from one origin';
     Sentry.withScope((scope) => {
       scope.setLevel('warning');
       scope.setTag('security_event', 'auth_failure_spike');
       scope.setUser({ id: pseudonym });
-      Sentry.captureMessage('Auth failure spike: 12 failures from one origin');
+      Sentry.captureMessage(text);
     });
     await Sentry.flush(2000);
 
     expect(captured).toHaveLength(1);
     const [event] = captured;
+    // The SDK may carry message text as `message` or as `logentry`, and only
+    // `message` is on the scrubber's allowlist — so if a future version switches
+    // shape, the spike alerts in `all-exceptions.filter.ts` would arrive blank.
+    // Asserting the text (not just the tags) is what would catch that.
+    expect(event.message).toBe(text);
     expect(event.level).toBe('warning');
     expect(event.tags).toMatchObject({ security_event: 'auth_failure_spike' });
-    // Already-pseudonymous, so the scrubber's `user` rule keeps it. This is the
-    // half of the contract `all-exceptions.filter.ts` relies on when it hashes
-    // ids at the source rather than leaving them for `beforeSend`.
+    // Already-pseudonymous, so the scrubber's `user` rule keeps it.
     expect(event.user?.id).toBe(pseudonym);
   });
 
   it('scrubs PII out of a real captured exception message', async () => {
-    // Assembled at runtime, never written as a literal. The SDK's ContextLines
-    // integration attaches the *source lines* surrounding each stack frame, so
-    // any PII-shaped string spelled out in this file would be echoed back into
-    // the event from disk and defeat the whole-payload assertion below — while
-    // saying nothing about whether the scrubber works. Building the values here
-    // keeps that assertion meaningful: the only way they can reach the event is
-    // through the runtime path the scrubber is responsible for.
     const email = ['member', 'example.com'].join('@');
-    const uuid = USER_UUID_PARTS.join('-');
-
-    Sentry.captureException(new Error(`upsert failed for ${email} (${uuid})`));
+    Sentry.captureException(
+      new Error(`upsert failed for ${email} (${USER_UUID})`),
+    );
     await Sentry.flush(2000);
 
     expect(captured).toHaveLength(1);
-    const serialized = JSON.stringify(captured[0]);
-    expect(serialized).not.toContain(email);
-    expect(serialized).not.toContain(uuid);
-    expect(serialized).toContain('[redacted:email]');
+    // Asserted against the exception value specifically, NOT the serialized
+    // event. The SDK's ContextLines integration attaches ~7 source lines around
+    // each stack frame, so this file's own text lands in the payload: an earlier
+    // draft asserted `JSON.stringify(event)` contained '[redacted:email]' and
+    // passed purely off that echo — it stayed green with the scrubber replaced
+    // by the identity function. The email is still assembled at runtime because
+    // the capture site above sits inside the context window.
+    const value = captured[0].exception?.values?.[0]?.value ?? '';
+    expect(value).not.toContain(email);
+    expect(value).not.toContain(USER_UUID);
+    expect(value).toContain('[redacted:email]');
+    expect(value).toMatch(/\[id:[0-9a-f]{64}\]/);
   });
 });
