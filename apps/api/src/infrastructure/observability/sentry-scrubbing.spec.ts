@@ -170,6 +170,47 @@ describe('scrubSentryEvent', () => {
     ).toBe('handler');
   });
 
+  // Regression: an allowlist of context *names* alone let the trace context
+  // through whole, and on an HTTP span its `description` is the route with the
+  // query string still attached — reintroducing the leak `request.url` closes.
+  it('scrubs the trace context rather than passing it through whole', () => {
+    const scrubbed = scrubSentryEvent({
+      contexts: {
+        trace: {
+          trace_id: 'abc123',
+          span_id: 'def456',
+          op: 'http.server',
+          description: 'GET /v1/reports?access_token=super-secret',
+          data: {
+            'http.url':
+              'https://api.frapp.live/v1/reports?access_token=super-secret',
+            'url.query': 'access_token=super-secret',
+          },
+        },
+      },
+    } as unknown as ErrorEvent);
+
+    const out = serialize(scrubbed);
+    expect(out).not.toContain('super-secret');
+    expect(out).not.toContain('access_token');
+
+    const trace = scrubbed?.contexts?.trace as Record<string, unknown>;
+    expect(trace).not.toHaveProperty('data');
+    expect(trace.description).toBe('GET /v1/reports');
+    // The parts that make the context useful survive.
+    expect(trace.trace_id).toBe('abc123');
+    expect(trace.op).toBe('http.server');
+  });
+
+  it('sweeps author-set fingerprints', () => {
+    const scrubbed = scrubSentryEvent({
+      fingerprint: [`chapter-${CHAPTER_UUID}`, 'static-part'],
+    } as unknown as ErrorEvent);
+
+    expect(serialize(scrubbed)).not.toContain(CHAPTER_UUID);
+    expect(scrubbed?.fingerprint?.[1]).toBe('static-part');
+  });
+
   it('drops non-allowlisted top-level keys and contexts', () => {
     const scrubbed = scrubSentryEvent({
       level: 'error',

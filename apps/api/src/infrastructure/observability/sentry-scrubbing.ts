@@ -85,7 +85,7 @@ const CONTEXT_ALLOWLIST = new Set([
  * catch. Anchored on `/` or a scheme so ordinary prose ending in a question
  * mark is left alone.
  */
-const URL_QUERY_RE = /((?:https?:\/\/\S*?|\/[^\s?#]*)\?)\S*/g;
+const URL_QUERY_RE = /((?:https?:\/\/[^\s?#]*|\/[^\s?#]*)\?)\S*/g;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 /** `Bearer <jwt|opaque>`, and bare three-segment JWTs wherever they appear. */
 const BEARER_RE = /\bBearer\s+[\w\-._~+/]+=*/gi;
@@ -201,9 +201,10 @@ function scrubRequest(
 
   // Rebuilt, not spread: `data` (body), `cookies`, `env` (which carries
   // REMOTE_ADDR), and `query_string` are all dropped by omission.
+  const url = pathOnly(request.url);
   return {
     ...(request.method ? { method: request.method } : {}),
-    ...(pathOnly(request.url) ? { url: pathOnly(request.url) } : {}),
+    ...(url ? { url } : {}),
     ...(Object.keys(headers).length > 0 ? { headers } : {}),
   };
 }
@@ -233,15 +234,45 @@ function scrubTags(tags: ErrorEvent['tags']): ErrorEvent['tags'] {
   return out;
 }
 
+/**
+ * Fields of the `trace` context that may survive.
+ *
+ * The trace context is the one allowlisted context that is *not* pure infra
+ * metadata. On an HTTP span the SDK sets `description` to the route — including
+ * its query string — and `data` to span attributes such as `http.url` and
+ * `url.query`. Passing the context through whole, as an allowlist of context
+ * *names* alone would, reintroduces exactly the query-string leak that
+ * `request.url` and the free-text sweep close everywhere else.
+ */
+const TRACE_FIELD_ALLOWLIST = new Set([
+  'trace_id',
+  'span_id',
+  'parent_span_id',
+  'op',
+  'status',
+  'origin',
+]);
+
+function scrubTraceContext(trace: Record<string, unknown>): typeof trace {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(trace)) {
+    if (TRACE_FIELD_ALLOWLIST.has(key)) out[key] = value;
+  }
+  // Kept, but swept — the route is genuinely useful for grouping.
+  if (typeof trace.description === 'string') {
+    out.description = redactFreeText(trace.description);
+  }
+  return out;
+}
+
 function scrubContexts(
   contexts: ErrorEvent['contexts'],
 ): ErrorEvent['contexts'] {
   if (!contexts) return undefined;
   const out: NonNullable<ErrorEvent['contexts']> = {};
   for (const [key, value] of Object.entries(contexts)) {
-    if (CONTEXT_ALLOWLIST.has(key) && value) {
-      out[key] = value;
-    }
+    if (!CONTEXT_ALLOWLIST.has(key) || !value) continue;
+    out[key] = key === 'trace' ? scrubTraceContext(value) : value;
   }
   return out;
 }
@@ -269,6 +300,12 @@ export function scrubSentryEvent(event: ErrorEvent): ErrorEvent | null {
     if (event.transaction) scrubbed.transaction = pathOnly(event.transaction);
     if (event.tags) scrubbed.tags = scrubTags(event.tags);
     if (event.contexts) scrubbed.contexts = scrubContexts(event.contexts);
+    // Author-set free text, so it goes through the sweep like any other.
+    if (Array.isArray(event.fingerprint)) {
+      scrubbed.fingerprint = event.fingerprint.map((part) =>
+        typeof part === 'string' ? redactFreeText(part) : part,
+      );
+    }
 
     const request = scrubRequest(event.request);
     if (request && Object.keys(request).length > 0) scrubbed.request = request;
