@@ -5,6 +5,7 @@ relevant `spec/behavior/` files; these are implementation/ops notes.)
 
 | Doc | Scope |
 | --- | ----- |
+| [`AUTHORIZATION_MODEL.md`](AUTHORIZATION_MODEL.md) | Route → guard → ownership-proof map, and the RLS truth table (which layer enforces tenancy per table); regression-covered by `apps/api/test/cross-tenant-isolation.e2e-spec.ts` |
 | [`ai-prompt-injection.md`](ai-prompt-injection.md) | Prompt-injection threat model for the AI corpus + acting agent; enforced by `apps/api/test/ai-evals/` |
 | [`content-validation.md`](content-validation.md) | File-upload content-type/extension allowlists; SVG-XSS warning |
 | [`path-traversal.md`](path-traversal.md) | `path.basename()` on uploaded filenames across upload endpoints |
