@@ -88,6 +88,25 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 
 **Lifecycle.** File with `triage` → accepted to **Backlog** (label removed, priority confirmed) → an agent claims it via `/next` (`in-progress` label + claim comment) → branch (`claude/<slug>`) → push (the local **pre-push review-gate hook** requires one review pass on the diff — the single pre-PR review gate. Agents run **`/diff-review`**, which is always invocable and writes the gate marker. The bundled `/code-review` is richer but only *conditionally* model-invocable — `Skill(skill: "code-review")` is waived only when the current turn's prompt carries `/code-review` **whitespace-delimited on both sides** (backticks, quotes, and trailing punctuation all defeat it, so expect refusal by default), never inside a sub-agent, and never under `/next`; see [`docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md`](docs/internal/ci-cd/AI_CODE_REVIEW_RUNBOOK.md). Review sub-agents inherit the session model) → PR with `Fixes #N` per closed issue → merge closes them natively. Express blockers as `Blocked by #N` lines so an issue isn't started until they're resolved.
 
+## Tech debt protocol (non-optional)
+
+This repo is **mid-rebuild (Frapp → Signet)**. Half-migrated surfaces, superseded implementations, and specs describing the old product are the normal state here — treat existing code as *possibly dead* until you've checked, not as precedent.
+
+**Before extending or building on existing code, confirm it has real consumers.** Search for actual call sites (e.g. `grep -rn "useThing" --include=*.tsx apps packages`). A hook, component, or endpoint being *defined* — or re-exported from an `index.ts` — is not evidence that anything calls it. Building on an orphan silently doubles the debt instead of paying it down.
+
+**Never silently work around orphaned, superseded, or contradictory code.** When you find it, do both:
+
+1. **Flag it explicitly in your output** — in your response and the PR body, not buried in a code comment.
+2. **Add an entry to [`TECH-DEBT.md`](TECH-DEBT.md)** — the running ledger at repo root (one entry per item: `id`, `area`, `description`, `recommended action`, `status`, `first flagged`).
+
+**Code is ground truth for behavior; docs are ground truth for intent.** When a doc (an ADR, `spec/*`, a README) and the shipped code disagree, believe the **code** for what the system actually does — but never propagate the stale assumption onward. Flag the doc for correction and log it, then fix the doc in the same PR when it's in scope.
+
+**A cutover deletes what it replaces.** When a rebuild or migration supersedes an old implementation, delete the superseded code **in the same change**, unless there is an explicit, stated reason to keep both live (a flag mid-rollout, a documented migration window). "We might need it later" is not a reason — git history is the backup, and a second live implementation is a trap for the next agent.
+
+**End every audit or implementation task with a short "debt spotted" note** — even when debt wasn't the task's focus, and even when the honest answer is "none found". One line per item plus its `TECH-DEBT.md` id is enough.
+
+**Relationship to GitHub Issues.** `TECH-DEBT.md` is the **ledger**: a durable, greppable record of known rot that outlives the session that found it. GitHub Issues remain the **tracker** for work that is actually scheduled (see [Filing follow-up work](#filing-follow-up-work-as-github-issues)). Log every item in the ledger; open an issue when an item is ready to be worked. Cross-reference both ways (`#N` in the entry, the `TD-###` id in the issue). When a PR resolves an item, flip that entry's `status` to `resolved` in the same PR — don't delete the row.
+
 ## Services and ports
 
 | What            | Port  | Notes                                     |

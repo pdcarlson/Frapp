@@ -30,3 +30,5 @@ Developer guides and operator runbooks. Product and architecture truth lives in 
 What to update in a PR, and where docs vs. spec belong: **[`docs/internal/DOCUMENTATION_CONVENTIONS.md`](internal/DOCUMENTATION_CONVENTIONS.md)**.
 
 The docs/spec CI gate (a change outside `docs/` or `spec/` must also touch one of them) is described in [`internal/ci-cd/DOCS_CI.md`](internal/ci-cd/DOCS_CI.md).
+
+Known tech debt in the Frapp → Signet rebuild is logged in **[`TECH-DEBT.md`](../TECH-DEBT.md)** at repo root — the ledger of found rot, distinct from GitHub Issues (the tracker for scheduled work). The protocol for adding to it is [`AGENTS.md` § Tech debt protocol](../AGENTS.md#tech-debt-protocol-non-optional).
