@@ -63,6 +63,10 @@ import {
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
+import {
+  isTopicOccupied as isRealtimeTopicOccupied,
+  releaseTopic as releaseRealtimeTopic,
+} from "@/lib/realtime/topic-registry";
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -294,34 +298,22 @@ class ChatRealtimeManager {
   }
 
   /**
-   * Is anything still registered under this topic?
-   *
-   * `RealtimeClient.channel(topic)` hands back the *existing* instance whenever
-   * one is, so this is the difference between minting a fresh channel and
-   * silently getting the old one back.
+   * Is anything still registered under this topic? A `ctx` guard over the
+   * shared registry helper.
    */
   private isTopicOccupied(topic: string): boolean {
     if (!this.ctx) return false;
-    const realtimeTopic = `realtime:${topic}`;
-    return this.ctx.supabase
-      .getChannels()
-      .some((channel) => channel.topic === realtimeTopic);
+    return isRealtimeTopicOccupied(this.ctx.supabase, topic);
   }
 
   /**
    * Frees a topic so the next `supabase.channel(topic)` mints a genuinely new
    * instance.
    *
-   * `removeChannel()` only calls `teardown()` — the step that actually
-   * unregisters the channel — when `unsubscribe()` resolves `"ok"`. Tearing
-   * down unconditionally is what makes this airtight, and it closes two
-   * distinct failures at once:
-   *
-   *   - a reused `joined`/`joining` instance makes
-   *     `.on("postgres_changes", …)` **throw**, which is what took the
-   *     dashboard shell down (#783); and
-   *   - a reused `leaving`/`errored` instance throws nothing but never
-   *     delivers a row, so the channel looks attached and stays silent.
+   * The mechanism — and why the unconditional `teardown()` is load-bearing —
+   * lives in `lib/realtime/topic-registry.ts`, which
+   * `lib/realtime/supabase-realtime.ts` shares so both attach paths free
+   * topics identically (#817). It was extracted from here.
    *
    * `unsubscribe()` resolves rather than rejects and is bounded by the client's
    * own timeout, so this cannot wedge a reattach — and the poll fallback
@@ -330,22 +322,7 @@ class ChatRealtimeManager {
   private async releaseTopic(topic: string): Promise<void> {
     const supabase = this.ctx?.supabase;
     if (!supabase) return;
-    const realtimeTopic = `realtime:${topic}`;
-    // `getChannels()` returns the client's live array and teardown mutates it,
-    // so iterate a snapshot.
-    for (const channel of [...supabase.getChannels()]) {
-      if (channel.topic !== realtimeTopic) continue;
-      try {
-        await channel.unsubscribe();
-      } catch {
-        // Already gone, or the socket is down — teardown below is what counts.
-      }
-      try {
-        channel.teardown();
-      } catch {
-        // Already torn down.
-      }
-    }
+    await releaseRealtimeTopic(supabase, topic);
   }
 
   /**

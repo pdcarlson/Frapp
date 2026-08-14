@@ -382,7 +382,20 @@ useEffect(() => {
 > unconditional `teardown()` — before every attach, tags attaches with an epoch
 > so overlapping reopens cannot interleave, and contains attach failures in the
 > reconnect backoff rather than letting them reach a React render pass. See
-> `releaseTopic` / `attachChannel` in `apps/web/lib/chat/realtime-manager.ts`.
+> `releaseTopic` in `apps/web/lib/realtime/topic-registry.ts` — the single
+> implementation, shared by both attach paths — and `attachChannel` in
+> `apps/web/lib/chat/realtime-manager.ts`.
+>
+> **The same rule binds every non-chat subscription.** `useRealtimeTable`
+> derives its topic from `table` + `filter` alone, so an effect re-run driven by
+> any *other* dependency — a changed invalidate key, a new `queryClient`, React
+> StrictMode's dev remount — reopens an unchanged topic and lands on exactly the
+> case above. `attachRealtimeChannel`
+> (`apps/web/lib/realtime/supabase-realtime.ts`) therefore attaches through the
+> same release. Because a `useEffect` cleanup is synchronous and freeing a topic
+> is not, it serializes every attach and release for a topic through a per-topic
+> queue: without that ordering, a cleanup's teardown can land *after* its
+> successor has registered and tear down the live channel.
 >
 > The topic string itself must stay `chat:channel:<id>`: the push worker reads
 > presence on the same topic (§ ADR-10, `spec/architecture/README.md`), so
