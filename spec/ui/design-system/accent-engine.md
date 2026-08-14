@@ -87,9 +87,17 @@ This spec documents the target engine. The code that exists today serves the leg
 | Callers of `derivePalette` | `apps/api/src/application/services/chapter-onboarding.service.ts`, `apps/api/src/application/services/chapter-config.service.ts` | Onboarding seeds `theme_palette`; config PATCH/recompute persists it. |
 | `resolveChapterAccentColor(accent, {background, fallbackAccent})` | `packages/theme/src/accent.ts` | Client-side per-surface re-validation of the stored accent (contrast against the actual background, mode-specific fallback). Behavior canon: [`../../behavior/branding.md`](../../behavior/branding.md). |
 
+### Implemented
+
+| Unit | Location | Behavior |
+|---|---|---|
+| `deriveSignetPalette(seed?)` | `packages/chapter-theme/src/signet.ts` | Wraps `generateRadixColors` with the §1 parameters and emits the §2 role tokens as flat `--signet-*` CSS custom properties, plus their alpha counterparts. DOM-free and CommonJS-safe. Never throws — an absent seed resolves to house gold, an unparseable one does too and sets `invalidSeed`. |
+| `generateRadixColors` | `packages/chapter-theme/src/vendor/` | Vendored from `radix-ui/website` (MIT, © 2024 WorkOS); it is not published to npm. Provenance and resync procedure in that directory's README. |
+
+Token names are flat and string-valued so the additive field cannot disturb legacy readers: `apps/web/lib/hooks/use-chapter-theme.ts` iterates every key of `theme_palette` and sets it as a custom property, and nothing in the legacy stylesheet references `--signet-*`.
+
 ### Not yet implemented
 
-- `deriveSignetPalette` is added to `packages/chapter-theme`: wraps `generateRadixColors` with the fixed parameters in §1 and emits the role tokens in §2. It MUST stay DOM-free and NestJS-callable, and MUST NOT break the existing `derivePalette` callers above — both functions coexist.
 - `chapters.theme_palette` gains the additive Signet field (§4); the recompute endpoint writes both maps.
 - Legacy `derivePalette` and `resolveChapterAccentColor` are removed only after the web reskin stops reading their tokens.
 
@@ -99,6 +107,7 @@ This spec documents the target engine. The code that exists today serves the leg
 
 ## 8. Validation
 
-- The engine guarantees contrast **by construction** for its mapped roles: the Radix generator produces step 11 as legible text on steps 1–3 surfaces and a contrast color legible on step 9. No runtime per-token fallback (the legacy bronze-substitution pattern) applies to engine output.
-- Gate: accent-derived **text** roles MUST meet WCAG AA 4.5:1 on the surfaces they are specified for — `accent-text` (step 11) on the neutral backgrounds and on `accent-subtle-bg`, and `on-primary` on `accent-primary`. An automated check at generation time SHOULD assert this and fail loudly on regression (a generator upgrade is the realistic way this breaks).
+- The engine guarantees contrast **by construction** for its mapped roles: the Radix generator produces step 11 as legible text on steps 1–3 surfaces. No runtime per-token fallback (the legacy bronze-substitution pattern) applies to engine output.
+- **`on-primary` needs one correction to make that true.** The generator's own contrast color is *not* reliably legible on step 9 for light seeds in dark appearance — it returns white for `#C9A56F` (2.31:1) and `#FF69B4` (2.65:1), where black would score 9.10:1 and 7.93:1. This is not a corner case: `#C9A56F` is 45 of the 100 color values in `supabase/seed/chapter_directory.csv`. So `deriveSignetPalette` keeps the generator's choice when it clears AA — which it does for the house seed, `#2B2009` at 8.82:1 — and otherwise substitutes whichever of black or white scores higher. That substitution cannot itself fail: the two curves cross at luminance ≈0.179 where both score ≈4.58:1, so the better of the pair is always ≥4.5:1 for any color.
+- Gate: accent-derived **text** roles MUST meet WCAG AA 4.5:1 on the surfaces they are specified for — `accent-text` (step 11) on the neutral backgrounds and on `accent-subtle-bg`, and `on-primary` on `accent-primary`. This is asserted at generation time and reported on `contrastChecks`, and pinned by `packages/chapter-theme/src/signet.spec.ts` across every distinct chapter color in the seed directory. A generator upgrade is the realistic way it breaks, which is why the generator is vendored rather than floated.
 - Save-time validation of the seed itself (format, and legacy light-mode contrast checks) is behavior canon in [`../../behavior/branding.md`](../../behavior/branding.md).

@@ -24,6 +24,17 @@ import {
   type Rgb,
 } from "@repo/color";
 
+// The Signet accent engine. Additive: `derivePalette` below still generates the
+// legacy web token map, and both are written to `chapters.theme_palette` until
+// `apps/web` reskins. See spec/ui/design-system/accent-engine.md §6.
+export {
+  deriveSignetPalette,
+  HOUSE_SEED,
+  type DeriveSignetPaletteResult,
+  type SignetContrastCheck,
+  type SignetPalette,
+} from "./signet.js";
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 /** Bone: the main light-mode background. ~hsl(37 33% 96%) */

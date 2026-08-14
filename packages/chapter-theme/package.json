@@ -15,14 +15,19 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint . --max-warnings 0",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
-    "@repo/color": "*"
+    "@radix-ui/colors": "3.0.0",
+    "@repo/color": "*",
+    "bezier-easing": "^2.1.0",
+    "colorjs.io": "0.5.2"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.1.0"
   }
 }
