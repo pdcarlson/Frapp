@@ -38,16 +38,35 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * It is hermetic by construction: the stubbed transport means no envelope can
  * leave the process and the `.invalid` DSN is never resolved, on any runner.
  *
- * Integrations are pinned to the two that shape what the scrubber must handle
- * here — source context and request data — rather than left at the default
- * set, which leaks a test environment per worker (`jest --detectLeaks` fails).
+ * **Scope of "production options", stated precisely.** `dsn`, `environment`,
+ * `tracesSampleRate`, `sendDefaultPii` and `beforeSend` come from the builder
+ * and are what the assertions below exercise. `transport`, `integrations` and
+ * `defaultIntegrations` are overridden here, so this file would *not* notice
+ * production adding any of those three — the default integration set leaks a
+ * test environment per worker (`jest --detectLeaks` fails), and a real
+ * transport would defeat hermeticity.
  *
- * `localVariablesIntegration` is deliberately absent: it only populates
- * `frame.vars` for *uncaught* exceptions, so under `captureException` it
- * attaches nothing, and a test asserting `vars` is stripped would pass even
- * with `scrubException`'s `delete kept.vars` removed. That rule is covered
- * where it can actually fail — `sentry-scrubbing.spec.ts:151` builds a frame
- * carrying `vars` by hand and asserts it does not survive.
+ * `contextLines` is pinned because it is what makes source text reach the
+ * payload, which several assertions below have to work around.
+ * `localVariablesIntegration` is absent for a narrower reason than it may
+ * appear: it does cover caught exceptions (`captureAllExceptions` defaults to
+ * `true`), but it attaches nothing unless `includeLocalVariables` is set — the
+ * API does not set it — and it needs the debugger to pause on a *thrown*
+ * error, which `captureException(new Error(...))` never does. So a `vars`
+ * assertion here would pass with `scrubException`'s `delete kept.vars`
+ * removed, making it worse than no test. That rule is covered where it can
+ * actually fail — `sentry-scrubbing.spec.ts:151` builds a frame carrying
+ * `vars` by hand and asserts it does not survive. **Do not read that as the
+ * rule being dead:** `LocalVariablesAsync` ships in production's default
+ * integration set and `sendDefaultPii: false` still resolves
+ * `stackFrameVariables: true`, so enabling `includeLocalVariables` for
+ * debugging would immediately put request payloads behind that rule.
+ *
+ * This file is a wiring test, not a scrubber test. The per-rule coverage
+ * (`user` rejection, contexts, request, breadcrumbs, fail-closed) lives in
+ * `sentry-scrubbing.spec.ts`, which can construct the event shapes needed to
+ * make each rule fail; several of those rules cannot be made to fail from
+ * here, so passing this file alone is not evidence the scrubber is intact.
  */
 
 /** Well-formed but deliberately unroutable — `.invalid` is reserved (RFC 2606). */
@@ -118,14 +137,65 @@ describe('Sentry SDK integration', () => {
       expect(options().sendDefaultPii).toBe(false);
     });
 
-    it('passes the DSN through and defaults environment and sample rate', () => {
-      const built = options();
-      expect(built.dsn).toBe(FIXTURE_DSN);
-      expect(built.environment).toBe(process.env.NODE_ENV ?? 'development');
-      // A malformed SENTRY_TRACES_SAMPLE_RATE yields NaN, and the SDK treats a
-      // non-null rate as "tracing on" — so assert a usable number, not just
-      // that the key exists. See #904.
-      expect(Number.isFinite(built.tracesSampleRate)).toBe(true);
+    it('passes the DSN through', () => {
+      expect(options().dsn).toBe(FIXTURE_DSN);
+    });
+
+    it('reads environment from NODE_ENV and falls back to development', () => {
+      // Asserted against literals with the environment manipulated, not
+      // against `process.env.NODE_ENV ?? 'development'` — restating the
+      // implementation's own expression is the tautology this file keeps
+      // relapsing into, and Jest pins NODE_ENV=test, so the fallback branch is
+      // otherwise unreachable and untested.
+      const previous = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'staging';
+        expect(options().environment).toBe('staging');
+        delete process.env.NODE_ENV;
+        expect(options().environment).toBe('development');
+      } finally {
+        if (previous === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = previous;
+      }
+    });
+
+    it('reads the trace sample rate from env and defaults to 0.1', () => {
+      const previous = process.env.SENTRY_TRACES_SAMPLE_RATE;
+      try {
+        delete process.env.SENTRY_TRACES_SAMPLE_RATE;
+        expect(options().tracesSampleRate).toBe(0.1);
+        process.env.SENTRY_TRACES_SAMPLE_RATE = '0.25';
+        expect(options().tracesSampleRate).toBe(0.25);
+      } finally {
+        if (previous === undefined)
+          delete process.env.SENTRY_TRACES_SAMPLE_RATE;
+        else process.env.SENTRY_TRACES_SAMPLE_RATE = previous;
+      }
+      // Asserting the concrete default matters beyond correctness: transaction
+      // events bypass the scrubber entirely (#896), so a silent rate increase
+      // widens a known-unscrubbed path. A malformed value yields NaN, which
+      // the SDK reads as tracing-enabled — #904.
+    });
+
+    it('does not let transaction events through unscrubbed', () => {
+      // Guards the plausible wrong fix for #896. `scrubSentryEvent` cannot be
+      // reused for transactions (it would drop `spans`), which invites a
+      // `beforeSendTransaction: (e) => e` passthrough instead — spans carry
+      // `http.url` and `url.query`, exactly the query-string leak the
+      // free-text sweep exists to close. Written forward-compatibly: unset is
+      // the status quo, and any future hook must actually redact.
+      const hook = options().beforeSendTransaction;
+      if (hook === undefined) return;
+      const email = ['ops', 'example.com'].join('@');
+      const out = hook(
+        {
+          type: 'transaction',
+          transaction: `/v1/chapters?notify=${email}`,
+          spans: [],
+        } as unknown as Parameters<typeof hook>[0],
+        {},
+      );
+      expect(JSON.stringify(out)).not.toContain(email);
     });
   });
 
@@ -168,6 +238,25 @@ describe('Sentry SDK integration', () => {
     expect(event.level).toBe('warning');
     expect(event.tags).toMatchObject({ security_event: 'auth_failure_spike' });
     expect(event.user?.id).toBe(pseudonym);
+  });
+
+  it('scrubs PII out of tag values', async () => {
+    // Nothing else in the repo covers `scrubTags`: replacing its body with
+    // `return tags;` left all 87 suites green before this test existed. Tags
+    // are not incidental — `all-exceptions.filter.ts` sets `origin` (an IP
+    // hash), `chapter`, and `route` on every reported error, so tag values are
+    // a live path to the wire.
+    const email = ['ops', 'example.com'].join('@');
+    Sentry.withScope((scope) => {
+      scope.setTag('note', `escalate to ${email}`);
+      Sentry.captureException(new Error('tag scrub check'));
+    });
+    await Sentry.flush(2000);
+
+    expect(sent).toHaveLength(1);
+    const tags = JSON.stringify(sent[0].tags);
+    expect(tags).not.toContain(email);
+    expect(tags).toContain('[redacted:email]');
   });
 
   it('scrubs PII out of a real captured exception message', async () => {
