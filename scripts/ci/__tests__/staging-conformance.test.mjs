@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   ALERT_ISSUE_TITLE,
+  DELEGATED,
   FAIL,
   FAILING_MARKER,
   PASS,
@@ -227,8 +228,13 @@ test("migration parity is reported as owned elsewhere, and never as a pass", asy
   // effect. The row stays visible so the inventory is complete; it asserts
   // nothing, so it can never close this workflow's alert.
   const r = checkSchemaDrift();
-  assert.equal(r.status, SKIPPED);
+  assert.equal(r.status, DELEGATED);
   assert.notEqual(r.status, PASS, "must never count toward this workflow's health");
+  assert.notEqual(
+    r.status,
+    SKIPPED,
+    "a permanent delegation must not arm the loud-skip banner every single day",
+  );
   assert.match(r.detail, /check-migration-drift\.yml/);
   assert.match(r.detail, /#833/);
 });
@@ -712,7 +718,7 @@ test("a failing sync surfaces lastSyncMessage, redacted", async () => {
   assert.doesNotMatch(result.detail, /hunter2hunter2/);
 });
 
-// ── Schema-drift delegation ─────────────────────────────────────────────────
+// ── Thrown assertions and env fallbacks ─────────────────────────────────────────────────
 
 test("a thrown assertion names which check threw and surfaces error.cause", async () => {
   const { fetchImpl } = makeFetchMock([
@@ -1076,5 +1082,57 @@ test("a failed alert lookup never closes an alert — unreadable is not the same
     patches.filter((b) => /"state":"closed"/.test(b ?? "")).length,
     0,
     "no close may be issued when the alert state could not be read",
+  );
+});
+
+// ── DELEGATED is a fourth status, not a dressed-up skip ─────────────────────
+
+test("a delegated row does not inflate or deflate the assertion score", () => {
+  const summary = buildRunSummary({
+    outcome: "healthy",
+    results: [
+      { id: "a", status: PASS, label: "A", detail: "" },
+      { id: "b", status: PASS, label: "B", detail: "" },
+      { id: "schema-drift", status: DELEGATED, label: "parity", detail: "owned elsewhere" },
+    ],
+    runUrl: "",
+  });
+  assert.match(summary, /2 of 2 assertions passed/, "the delegated row is not part of the denominator");
+  assert.doesNotMatch(
+    summary,
+    /could not run/,
+    "a delegation must never fire the skipped-assertion banner",
+  );
+  assert.match(summary, /owned by another watchdog/);
+});
+
+test("a delegated row cannot make a run inconclusive on its own", () => {
+  const { outcome, delegated, passed } = classifyConformance([
+    { id: "a", status: PASS },
+    { id: "schema-drift", status: DELEGATED },
+  ]);
+  assert.equal(outcome, "healthy");
+  assert.equal(delegated.length, 1);
+  assert.equal(passed.length, 1);
+});
+
+test("an all-delegated run is inconclusive — a pointer is not evidence", () => {
+  const { outcome } = classifyConformance([{ id: "schema-drift", status: DELEGATED }]);
+  assert.equal(outcome, "inconclusive");
+});
+
+test("a delegated id can never strand the alert, even if it reaches the marker", () => {
+  // Unreachable today (a delegated row cannot FAIL, so it cannot enter the
+  // marker), but the gate must not depend on that staying true: schema-drift
+  // can never PASS, so requiring it would keep the alert open forever.
+  assert.equal(
+    canResolveAlert({
+      results: [
+        { id: "auth-hook", status: PASS },
+        { id: "schema-drift", status: DELEGATED },
+      ],
+      failingIds: ["auth-hook", "schema-drift"],
+    }),
+    true,
   );
 });

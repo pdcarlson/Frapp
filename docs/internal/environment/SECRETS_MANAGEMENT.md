@@ -261,10 +261,12 @@ These three are **repository secrets**, not environment secrets. One machine ide
 Consumed only by `.github/workflows/staging-conformance.yml`. When absent, the workflow's
 end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass.
 
-Worth knowing before treating that as optional: at merge, **two** of the five assertions are
-already unrunnable — this one, and migration parity, which is delegated to #833 and reports
-not-wired until that ships. So an unprovisioned smoke user leaves the workflow asserting three
-properties, none of which is behavioural. Provisioning it is what makes a green run mean much.
+Worth knowing before treating that as optional: this is the **only behavioural** assertion the
+workflow makes — the other three (project health, auth-hook enablement, secret-sync status) all
+read configuration. Migration parity is not among them: `check-migration-drift.yml` owns it, and
+the conformance table lists it only as a pointer. So an unprovisioned smoke user leaves the
+workflow asserting three configuration properties and nothing about whether the stack actually
+works. Provisioning it is what makes a green run mean much.
 
 | Secret                        | Value                                                         |
 | ----------------------------- | ------------------------------------------------------------- |

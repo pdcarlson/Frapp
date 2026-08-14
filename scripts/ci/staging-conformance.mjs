@@ -82,6 +82,19 @@ export const ALERT_ISSUE_LABELS = [ALERT_ISSUE_LOOKUP_LABEL, "area:ci", "P1"];
 export const PASS = "pass";
 export const FAIL = "fail";
 export const SKIPPED = "skipped";
+/**
+ * A property this workflow deliberately does not check, because another
+ * watchdog owns it end to end.
+ *
+ * Distinct from SKIPPED on purpose. SKIPPED means "should be asserted here and
+ * could not be", and it is rendered loudly so nobody mistakes it for health.
+ * A permanent delegation rendered that way would fire that warning every day
+ * forever, and a signal that is always on is one nobody reads — so the day a
+ * real assertion degrades to SKIPPED it would look like the usual noise. That
+ * is the alert fatigue this file exists to prevent, so DELEGATED is reported
+ * as an inventory line and counted separately.
+ */
+export const DELEGATED = "delegated";
 
 /**
  * Sync states that mean "this sync is broken right now".
@@ -434,7 +447,7 @@ export function checkSchemaDrift() {
   return result(
     "schema-drift",
     "Applied migrations match supabase/migrations/",
-    SKIPPED,
+    DELEGATED,
     "owned by check-migration-drift.yml (#833), which alerts separately — not duplicated here",
   );
 }
@@ -456,10 +469,14 @@ export function classifyConformance(results) {
   const failed = results.filter((r) => r.status === FAIL);
   const skipped = results.filter((r) => r.status === SKIPPED);
   const passed = results.filter((r) => r.status === PASS);
+  // Delegated rows are neither evidence nor a gap here — they are a pointer to
+  // the watchdog that does assert them, so they never move this workflow's
+  // outcome in either direction.
+  const delegated = results.filter((r) => r.status === DELEGATED);
   let outcome = "healthy";
   if (failed.length > 0) outcome = "failed";
   else if (passed.length === 0) outcome = "inconclusive";
-  return { outcome, failed, skipped, passed };
+  return { outcome, failed, skipped, passed, delegated };
 }
 
 /**
@@ -484,26 +501,35 @@ export function canResolveAlert({ results, failingIds }) {
   // the alert was raised — are not evidence of an unrecovered failure, and
   // nothing could ever mark them passing. Without this they are sticky
   // forever and the alert can never close.
-  const known = new Set(results.map((r) => r.id));
-  return failingIds.filter((id) => known.has(id)).every((id) => passing.has(id));
+  // Also exclude ids that structurally cannot ever PASS — a delegated row is
+  // never asserted here, so requiring it to pass would strand the alert open
+  // forever. Unreachable today (a delegated row cannot FAIL, so it cannot enter
+  // the marker), but the gate should not depend on that staying true.
+  const gateable = new Set(
+    results.filter((r) => r.status !== DELEGATED).map((r) => r.id),
+  );
+  return failingIds.filter((id) => gateable.has(id)).every((id) => passing.has(id));
 }
 
-const ICON = { [PASS]: "✅", [FAIL]: "❌", [SKIPPED]: "⏭️" };
+const ICON = { [PASS]: "✅", [FAIL]: "❌", [SKIPPED]: "⏭️", [DELEGATED]: "↗️" };
 
 export function buildRunSummary({ outcome, results, runUrl }) {
-  const { failed, skipped, passed } = classifyConformance(results);
+  const { failed, skipped, passed, delegated } = classifyConformance(results);
+  // Denominator counts assertions this workflow owns; delegated rows are listed
+  // but never inflate or deflate the score.
+  const owned = results.length - delegated.length;
   const headline = {
-    failed: `**frapp-staging has drifted** — ${failed.length} of ${results.length} assertions failed.`,
-    healthy: `**frapp-staging is conformant** — ${passed.length} of ${results.length} assertions passed.`,
+    failed: `**frapp-staging has drifted** — ${failed.length} of ${owned} assertions failed.`,
+    healthy: `**frapp-staging is conformant** — ${passed.length} of ${owned} assertions passed.`,
     inconclusive:
-      `**Inconclusive — nothing was asserted.** All ${results.length} assertions skipped, so this run ` +
+      `**Inconclusive — nothing was asserted.** All ${owned} assertions skipped, so this run ` +
       "proves nothing about staging. Any open alert is left open deliberately.",
     "unproven-recovery":
       `**Nothing failed, but the open alert is not cleared.** ${passed.length} of ${results.length} ` +
       "assertions passed; the ones this alert was raised for could not be asserted, so closing it " +
       "would report a recovery nobody proved.",
   }[outcome] ??
-    `**frapp-staging is conformant** — ${passed.length} of ${results.length} assertions passed.`;
+    `**frapp-staging is conformant** — ${passed.length} of ${owned} assertions passed.`;
   const lines = [
     "## Staging conformance",
     "",
@@ -513,6 +539,13 @@ export function buildRunSummary({ outcome, results, runUrl }) {
     "| --- | --- | --- |",
     ...results.map((r) => `| ${ICON[r.status]} ${r.status.toUpperCase()} | ${r.label} | ${r.detail} |`),
   ];
+  if (delegated.length > 0) {
+    lines.push(
+      "",
+      `↗️ **${delegated.length} row(s) are owned by another watchdog** and are not asserted here. ` +
+        "They are listed so this table stays a complete inventory of what is watched.",
+    );
+  }
   if (skipped.length > 0) {
     lines.push(
       "",
@@ -699,12 +732,14 @@ export async function runStagingConformance({
     }
   }
 
-  const { outcome, failed, skipped } = classifyConformance(results);
+  const { outcome, failed, skipped, delegated } = classifyConformance(results);
 
   // Annotations surface at the top of the run page. `::error::` here only
   // annotates — the exit code below is what reds the run.
   for (const r of failed) logger.log?.(`::error::${r.label} — ${r.detail}`);
   for (const r of skipped) logger.log?.(`::warning::SKIPPED ${r.label} — ${r.detail}`);
+  // Notice, not warning: a delegation is the intended steady state.
+  for (const r of delegated) logger.log?.(`::notice::DELEGATED ${r.label} — ${r.detail}`);
 
   if (outcome === "failed") {
     writeSummary(buildRunSummary({ outcome, results, runUrl }));

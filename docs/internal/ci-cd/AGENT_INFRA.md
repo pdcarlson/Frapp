@@ -354,9 +354,10 @@ stay silent).
 `unknown` — a target the Management API could not be read — does **neither**. An API blip must not
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
-run rather than a quiet pass. This is the one watchdog in `scripts/ci/` that exits non-zero at all:
-the others annotate a run that is already red, whereas this script *is* the run, so green has to
-mean "the databases were checked and match".
+run rather than a quiet pass. Along with `staging-conformance.mjs` it is one of the two watchdogs
+in `scripts/ci/` that exit non-zero at all — both *are* the check, so green has to mean "it was
+checked and it matched". The rest (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
+that is already red, and deliberately exit 0 so a watchdog never adds noise of its own.
 
 **Read-only by construction.** It calls the Management API's migration-history endpoint
 (`GET /v1/projects/{ref}/database/migrations` — the stable endpoint, not the Beta `database/query`
