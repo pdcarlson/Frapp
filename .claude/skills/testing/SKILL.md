@@ -210,7 +210,7 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    `npm run test:e2e -w apps/api` — run it too when API wiring changes)
 6. `npm run test -w apps/web` → `CI / web-tests` (Vitest / jsdom unit suite; the
    Playwright visual tests under `tests/visual/**` are excluded by
-   `apps/web/vitest.config.ts` and run separately — see item 11).
+   `apps/web/vitest.config.ts` and run separately — see item 12).
    The same job also runs the two shared packages web consumes:
    `npm run test -w packages/hooks` and `npm run test -w packages/ui`. Run those
    too when you touch `packages/**` — the job's path filter covers that glob, so
@@ -225,13 +225,13 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    reached by the mobile lint or typecheck steps)
 9. `npm run check:api-contract` → `CI / api-contract-check`
 10. `npm run check:migration-safety` → `CI / migration-safety`
-10b. `npm run check:npm-audit` → `CI / dependency-audit` (npm audit gate: fails on
+11. `npm run check:npm-audit` → `CI / dependency-audit` (npm audit gate: fails on
    any high/critical advisory not allowlisted in
    `scripts/npm-audit-allowlist.json`; needs registry network — append
    `-- --soft-network` to warn instead of fail when offline. Most likely to
    fire on dependency/lockfile PRs, or when a new advisory was published
    upstream since the last CI run)
-11. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
+12. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they
    match the job's single-worker Playwright run; see

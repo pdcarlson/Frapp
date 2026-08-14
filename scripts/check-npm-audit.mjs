@@ -24,13 +24,14 @@
  *     hard failures, never silent skips.
  *
  * Flags:
- *   --soft-network  when `npm audit` itself cannot produce a usable report
- *                   (offline, registry unreachable), warn and exit 0 instead
- *                   of failing. Passed only by the local gate so an offline
- *                   dev isn't hard-blocked (same convention as the secret
- *                   scan's --soft-missing); the CI job omits it, staying the
- *                   hard gate. Allowlist validation and audit-content
- *                   failures are NEVER softened.
+ *   --soft-network  when `npm audit` itself cannot produce a usable report —
+ *                   offline, registry unreachable, but also any broken local
+ *                   npm state (missing lockfile, bad config) — warn and exit
+ *                   0 instead of failing. Passed only by the local gate so an
+ *                   offline dev isn't hard-blocked (same convention as the
+ *                   secret scan's --soft-missing); the CI job omits it and
+ *                   hard-fails every one of those states. Allowlist
+ *                   validation and audit-content failures are NEVER softened.
  *
  * Audit is run with --package-lock-only (lockfile + registry only, no
  * node_modules needed) and explicit --include=dev --include=optional so a
@@ -233,19 +234,22 @@ export function parseAllowlistSource(raw) {
   return parsed.entries;
 }
 
+const AUDIT_ARGS = ["audit", "--json", "--package-lock-only", "--include=dev", "--include=optional"];
+
 function runNpmAudit() {
-  const result = spawnSync(
-    "npm",
-    ["audit", "--json", "--package-lock-only", "--include=dev", "--include=optional"],
-    {
-      cwd: ROOT,
-      encoding: "utf8",
-      maxBuffer: 128 * 1024 * 1024,
-      // npm is npm.cmd on Windows; spawning it there needs a shell. Args are
-      // static strings, so shell interpretation introduces no injection risk.
-      shell: process.platform === "win32",
-    },
-  );
+  const options = {
+    cwd: ROOT,
+    encoding: "utf8",
+    maxBuffer: 128 * 1024 * 1024,
+  };
+  // npm is npm.cmd on Windows, which needs a shell — and shell+args-array is
+  // deprecated (DEP0190), so the win32 branch passes one command string. The
+  // args are static strings, so shell interpretation introduces no injection
+  // risk.
+  const result =
+    process.platform === "win32"
+      ? spawnSync(["npm", ...AUDIT_ARGS].join(" "), { ...options, shell: true })
+      : spawnSync("npm", AUDIT_ARGS, options);
   if (result.error) {
     throw new Error(`failed to spawn npm audit: ${result.error.message}`);
   }
@@ -348,14 +352,15 @@ function main() {
   console.log("\n✅ npm audit gate passed: no unallowlisted high/critical advisories.");
 }
 
-// realpathSync both sides: for an ESM entry module `import.meta.url` is
-// symlink-resolved while `process.argv[1]` is not, and a mismatch here must
-// not silently skip main() — that would make the gate exit 0 having checked
-// nothing (observed with checkouts reached through symlinked paths).
+// realpathSync BOTH sides: Node symlink-resolves the ESM entry's
+// `import.meta.url` by default but never `process.argv[1]`, and with
+// --preserve-symlinks-main it resolves neither — either asymmetry would make
+// the comparison fail and silently skip main(), the gate exiting 0 having
+// checked nothing (observed with checkouts reached through symlinked paths).
 function isInvokedDirectly() {
   if (!process.argv[1]) return false;
   try {
-    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
   } catch {
     return false;
   }
