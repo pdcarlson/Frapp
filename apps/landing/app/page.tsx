@@ -265,7 +265,7 @@ export default function Home() {
             Illustrative projections—not reported customer metrics. Replace with
             verified figures when available (see{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-              spec/ui-brand-identity.md
+              spec/ui/brand-identity.md
             </code>{" "}
             in the repo).
           </p>

@@ -5,6 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from '@nestjs/common';
+import { isPollClosed, validateIndexedPollVote } from '@repo/validation';
 import { CHAT_MESSAGE_REPOSITORY } from '../../domain/repositories/chat.repository.interface';
 import type { IChatMessageRepository } from '../../domain/repositories/chat.repository.interface';
 import { POLL_VOTE_REPOSITORY } from '../../domain/repositories/poll-vote.repository.interface';
@@ -119,24 +120,33 @@ export class PollService {
     }
 
     const metadata = message.metadata as PollMetadata;
-    const isExpired = this.isPollExpired(metadata);
-    if (isExpired) {
-      throw new BadRequestException('Poll has expired');
-    }
-
     const options = metadata.options ?? [];
-    for (const idx of optionIndexes) {
-      if (idx < 0 || idx >= options.length) {
-        throw new BadRequestException(`Invalid option index: ${idx}`);
+
+    // Same rules the chat-card vote path now applies (#871). The messages below
+    // are unchanged so this service's existing tests keep passing untouched —
+    // that they do is the proof the extraction preserved behaviour.
+    const rejection = validateIndexedPollVote({
+      expiresAt: metadata.expires_at,
+      optionCount: options.length,
+      optionIndexes,
+      choiceMode: metadata.choice_mode,
+    });
+    if (rejection) {
+      switch (rejection.reason) {
+        case 'closed':
+          throw new BadRequestException('Poll has expired');
+        case 'unknown_option':
+          throw new BadRequestException(
+            `Invalid option index: ${rejection.option}`,
+          );
+        case 'cardinality':
+          throw new BadRequestException(
+            'Single-choice poll requires exactly one option',
+          );
       }
     }
 
     if (metadata.choice_mode === 'single') {
-      if (optionIndexes.length !== 1) {
-        throw new BadRequestException(
-          'Single-choice poll requires exactly one option',
-        );
-      }
       await this.voteRepo.deleteByMessageAndUser(messageId, userId);
       await this.voteRepo.create({
         message_id: messageId,
@@ -244,10 +254,9 @@ export class PollService {
     };
   }
 
+  /** Thin wrapper so the read paths share the vote path's notion of "closed". */
   private isPollExpired(metadata: PollMetadata): boolean {
-    const expiresAt = metadata.expires_at;
-    if (!expiresAt) return false;
-    return new Date(expiresAt) <= new Date();
+    return isPollClosed(metadata.expires_at);
   }
 
   /**

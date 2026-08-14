@@ -37,7 +37,7 @@ import type {
   ChatMessageKind,
   ChannelType,
 } from '../../domain/entities/chat.entity';
-import { allowsInThreadReplies } from '@repo/validation';
+import { allowsInThreadReplies, validateCardPollVote } from '@repo/validation';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
@@ -138,6 +138,57 @@ const SERVER_ONLY_KINDS: ReadonlySet<ChatMessageKind> = new Set([
 
 /** Vote action UPSERTS rather than duplicates (ADR-07). */
 const VOTE_ACTION_TYPE = 'vote';
+
+/** The poll-card payload written by the composer (`apps/web/lib/chat/dispatch.ts`). */
+type PollCardPayload = {
+  options?: { id?: unknown }[];
+  closes_at?: string | null;
+  choice_mode?: 'single' | 'multi';
+};
+
+/**
+ * Applies the shared poll rules to a chat-card vote, translating a rejection
+ * into the same 400 the polls surface returns.
+ *
+ * A card whose payload carries no options is left alone rather than rejected:
+ * that is a malformed message, and refusing every vote on it would turn a data
+ * problem into a dead card. Cards default to single-choice, matching the
+ * composer, which offers no multi-select.
+ */
+function assertCardPollVoteAllowed(
+  messagePayload: unknown,
+  actionPayload: Record<string, unknown>,
+): void {
+  const card = (messagePayload ?? {}) as PollCardPayload;
+  const optionIds = (card.options ?? [])
+    .map((option) => option?.id)
+    .filter((id): id is string => typeof id === 'string');
+  if (optionIds.length === 0) return;
+
+  const rawSelection = actionPayload['option_id'];
+  const selected = (
+    Array.isArray(rawSelection) ? rawSelection : [rawSelection]
+  ).filter((id): id is string => typeof id === 'string');
+
+  const rejection = validateCardPollVote({
+    closesAt: card.closes_at,
+    optionIds,
+    selected,
+    choiceMode: card.choice_mode ?? 'single',
+  });
+  if (!rejection) return;
+
+  switch (rejection.reason) {
+    case 'closed':
+      throw new BadRequestException('Poll has expired');
+    case 'unknown_option':
+      throw new BadRequestException(`Invalid option: ${rejection.option}`);
+    case 'cardinality':
+      throw new BadRequestException(
+        'Single-choice poll requires exactly one option',
+      );
+  }
+}
 /**
  * Realtime topic the web client subscribes to per channel. Matches the
  * topic used by the retired `chat-send` Edge Function so subscribed
@@ -766,10 +817,24 @@ export class ChatService {
     deduplicated: boolean;
     updated?: boolean;
   }> {
-    await this.assertMessageAccess(messageId, chapterId, userId);
+    const message = await this.assertMessageAccess(
+      messageId,
+      chapterId,
+      userId,
+    );
 
     const payload = input.payload ?? {};
     const isVote = input.action_type === VOTE_ACTION_TYPE;
+
+    // #871: this path used to check channel access and then insert whatever it
+    // was handed, so a member could vote on a closed poll, pick an option that
+    // does not exist, or send several selections to a single-choice poll —
+    // every one of which the polls surface rejects for the same poll. The rules
+    // are shared with `PollService.vote`; only the encoding differs, since this
+    // side addresses options by id rather than by index.
+    if (isVote && message.kind === 'poll') {
+      assertCardPollVoteAllowed(message.payload, payload);
+    }
 
     try {
       const action = await this.actionRepo.create({

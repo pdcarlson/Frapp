@@ -1,6 +1,12 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
+import {
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useFrappClient, useActiveChapterId } from "@repo/hooks";
 import type { components } from "@repo/api-sdk";
 import { isModuleEnabled } from "@repo/validation";
@@ -99,6 +105,46 @@ function applyOptimistic(
   return next;
 }
 
+const configMutationKey = (chapterId: string | null | undefined) =>
+  ["chapter-config", chapterId, "patch"] as const;
+
+/**
+ * The settings leaves currently being saved, e.g. `enabled_modules.chat`,
+ * `dues`, `analytics_opt_out`.
+ *
+ * Settings surfaces used to share the single `isPending` flag off one
+ * `usePatchOrgConfig()` call, so saving anything disabled every control on
+ * every tab — toggling one module greyed out the Dues form (#881). Reading the
+ * in-flight *variables* instead lets each control ask only about itself.
+ *
+ * Top-level keys are reported as-is; `enabled_modules` additionally reports one
+ * entry per module key, since that tab renders a switch per module and they
+ * save independently.
+ */
+export function usePendingConfigKeys(): ReadonlySet<string> {
+  const chapterId = useActiveChapterId();
+  const pending = useMutationState({
+    filters: { mutationKey: configMutationKey(chapterId), status: "pending" },
+    select: (mutation) => mutation.state.variables as PatchChapterConfig,
+  });
+
+  return useMemo(() => {
+    const keys = new Set<string>();
+    for (const diff of pending) {
+      if (!diff) continue;
+      for (const [key, value] of Object.entries(diff)) {
+        keys.add(key);
+        if (key === "enabled_modules" && value && typeof value === "object") {
+          for (const moduleKey of Object.keys(value)) {
+            keys.add(`enabled_modules.${moduleKey}`);
+          }
+        }
+      }
+    }
+    return keys;
+  }, [pending]);
+}
+
 export function usePatchOrgConfig() {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
@@ -106,6 +152,14 @@ export function usePatchOrgConfig() {
   const queryKey = ["chapter-config", chapterId] as const;
 
   return useMutation({
+    // Identifies this mutation to `usePendingConfigKeys` below, which needs to
+    // know WHICH settings are in flight rather than merely that something is.
+    mutationKey: configMutationKey(chapterId),
+    // Serialises concurrent config PATCHes. The server deep-merges against the
+    // row it reads (`chapter-config.service.ts` does a read-modify-write on
+    // `enabled_modules`), so two overlapping writes each merge against a stale
+    // copy and the later one silently drops the earlier toggle.
+    scope: { id: `chapter-config:${chapterId ?? "none"}` },
     mutationFn: async (diff: PatchChapterConfig) => {
       if (!chapterId) throw new Error("No active chapter selected");
       const { data, error } = await client.PATCH("/v1/chapters/{id}/config", {
