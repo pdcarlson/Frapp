@@ -97,15 +97,15 @@ This repo is **mid-rebuild (Frapp → Signet)**. Half-migrated surfaces, superse
 **Never silently work around orphaned, superseded, or contradictory code.** When you find it, do both:
 
 1. **Flag it explicitly in your output** — in your response and the PR body, not buried in a code comment.
-2. **Add an entry to [`TECH-DEBT.md`](TECH-DEBT.md)** — the running ledger at repo root (one entry per item: `id`, `area`, `description`, `recommended action`, `status`, `first flagged`).
+2. **File a GitHub issue** per [Filing follow-up work](#filing-follow-up-work-as-github-issues) — `triage` + one `area:<x>` + a priority, written to be executed cold. Fix it inline instead when it's small and in scope; a one-line deletion doesn't need a ticket.
 
-**Code is ground truth for behavior; docs are ground truth for intent.** When a doc (an ADR, `spec/*`, a README) and the shipped code disagree, believe the **code** for what the system actually does — but never propagate the stale assumption onward. Flag the doc for correction and log it, then fix the doc in the same PR when it's in scope.
+**The tracker is the only debt list.** Do **not** start a running debt file (`TECH-DEBT.md` or similar) — one was tried and removed, because a hand-maintained list of things-to-fix goes stale the moment someone fixes an item without updating the file, which is precisely the doc/code divergence this section exists to prevent. GitHub Issues already have status, ownership, priority, dedup, and close-on-merge. A markdown ledger has none of that and needs a human to keep it honest.
+
+**Code is ground truth for behavior; docs are ground truth for intent.** When a doc (an ADR, `spec/*`, a README) and the shipped code disagree, believe the **code** for what the system actually does — but never propagate the stale assumption onward. Fix the doc in the same PR when it's in scope; file it when it isn't.
 
 **A cutover deletes what it replaces.** When a rebuild or migration supersedes an old implementation, delete the superseded code **in the same change**, unless there is an explicit, stated reason to keep both live (a flag mid-rollout, a documented migration window). "We might need it later" is not a reason — git history is the backup, and a second live implementation is a trap for the next agent.
 
-**End every audit or implementation task with a short "debt spotted" note** — even when debt wasn't the task's focus, and even when the honest answer is "none found". One line per item plus its `TECH-DEBT.md` id is enough.
-
-**Relationship to GitHub Issues.** `TECH-DEBT.md` is the **ledger**: a durable, greppable record of known rot that outlives the session that found it. GitHub Issues remain the **tracker** for work that is actually scheduled (see [Filing follow-up work](#filing-follow-up-work-as-github-issues)). Log every item in the ledger; open an issue when an item is ready to be worked. Cross-reference both ways (`#N` in the entry, the `TD-###` id in the issue). When a PR resolves an item, flip that entry's `status` to `resolved` in the same PR — don't delete the row.
+**End every audit or implementation task with a short "debt spotted" note** — even when debt wasn't the task's focus, and even when the honest answer is "none found". One line per item plus the issue number you filed for it is enough.
 
 ## Services and ports
 
