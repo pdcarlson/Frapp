@@ -32,7 +32,7 @@ const BONE = "#F7F3EC";
 /** Ink: the darkest neutral, used for sidebar backgrounds. */
 const INK = "#1F1A15";
 
-/** Bronze: the platform fallback accent. From @repo/theme tokens (royalBlue). */
+/** Bronze: the platform fallback accent. Mirrors `@repo/theme`'s `brand.bronze`. */
 const BRONZE = "#7A5A2F";
 
 const MIN_CONTRAST = 4.5; // WCAG AA normal text

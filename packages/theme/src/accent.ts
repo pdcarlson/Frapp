@@ -26,7 +26,7 @@ const DEFAULT_BACKGROUND = "#FFFFFF";
  * reported ratio still tell the caller what happened.
  */
 const FALLBACK_LADDER = [
-  frappTokens.color.brand.royalBlue,
+  frappTokens.color.brand.bronze,
   "#C8A062",
   "#1F1A15",
   "#FAF7F2",
@@ -93,7 +93,7 @@ export function resolveChapterAccentColor(
     normalizeHex(options?.background ?? "") || DEFAULT_BACKGROUND;
   const requestedFallback =
     normalizeHex(options?.fallbackAccent ?? "") ||
-    frappTokens.color.brand.royalBlue;
+    frappTokens.color.brand.bronze;
 
   const backgroundRgb = toRgb(background);
 

@@ -15,6 +15,17 @@ const config: Partial<Config> = {
          * VALUES now map to the bone / bronze / ink palette. Mark the
          * "navy" key as ink and "royal-blue" as bronze in your mental
          * model — the chat-first redesign no longer ships with blue.
+         *
+         * The TS tokens in `tokens.ts` now carry honest names (`ink`,
+         * `bronze`, `moss`) with the old ones kept as deprecated aliases.
+         * These Tailwind scale keys deliberately did NOT follow, and adding
+         * honest aliases here would be worse than leaving them: `emerald`
+         * overrides only DEFAULT/50/100/400/500/600, so `emerald-300`,
+         * `emerald-700`, and `emerald-900` — all in live use — fall through
+         * to stock Tailwind green. A `moss` alias built from the five
+         * overridden steps would therefore render `moss-700` at a different
+         * color than `emerald-700`. Renaming these is web/landing reskin
+         * work, done when the class sites move with them.
          */
         navy: {
           DEFAULT: "#1F1A15", /* ink */
