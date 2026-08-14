@@ -56,13 +56,19 @@ Three things about it are load-bearing:
   on the natural key — the only unique index is the random uuid primary key.
 - **Updates are scoped to `source = 'seed'`.** A row curated by hand or arriving
   from another source is never overwritten by a re-run.
-- **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed`
-  runs in CI as a blocking job because a malformed hex does not fail — `derivePalette`
-  substitutes platform bronze (`#7A5A2F`), so the chapter gets a plausible-looking
-  wrong brand color with no error anywhere. The seed originally shipped with 50 of
-  its 100 values missing a leading `#` and nothing noticed (#840). `derivePalette`
-  now reports the substitution on `DerivePaletteResult.invalidInputs`, and both API
-  callers log it.
+- **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed` runs
+  in CI as the `chapter-directory-seed` job, because a malformed hex does not fail —
+  `derivePalette` substitutes platform bronze (`#7A5A2F`), so the chapter gets a
+  plausible-looking wrong brand color with no error anywhere. The seed originally
+  shipped with 50 of its 100 values missing a leading `#` and nothing noticed (#840).
+  `derivePalette` now reports the substitution on `DerivePaletteResult.invalidInputs`,
+  and both API callers log it.
+
+  > The job is listed in `scripts/configure-branch-protection.mjs`, but listing it is
+  > not the same as enforcing it: required checks only change when someone runs
+  > `npm run configure:branch-protection`. Until that happens this job runs and reports
+  > on every PR without blocking a merge — the same rollout state as `secret-scan`,
+  > `clean-checkout-typecheck`, and `dependency-audit` (#813).
 
 The current file is a 50-row placeholder covering 41 universities. Growing it to
 the full dataset is tracked in #232.

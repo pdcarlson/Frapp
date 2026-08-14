@@ -855,7 +855,7 @@ await db.exec(`
 // silently nulling `chapters.directory_id` on every bootstrap — that column is
 // `on delete set null` — so the second run additionally proves row ids survive.
 console.log("\n=== chapter directory seed load (#840) ===");
-{
+try {
   const { execFileSync } = await import("node:child_process");
   const loadSql = execFileSync(
     process.execPath,
@@ -915,6 +915,15 @@ console.log("\n=== chapter directory seed load (#840) ===");
   // Leave the schema as the migrations produced it — same contract as the tiers
   // above, so anything appended later does not inherit seeded rows.
   await db.exec("delete from public.chapter_directory;");
+} catch (e) {
+  // Same contract as the tiers above: a thrown error becomes a counted MISS with a
+  // one-line reason, not a stack trace that buries the other 40-odd assertions. The
+  // generator exits non-zero on an invalid seed, and execFileSync turns that into a
+  // throw — which is a legitimate failure to report, not a crash to propagate.
+  missing += 1;
+  console.log(
+    `MISS  chapter directory seed load\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+  );
 }
 
 const tableCount = await db.query(

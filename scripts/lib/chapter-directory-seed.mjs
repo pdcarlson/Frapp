@@ -148,7 +148,9 @@ export function parseCsv(text) {
   // A file not ending in a newline still has a final row pending.
   if (field !== "" || row.length > 0) pushRow();
 
-  // Drop a single trailing empty row produced by a file-final newline.
+  // Drop trailing empty rows produced by a file-final newline (or several). Only
+  // trailing ones: a blank line in the middle survives as an empty row, so loadSeed
+  // reports its real line number instead of silently renumbering everything after it.
   while (rows.length > 0) {
     const last = rows[rows.length - 1];
     if (last.length === 1 && last[0] === "") rows.pop();
