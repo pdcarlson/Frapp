@@ -11,7 +11,8 @@ import { scrubSentryEvent } from './sentry-scrubbing';
  * actually ships rather than a copy of it — a copy can drift silently, and a
  * test that asserts against its own literals proves nothing about production.
  *
- * `pseudonyms.ts` was split out of the Sentry bootstrap for the same reason.
+ * The `tracesSampleRate` read below is unvalidated: a malformed value yields
+ * `NaN`, which the SDK treats as "tracing enabled". Tracked in #904.
  */
 export function buildSentryOptions(dsn: string): NodeOptions {
   return {

@@ -142,9 +142,9 @@ Reads these directly (no prefix needed):
 | `STRIPE_WEBHOOK_SECRET` | `stripe.service.ts` | ✅ |
 | `STRIPE_PRICE_ID` | `stripe.service.ts` | ✅ |
 | `PORT` | `main.ts` (default: `3001`) | ❌ |
-| `NODE_ENV` | `main.ts` (default: `development`) | ❌ |
+| `NODE_ENV` | `infrastructure/observability/sentry-options.ts` (default: `development`) | ❌ |
 | `SENTRY_DSN` | `main.ts` (optional; unset → Sentry no-ops entirely. When set, pair it with `ANALYTICS_HMAC_SALT`) | ❌ |
-| `SENTRY_TRACES_SAMPLE_RATE` | `main.ts` (default: `0.1`) | ❌ |
+| `SENTRY_TRACES_SAMPLE_RATE` | `infrastructure/observability/sentry-options.ts` (default: `0.1`; a malformed value yields `NaN` — #904) | ❌ |
 | `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
 | `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset | ❌ |
 | `POSTHOG_API_KEY` | `analytics.module.ts` (selects PostHog vs no-op provider) | ❌ |
