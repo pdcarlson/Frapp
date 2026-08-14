@@ -1057,3 +1057,56 @@ test("the alert body names what is actually holding it open", () => {
   assert.match(body, /Not yet shown to have recovered/);
   assert.match(body, /auth-signin/);
 });
+
+test("a failed alert lookup never closes an alert — unreadable is not the same as absent", async () => {
+  // Proven during review by faulting exactly this one GET: the gate saw an
+  // empty list, fell through, and resolveAlert's own lookup (succeeding
+  // moments later) closed an alert whose gated assertion was never proven.
+  // Because that assertion is SKIPPED rather than FAIL, no later run reopens
+  // it — a permanent silent green.
+  let firstLookup = true;
+  const patches = [];
+  const fetchImpl = async (url, init = {}) => {
+    const method = init.method ?? "GET";
+    if (method === "GET" && String(url).includes("/issues?state=all")) {
+      if (firstLookup) {
+        firstLookup = false;
+        return { ok: false, status: 500, text: async () => "{}" };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify([
+            {
+              number: 100,
+              state: "open",
+              title: ALERT_ISSUE_TITLE,
+              body: `\`${FAILING_MARKER} auth-hook\``,
+            },
+          ]),
+      };
+    }
+    if (method === "PATCH") patches.push(init.body);
+    return { ok: true, status: 200, text: async () => "{}" };
+  };
+
+  const { alert } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      async () => ({ id: "project-status", label: "status", status: PASS, detail: "" }),
+      async () => ({ id: "auth-hook", label: "hook", status: SKIPPED, detail: "credential gone" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+
+  assert.deepEqual(alert.closed, [], "an unreadable lookup must not close anything");
+  assert.equal(
+    patches.filter((b) => /"state":"closed"/.test(b ?? "")).length,
+    0,
+    "no close may be issued when the alert state could not be read",
+  );
+});

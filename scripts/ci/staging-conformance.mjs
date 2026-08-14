@@ -55,7 +55,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { findAlertIssues, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { findAlertIssuesDetailed, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 import { ghRequest } from "./ci-wake.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -789,15 +789,29 @@ export async function runStagingConformance({
 
   // Recovery is gated on the assertions the OPEN alert names, not on this
   // run's pass count. Read them before deciding to close.
-  const openAlerts = (
-    await findAlertIssues({
-      token,
-      repo,
-      fetchImpl,
-      title: ALERT_ISSUE_TITLE,
-      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-    })
-  ).filter((issue) => issue.state === "open");
+  const { issues: allAlerts, lookupOk } = await findAlertIssuesDetailed({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+  });
+
+  // A failed lookup returns an empty list, which is indistinguishable from
+  // "no alert is open". Falling through on that would let a transient 5xx
+  // close an alert whose gated assertion was never proven — and because the
+  // unproven check is SKIPPED rather than FAIL, no later run would reopen it.
+  // "I could not read the alerts" must never mean "there are none".
+  if (!lookupOk) {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
+    logger.log?.(
+      "::warning::Could not read the alert issues, so no alert was closed this run. " +
+        "Nothing failed; retrying tomorrow.",
+    );
+    return { outcome, results, alert: { action: "none", closed: [] } };
+  }
+
+  const openAlerts = allAlerts.filter((issue) => issue.state === "open");
 
   const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
   if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {

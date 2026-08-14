@@ -30,7 +30,20 @@ const MAX_ISSUE_PAGES = 5;
  * "create", because a duplicate alert is a better failure mode than silence,
  * and `resolveAlert` closes every match so the duplicate self-heals.
  */
-export async function findAlertIssues({
+export async function findAlertIssues(options) {
+  return (await findAlertIssuesDetailed(options)).issues;
+}
+
+/**
+ * As `findAlertIssues`, but reports whether the lookup actually succeeded.
+ *
+ * `findAlertIssues` returning `[]` is ambiguous: it means either "no alert
+ * exists" or "the lookup failed". That ambiguity is safe on the raise path —
+ * it falls through to create, and a duplicate self-heals — but NOT on any path
+ * that decides to close something, where "I could not read the alerts" must
+ * never be treated as "there are none to worry about".
+ */
+export async function findAlertIssuesDetailed({
   token,
   repo,
   fetchImpl,
@@ -38,6 +51,7 @@ export async function findAlertIssues({
   lookupLabel = DEFAULT_LOOKUP_LABEL,
 }) {
   const found = [];
+  let lookupOk = true;
   for (let page = 1; page <= MAX_ISSUE_PAGES; page += 1) {
     const { ok, data } = await ghRequest({
       token,
@@ -49,14 +63,17 @@ export async function findAlertIssues({
         `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(lookupLabel)}` +
         `&sort=created&direction=desc&per_page=100&page=${page}`,
     });
-    if (!ok || !Array.isArray(data)) break;
+    if (!ok || !Array.isArray(data)) {
+      lookupOk = false;
+      break;
+    }
     for (const issue of data) {
       // The issues endpoint returns PRs too; they are never an alert.
       if (!issue.pull_request && issue.title === title) found.push(issue);
     }
     if (data.length < 100) break;
   }
-  return found;
+  return { issues: found, lookupOk };
 }
 
 /**
