@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "@repo/typescript-config/base.json",
+  "compilerOptions": {
+    // This package has no build — `apps/web`, `apps/landing`, and `apps/mobile`
+    // consume `src/*.ts` directly through their own bundlers, so relative
+    // imports here are extensionless and must be resolved the way those
+    // bundlers resolve them, not the way NodeNext would.
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules"]
+}
