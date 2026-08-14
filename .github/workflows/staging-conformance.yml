@@ -1,0 +1,93 @@
+name: Staging conformance
+
+# The repository's only scheduled verification. Every other workflow is
+# push-triggered, which meant environment drift stayed invisible until someone
+# happened to push — staging sat 38 migrations behind with all checks green, the
+# Infisical credential was dead for 71 days (#696/#763), and the custom access
+# token hook was never enabled after #643 (#805). A quiet week looked identical
+# to a healthy one. See #838.
+#
+# Semantics live in scripts/ci/staging-conformance.mjs.
+# Unit tests: scripts/ci/__tests__/staging-conformance.test.mjs (`npm run test:ci-scripts`).
+#
+# Scope is frapp-staging ONLY. frapp-prod is intentionally INACTIVE while
+# production is deferred, and alerting on that would be alerting on a decision
+# (see #814). Extend to production when it is provisioned, not before.
+
+on:
+  schedule:
+    # 07:00 UTC daily — after any overnight provider maintenance window, and
+    # early enough that a drifted staging is known before the working day.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The script upserts a single `routine-state` alert issue and closes it on
+  # recovery. Nothing else here writes.
+  issues: write
+
+concurrency:
+  # One conformance run at a time. Cancelling in progress is safe — the next run
+  # asserts the same live state, and a half-finished run must not race the alert
+  # upsert with its successor.
+  group: staging-conformance
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Mirrors deploy-api.yml's preflight. A missing credential here would
+      # otherwise present as a 401 from the injection step, which reads as
+      # "revoked" when it is usually "never set". See #696.
+      - name: Verify Infisical credentials are configured
+        env:
+          CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+        run: |
+          MISSING=""
+          [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
+          [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
+          if [ -n "$MISSING" ]; then
+            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "Infisical credentials are present; a 401 from the next step means they were rejected, not missing."
+
+      - name: Inject staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Assert staging conformance
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Injected above by the Infisical step: SUPABASE_ACCESS_TOKEN,
+          # SUPABASE_PROJECT_REF, SUPABASE_URL, SUPABASE_ANON_KEY.
+          # INFISICAL_PROJECT_ID is not passed: the script reads workspaceId
+          # from .infisical.json, so it cannot drift from the checked-in value.
+          INFISICAL_CLIENT_ID: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          INFISICAL_CLIENT_SECRET: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          # Optional. Absent → the end-to-end sign-in probe reports SKIPPED
+          # rather than passing silently. The user must have exactly ONE
+          # chapter membership; see the script's note on the claimless-token trap.
+          STAGING_SMOKE_USER_EMAIL: ${{ secrets.STAGING_SMOKE_USER_EMAIL }}
+          STAGING_SMOKE_USER_PASSWORD: ${{ secrets.STAGING_SMOKE_USER_PASSWORD }}
+        run: node scripts/ci/staging-conformance.mjs

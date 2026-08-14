@@ -22,6 +22,7 @@
     "check:npm-audit": "node scripts/check-npm-audit.mjs",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
+    "check:staging-conformance": "node scripts/ci/staging-conformance.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs",
     "test:ci-scripts": "node --test scripts/ci/__tests__/*.test.mjs",
     "prepare": "node -e \"try{const fs=require('fs');if(fs.existsSync('scripts/setup-git-hooks.mjs'))require('child_process').execFileSync(process.execPath,['scripts/setup-git-hooks.mjs'],{stdio:'inherit'})}catch{}\""
