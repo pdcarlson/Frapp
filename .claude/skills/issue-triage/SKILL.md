@@ -31,13 +31,20 @@ verify access at the start of the run. **If the GitHub MCP is unavailable, stop 
 fallback.** The label roster and shared routine config live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
-> **Never source a body edit from `issue_read`.** `issue_read method:get` **strips HTML comments**
-> from the body it returns, so the `<!-- agent-suggestion: v1 fp=… -->` dedup marker is invisible
-> in its output even when the issue has one. Rewriting a body from that text silently deletes the
-> marker, and the curator then re-files the issue as a duplicate on its next run. **Read the raw
-> body with `search_issues` (`fields: ["number","title","body"]`), which returns HTML comments
-> intact**, edit that, and confirm the marker survives in what you send back. Verified 2026-08-11
-> against #618/#619. The same hazard applies to every routine that re-bodies an issue.
+> **Never source a body edit from `issue_read` or `list_issues`.** Both corrupt the body they
+> return, three independent ways: HTML comments deleted (the `<!-- agent-suggestion: v1 fp=… -->`
+> dedup marker), unrecognised tags deleted (including JSX inside ` ```tsx ` fences), and `'`/`"`/`&`
+> entity-escaped. Rewriting from that text silently destroys content — a dropped marker makes the
+> curator re-file the issue as a duplicate, and a dropped code snippet is **unrecoverable**.
+> **Read the raw body with `search_issues` (`fields: ["number","title","body"]`), which returns all
+> three intact**, edit that, and confirm the marker survives in what you send back. Verified
+> 2026-08-14 across all three vectors — full table and the probe to re-verify:
+> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+> The same hazard applies to every routine that re-bodies an issue.
+>
+> **Agent-brief backfills are unblocked.** Earlier runs (2026-08-10, -08-12) correctly refused to
+> write briefs because only the HTML-comment vector was known to be safe; with `search_issues`
+> verified lossless on all three, Pass A step 3 and Pass B brief work proceed normally.
 >
 > `search_issues` is a **semantic** search, not a fetch-by-number, so it can miss or mis-rank the
 > issue you want. Query it with distinctive words from the target's own title, then **check that a

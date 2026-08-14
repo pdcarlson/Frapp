@@ -75,13 +75,24 @@ comment at the end:
 If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
 `backfill-oldest` = the oldest PR in that window.
 
-> **Read this issue's body with `search_issues`, never `issue_read`.** `issue_read method:get`
-> **strips HTML comments** from the body it returns, so the `pr-followups-state` marker above is
-> invisible in its output even when it is there. Republishing the tracking issue from that text
-> deletes the marker — and because a missing marker is the bootstrap trigger, the next run silently
-> resets to an 8-day window and re-crawls history it had already audited, rather than failing
-> loudly. The `search_issues` lookup named above already returns the raw body with comments intact;
-> keep using it, and confirm the marker is present in what you write back. Verified 2026-08-11.
+> **Read this issue's body with `search_issues`, never `issue_read` or `list_issues`.** Those two
+> corrupt the body they return three ways — HTML comments deleted, unrecognised tags deleted, and
+> `'`/`"`/`&` entity-escaped — so the `pr-followups-state` marker above is invisible in their
+> output even when it is there. Republishing the tracking issue from that text deletes the marker,
+> and because a missing marker is the bootstrap trigger, the next run silently resets to an 8-day
+> window and re-crawls history it had already audited, rather than failing loudly. The
+> `search_issues` lookup named above already returns the raw body intact on all three counts;
+> keep using it, and confirm the marker is present in what you write back. Verified 2026-08-14 —
+> full table and the probe to re-verify:
+> [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
+>
+> **Reconcile #814's duplicated marker on your next rebuild.** #814 currently carries the state
+> twice — the HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
+> authoritative. That was the right call when no lossless read was known; it is now stale, and two
+> markers with two authority claims will silently diverge the first time one is updated alone. Both
+> presently agree, so there is nothing to recover: when you next rebuild the body, keep the HTML
+> comment as the single source of truth and drop the parenthetical's authority claim. Keeping the
+> fence as a human-readable copy is fine — just don't leave it declared authoritative.
 
 ## Job 1 — Audit previously harvested items
 
