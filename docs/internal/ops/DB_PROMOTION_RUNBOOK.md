@@ -98,7 +98,19 @@ from supabase_migrations.schema_migrations where version = '<version>';
 
 Postgres stores the executed SQL, so a migration absent from git is still fully recoverable from the database. Only once you have confirmed its effects are either redundant with the repo or intentionally superseded should you remove the row (`delete from supabase_migrations.schema_migrations where version = '<version>';` — equivalent in effect to `repair --status reverted`, and what was used here). Record the `version` and `name` first — re-inserting them is the rollback. If the row's SQL is **not** represented in `supabase/migrations/`, stop: the correct fix is a new migration capturing it, not deleting the evidence.
 
-This class of drift is invisible to CI today; detection is tracked in #833.
+**This class of drift now has a detector.** `.github/workflows/check-migration-drift.yml` runs
+daily (07:00 UTC) and compares `supabase_migrations.schema_migrations` on each deployed database
+against `supabase/migrations/`, reporting three sets — **pending** (in the repo, not applied),
+**foreign** (applied, absent from the repo), and **matched**. Foreign rows fail immediately;
+pending rows are tolerated for 24h after their own version timestamp so a just-merged migration is
+not an alert. A failure upserts one `routine-state` tracking issue and closes it once every
+environment is back in sync, so "alert issue open" means "a deployed database is drifting right
+now". Semantics in `scripts/ci/check-migration-drift.mjs`; run it by hand from the Actions tab
+(`workflow_dispatch`, with an adjustable grace window) or via `npm run check:migration-drift`.
+
+The check **reports and never repairs** — it sends no SQL. Reconciling a foreign row is the manual
+procedure above, and applying a backlog of pending migrations is a deliberate promotion, not
+something a watchdog should do on its own.
 
 ## 2026-08-09: Activation funnel — `chapter_activation_milestones` (#267)
 * **Migration**: `20260809001500_chapter_activation_milestones.sql`
