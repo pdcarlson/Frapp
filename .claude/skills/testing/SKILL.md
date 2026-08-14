@@ -34,6 +34,7 @@ description: >
 | PGlite migration validator | `npm run check:pglite-migrations` |
 | Contract check | `npm run check:api-contract` |
 | Migration check | `npm run check:migration-safety` |
+| npm audit gate (high/critical) | `npm run check:npm-audit` (offline: `-- --soft-network`) |
 | Web dashboard screenshots (Playwright) | `npm run test:visual -w apps/web` |
 
 ---
@@ -224,6 +225,12 @@ Before pushing, verify these pass locally (mirrors the CI pipeline):
    reached by the mobile lint or typecheck steps)
 9. `npm run check:api-contract` → `CI / api-contract-check`
 10. `npm run check:migration-safety` → `CI / migration-safety`
+10b. `npm run check:npm-audit` → `CI / dependency-audit` (npm audit gate: fails on
+   any high/critical advisory not allowlisted in
+   `scripts/npm-audit-allowlist.json`; needs registry network — append
+   `-- --soft-network` to warn instead of fail when offline. Most likely to
+   fire on dependency/lockfile PRs, or when a new advisory was published
+   upstream since the last CI run)
 11. `npm run test:visual -w apps/web` → `CI / web-visual-regression` (after
    intentional dashboard layout changes, refresh Linux baselines from
    `apps/web` with `CI=true npx playwright test --update-snapshots` so they

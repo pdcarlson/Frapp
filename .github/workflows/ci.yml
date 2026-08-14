@@ -416,7 +416,7 @@ jobs:
   # allowlisted in scripts/npm-audit-allowlist.json — entries need a reason, a
   # tracking issue, and an expiry, so known debt is visible and time-boxed
   # while new advisories block immediately. See
-  # docs/internal/security/SECURITY_FIXES.md § npm audit CI gate.
+  # docs/internal/security/SECURITY_FIXES.md § npm audit sweep + CI gate.
   dependency-audit:
     runs-on: ubuntu-latest
     permissions:

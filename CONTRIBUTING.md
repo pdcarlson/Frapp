@@ -51,6 +51,10 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                                      |
 | `migration-safety`   | Migration filename validation + promotion docs                                                     |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
+| `ci-scripts-tests`   | `node --test` unit tests for the deploy-gate/CI scripts under `scripts/ci/`                        |
+| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
+| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
+| `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail |
 | `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)                    |
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 

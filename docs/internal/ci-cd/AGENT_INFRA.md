@@ -118,6 +118,7 @@ Deploy workflow resolves all runtime secrets (including `SUPABASE_ACCESS_TOKEN`)
 - `npm run check-types` — turbo TypeScript
 - `npm run check:api-contract` — OpenAPI / SDK drift
 - `npm run check:migration-safety` — migrations + promotion docs
+- `npm run check:npm-audit` — npm audit gate: non-allowlisted high/critical advisories fail (CI `dependency-audit`; `-- --soft-network` for offline dev)
 
 `lint` and `check-types` both depend on `^build` in root `turbo.json`, so they build the shared
 packages themselves and need no `npx turbo run build --filter='./packages/*'` beforehand — a bare
