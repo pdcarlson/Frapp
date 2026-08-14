@@ -42,7 +42,7 @@ Every route uses one of these. Anything that matches none of them is a bug.
 | --- | --- | --- | --- |
 | **A** | **Guard-resolved chapter** — the handler takes `@CurrentChapterId()` and never a client chapter id | `ChapterGuard` verified membership | `tasks`, `events`, `invoices` — the majority |
 | **B** | **Scoped repository read** — `findById(id, chapterId)`; a foreign id simply returns no row | Query predicate | `task.service.ts:78`, `event.service.ts`, `financial-invoice.service.ts:103` |
-| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts:112`, `rbac.service.ts:70`, `invite.service.ts:148` |
+| **C** | **Fetch-then-compare** — unscoped `findById(id)` followed by an explicit `chapter_id !== chapterId` throw | Post-fetch check | `member.service.ts:112`, `rbac.service.ts:71`, `invite.service.ts:148` |
 | **D** | **Self-scoped** — the row is keyed by the caller's own user id, no chapter involved | `@CurrentUser('id')` | `users/me`, `settings`, `push-tokens`, `notifications` |
 
 Idiom **C** is the fragile one: the check is a separate statement that a refactor can drop without
@@ -76,7 +76,7 @@ composed with **B** or **C** for per-row reads.
 | `members` | `GET`, `GET /search`, `GET /:id`, `PATCH /:id/roles`, `PATCH /me/onboarding`, `DELETE /:id` | A+C+P `members:view`, `roles:manage`, `members:remove` | **C** — `memberRepo.findById(id)` then `member.chapter_id !== chapterId → 403` (`member.service.ts:112,205,218`) |
 | `points` | `GET /me`, `GET /leaderboard`, `GET /transactions`, `GET /members/:userId`, `POST /adjust` | A+C+P `members:view`, `points:view_all`, `points:adjust` | B — `pointTxnRepo.findByUser(chapterId, userId)`; a foreign `:userId` yields an empty summary, not another chapter's rows |
 | `polls` | `POST /channels/:channelId/polls`, `POST/DELETE /polls/:messageId/vote`, `GET /polls`, `GET /polls/:messageId` | A+C+P `members:view`, `polls:create`, `polls:view_all` | **C** — `messageRepo.findById()` then `channelAccess.assertChannelAccess(channel_id, chapterId, …)` before any poll field is read (`poll.service.ts:110,178,208`) |
-| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts:70,124`) |
+| `roles` | `GET`, `GET /permissions-catalog`, `POST`, `PATCH /:id`, `DELETE /:id`, `POST /transfer-presidency` | A+C+P `members:view`, `roles:manage`, `*` for transfer | **C** — `roleRepo.findById()` then `role.chapter_id !== chapterId → 403` (`rbac.service.ts:71,124`) |
 | `reports` | `POST /attendance`, `POST /points`, `POST /roster`, `POST /service` | A+C+P `reports:export` | A |
 | `search` | `GET /` | A+C+P `members:view` | A |
 | `semesters` / `chapters/current/rollover` | `POST /chapters/current/rollover`, `GET /semesters` | A+C+P `members:view`, `semester:rollover` | A |
@@ -218,7 +218,13 @@ asserts that a member of chapter B is rejected when they:
 
 - send chapter A's `x-chapter-id` (no membership) → `403 chapter.context.invalid`
 - send an `x-chapter-id` that disagrees with their JWT claim → `403 chapter.context.mismatch`
-- request chapter A's member, role, invite, task, event, or invoice by raw id → `403` / `404`
+- request chapter A's member, task, event, or invoice by raw id → `403` / `404`
+- edit chapter A's role, or revoke chapter A's invite → `403` / `404`
 - read or write notification preferences for chapter A → `403`
+
+It also carries **positive controls** — chapter B's own task, event, and invoice each return `200` —
+so a fake that simply failed every lookup could not make the suite pass vacuously. Note that
+`GET /tasks/:id` and `GET /invoices/:id` layer a per-row ACL (assignee / own-invoice, else a
+managing permission) *on top of* chapter scoping, so their fixtures are owned by the caller.
 
 The rest of the e2e suite stubs `ChapterGuard`; this spec must not, or it tests nothing.

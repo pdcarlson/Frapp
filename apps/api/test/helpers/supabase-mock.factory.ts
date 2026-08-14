@@ -205,18 +205,5 @@ export function createTableAwareSupabaseMock(options: {
       return ch;
     }),
     removeChannel: jest.fn().mockResolvedValue('ok'),
-    storage: {
-      from: jest.fn().mockReturnValue({
-        createSignedUrl: jest.fn().mockResolvedValue({
-          data: { signedUrl: 'https://signed' },
-          error: null,
-        }),
-        createSignedUploadUrl: jest.fn().mockResolvedValue({
-          data: { signedUrl: 'https://signed' },
-          error: null,
-        }),
-        remove: jest.fn().mockResolvedValue({ data: null, error: null }),
-      }),
-    },
   };
 }

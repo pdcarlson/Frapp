@@ -37,19 +37,29 @@ import {
 
 const V1 = '/v1';
 
+// Real UUIDs, not readable slugs: several DTOs validate ids with `@IsUUID()`
+// (e.g. `UpdateNotificationPreferenceDto.chapter_id`), so a slug would be
+// rejected by the ValidationPipe with a 400 and the request would never reach
+// the tenancy check this spec exists to exercise — passing for the wrong reason.
+//
 // Chapter A — the victim tenant. Chapter B — the caller's own chapter.
-const CHAPTER_A = 'chapter-aaaa';
-const CHAPTER_B = 'chapter-bbbb';
+const CHAPTER_A = '11111111-1111-4111-8111-111111111111';
+const CHAPTER_B = '22222222-2222-4222-8222-222222222222';
 
 const AUTH_B = 'auth-bob';
-const USER_B = 'user-bob';
-const MEMBER_B = 'member-bob';
+const USER_A = '33333333-3333-4333-8333-333333333333';
+const USER_B = '44444444-4444-4444-8444-444444444444';
+const MEMBER_B = '55555555-5555-4555-8555-555555555555';
 
-const MEMBER_A = 'member-alice';
-const ROLE_A = 'role-alice';
-const INVITE_A = 'invite-alice';
-const TASK_A = 'task-alice';
-const TASK_B = 'task-bob';
+const MEMBER_A = '66666666-6666-4666-8666-666666666666';
+const ROLE_A = '77777777-7777-4777-8777-777777777777';
+const INVITE_A = '88888888-8888-4888-8888-888888888888';
+const TASK_A = '99999999-9999-4999-8999-999999999999';
+const TASK_B = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const EVENT_A = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const INVOICE_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const EVENT_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const INVOICE_B = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 
 class AllowPermissionsGuard implements CanActivate {
   canActivate(): boolean {
@@ -72,7 +82,7 @@ function seed(): SeededTables {
       // Alice's membership row. Bob must never resolve through it.
       {
         id: MEMBER_A,
-        user_id: 'user-alice',
+        user_id: USER_A,
         chapter_id: CHAPTER_A,
         role_ids: [],
         custom_role_ids: [],
@@ -107,9 +117,24 @@ function seed(): SeededTables {
         assignee_id: USER_B,
       },
     ],
+    events: [
+      { id: EVENT_A, chapter_id: CHAPTER_A, title: "Alice's event" },
+      { id: EVENT_B, chapter_id: CHAPTER_B, title: "Bob's event" },
+    ],
+    financial_invoices: [
+      { id: INVOICE_A, chapter_id: CHAPTER_A, amount_cents: 5000 },
+      // Billed to Bob: like tasks, `GET /invoices/:id` layers a per-row ACL
+      // (own invoice, or `billing:view`) on top of chapter scoping.
+      {
+        id: INVOICE_B,
+        chapter_id: CHAPTER_B,
+        user_id: USER_B,
+        amount_cents: 5000,
+      },
+    ],
     notification_preferences: [
       {
-        user_id: 'user-alice',
+        user_id: USER_A,
         chapter_id: CHAPTER_A,
         category: 'chat',
         is_enabled: true,
@@ -205,6 +230,25 @@ describe('Cross-tenant isolation (e2e)', () => {
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(TASK_B);
     });
+
+    it('returns the caller’s own event and invoice (positive control)', async () => {
+      // Pins the negative event/invoice cases below to *tenancy*. Without this,
+      // a 404 there could equally mean a disabled module, a mis-typed path, or a
+      // seed the fake never matched — and the test would look like it passed.
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const event = await asBob(
+        request(app.getHttpServer()).get(`${V1}/events/${EVENT_B}`),
+      );
+      expect(event.status).toBe(200);
+      expect(event.body.id).toBe(EVENT_B);
+
+      const invoice = await asBob(
+        request(app.getHttpServer()).get(`${V1}/invoices/${INVOICE_B}`),
+      );
+      expect(invoice.status).toBe(200);
+      expect(invoice.body.id).toBe(INVOICE_B);
+    });
   });
 
   describe('resource ids from another chapter', () => {
@@ -239,6 +283,22 @@ describe('Cross-tenant isolation (e2e)', () => {
       expect([403, 404]).toContain(res.status);
     });
 
+    it('does not return another chapter’s event by raw id', async () => {
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/events/${EVENT_A}`),
+      );
+
+      expect(res.status).toBe(404);
+    });
+
+    it('does not return another chapter’s invoice by raw id', async () => {
+      const res = await asBob(
+        request(app.getHttpServer()).get(`${V1}/invoices/${INVOICE_A}`),
+      );
+
+      expect(res.status).toBe(404);
+    });
+
     it('does not let a caller revoke another chapter’s invite', async () => {
       const res = await asBob(
         request(app.getHttpServer()).delete(`${V1}/invites/${INVITE_A}`),
@@ -262,6 +322,17 @@ describe('Cross-tenant isolation (e2e)', () => {
 
       expect(res.status).toBe(403);
       expect(JSON.stringify(res.body)).not.toContain('is_enabled');
+    });
+
+    it('does not let a caller write notification preferences for another chapter', async () => {
+      app = await boot({ active_chapter_id: CHAPTER_B });
+
+      const res = await request(app.getHttpServer())
+        .patch(`${V1}/notifications/preferences`)
+        .set('authorization', 'Bearer token-bob')
+        .send({ chapter_id: CHAPTER_A, category: 'chat', is_enabled: false });
+
+      expect(res.status).toBe(403);
     });
   });
 });
