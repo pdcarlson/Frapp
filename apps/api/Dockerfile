@@ -29,7 +29,12 @@ COPY apps/api/src/ ./apps/api/src/
 COPY apps/api/tsconfig.json apps/api/tsconfig.build.json apps/api/nest-cli.json ./apps/api/
 RUN npm run build --workspace=packages/validation
 RUN npm run build --workspace=packages/org-archetypes
-RUN npm run build --workspace=packages/chapter-theme --workspace=packages/color
+# Before chapter-theme, which imports @repo/color and resolves it through dist.
+# Separate RUN lines, not one --workspace list: npm gives no ordering guarantee
+# across workspaces, so a combined invocation can compile chapter-theme first
+# and fail on a dist that does not exist yet.
+RUN npm run build --workspace=packages/color
+RUN npm run build --workspace=packages/chapter-theme
 RUN npm run build --workspace=apps/api
 
 # Stage 3: Production-only dependencies (clean install, no dev deps)
