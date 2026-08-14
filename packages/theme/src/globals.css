@@ -7,8 +7,9 @@
  *
  * The shadcn-style variable names (`--background`, `--primary`, etc.) are
  * preserved so the Tailwind preset and every existing surface keeps
- * resolving. The values now map to the warm-stone / ink / bronze system
- * defined in `docs/internal/design-reference/styles.css`. Sidebar-specific tokens
+ * resolving. The values map to the legacy warm-stone / ink / bronze system
+ * (kept for web/landing until their Signet reskin; the retired prototype's
+ * styles.css that defined it lives in git history). Sidebar-specific tokens
  * (`--side-*`) live alongside the shadcn names because the chat-first
  * shell needs an "always dark ink" sidebar regardless of the active
  * light/dark mode of the rest of the app.
@@ -174,8 +175,8 @@
   /*
    * Eyebrow micro-label — small uppercase tag that sits above titles in
    * the chat-first shell. Pairs with `.h-display` headlines for the
-   * "micro-label + display headline" motif from
-   * `spec/ui-brand-identity.md` §2.3.
+   * "micro-label + display headline" motif from the legacy Frapp brand
+   * system (pre-Signet; see spec/ui/brand-identity.md for current identity).
    */
   .eyebrow {
     font-size: 11px;
@@ -187,8 +188,8 @@
 
   /*
    * Ledger line — full-width hairline divider with a primary dot.
-   * Anchors section titles to ledger-style rules; matches the
-   * `docs/internal/design-reference/styles.css` `.ledger-line` motif.
+   * Anchors section titles to ledger-style rules; matches the retired
+   * design-reference prototype's `.ledger-line` motif (see git history).
    */
   .ledger-line {
     display: flex;

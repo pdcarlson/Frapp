@@ -1,6 +1,6 @@
 # Chapter Settings
 
-The settings surface is the chapter's configuration home. It is organized as a **settings rail** with ten tabs: **Org, Modules, Roles, Fields, Workflows, Dues, Theme, Privacy, Beta, Audit**. This file covers the cross-cutting behavior plus the **Org**, **Modules**, and **Privacy** tabs; the customization-heavy tabs (Theme, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
+The settings surface is the chapter's configuration home. It is organized as a **settings rail** with ten tabs: **Org, Modules, Roles, Fields, Workflows, Dues, Theme, Privacy, Beta, Audit**. This file covers the cross-cutting behavior plus the **Org**, **Modules**, **Privacy**, and **Beta** tabs; the customization-heavy tabs (Theme, Roles, Fields, Workflows, Dues) are specced in [`customization.md`](customization.md).
 
 Related canon lives in:
 
@@ -33,6 +33,19 @@ Related canon lives in:
 - Chapter-wide data controls, gated by `chapter-config:manage`. Non-managers see the toggles read-only.
 - **Analytics opt-out.** A single toggle writes the `chapters.analytics_opt_out` scalar through the config PATCH mutation (so it is audit-logged like every other settings change). The switch is framed positively ("Chapter analytics" on/off) to avoid a double-negative — *checked = analytics enabled = `analytics_opt_out` false*. Default is opt-in (analytics on); onboarding discloses this.
 - When opted out, the web client emits **zero** events for the chapter's members (enforced at the SDK boundary) and the API repeats the check server-side as defense-in-depth. Full pipeline + keying semantics live in [`../data-retention.md`](../data-retention.md) (#analytics-events-pseudonymous).
+
+## Beta Tab
+
+> **Not yet built.** The API contract below exists; the UI does not. The Beta tab currently renders
+> a coming-soon placeholder (`COMING_SOON_TABS` in `apps/web/components/settings/settings-page.tsx`),
+> and the dashboard shell paints the badge from a hardcoded `BETA_CONFIG` constant
+> (`apps/web/components/layout/dashboard-shell.tsx`) rather than reading the chapter's stored value —
+> so every signed-in user currently sees the sidebar pill regardless of what is saved.
+
+- Beta preferences live in the chapter's `beta_config` object (`{ enabled, style }`), read and written through the audited config GET/PATCH like every other tab — shape in [`../chapter-config.md`](../chapter-config.md). Writes already work; nothing reads them yet.
+- **Build channel.** A stable / beta selector writes `beta_config.enabled`. Beta shows the BETA badge in the dashboard shell; stable hides it. The channel is chapter-level — there is no per-user override.
+- **Badge style.** `beta_config.style` is one of `sidebar_pill | breadcrumb_pill | top_banner | corner_badge`. The enum is enforced at the API boundary (`apps/api/src/interface/dtos/chapter-config.dto.ts`), so an unrecognized style is rejected rather than silently coerced to a default.
+- **When the UI lands**, the shell MUST source the badge from the chapter's stored `beta_config` rather than a build-time constant, so a saved style takes effect without a redeploy.
 
 ## Audit Rules
 

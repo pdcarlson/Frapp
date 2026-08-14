@@ -66,6 +66,7 @@ Frapp/
 
 - **Framework:** Next.js (App Router), React, Tailwind CSS, ShadCN UI.
 - **Data fetching:** TanStack Query + `@repo/api-sdk`.
+- **Client state:** Zustand is the sanctioned store for client-only state, distinct from TanStack Query's server-state cache. The active-chapter selection is the live example — `apps/web/lib/stores/chapter-store.ts` wraps the store in Zustand's `persist` middleware so the choice survives reloads.
 - **Auth:** Supabase Auth (browser client via `@supabase/ssr`). Session token forwarded to API.
 - **Role:** Admin console for Presidents, Treasurers, and officers.
 - **Server Components** by default; Client Components marked with `'use client'` only where interactivity requires it.

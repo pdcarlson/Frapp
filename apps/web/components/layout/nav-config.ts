@@ -21,8 +21,8 @@ import {
  * Permission-aware dashboard navigation.
  *
  * Kept in a single module so the sidebar, mobile sheet, command palette, and
- * breadcrumb title map all stay in sync. Each entry mirrors the 16-screen
- * layout in `spec/ui-web-dashboard.md` §2 plus member-only surfaces.
+ * breadcrumb title map all stay in sync. Each entry mirrors the nav table
+ * in `spec/ui/web-dashboard/README.md` plus member-only surfaces.
  *
  * Permission semantics:
  * - `requirePermission` — a single permission string; hide when absent.

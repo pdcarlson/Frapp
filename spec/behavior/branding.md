@@ -12,6 +12,11 @@ Behavior and boundaries for per-chapter branding. Visual design tokens (palette,
 
 ## Accent Color
 
+> This section describes the **currently shipping** single-accent model. Signet replaces it with a
+> 12-step generated scale — see [`../ui/design-system/accent-engine.md`](../ui/design-system/accent-engine.md).
+> Both are live during the cutover: Signet surfaces consume the generated scale; `apps/web` and
+> `apps/landing` keep the model below until their reskin. Update this section when that lands.
+
 - Chapters can set a custom accent color (hex string, e.g. `#8B0000` for crimson). It is stored on the `chapters` table.
 - The accent color is applied to: primary buttons, links, active tab indicators, the chat self-bubble, mention pills, and highlights throughout the app — for that chapter's members only. On mobile that means the active tab tint, primary buttons, and in-chapter highlights.
 - Two different "defaults" are in play, and they are not interchangeable:

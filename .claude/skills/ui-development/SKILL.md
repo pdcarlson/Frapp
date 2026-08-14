@@ -1,15 +1,17 @@
 ---
 name: ui-development
 description: >
-  Build or modify UI in the web dashboard (apps/web), landing site (apps/landing), or the shared
-  component/theme/hooks/validation packages. Use when writing or editing frontend code — React
+  Build or modify UI in the mobile app (apps/mobile), web dashboard (apps/web), landing site
+  (apps/landing), or the shared component/theme/hooks/validation packages. Use when writing or
+  editing frontend code — React Native screens and typed StyleSheet token factories, React
   components, ShadCN/Radix composites, Tailwind styling, theme tokens, TanStack Query data hooks,
-  or Zod form validation — anywhere under apps/web, apps/landing, or packages/{ui,theme,hooks,validation}.
+  or Zod form validation — anywhere under apps/mobile, apps/web, apps/landing, or
+  packages/{ui,theme,hooks,validation}.
 ---
 
 # UI Development
 
-> Read before building or modifying UI in the web dashboard, landing site, or shared component packages.
+> Read before building or modifying UI in the mobile app, web dashboard, landing site, or shared component packages.
 
 ---
 
@@ -23,6 +25,8 @@ description: >
 | App components | `apps/web/components/` | Feature-level components |
 | Pages | `apps/web/app/` | Next.js App Router pages and layouts |
 | Landing | `apps/landing/app/` | Marketing site (separate Next.js app) |
+| Mobile screens | `apps/mobile/app/` | Expo Router screens (React Native — no Tailwind classes) |
+| Mobile components | `apps/mobile/components/` | React Native composites |
 
 ---
 
@@ -60,19 +64,33 @@ ShadCN components are copy-pasted from the ShadCN registry, not installed via CL
 
 ## Tailwind and theming
 
-The canonical design-system contract (color role map, component ownership matrix, state
-completeness standard, accessibility gates) lives in
-[`docs/internal/design-system/UI_UX_SYSTEM.md`](../../../docs/internal/design-system/UI_UX_SYSTEM.md);
-the tables below summarize the tokens as implemented in `@repo/theme`. **Palette note:** the
-chat-first redesign rebranded the palette to **bone / bronze / ink** (see
-`packages/theme/src/globals.css` and `tailwind.config.ts`) — the legacy `navy` / `royal-blue` /
-`emerald` **keys are preserved so existing utility classes keep compiling, but their values now map
-to ink / bronze / bone-era colors**. `UI_UX_SYSTEM.md`'s color role map predates that rebrand; where
-they disagree, the theme package is what ships.
+The canonical design-system contract (component ownership matrix, state completeness standard,
+fail-fast entitlement gating, accessibility gates, motion) lives in
+[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md); the tables below
+summarize the tokens as implemented in `@repo/theme`.
 
-### Theme tokens (from `@repo/theme`)
+**Palette status (read this before styling anything):** the repo's canonical design system is now
+**Signet** — dark-first, warm neutrals, gold accent seed, Figtree — specified under
+[`spec/ui/design-system/`](../../../spec/ui/design-system/README.md). **The web dashboard and
+landing site have NOT been reskinned yet**: they still ship the legacy chat-first
+**bone / bronze / ink** palette (see `packages/theme/src/globals.css` and `tailwind.config.ts`),
+light-first with Geist Sans, and their specs are frozen at that state
+([`spec/ui/README.md`](../../../spec/ui/README.md)). Web/landing work continues on the legacy
+tokens below — do not restyle those shipping surfaces toward Signet ad hoc. The legacy `navy` /
+`royal-blue` / `emerald` **keys are preserved so existing utility classes keep compiling, but their
+values map to ink / bronze / bone-era colors**.
 
-The design system uses HSL CSS variables for semantic colors:
+**`packages/theme` is the shared token package for every surface, not a web-only one.** It already
+serves `apps/web` and `apps/landing` (Tailwind preset + CSS variables) and `apps/mobile` (typed
+tokens via `@repo/theme/tokens`), and Signet tokens land there too — as an **additive entrypoint**,
+leaving the existing legacy exports that web/landing consume untouched. Two things are defects:
+Signet values replacing or bleeding into those legacy exports, and Signet tokens duplicated into
+app-local files instead of extending the package. Component ownership and token-extension rules: §3
+of [`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md).
+
+### Theme tokens (the legacy web exports of `@repo/theme`)
+
+The shipping web theme uses HSL CSS variables for semantic colors:
 
 | Token | Usage |
 |-------|-------|
@@ -121,6 +139,33 @@ Global CSS imports the theme's base styles:
 /* apps/web/app/globals.css */
 @import "../../../packages/theme/src/globals.css";
 ```
+
+---
+
+## Mobile app (`apps/mobile`)
+
+`apps/mobile` is the active Signet surface. Start at
+[`spec/ui/mobile/README.md`](../../../spec/ui/mobile/README.md) — it and its siblings
+(`screens.md`, `navigation.md`, `patterns.md`) own the screen inventory, IA, and interaction
+patterns; tokens, components, icons, and copy come from
+[`spec/ui/design-system/README.md`](../../../spec/ui/design-system/README.md). Read those before
+writing a screen. The constraints below are the ones most often violated by web habits:
+
+- **Typed `StyleSheet` token factories, not NativeWind.** A screen calls `useFrappTheme()`
+  (`apps/mobile/lib/theme.tsx`) and passes the tokens to a `createStyles(tokens: FrappTokens)`
+  factory that returns a `StyleSheet` — see `apps/mobile/components/nav-tile.tsx`. There is zero
+  `className` usage in `apps/mobile`; `nativewind` remains a dependency with config files left in
+  place, but it MUST NOT style Signet surfaces.
+- **No raw hex in screen code.** Every color comes from `@repo/theme/tokens` via `getFrappTokens()`.
+  A color literal in a screen or component is a defect.
+- **Expo Go is the only current run path** (`npm run start -w apps/mobile`, then scan from a
+  physical device or local emulator — it cannot be verified headless). Modules that do not run in Go
+  — Stripe React Native, remote push, `react-native-keyboard-controller` — MUST sit behind an
+  isolation module that does a runtime environment check and degrades gracefully, so importing a
+  screen never crashes Go. Screen code MUST NOT import them directly.
+
+Everything else — component variants, states, iconography, copy — is specified in the docs linked
+above and is not restated here.
 
 ---
 
@@ -186,6 +231,8 @@ After making UI changes, start the dev server and verify in-browser (setup detai
 npm run dev -w apps/web   # http://localhost:3000
 npm run dev -w apps/landing  # http://localhost:3002
 ```
+
+Mobile is verified on a device, not in a browser — see the run-path constraint above.
 
 ### Dark mode
 

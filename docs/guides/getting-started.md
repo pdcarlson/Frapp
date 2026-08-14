@@ -87,7 +87,7 @@ You can open Supabase Studio at:
 - `http://127.0.0.1:54323`
 
 > **Note:** The `supabase/` directory in the repo is the single source of truth for the database schema and seed data. Never edit tables manually in Studio without also adding a migration.
-> **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `docs/internal/design-system/BRAND_ASSETS.md` and `spec/ui/assets.md`.
+> **Note:** Frapp icons and the marketing lockup are synced from `packages/brand-assets/` into each Next app on **`next build`** (`prebuild`). After changing those SVGs, run `npm run sync:brand-assets` from the repo root (or build once). See `spec/ui/assets.md`.
 
 ## 4. Configure environment variables
 

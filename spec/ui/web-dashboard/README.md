@@ -1,62 +1,12 @@
+> **FROZEN (pre-Signet).** This surface ships the legacy Frapp bone/bronze design until its Signet reskin session. Do not implement visual changes from this document and do not file spec-vs-implementation drift issues against it.
+
 # UI/UX Specification: Web Dashboard (app.frapp.live)
 
-> The web dashboard is the command center for chapter admins. It must be information-dense without feeling cluttered, responsive down to tablet, and resilient on slow connections. In the chat-first product it is **secondary to chat** — every ops capability exists first as an inline chat artifact, and the dashboard page is the longer-form view.
+> The chapter admin command center — secondary to chat in the chat-first product. This is the single surviving spec page for the surface: the navigation/permission map, gating and routing semantics, the responsive shell contract, and the data contracts that outlive the retired per-screen docs. Visual truth for the future reskin lives in [`../design-system/`](../design-system/README.md); legacy tokens live in [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css).
 
-**Cross-app identity:** Motifs, color semantics, motion budget, and trust rules live in **[brand-identity.md](../brand-identity.md)** (palette, typography, radii, theming model). This document set specifies the dashboard shell, screens, components, and data behavior.
+## Navigation map
 
-## Document map
-
-| Doc | Scope |
-| --- | ----- |
-| [README.md](README.md) (this file) | Overview, layout shell, sidebar/nav, header bar |
-| [layout.md](layout.md) | Design system foundation, dashboard typography, responsive strategy |
-| [components.md](components.md) | ShadCN install set + custom component library |
-| [screens.md](screens.md) | Per-screen specs (chat, members, events, points, billing, settings) + auth/onboarding wizard |
-| [state.md](state.md) | TanStack Query patterns, network resilience, offline handling, accessibility |
-
----
-
-## Layout Shell
-
-### Structure
-
-```
-┌──────────────────────────────────────────────────────┐
-│ [Sidebar]  │  [Header Bar]                           │
-│            │─────────────────────────────────────────│
-│ [Lockup]   │  [Page Content]                         │
-│            │                                         │
-│ [Nav]      │                                         │
-│            │                                         │
-│            │                                         │
-│            │                                         │
-│ [BETA]     │                                         │
-│ [User]     │                                         │
-└──────────────────────────────────────────────────────┘
-```
-
-### Sidebar
-
-**Background:** `--side-bg` (always dark ink, regardless of light/dark mode) per the chat-first product. The sidebar palette never inverts; light/dark mode only swaps the content surfaces. Companion tokens (`--side-bg-hi`, `--side-fg`, `--side-fg-hi`, `--side-muted`, `--side-divider`, `--side-accent`) live in [`packages/theme/src/globals.css`](../../../packages/theme/src/globals.css).
-
-**Text:** `--side-fg`; active item: `--side-fg-hi` with a `--side-accent` left border.
-
-The sidebar tint, accent, and divider are driven by the chapter's derived palette via `useChapterTheme()` — the always-dark base mixes 70% chapter-dark toward neutral ink for legibility (see [brand-identity.md](../brand-identity.md) "Theming model").
-
-**Chapter Lockup (top of sidebar).** The sidebar **leads with the chapter**, not the product. [`apps/web/components/layout/chapter-lockup.tsx`](../../../apps/web/components/layout/chapter-lockup.tsx) renders a small Greek-letters crest on an accent square, the chapter name, and the designation + school short (from `chapters.branding`). This replaces the legacy "Frapp / Operations Console" header.
-
-**BETA badge.** [`apps/web/components/layout/beta-badge.tsx`](../../../apps/web/components/layout/beta-badge.tsx) supports four styles — `sidebar_pill` (default, shown at the foot of the sidebar), `breadcrumb_pill`, `top_banner`, `corner_badge`. The shell defaults to `{enabled: true, style: "sidebar_pill"}`; the active style is sourced from `chapters.beta_config` and is editable from the Settings → Beta tab (with a live preview). See [screens.md](screens.md#settings-settings).
-
-**Navigation sections (source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts)):**
-
-Items are grouped under short uppercase section labels so the sidebar reads as an
-operations console, not a single scrolling list. Each item declares either a
-`requirePermission` string or a `requireAnyOf` list; the shell hides items the
-caller cannot access and disables items that are on the roadmap but not yet wired
-to a route. The caller's effective permission set is loaded once via
-`GET /v1/users/me/permissions` and cached with TanStack Query.
-
-**Module gating.** Each nav item also carries a `module` field. `<ProtectedNavItem>` reads `useOrgConfig().isModuleEnabled(item.module)` and **hides** items whose module is disabled (never disabled-greyed). Permission gating and module gating coexist — an item shows only when the caller has the permission *and* the module is enabled. Disabling a module from Settings → Modules immediately removes its sidebar item, strips its slash commands from the chat palette, and mutes its system channel; data is preserved and re-enabling restores everything.
+Source of truth: [`apps/web/components/layout/nav-config.ts`](../../../apps/web/components/layout/nav-config.ts). Each item declares `requirePermission` or `requireAnyOf`; the shell hides items the caller cannot access. The caller's effective permission set is loaded once via `GET /v1/users/me/permissions` and cached with TanStack Query (resolution rules: [`spec/behavior/rbac.md`](../../behavior/rbac.md)).
 
 | Section | Item | Route | Permission |
 | --- | --- | --- | --- |
@@ -78,66 +28,48 @@ to a route. The caller's effective permission set is loaded once via
 | Finance | Reports | `/reports` | `reports:export` |
 | Settings | Settings | `/settings` | — |
 
-**Web study hours** is a deliberate adaptation of the mobile foreground
-enforcement rule. The `/study` timer uses the `Page Visibility API` — when
-the tab is hidden (or the member hits the manual pause button) the client
-calls `POST /v1/study-sessions/pause`, so the **server** stops crediting
-time and starts the grace clock; returning calls `/resume` with fresh
-coordinates. The pause is server-owned on purpose: a client that only
-stopped its own heartbeat left the server unable to tell "backgrounded"
-from "heartbeat in flight", and the gap was credited as study time. If the
-member does not come back within the study zone's `pause_grace_minutes`,
-the session ends as `PAUSED_EXPIRED`, keeping only the minutes banked
-before the pause; the page surfaces that outcome as a toast. A `pagehide`
-listener still best-effort stops the session when the tab closes, and the
-server additionally expires sessions after 10 minutes of stale heartbeats.
-Members who need uninterrupted tracking should use the mobile app once its
-study screen exists. This divergence is called out in-copy on `/study` so
-there are no surprises. Full rules: [`spec/behavior/study-sessions.md`](../../behavior/study-sessions.md).
+The standalone `/roles` page redirects to `/settings?tab=roles` (role IA canon: [`spec/behavior/settings/customization.md`](../../behavior/settings/customization.md)); `nav-config.ts` remains the source of truth for what renders. Roadmap entries render soft-disabled with a `Soon` chip (`aria-disabled="true"` + `tabIndex={-1}`).
 
-**Study Zones** (`/geofences`, `geofences:manage`) configures each zone's
-polygon plus its points rate, minimum session length, and **pause grace
-(min)** — the window above, per zone.
+## Gating & routing semantics
 
-**Default route.** Chat is the default landing surface for the chat-first
-chat-first rework. The unauthenticated landing page lives at `/` and redirects to
-`/chat` once a Supabase session is present. `/dashboard` is a legacy alias
-that also redirects to `/chat`. The dashboard route group includes
-`app/(dashboard)/page.tsx`, which redirects to `/chat` as well, so the
-`(dashboard)` tree always has an index page for parity with bookmarks and
-internal tooling that expect a segment root. The standalone `/home` overview
-was removed in the chat-first rework.
+- **Module gating is hide, not grey.** Each nav item carries a `module` field; `<ProtectedNavItem>` reads `useOrgConfig().isModuleEnabled(item.module)` and **hides** items whose module is disabled — never disabled-greyed. Permission gating and module gating coexist: an item shows only when the caller holds the permission *and* the module is enabled. Disabling a module from Settings → Modules immediately removes its sidebar item, strips its slash commands from the chat palette, and mutes its system channel; data is preserved and re-enabling restores everything ([`spec/behavior/settings/README.md`](../../behavior/settings/README.md)).
+- **Default route.** Chat is the post-sign-in landing surface: `/` redirects to `/chat` once a Supabase session is present, `/dashboard` is a legacy alias that also redirects to `/chat`, and `app/(dashboard)/page.tsx` (the route-group index) redirects there as well so bookmarks and internal tooling always find a segment root. The standalone `/home` overview was removed in the chat-first rework. Users with zero permissions land on `/no-access`, which explains how to request a role without dumping them back to sign-in.
+- **Unauthenticated deep links keep their destination.** [`apps/web/proxy.ts`](../../../apps/web/proxy.ts) guards every protected prefix: with no Supabase session it redirects to `/sign-in?redirectTo=<pathname + search>`, and once a session exists the same proxy returns the caller there instead of the `/chat` default. The value must start with `/` or it falls back to `/chat` — the open-redirect guard, applied in the proxy and again in `resolveRedirectPath` ([`apps/web/lib/auth/redirect.ts`](../../../apps/web/lib/auth/redirect.ts)) — and it survives the sign-in ↔ sign-up hop and is reused as the magic-link `emailRedirectTo`.
+- **Web study pause is server-owned.** The `/study` timer calls `POST /v1/study-sessions/pause` when the tab is hidden (Page Visibility API) or manually paused, so the server stops crediting time and starts the grace clock; returning calls `/resume` with fresh coordinates, and overrunning the zone's `pause_grace_minutes` ends the session `PAUSED_EXPIRED`. Full rules: [`spec/behavior/study-sessions.md`](../../behavior/study-sessions.md). `/geofences` configures each zone's polygon, points rate, minimum session length, and pause grace.
 
-Roadmap entries render disabled with a `Soon` chip (soft-disabled via
-`aria-disabled="true"` + `tabIndex={-1}`) so the full footprint of the
-dashboard is discoverable even before every route ships. Users with zero
-permissions can land on `/no-access`, which explains how to request a role
-without dumping them back to the sign-in page.
+## Responsive contract
 
-**User section (bottom of sidebar):**
+Shell geometry as built. Source of truth: [`apps/web/components/layout/dashboard-shell.tsx`](../../../apps/web/components/layout/dashboard-shell.tsx) against stock Tailwind v3 breakpoints (`sm` 640px, `md` 768px, `lg` 1024px) — the shared preset ([`packages/theme/src/tailwind.config.ts`](../../../packages/theme/src/tailwind.config.ts)) extends colors, radii, and motion but never overrides `screens`.
 
-```
-┌──────────────────────┐
-│ [Avatar] Admin Name   │
-│          President     │
-│ [Chapter selector ▼]  │
-└──────────────────────┘
-```
+| Viewport | Primary navigation | Content column |
+| --- | --- | --- |
+| ≥1024px (`lg`) | Fixed 288px (`w-72`) sidebar, always expanded, its own scroll region | Remaining width inside the shell cap |
+| <1024px | Sidebar hidden; header hamburger opens a left slide-out Sheet (75% of viewport width, capped at 384px from 640px up) over a modal overlay | Full width |
 
-- Chapter selector dropdown (for users in multiple chapters). On chapter switch, `useChapterTheme()` rewrites the CSS variables on `:root`.
-- Click avatar → dropdown: Profile, Sign Out.
+- **Two states, not four.** The shell switches once, at `lg`. There is no collapsed icon-rail tier and no hover-expand sidebar; adding or removing a tier is a spec change, not a refactor.
+- **The cap is on the shell, not the content.** `max-w-[1400px]` with `mx-auto` bounds sidebar and content together and centers them, so above 1400px the surface gains bare-background gutters (the visual regression suite shoots at 1440px, so that is the state its baselines capture). The content column carries no max-width of its own. Horizontal padding is `px-4` below 640px and `px-6` from 640px up, applied identically to the sticky 64px header and to `<main>`.
+- **The drawer is the sidebar.** Both render the same section list, so every nav item and its permission and module gates reach the drawer automatically. Navigation MUST NOT be duplicated into a separate mobile list; the trigger keeps its "Open navigation menu" accessible name and the drawer keeps its labelled title and description.
+- **375px is the floor.** Every dashboard route MUST render without horizontal scroll down to 375px.
+- **In-page columns collapse on their own breakpoint.** Chat stacks to one column below 768px and becomes a `260px / 1fr / 300px` grid at `md` and up ([`apps/web/components/chat/chat-shell.tsx`](../../../apps/web/components/chat/chat-shell.tsx)); Settings is a wrapped horizontal tab row below 1024px and a 224px vertical rail at `lg` ([`apps/web/components/settings/settings-page.tsx`](../../../apps/web/components/settings/settings-page.tsx)). Both tiers count as impacted responsive behavior for those routes.
 
-Nav rows that change client state are semantic `<button type="button">`; rows that navigate use the framework's `Link`. No `<div onClick>` for nav.
+## Surviving data contracts
 
-### Header Bar
+Per-screen truths that outlive the retired screen docs. Where a fact is canonical in `spec/behavior/`, the pointer is the fact — do not restate it here.
 
-**Height:** 56px. Fixed at top of content area.
+- **Global query defaults.** One browser-wide `QueryClient` ([`apps/web/lib/providers/query-provider.tsx`](../../../apps/web/lib/providers/query-provider.tsx)) defaults queries to `staleTime: 30_000`, `gcTime: 10 * 60_000`, `retry: 3`, `retryDelay: min(1000 * 2 ** attempt, 30_000)`, `refetchOnWindowFocus: true`, `refetchOnReconnect: "always"`, and mutations to `retry: 2` with the same backoff capped at 10s. Both retry policies are status-blind — no `networkMode` and no non-retryable-status predicate ship — so a 4xx is retried like a 5xx unless the caller sets its own `retry`; the one systematic status-driven behavior is the unauthenticated redirect under [Gating & routing semantics](#gating--routing-semantics). The chat message cache opts out with `staleTime: Infinity` because realtime, not polling, keeps it fresh.
+- **Mutation optimism is opt-in, not the default.** The domain hooks in [`packages/hooks/src/`](../../../packages/hooks/src) are pessimistic — `mutationFn`, then `invalidateQueries` on success; the only `onMutate`/rollback paths that ship are the chat send ([`apps/web/lib/chat/cache.ts`](../../../apps/web/lib/chat/cache.ts)) and the chapter-config PATCH ([`apps/web/lib/hooks/use-org-config.ts`](../../../apps/web/lib/hooks/use-org-config.ts)). Two writes must stay pessimistic whatever the default becomes: invoice status transitions (`useTransitionInvoiceStatus`) and service approve/reject (`useReviewServiceEntry`) are irreversible, so the UI waits for server confirmation rather than rendering a state it cannot roll back.
+- **Billing pay affordance (client gate).** The Pay action renders only when the invoice is `OPEN`, its `user_id` is the signed-in member's, and `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` is configured (absent → the affordance does not render, so local dev, CI, and the build prerender are unaffected). The Stripe Elements dialog confirms against the `client_secret` from `POST /v1/invoices/:id/payment-intent` with `redirect: "if_required"` (3-D Secure stays in-page), then re-reads the invoice until the server reports PAID. List scoping, failure-code mapping, and the webhook-is-truth-for-PAID rule: [`spec/behavior/billing.md`](../../behavior/billing.md) §Member payment flow.
+- **Slash palette fails closed.** The `cmdk` palette reads its catalog from `@repo/chat-integrations` filtered by `useOrgConfig().isModuleEnabled(requiredModule)`. While the chapter-config query is pending it renders an explicit "Loading commands…" panel; on error, a "Modules unavailable" panel with Retry — never the unfiltered catalog. Empty match → "No matching command."
+- **Chat reconnect order (web client).** The client gates REST backfill (`GET /channels/:id/messages?since=<lastSeen>`) on the realtime subscription reaching `SUBSCRIBED` — subscribe first, then backfill — relying on the single idempotent per-channel merge keyed by `client_message_id` to dedupe overlap (`apps/web/lib/chat/`); that merge lands in one normalized cache per channel under query key `["chat", channelId, "messages"]`, shaped `{ byId, order, actionIndex }`. Message-delivery guarantees: [`spec/behavior/chat/README.md`](../../behavior/chat/README.md) and [`../resilience.md`](../resilience.md).
+- **Chat drafts & outbox (Dexie).** `drafts(channelId, body, updatedAt)` restore on reload; `outbox(clientId, channelId, body, attempts, queuedAt, status)` flushes in order on reconnect — a 4xx moves the entry to `failed` (surfaced inline with Retry / Discard), network errors and 5xx stay queued.
+- **Realtime primitive.** Live surfaces (event attendance rosters, the events list) subscribe to Postgres changes via the shared `useRealtimeTable` hook ([`apps/web/lib/realtime/use-realtime-table.ts`](../../../apps/web/lib/realtime/use-realtime-table.ts)), and one shared browser Supabase client multiplexes every subscription over a single websocket ([`apps/web/lib/realtime/supabase-realtime.ts`](../../../apps/web/lib/realtime/supabase-realtime.ts)).
+- **Notification drawer.** Endpoint + realtime contract and the web-push scope decision: [`spec/behavior/notifications.md`](../../behavior/notifications.md).
+- **Event role targeting.** `required_role_ids` wire semantics (omit-on-create → `null`; `[]` on update clears; empty ≡ untargeted): [`spec/behavior/events.md`](../../behavior/events.md) §Event Creation.
+- **Onboarding wizard.** Trigger, re-trigger signal, and server-side config materialization via `POST /v1/chapters/onboard`: [`spec/behavior/onboarding.md`](../../behavior/onboarding.md). Wizard UI contract: full-screen overlay at [`apps/web/components/onboarding/chapter-wizard.tsx`](../../../apps/web/components/onboarding/chapter-wizard.tsx), holds the [375px mobile floor](#responsive-contract), directory combobox debounced 250ms against `GET /v1/chapter-directory/search` with explicit idle/loading/no-results/error states, and a manual-entry path that is always available.
+- **Custom roles & fields CRUD.** Endpoint permissions and status-code semantics (400 wildcard capability, 403 core-role delete, 409 duplicate key, `key`/`type` immutability): [`spec/behavior/settings/customization.md`](../../behavior/settings/customization.md).
+- **Points audit.** `GET /v1/points/transactions` (`points:view_all`, `limit` clamped 1–200, default 50) and anomaly flagging: [`spec/behavior/points.md`](../../behavior/points.md).
+- **Config, theme, archetype.** Config reads/writes go through `GET`/`PATCH /chapters/:id/config` and every write produces an audit row mirrored to `#chapter-audit`; palette saves go through `POST /chapters/:id/theme-palette` (server recompute, applied without reload): [`spec/behavior/chapter-config.md`](../../behavior/chapter-config.md). Archetype switching resets modules/role pack/vocabulary and preserves identity, branding, and custom fields: [`spec/behavior/settings/README.md`](../../behavior/settings/README.md).
 
-```
-[Breadcrumb: Dashboard > Events]          [🔍 Search]  [🔔 Notifications]  [🌙 Theme]
-```
+## Future reskin
 
-- Breadcrumb: auto-generated from route segments.
-- Search: opens the command palette (⌘K / Ctrl+K). Searches across members, events, backwork. The trigger's `aria-label` spells out the shortcut ("Command K") for screen readers.
-- Notifications: bell icon with a live unread badge count. Click opens the notification drawer (slide from right). The drawer polls `/v1/notifications` via TanStack Query and subscribes to Supabase Realtime INSERT events on `public.notifications` filtered by the current user so new notifications appear without a manual refresh. Tapping a notification deep-links to the relevant surface (events, points, billing, tasks, service, profile) and marks it read via `PATCH /v1/notifications/{id}/read`. Web push is intentionally out of scope for this phase per [`../../behavior/notifications.md`](../../behavior/notifications.md).
-- Theme: toggle (sun / moon / system cycle).
+The dashboard's Signet visual system — palette, type, radii, iconography, states — is specified in [`../design-system/`](../design-system/README.md). Until the reskin session lands, the implementation intentionally ships the legacy bone/bronze theme and this document stays visual-change frozen.

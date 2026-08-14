@@ -81,4 +81,4 @@ UI PRs are blocked until:
 - evidence is attached
 - no unresolved accessibility regressions remain
 
-Reference this protocol from `.github/pull_request_template.md` and `docs/internal/design-system/UI_UX_SYSTEM.md`.
+Reference this protocol from `.github/pull_request_template.md` and `spec/ui/design-system/README.md`.

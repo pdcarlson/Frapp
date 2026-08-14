@@ -1,7 +1,8 @@
 /**
  * @repo/org-archetypes
  *
- * TypeScript port of docs/internal/design-reference/org-config.jsx.
+ * TypeScript port of the retired design-reference prototype's org-config.jsx
+ * (removed in the Signet docs restructure; see git history for the original).
  * All seed exports are immutable (as const / Object.freeze at leaf level).
  * Any function that materializes per-chapter data from seeds must
  * structuredClone — never shallow-spread — so per-chapter edits cannot

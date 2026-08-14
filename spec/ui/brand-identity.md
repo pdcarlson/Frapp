@@ -1,134 +1,83 @@
-# Frapp brand identity — cross-app UI
+# Signet brand identity
 
-> **Single source of truth** for what “looks like Frapp” on frapp.live, app.frapp.live, and (eventually) mobile. Product and landing specs inherit this; implementation inherits [`@repo/theme`](../../packages/theme). The canonical visual reference (palette, prototypes, screenshots) lives at [`docs/internal/design-reference/`](../../docs/internal/design-reference/).
-
----
-
-## 1. Positioning and voice
-
-- **Line:** “The operating system for Greek life.” (see [../product/](../product/README.md).)
-- **Voice:** Direct, operational, chapter-native. Prefer concrete nouns (attendance, dues, roster) over abstract “synergy.” Avoid startup clichés (“supercharge,” “10×,” “all-in-one” without proof).
-- **Trust:** Differentiation comes from **clarity and honesty**, not invented metrics. Stats, logos, and testimonials on the marketing site must be **true** or **clearly marked as illustrative** until verified.
-- **Aesthetic:** Bone / bronze / ink — newspaper-warm neutrals, deep bronze accent, ink sidebar. No royal blue anywhere in chrome (chapter accents may overlay later; see the *Theming model* in §3a below and [`../architecture/README.md`](../architecture/README.md) §15).
+> What "is Signet" at the brand level: the name, the mark, and the identity decisions every other UI spec inherits. Design tokens live in [design-system/foundations.md](design-system/foundations.md); chapter theming lives in [design-system/accent-engine.md](design-system/accent-engine.md). This doc does not restate either.
 
 ---
 
-## 2. Signature motifs (repeat everywhere)
+## 1. Identity
 
-These are intentional repeats—not one-off landing tricks—so the product and marketing feel like one system.
+| Fact        | Value                                                                                                       |
+| ----------- | ----------------------------------------------------------------------------------------------------------- |
+| Name        | **Signet** — a rebrand of Frapp                                                                             |
+| Tagline     | "Ask your chapter anything."                                                                                |
+| Positioning | The AI-first operating system for Greek life — see [../product/positioning.md](../product/positioning.md)   |
+| Lane        | Dark-first, warm, **consumer** (Notion / Cash App), with de-Google guardrails. Not Linear/Vercel technical. |
 
-### 2.1 Ledger line
-
-A **full-width hairline** (`border-t border-border` or 1px rule) separates major blocks. Section titles sit **on** the line or immediately above it with consistent vertical rhythm. Evokes ledgers, rosters, and run-of-show—appropriate for chapter operations.
-
-### 2.2 Flat surfaces, border-defined depth
-
-**No** soft gradient hero washes or glassmorphism as the default hero treatment. Primary surfaces use **solid** `background` / `card` tokens and **visible borders** for hierarchy. Shadows are **minimal** (e.g. `shadow-sm` only where needed for elevation, not decoration).
-
-### 2.3 Micro-label + display headline
-
-**Micro-label:** uppercase, `text-xs`, `font-semibold`, wide letter-spacing (`tracking-[0.2em]`–`0.24em]`), `text-muted-foreground` or emerald for a single accent line. **Headline:** `text-navy` / inverse in dark mode, tight tracking on the headline itself (`tracking-tight`), weight 700–800.
-
-Dashboard surfaces should reach for the `.eyebrow` and `.ledger-line` utility classes from [`packages/theme/src/globals.css`](../../packages/theme/src/globals.css) instead of re-implementing these per page.
+**Naming rule (binding).** Prose — specs, UI copy, marketing — says **Signet**. Code identifiers, package names (`@repo/*`), domains (`frapp.live`, `app.frapp.live`), and bundle ids stay **frapp** for now: the repo/package/domain rename is deferred, and any tracking for it lives in GitHub Issues, not in this spec. When citing code, cite the real current names.
 
 ---
 
-## 3. Color roles
+## 2. The mark
 
-The chat-first product moves the chrome palette from royal-blue + navy to **bone / bronze / ink**. The semantic token names (`primary`, `success`, `foreground`, `border`, etc.) are stable; the *values* changed in [`packages/theme/src/globals.css`](../../packages/theme/src/globals.css) and [`packages/theme/src/tokens.ts`](../../packages/theme/src/tokens.ts). Existing Tailwind utility classes that reference `navy.*` or `royal-blue.*` keep compiling — they now resolve to ink and bronze, respectively. New work should prefer the semantic tokens.
+The shipping mark is a **placeholder**: a rounded-square tile in house gold carrying a bold "S" glyph. The committed visual truth is the reference boards — [design-system/reference/signet-design-system.dc.html](design-system/reference/signet-design-system.dc.html) (identity panel) and [design-system/reference/canvas-screens.dc.html](design-system/reference/canvas-screens.dc.html) (mark in context).
 
-| Role                         | Token / usage                                                              | Where                                                                                                         |
-| ---------------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **Frapp primary (actions)**  | `primary` (deep bronze in `@repo/theme`)                                   | Primary buttons, links, focus rings, key CTAs                                                                 |
-| **Frapp success / positive** | `success` / emerald utilities (moss values under the hood)                 | Badges, check states, “active” positive chips—not primary buttons                                             |
-| **Frapp neutral text**       | `foreground`, `muted-foreground`, `navy` utilities (ink values)            | Body, headings, chrome                                                                                        |
-| **Frapp sidebar (chrome)**   | `--side-bg`, `--side-fg`, `--side-accent` CSS variables                    | Always-dark sidebar — never overridden by light/dark mode                                                     |
-| **Chapter accent**           | Validated hex per chapter ([`accent.ts`](../../packages/theme/src/accent.ts)) | In-product chapter branding only (avatars, role chips, chapter settings)—**not** the global marketing palette |
+| Fact             | Value                                                                                                                        |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| House gold       | `#EFB63B` — Signet's own accent. Gold/amber, never brown-bronze.                                                             |
+| Accent seed      | `#F2B72E` — the default chapter accent seed; see [design-system/accent-engine.md](design-system/accent-engine.md)            |
+| Placeholder mark | Rounded-square "S" tile on house gold                                                                                        |
+| Final logo       | **TBD** — blocked on a USPTO trademark search for "Signet" (a human action). Do not commission or ship a final mark before it clears. |
 
-Marketing (`frapp.live`) uses **Frapp** tokens only unless showing an **in-app screenshot** where chapter accent appears in context.
+The mark and logo **MUST NOT** take the chapter accent — ever. Chapter theming recolors product UI through the accent engine; the brand itself never retints.
 
----
+### Banned logo vocabulary
 
-## 3a. Theming model (chapter accent overlay)
+Binding constraints (research-derived) for any future mark exploration:
 
-Each chapter supplies **two colors only** — `branding.colors = { dark, accent }`. `derivePalette()` expands them into the per-chapter CSS variables applied in-product:
+- No blue.
+- No serif.
+- No checkmark.
+- No literal signet ring or wax seal.
+- No hexagon, swirl, or gradient — the generic-AI-startup look.
 
-| Variable | Derivation |
-| -------- | ---------- |
-| `--side-bg` | chapter `dark` tinted toward ink (mix 70% chapter-dark + 30% neutral ink for legibility) |
-| `--side-accent` | `accent` |
-| `--brand-band` | `accent` at low saturation, for header strips |
-| `--mention-bg` / `--mention-fg` | derived from `accent` with contrast guarantees |
-| `--chat-self-bubble` | `accent` at 8% over bone |
-| `--reaction-active` | `accent` |
-| `--ring` | `accent` |
+### Platform requirements when the real mark lands
 
-**WCAG fallback.** Each derived token is validated against **both** bone (light) and ink (dark) backgrounds. If either fails AA 4.5:1, that token specifically falls back to bronze — never the whole palette (validation utility: [`packages/theme/src/accent.ts`](../../packages/theme/src/accent.ts)).
+- **iOS:** Light, Dark, and Tinted app-icon variants.
+- **Android:** an adaptive icon with a monochrome layer.
 
-**Lifecycle.** The palette is rebuilt **server-side** on color change and cached in `chapters.theme_palette`. The client reads it through `useChapterTheme()` and writes the CSS variables onto `:root`, re-running on every chapter switch — no full reload. The always-dark sidebar never inverts with light/dark mode; only the content surfaces swap.
+Asset production, storage, and sync are owned by [assets.md](assets.md).
 
 ---
 
-## 4. Typography
+## 3. Decisions recorded as of this doc
 
-- **Family:** Geist Sans as the single UI family (loaded once from [`packages/theme/fonts/GeistVF.woff2`](../../packages/theme/fonts/GeistVF.woff2) via `next/font/local` in each Next app; variable `--font-geist-sans`).
-- **Roles:** Apply the **micro-label + display headline** motif on marketing; the dashboard uses **compact** sizes per [web-dashboard/layout.md](web-dashboard/layout.md).
-- **Scale:** Display 24 / title 18 / section 14 / eyebrow 11 / body 14 (px). See [`packages/theme/src/tokens.ts`](../../packages/theme/src/tokens.ts) `type.*`.
-- **Radii:** xs 3 / sm 5 / md 7 / lg 9 / xl 12 (px). Matches the `--radius-*` CSS variables and `frappTokens.radius.*`.
+These were open questions in the research phase. This document closes them; do not reopen without a new decision record.
 
-### Monospace
+| Decision          | Ruling                                                                                                                                                          |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UI typeface       | **Figtree** — humanist rounded sans, fitting the warm consumer lane. **Geist is explicitly rejected** for Signet. Weights and scale: [design-system/foundations.md](design-system/foundations.md). |
+| Mobile navigation | **4 tabs: Chat (home), Events, Tasks, More.** There is no Home tab. Spec: [mobile/navigation.md](mobile/navigation.md).                                          |
 
-`--font-mono` is a deliberate **system-monospace stack** (`ui-monospace, SFMono-Regular, …, monospace`), **not** a bundled webfont. Ledger-line motifs, eyebrow labels, and `#chapter-audit` cards render against the system stack. Because the stack needs no loading, the "monospace family must be loaded" engineering principle is satisfied for free. Do **not** bundle Geist Mono (or any mono webfont) unless brand explicitly revisits this; if you do reference a custom monospace family in CSS, load it via `next/font` first.
-
----
-
-## 5. Motion budget
-
-Aligned with [packages/theme/src/tokens.ts](../../packages/theme/src/tokens.ts) (`motion.duration`, `motion.easing`).
-
-| Zone                   | Rule                                                                                                                                               |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **First paint (hero)** | No entrance animation on LCP-critical text or primary CTA. Prefer static layout.                                                                   |
-| **Below the fold**     | Optional `fade-up` / stagger once (`motion-safe`, respect `prefers-reduced-motion`).                                                               |
-| **Hover**              | Color and border transitions only; **avoid** scale transforms on primary chrome (buttons, nav) unless explicitly specified for a single component. |
-| **Duration**           | Prefer `standard` (220ms) for UI chrome; `context` (300ms) max for section entrances.                                                              |
+Note: the design-system reference board's panel 4g draws a stale 5-tab bar; the Canvas header and all 23 screens in [design-system/reference/canvas-screens.dc.html](design-system/reference/canvas-screens.dc.html) lock 4 tabs. Four tabs win.
 
 ---
 
-## 6. Anti-patterns (“vibe-coded SaaS”)
+## 4. Direction map
 
-Avoid as **default** patterns:
+Signet's direction is dark-first, warm, and consumer-grade. Every fact below has exactly one canonical doc — link it, never restate it:
 
-- Full-width **gradient washes** behind the hero as the only visual idea.
-- **Six-up icon cards** as the sole product story (icons are supporting, not the hero narrative).
-- **Unverified** large numbers and fake-sounding quotes presented as established truth.
-- **Excessive** hover lift / shadow on every card.
-- **Emerald** (success) as the global primary button color—reserved for success semantics; primary CTAs use the `primary` token (deep bronze in `@repo/theme`), never the legacy `royal-blue.*` utilities.
-
----
-
-## 7. Spec map
-
-| Document                                            | Scope                            |
-| --------------------------------------------------- | -------------------------------- |
-| [brand-identity.md](brand-identity.md) (this file)  | Cross-app identity               |
-| [landing/](landing/README.md)                       | frapp.live layout and sections   |
-| [web-dashboard/](web-dashboard/README.md)           | app.frapp.live shell and screens |
-| [assets.md](assets.md)                              | Logos, favicons, OG, asset sync  |
-| [../product/](../product/README.md)                 | Surfaces and features            |
+| Topic                                                         | Canonical doc                                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Neutral ladder, semantic colors, type scale, radii, spacing, elevation | [design-system/foundations.md](design-system/foundations.md)   |
+| Components and skeleton/empty/error states                    | [design-system/components.md](design-system/components.md)             |
+| Duotone icon recipe                                           | [design-system/iconography.md](design-system/iconography.md)           |
+| Voice and UI writing                                          | [design-system/writing.md](design-system/writing.md)                   |
+| Chapter accent engine (seed → 12-step scale)                  | [design-system/accent-engine.md](design-system/accent-engine.md)       |
+| Mobile screens, navigation, patterns                          | [mobile/README.md](mobile/README.md)                                   |
+| Design-system entry point                                     | [design-system/README.md](design-system/README.md)                     |
 
 ---
 
-## 8. Implementation map
+## 5. What still ships legacy
 
-| Layer                                | Location                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| CSS variables + Tailwind preset      | `packages/theme/src/globals.css`, `packages/theme/src/tailwind.config.ts`                                           |
-| TS tokens (motion, radius, feedback) | `packages/theme/src/tokens.ts`                                                                                      |
-| Chapter accent validation            | `packages/theme/src/accent.ts`                                                                                      |
-| Frapp mark + lockup (canonical)      | `packages/brand-assets/assets/` — see [assets.md](assets.md)                                                  |
-| Synced app icons (`app/icon.svg`)    | `apps/landing`, `apps/web` — copied from brand-assets by `scripts/sync-brand-assets.mjs`               |
-| Open Graph preview image             | `apps/landing/app/opengraph-image.tsx` — social cards when links are shared; do not reference missing static URLs   |
-| Chapter logo (tenant)                | Supabase Storage `chapters/{id}/branding/logo.*` — **never** replaces Frapp marketing assets                        |
-| Next apps                            | `apps/landing`, `apps/web` — both use `@repo/theme` preset                                              |
-| Email / external templates           | Embed or host files from `@repo/brand-assets` per [docs/internal/design-system/BRAND_ASSETS.md](../../docs/internal/design-system/BRAND_ASSETS.md) |
+The web dashboard and the landing site still ship the legacy Frapp **bone/bronze** look until their reskin sessions; their frozen READMEs mark this — [web-dashboard/README.md](web-dashboard/README.md) and [landing/README.md](landing/README.md). New Signet work MUST NOT copy visual patterns from those surfaces.

@@ -43,8 +43,8 @@
 - [ ] Responsive/adaptive behavior checked for impacted surfaces.
 - [ ] Microcopy uses production-grade language (no placeholder/vibe-coded copy).
 - [ ] No dead-end controls: every actionable-looking control has behavior or explicit disabled rationale.
-- [ ] Fail fast on entitlements: if a route this UI calls carries a permission, subscription, or module gate, the control that starts the flow mirrors that gate (disabled + reason + recovery path) rather than letting the user complete a form the server will reject. See `UI_UX_SYSTEM.md` §5.
-- [ ] If this PR changes UX patterns, `docs/internal/design-system/UI_UX_SYSTEM.md` and/or `docs/internal/design-system/UX_WRITING_GUIDE.md` were updated.
+- [ ] Fail fast on entitlements: if a route this UI calls carries a permission, subscription, or module gate, the control that starts the flow mirrors that gate (disabled + reason + recovery path) rather than letting the user complete a form the server will reject. See the fail-fast entitlement gating standard in `spec/ui/design-system/README.md`.
+- [ ] If this PR changes UX patterns, `spec/ui/design-system/README.md` and/or `spec/ui/design-system/writing.md` were updated.
 
 ## Release label (main → production only)
 

@@ -201,7 +201,7 @@ export function EventEditorDialog({
       if (mode === "create") {
         // Omit required_role_ids when empty so a new event defaults to all
         // members; on update (below) we always send it, so an empty array
-        // clears targeting. See spec/ui/web-dashboard/screens.md §Events.
+        // clears targeting. See spec/behavior/events.md.
         await createEventMutation.mutateAsync(
           requiredRoleIds.length > 0
             ? { ...payload, required_role_ids: requiredRoleIds }

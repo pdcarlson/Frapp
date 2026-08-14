@@ -42,7 +42,10 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 - The invoice's OPEN state is re-checked **after** the provider round-trip, on both the new-intent and reuse paths, and the intent id is stamped only while it still holds; if the invoice settled or was voided in that window the request fails (409 when already paid) rather than handing out a live client secret for a non-payable invoice.
 - A second request arriving while the first is still in flight at the provider gets 409 ("payment attempt already in progress"), not a 503 — the idempotency key collapses them into one intent by design.
 - The route is **subscription-exempt**: dues collection must stay reachable while the chapter's own subscription is `past_due`/`canceled` — collecting dues is exactly how a chapter recovers.
+- **Invoice list visibility:** `GET /v1/invoices` returns the *whole chapter's* invoices to a `billing:view` holder; a member without that permission sees only their own rows. Payment ownership is enforced by the API (the 403 below), so a client rendering the chapter-wide list must not offer a pay affordance on an invoice whose `user_id` is not the viewer's — the client gate only avoids offering an action that cannot work; the 403 is the enforcement.
+- **Failure responses** for the payment-intent endpoint, for clients mapping errors: **400** — the invoice is no longer OPEN; **403** — the caller is not the invoice's owner; **409** — the two cases above (payment already completed / attempt already in flight), distinguished by the server's own message; **503** — the payment provider is unavailable.
 - Only the `payment_intent.succeeded` webhook moves an invoice to PAID on the Stripe path; the pay endpoint never does.
+- **A successful client-side confirmation means the money moved, not that the invoice settled.** Clients must re-read the invoice until the server reports PAID, and until then surface "payment received, confirmation pending" — never a locally-declared PAID the webhook has not written.
 
 ### Payment webhook idempotency
 
