@@ -52,6 +52,11 @@ jobs:
               - 'scripts/check-pglite-migrations.mjs'
               - 'packages/validation/**'
               - 'package-lock.json'
+              # The PGlite job also loads the chapter directory seed, so a change
+              # to the seed or its loader must re-run it.
+              - 'supabase/seed/**'
+              - 'scripts/load-chapter-directory.mjs'
+              - 'scripts/lib/chapter-directory-seed.mjs'
 
   # ── Shared packages build (dependency for downstream jobs) ──────────────
   packages-build:
@@ -353,6 +358,36 @@ jobs:
       - name: Check migration safety (push)
         if: github.event_name == 'push'
         run: npm run check:migration-safety
+
+  # ── Chapter directory seed validation ───────────────────────────────────
+  # Guards supabase/seed/chapter_directory.csv: canonical #RRGGBB colors,
+  # archetypes that exist in the ArchetypeKey union, no duplicate natural keys.
+  #
+  # The colors are the reason this is blocking. The seed shipped with 50 of its
+  # 100 values missing a leading `#` (#840), and nothing caught it because
+  # derivePalette answers an unparseable hex with platform bronze rather than an
+  # error — so a bad value produces a plausible wrong brand color, not a failure.
+  #
+  # No `npm ci` step: the checker imports only node: builtins, so installing the
+  # workspace would be pure latency. The loader's actual execution against a real
+  # database is covered in `pglite-migrations` instead, the one job here with one.
+  chapter-directory-seed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate the chapter directory seed
+        run: npm run check:chapter-directory-seed
 
   # ── Mobile app validation ───────────────────────────────────────────────
   mobile-validate:

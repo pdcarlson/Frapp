@@ -1,0 +1,111 @@
+name: Check migration drift
+
+# Scheduled schema-drift detector. CI proves the code compiles and the tests
+# pass; nothing else in this repo verifies that a DEPLOYED database still
+# matches `supabase/migrations/`. A database can be dozens of migrations behind,
+# or carry migrations that exist nowhere in the repo, and every other workflow
+# stays green (issue #833).
+#
+# Runs on a SCHEDULE, not on deploy, and that is the point: `Deploy API` failed
+# 44 of 44 executing runs for 71 days (#763), so a check that only ran after a
+# successful deploy would have been silent for exactly the period it was needed.
+# A dead deploy pipeline must not be able to hide drift.
+#
+# Read-only: the script calls the Supabase Management API's migration-history
+# endpoint and sends no SQL. It reports drift and never repairs it — reconciling
+# a hosted database is a human action (see DB_PROMOTION_RUNBOOK.md).
+#
+# Semantics live in scripts/ci/check-migration-drift.mjs.
+# Unit tests: scripts/ci/__tests__/ (run via `npm run test:ci-scripts`).
+
+on:
+  schedule:
+    # 07:00 UTC daily (~03:00 ET). Drift is a slow failure; daily is enough to
+    # catch it long before the next promotion, and keeps the alert quiet.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      grace_hours:
+        description: "Hours a pending migration is tolerated after its version timestamp"
+        required: false
+        default: "24"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two drift checks at once — concurrent runs would race on the single
+  # alert issue and could file a duplicate.
+  group: check-migration-drift
+  cancel-in-progress: false
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The only write scope in this workflow, job-scoped: the alert issue.
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Project refs are not committed to this repo — they live in Infisical
+      # alongside the rest of the deploy config (`run-migration.mjs` reads
+      # SUPABASE_PROJECT_REF the same way). Both environments are needed in one
+      # job so a single alert issue can speak for the whole fleet, so the
+      # injection runs twice and each ref is captured before being overwritten.
+      # NOTE: the Infisical slug for production is `prod`, not `production`.
+      - name: Inject staging secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "staging"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Capture staging project ref
+        run: |
+          if [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'staging' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "STAGING_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
+
+      - name: Inject production secrets from Infisical
+        uses: Infisical/secrets-action@v1.0.12
+        with:
+          method: "universal"
+          client-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
+          client-secret: ${{ secrets.INFISICAL_CLIENT_SECRET }}
+          project-slug: "frapp-live-ej-ls"
+          env-slug: "prod"
+          secret-path: "/"
+          include-imports: true
+
+      - name: Capture production project ref
+        run: |
+          if [ -z "$SUPABASE_PROJECT_REF" ]; then
+            echo "::error::SUPABASE_PROJECT_REF is not set in the Infisical 'prod' environment. See docs/internal/environment/SECRETS_MANAGEMENT.md."
+            exit 1
+          fi
+          echo "PRODUCTION_PROJECT_REF=$SUPABASE_PROJECT_REF" >> "$GITHUB_ENV"
+
+      - name: Check migration drift
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          # SUPABASE_ACCESS_TOKEN is account-level, so either injection supplies
+          # the same value; the production one is in scope here.
+          DRIFT_TARGETS: "staging=${{ env.STAGING_PROJECT_REF }},production=${{ env.PRODUCTION_PROJECT_REF }}"
+          PENDING_GRACE_HOURS: ${{ inputs.grace_hours || '24' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/ci/check-migration-drift.mjs

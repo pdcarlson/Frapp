@@ -4,8 +4,12 @@
 -- seeded from a curated CSV. Used by the onboarding wizard to autofill
 -- chapter identity. Linked back to chapters via chapters.directory_id.
 --
--- Seed: supabase/seed/chapter_directory.csv (50-row placeholder;
--- full ~2000-row data tracked in GitHub issue #231).
+-- Seed: supabase/seed/chapter_directory.csv (50-row placeholder).
+-- Loaded by scripts/load-chapter-directory.mjs, which both bootstrap paths run
+-- after migrations apply (#840). Until that landed nothing read the file at all,
+-- so this table was empty in every environment despite the promise above.
+-- Full ~2000-row dataset is tracked in GitHub issue #232 (this comment
+-- previously cited #231, which is the merged PR, not the follow-up issue).
 
 create table chapter_directory (
   id                   uuid         primary key default gen_random_uuid(),
