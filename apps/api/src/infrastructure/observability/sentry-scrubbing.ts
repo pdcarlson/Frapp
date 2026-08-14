@@ -33,8 +33,10 @@ const HEADER_ALLOWLIST = new Set(['content-type', 'x-request-id']);
  * Top-level event keys that may survive. Sentry's own envelope metadata plus
  * the fields we deliberately populate.
  *
- * `user`, `request`, and `breadcrumbs` are absent on purpose: they are rebuilt
- * field-by-field below rather than passed through.
+ * `user`, `request`, `breadcrumbs`, and `fingerprint` are absent on purpose:
+ * they are rebuilt field-by-field below rather than passed through. Leaving
+ * `fingerprint` out means a non-array one is dropped rather than copied raw —
+ * the SDK types it `string[]`, so anything else is already anomalous.
  */
 const EVENT_KEY_ALLOWLIST = new Set([
   'event_id',
@@ -49,7 +51,6 @@ const EVENT_KEY_ALLOWLIST = new Set([
   'environment',
   'sdk',
   'type',
-  'fingerprint',
   'transaction',
   'transaction_info',
   'exception',
