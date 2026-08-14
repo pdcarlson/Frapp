@@ -161,13 +161,13 @@ describe('scrubSentryEvent', () => {
     expect(out).not.toContain('hunter2');
     expect(out).not.toContain('token=abc');
     expect(scrubbed?.breadcrumbs?.[0]).not.toHaveProperty('data');
-    expect(scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0]).not.toHaveProperty(
-      'vars',
-    );
+    expect(
+      scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0],
+    ).not.toHaveProperty('vars');
     // Code identity survives — that is what makes the report useful.
-    expect(scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0]?.function).toBe(
-      'handler',
-    );
+    expect(
+      scrubbed?.exception?.values?.[0]?.stacktrace?.frames?.[0]?.function,
+    ).toBe('handler');
   });
 
   it('drops non-allowlisted top-level keys and contexts', () => {

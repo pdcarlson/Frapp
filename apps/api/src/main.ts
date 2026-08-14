@@ -4,7 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
-import { RequestIdInterceptor } from './interface/interceptors/request-id.interceptor';
+import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
 import { scrubSentryEvent } from './infrastructure/observability/sentry-scrubbing';
 import { pseudonymsAvailable } from './infrastructure/observability/pseudonyms';
@@ -82,10 +82,11 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalInterceptors(
-    new RequestIdInterceptor(),
-    new LoggingInterceptor(),
-  );
+  // Before the Nest pipeline, so guard rejections carry a request id too — see
+  // the middleware's own note on why this cannot be an interceptor.
+  app.use(requestIdMiddleware);
+
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

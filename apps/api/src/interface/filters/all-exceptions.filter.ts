@@ -211,9 +211,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         );
       });
     } catch (error) {
-      this.logger.warn(
-        `Sentry capture failed: ${(error as Error).message}`,
-      );
+      this.logger.warn(`Sentry capture failed: ${(error as Error).message}`);
     }
   }
 }

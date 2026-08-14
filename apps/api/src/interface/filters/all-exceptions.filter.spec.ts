@@ -198,7 +198,9 @@ describe('AllExceptionsFilter', () => {
     );
 
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
-    expect(setUser).toHaveBeenCalledWith({ id: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(setUser).toHaveBeenCalledWith({
+      id: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
     expect(setUser).not.toHaveBeenCalledWith({ id: USER_ID });
 
     const tags = Object.fromEntries(setTag.mock.calls as [string, string][]);
@@ -227,7 +229,10 @@ describe('AllExceptionsFilter', () => {
     );
 
     expect(captured.status).toBe(401);
-    expect(captured.json).toMatchObject({ statusCode: 401, requestId: 'req-abc' });
+    expect(captured.json).toMatchObject({
+      statusCode: 401,
+      requestId: 'req-abc',
+    });
   });
 
   it('preserves the existing 5xx error log shape', () => {

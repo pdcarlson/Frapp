@@ -176,10 +176,12 @@ function scrubException(
       // `vars` is a snapshot of local variables — arbitrary request payload.
       stacktrace: value.stacktrace && {
         ...value.stacktrace,
-        frames: value.stacktrace.frames?.map(({ vars: _vars, ...frame }) => ({
-          ...frame,
-          filename: redactMaybe(frame.filename) ?? frame.filename,
-        })),
+        frames: value.stacktrace.frames?.map((frame) => {
+          const kept = { ...frame };
+          delete kept.vars;
+          kept.filename = redactMaybe(frame.filename) ?? frame.filename;
+          return kept;
+        }),
       },
     })),
   };
@@ -210,13 +212,15 @@ function scrubBreadcrumbs(
   breadcrumbs: ErrorEvent['breadcrumbs'],
 ): ErrorEvent['breadcrumbs'] {
   if (!breadcrumbs) return undefined;
-  return breadcrumbs.map(({ data: _data, ...crumb }) => ({
-    ...crumb,
+  return breadcrumbs.map((crumb) => {
     // `data` is dropped wholesale: on http breadcrumbs it holds the full URL
     // with query string and the response body size, and on custom ones it is
     // whatever the caller passed.
-    message: redactMaybe(crumb.message) ?? crumb.message,
-  }));
+    const kept = { ...crumb };
+    delete kept.data;
+    kept.message = redactMaybe(crumb.message) ?? crumb.message;
+    return kept;
+  });
 }
 
 function scrubTags(tags: ErrorEvent['tags']): ErrorEvent['tags'] {
