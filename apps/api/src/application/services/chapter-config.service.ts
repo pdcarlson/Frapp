@@ -286,12 +286,16 @@ export class ChapterConfigService {
       const previousAccent = readAccent(existing.branding);
       const nextAccent = readAccent(mergedBranding);
 
-      // #795: mirror the authoritative accent into the legacy column. Diffed
-      // against the previous *branding* accent rather than against
-      // `existing.accent_color`, because `getConfig`'s select does not read that
-      // column and widening it would change the GET /config response.
+      // #795: mirror the authoritative accent into the legacy column.
+      //
+      // No separate `accent_color` diff entry: `getConfig`'s select does not
+      // read that column, so the only "previous" value available here is the
+      // branding accent, and on exactly the legacy rows this mirror exists to
+      // repair those two disagree. Recording the branding value as the column's
+      // prior state would put a number in the audit log that the column never
+      // held. The branding diff above already records the accent change, which
+      // is the authoritative one.
       if (typeof nextAccent === 'string' && nextAccent !== previousAccent) {
-        diff['accent_color'] = { from: previousAccent ?? null, to: nextAccent };
         update['accent_color'] = nextAccent;
       }
     }

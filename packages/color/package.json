@@ -9,7 +9,7 @@
     ".": {
       "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
-      "import": "./dist/index.js",
+      "import": "./src/index.ts",
       "default": "./dist/index.js"
     }
   },

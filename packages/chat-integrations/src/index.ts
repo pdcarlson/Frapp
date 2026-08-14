@@ -12,15 +12,20 @@
  * dispatch + parsers below.
  */
 
-// Re-exports carry the `.js` extension because this package builds under
-// NodeNext (#236). The extensionless form was only valid while the tsconfig
-// overrode `moduleResolution: "Bundler"`, and it emitted a `dist` that Node
-// could not load at all — the specifiers survived into the output verbatim,
-// so `require("@repo/chat-integrations")` resolved `./parsers` against the
-// filesystem and found nothing. TypeScript rewrites nothing here: `.js` is
-// what the emitted JS needs, and TS resolves it back to the `.ts` source.
-export * from "./parsers.js";
-export * from "./payloads.js";
+// Re-exports without the `.js` extension because the package is consumed via
+// bundler (Turbopack in dev, tsc in build) and the dev path resolves
+// extensionless TS imports. The tsconfig sets `moduleResolution: "Bundler"`
+// so the build matches.
+//
+// #236 moved the other built packages to NodeNext so their `require` condition
+// serves real CommonJS. This one is deliberately left behind: switching it
+// means `.js` specifiers, and Turbopack cannot resolve `./parsers.js` against
+// `parsers.ts`, so `npm run build -w apps/web` fails outright. Its emitted dist
+// is not loadable by Node — but nothing loads it that way, since `apps/api`
+// does not depend on this package at all. Fixing that properly means a dual
+// build, which is its own change.
+export * from "./parsers";
+export * from "./payloads";
 
 /**
  * A slash command the user can invoke from the composer. `requiredModule` ties

@@ -102,20 +102,27 @@ export function resolveChapterAccentColor(
   // closes — the light brand token scores 2.63:1 on the native dark card, below
   // inputs it would replace. The requested fallback is tried first, so a caller
   // passing its own mode's token (all of them do today) is unaffected.
-  const fallbackAccent =
-    pickAccessibleColor([requestedFallback, ...FALLBACK_LADDER], backgroundRgb, {
-      minimum: MIN_ACCENT_CONTRAST,
-      round: true,
-    }) ?? requestedFallback;
-
+  // Resolved lazily, inside the closure: this runs on every render of the
+  // dashboard shell and the mobile chapter header, and walking the ladder is
+  // several contrast evaluations whose result is thrown away whenever the
+  // chapter's own accent passes — which is the normal case.
   const fallback = (
     reason: AccentValidationResult["reason"],
-  ): AccentValidationResult => ({
-    resolvedAccent: fallbackAccent,
-    fallbackApplied: true,
-    contrastOnBackground: ratioOn(toRgb(fallbackAccent), backgroundRgb),
-    reason,
-  });
+  ): AccentValidationResult => {
+    const fallbackAccent =
+      pickAccessibleColor(
+        [requestedFallback, ...FALLBACK_LADDER],
+        backgroundRgb,
+        { minimum: MIN_ACCENT_CONTRAST, round: true },
+      ) ?? requestedFallback;
+
+    return {
+      resolvedAccent: fallbackAccent,
+      fallbackApplied: true,
+      contrastOnBackground: ratioOn(toRgb(fallbackAccent), backgroundRgb),
+      reason,
+    };
+  };
 
   if (!inputAccent) {
     return fallback("invalid_format");

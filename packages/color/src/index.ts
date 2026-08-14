@@ -173,8 +173,20 @@ export function applyAlpha(hex: string, alpha: number, background: string): stri
 }
 
 function toHex({ r, g, b }: Rgb): string {
-  const channel = (value: number) =>
-    Math.max(0, Math.min(255, value)).toString(16).padStart(2, "0");
+  const channel = (value: number) => {
+    // Clamping alone is not enough: `Math.min(255, NaN)` is `NaN`, whose
+    // `toString(16)` is `"nan"` — three characters, so `padStart(2)` leaves it
+    // — and the function would return `#NANNANNAN`. That is not a color, no
+    // caller can detect it, and `derivePalette` would write it straight into
+    // `chapters.theme_palette` for the web client to set as a custom property,
+    // where it silently resolves to nothing. A non-finite channel means the
+    // caller passed a non-finite ratio or alpha; treat it as 0 rather than
+    // emitting a string that only looks like a color.
+    const safe = Number.isFinite(value) ? value : 0;
+    return Math.round(Math.max(0, Math.min(255, safe)))
+      .toString(16)
+      .padStart(2, "0");
+  };
   return `#${channel(r)}${channel(g)}${channel(b)}`.toUpperCase();
 }
 

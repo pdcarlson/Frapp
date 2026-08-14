@@ -6,8 +6,10 @@
  * and the by-construction contrast guarantee in §8.
  *
  * Coexists with `derivePalette` rather than replacing it. That one still feeds
- * the legacy web token map, and both are written into `chapters.theme_palette`
- * by the same callers until `apps/web` reskins.
+ * the legacy web token map that `apps/web` reads from `chapters.theme_palette`.
+ * Nothing persists the Signet map yet — no API caller invokes this function; it
+ * is the engine, ready for the mobile rebuild and the recompute endpoint to
+ * call. `accent-engine.md` §6 tracks that remaining wiring.
  *
  * DOM-free and CommonJS-safe, because the NestJS API calls it.
  */
@@ -177,8 +179,10 @@ export function deriveSignetPalette(
   const alphaStep = (role: SignetRole): string =>
     (alpha[ROLE_STEPS[role] - 1] ?? resolvedSeed).toUpperCase();
 
+  const primary = step("accent-primary");
+
   const palette: SignetPalette = {
-    "--signet-accent-primary": step("accent-primary"),
+    "--signet-accent-primary": primary,
     "--signet-accent-hover": step("accent-hover"),
     "--signet-accent-ring": step("accent-ring"),
     "--signet-accent-subtle-bg": step("accent-subtle-bg"),
@@ -186,7 +190,7 @@ export function deriveSignetPalette(
     "--signet-accent-text": step("accent-text"),
     "--signet-accent-on-primary": onPrimaryFor(
       solidValue(generated.accentContrast),
-      solidValue(solid[ROLE_STEPS["accent-primary"] - 1]),
+      primary,
     ),
     "--signet-accent-primary-alpha": alphaStep("accent-primary"),
     "--signet-accent-hover-alpha": alphaStep("accent-hover"),

@@ -24,10 +24,6 @@ import {
 import { Chapter } from '../../domain/entities/chapter.entity';
 import type { Member } from '../../domain/entities/member.entity';
 import {
-  checkWcagContrast,
-  LIGHT_MODE_BACKGROUND,
-} from '../../domain/utils/wcag';
-import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
   SystemRoleKeys,
@@ -239,11 +235,23 @@ export class ChapterService {
       return this.chapterRepo.update(id, data);
     }
 
-    if (!checkWcagContrast(data.accent_color, LIGHT_MODE_BACKGROUND)) {
-      throw new BadRequestException(
-        `accent_color does not meet WCAG AA contrast requirements (4.5:1) against the light mode background (${LIGHT_MODE_BACKGROUND}). Please choose a darker color.`,
-      );
-    }
+    // No contrast gate here any more, and its removal is the point rather than
+    // an oversight. `accent_color` is now a mirror of `branding.colors.accent`,
+    // which is deliberately not contrast-gated (spec/behavior/branding.md): it
+    // is the accent engine's seed, and gating it would reject 49 of the 50 real
+    // chapters in the directory seed.
+    //
+    // Keeping the gate on only this path made the column reachable in a state
+    // it then refused to accept: onboarding, the config PATCH, and the backfill
+    // all write it without checking, so a chapter created with a light gold
+    // could never re-save its own accent from Settings — the form resends the
+    // stored value and got a 400 telling the officer to pick a darker color
+    // they had never picked. One value cannot have two different validities
+    // depending on which door it came through.
+    //
+    // Legibility is still guaranteed where it matters: `resolveChapterAccentColor`
+    // re-validates per surface at render time and substitutes an accessible
+    // fallback, so an illegible stored accent is never actually painted.
 
     // `branding.colors.accent` is the authoritative accent (#795) and this
     // column mirrors it, so a Settings edit — the one path that writes the

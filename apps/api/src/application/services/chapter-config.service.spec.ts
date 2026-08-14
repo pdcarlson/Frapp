@@ -396,8 +396,17 @@ describe('ChapterConfigService — branding accent (#795)', () => {
       expect(update.accent_color).toBe('#8B0000');
       expect(update.branding).toMatchObject({ colors: { accent: '#8B0000' } });
 
+      // The accent change is audited under `branding`, which is the
+      // authoritative store. No separate `accent_color` entry: `getConfig` does
+      // not select that column, so the only "before" value available here is
+      // the branding accent — and on exactly the legacy rows this mirror exists
+      // to repair, the two disagree. Recording it would put a value in the
+      // audit log that the column never actually held.
       const auditRow = supabase.auditInsert.mock.calls[0][0];
-      expect(auditRow.diff.accent_color).toEqual({ from: null, to: '#8B0000' });
+      expect(auditRow.diff).not.toHaveProperty('accent_color');
+      expect(auditRow.diff.branding.to).toMatchObject({
+        colors: { accent: '#8B0000' },
+      });
     });
 
     it('does not write the column for a branding PATCH that leaves the accent alone', async () => {
