@@ -9,6 +9,9 @@
     "./tokens": "./src/tokens.ts",
     "./accent": "./src/accent.ts"
   },
+  "dependencies": {
+    "@repo/color": "*"
+  },
   "devDependencies": {
     "tailwindcss": "^3.4.17",
     "typescript": "5.9.2"

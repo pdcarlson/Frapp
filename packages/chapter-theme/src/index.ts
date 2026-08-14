@@ -11,8 +11,18 @@
  * Bronze is the platform's preferred fallback but lighter alternatives are
  * tried first when bronze itself fails on a dark background.
  *
- * No window.* or DOM dependencies. Safe for NestJS and Deno Edge Functions.
+ * No window.* or DOM dependencies — this runs inside the NestJS API, which is
+ * where both callers live (chapter onboarding and chapter-config recompute).
  */
+
+import {
+  applyAlpha,
+  contrastRatio,
+  mixHex,
+  parseHex,
+  pickAccessibleColor,
+  type Rgb,
+} from "@repo/color";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -26,7 +36,6 @@ const INK = "#1F1A15";
 const BRONZE = "#7A5A2F";
 
 const MIN_CONTRAST = 4.5; // WCAG AA normal text
-const HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 
 /**
  * Ordered fallback accents. Bronze is the brand default, but it fails AA on a
@@ -35,75 +44,27 @@ const HEX_RE = /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
  */
 const FALLBACK_ACCENTS = [BRONZE, "#C8A062", BONE] as const;
 
-// ── WCAG math (inline — avoids importing @repo/theme private helpers) ────────
-
-type Rgb = { r: number; g: number; b: number };
-
-function parseHex(hex: string): Rgb | null {
-  const h = hex.trim();
-  if (!HEX_RE.test(h)) return null;
-  const full =
-    h.length === 4
-      ? `#${h[1]}${h[1]}${h[2]}${h[2]}${h[3]}${h[3]}`
-      : h;
-  return {
-    r: parseInt(full.slice(1, 3), 16),
-    g: parseInt(full.slice(3, 5), 16),
-    b: parseInt(full.slice(5, 7), 16),
-  };
-}
-
-function linearize(c: number): number {
-  const v = c / 255;
-  return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-}
-
-function luminance({ r, g, b }: Rgb): number {
-  return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b);
-}
-
-function contrastRatio(a: Rgb, b: Rgb): number {
-  const la = luminance(a);
-  const lb = luminance(b);
-  const lighter = Math.max(la, lb);
-  const darker = Math.min(la, lb);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
-/** Mix two hex colors: ratio=0 → 100% colorA, ratio=1 → 100% colorB. */
-function mixHex(hexA: string, hexB: string, ratio: number): string {
-  const a = parseHex(hexA) ?? parseHex(BONE)!;
-  const b = parseHex(hexB) ?? parseHex(INK)!;
-  const r = Math.round(a.r + (b.r - a.r) * ratio);
-  const g = Math.round(a.g + (b.g - a.g) * ratio);
-  const bl = Math.round(a.b + (b.b - a.b) * ratio);
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bl.toString(16).padStart(2, "0")}`.toUpperCase();
-}
-
-/** Apply alpha over a background (simulate CSS color-mix / opacity). */
-function applyAlpha(hex: string, alpha: number, bg: string): string {
-  const fg = parseHex(hex) ?? parseHex(BRONZE)!;
-  const background = parseHex(bg) ?? parseHex(BONE)!;
-  const r = Math.round(fg.r * alpha + background.r * (1 - alpha));
-  const g = Math.round(fg.g * alpha + background.g * (1 - alpha));
-  const b = Math.round(fg.b * alpha + background.b * (1 - alpha));
-  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`.toUpperCase();
-}
+// ── WCAG math ────────────────────────────────────────────────────────────────
+//
+// Shared with `packages/theme` via `@repo/color` (#797). It used to be inlined
+// here to avoid reaching into theme's private helpers; the helpers are now their
+// own zero-dependency package, so both callers agree by construction instead of
+// by coincidence. Note this side compares the EXACT ratio — theme's resolver
+// rounds first, and that difference is deliberate: these values are persisted to
+// `chapters.theme_palette`, so they must not drift with a display convention.
 
 /**
  * Picks the first FALLBACK_ACCENTS entry that clears MIN_CONTRAST against
  * `bg`. Bronze fails AA on a dark sidebar, so the lighter candidates exist to
  * guarantee the returned fallback is itself accessible. Bronze is the last
- * resort if (somehow) nothing passes.
+ * resort if nothing passes — reachable on a mid-tone background, where neither
+ * a dark nor a light candidate clears 4.5:1.
  */
 function pickAccessibleFallback(bg: Rgb): string {
-  for (const candidate of FALLBACK_ACCENTS) {
-    const rgb = parseHex(candidate);
-    if (rgb && contrastRatio(rgb, bg) >= MIN_CONTRAST) {
-      return candidate.toUpperCase();
-    }
-  }
-  return BRONZE.toUpperCase();
+  return (
+    pickAccessibleColor(FALLBACK_ACCENTS, bg, { minimum: MIN_CONTRAST }) ??
+    BRONZE.toUpperCase()
+  );
 }
 
 /**
