@@ -42,7 +42,11 @@
 
 import { appendFileSync } from "node:fs";
 
-import { ghRequest } from "./ci-wake.mjs";
+import {
+  findAlertIssues as findAlertIssuesByTitle,
+  raiseAlert as raiseAlertIssue,
+  resolveAlert as resolveAlertIssue,
+} from "./lib/alert-issue.mjs";
 
 // ── Alert issue identity ────────────────────────────────────────────────────
 // Title is the primary key: it is looked up by exact match, so it must stay
@@ -69,8 +73,6 @@ export const DEPLOY_JOB_NAMES = [
 // as benign is precisely the "green history" failure this script exists to end.
 export const FAILED_RESULTS = new Set(["failure", "cancelled", "timed_out"]);
 
-// Pages of issues to scan when locating the alert issue.
-const MAX_ISSUE_PAGES = 5;
 
 /**
  * Pure classifier over the `needs` context's job results.
@@ -277,26 +279,13 @@ export function buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl
  * failure mode than silence, and the resolve path closes every match.
  */
 export async function findAlertIssues({ token, repo, fetchImpl }) {
-  const found = [];
-  for (let page = 1; page <= MAX_ISSUE_PAGES; page += 1) {
-    const { ok, data } = await ghRequest({
-      token,
-      fetchImpl,
-      // sort/direction are pinned explicitly: raiseAlert treats the first match
-      // as the most recent one to reopen, and that must not depend on an
-      // unstated API default.
-      path:
-        `/repos/${repo}/issues?state=all&labels=${encodeURIComponent(ALERT_ISSUE_LOOKUP_LABEL)}` +
-        `&sort=created&direction=desc&per_page=100&page=${page}`,
-    });
-    if (!ok || !Array.isArray(data)) break;
-    for (const issue of data) {
-      // The issues endpoint returns PRs too; they are never this alert.
-      if (!issue.pull_request && issue.title === ALERT_ISSUE_TITLE) found.push(issue);
-    }
-    if (data.length < 100) break;
-  }
-  return found;
+  return findAlertIssuesByTitle({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+  });
 }
 
 /**
@@ -314,62 +303,18 @@ export async function raiseAlert({
   headSha,
   runUrl,
 }) {
-  const existing = await findAlertIssues({ token, repo, fetchImpl });
-  // Prefer an open one; otherwise reopen the most recent closed one.
-  const open = existing.find((issue) => issue.state === "open");
-  const target = open ?? existing[0];
-
-  if (!target) {
-    const { ok, data } = await ghRequest({
-      token,
-      fetchImpl,
-      method: "POST",
-      path: `/repos/${repo}/issues`,
-      body: {
-        title: ALERT_ISSUE_TITLE,
-        // Labels that do not exist yet are created by this call.
-        labels: ALERT_ISSUE_LABELS,
-        body: buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl }),
-      },
-    });
-    return ok
-      ? { action: "created", issueNumber: data?.number ?? null }
-      : { action: "failed", issueNumber: null };
-  }
-
-  const reopened = target.state !== "open";
-  if (reopened) {
-    await ghRequest({
-      token,
-      fetchImpl,
-      method: "PATCH",
-      path: `/repos/${repo}/issues/${target.number}`,
-      body: { state: "open" },
-    });
-  }
-
-  const { ok } = await ghRequest({
+  return raiseAlertIssue({
     token,
+    repo,
     fetchImpl,
-    method: "POST",
-    path: `/repos/${repo}/issues/${target.number}/comments`,
-    body: {
-      body: buildAlertCommentBody({
-        headline,
-        failed,
-        headBranch,
-        headSha,
-        runUrl,
-        reopened,
-      }),
-    },
+    title: ALERT_ISSUE_TITLE,
+    labels: ALERT_ISSUE_LABELS,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    buildIssueBody: () =>
+      buildAlertIssueBody({ headline, failed, headBranch, headSha, runUrl }),
+    buildCommentBody: ({ reopened }) =>
+      buildAlertCommentBody({ headline, failed, headBranch, headSha, runUrl, reopened }),
   });
-
-  if (!ok) return { action: "failed", issueNumber: target.number };
-  return {
-    action: reopened ? "reopened" : "commented",
-    issueNumber: target.number,
-  };
 }
 
 /**
@@ -386,32 +331,15 @@ export async function resolveAlert({
   headSha,
   runUrl,
 }) {
-  const openIssues = (await findAlertIssues({ token, repo, fetchImpl })).filter(
-    (issue) => issue.state === "open",
-  );
-  if (openIssues.length === 0) return { action: "none", closed: [] };
-
-  const closed = [];
-  for (const issue of openIssues) {
-    await ghRequest({
-      token,
-      fetchImpl,
-      method: "POST",
-      path: `/repos/${repo}/issues/${issue.number}/comments`,
-      body: {
-        body: buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl }),
-      },
-    });
-    const { ok } = await ghRequest({
-      token,
-      fetchImpl,
-      method: "PATCH",
-      path: `/repos/${repo}/issues/${issue.number}`,
-      body: { state: "closed", state_reason: "completed" },
-    });
-    if (ok) closed.push(issue.number);
-  }
-  return { action: "closed", closed };
+  return resolveAlertIssue({
+    token,
+    repo,
+    fetchImpl,
+    title: ALERT_ISSUE_TITLE,
+    lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    buildRecoveryBody: () =>
+      buildRecoveryCommentBody({ deployed, headBranch, headSha, runUrl }),
+  });
 }
 
 // ── Orchestration ───────────────────────────────────────────────────────────
