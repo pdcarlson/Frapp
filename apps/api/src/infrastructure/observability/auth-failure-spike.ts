@@ -16,10 +16,18 @@
  *     traffic and each count half the failures. On a single Render instance
  *     that is exact; past that it under-reports, never over-reports.
  *  2. **Lost on restart.** A deploy resets every window.
+ *  3. **Evadable by origin churn.** The origin map is bounded (see
+ *     `maxTrackedOrigins`), so an attacker who emits more distinct origins than
+ *     the cap holds within one window evicts their own counter before it fills.
+ *     Bounding the map is not optional — an unbounded one turns this into the
+ *     denial of service it exists to report — so this is the cost of counting
+ *     in memory at all, not a bug to fix here. Pinned by a test.
  *
- * Both are acceptable for a *spike* signal, whose job is to notice a burst in
- * progress rather than to be an audit ledger. Neither is acceptable for
- * anything that must be complete — do not grow this into one.
+ * All three are acceptable for a *spike* signal, whose job is to notice a burst
+ * in progress rather than to be an audit ledger. None is acceptable for
+ * anything that must be complete — do not grow this into one. The Sentry-side
+ * rule is the layer without these limits, which is why it stays on the human
+ * action list rather than being considered redundant with this.
  */
 
 export interface AuthFailureSpikeOptions {

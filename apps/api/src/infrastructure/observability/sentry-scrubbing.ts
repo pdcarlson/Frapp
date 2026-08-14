@@ -75,17 +75,41 @@ const CONTEXT_ALLOWLIST = new Set([
 
 // ── Free-text redaction ──────────────────────────────────────────────────────
 
+/**
+ * A URL — absolute or a bare path — together with its query string.
+ *
+ * Query strings are the single most common place a token turns up in free
+ * text: an http breadcrumb's message, a fetch error, a logged upstream URL.
+ * Stripping the query wherever a URL appears in prose is stricter than
+ * stripping `request.url` alone, which is what a structural scrubber would
+ * catch. Anchored on `/` or a scheme so ordinary prose ending in a question
+ * mark is left alone.
+ */
+const URL_QUERY_RE = /((?:https?:\/\/\S*?|\/[^\s?#]*)\?)\S*/g;
 const EMAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 /** `Bearer <jwt|opaque>`, and bare three-segment JWTs wherever they appear. */
 const BEARER_RE = /\bBearer\s+[\w\-._~+/]+=*/gi;
 const JWT_RE = /\beyJ[\w-]*\.[\w-]+\.[\w-]+/g;
-/** Supabase/Stripe-shaped API keys and the project's own secret prefixes. */
-const KEYLIKE_RE = /\b(?:sk|pk|rk|whsec|sbp)_[A-Za-z0-9]{8,}/g;
+/**
+ * Supabase/Stripe-shaped API keys and the project's own secret prefixes.
+ * The body allows `_` because every real key has one (`sk_live_…`, `sk_test_…`)
+ * and stopping at the first underscore would match four harmless characters.
+ */
+const KEYLIKE_RE = /\b(?:sk|pk|rk|whsec|sbp)_[A-Za-z0-9_]{8,}/g;
 const UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const IPV4_RE = /\b(?:\d{1,3}\.){3}\d{1,3}\b/g;
-/** Deliberately conservative: only forms with >= 2 colons, to avoid eating times. */
-const IPV6_RE = /\b(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\b/gi;
+/**
+ * IPv6, in the two shapes that actually occur: the full eight groups, or any
+ * `::`-compressed form with at least one hex group attached.
+ *
+ * Requiring either eight groups or a literal `::` is what keeps `12:30:45` — a
+ * clock time, three colon-separated runs of valid hex — out of the match. A
+ * looser "two or more colon-separated hex groups" pattern silently rewrites
+ * every timestamp in every log line it touches.
+ */
+const IPV6_RE =
+  /\b(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\b|\b[0-9a-f]{1,4}::(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*)?|(?<![0-9a-f:])::[0-9a-f]{1,4}(?::[0-9a-f]{1,4})*/gi;
 
 /**
  * Best-effort PII sweep over a free-text string (exception messages, culprits,
@@ -104,6 +128,9 @@ const IPV6_RE = /\b(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}\b/gi;
  */
 export function redactFreeText(input: string): string {
   return input
+    .replace(URL_QUERY_RE, (_match, uptoQuestionMark: string) =>
+      uptoQuestionMark.slice(0, -1),
+    )
     .replace(BEARER_RE, '[redacted:token]')
     .replace(JWT_RE, '[redacted:token]')
     .replace(KEYLIKE_RE, '[redacted:key]')
