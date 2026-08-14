@@ -56,8 +56,11 @@ close, re-label, comment on, re-body, mark-duplicate, set priority, or split **o
 Pull the open suggestion set (`list_issues` with `labels: ["suggestion"]`, state OPEN) and triage
 each — **except issues whose marker fingerprint starts `fp=pr-followup/` or `fp=human/`**: those
 are owned by the weekly [`pr-followups`](../pr-followups/SKILL.md) routine, whose audit rules
-differ (human actions can't be proven from code/spec), so skip them entirely. Pick **exactly one** action per issue,
-grounded in **current code and `spec/`** (not a hunch):
+differ (human actions can't be proven from code/spec), so skip them entirely. Issues labeled
+**`scope:production`** are **parked by owner decision** (2026-08-10; see the label roster in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)), not aging — never mark them `stale`,
+never raise their priority for age, and never file duplicates of them. Pick **exactly one** action
+per issue, grounded in **current code and `spec/`** (not a hunch):
 
 | Situation (must be provable from code/spec) | Action |
 | --- | --- |
