@@ -20,8 +20,12 @@ cd "$ROOT"
 # uses `npx supabase` on purpose. The lib reads the prefix at call time, so the order relative
 # to the source below does not matter.
 FRAPP_ACL_LOG_PREFIX='[local-dev-setup]'
+FRAPP_SEED_LOG_PREFIX='[local-dev-setup]'
 # shellcheck source=scripts/lib/local-postgres-acl.sh
 . "$ROOT/scripts/lib/local-postgres-acl.sh"
+# Must come AFTER local-postgres-acl.sh — it calls frapp_run_local_sql from that lib.
+# shellcheck source=scripts/lib/local-seed-data.sh
+. "$ROOT/scripts/lib/local-seed-data.sh"
 
 QUICK=false
 RESET_SUPABASE=false
@@ -214,6 +218,20 @@ else
     log_err "without the repair. Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
     exit 1
   fi
+fi
+
+# Reference data. AFTER the ACL repair, because the load is a plain INSERT/UPDATE as
+# `postgres` and would otherwise be the first thing to hit the missing DML grants.
+#
+# Non-fatal by design, unlike the repair above: an empty chapter_directory degrades
+# onboarding autofill to the miss path, which exists and works, whereas missing grants
+# make every table unreadable. The WARNING is loud because #840 is precisely the story
+# of this table being empty in every environment without anyone noticing.
+log "Loading the chapter directory seed..."
+if ! frapp_load_chapter_directory "$ROOT" npx supabase; then
+  log_err "WARN: chapter directory seed did not load; onboarding autofill will match nothing."
+  log_err "      The stack is otherwise fine. Re-run: node scripts/load-chapter-directory.mjs"
+  log_err "      Troubleshooting: docs/internal/environment/LOCAL_DEV.md#troubleshooting"
 fi
 
 if [[ "${QUICK}" == "false" ]]; then

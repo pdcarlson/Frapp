@@ -154,6 +154,21 @@ export interface DerivePaletteResult {
    * high-contrast. Only the failing token is replaced — the rest stand.
    */
   fallbacks: Partial<Record<keyof ChapterPalette, true>>;
+  /**
+   * Which *inputs* were not parseable hex and were replaced with bronze before
+   * any token was derived. Empty when both inputs were valid.
+   *
+   * Distinct from `fallbacks`, and the distinction is the point. A `fallbacks`
+   * entry means "your color is valid but fails WCAG contrast here" — expected,
+   * often unavoidable, not a defect. An `invalidInputs` entry means "this was
+   * not a color at all", which is always a data or plumbing bug upstream.
+   *
+   * This exists because that second case used to be entirely silent: the seed
+   * in supabase/seed/chapter_directory.csv shipped 50 of its 100 values missing
+   * a leading `#`, and every one of them would have become bronze here without
+   * a single signal reaching the caller (#840).
+   */
+  invalidInputs: Partial<Record<"dark" | "accent", true>>;
   /** Input after normalization / validation. */
   resolvedDark: string;
   resolvedAccent: string;
@@ -170,7 +185,9 @@ export interface DerivePaletteResult {
  *  - Bubble/reaction tokens → tested against the bone surface they sit on
  *
  * Tokens that fail AA 4.5:1 fall back to bronze individually.
- * The input dark/accent colors are normalised; invalid hex → bronze.
+ * The input dark/accent colors are normalised; invalid hex → bronze, reported
+ * on `invalidInputs` so the caller can log it rather than shipping a silently
+ * wrong brand color.
  *
  * @example
  * derivePalette({ dark: "#2A1A2E", accent: "#C49A3A" })
@@ -181,9 +198,22 @@ export interface DerivePaletteResult {
  * //   fallbacks.["--mention-fg"] set to true (yellow fails on bone)
  */
 export function derivePalette(input: ChapterPaletteInput): DerivePaletteResult {
-  // Normalise inputs — treat any invalid hex as BRONZE
-  const rawDark   = parseHex(input.dark)   ? input.dark.toUpperCase()   : BRONZE.toUpperCase();
-  const rawAccent = parseHex(input.accent) ? input.accent.toUpperCase() : BRONZE.toUpperCase();
+  // Normalise inputs — treat any invalid hex as BRONZE.
+  //
+  // The substitution is recorded rather than performed silently. An unparseable
+  // input is a data bug (a seed row missing its `#`, a hand-edited config, a bad
+  // API payload), and silently rendering platform bronze means the chapter sees a
+  // plausible wrong brand color with nothing anywhere saying why. Callers decide
+  // what to do with the signal; this function still never throws.
+  const invalidInputs: Partial<Record<"dark" | "accent", true>> = {};
+
+  const darkValid = parseHex(input.dark) !== null;
+  const accentValid = parseHex(input.accent) !== null;
+  if (!darkValid) invalidInputs.dark = true;
+  if (!accentValid) invalidInputs.accent = true;
+
+  const rawDark   = darkValid   ? input.dark.toUpperCase()   : BRONZE.toUpperCase();
+  const rawAccent = accentValid ? input.accent.toUpperCase() : BRONZE.toUpperCase();
 
   const fallbacks: Partial<Record<keyof ChapterPalette, true>> = {};
 
@@ -245,6 +275,7 @@ export function derivePalette(input: ChapterPaletteInput): DerivePaletteResult {
   return {
     palette,
     fallbacks,
+    invalidInputs,
     resolvedDark:   rawDark,
     resolvedAccent: rawAccent,
   };

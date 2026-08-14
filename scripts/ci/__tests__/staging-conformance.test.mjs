@@ -25,6 +25,8 @@ import {
   runStagingConformance,
 } from "../staging-conformance.mjs";
 
+import { readFileSync } from "node:fs";
+
 import { makeFetchMock, quiet } from "./helpers.mjs";
 
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
@@ -217,26 +219,28 @@ test("decodeJwtPayload reads a real base64url payload and survives garbage", () 
 
 // ── Schema drift delegation (#833) ──────────────────────────────────────────
 
-test("schema drift reports NOT-WIRED while #833 is unmerged, and never a pass", async () => {
-  const result = await checkSchemaDrift({ exists: () => false });
-  assert.equal(result.status, SKIPPED);
-  assert.match(result.detail, /#833/);
+test("migration parity is reported as owned elsewhere, and never as a pass", async () => {
+  // #833 shipped a complete sibling watchdog (check-migration-drift.yml) with
+  // its own schedule and its own alert issue, covering production too. Running
+  // its script from here would check the same thing twice a day, let one drift
+  // open two P1s, and mutate another watchdog's incident state as a side
+  // effect. The row stays visible so the inventory is complete; it asserts
+  // nothing, so it can never close this workflow's alert.
+  const r = checkSchemaDrift();
+  assert.equal(r.status, SKIPPED);
+  assert.notEqual(r.status, PASS, "must never count toward this workflow's health");
+  assert.match(r.detail, /check-migration-drift\.yml/);
+  assert.match(r.detail, /#833/);
 });
 
-test("schema drift delegates to the script once it exists", async () => {
-  const passed = await checkSchemaDrift({ exists: () => true, run: () => "no drift" });
-  assert.equal(passed.status, PASS);
-
-  const failed = await checkSchemaDrift({
-    exists: () => true,
-    run: () => {
-      const error = new Error("exited 1");
-      error.stdout = "3 migrations applied remotely are missing locally";
-      throw error;
-    },
-  });
-  assert.equal(failed.status, FAIL);
-  assert.match(failed.detail, /missing locally/);
+test("migration parity runs no child process", () => {
+  // Guards the collision directly: if this ever shells out again it would be
+  // re-running #833's script, which upserts and closes ITS alert.
+  const source = readFileSync(
+    new URL("../staging-conformance.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /execFileSync|spawnSync|child_process/);
 });
 
 // ── Classification and reporting ────────────────────────────────────────────
@@ -709,42 +713,6 @@ test("a failing sync surfaces lastSyncMessage, redacted", async () => {
 });
 
 // ── Schema-drift delegation ─────────────────────────────────────────────────
-
-test("schema drift reports both streams, so stdout chatter cannot hide the stderr verdict", async () => {
-  const result = await checkSchemaDrift({
-    exists: () => true,
-    run: () => {
-      const error = new Error("exited 1");
-      error.stdout = "Comparing local migrations...\nFetched 214 applied migrations.";
-      error.stderr = "DRIFT: 3 migrations applied remotely are missing locally";
-      throw error;
-    },
-  });
-  assert.equal(result.status, FAIL);
-  assert.match(result.detail, /DRIFT: 3 migrations/);
-});
-
-test("schema-drift output is redacted before it can reach the alert issue", async () => {
-  const result = await checkSchemaDrift({
-    exists: () => true,
-    run: () => {
-      const error = new Error("boom");
-      error.stderr = "connect postgresql://postgres:leakedpassword@db.x.supabase.co:5432/postgres";
-      throw error;
-    },
-  });
-  assert.equal(result.status, FAIL);
-  assert.doesNotMatch(result.detail, /leakedpassword/);
-});
-
-test("the not-wired message names the exact contract #833 must satisfy", async () => {
-  const result = await checkSchemaDrift({ exists: () => false });
-  assert.equal(result.status, SKIPPED);
-  assert.match(result.detail, /check-schema-drift\.mjs/);
-  assert.match(result.detail, /no arguments/);
-});
-
-// ── Thrown assertions ───────────────────────────────────────────────────────
 
 test("a thrown assertion names which check threw and surfaces error.cause", async () => {
   const { fetchImpl } = makeFetchMock([

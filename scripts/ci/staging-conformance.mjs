@@ -50,8 +50,7 @@
 //   STAGING_SMOKE_USER_PASSWORD
 //   RUN_URL                     — html_url of this run, for the alert body
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -103,7 +102,6 @@ export const FAILING_SYNC_STATUSES = new Set(["failed"]);
  * writing no summary and raising no alert.
  */
 const FETCH_TIMEOUT_MS = 20_000;
-const CHILD_TIMEOUT_MS = 120_000;
 const withTimeout = (init = {}) => ({
   ...init,
   signal: init.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -137,18 +135,18 @@ export function parseFailingIds(body) {
 }
 
 /**
- * Scrubs text that originates outside this file — notably a delegated child
- * process's stderr — before it can reach an alert issue body. The job injects
- * the whole staging store (`secret-path: "/"`, `include-imports: true`), and
- * GitHub's log masking does NOT apply to issue bodies written via the REST API.
+ * Scrubs provider-supplied text — Infisical sync messages, thrown-assertion
+ * reasons — before it can reach an alert issue body. The job injects the whole
+ * staging store (`secret-path: "/"`, `include-imports: true`), and GitHub's log
+ * masking does NOT apply to issue bodies written via the REST API.
  *
  * Know what this does and does not cover. It masks (a) values of env vars whose
  * NAME matches the pattern below and are at least 8 characters, and (b)
  * `//user:password@` credentials in a URL. It is therefore **name-driven, not
  * content-driven**: a secret whose variable name matches none of those words
  * passes through verbatim. This is a reduction in blast radius, not a
- * guarantee — the durable rule is that a delegated script must not print
- * credentials on failure in the first place.
+ * guarantee — the durable rule is that nothing this script reports should be
+ * carrying credentials in the first place.
  */
 export function redactSecrets(text, env = process.env) {
   let out = String(text ?? "");
@@ -416,63 +414,29 @@ export async function checkAuthSignIn({
 }
 
 /**
- * Schema drift — delegated to #833, deliberately not reimplemented here.
+ * Migration parity — reported, NOT run here.
  *
- * #838 says: "Build #833 first as a standalone `npm run check:*` script, then
- * have this workflow call it alongside the other assertions. Do not reimplement
- * it here." #833 is a separate unit of work. Until it lands, this reports
- * SKIPPED naming the issue; when it lands, the row lights up with no change to
- * this file.
+ * #838 asked this workflow to call #833's drift script as one of its rows. What
+ * #833 actually shipped is a complete sibling watchdog: its own daily schedule,
+ * its own `routine-state` alert issue, and coverage of production as well as
+ * staging (`.github/workflows/check-migration-drift.yml`). Invoking it from
+ * here would run the same comparison twice a day and let one real drift open
+ * two P1 alerts — and because that script upserts and closes its own alert as a
+ * side effect, this workflow would be mutating another watchdog's incident
+ * state. Neither is acceptable, so ownership sits entirely with that workflow.
+ *
+ * The row stays visible rather than being deleted so the conformance table
+ * remains a complete inventory of what is watched, with a pointer to who
+ * watches it. It reports SKIPPED, which by this file's rules asserts nothing
+ * and cannot close an alert — the honest status for "someone else proves this".
  */
-export async function checkSchemaDrift({
-  scriptPath = join(REPO_ROOT, "scripts", "check-schema-drift.mjs"),
-  exists = existsSync,
-  // Bounded like the provider fetches. execFileSync is synchronous and blocks
-  // the event loop, so an AbortSignal could not help it — the child needs its
-  // own timeout, or a wedged connection to a paused staging project runs out
-  // the job's 10 minutes and produces a red run with no summary and no alert.
-  run = (path) =>
-    execFileSync(process.execPath, [path], {
-      encoding: "utf8",
-      stdio: "pipe",
-      timeout: CHILD_TIMEOUT_MS,
-      killSignal: "SIGKILL",
-    }),
-  redact = redactSecrets,
-} = {}) {
-  const label = "Applied migrations match supabase/migrations/";
-  if (!exists(scriptPath)) {
-    return result(
-      "schema-drift",
-      label,
-      SKIPPED,
-      `not wired yet — expects #833 to provide ${scriptPath.replace(REPO_ROOT + "/", "")}, ` +
-        "runnable with no arguments and targeting staging",
-    );
-  }
-  try {
-    run(scriptPath);
-    return result("schema-drift", label, PASS, "check-schema-drift.mjs reported no drift");
-  } catch (error) {
-    // Both streams, concatenated. `stdout || stderr` short-circuited, so any
-    // progress chatter on stdout suppressed the stderr line that actually
-    // names the drift — losing the diagnostic in the alert AND (with
-    // stdio: "pipe") from the run log.
-    const raw = [error?.stdout, error?.stderr, error?.message]
-      .filter(Boolean)
-      .map(String)
-      .join("\n")
-      .trim();
-    // Scrubbed: this text is written verbatim into a GitHub issue body, and
-    // the delegated script inherits the full staging secret store.
-    const detail = redact(raw).split("\n").slice(-3).join(" ").trim();
-    return result(
-      "schema-drift",
-      label,
-      FAIL,
-      detail || "check-schema-drift.mjs exited non-zero",
-    );
-  }
+export function checkSchemaDrift() {
+  return result(
+    "schema-drift",
+    "Applied migrations match supabase/migrations/",
+    SKIPPED,
+    "owned by check-migration-drift.yml (#833), which alerts separately — not duplicated here",
+  );
 }
 
 // ── Reporting ───────────────────────────────────────────────────────────────

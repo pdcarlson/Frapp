@@ -6,7 +6,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
 import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
-import { scrubSentryEvent } from './infrastructure/observability/sentry-scrubbing';
+import { buildSentryOptions } from './infrastructure/observability/sentry-options';
 import { pseudonymsAvailable } from './infrastructure/observability/pseudonyms';
 
 function initializeSentry(): void {
@@ -30,18 +30,9 @@ function initializeSentry(): void {
     );
   }
 
-  Sentry.init({
-    dsn,
-    environment: process.env.NODE_ENV ?? 'development',
-    tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
-    // Belt to `beforeSend`'s braces: keeps the SDK from *collecting* IPs,
-    // cookies, and request bodies in the first place, so a future scrubber gap
-    // has less to leak. Explicit rather than relying on the v9 default.
-    sendDefaultPii: false,
-    // Every event leaves through here. See `sentry-scrubbing.ts` for the rules
-    // and why they are allowlists.
-    beforeSend: scrubSentryEvent,
-  });
+  // Built in `sentry-options.ts` so the integration spec can assert against the
+  // real configuration instead of a copy — see that file's note.
+  Sentry.init(buildSentryOptions(dsn));
 }
 
 async function bootstrap() {

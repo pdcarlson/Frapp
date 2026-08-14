@@ -52,7 +52,8 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
-| Staging conformance | `.github/workflows/staging-conformance.yml` — **the only `schedule:`-triggered workflow** (daily 07:00 UTC, plus `workflow_dispatch`). Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, migration parity (delegated to #833), and an end-to-end sign-in whose JWT carries `active_chapter_id`. Upserts one `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. See "Scheduled conformance" below. |
+| Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
+| Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
@@ -317,6 +318,57 @@ other watchdogs it is best-effort and **exits 0 on every handled outcome**: the 
 job is already red, and a watchdog that reds the run creates the noise it exists to remove. If the
 issues API is unreachable the summary and annotation still land.
 
+### Schema drift detection (`scripts/ci/check-migration-drift.mjs`)
+
+CI proves the code compiles and the tests pass. Until
+[#833](https://github.com/pdcarlson/Frapp/issues/833) nothing verified that a **deployed database**
+still matched `supabase/migrations/` — so a database could be dozens of migrations behind, or carry
+migrations that exist nowhere in the repo, with every workflow green. Two modes, both observed for
+real:
+
+- **Behind.** `frapp-staging` held 2 rows in `schema_migrations` against 39 repo files (~5.5 months
+  / 38 migrations). Public tables 29 vs 44, functions 1 vs 15, storage buckets 0 vs 7. Remediated
+  2026-08-10. `frapp-prod` was measured in the same state on 2026-08-14 — 37 pending, remediation
+  owned by [#832](https://github.com/pdcarlson/Frapp/issues/832).
+- **Foreign.** The history carried `20260228000000_enable_rls_on_remaining_tables`, a version that
+  has never existed in this repository (hand-applied in February). `supabase db push` refuses to
+  run at all in that state, and the error's suggested fix (`migration repair --status reverted`) is
+  destructive if applied without first reading what the row did — see
+  [`../ops/DB_PROMOTION_RUNBOOK.md`](../ops/DB_PROMOTION_RUNBOOK.md) § reconciling a foreign
+  migration row.
+
+**Why scheduled and not post-deploy.** `Deploy API` failed 44 of 44 executing runs for 71 days
+(#763). A check that only ran after a successful deploy would have been silent for exactly the
+period it was needed — a dead pipeline must not be able to hide drift. The schedule is what would
+have caught February.
+
+**Classification.** `pending` (repo, not applied) · `foreign` (applied, not in repo) · `matched`.
+Foreign rows are never graced: a version the repo has never contained is wrong the moment it
+appears. Pending rows are tolerated for `PENDING_GRACE_HOURS` (default 24) measured from the
+migration's **own 14-digit version timestamp**, which is the only "when was this authored" signal
+available without a git or API round-trip — so a migration merged minutes ago is not an alert, and
+a back-dated one alerts immediately (deliberately conservative: this check may cry wolf, it may not
+stay silent).
+
+**Three verdicts, and the reason there are three.** `drift` raises the alert; `clean` closes it;
+`unknown` — a target the Management API could not be read — does **neither**. An API blip must not
+close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
+was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
+run rather than a quiet pass. This is the one watchdog in `scripts/ci/` that exits non-zero at all:
+the others annotate a run that is already red, whereas this script *is* the run, so green has to
+mean "the databases were checked and match".
+
+**Read-only by construction.** It calls the Management API's migration-history endpoint
+(`GET /v1/projects/{ref}/database/migrations` — the stable endpoint, not the Beta `database/query`
+ones) and sends no SQL, so it cannot mutate a database even if its logic is wrong. It reports drift
+and never repairs it; reconciliation is a human, E2-class action.
+
+Project refs are **not** committed — they come from Infisical (`SUPABASE_PROJECT_REF`, the same
+source `run-migration.mjs` uses), which is why the job injects twice and captures each ref before
+the second injection overwrites it. The Infisical slug for production is **`prod`**, not
+`production`. Like the deploy alert, the tracking issue carries `routine-state` so `/next` §0.2
+never claims it as backlog work.
+
 ### Scheduled conformance (`scripts/ci/staging-conformance.mjs`)
 
 Deploy visibility above fixes *"a push failed and nobody noticed."* This fixes the other half:
@@ -338,7 +390,7 @@ shape:
 - `custom_access_token_hook` was never enabled after #643 shipped, so `ChapterGuard` silently fell
   back to the client-supplied `x-chapter-id` header — the pre-#643 trust model (#805).
 
-Runs daily at 07:00 UTC (`workflow_dispatch` for on-demand), asserting five properties of live
+Runs daily at 07:00 UTC (`workflow_dispatch` for on-demand), asserting four properties of live
 `frapp-staging`. Scope is **staging only**: `frapp-prod` is intentionally `INACTIVE` while production
 is deferred, and alerting on that would be alerting on a decision (#814).
 
@@ -375,9 +427,16 @@ Actions tab.
 
 Two assertions ship degraded on purpose, each saying so in the step summary:
 
-- **Migration parity** is delegated to `npm run check:schema-drift`, owned by
-  [#833](https://github.com/pdcarlson/Frapp/issues/833). Until that merges the row reports
-  not-wired; it lights up with no change to this file. Deliberately not reimplemented here.
+- **Migration parity is owned by `check-migration-drift.yml`, not by this workflow.**
+  [#833](https://github.com/pdcarlson/Frapp/issues/833) was expected to land as a plain
+  `npm run check:*` script this workflow would call. It landed as a **complete sibling
+  watchdog** instead: its own daily schedule, its own `routine-state` alert issue, and coverage
+  of production as well as staging. Calling its script from here would run the same comparison
+  twice a day, let one real drift open two P1 alerts, and — because that script upserts and
+  closes its own alert as a side effect — have this workflow mutating another watchdog's
+  incident state. So the row is reported, not run: it shows as SKIPPED with a pointer, which
+  asserts nothing and cannot close this workflow's alert. Deleting the row instead would have
+  been worse; the table is meant to be a complete inventory of what is watched.
 - **End-to-end sign-in** — the only row that exercises behaviour rather than configuration, covering
   migration, grants, RLS, and hook resolution in one probe — needs `STAGING_SMOKE_USER_EMAIL` /
   `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned (#893). **The smoke user must have
@@ -410,9 +469,12 @@ reading an unparseable response as "no failing syncs" would rebuild the silent g
 
 The alert issue is titled *"Staging conformance is failing — frapp-staging has drifted"*
 (`routine-state`, `area:ci`, `P1`) and follows the same upsert contract as the deploy alert: created
-if absent, reopened if closed, otherwise commented, and closed on the next clean run. Both share
-`scripts/ci/lib/alert-issue.mjs`. Unlike the deploy watchdog this script **is** the check, so a
-confirmed drift exits non-zero and reds the run.
+if absent, reopened if closed, otherwise commented, and closed on the next clean run. It shares
+`scripts/ci/lib/alert-issue.mjs` with the deploy alert. (`check-migration-drift.mjs` landed
+concurrently carrying its own copy of that upsert logic — consolidating it onto the shared lib is
+tracked in [#909](https://github.com/pdcarlson/Frapp/issues/909), not done here, so this PR does not
+rewrite a watchdog that merged hours ago.) Unlike the deploy watchdog this script **is** the check,
+so a confirmed drift exits non-zero and reds the run.
 
 ### Applied permission allows
 

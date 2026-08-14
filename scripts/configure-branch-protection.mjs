@@ -14,6 +14,7 @@
  */
 
 import { execSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 // ── Required status checks ──────────────────────────────────────────────────
 // These must match check-run names exactly as reported on PRs.
@@ -42,6 +43,14 @@ const CI_CHECKS = [
   // secret-scan — required only once the dependency-audit job exists on the target
   // branch and has run green.
   "dependency-audit",
+  // Chapter directory seed gate (issue #840): validates
+  // supabase/seed/chapter_directory.csv — canonical #RRGGBB colors, real archetypes,
+  // no duplicate natural keys. Required because the failure it catches is silent:
+  // derivePalette answers a malformed hex with platform bronze rather than an error,
+  // so a bad value ships as a plausible wrong brand color. ROLLOUT: same caveat as
+  // secret-scan — required only once the chapter-directory-seed job exists on the
+  // target branch and has run green.
+  "chapter-directory-seed",
 ];
 
 const DOCS_CHECKS = [
@@ -218,8 +227,25 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`Branch protection configuration failed: ${message}`);
-  process.exit(1);
-});
+// Entry guard, and it is load-bearing rather than boilerplate. Without it, merely
+// `import()`ing this module — to read ALL_REQUIRED_CHECKS, to unit-test a helper, to
+// let an editor or agent inspect it — runs main() in LIVE mode and PUTs new branch
+// protection to main and production. That happened during the review of #840: an
+// import intended purely to read the checks list applied a not-yet-existing required
+// check to main, which would have blocked every PR until it was noticed and undone.
+//
+// A module that reconfigures repository governance as a side effect of being loaded
+// has no safe way to be read. `--dry-run` does not help, because the caller doing the
+// importing never passes argv at all.
+const isDirectRun =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  main().catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Branch protection configuration failed: ${message}`);
+    process.exit(1);
+  });
+}
+
+export { ALL_REQUIRED_CHECKS, CI_CHECKS, DOCS_CHECKS, buildProtectionPayload };
