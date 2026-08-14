@@ -63,6 +63,20 @@ Post-apply production checks:
 - Do not apply production migrations before staging validation.
 - Do not merge migration PRs without rollback instructions.
 - If any post-apply check fails, stop and execute `DB_ROLLBACK_PLAYBOOK.md`.
+- **Promoting migrations does not carry reference data.** `chapter_directory` is
+  populated from `supabase/seed/chapter_directory.csv` by
+  `scripts/load-chapter-directory.mjs`, which the local bootstrap scripts run and the
+  promotion path does not. A hosted project therefore has the table and its indexes
+  but **zero rows** until someone loads it — which is how it stayed empty in every
+  environment long enough to reach production onboarding (#840). Check
+  `select count(*) from chapter_directory` as part of post-apply verification;
+  populating staging is tracked in #902.
+
+  When you do load it, generate the SQL with `npm run load:chapter-directory` and read
+  it before applying. It is idempotent and **preserves row ids**, which matters here:
+  `chapters.directory_id` references `chapter_directory(id) on delete set null`, so a
+  delete-and-reload would silently detach every chapter already linked to a directory
+  entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
 ## 2026-08-10: Staging migration backlog cleared — two blockers behind the #696 credential
 
