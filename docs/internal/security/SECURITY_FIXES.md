@@ -97,6 +97,8 @@ Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 hi
 
 **Posture of record (2026-08-13, head of this sweep): 39 total — 0 critical, 12 high, 27 moderate, 0 low.** Every remaining high/critical *package* finding is the Expo SDK 54 chain, whose root causes are exactly four advisories (`image-size` ×2, `postcss` ×2) fixed only by the Expo SDK 57 major upgrade (#289). Remaining moderates: the Expo chain (#289) and the `@sentry/nestjs`/OpenTelemetry chain (#682).
 
+> **Superseded 2026-08-14 by the `@sentry/nestjs` major bump (#682), below: 22 total — 0 critical, 12 high, 10 moderate, 0 low.** The high count is unchanged because it was always entirely the Expo chain; the 17 cleared moderates were the OpenTelemetry subtree. The Expo chain (#289) is now the *only* remaining source of package findings.
+
 ### The gate (`dependency-audit`, issue #618)
 
 `scripts/check-npm-audit.mjs` runs as the `dependency-audit` CI job on every PR and push (and in `npm run ci:local-gate`). Mechanics:
@@ -111,6 +113,26 @@ Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 hi
 ### Prevention
 
 When the gate goes red on a PR that did not touch dependencies, a new advisory was published upstream against the existing lockfile: fix it in-range if `npm audit fix`/`npm update <pkg>` can (see the #245/#684/#291 playbooks above), otherwise file or link the tracking issue and add a time-boxed allowlist entry in the same PR. Never widen an entry beyond the single GHSA id, and never land an entry without a tracking issue. The gate only fires on PR/push activity, so advisories against an untouched lockfile surface on the next PR — Dependabot (#848) is the tracked complement for proactive detection and bumps.
+
+## `@sentry/nestjs` v9 → v10 (issue #682)
+
+The one advisory chain the #831 sweep above could not clear in-range: `@sentry/nestjs@9.47.1` pulled `@opentelemetry/core@1.30.1`, carrying **GHSA-8988-4f7v-96qf** (unbounded memory allocation parsing W3C Baggage headers). Baggage propagation runs on every traced request, so the trigger surface was the whole hot path. `npm audit` reported `isSemVerMajor: true` — the fix only existed across a major boundary, which is why it was deferred to its own issue rather than folded into the sweep.
+
+**Bumped `apps/api` to `@sentry/nestjs@^10.70.0`** (`10.69.0` was the audit's stated floor; `10.70.0` was `latest` at the time and avoids landing one patch stale). This moves `@opentelemetry/core` to **2.10.0** and drops the audit from 39 findings to **22 — 0 critical, 12 high, 10 moderate**. All 17 cleared findings were the OpenTelemetry subtree.
+
+### Why the major was safe here
+
+v10's headline change is *"bump to OpenTelemetry v2"*, with `@sentry/nestjs` switching to OTel core instrumentation. Its removals — `BaseClient`, `hasTracingEnabled`, the `logger`/`Logger` export, the `_experiments.enableLogs`/`beforeSendLog`/`autoFlushOnFeedback` options, and browser-side FID collection — are **none of them reachable from this repo**, whose entire Sentry surface is five files: `Sentry.init` in `main.ts`, the `ErrorEvent` type in `sentry-scrubbing.ts` and its spec, and `withScope`/`captureException`/`captureMessage` in `all-exceptions.filter.ts` and its spec. Peer ranges (`@nestjs/* ^8 || ^9 || ^10 || ^11` against this repo's 11.1.28) and `engines.node >= 18` both already held.
+
+One v10 behavior change *does* land here, and it tightens rather than loosens the posture: **from v10.4.0 the SDK keys user-IP inference off the top-level `sendDefaultPii`**, which `main.ts` sets to `false`. Server-side IP inference is therefore off by construction, which is what `spec/behavior/observability.md` § Error Tracking asks for and what the scrubber's IP pseudonymization assumes.
+
+### The coverage gap this exposed
+
+Before this change, **nothing in the repo exercised the real SDK.** `sentry-scrubbing.spec.ts` calls `scrubSentryEvent` as a plain function and `all-exceptions.filter.spec.ts` opens with `jest.mock('@sentry/nestjs')` — correct for what each tests, but between them no test would notice an SDK upgrade that silently stopped invoking `beforeSend`. Every existing Sentry test would have stayed green while the API shipped unscrubbed events.
+
+`sentry-integration.spec.ts` closes that: it initializes the real SDK with `main.ts`'s options and the production scrubber as `beforeSend`, captures through both entry points the exception filter uses, and asserts the scrubber ran. It is hermetic by construction — a stubbed `transport` plus an `.invalid` DSN mean no envelope can leave the process on any runner.
+
+Writing it surfaced a wrinkle worth knowing before anyone extends these tests: the SDK's `ContextLines` integration attaches the **source lines** around every stack frame, so a PII-shaped string written as a literal in a test file is echoed back into the event from disk and will defeat a "this value appears nowhere in the payload" assertion — while proving nothing about the scrubber. That test assembles its email and uuid at runtime for exactly this reason. Those frame-context fields pass through `scrubException` unredacted (it rebuilds frames by spread, deleting only `vars`), which is a denylist in a module that is otherwise deliberately allowlist-shaped — tracked separately in #889.
 
 ## Next.js advisory cleanup (issue #291)
 
