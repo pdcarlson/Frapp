@@ -69,11 +69,6 @@ issue if anything looks off):
   blocked and not stale: routines must not mark these `stale`, must not raise their priority for
   age, and must not re-file duplicates of them.
 - **Routine infrastructure:** `routine-state` (cross-run state stores, never work — skipped by `/next` and by this file's routines)
-- **Scope:** `scope:production` — work that only becomes relevant once a production environment
-  exists (added 2026-08-10; see #814). These issues are **parked by choice, not blocked and not
-  stale**: routines must not mark them `stale`, must not raise their priority for age, and must
-  not re-file duplicates of them. Full policy:
-  [`GITHUB_PM.md`](GITHUB_PM.md#labels-and-priority-lean-taxonomy).
 - Legacy (`bug`, `Improvement`, `release:*`) persists on old issues; don't extend it.
 
 Reads accept issue numbers (`issue_read`, `list_issues`, `search_issues`); writes go through
