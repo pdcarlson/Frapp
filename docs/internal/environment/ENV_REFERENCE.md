@@ -85,6 +85,13 @@ Product analytics is pseudonymous by construction: the API keys every event by `
 
 > All three are **optional**. With no `POSTHOG_API_KEY` the API uses a no-op provider (debug logging), and with no `ANALYTICS_HMAC_SALT` server analytics is disabled entirely — so local dev, tests, and CI run without any analytics secret.
 
+> ⚠️ **`ANALYTICS_HMAC_SALT` is no longer analytics-only.** It is now the salt for every pseudonym the API produces: analytics keys, the `originHash` on security-event logs, and the user/chapter hashes on Sentry events (`spec/behavior/observability.md` § Error Tracking). Two consequences when it is unset in an environment that *does* have a `SENTRY_DSN`:
+>
+> - Sentry events arrive with identifiers **removed rather than hashed** — they are safe, but unattributable, so you cannot tell which tenant hit an error. The API logs a `Bootstrap` warning at startup in exactly this case.
+> - Security-event records omit `originHash`, so the auth-failure spike rule cannot group by origin.
+>
+> Set it wherever `SENTRY_DSN` is set. **Rotating it re-keys every pseudonym at once** — analytics continuity, Sentry grouping, and in-flight spike windows all break together. That is the intended blast radius of a salt rotation, but do it deliberately.
+
 ### CD Secrets (Deploy Workflows Only)
 
 These are only used by GitHub Actions. Leave them empty in the `local` environment — they're not needed for local development.
@@ -136,10 +143,10 @@ Reads these directly (no prefix needed):
 | `STRIPE_PRICE_ID` | `stripe.service.ts` | ✅ |
 | `PORT` | `main.ts` (default: `3001`) | ❌ |
 | `NODE_ENV` | `main.ts` (default: `development`) | ❌ |
-| `SENTRY_DSN` | `main.ts` (optional) | ❌ |
+| `SENTRY_DSN` | `main.ts` (optional; unset → Sentry no-ops entirely. When set, pair it with `ANALYTICS_HMAC_SALT`) | ❌ |
 | `SENTRY_TRACES_SAMPLE_RATE` | `main.ts` (default: `0.1`) | ❌ |
 | `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
-| `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (per-env salt for pseudonymous keying; analytics disabled when unset) | ❌ |
+| `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset | ❌ |
 | `POSTHOG_API_KEY` | `analytics.module.ts` (selects PostHog vs no-op provider) | ❌ |
 | `POSTHOG_HOST` | `analytics.module.ts` (provider host override; default PostHog US) | ❌ |
 

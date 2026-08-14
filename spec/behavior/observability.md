@@ -6,6 +6,8 @@ Every API request is logged as structured JSON with: request ID, user ID, chapte
 
 **Identifier handling (internal logs):** `user_id` and `chapter_id` are retained as raw values in internal structured logs because the logs are confined to Frapp-internal observability tooling and operate under the internal retention policy. They are **not** PII-scrubbed at the log boundary — scrubbing applies only at external-reporting boundaries (Sentry / external observability vendors). Email addresses, IPs, auth tokens, request bodies, and response bodies are never logged.
 
+**Request origin (`originHash`).** The IP rule above is unconditional, but a security signal such as "this origin has failed auth twenty times in five minutes" needs a *stable key per origin* — which is not the same thing as needing the address. Where a record must group by origin it carries **`originHash` = `hmac_sha256(salt, ip)`** under the same per-environment salt as every other pseudonym here, and never an `ip` field. The field is named for what it holds so it is not later "fixed" by substituting the raw value. Unlike the user and chapter hashes this one is not reversible-resistant against an attacker holding the salt — the IPv4 space is small enough to enumerate — which is a property of the address space, not a reason to log the address instead.
+
 ## Request Tracing
 
 A unique `x-request-id` header is generated for each incoming request (or preserved if the client sends one). This ID is included in all log entries and all error responses, enabling end-to-end tracing. The request ID itself is non-PII and may be surfaced in client-facing error messages.
@@ -20,6 +22,14 @@ Integrate with Sentry (or equivalent). All unhandled exceptions and 5xx response
 
 - **Pseudonymized before sending:** `user_id` and `chapter_id` are sent as HMAC-SHA256 hashes using the same per-environment salt as the analytics pipeline (see [`data-retention.md`](data-retention.md) #analytics-events-pseudonymous). Reversing the hash requires access to the salt, which is held outside the error-reporting provider.
 - **Redacted entirely:** email addresses, IP addresses, auth tokens (including any `Authorization` header value), request bodies, response bodies, message contents, document contents, and any free-text fields that may contain user-typed PII.
+
+Enforced in one place — `apps/api/src/infrastructure/observability/sentry-scrubbing.ts`, wired as Sentry's `beforeSend` — on these rules:
+
+- **Allowlist wherever the structure is enumerable.** Top-level event keys, request fields, headers, and contexts are rebuilt from what is permitted rather than filtered for what is forbidden. A denylist starts leaking the day the SDK adds a field, and nobody reads their own error reports looking for PII.
+- **Free text is swept, not dropped.** An exception message is the payload worth having, so emails, bearer tokens, JWTs, key-shaped strings, IPs, and UUIDs are rewritten in place. UUIDs become their HMAC rather than a placeholder, so a message stays correlatable with the event's own `user`/`chapter` values — the hashes are byte-identical.
+- **Fail closed, twice.** With no salt configured the identifiers are removed rather than sent raw, and any throw inside the scrubber drops the event entirely. Losing an error report is preferable to emitting an uninspected payload.
+
+`sendDefaultPii` is `false` so the SDK does not collect IPs, cookies, or bodies in the first place; the scrubber is the second line, not the only one.
 
 ## Metrics
 
@@ -57,6 +67,33 @@ Records with `failures > 0` are emitted at `warn` and clean ones at `log`, so a 
 **No token values are ever logged** — counts only. Push tokens are device credentials, and the push service echoes the offending token back in several of its error messages, so a token appearing in a provider error is redacted before the error is logged, consistent with the auth-token rule under Structured Logging. Redaction is by exact match against the tokens the send was given, not by token shape: a valid push token may be a bare UUID with no distinguishing form, and matching every UUID instead would destroy request ids. Provider errors log a length-capped message only — never the error object, whose stack would re-embed the raw message, and whose volume spikes precisely during an outage.
 
 A send in which every token is invalid still emits a record: a push that reaches nobody must not be indistinguishable from having nothing to send.
+
+### Security events
+
+Three HTTP outcomes are security-relevant on their own, independent of any exception: a rejected credential, a denied authorization, and a tripped rate limit. Each emits one flat JSON record at **`warn`**, so a level filter alone isolates them from the per-request `log` stream.
+
+They are emitted from `AllExceptionsFilter` (`apps/api/src/interface/filters/all-exceptions.filter.ts`) — the single point every denial passes through as an `HttpException`, whichever guard raised it. `LoggingInterceptor` is deliberately not the seam: it logs every request at one level and cannot distinguish a denial from a success.
+
+| Field | Meaning |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `event` | Always `security_event`. |
+| `kind` | `auth_failure` (401), `authorization_denied` (403), or `rate_limit_rejected` (429). |
+| `statusCode` | The HTTP status that produced the record. |
+| `method` | Request method. |
+| `path` | Request path **without the query string** — a query is free text on a public surface and routinely carries tokens. |
+| `requestId` | Ties the record to the request-tracing ID above. |
+| `userId` | Raw user id, when the request resolved one. Raw per the internal-log rule above. |
+| `chapterId` | Raw chapter id, when one was in context. |
+| `originHash` | Pseudonymized origin (see § Structured Logging). Absent when no salt is configured. |
+| `timestamp` | ISO-8601. |
+
+#### Auth-failure spikes
+
+A sliding-window counter (`auth-failure-spike.ts`) watches `auth_failure` records per origin and emits a `kind: auth_failure_spike` record — plus a `warning`-level Sentry event — when one origin crosses **20 failures in 5 minutes**, then stays silent for a 15-minute cooldown so one sustained attack reports once rather than thousands of times.
+
+The counter is in-memory, which is a deliberate trade and bounds what it can be asked to do. It is **per-instance** (two API instances each count their own half), **reset by every deploy**, and **evadable by an attacker who rotates more origins than the bounded map holds**. Bounding the map is not optional — an unbounded one is itself a memory-exhaustion vector — so these are the cost of counting in process, not defects to fix in place. The signal is a *spike detector*, never an audit ledger; anything that must be complete belongs in a provider-side rule.
+
+Origin attribution is only as good as the address Express resolves. `trust proxy` is not currently set, so behind a hosting proxy every unauthenticated caller collapses into one bucket — the counter keys on the same tracker the rate limiter uses (authenticated subject first, origin second) so the two degrade together rather than disagreeing.
 
 ## Product Analytics — Activation Funnel
 
