@@ -193,6 +193,12 @@ describe("attachRealtimeChannel — topic reuse (#817)", () => {
     expect(() => detach?.()).not.toThrow();
     await flush();
     expect(warn).toHaveBeenCalled();
+
+    // `client.channel(topic)` registers before `configure` is called, so the
+    // cleanup still has to free the topic — otherwise it stays occupied by a
+    // channel no caller holds a reference to.
+    expect(created).toHaveLength(1);
+    expect(created[0]!.teardown).toHaveBeenCalledTimes(1);
   });
 
   test("unrelated topics are freed independently", async () => {

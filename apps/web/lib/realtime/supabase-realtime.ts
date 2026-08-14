@@ -90,8 +90,12 @@ export function attachRealtimeChannel(
       // below would then have nothing to undo, so stop here instead.
       if (detached) return;
     }
-    const channel = configure(client.channel(topic));
+    const channel = client.channel(topic);
+    // Claim it for cleanup *before* `configure` runs: the channel is already in
+    // the client's registry by now, so a `configure` that throws would
+    // otherwise strand it there with nothing holding a reference to release.
     attached = channel;
+    configure(channel);
     channel.subscribe();
   });
 
