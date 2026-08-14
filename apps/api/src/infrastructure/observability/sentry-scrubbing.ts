@@ -5,7 +5,15 @@ import { pseudonymizeIp, pseudonymizeUserId } from './pseudonyms';
  * PII scrubbing for everything leaving the API for Sentry (issue #481).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
- * classes, and this module is the single enforcement point for both:
+ * classes, and this module is the single enforcement point for both **on error
+ * events**. It is wired as `beforeSend` (via `sentry-options.ts`), which the SDK
+ * invokes for error events only — transaction events go to
+ * `beforeSendTransaction`, which is not set, so nothing below applies to them.
+ * That gap is tracked in #896; it is not fixable by pointing
+ * `beforeSendTransaction` here, because `spans` is absent from
+ * {@link EVENT_KEY_ALLOWLIST} and would be dropped.
+ *
+ * The two classes:
  *
  *  - **Pseudonymized:** `user_id` and `chapter_id` → HMAC-SHA256 under the
  *    per-environment analytics salt.

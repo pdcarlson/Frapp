@@ -97,6 +97,8 @@ Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 hi
 
 **Posture of record (2026-08-13, head of this sweep): 39 total — 0 critical, 12 high, 27 moderate, 0 low.** Every remaining high/critical *package* finding is the Expo SDK 54 chain, whose root causes are exactly four advisories (`image-size` ×2, `postcss` ×2) fixed only by the Expo SDK 57 major upgrade (#289). Remaining moderates: the Expo chain (#289) and the `@sentry/nestjs`/OpenTelemetry chain (#682).
 
+> **Superseded 2026-08-14 by the `@sentry/nestjs` major bump (#682), below: 22 total — 0 critical, 12 high, 10 moderate, 0 low.** The high count is unchanged because it was always entirely the Expo chain; the 17 cleared moderates were the OpenTelemetry subtree. The Expo chain (#289) is now the *only* remaining source of package findings.
+
 ### The gate (`dependency-audit`, issue #618)
 
 `scripts/check-npm-audit.mjs` runs as the `dependency-audit` CI job on every PR and push (and in `npm run ci:local-gate`). Mechanics:
@@ -111,6 +113,49 @@ Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 hi
 ### Prevention
 
 When the gate goes red on a PR that did not touch dependencies, a new advisory was published upstream against the existing lockfile: fix it in-range if `npm audit fix`/`npm update <pkg>` can (see the #245/#684/#291 playbooks above), otherwise file or link the tracking issue and add a time-boxed allowlist entry in the same PR. Never widen an entry beyond the single GHSA id, and never land an entry without a tracking issue. The gate only fires on PR/push activity, so advisories against an untouched lockfile surface on the next PR — Dependabot (#848) is the tracked complement for proactive detection and bumps.
+
+## `@sentry/nestjs` v9 → v10 (issue #682)
+
+The one advisory chain the #831 sweep above could not clear in-range: `@sentry/nestjs@9.47.1` pulled `@opentelemetry/core@1.30.1`, carrying **GHSA-8988-4f7v-96qf** (unbounded memory allocation parsing W3C Baggage headers). Baggage propagation runs on every traced request, so the trigger surface was the whole hot path. `npm audit` reported `isSemVerMajor: true` — the fix only existed across a major boundary, which is why it was deferred to its own issue rather than folded into the sweep.
+
+**Bumped `apps/api` to `@sentry/nestjs@^10.70.0`.** On the floor: #682's body (filed 2026-08-08) quotes `fixAvailable` as `10.69.0`, but re-running `npm audit --json` against `origin/main`'s lockfile today reports `10.70.0` — 10.70.0 published 2026-08-10, so the number moved between the issue being filed and the work being done, and 10.69.0 → 10.70.0 is a *minor*, not a patch. Either clears the advisory: both pull `@opentelemetry/sdk-trace-base ^2.9.0`, well above the `< 2.8.0` range, so the true minimum is lower than either number. `^10.70.0` was taken as current `latest`. This moves `@opentelemetry/core` to **2.10.0** and drops the audit from 39 findings to **22 — 0 critical, 12 high, 10 moderate**. All 17 cleared findings were the OpenTelemetry subtree.
+
+### Why the major was safe here
+
+v10's headline change is *"bump to OpenTelemetry v2"*, with `@sentry/nestjs` switching to OTel core instrumentation. Its removals — `BaseClient`, `hasTracingEnabled`, the `Logger` *type* and the debug logger (now `debug`, exported from `@sentry/core`, not `@sentry/nestjs`), the `_experiments.enableLogs`/`beforeSendLog`/`autoFlushOnFeedback` options, and browser-side FID collection — are **none of them reachable from this repo**. One correction for anyone grepping this list: **`logger` is still exported** in 10.70.0 — it is the Logs API (`fmt`/`debug`/`info`/`warn`/`error`/`fatal`/`trace`), a different thing from the removed debug logger, so a live `Sentry.logger` call site is not dead code. The Sentry surface at the time of the bump was five files: `Sentry.init` in `main.ts`, the `ErrorEvent` type in `sentry-scrubbing.ts` and its spec, and `withScope`/`captureException`/`captureMessage` in `all-exceptions.filter.ts` and its spec. This PR added two more — `sentry-options.ts` (which now holds the `init` options and imports `NodeOptions`) and `sentry-integration.spec.ts` — so anyone reusing this paragraph as the reachability checklist for the *next* major should audit **seven**. Peer ranges (`@nestjs/* ^8 || ^9 || ^10 || ^11` against this repo's 11.1.28) and `engines.node >= 18` both already held.
+
+Reachability is only half a major-bump argument, so for completeness on the supply-chain half: v10 pulls a genuinely new vendor subtree — `@sentry/server-utils` → `@apm-js-collab/tracing-hooks` → `@apm-js-collab/code-transformer`, which brings `meriyah` (a JS parser) and `astring` (a code generator) into the API image. It is audit-clean and only reachable through the opt-in `experimentalUseDiagnosticsChannelInjection` loader, which this repo does not enable, but a parser and codegen arriving in a backend image is worth naming rather than leaving for someone to discover in a lockfile diff.
+
+One v10 behavior change *does* land here, and it is worth stating precisely because the previous comment in `main.ts` described it wrongly. In v10, `sendDefaultPii: false` is **not** a "collect nothing" switch — it resolves through `defaultPiiToCollectionOptions` to a *key-based filter*. Verified by calling the SDK's own `filterKeyValueData` with the resolved options:
+
+| Field | Result under `sendDefaultPii: false` |
+| --- | --- |
+| `authorization`, `cookie` headers | `[Filtered]` |
+| `?token=…` and other sensitive-*named* params | `[Filtered]` |
+| request bodies | not collected (`httpBodies: []`) |
+| client IP | not inferred (`userInfo: false`) |
+| `x-custom-note: "contact member@example.com"` | **passes through verbatim** |
+| `?email=member@example.com` | **passes through verbatim** |
+
+The filter matches on *key names*, so values under innocuously-named keys survive it. That is exactly the gap `redactFreeText` exists to close, and it is why `beforeSend` — not this flag — is the real enforcement point. The IP and body halves are genuinely off, so the net posture is at least as strong as v9's; the mechanism is just not the one the old comment claimed.
+
+### The coverage gap this exposed
+
+Before this change, **nothing in the repo exercised the real SDK.** `sentry-scrubbing.spec.ts` calls `scrubSentryEvent` as a plain function and `all-exceptions.filter.spec.ts` opens with `jest.mock('@sentry/nestjs')` — correct for what each tests, but between them no test would notice an SDK upgrade that silently stopped invoking `beforeSend`. Every existing Sentry test would have stayed green while the API shipped unscrubbed events.
+
+`sentry-integration.spec.ts` closes that, and the **options come from `buildSentryOptions()`** — the same function `main.ts` calls, extracted in this PR for exactly that reason. `main.ts` ends in `void bootstrap()`, so it cannot be imported to inspect; without the extraction the spec had to re-declare the options, which made its assertions tautologies that read back the test's own literals. Now, deleting `beforeSend` or flipping `sendDefaultPii` in production fails the suite. All three cases are mutation-verified: replacing the scrubber with the identity function, flipping `sendDefaultPii`, and dropping `beforeSend` each turn the suite red.
+
+It is hermetic by construction — a stubbed `transport` plus an `.invalid` DSN mean no envelope can leave the process on any runner — and its assertions read **what reached the transport**, not what `beforeSend` returned. That distinction is load-bearing: a draft that recorded `beforeSend`'s return value could not tell "the scrubber dropped this event" from "the scrubber never ran", and a scrubber mutated to return `null` for message events — silencing every auth-failure-spike alert — passed it 6/6.
+
+The integration set is pinned (`defaultIntegrations: false` plus an explicit `contextLines` + `requestData`) because the **default set leaks a test environment per worker**, failing `jest --detectLeaks`. Measured 2×2: the integration set alone decides it — with defaults off, production's `tracesSampleRate` can stay on and the check still passes.
+
+The mechanism is process-global `node:diagnostics_channel` subscriptions that `Sentry.close()` never unsubscribes. Isolated per integration: `childProcessIntegration` alone reproduces the failure (it subscribes to `child_process` and `worker_threads` with no teardown anywhere in the file), as do `httpIntegration` and `nativeNodeFetchIntegration`; `nodeContext`, `modules`, `console`, `processSession`, `onUncaughtException` and `localVariables` are all clean. Two earlier drafts of this paragraph got this wrong in opposite directions and both are worth recording: the first blamed `tracesSampleRate: 0` pulling in ~28 OpenTelemetry instrumentations (wrong trigger — `hasSpansEnabled` *is* a nullish check, so `0` does read as enabled, but that is not what leaked); the second "corrected" it by dismissing the `diagnostics_channel` mechanism entirely as gated behind `experimentalUseDiagnosticsChannelInjection`, which is a *different*, injection-based mechanism — the subscriptions above are unconditional and non-experimental.
+
+`localVariablesIntegration` is excluded, but not because the `vars` rule is dead. It attaches nothing here only because `includeLocalVariables` is unset and the spec's error is never thrown — `captureAllExceptions` defaults to `true`, so caught exceptions are in scope in principle, `LocalVariablesAsync` ships in production's default set, and `sendDefaultPii: false` still resolves `stackFrameVariables: true`. A `vars` assertion in that file would therefore pass with `scrubException`'s `delete kept.vars` deleted; `sentry-scrubbing.spec.ts:151` covers it where it can actually fail.
+
+**Scope, stated plainly: this covers error events only.** The SDK routes just those to `beforeSend`; transaction events go to `beforeSendTransaction`, which the API does not set, so they reach Sentry without passing through the scrubber at all. That is pre-existing (v9 split the hooks identically), not introduced here, and it is **not** fixable by pointing `beforeSendTransaction` at `scrubSentryEvent` — `spans` is absent from `EVENT_KEY_ALLOWLIST`, so doing so would silently ship span-less traces. Tracked in **#896**.
+
+Writing the spec surfaced a second wrinkle worth knowing before anyone extends these tests: the SDK's `ContextLines` integration attaches the **source lines** around every stack frame, so a PII-shaped literal in a test file is echoed back into the event from disk. This defeats "value appears nowhere in the payload" assertions *and* silently satisfies "payload contains `[redacted:…]`" ones. An earlier draft asserted the latter against `JSON.stringify(event)`; mutating the scrubber to emit a *different* marker left that draft 4/4 green. (Replacing the scrubber with the identity function outright did fail it, on one assertion — an earlier version of this paragraph claimed otherwise and overstated how blind the draft was.) The fix is to assert against `exception.values[0].value` rather than the serialized event. Those frame-context fields pass through `scrubException` unredacted (it rebuilds frames by spread, deleting only `vars`), a denylist in a module that is otherwise deliberately allowlist-shaped — tracked separately in **#889**.
 
 ## Next.js advisory cleanup (issue #291)
 
