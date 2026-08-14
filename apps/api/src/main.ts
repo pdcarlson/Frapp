@@ -4,19 +4,43 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as Sentry from '@sentry/nestjs';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './interface/filters/all-exceptions.filter';
-import { RequestIdInterceptor } from './interface/interceptors/request-id.interceptor';
+import { requestIdMiddleware } from './interface/middleware/request-id.middleware';
 import { LoggingInterceptor } from './interface/interceptors/logging.interceptor';
+import { scrubSentryEvent } from './infrastructure/observability/sentry-scrubbing';
+import { pseudonymsAvailable } from './infrastructure/observability/pseudonyms';
 
 function initializeSentry(): void {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) {
+    // No DSN → no-op, in every environment. This is the switch that keeps
+    // local and test runs from reporting anywhere.
     return;
+  }
+
+  if (!pseudonymsAvailable()) {
+    // Without the salt, `beforeSend` cannot pseudonymize — it would strip the
+    // identifiers instead, and every event would arrive unattributable.
+    // `spec/behavior/observability.md` requires the hashes, so warn loudly
+    // rather than let a misconfigured environment look healthy.
+    Logger.warn(
+      'SENTRY_DSN is set but ANALYTICS_HMAC_SALT is not — events will be ' +
+        'reported with identifiers removed rather than pseudonymized. Set ' +
+        'ANALYTICS_HMAC_SALT to make Sentry events attributable.',
+      'Bootstrap',
+    );
   }
 
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV ?? 'development',
     tracesSampleRate: Number(process.env.SENTRY_TRACES_SAMPLE_RATE ?? '0.1'),
+    // Belt to `beforeSend`'s braces: keeps the SDK from *collecting* IPs,
+    // cookies, and request bodies in the first place, so a future scrubber gap
+    // has less to leak. Explicit rather than relying on the v9 default.
+    sendDefaultPii: false,
+    // Every event leaves through here. See `sentry-scrubbing.ts` for the rules
+    // and why they are allowlists.
+    beforeSend: scrubSentryEvent,
   });
 }
 
@@ -58,10 +82,11 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalInterceptors(
-    new RequestIdInterceptor(),
-    new LoggingInterceptor(),
-  );
+  // Before the Nest pipeline, so guard rejections carry a request id too — see
+  // the middleware's own note on why this cannot be an interceptor.
+  app.use(requestIdMiddleware);
+
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   app.useGlobalFilters(new AllExceptionsFilter());
 

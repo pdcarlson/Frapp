@@ -4,6 +4,7 @@ import {
   activationMilestoneStep,
   assertContentFreeProperties,
   hashChapterIdForAnalytics,
+  hashIpForObservability,
   hashUserIdForAnalytics,
   hmacSha256Hex,
 } from '@repo/validation';
@@ -169,6 +170,44 @@ describe('analytics keying util', () => {
 
     it('throws when the chapter id is empty', () => {
       expect(() => hashChapterIdForAnalytics('salt', '')).toThrow(/chapterId/);
+    });
+  });
+
+  describe('hashIpForObservability (#846)', () => {
+    it('returns a 64-char lowercase hex digest', () => {
+      expect(hashIpForObservability('salt', '203.0.113.7')).toMatch(
+        /^[0-9a-f]{64}$/,
+      );
+    });
+
+    it('never returns the raw address', () => {
+      expect(hashIpForObservability('salt', '203.0.113.7')).not.toContain(
+        '203.0.113.7',
+      );
+    });
+
+    // Grouping is the only property the spike rule needs from an address, and
+    // it is exactly what survives the hash.
+    it('is stable for one origin and distinct across origins', () => {
+      const a = hashIpForObservability('salt', '203.0.113.7');
+      expect(hashIpForObservability('salt', '203.0.113.7')).toBe(a);
+      expect(hashIpForObservability('salt', '203.0.113.8')).not.toBe(a);
+    });
+
+    // Same construction as the user/chapter hashes, so an operator can pivot
+    // between a security log line and a Sentry event on one digest.
+    it('agrees with the raw HMAC under the same salt', () => {
+      expect(hashIpForObservability('salt', '203.0.113.7')).toBe(
+        nodeHmac('salt', '203.0.113.7'),
+      );
+    });
+
+    it('throws when the salt is empty', () => {
+      expect(() => hashIpForObservability('', '203.0.113.7')).toThrow(/salt/i);
+    });
+
+    it('throws when the ip is empty', () => {
+      expect(() => hashIpForObservability('salt', '')).toThrow(/ip/);
     });
   });
 
