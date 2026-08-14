@@ -86,9 +86,13 @@ If the issue or marker is missing, bootstrap: window = PRs updated in the last 8
 > full table and the probe to re-verify:
 > [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity).
 >
-> The visible code fence duplicating this marker on **#814** was a workaround for the era when no
-> lossless read was known. It is harmless and can stay, but it is no longer load-bearing — the
-> HTML comment above is authoritative again.
+> **Reconcile #814's duplicated marker on your next rebuild.** #814 currently carries the state
+> twice — the HTML comment *and* a visible code fence — with a parenthetical declaring the **fence**
+> authoritative. That was the right call when no lossless read was known; it is now stale, and two
+> markers with two authority claims will silently diverge the first time one is updated alone. Both
+> presently agree, so there is nothing to recover: when you next rebuild the body, keep the HTML
+> comment as the single source of truth and drop the parenthetical's authority claim. Keeping the
+> fence as a human-readable copy is fine — just don't leave it declared authoritative.
 
 ## Job 1 — Audit previously harvested items
 
