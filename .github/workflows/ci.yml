@@ -410,6 +410,29 @@ jobs:
         # No npm ci needed — these tests have no dependencies beyond node:test.
         run: npm run test:ci-scripts
 
+  # ── Dependency audit gate (issue #618) ──────────────────────────────────
+  # Fast, standalone gate: no `npm ci` (the script audits the lockfile via
+  # --package-lock-only). Fails on any HIGH/CRITICAL advisory not explicitly
+  # allowlisted in scripts/npm-audit-allowlist.json — entries need a reason, a
+  # tracking issue, and an expiry, so known debt is visible and time-boxed
+  # while new advisories block immediately. See
+  # docs/internal/security/SECURITY_FIXES.md § npm audit sweep + CI gate.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: npm audit gate (high/critical block unless allowlisted)
+        run: npm run check:npm-audit
+
   # ── Secret scanning (gitleaks; ADR-13 push-protection replacement) ──────
   # Fast, standalone gate: no `npm ci` (gitleaks is a single pinned binary). Scans
   # only the PR/push commit range against .gitleaks.toml. The pre-commit hook is the

@@ -51,7 +51,13 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                                      |
 | `migration-safety`   | Migration filename validation + promotion docs                                                     |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
+| `ci-scripts-tests`   | `node --test` unit tests for the deploy-gate/CI scripts under `scripts/ci/`                        |
+| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
+| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
+| `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
 | `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)                    |
+
+† `dependency-audit` becomes a *required* check via the standard rollout step: after the job first runs green on the target branch, an admin re-runs `npm run configure:branch-protection` (see [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). Until then the job runs and reports on every PR but is not yet merge-blocking.
 | `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
 ### Vercel deployment policy
