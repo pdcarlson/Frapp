@@ -13,7 +13,7 @@ Frapp uses **Supabase Cloud** for staging/production and **Supabase CLI** + Dock
 ## 2. Schema location
 
 - All migrations: `supabase/migrations/*.sql`
-- Seed data: `supabase/seed.sql`
+- Seed data: `supabase/seed.sql`, plus `supabase/seed/*.csv` for reference tables (below)
 - Supabase config: `supabase/config.toml`
 
 To reset your local database:
@@ -23,6 +23,49 @@ npx supabase db reset
 ```
 
 This drops and recreates the database, applies all migrations, and reruns `seed.sql`.
+
+> **A `db reset` drops the reference data too.** `seed.sql` is the only thing the
+> CLI reruns; the CSV-backed reference tables below are loaded by the bootstrap
+> scripts, not by the CLI. After a reset, re-run `bash scripts/local-dev-setup.sh --quick`
+> (or `bash scripts/cloud-sandbox-up.sh` in a sandbox) to get them back. This is the
+> same footgun as the Postgres ACL repair, and it reappears the same way.
+
+### Reference data: the chapter directory
+
+`chapter_directory` is a global (not chapter-scoped) table the onboarding wizard
+searches to autofill a new chapter's identity — Greek letters, org name,
+university, founding year, brand colors. It is populated from
+`supabase/seed/chapter_directory.csv`:
+
+```bash
+npm run check:chapter-directory-seed   # validate the CSV (no database needed)
+npm run load:chapter-directory         # print the load SQL to stdout
+```
+
+Both `scripts/cloud-sandbox-up.sh` and `scripts/local-dev-setup.sh` run the load
+automatically after migrations apply, via `frapp_load_chapter_directory` in
+`scripts/lib/local-seed-data.sh`. Set `FRAPP_SKIP_DIRECTORY_LOAD=1` to skip it.
+
+Three things about it are load-bearing:
+
+- **The loader is idempotent and preserves row ids.** `chapters.directory_id`
+  references `chapter_directory(id) on delete set null`, so a loader that deleted
+  and re-inserted would silently detach every real chapter from its directory
+  entry on each bootstrap. The generated SQL updates in place and inserts only
+  what is missing. It is not `ON CONFLICT` because there is no unique constraint
+  on the natural key — the only unique index is the random uuid primary key.
+- **Updates are scoped to `source = 'seed'`.** A row curated by hand or arriving
+  from another source is never overwritten by a re-run.
+- **Colors must be canonical `#RRGGBB`.** `npm run check:chapter-directory-seed`
+  runs in CI as a blocking job because a malformed hex does not fail — `derivePalette`
+  substitutes platform bronze (`#7A5A2F`), so the chapter gets a plausible-looking
+  wrong brand color with no error anywhere. The seed originally shipped with 50 of
+  its 100 values missing a leading `#` and nothing noticed (#840). `derivePalette`
+  now reports the substitution on `DerivePaletteResult.invalidInputs`, and both API
+  callers log it.
+
+The current file is a 50-row placeholder covering 41 universities. Growing it to
+the full dataset is tracked in #232.
 
 ## 3. Conventions
 

@@ -133,10 +133,22 @@ export class ChapterOnboardingService {
   private buildPalette(colors: { dark?: string; accent?: string }) {
     if (!colors.dark && !colors.accent) return null;
     try {
-      return derivePalette({
+      const result = derivePalette({
         dark: colors.dark ?? '#1F1A15',
         accent: colors.accent ?? '#7A5A2F',
-      }).palette;
+      });
+      // derivePalette substitutes bronze for an unparseable hex and carries on,
+      // so without this the chapter is onboarded with a plausible-looking wrong
+      // brand color and nothing anywhere records that it happened (#840).
+      const invalid = Object.keys(result.invalidInputs);
+      if (invalid.length > 0) {
+        this.logger.warn(
+          `Invalid chapter brand color(s) during onboarding: ${invalid
+            .map((key) => `${key}="${colors[key as 'dark' | 'accent']}"`)
+            .join(', ')} — substituted platform bronze. Expected #RRGGBB.`,
+        );
+      }
+      return result.palette;
     } catch (err) {
       this.logger.warn('Failed to derive theme palette during onboarding', err);
       return null;
