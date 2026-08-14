@@ -52,6 +52,17 @@ GitHub MCP tool schemas (via `ToolSearch`, e.g.
 and verifying access (e.g. `issue_read` on a known issue resolves). **If the MCP is unavailable,
 the routine stops and reports — there is no fallback tracker.**
 
+> **`issue_read` strips HTML comments — never source a body rewrite from it.** `issue_read
+> method:get` omits HTML comments from the body it returns, so the hidden `fp=` dedup markers and
+> the `pr-followups-state` marker are invisible in its output even when the issue carries them
+> (verified 2026-08-11 against #618 and #619, whose markers `search_issues` returned and
+> `issue_read` did not). Rewriting a body from that text deletes the marker without any error, and
+> because markers are how the routines recognise their own issues across runs, the damage surfaces
+> a run later as a duplicate filing or a reset watermark. **Read raw bodies with `search_issues`
+> (`fields: ["number","title","body"]`), which returns HTML comments intact** — and since that tool
+> matches semantically rather than by number, confirm the returned `number` is the issue you meant
+> before writing back. Each skill states the rule for its own writes.
+
 **Label roster** (auto-created on first use; re-verify with `issue_read get_labels` on a labeled
 issue if anything looks off):
 

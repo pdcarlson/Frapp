@@ -77,6 +77,16 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
 the union of the existing labels plus your change, never just the addition.
 
+**Reading a body you intend to rewrite.** `issue_read method:get` **strips HTML comments** from the
+body it returns, so the `fp=` marker is invisible in its output even when the issue has one.
+Refreshing or splitting a body from that text silently deletes the marker, which breaks dedup and
+causes a re-file on the next run. **Source the raw body from `search_issues`
+(`fields: ["number","title","body"]`), which returns HTML comments intact**, and confirm the marker
+is present in what you send back. Verified 2026-08-11. Because `search_issues` matches
+*semantically* rather than by number, query it with distinctive words from the target's own title
+and **verify the returned `number` is the issue you mean**; if it does not come back, skip the
+rewrite rather than falling back to `issue_read`.
+
 **Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` marker from a
 previous automation platform. It is equivalent to the current `agent-suggestion` marker — dedup
 matches on the `fp=` string, which is unchanged. When you refresh a body for any other reason,

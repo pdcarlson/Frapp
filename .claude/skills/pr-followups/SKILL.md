@@ -75,6 +75,14 @@ comment at the end:
 If the issue or marker is missing, bootstrap: window = PRs updated in the last 8 days,
 `backfill-oldest` = the oldest PR in that window.
 
+> **Read this issue's body with `search_issues`, never `issue_read`.** `issue_read method:get`
+> **strips HTML comments** from the body it returns, so the `pr-followups-state` marker above is
+> invisible in its output even when it is there. Republishing the tracking issue from that text
+> deletes the marker — and because a missing marker is the bootstrap trigger, the next run silently
+> resets to an 8-day window and re-crawls history it had already audited, rather than failing
+> loudly. The `search_issues` lookup named above already returns the raw body with comments intact;
+> keep using it, and confirm the marker is present in what you write back. Verified 2026-08-11.
+
 ## Job 1 — Audit previously harvested items
 
 Fetch open issues whose description contains the `fp=pr-followup/` **or `fp=human/`** marker
