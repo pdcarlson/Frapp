@@ -81,6 +81,9 @@ npm run configure:branch-protection -- --repo pdcarlson/Frapp
 | `migration-safety`   | Migration filename + docs validation                                                            |
 | `mobile-validate`    | Mobile lint + typecheck + Vitest unit tests                                                     |
 | `ci-scripts-tests`   | `node --test` unit tests for deploy-gate scripts under `scripts/ci/`                            |
+| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                     |
+| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`) |
+| `dependency-audit`   | npm audit gate: any high/critical advisory not allowlisted in `scripts/npm-audit-allowlist.json` fails (issue #618) |
 
 **Not required on branches (informational):** `web-visual-regression` from `.github/workflows/ci.yml` runs Playwright snapshots on `main` / `production` PRs and pushes but is intentionally omitted from [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-branch-protection.mjs) so merges are not blocked by visual flake; treat failures as a signal to investigate or update snapshots.
 

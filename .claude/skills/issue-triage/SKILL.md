@@ -31,6 +31,20 @@ verify access at the start of the run. **If the GitHub MCP is unavailable, stop 
 fallback.** The label roster and shared routine config live in
 [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md).
 
+> **Never source a body edit from `issue_read`.** `issue_read method:get` **strips HTML comments**
+> from the body it returns, so the `<!-- agent-suggestion: v1 fp=… -->` dedup marker is invisible
+> in its output even when the issue has one. Rewriting a body from that text silently deletes the
+> marker, and the curator then re-files the issue as a duplicate on its next run. **Read the raw
+> body with `search_issues` (`fields: ["number","title","body"]`), which returns HTML comments
+> intact**, edit that, and confirm the marker survives in what you send back. Verified 2026-08-11
+> against #618/#619. The same hazard applies to every routine that re-bodies an issue.
+>
+> `search_issues` is a **semantic** search, not a fetch-by-number, so it can miss or mis-rank the
+> issue you want. Query it with distinctive words from the target's own title, then **check that a
+> returned item's `number` is the issue you intend** before using its body. If the target does not
+> come back, **skip the body edit and say so** — leave a comment instead. Never fall back to
+> `issue_read` to source a rewrite; that is the failure this paragraph exists to prevent.
+
 ## Ownership: organize freely, destroy narrowly
 
 Triage's job is to **organize the whole inbox**, whoever filed it — so setting a **priority

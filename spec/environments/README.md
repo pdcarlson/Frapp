@@ -163,6 +163,9 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
 | `ci-scripts-tests`   | CI scripts unit/integration tests                                                                    | Yes        |
+| `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                          | Yes        |
+| `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)      | Yes        |
+| `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes (after one-time rollout: admin re-runs `npm run configure:branch-protection` once the job is green on the target branch) |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
 ### Additional Required Checks
