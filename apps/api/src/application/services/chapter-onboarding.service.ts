@@ -140,7 +140,13 @@ export class ChapterOnboardingService {
       // derivePalette substitutes bronze for an unparseable hex and carries on,
       // so without this the chapter is onboarded with a plausible-looking wrong
       // brand color and nothing anywhere records that it happened (#840).
-      const invalid = Object.keys(result.invalidInputs);
+      //
+      // `?? {}` is load-bearing, not defensive habit: this block sits inside the
+      // try/catch below, so a result missing the field (a stale @repo/chapter-theme
+      // build, a test double written against the older shape) would throw here and
+      // be swallowed into `return null` — silently dropping the palette entirely.
+      // Logging must never be able to cost more than the thing it reports on.
+      const invalid = Object.keys(result.invalidInputs ?? {});
       if (invalid.length > 0) {
         this.logger.warn(
           `Invalid chapter brand color(s) during onboarding: ${invalid

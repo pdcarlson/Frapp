@@ -32,7 +32,15 @@ jest.mock('@repo/org-archetypes', () => ({
   ],
 }));
 jest.mock('@repo/chapter-theme', () => ({
-  derivePalette: jest.fn(() => ({ palette: { '--side-bg': '#1F1A15' } })),
+  // Mirrors the real DerivePaletteResult shape — see the note in
+  // chapter-onboarding.service.spec.ts for why a partial double is a trap here.
+  derivePalette: jest.fn(() => ({
+    palette: { '--side-bg': '#1F1A15' },
+    fallbacks: {},
+    invalidInputs: {},
+    resolvedDark: '#1F1A15',
+    resolvedAccent: '#7A5A2F',
+  })),
 }));
 
 import { Test, TestingModule } from '@nestjs/testing';

@@ -13,7 +13,11 @@ jest.mock('@repo/org-archetypes', () => ({
   getArchetype: jest.fn((key: string) => ({ key })),
 }));
 jest.mock('@repo/chapter-theme', () => ({
-  derivePalette: jest.fn(() => ({ palette: {} })),
+  derivePalette: jest.fn(() => ({
+    palette: {},
+    fallbacks: {},
+    invalidInputs: {},
+  })),
 }));
 
 import { Reflector } from '@nestjs/core';

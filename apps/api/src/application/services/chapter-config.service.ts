@@ -518,7 +518,10 @@ export class ChapterConfigService {
     // (#840). Warn rather than reject: the palette written is still valid, and
     // failing a config save on a bad color is a behavior change this does not
     // make. Chapter id is included because this is a per-tenant data problem.
-    const invalid = Object.keys(result.invalidInputs);
+    // `?? {}` so a stale @repo/chapter-theme build cannot turn a config save into
+    // a 500 — this path is not inside a try/catch, and a log line must never be
+    // able to fail the write it is describing.
+    const invalid = Object.keys(result.invalidInputs ?? {});
     if (invalid.length > 0) {
       this.logger.warn(
         `Invalid brand color(s) for chapter ${chapterId}: ${invalid

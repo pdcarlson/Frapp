@@ -19,7 +19,17 @@ jest.mock('@repo/org-archetypes', () => ({
   getArchetype: jest.fn((key: string) => ({ key, label: key })),
 }));
 jest.mock('@repo/chapter-theme', () => ({
-  derivePalette: jest.fn(() => ({ palette: { '--side-bg': '#1F1A15' } })),
+  // Mirrors the real DerivePaletteResult shape. Returning a partial object here
+  // hid a live defect once: the service read `result.invalidInputs` unguarded,
+  // threw, and the surrounding try/catch turned that into a silently missing
+  // theme_palette. Keep this in step with packages/chapter-theme.
+  derivePalette: jest.fn(() => ({
+    palette: { '--side-bg': '#1F1A15' },
+    fallbacks: {},
+    invalidInputs: {},
+    resolvedDark: '#1F1A15',
+    resolvedAccent: '#7A5A2F',
+  })),
 }));
 jest.mock('@repo/validation', () => ({ LEGAL_POLICY_VERSION: 'test-version' }));
 
