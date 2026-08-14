@@ -250,9 +250,13 @@ frapp_resolve_supabase_db_container() {
   return 2
 }
 
-# Apply the repair.
+# Run SQL against the LOCAL Supabase stack for a project.
 #
-#   frapp_repair_local_acls <project_root> [supabase_cli_command...]
+#   frapp_run_local_sql <project_root> <sql> <what> [supabase_cli_command...]
+#
+# `what` is a short lowercase noun phrase naming the operation ("ACL repair", "chapter
+# directory load"). It only ever appears in log lines, so that one dispatch can serve
+# several callers without any of them inheriting another's wording.
 #
 # The CLI command (`cs_supabase`, or `npx supabase`) is passed as trailing words rather than
 # a resolved URL so the `status -o env` round-trip stays lazy — a host without psql never pays
@@ -260,13 +264,19 @@ frapp_resolve_supabase_db_container() {
 # into both bootstrap scripts. Omit it to go straight to the container path.
 #
 # -X is load-bearing, not hygiene. psql applies `-v ON_ERROR_STOP=1` BEFORE reading ~/.psqlrc,
-# so an rc file wins: with `\set AUTOCOMMIT off` in it, all four statements run inside an
-# implicit transaction that is rolled back at disconnect while psql still exits 0. The repair
-# would silently no-op, the caller would report success, and the API would still fail with
-# 42501 — the exact failure this function exists to prevent. Verified locally.
-frapp_repair_local_acls() {
+# so an rc file wins: with `\set AUTOCOMMIT off` in it, the statements run inside an implicit
+# transaction that is rolled back at disconnect while psql still exits 0. The work would
+# silently no-op and the caller would report success — for the ACL repair that means the API
+# still fails with 42501, the exact failure this exists to prevent. Verified locally.
+#
+# SQL arrives as an argument, never a file path: both callers generate it (one from a
+# here-doc constant, one from a Node script writing to stdout), and a temp file would add a
+# cleanup path and a TOCTOU window for no benefit.
+frapp_run_local_sql() {
   local project_root="$1"
-  shift
+  local sql="$2"
+  local what="$3"
+  shift 3
   local db_url container rc
 
   # Preferred path: the host psql against the URL the CLI reports, so the port stays in one
@@ -275,9 +285,9 @@ frapp_repair_local_acls() {
   if [ "$#" -gt 0 ] && command -v psql >/dev/null 2>&1; then
     # Run the CLI IN the project root. `supabase status` resolves its project from the working
     # directory, so invoking it wherever the caller happens to stand would report a different
-    # project's stack while this function claims to have repaired $project_root. Both in-repo
+    # project's stack while this function claims to have acted on $project_root. Both in-repo
     # callers `cd "$ROOT"` first, so this is belt-and-braces — but the signature promises a
-    # project-scoped repair and this is what makes that true.
+    # project-scoped operation and this is what makes that true.
     # `cd` is silenced, not just error-suppressed: with CDPATH set it echoes the resolved
     # directory to stdout, which the command substitution would splice onto the front of the
     # URL. Only reachable with a relative project_root, which no current caller passes.
@@ -288,18 +298,18 @@ frapp_repair_local_acls() {
     # anon/authenticated DML across the whole public schema. `supabase status` can only ever
     # report the local stack today, so this rejects nothing that works now — it is here so a
     # later edit (say, falling back to $DATABASE_URL when status comes back empty) cannot
-    # quietly turn a bootstrap helper into a production privilege change.
+    # quietly turn a bootstrap helper into a production write.
     if [ -n "${db_url}" ] && ! _frapp_db_url_is_local "${db_url}"; then
-      frapp_acl_log "WARN: refusing to repair ACLs over a non-loopback database URL."
-      frapp_acl_log "      This repair is for local stacks only; falling back to the container path."
+      frapp_acl_log "WARN: refusing to run the ${what} over a non-loopback database URL."
+      frapp_acl_log "      This is for local stacks only; falling back to the container path."
       db_url=""
     fi
 
     if [ -n "${db_url}" ]; then
-      if printf '%s' "${FRAPP_LOCAL_ACL_SQL}" | psql "${db_url}" -X -v ON_ERROR_STOP=1 -q -f - >&2; then
+      if printf '%s' "${sql}" | psql "${db_url}" -X -v ON_ERROR_STOP=1 -q -f - >&2; then
         return 0
       fi
-      frapp_acl_log "WARN: psql ACL repair failed; retrying inside the database container."
+      frapp_acl_log "WARN: psql ${what} failed; retrying inside the database container."
     fi
   fi
 
@@ -313,12 +323,25 @@ frapp_repair_local_acls() {
   if [ "${rc}" -ne 0 ]; then
     # rc 2 has already logged the candidates it refused; rc 1 needs its own line.
     if [ "${rc}" -eq 1 ]; then
-      frapp_acl_log "ERROR: no running supabase_db_* container found for the ACL repair."
+      frapp_acl_log "ERROR: no running supabase_db_* container found for the ${what}."
     fi
     return 1
   fi
 
-  frapp_acl_log "Repairing via container ${container}."
-  printf '%s' "${FRAPP_LOCAL_ACL_SQL}" \
+  frapp_acl_log "Running the ${what} via container ${container}."
+  printf '%s' "${sql}" \
     | docker exec -i "${container}" psql -U postgres -d postgres -X -v ON_ERROR_STOP=1 -q -f - >&2
+}
+
+# Apply the repair.
+#
+#   frapp_repair_local_acls <project_root> [supabase_cli_command...]
+#
+# A thin caller of frapp_run_local_sql so that "how do I reach the local database" has
+# exactly one implementation — the same reason this file exists rather than each bootstrap
+# script carrying its own copy.
+frapp_repair_local_acls() {
+  local project_root="$1"
+  shift
+  frapp_run_local_sql "${project_root}" "${FRAPP_LOCAL_ACL_SQL}" "ACL repair" "$@"
 }
