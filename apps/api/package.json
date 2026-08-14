@@ -28,7 +28,7 @@
     "@nestjs/core": "^11.1.28",
     "@nestjs/platform-express": "^11.1.28",
     "@nestjs/schedule": "^5.0.1",
-    "@nestjs/swagger": "^11.4.4",
+    "@nestjs/swagger": "^11.4.6",
     "@nestjs/throttler": "^6.5.0",
     "@repo/chapter-theme": "*",
     "@repo/org-archetypes": "*",
