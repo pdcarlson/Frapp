@@ -1,0 +1,37 @@
+{
+  "$comment": "Allowlist for scripts/check-npm-audit.mjs (CI `dependency-audit` job). Entries accept a KNOWN high/critical advisory that cannot be fixed without a tracked breaking upgrade. Every entry needs: ghsa (the advisory id — one entry can never cover anything else), reason, trackedBy (GitHub issue), expires (YYYY-MM-DD — an expired entry with a live advisory FAILS the gate; renew only with re-triage). Policy: docs/internal/security/SECURITY_FIXES.md § npm audit CI gate.",
+  "entries": [
+    {
+      "ghsa": "GHSA-w3rx-r6r6-pgpr",
+      "package": "image-size",
+      "severity": "high",
+      "reason": "ICNS parser infinite-loop DoS in image-size, reachable only through the Expo/Metro bundler toolchain (dev/build-time, not production runtime). Fix requires the Expo SDK 57 major upgrade.",
+      "trackedBy": "#289",
+      "expires": "2026-11-15"
+    },
+    {
+      "ghsa": "GHSA-5p2g-fcmc-qvqq",
+      "package": "image-size",
+      "severity": "high",
+      "reason": "JXL/HEIF parser infinite-loop DoS in image-size, same Expo/Metro build-time chain as GHSA-w3rx-r6r6-pgpr. Fix requires the Expo SDK 57 major upgrade.",
+      "trackedBy": "#289",
+      "expires": "2026-11-15"
+    },
+    {
+      "ghsa": "GHSA-6g55-p6wh-862q",
+      "package": "postcss",
+      "severity": "high",
+      "reason": "postcss arbitrary-file-read via sourceMappingURL, in the copy nested under @expo/metro-config (build-time). The app-facing postcss copies (web/landing/vite) are already on patched versions; only the Expo chain pins the vulnerable one. Fix requires the Expo SDK 57 major upgrade.",
+      "trackedBy": "#289",
+      "expires": "2026-11-15"
+    },
+    {
+      "ghsa": "GHSA-r28c-9q8g-f849",
+      "package": "postcss",
+      "severity": "high",
+      "reason": "postcss path traversal via source-map auto-loading, same @expo/metro-config nested copy as GHSA-6g55-p6wh-862q. Fix requires the Expo SDK 57 major upgrade.",
+      "trackedBy": "#289",
+      "expires": "2026-11-15"
+    }
+  ]
+}

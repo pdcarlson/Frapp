@@ -37,6 +37,11 @@ const CI_CHECKS = [
   // caveat as secret-scan — required only once the clean-checkout-typecheck job
   // exists on the target branch and has run green.
   "clean-checkout-typecheck",
+  // npm audit gate (issue #618): blocks any high/critical advisory not explicitly
+  // allowlisted in scripts/npm-audit-allowlist.json. ROLLOUT: same caveat as
+  // secret-scan — required only once the dependency-audit job exists on the target
+  // branch and has run green.
+  "dependency-audit",
 ];
 
 const DOCS_CHECKS = [

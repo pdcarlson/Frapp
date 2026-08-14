@@ -75,6 +75,7 @@ function runLocalGate() {
     ["npm run test -w apps/api", "Run API unit tests"],
     ["npm run check:api-contract", "Run API contract freshness check"],
     ["npm run check:migration-safety", "Run migration safety check"],
+    ["npm run check:npm-audit", "Run npm audit gate (high/critical)"],
   ];
 
   for (const [command, label] of gateChecks) {
