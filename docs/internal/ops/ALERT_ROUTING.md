@@ -8,6 +8,23 @@
 
 > **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
 
+## Automated GitHub-issue alerts
+
+Two watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
+token, and the issue thread doubles as the incident log. Both upsert **one** tracking issue (created
+if absent, reopened if closed, otherwise commented) and close it on recovery, so **an open alert
+issue means that thing is broken right now**. Both carry `routine-state`, which `/next` §0.2 treats
+as never-claimable — they track live state, not a unit of work, so do not pick them up as backlog.
+
+| Alert issue title | Raised by | Means | Clears when |
+| --- | --- | --- | --- |
+| *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
+| *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:00 UTC) | live `frapp-staging` no longer matches what the repo expects — paused project, disabled auth hook, failing secret sync, migration drift, or a broken sign-in chain | the next scheduled run asserts clean |
+
+Neither closes on a run that proved nothing: a no-op deploy run and an all-skipped conformance run
+both leave an open alert open. Mechanics and rationale:
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § "Deploy visibility" and § "Scheduled conformance".
+
 ## Critical alerts
 
 - API health check down

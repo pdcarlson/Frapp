@@ -256,6 +256,22 @@ These three are **repository secrets**, not environment secrets. One machine ide
 | `INFISICAL_CLIENT_SECRET`       | From the same Universal Auth panel → **Add Client Secret** (shown once)      |
 | `INFISICAL_PROJECT_ID`          | From Infisical → Project Settings → Project ID                              |
 
+**Optional — staging conformance smoke user (repository scope):**
+
+Consumed only by `.github/workflows/staging-conformance.yml`. When absent, the workflow's
+end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass — and
+the other four assertions still run.
+
+| Secret                        | Value                                                         |
+| ----------------------------- | ------------------------------------------------------------- |
+| `STAGING_SMOKE_USER_EMAIL`    | Email of a dedicated staging-only user, no production access   |
+| `STAGING_SMOKE_USER_PASSWORD` | That user's password                                           |
+
+> ⚠️ **The smoke user must belong to exactly one chapter.** `custom_access_token_hook` omits the
+> `active_chapter_id` claim entirely for a user who resolves to no chapter, so a zero-membership
+> smoke user yields a claimless token from a *correctly working* hook — and a check that cannot tell
+> those apart passes while proving nothing. Give the user one membership and no more.
+
 > ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 
 **Transitional (until Infisical GitHub Action injection is wired):**

@@ -52,6 +52,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | API deploy          | `.github/workflows/deploy-api.yml` — after CI (`workflow_run`)                                                                                        |
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
+| Staging conformance | `.github/workflows/staging-conformance.yml` — **the only `schedule:`-triggered workflow** (daily 07:00 UTC, plus `workflow_dispatch`). Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, migration parity (delegated to #833), and an end-to-end sign-in whose JWT carries `active_chapter_id`. Upserts one `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. See "Scheduled conformance" below. |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
@@ -315,6 +316,63 @@ the workflow's only write scope, job-scoped, leaving every other job on `content
 other watchdogs it is best-effort and **exits 0 on every handled outcome**: the underlying deploy
 job is already red, and a watchdog that reds the run creates the noise it exists to remove. If the
 issues API is unreachable the summary and annotation still land.
+
+### Scheduled conformance (`scripts/ci/staging-conformance.mjs`)
+
+Deploy visibility above fixes *"a push failed and nobody noticed."* This fixes the other half:
+**nobody pushed, and the environment rotted anyway.** Until this workflow, every verification in the
+repo was push-triggered, so a quiet week and a healthy week produced identical evidence. The four
+incidents that motivated it ([#838](https://github.com/pdcarlson/Frapp/issues/838)) all share that
+shape:
+
+- `frapp-staging` sat **38 migrations / ~5.5 months** behind with every workflow green.
+- The Infisical credential was invalid for **71+ days** (#696/#763).
+- Both Vercel staging secret syncs failed for their **entire existence**, surfacing only when adding
+  a new secret forced a write (#834).
+- `custom_access_token_hook` was never enabled after #643 shipped, so `ChapterGuard` silently fell
+  back to the client-supplied `x-chapter-id` header — the pre-#643 trust model (#805).
+
+Runs daily at 07:00 UTC (`workflow_dispatch` for on-demand), asserting five properties of live
+`frapp-staging`. Scope is **staging only**: `frapp-prod` is intentionally `INACTIVE` while production
+is deferred, and alerting on that would be alerting on a decision (#814).
+
+**Three outcomes, and the third is the point.** A check that cannot run must never look like a check
+that passed:
+
+| Outcome | Meaning | Effect |
+| --- | --- | --- |
+| `pass` | asserted against live staging, and it held | counts toward health |
+| `fail` | asserted, and it did not hold | reds the run, raises the alert |
+| `skipped` | could not assert (missing credential, or not yet built) | reported separately, **never** folded into the pass count |
+
+A run where *everything* skipped classifies as **`inconclusive`**, not healthy, and therefore
+**cannot close an open alert** — a run that proved nothing is not evidence of recovery. That is the
+same rule the `deploy-alert` no-op draws, for the same reason, and it matters more here because
+silent-green is the exact defect this workflow exists to end.
+
+Two assertions ship degraded on purpose, each saying so in the step summary:
+
+- **Migration parity** is delegated to `npm run check:schema-drift`, owned by
+  [#833](https://github.com/pdcarlson/Frapp/issues/833). Until that merges the row reports
+  not-wired; it lights up with no change to this file. Deliberately not reimplemented here.
+- **End-to-end sign-in** — the only row that exercises behaviour rather than configuration, covering
+  migration, grants, RLS, and hook resolution in one probe — needs `STAGING_SMOKE_USER_EMAIL` /
+  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned. **The smoke user must have exactly one
+  chapter membership:** a correctly-working hook returns a token with *no* claim when the user
+  resolves to no chapter, so a zero-membership user makes the check pass while proving nothing.
+
+Note what a green Infisical row does and does not mean. It asserts *no sync is currently failing* —
+the #834 signature. It does **not** assert the destinations hold the right values;
+[`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) records the hard-won rule that "a
+sync that reports Failed today tells you nothing about what it delivered before it broke — check the
+destination, not the sync status." An unrecognised Infisical response shape **fails closed**, because
+reading an unparseable response as "no failing syncs" would rebuild the silent green.
+
+The alert issue is titled *"Staging conformance is failing — frapp-staging has drifted"*
+(`routine-state`, `area:ci`, `P1`) and follows the same upsert contract as the deploy alert: created
+if absent, reopened if closed, otherwise commented, and closed on the next clean run. Both share
+`scripts/ci/lib/alert-issue.mjs`. Unlike the deploy watchdog this script **is** the check, so a
+confirmed drift exits non-zero and reds the run.
 
 ### Applied permission allows
 
