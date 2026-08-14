@@ -159,7 +159,7 @@ export function StudyPage() {
   );
 
   // Track Page Visibility — web's adaptation of the mobile "foreground
-  // enforcement" rule. See spec/ui-web-dashboard.md §3 Study Hours.
+  // enforcement" rule. See spec/behavior/study-sessions.md.
   useEffect(() => {
     function handleVisibility() {
       setPageHidden(document.visibilityState === "hidden");

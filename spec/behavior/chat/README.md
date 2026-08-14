@@ -177,8 +177,9 @@ These are the user-observable guarantees of the chat client (web and mobile), in
 
 - **Optimistic + idempotent sends.** Every send/react/card-action is applied to the local view immediately under a client-generated UUID (`client_message_id`), then confirmed against the canonical row. A failed send rolls back with a toast; a duplicate (same `client_message_id`) reconciles to a single message — racing two sends of the same body yields exactly one stored message, never two.
 - **Offline composer queue.** Drafts persist across reloads/cold launches. Messages composed while offline are queued and flushed in order on reconnect. A send that hard-fails (4xx) surfaces inline with a retry affordance rather than disappearing.
+- **Composer keyboard contract (web).** Enter submits the message, Shift+Enter inserts a hard break, and Cmd+/ (Ctrl+/ on Windows) opens the slash palette.
 - **Reconnect pill.** On loss of the realtime connection the client shows an unobtrusive "Reconnecting…" indicator near the channel header and retries with capped backoff.
-- **Backfill before resubscribe.** On reconnect, for each channel the client reads its last-seen message id and backfills missed messages *before* resubscribing to realtime, so no message is lost and none is duplicated.
+- **Resubscribe before backfill.** On reconnect the client resubscribes to realtime first and backfills only once the channel reaches `SUBSCRIBED`, reading from its last-seen message id. Backfilling first would drop every row written between the query and the listener attaching. Overlap is safe because the per-channel merge is idempotent on `client_message_id`, so nothing duplicates. Implementation: `apps/web/lib/chat/realtime-manager.ts` (its test suite names this the subscribe-then-backfill gate).
 - **Empty states are explicit.** No visible channels, no messages in a channel, no DM threads, and no search results each render a purposeful empty state rather than a blank pane.
 
 ## Reconnect replay

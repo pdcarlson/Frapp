@@ -1,7 +1,7 @@
 # Chat catch-up — the chapter pulse artifact
 
 The chat-first product removed the standalone `/home` dashboard; `/chat` is the post-sign-in
-landing (see [`../../ui/web-dashboard/screens.md`](../../ui/web-dashboard/screens.md)). The value
+landing (see [`../../ui/web-dashboard/README.md`](../../ui/web-dashboard/README.md)). The value
 that dashboard carried — *chapter health at a glance* — was promised as an "inline chat artifact"
 but never specified, so it has been homeless since the redesign. This file is that specification.
 

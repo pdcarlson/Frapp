@@ -50,8 +50,8 @@ those take precedence — the defaults only fill gaps.
 
 ## Per-route attestations (regenerate-or-confirm history)
 
-`docs/internal/redesign/REVIEW_CHECKLIST.md` §6 requires each regenerated
-baseline to be listed with a reason + Chromium revision. Add one per-route
+Each regenerated baseline must be listed with a reason + Chromium revision
+(a convention from the retired redesign-chunk process). Add one per-route
 entry below each time a chunk touches a dashboard surface (or, when nothing
 changed, record why the existing baseline still applies) so reviewers don't
 re-investigate the same surface.

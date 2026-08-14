@@ -11,10 +11,10 @@ Canonical **Frapp** marketing marks (not chapter logos).
 
 ## Consumers
 
-- **Next.js:** Run `node scripts/sync-brand-assets.mjs` from the monorepo root so `app/icon.svg` is updated in `landing`, `web`, and `docs`.
+- **Next.js:** Run `node scripts/sync-brand-assets.mjs` from the monorepo root so `app/icon.svg` is updated in `landing` and `web`.
 - **Landing header:** Uses `apps/landing/components/frapp-lockup.tsx` (inline SVG with `currentColor` for the word); keep in sync when changing `frapp-lockup.svg`.
 - **Email / PDF:** Embed `frapp-lockup.svg` or export PNG from the same source.
-- **Expo:** Regenerate raster icons under `apps/mobile/assets/images/` (see `docs/internal/BRAND_ASSETS.md`).
+- **Expo:** Regenerate raster icons under `apps/mobile/assets/images/` (see `spec/ui/assets.md`).
 
 ## Monorepo tasks
 

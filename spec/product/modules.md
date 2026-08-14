@@ -245,6 +245,10 @@ Every paid module ships with: slash command(s), rich renderer, system channel, a
 
 `billing`, `academics`, `philanthropy`, `risk`, `lines`, `networking`, `standards`, `serviceFirst` — these are in the catalog for archetype presets and future feature scoping. They are paid-tier and opt-in.
 
+## Ops-setup nudges
+
+Enabling paid ops modules is never a gate — it is surfaced as a dismissible inline nudge in chat once a chapter is settled there ([`spec/product/positioning.md`](./positioning.md)). **One nudge per module**, shown in the fixed priority order **Dues > Events > Tasks > Points**, so a chapter is never asked two things at once. Nudge copy renders the chapter's terms through the vocabulary helper rather than hardcoding "rush" or "pledge". The dismissed state is persisted **per user per chapter**: one officer dismissing a nudge neither hides it from the rest of the exec board nor carries across their other chapters. Clicking a nudge opens the Settings → Modules surface on the module it names ([`spec/behavior/settings/README.md`](../behavior/settings/README.md)).
+
 ## Module disabling behavior
 
 The control surface is **Settings → Modules**, driven by the `@repo/org-archetypes` `MODULE_CATALOG`. Toggling a paid module writes `chapter_config.enabled_modules[key]` through `usePatchOrgConfig()` (optimistic cache update + audited PATCH).

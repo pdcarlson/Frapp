@@ -20,7 +20,7 @@ not here. Developer workflows and runbooks live under **`docs/`** — start at
 
 | Document | Purpose |
 | -------- | ------- |
-| [`ui/`](ui/README.md) | Brand identity, web dashboard, landing, assets, resilience |
+| [`ui/`](ui/README.md) | Signet design system, brand identity, mobile, web dashboard, landing, assets, resilience |
 
 Security implementation notes live under [`docs/internal/security/`](../docs/internal/security/README.md).
 Documentation-placement conventions: [`docs/internal/DOCUMENTATION_CONVENTIONS.md`](../docs/internal/DOCUMENTATION_CONVENTIONS.md).

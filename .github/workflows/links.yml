@@ -19,10 +19,18 @@ jobs:
 
       # Internal links + heading anchors only. `--offline` never hits external
       # URLs; options are passed as CLI args (no lychee.toml) to stay
-      # version-stable across lychee releases. design-reference is the
-      # non-maintained visual prototype bundle.
+      # version-stable across lychee releases.
+      #
+      # design-system/reference holds committed design-tool HTML exports. They
+      # are consumed as source text, not rendered — their runtime scaffolding
+      # (support.js, ios-frame.jsx) is deliberately not committed, so they carry
+      # references that resolve nowhere. Excluding them as link *sources* keeps
+      # that out of the gate; markdown links pointing *into* the directory are
+      # still checked. Today the exclusion is belt-and-braces (lychee's walk
+      # does not extract `<script src>`, and it only reaches these files when
+      # the directory is passed explicitly) — it guards against that changing.
       - name: Check internal markdown links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: "--offline --include-fragments --no-progress --exclude-path docs/internal/design-reference docs spec AGENTS.md README.md CONTRIBUTING.md"
+          args: "--offline --include-fragments --no-progress --exclude-path spec/ui/design-system/reference docs spec AGENTS.md README.md CONTRIBUTING.md"
           fail: true

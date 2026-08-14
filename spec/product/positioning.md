@@ -52,7 +52,7 @@ A chapter picks two colors — a dark and an accent. Sidebar tint, header band, 
 
 Frapp balances the prestige of traditional Greek life with the clean feel of modern SaaS.
 
-**Cross-app tokens, CTA color semantics, and motifs** are specified in **[`spec/ui/brand-identity.md`](../ui/brand-identity.md)** and implemented in `@repo/theme`. This section summarizes product-facing labels; where naming differs, **ui-brand-identity wins** (e.g., ShadCN **`primary`** is royal blue for buttons and links, not navy).
+**Cross-app tokens, CTA color semantics, and motifs** are specified in **[`spec/ui/brand-identity.md`](../ui/brand-identity.md)** and implemented in `@repo/theme`. This section summarizes product-facing labels; where naming differs, **`spec/ui/brand-identity.md` wins** (the shipping web theme's `primary` is bronze, not royal blue; Signet surfaces follow [`spec/ui/design-system/`](../ui/design-system/README.md)).
 
 ## Color Palette
 
