@@ -259,8 +259,12 @@ These three are **repository secrets**, not environment secrets. One machine ide
 **Optional — staging conformance smoke user (repository scope):**
 
 Consumed only by `.github/workflows/staging-conformance.yml`. When absent, the workflow's
-end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass — and
-the other four assertions still run.
+end-to-end sign-in assertion reports **SKIPPED** rather than passing — it never fakes a pass.
+
+Worth knowing before treating that as optional: at merge, **two** of the five assertions are
+already unrunnable — this one, and migration parity, which is delegated to #833 and reports
+not-wired until that ships. So an unprovisioned smoke user leaves the workflow asserting three
+properties, none of which is behavioural. Provisioning it is what makes a green run mean much.
 
 | Secret                        | Value                                                         |
 | ----------------------------- | ------------------------------------------------------------- |
@@ -269,8 +273,11 @@ the other four assertions still run.
 
 > ⚠️ **The smoke user must belong to exactly one chapter.** `custom_access_token_hook` omits the
 > `active_chapter_id` claim entirely for a user who resolves to no chapter, so a zero-membership
-> smoke user yields a claimless token from a *correctly working* hook — and a check that cannot tell
-> those apart passes while proving nothing. Give the user one membership and no more.
+> smoke user yields a claimless token from a *correctly working* hook, which is indistinguishable
+> from a disabled one. The check resolves that ambiguity toward safety: a claimless token is a
+> **FAIL** naming both causes. So a zero-membership user does not quietly under-test — it reds the
+> daily run and opens a P1 blaming the auth hook on a healthy environment. Give it one membership
+> and no more.
 
 > ⚠️ **`INFISICAL_MACHINE_IDENTITY_ID` wants the Client ID, not the identity ID.** An Infisical machine identity has an **ID** on its Details page and a separate **Client ID** inside its Universal Auth panel. Only the Client ID authenticates. The secret's name points at the wrong one, and pasting the Details-page ID yields `401 Invalid credentials` — indistinguishable at a glance from a revoked credential. This cost 71 days of dead deploys (#696).
 

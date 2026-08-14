@@ -8,8 +8,11 @@
 //   * frapp-staging sat 38 migrations / ~5.5 months behind, all checks green.
 //   * The Infisical credential was invalid for 71+ days; 46 of 90 Deploy API
 //     runs skipped every job and reported success (#696, #763).
-//   * vercel-landing-staging / vercel-web-staging syncs failed for their entire
-//     existence and only surfaced when a new secret forced a write (#834).
+//   * Both Vercel staging secret syncs were pointed at a git branch named
+//     `preview` that has never existed here, and failed on that for months
+//     with nothing reporting it. (They deliver now, since the repoint to
+//     `main` — see SECRETS_MANAGEMENT.md §5, which records the opposite
+//     reading as a misreading not to repeat.)
 //   * custom_access_token_hook was never enabled after #643 shipped, so
 //     ChapterGuard silently fell back to the client-supplied x-chapter-id
 //     header — the pre-#643 trust model (#805).
@@ -49,7 +52,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { findAlertIssues, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -77,7 +80,78 @@ export const PASS = "pass";
 export const FAIL = "fail";
 export const SKIPPED = "skipped";
 
+/**
+ * Sync states that mean "this sync is broken right now".
+ *
+ * Infisical's `SecretSyncStatus` enum is exactly `pending | running |
+ * succeeded | failed` (plus `null` before a sync has ever run), so this set is
+ * deliberately the single real failure state rather than a defensive list of
+ * spellings that never occur.
+ */
+export const FAILING_SYNC_STATUSES = new Set(["failed"]);
+
+/**
+ * Every provider call is bounded. `fetch` has no default timeout, and the job
+ * had none either, so one unresponsive socket — the exact condition
+ * `checkProjectStatus` exists to detect — could hang the run for hours,
+ * writing no summary and raising no alert.
+ */
+const FETCH_TIMEOUT_MS = 20_000;
+const withTimeout = (init = {}) => ({
+  ...init,
+  signal: init.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
+});
+
+/**
+ * Marker line carried in the alert issue body naming the assertions that were
+ * failing when it was last raised.
+ *
+ * Recovery is decided against THIS list, not against a pass count. Without it,
+ * an alert raised by `auth-hook` closes as "recovered" on a later run where
+ * `auth-hook` merely SKIPPED (its credential vanished) and unrelated checks
+ * passed — i.e. deleting a secret resolves the alert. Deliberately a visible
+ * backticked line rather than an HTML comment: #800 proves HTML comments do not
+ * survive round-tripping through the GitHub MCP that agents read issues with.
+ */
+export const FAILING_MARKER = "conformance-failing:";
+
 const result = (id, label, status, detail) => ({ id, label, status, detail });
+
+/** Reads the failing-assertion ids out of an alert issue body. */
+export function parseFailingIds(body) {
+  const match = String(body ?? "").match(
+    new RegExp(`${FAILING_MARKER}\\s*([^\`\\n]*)`),
+  );
+  if (!match) return [];
+  return match[1]
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Secrets must never reach an alert issue body. The job injects the whole
+ * staging store (`secret-path: "/"`, `include-imports: true`), and GitHub's
+ * log masking does NOT apply to issue bodies written through the REST API, so
+ * any text originating outside this file — notably a delegated child process's
+ * stderr — is scrubbed before it can be reported.
+ */
+export function redactSecrets(text, env = process.env) {
+  let out = String(text ?? "");
+  // Anything that looks like a URL password, first — it survives value-based
+  // redaction when the password is not itself an env var we know about.
+  out = out.replace(/\/\/([^\s:/@]+):([^\s@]+)@/g, "//$1:***@");
+  const values = Object.entries(env)
+    .filter(([name, value]) =>
+      typeof value === "string" &&
+      value.length >= 8 &&
+      /KEY|SECRET|TOKEN|PASSWORD|DSN/i.test(name))
+    .map(([, value]) => value)
+    // Longest first, so a value containing another is not partly replaced.
+    .sort((a, b) => b.length - a.length);
+  for (const value of values) out = out.split(value).join("***");
+  return out;
+}
 
 // ── Assertions ──────────────────────────────────────────────────────────────
 
@@ -93,9 +167,10 @@ export async function checkProjectStatus({ accessToken, projectRef, fetchImpl = 
   if (!accessToken || !projectRef) {
     return result("project-status", label, SKIPPED, "SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set");
   }
-  const response = await fetchImpl(`https://api.supabase.com/v1/projects/${projectRef}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const response = await fetchImpl(
+    `https://api.supabase.com/v1/projects/${projectRef}`,
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
+  );
   if (!response.ok) {
     return result("project-status", label, FAIL, `Management API returned HTTP ${response.status}`);
   }
@@ -121,7 +196,7 @@ export async function checkAuthHook({ accessToken, projectRef, fetchImpl = fetch
   }
   const response = await fetchImpl(
     `https://api.supabase.com/v1/projects/${projectRef}/config/auth`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
   );
   if (!response.ok) {
     return result("auth-hook", label, FAIL, `Management API returned HTTP ${response.status}`);
@@ -158,6 +233,7 @@ export async function checkInfisicalSyncs({
   clientSecret,
   projectId,
   fetchImpl = fetch,
+  redact = redactSecrets,
 }) {
   const label = "Every Infisical secret sync reports succeeded";
   if (!clientId || !clientSecret || !projectId) {
@@ -166,11 +242,11 @@ export async function checkInfisicalSyncs({
 
   const loginResponse = await fetchImpl(
     "https://app.infisical.com/api/v1/auth/universal-auth/login",
-    {
+    withTimeout({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ clientId, clientSecret }),
-    },
+    }),
   );
   if (!loginResponse.ok) {
     // 401 here is the #696 signature. Say which of the two causes it is not,
@@ -189,13 +265,13 @@ export async function checkInfisicalSyncs({
 
   const syncResponse = await fetchImpl(
     `https://app.infisical.com/api/v1/secret-syncs?projectId=${encodeURIComponent(projectId)}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
+    withTimeout({ headers: { Authorization: `Bearer ${accessToken}` } }),
   );
   if (!syncResponse.ok) {
     return result("infisical-syncs", label, FAIL, `secret-syncs returned HTTP ${syncResponse.status}`);
   }
   const payload = await syncResponse.json();
-  const syncs = Array.isArray(payload) ? payload : (payload?.secretSyncs ?? null);
+  const syncs = payload?.secretSyncs ?? null;
   if (!Array.isArray(syncs)) {
     // Fail closed. An unrecognised shape must not read as "no failing syncs" —
     // that is precisely the silent-green this whole workflow exists to end.
@@ -203,22 +279,57 @@ export async function checkInfisicalSyncs({
       "infisical-syncs",
       label,
       FAIL,
-      "could not interpret the secret-syncs response; expected an array or { secretSyncs: [...] }",
+      "could not interpret the secret-syncs response; expected { secretSyncs: [...] }",
     );
   }
   if (syncs.length === 0) {
-    return result("infisical-syncs", label, FAIL, "no secret syncs returned — expected 6 (see SECRETS_MANAGEMENT.md §5)");
+    return result(
+      "infisical-syncs",
+      label,
+      FAIL,
+      "no secret syncs returned — the project is expected to have several (SECRETS_MANAGEMENT.md §5)",
+    );
   }
 
-  const broken = syncs.filter((sync) => {
-    const status = String(sync?.syncStatus ?? sync?.status ?? "").toLowerCase();
-    return status !== "succeeded" && status !== "success" && status !== "synced";
-  });
-  if (broken.length > 0) {
-    const names = broken.map((s) => `${s?.name ?? "unnamed"}=${s?.syncStatus ?? s?.status ?? "unknown"}`);
+  // Infisical's SecretSyncStatus is exactly pending | running | succeeded |
+  // failed, plus null for a sync that has never run (auto-sync off, or newly
+  // created). Only `failed` means broken.
+  //
+  // Treating "not succeeded" as broken raised a P1 for two routine states: a
+  // sync mid-window at 07:00, and the morning after Infisical's daily retry
+  // sweep flips failed -> pending. A workflow whose own premise is that a muted
+  // alert is worse than none must not cry wolf on a healthy store.
+  const statusOf = (sync) => String(sync?.syncStatus ?? "").toLowerCase();
+  const failedSyncs = syncs.filter((sync) => FAILING_SYNC_STATUSES.has(statusOf(sync)));
+  const settled = syncs.filter((sync) => statusOf(sync) === "succeeded");
+
+  if (failedSyncs.length > 0) {
+    const names = failedSyncs.map(
+      (s) =>
+        `${s?.name ?? "unnamed"}=${s?.syncStatus}` +
+        // lastSyncMessage carries the provider's actual error text — the thing
+        // that says WHICH branch or scope broke.
+        (s?.lastSyncMessage ? ` (${redact(String(s.lastSyncMessage))})` : ""),
+    );
     return result("infisical-syncs", label, FAIL, `failing syncs: ${names.join(", ")}`);
   }
-  return result("infisical-syncs", label, PASS, `${syncs.length} syncs succeeded`);
+  if (settled.length === 0) {
+    // Nothing has completed a sync, so there is no sync state to assert. That
+    // is a skip, not a pass — and a skip cannot close an open alert.
+    return result(
+      "infisical-syncs",
+      label,
+      SKIPPED,
+      `all ${syncs.length} syncs are pending/running/never-run — no settled sync state to assert`,
+    );
+  }
+  const inFlight = syncs.length - settled.length;
+  return result(
+    "infisical-syncs",
+    label,
+    PASS,
+    `${settled.length} succeeded, none failing` + (inFlight ? `, ${inFlight} pending/running` : ""),
+  );
 }
 
 /**
@@ -256,11 +367,14 @@ export async function checkAuthSignIn({
     return result("auth-signin", label, SKIPPED, "SUPABASE_URL / SUPABASE_ANON_KEY not set");
   }
 
-  const response = await fetchImpl(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", apikey: anonKey },
-    body: JSON.stringify({ email, password }),
-  });
+  const response = await fetchImpl(
+    `${supabaseUrl}/auth/v1/token?grant_type=password`,
+    withTimeout({
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: anonKey },
+      body: JSON.stringify({ email, password }),
+    }),
+  );
   if (!response.ok) {
     return result("auth-signin", label, FAIL, `sign-in returned HTTP ${response.status}`);
   }
@@ -296,17 +410,40 @@ export async function checkSchemaDrift({
   scriptPath = join(REPO_ROOT, "scripts", "check-schema-drift.mjs"),
   exists = existsSync,
   run = (path) => execFileSync(process.execPath, [path], { encoding: "utf8", stdio: "pipe" }),
+  redact = redactSecrets,
 } = {}) {
   const label = "Applied migrations match supabase/migrations/";
   if (!exists(scriptPath)) {
-    return result("schema-drift", label, SKIPPED, "not wired yet — provided by #833, which is not merged");
+    return result(
+      "schema-drift",
+      label,
+      SKIPPED,
+      `not wired yet — expects #833 to provide ${scriptPath.replace(REPO_ROOT + "/", "")}, ` +
+        "runnable with no arguments and targeting staging",
+    );
   }
   try {
     run(scriptPath);
     return result("schema-drift", label, PASS, "check-schema-drift.mjs reported no drift");
   } catch (error) {
-    const detail = (error?.stdout || error?.stderr || error?.message || "").toString().trim();
-    return result("schema-drift", label, FAIL, detail.split("\n").slice(-3).join(" ") || "check-schema-drift.mjs exited non-zero");
+    // Both streams, concatenated. `stdout || stderr` short-circuited, so any
+    // progress chatter on stdout suppressed the stderr line that actually
+    // names the drift — losing the diagnostic in the alert AND (with
+    // stdio: "pipe") from the run log.
+    const raw = [error?.stdout, error?.stderr, error?.message]
+      .filter(Boolean)
+      .map(String)
+      .join("\n")
+      .trim();
+    // Scrubbed: this text is written verbatim into a GitHub issue body, and
+    // the delegated script inherits the full staging secret store.
+    const detail = redact(raw).split("\n").slice(-3).join(" ").trim();
+    return result(
+      "schema-drift",
+      label,
+      FAIL,
+      detail || "check-schema-drift.mjs exited non-zero",
+    );
   }
 }
 
@@ -333,6 +470,27 @@ export function classifyConformance(results) {
   return { outcome, failed, skipped, passed };
 }
 
+/**
+ * May a clean-looking run close this open alert?
+ *
+ * Only if every assertion the alert was raised for is now actually PASSing.
+ * Aggregate counts are not enough: an alert raised by `auth-hook` would
+ * otherwise close on a run where `auth-hook` merely SKIPPED — its credential
+ * deleted or renamed — while unrelated checks passed. Deleting a secret would
+ * resolve the alert and staging would go unwatched.
+ *
+ * An alert with no parseable marker (hand-filed, or written by an older
+ * version) falls back to "close it", matching the previous behaviour rather
+ * than stranding an issue nobody can clear.
+ */
+export function canResolveAlert({ results, failingIds }) {
+  if (!failingIds || failingIds.length === 0) return true;
+  const passing = new Set(
+    results.filter((r) => r.status === PASS).map((r) => r.id),
+  );
+  return failingIds.every((id) => passing.has(id));
+}
+
 const ICON = { [PASS]: "✅", [FAIL]: "❌", [SKIPPED]: "⏭️" };
 
 export function buildRunSummary({ outcome, results, runUrl }) {
@@ -343,7 +501,12 @@ export function buildRunSummary({ outcome, results, runUrl }) {
     inconclusive:
       `**Inconclusive — nothing was asserted.** All ${results.length} assertions skipped, so this run ` +
       "proves nothing about staging. Any open alert is left open deliberately.",
-  }[outcome];
+    "unproven-recovery":
+      `**Nothing failed, but the open alert is not cleared.** ${passed.length} of ${results.length} ` +
+      "assertions passed; the ones this alert was raised for could not be asserted, so closing it " +
+      "would report a recovery nobody proved.",
+  }[outcome] ??
+    `**frapp-staging is conformant** — ${passed.length} of ${results.length} assertions passed.`;
   const lines = [
     "## Staging conformance",
     "",
@@ -366,7 +529,7 @@ export function buildRunSummary({ outcome, results, runUrl }) {
 
 export function buildAlertIssueBody({ results, runUrl }) {
   const { failed } = classifyConformance(results);
-  return [
+  const lines = [
     "## Staging conformance is failing",
     "",
     "This issue is **opened and closed automatically** by `.github/workflows/staging-conformance.yml`",
@@ -386,10 +549,22 @@ export function buildAlertIssueBody({ results, runUrl }) {
     "someone happened to push: staging sat 38 migrations behind with all checks green, the Infisical",
     "credential was dead for 71 days (#696/#763), and `custom_access_token_hook` was never enabled",
     "after #643 shipped (#805). See #838.",
-    runUrl ? `\n- Run: ${runUrl}` : "",
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
+    "",
+    "### Recovery state",
+    "",
+    "This alert closes only when the assertions listed below pass again — not merely when nothing",
+    "fails, since an assertion that stops being *runnable* would otherwise read as a recovery.",
+    "",
+    // Machine-readable and deliberately visible: HTML comments do not survive
+    // the GitHub MCP round-trip that agents read issues through (#800).
+    `\`${FAILING_MARKER} ${failed.map((r) => r.id).join(",")}\``,
+  ];
+  // Only the optional trailing run link is conditional. A blanket
+  // `.filter(line => line !== "")` stripped every intentional blank line and
+  // collapsed the whole body into one paragraph — burying the "do not claim
+  // this issue" warning that stops agents picking the alert up as backlog.
+  if (runUrl) lines.push("", `- Run: ${runUrl}`);
+  return lines.join("\n");
 }
 
 export function buildAlertCommentBody({ results, runUrl, reopened }) {
@@ -440,46 +615,64 @@ export async function runStagingConformance({
   logger = console,
   runUrl = env.RUN_URL ?? "",
 }) {
+  // Labelled, not anonymous thunks. When a check throws, the catch below needs
+  // to say WHICH provider blew up — an alert whose whole body reads
+  // "assertion threw — fetch failed" names nothing, which is the opposite of
+  // this script's purpose.
   const toRun = checks ?? [
-    () => checkProjectStatus({
-      accessToken: env.SUPABASE_ACCESS_TOKEN,
-      projectRef: env.SUPABASE_PROJECT_REF,
-      fetchImpl,
-    }),
-    () => checkAuthHook({
-      accessToken: env.SUPABASE_ACCESS_TOKEN,
-      projectRef: env.SUPABASE_PROJECT_REF,
-      fetchImpl,
-    }),
-    () => checkInfisicalSyncs({
-      clientId: env.INFISICAL_CLIENT_ID,
-      clientSecret: env.INFISICAL_CLIENT_SECRET,
-      projectId: env.INFISICAL_PROJECT_ID ?? readWorkspaceId(),
-      fetchImpl,
-    }),
-    () => checkSchemaDrift(),
-    () => checkAuthSignIn({
-      supabaseUrl: env.SUPABASE_URL,
-      anonKey: env.SUPABASE_ANON_KEY,
-      email: env.STAGING_SMOKE_USER_EMAIL,
-      password: env.STAGING_SMOKE_USER_PASSWORD,
-      fetchImpl,
-    }),
+    { id: "project-status", label: "Supabase project is ACTIVE_HEALTHY", run: () =>
+      checkProjectStatus({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "auth-hook", label: "custom_access_token_hook is enabled", run: () =>
+      checkAuthHook({
+        accessToken: env.SUPABASE_ACCESS_TOKEN,
+        projectRef: env.SUPABASE_PROJECT_REF,
+        fetchImpl,
+      }) },
+    { id: "infisical-syncs", label: "Every Infisical secret sync reports succeeded", run: () =>
+      checkInfisicalSyncs({
+        clientId: env.INFISICAL_CLIENT_ID,
+        clientSecret: env.INFISICAL_CLIENT_SECRET,
+        // `||`, not `??`: GitHub renders an unset secret as "", which `??`
+        // would keep, silently defeating the .infisical.json fallback and
+        // downgrading this assertion to SKIPPED.
+        projectId: env.INFISICAL_PROJECT_ID || readWorkspaceId(),
+        fetchImpl,
+      }) },
+    { id: "schema-drift", label: "Applied migrations match supabase/migrations/", run: () =>
+      checkSchemaDrift() },
+    { id: "auth-signin", label: "Staging sign-in yields a JWT carrying active_chapter_id", run: () =>
+      checkAuthSignIn({
+        supabaseUrl: env.SUPABASE_URL,
+        anonKey: env.SUPABASE_ANON_KEY,
+        email: env.STAGING_SMOKE_USER_EMAIL,
+        password: env.STAGING_SMOKE_USER_PASSWORD,
+        fetchImpl,
+      }) },
   ];
 
   const results = [];
   for (const check of toRun) {
+    // Accepts a bare thunk too, so tests can pass plain functions.
+    const run = typeof check === "function" ? check : check.run;
+    const id = typeof check === "function" ? "unknown" : check.id;
+    const label = typeof check === "function" ? "assertion threw" : check.label;
     try {
-      results.push(await check());
+      results.push(await run());
     } catch (error) {
-      results.push(
-        result("unknown", "assertion threw", FAIL, `${error?.message ?? error}`),
-      );
+      // undici puts the real reason (ENOTFOUND, ECONNRESET) on `cause`; the
+      // message alone is just "fetch failed".
+      const reason = [error?.message ?? String(error), error?.cause?.message]
+        .filter(Boolean)
+        .join(": ");
+      results.push(result(id, label, FAIL, `assertion threw — ${redactSecrets(reason)}`));
     }
   }
 
   const { outcome, failed, skipped } = classifyConformance(results);
-  writeSummary(buildRunSummary({ outcome, results, runUrl }));
 
   // Annotations surface at the top of the run page. `::error::` here only
   // annotates — the exit code below is what reds the run.
@@ -487,6 +680,7 @@ export async function runStagingConformance({
   for (const r of skipped) logger.log?.(`::warning::SKIPPED ${r.label} — ${r.detail}`);
 
   if (outcome === "failed") {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
     const alert = await raiseAlert({
       token,
       repo,
@@ -496,6 +690,9 @@ export async function runStagingConformance({
       lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
       buildIssueBody: () => buildAlertIssueBody({ results, runUrl }),
       buildCommentBody: ({ reopened }) => buildAlertCommentBody({ results, runUrl, reopened }),
+      // The body carries the failing-assertion marker that gates recovery, so
+      // it must track the CURRENT failure set, not the first one ever seen.
+      refreshBodyOnRaise: true,
     });
     logger.log?.(
       alert.action === "failed"
@@ -506,6 +703,7 @@ export async function runStagingConformance({
   }
 
   if (outcome === "inconclusive") {
+    writeSummary(buildRunSummary({ outcome, results, runUrl }));
     // Nothing was asserted, so nothing was proved. Deliberately does NOT close
     // an open alert — see classifyConformance.
     logger.log?.(
@@ -515,6 +713,38 @@ export async function runStagingConformance({
     return { outcome, results, alert: { action: "none", closed: [] } };
   }
 
+  // Recovery is gated on the assertions the OPEN alert names, not on this
+  // run's pass count. Read them before deciding to close.
+  const openAlerts = (
+    await findAlertIssues({
+      token,
+      repo,
+      fetchImpl,
+      title: ALERT_ISSUE_TITLE,
+      lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
+    })
+  ).filter((issue) => issue.state === "open");
+
+  const failingIds = openAlerts.flatMap((issue) => parseFailingIds(issue.body));
+  if (openAlerts.length > 0 && !canResolveAlert({ results, failingIds })) {
+    const unresolved = failingIds.filter(
+      (id) => !results.some((r) => r.id === id && r.status === PASS),
+    );
+    // Summary written here, with the real outcome — a run that leaves the
+    // alert open must not print "conformant" at the top of the page.
+    writeSummary(buildRunSummary({ outcome: "unproven-recovery", results, runUrl }));
+    logger.log?.(
+      `::warning::Nothing failed, but ${unresolved.join(", ")} could not be asserted — ` +
+        "leaving the alert open.",
+    );
+    return {
+      outcome: "unproven-recovery",
+      results,
+      alert: { action: "none", closed: [] },
+    };
+  }
+
+  writeSummary(buildRunSummary({ outcome, results, runUrl }));
   const alert = await resolveAlert({
     token,
     repo,

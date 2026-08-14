@@ -18,6 +18,13 @@ on:
   schedule:
     # 07:00 UTC daily — after any overnight provider maintenance window, and
     # early enough that a drifted staging is known before the working day.
+    #
+    # ⚠️ GitHub DISABLES scheduled triggers in a repository with no activity for
+    # 60 days, notifying the repo owner by email only. This is the one workflow
+    # whose entire premise is running during quiet periods, so that ceiling is
+    # exactly backwards for it: a long quiet stretch silently turns off the
+    # thing watching the quiet stretch. If the repo goes dormant, re-enable it
+    # from the Actions tab. Tracked in AGENT_INFRA.md § "Scheduled conformance".
     - cron: "0 7 * * *"
   workflow_dispatch:
 
@@ -28,18 +35,30 @@ permissions:
   issues: write
 
 concurrency:
-  # One conformance run at a time. Cancelling in progress is safe — the next run
-  # asserts the same live state, and a half-finished run must not race the alert
-  # upsert with its successor.
+  # One conformance run at a time, and NEVER cancel one in flight. The alert
+  # upsert is comment-then-PATCH, two non-atomic calls: a cancellation between
+  # them leaves the issue open carrying a "recovered — closing" comment, or
+  # reopened with no statement of what failed. A cancelled run is also neither
+  # green nor red and raises no alert, so that day's evidence just disappears —
+  # the failure mode this workflow exists to end. Same reasoning as
+  # verify-deployments.yml.
   group: staging-conformance
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   conformance:
     runs-on: ubuntu-latest
+    # Bounded, like the sibling watchdogs. Without it an unresponsive provider
+    # socket could hold the runner to GitHub's 360-minute default while writing
+    # no summary and raising no alert. The script also caps each fetch.
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # This is the repo's only workflow granting `issues: write` at
+          # workflow level, and a third-party action runs after checkout.
+          persist-credentials: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -58,12 +77,22 @@ jobs:
           [ -n "$CLIENT_ID" ] || MISSING="$MISSING INFISICAL_MACHINE_IDENTITY_ID"
           [ -n "$CLIENT_SECRET" ] || MISSING="$MISSING INFISICAL_CLIENT_SECRET"
           if [ -n "$MISSING" ]; then
-            echo "::error::Infisical credentials are not configured. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
-            exit 1
+            echo "::warning::Infisical credentials are not configured. Missing or empty:$MISSING. Set them as repository secrets — see docs/internal/environment/SECRETS_MANAGEMENT.md."
           fi
-          echo "Infisical credentials are present; a 401 from the next step means they were rejected, not missing."
+          case "$CLIENT_ID$CLIENT_SECRET" in
+            *[[:space:]]*) echo "::warning::An Infisical credential secret contains whitespace. A trailing newline picked up when pasting the value into GitHub is a common cause of 401 Invalid credentials — re-paste both secrets before concluding the credential was revoked." ;;
+          esac
+          echo "Preflight complete; a 401 from the next step means the credentials were rejected, not missing."
 
+      # continue-on-error is load-bearing, not laziness. A revoked or rotated
+      # machine identity — the #696/#763 incident this workflow exists to catch —
+      # makes this action exit non-zero. Failing the job here would kill the run
+      # BEFORE staging-conformance.mjs could report the credential failure and
+      # raise the alert, so the single most likely drift class would produce a
+      # red run and no issue. Letting it through means the script runs, finds the
+      # credential rejected, and files the alert that says so.
       - name: Inject staging secrets from Infisical
+        continue-on-error: true
         uses: Infisical/secrets-action@v1.0.12
         with:
           method: "universal"

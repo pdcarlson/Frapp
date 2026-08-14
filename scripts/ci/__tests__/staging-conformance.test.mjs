@@ -4,10 +4,14 @@ import assert from "node:assert/strict";
 import {
   ALERT_ISSUE_TITLE,
   FAIL,
+  FAILING_MARKER,
   PASS,
   SKIPPED,
+  buildAlertCommentBody,
   buildAlertIssueBody,
+  buildRecoveryCommentBody,
   buildRunSummary,
+  canResolveAlert,
   checkAuthHook,
   checkAuthSignIn,
   checkInfisicalSyncs,
@@ -15,7 +19,9 @@ import {
   checkSchemaDrift,
   classifyConformance,
   decodeJwtPayload,
+  parseFailingIds,
   readWorkspaceId,
+  redactSecrets,
   runStagingConformance,
 } from "../staging-conformance.mjs";
 
@@ -159,7 +165,7 @@ test("an unrecognised response shape fails closed rather than reading as healthy
   assert.match(result.detail, /could not interpret/);
 });
 
-test("zero syncs is a failure — the store is supposed to have six", async () => {
+test("zero syncs is a failure — an empty sync list is drift, not health", async () => {
   const result = await checkInfisicalSyncs({
     clientId: "c",
     clientSecret: "s",
@@ -446,4 +452,307 @@ test("the repo's real .infisical.json exposes a workspaceId", () => {
   // Not a mock: the Infisical assertion depends on this file's shape, so a
   // rename would otherwise only surface as a silent SKIPPED in production.
   assert.ok(readWorkspaceId());
+});
+
+// ── Secret redaction ────────────────────────────────────────────────────────
+// The job injects the whole staging store, and alert issue bodies are NOT
+// covered by GitHub's log masking.
+
+test("redactSecrets removes injected secret values from text bound for an issue body", () => {
+  const env = {
+    SUPABASE_DB_PASSWORD: "sup3rs3cretpassword",
+    SUPABASE_SERVICE_ROLE_KEY: "sb_secret_abcdefghijkl",
+    NODE_ENV: "production",
+  };
+  const leak =
+    'failed to connect: key=sb_secret_abcdefghijkl pw=sup3rs3cretpassword env=production';
+  const out = redactSecrets(leak, env);
+  assert.doesNotMatch(out, /sup3rs3cretpassword/);
+  assert.doesNotMatch(out, /sb_secret_abcdefghijkl/);
+  // A non-secret-named var of the same value must not be scrubbed away.
+  assert.match(out, /env=production/);
+});
+
+test("redactSecrets masks a password embedded in a connection URL it has never seen", () => {
+  const out = redactSecrets(
+    "failed to connect to postgresql://postgres:nEverSeenBefore@db.abc.supabase.co:5432/postgres",
+    {},
+  );
+  assert.doesNotMatch(out, /nEverSeenBefore/);
+  assert.match(out, /postgres:\*\*\*@db\.abc\.supabase\.co/);
+});
+
+test("redactSecrets ignores short values so it cannot blank out ordinary words", () => {
+  assert.equal(redactSecrets("all good", { API_KEY: "abc" }), "all good");
+});
+
+// ── Failing-assertion marker and gated recovery ─────────────────────────────
+
+test("parseFailingIds round-trips the marker the alert body writes", () => {
+  const body = buildAlertIssueBody({
+    results: [
+      { id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" },
+      { id: "project-status", status: FAIL, label: "status", detail: "paused" },
+      { id: "infisical-syncs", status: PASS, label: "syncs", detail: "" },
+    ],
+    runUrl: "",
+  });
+  assert.match(body, new RegExp(FAILING_MARKER));
+  assert.deepEqual(parseFailingIds(body), ["auth-hook", "project-status"]);
+});
+
+test("parseFailingIds returns [] for a body with no marker", () => {
+  assert.deepEqual(parseFailingIds("a hand-filed issue"), []);
+  assert.deepEqual(parseFailingIds(undefined), []);
+});
+
+test("canResolveAlert requires the previously-failing assertions to PASS, not merely not-fail", () => {
+  const results = [
+    { id: "auth-hook", status: SKIPPED },
+    { id: "project-status", status: PASS },
+  ];
+  assert.equal(canResolveAlert({ results, failingIds: ["auth-hook"] }), false);
+  assert.equal(canResolveAlert({ results, failingIds: ["project-status"] }), true);
+  // No marker (hand-filed or older version) → do not strand the issue.
+  assert.equal(canResolveAlert({ results, failingIds: [] }), true);
+});
+
+test("a run where the alert's failing check merely SKIPPED does not close it", async () => {
+  // The headline regression: deleting a secret must not resolve an alert.
+  const openAlert = {
+    number: 900,
+    state: "open",
+    title: ALERT_ISSUE_TITLE,
+    body: `\`${FAILING_MARKER} auth-signin\``,
+  };
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [openAlert] },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/900", body: {} },
+  ]);
+  let summary = "";
+  const { outcome, alert } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      async () => ({ id: "project-status", label: "status", status: PASS, detail: "" }),
+      async () => ({ id: "auth-signin", label: "sign-in", status: SKIPPED, detail: "credential gone" }),
+    ],
+    writeSummary: (s) => { summary = s; },
+    logger: quiet,
+  });
+  assert.equal(outcome, "unproven-recovery");
+  assert.deepEqual(alert.closed, []);
+  assert.equal(calls.filter((c) => c.method === "PATCH").length, 0, "must not close the issue");
+  assert.match(summary, /not cleared/);
+});
+
+test("a run where the alert's failing check now PASSES does close it", async () => {
+  const openAlert = {
+    number: 900,
+    state: "open",
+    title: ALERT_ISSUE_TITLE,
+    body: `\`${FAILING_MARKER} auth-signin\``,
+  };
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [openAlert] },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/900", body: {} },
+  ]);
+  const { outcome, alert } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      async () => ({ id: "auth-signin", label: "sign-in", status: PASS, detail: "" }),
+      async () => ({ id: "schema-drift", label: "drift", status: SKIPPED, detail: "#833" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(outcome, "healthy");
+  assert.deepEqual(alert.closed, [900]);
+});
+
+// ── Alert body rendering ────────────────────────────────────────────────────
+
+test("the alert issue body keeps its paragraph breaks", () => {
+  const body = buildAlertIssueBody({
+    results: [{ id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" }],
+    runUrl: "",
+  });
+  assert.match(body, /\n\n/, "blank lines must survive — they are the markdown paragraph breaks");
+  // The load-bearing warning must start its own paragraph, not be swallowed.
+  assert.match(body, /\n\nDo not claim this issue as backlog work/);
+});
+
+test("the comment builders render the failing assertions and distinguish a reopen", () => {
+  const results = [{ id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" }];
+  assert.match(buildAlertCommentBody({ results, runUrl: "", reopened: true }), /reopening/);
+  assert.match(buildAlertCommentBody({ results, runUrl: "", reopened: false }), /failed again/);
+  assert.match(buildAlertCommentBody({ results, runUrl: "", reopened: false }), /hook/);
+  assert.match(
+    buildRecoveryCommentBody({ results: [{ id: "a", status: PASS }], runUrl: "" }),
+    /recovered/i,
+  );
+});
+
+// ── Infisical status classification ─────────────────────────────────────────
+
+test("pending / running / never-run syncs are not treated as failures", async () => {
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    fetchImpl: infisicalFetch({
+      secretSyncs: [
+        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "vercel-web-staging", syncStatus: "pending" },
+        { name: "vercel-landing-staging", syncStatus: "running" },
+        { name: "brand-new-sync", syncStatus: null },
+      ],
+    }),
+  });
+  assert.equal(result.status, PASS, "a sync mid-window must not open a P1");
+  assert.match(result.detail, /pending\/running/);
+});
+
+test("a store where nothing has ever settled is SKIPPED, not PASS", async () => {
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    fetchImpl: infisicalFetch({
+      secretSyncs: [{ name: "a", syncStatus: "pending" }, { name: "b", syncStatus: null }],
+    }),
+  });
+  assert.equal(result.status, SKIPPED);
+});
+
+test("a failing sync surfaces lastSyncMessage, redacted", async () => {
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    redact: (t) => t.replace("hunter2hunter2", "***"),
+    fetchImpl: infisicalFetch({
+      secretSyncs: [
+        {
+          name: "vercel-landing-staging",
+          syncStatus: "failed",
+          lastSyncMessage: 'Branch "preview" not found; token hunter2hunter2',
+        },
+      ],
+    }),
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /Branch "preview" not found/);
+  assert.doesNotMatch(result.detail, /hunter2hunter2/);
+});
+
+// ── Schema-drift delegation ─────────────────────────────────────────────────
+
+test("schema drift reports both streams, so stdout chatter cannot hide the stderr verdict", async () => {
+  const result = await checkSchemaDrift({
+    exists: () => true,
+    run: () => {
+      const error = new Error("exited 1");
+      error.stdout = "Comparing local migrations...\nFetched 214 applied migrations.";
+      error.stderr = "DRIFT: 3 migrations applied remotely are missing locally";
+      throw error;
+    },
+  });
+  assert.equal(result.status, FAIL);
+  assert.match(result.detail, /DRIFT: 3 migrations/);
+});
+
+test("schema-drift output is redacted before it can reach the alert issue", async () => {
+  const result = await checkSchemaDrift({
+    exists: () => true,
+    run: () => {
+      const error = new Error("boom");
+      error.stderr = "connect postgresql://postgres:leakedpassword@db.x.supabase.co:5432/postgres";
+      throw error;
+    },
+  });
+  assert.equal(result.status, FAIL);
+  assert.doesNotMatch(result.detail, /leakedpassword/);
+});
+
+test("the not-wired message names the exact contract #833 must satisfy", async () => {
+  const result = await checkSchemaDrift({ exists: () => false });
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /check-schema-drift\.mjs/);
+  assert.match(result.detail, /no arguments/);
+});
+
+// ── Thrown assertions ───────────────────────────────────────────────────────
+
+test("a thrown assertion names which check threw and surfaces error.cause", async () => {
+  const { fetchImpl } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [] },
+    { method: "POST", path: "/issues", body: { number: 901 } },
+  ]);
+  const { results } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      {
+        id: "infisical-syncs",
+        label: "Every Infisical secret sync reports succeeded",
+        run: async () => {
+          throw new TypeError("fetch failed", {
+            cause: new Error("getaddrinfo ENOTFOUND app.infisical.com"),
+          });
+        },
+      },
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(results[0].status, FAIL);
+  assert.equal(results[0].id, "infisical-syncs", "the failing check must be identifiable");
+  assert.match(results[0].label, /Infisical/);
+  assert.match(results[0].detail, /ENOTFOUND/, "error.cause carries the real reason");
+});
+
+test("an empty INFISICAL_PROJECT_ID falls back to .infisical.json rather than skipping", async () => {
+  // GitHub renders an unset secret as "", which `??` would have kept — silently
+  // downgrading the sync assertion to SKIPPED while a valid workspaceId sat in
+  // the checked-in .infisical.json.
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(url);
+    if (String(url).includes("universal-auth/login")) {
+      return { ok: true, status: 200, json: async () => ({ accessToken: "at" }) };
+    }
+    if (String(url).includes("secret-syncs")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ secretSyncs: [{ name: "s", syncStatus: "succeeded" }] }),
+      };
+    }
+    return { ok: true, status: 200, json: async () => [] };
+  };
+
+  const { results } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    env: {
+      INFISICAL_PROJECT_ID: "",
+      INFISICAL_CLIENT_ID: "c",
+      INFISICAL_CLIENT_SECRET: "s",
+    },
+    writeSummary: () => {},
+    logger: quiet,
+  });
+
+  const syncRow = results.find((r) => r.id === "infisical-syncs");
+  assert.equal(syncRow.status, PASS, "must assert, not skip, on an empty env var");
+  const syncCall = seen.find((u) => String(u).includes("secret-syncs"));
+  assert.match(syncCall, new RegExp(`projectId=${readWorkspaceId()}`));
 });

@@ -75,6 +75,12 @@ export async function raiseAlert({
   lookupLabel = DEFAULT_LOOKUP_LABEL,
   buildIssueBody,
   buildCommentBody,
+  // When true, an existing alert's BODY is rewritten to `buildIssueBody()` on
+  // every raise, not just at creation. Opt-in, because it overwrites whatever
+  // is there. Callers that encode machine-readable state in the body (see
+  // staging-conformance.mjs's failing-assertion marker) need the body to track
+  // the current failure set; deploy-alert.mjs does not and leaves this off.
+  refreshBodyOnRaise = false,
 }) {
   const existing = await findAlertIssues({ token, repo, fetchImpl, title, lookupLabel });
   // Prefer an open one; otherwise reopen the most recent closed one.
@@ -90,7 +96,15 @@ export async function raiseAlert({
       body: {
         title,
         // Labels that do not exist yet are created by this call.
-        labels,
+        //
+        // `lookupLabel` is forced in rather than trusted from `labels`: this
+        // function creates the issue and `findAlertIssues` looks it up by that
+        // label, so a caller passing labels that omit it would file an issue
+        // its own lookup can never find — a fresh duplicate every run, and
+        // never closed on recovery. Before the extraction that was
+        // unrepresentable (one hard-coded constant served both roles); keeping
+        // it unrepresentable is the point.
+        labels: [...new Set([lookupLabel, ...(labels ?? [])])],
         body: buildIssueBody(),
       },
     });
@@ -100,14 +114,21 @@ export async function raiseAlert({
   }
 
   const reopened = target.state !== "open";
-  if (reopened) {
-    await ghRequest({
+  const patch = {};
+  if (reopened) patch.state = "open";
+  if (refreshBodyOnRaise) patch.body = buildIssueBody();
+  if (Object.keys(patch).length > 0) {
+    // Checked, not fire-and-forget. A failed reopen leaves the alert CLOSED
+    // while the caller logs "reopened" — a live outage with no open alert,
+    // which is the dangerous direction for this module's whole contract.
+    const { ok: patchOk } = await ghRequest({
       token,
       fetchImpl,
       method: "PATCH",
       path: `/repos/${repo}/issues/${target.number}`,
-      body: { state: "open" },
+      body: patch,
     });
+    if (!patchOk) return { action: "failed", issueNumber: target.number };
   }
 
   const { ok } = await ghRequest({
@@ -160,5 +181,9 @@ export async function resolveAlert({
     });
     if (ok) closed.push(issue.number);
   }
+  // `action: "closed"` must mean something actually closed. Returning it with
+  // an empty list let the caller log a successful closure while a P1 stayed
+  // open on a healthy environment, re-posting "recovered" every run.
+  if (closed.length === 0) return { action: "failed", closed };
   return { action: "closed", closed };
 }

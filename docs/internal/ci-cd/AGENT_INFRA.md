@@ -327,8 +327,11 @@ shape:
 
 - `frapp-staging` sat **38 migrations / ~5.5 months** behind with every workflow green.
 - The Infisical credential was invalid for **71+ days** (#696/#763).
-- Both Vercel staging secret syncs failed for their **entire existence**, surfacing only when adding
-  a new secret forced a write (#834).
+- Both Vercel staging secret syncs were pointed at a git branch named `preview` that has never
+  existed in this repository, and failed on that for months with nothing reporting it. (They
+  deliver now, since the repoint to `main` — [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md)
+  §5 records the "staging received nothing, so it was accidentally protective" reading as a
+  **misreading not to repeat**: the staging Vercel projects do hold the full backend store.)
 - `custom_access_token_hook` was never enabled after #643 shipped, so `ChapterGuard` silently fell
   back to the client-supplied `x-chapter-id` header — the pre-#643 trust model (#805).
 
@@ -345,10 +348,27 @@ that passed:
 | `fail` | asserted, and it did not hold | reds the run, raises the alert |
 | `skipped` | could not assert (missing credential, or not yet built) | reported separately, **never** folded into the pass count |
 
-A run where *everything* skipped classifies as **`inconclusive`**, not healthy, and therefore
-**cannot close an open alert** — a run that proved nothing is not evidence of recovery. That is the
-same rule the `deploy-alert` no-op draws, for the same reason, and it matters more here because
-silent-green is the exact defect this workflow exists to end.
+Two rules follow from that, both about **not closing an alert on weak evidence**:
+
+1. A run where *everything* skipped classifies as **`inconclusive`**, not healthy, and cannot close
+   an open alert — a run that proved nothing is not evidence of recovery. Same rule the
+   `deploy-alert` no-op draws, for the same reason.
+2. Recovery is judged **per assertion, not by counting**. The alert body carries a visible
+   `` `conformance-failing: <ids>` `` marker naming what it was raised for, refreshed on every
+   raise, and the alert closes only when those exact assertions **PASS** again. Without this, an
+   alert raised by `auth-hook` would close as "recovered" on a later run where `auth-hook` merely
+   *skipped* — its credential deleted or renamed — and unrelated checks passed. Deleting a secret
+   would resolve the alert. A run in that state reports **`unproven-recovery`**: green (nothing
+   failed), but the alert stays open and the summary says why.
+
+The marker is a visible backticked line rather than an HTML comment on purpose: #800 established
+that HTML comments do not survive the GitHub MCP round-trip agents read issues through.
+
+⚠️ **GitHub disables `schedule:` triggers after 60 days of repository inactivity**, emailing the
+owner only. That ceiling is exactly backwards for this workflow — a long quiet stretch silently
+turns off the thing that watches quiet stretches, and it is the only workflow here affected (every
+other one is push- or `workflow_run`-triggered). If the repo goes dormant, re-enable it from the
+Actions tab.
 
 Two assertions ship degraded on purpose, each saying so in the step summary:
 
@@ -357,12 +377,24 @@ Two assertions ship degraded on purpose, each saying so in the step summary:
   not-wired; it lights up with no change to this file. Deliberately not reimplemented here.
 - **End-to-end sign-in** — the only row that exercises behaviour rather than configuration, covering
   migration, grants, RLS, and hook resolution in one probe — needs `STAGING_SMOKE_USER_EMAIL` /
-  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned. **The smoke user must have exactly one
-  chapter membership:** a correctly-working hook returns a token with *no* claim when the user
-  resolves to no chapter, so a zero-membership user makes the check pass while proving nothing.
+  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned (#893). **The smoke user must have
+  exactly one chapter membership:** a correctly-working hook returns a token with *no* claim when
+  the user resolves to no chapter, so a zero-membership user is indistinguishable from a disabled
+  hook. The check resolves that ambiguity in the safe direction — a claimless token is reported as
+  **FAIL** naming both possible causes, never as a pass — so provisioning a zero-membership user
+  produces a red run and a P1 blaming the hook on a healthy environment. Give it exactly one.
+
+The Infisical injection step runs with `continue-on-error: true`, which is load-bearing rather than
+lax: a revoked machine identity is the single most likely drift class, and failing the job at that
+step would kill the run *before* the script could report it and raise the alert — a red run with no
+issue, for the exact incident this workflow was built for.
 
 Note what a green Infisical row does and does not mean. It asserts *no sync is currently failing* —
-the #834 signature. It does **not** assert the destinations hold the right values;
+the #834 signature. Infisical's status enum is `pending | running | succeeded | failed` (plus null
+before a sync has ever run), and only `failed` counts as broken: a sync caught mid-window at 07:00,
+or the morning after Infisical's daily retry sweep flips `failed → pending`, must not open a P1
+about a healthy store. If nothing has settled at all, the row is SKIPPED, not PASS. The row does
+**not** assert the destinations hold the right values;
 [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) records the hard-won rule that "a
 sync that reports Failed today tells you nothing about what it delivered before it broke — check the
 destination, not the sync status." An unrecognised Infisical response shape **fails closed**, because
