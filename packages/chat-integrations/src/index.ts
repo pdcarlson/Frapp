@@ -12,12 +12,15 @@
  * dispatch + parsers below.
  */
 
-// Re-exports without the `.js` extension because the package is consumed via
-// bundler (Turbopack in dev, tsc in build) and the dev path resolves
-// extensionless TS imports. The tsconfig sets `moduleResolution: "Bundler"`
-// so the build matches.
-export * from "./parsers";
-export * from "./payloads";
+// Re-exports carry the `.js` extension because this package builds under
+// NodeNext (#236). The extensionless form was only valid while the tsconfig
+// overrode `moduleResolution: "Bundler"`, and it emitted a `dist` that Node
+// could not load at all — the specifiers survived into the output verbatim,
+// so `require("@repo/chat-integrations")` resolved `./parsers` against the
+// filesystem and found nothing. TypeScript rewrites nothing here: `.js` is
+// what the emitted JS needs, and TS resolves it back to the `.ts` source.
+export * from "./parsers.js";
+export * from "./payloads.js";
 
 /**
  * A slash command the user can invoke from the composer. `requiredModule` ties

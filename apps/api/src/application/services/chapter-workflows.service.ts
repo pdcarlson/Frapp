@@ -6,9 +6,14 @@ import type { WorkflowEntry } from '@repo/org-archetypes';
 /**
  * DI token for the workflow catalog (`WORKFLOWS_SEED`), bound in
  * ChapterConfigModule. Injected as a value so this service file carries no
- * runtime import of the ESM-only `@repo/org-archetypes` dist — unit specs of
- * downstream services (service entries, invoices) would otherwise all have to
- * mock that package for jest.
+ * runtime import of `@repo/org-archetypes` — unit specs of downstream services
+ * (service entries, invoices) would otherwise all have to mock that package
+ * for jest.
+ *
+ * The original reason was narrower: that dist was ESM-only and jest could not
+ * load it at all. #236 made the built output CJS, so the hard blocker is gone.
+ * The indirection stays because the spec-ergonomics reason above still holds,
+ * and unpicking it would change the wiring of every downstream consumer.
  */
 export const ORG_WORKFLOWS_SEED = 'ORG_WORKFLOWS_SEED';
 
