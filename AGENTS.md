@@ -47,8 +47,27 @@ Every actor reaches the tracker through the **GitHub MCP** (`issue_write` / `iss
 
 Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work surfaces that doesn't belong in the current PR, **file it as a GitHub issue** (`issue_write` create, labels `triage` + one `area:<x>` + a priority). Issues are completed by AI agents, so write each one to be executed cold by a fresh agent.
 
+> **Hard rule — proven blockers become issues (non-negotiable, owner mandate 2026-08-12):** the
+> moment you have **proven** something needs the human — an environment/network-policy change
+> only the owner can make, a missing credential or external account, a dashboard-only toggle, a
+> purchase or product decision — file a GitHub issue for it before moving on. *Proven* means at
+> least one real attempt with the failure output in hand, not a guess. *Needs the human* means no
+> agent session could do it either — if a better-provisioned agent session could (Docker, creds,
+> a different harness), that's ordinary blocked work: file a normal issue (see "Blocked
+> verification" below), not a `[human]` one. Format: title **`[human] <imperative action>`**,
+> labels `triage` + `suggestion` + one `area:<x>` + a priority, body opening with
+> `**Human action required — hold in triage; not for /next.**` followed by what you tried, the
+> exact error/output as proof, and precisely what the human must do (exact setting/secret/file
+> names), ending with the marker
+> `<!-- agent-suggestion: v1 fp=human/<slug> source=<session|pr#N|issue#N> -->`. The weekly
+> **PR Follow-ups** routine owns the `fp=human/` namespace: it audits these against reality,
+> publishes every open one on the **Human Action List** the owner reads, and closes them on
+> proof — the `suggestion` label is what permits that close, so never omit it. Never work around
+> a blocker silently, never leave it only in chat, and never make the next session re-discover it.
+
 **When to file:**
 
+- A **proven human-only blocker** — per the hard rule above.
 - Deferred / out-of-scope work discovered mid-task (data backfills, follow-up refactors).
 - **Blocked verification** — when the sandbox can't run something (Docker/Supabase won't start, missing external creds), file an issue so the gap is tracked. **Never check a verification box you couldn't actually run** — say it's blocked and link the issue.
 - Review findings you're not fixing in the current PR (with a reason).

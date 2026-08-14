@@ -88,11 +88,14 @@ each:
 6. **Promote or hold:**
    - `suggestion`-owned **or** clearly well-formed and actionable → **remove the `triage` label**
      (that is the promotion to Backlog).
-   - **Exception — human-action holds:** a `[pr-followup][human]` title or a body opening with
-     `**Human action required — hold in triage` means the item needs Paul, not an agent — **never
-     promote it** (that would hand `/next` work it cannot do); leave it in triage untouched apart
-     from priority/estimate. The weekly [`pr-followups`](../pr-followups/SKILL.md) routine owns
-     its lifecycle.
+   - **Exception — human-action holds:** a `[pr-followup][human]` or bare `[human]` title
+     prefix, or a body opening with `**Human action required — hold in triage`, means the item
+     needs Paul, not an agent — **never promote it** (that would hand `/next` work it cannot do);
+     leave it in triage untouched apart from priority/estimate. The weekly
+     [`pr-followups`](../pr-followups/SKILL.md) routine owns its lifecycle (namespaces
+     `fp=pr-followup/` and `fp=human/`). If a `[human]`-titled item is missing the `suggestion`
+     label or the `fp=human/` marker, backfill both (that's organizational repair, and the label
+     is what lets its owner routine close it).
    - Ambiguous, under-specified, or a significant human-filed decision → **leave in triage** + a
      short comment on what's needed. Don't force-promote work a human should accept.
 
@@ -117,7 +120,9 @@ runs walk the whole Backlog):
   epic it doesn't fit, you may detach it.
 - **Estimate:** optional `Estimate:` body line when scope is clear.
 - **Stale / dups:** add `stale` to obvious aging `suggestion`s the curator missed; close/dedup
-  only `suggestion`-owned issues, and only with proof.
+  only `suggestion`-owned issues, and only with proof. Never mark a **`scope:production`** issue
+  `stale` or age-bump its priority — those are parked by owner decision (see the label roster in
+  [`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)).
 - **Ownership:** on human/planning issues, only fill an *absent* priority — never re-bucket,
   re-prioritize, close, or re-body them. Don't restructure epics.
 

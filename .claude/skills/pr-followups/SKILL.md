@@ -45,9 +45,14 @@ Human-filed and planning issues are strictly read-only. Policy:
 [`GITHUB_PM.md` → Ownership boundary](../../../docs/internal/ci-cd/GITHUB_PM.md#ownership-boundary-organize-broadly-destroy-narrowly).
 
 Within the `suggestion` set, lifecycle ownership is partitioned by fingerprint namespace: issues
-whose marker starts `fp=pr-followup/` belong to **this** routine — the daily curator skips them
-(its "provable from code/spec" close bar and instant-`stale` rule don't fit human actions), and
-this routine never touches `suggestion` issues outside its namespace beyond dedup reads.
+whose marker starts `fp=pr-followup/` **or `fp=human/`** belong to **this** routine — the daily
+curator skips them (its "provable from code/spec" close bar and instant-`stale` rule don't fit
+human actions), and this routine never touches `suggestion` issues outside its namespaces beyond
+dedup reads. The `fp=human/` namespace holds **human-only blocker issues filed by any agent
+session** per the AGENTS.md hard rule (owner mandate 2026-08-12): title `[human] <action>`,
+`suggestion`-labeled, hold-in-triage opener, `source=` instead of `pr=` in the marker. This
+routine audits and closes them exactly like `[pr-followup][human]` items and publishes them on
+the Human Action List.
 
 ## State: the Human Action List tracking issue
 
@@ -72,8 +77,9 @@ If the issue or marker is missing, bootstrap: window = PRs updated in the last 8
 
 ## Job 1 — Audit previously harvested items
 
-Fetch open issues whose description contains the `fp=pr-followup/` marker
-(`search_issues query:"fp=pr-followup in:body state:open"` plus a description check). For each,
+Fetch open issues whose description contains the `fp=pr-followup/` **or `fp=human/`** marker
+(`search_issues query:"fp=pr-followup in:body state:open"` **and**
+`search_issues query:"fp=human in:body state:open"`, plus a description check). For each,
 decide **from current code, config, CI history, or runtime evidence** — never from the issue's
 age:
 
@@ -151,8 +157,9 @@ For each surviving item:
 Rebuild the tracking issue's body from **live issue state** (never from memory) via `issue_write`
 update:
 
-1. **Needs you** — every open `[human]` item: `#N — title — one-line "do this" — source PR`.
-   Order by priority. Checkboxes are welcome, but state is canonical — a checked box without a
+1. **Needs you** — every open `[human]` item (both namespaces): `#N — title — one-line "do
+   this" — source` (the source PR for harvested items; the marker's `source=` value for
+   session-filed `fp=human/` blockers). Order by priority. Checkboxes are welcome, but state is canonical — a checked box without a
    closed issue is a prompt to close the issue.
 2. **Agent queue** — open agent-doable `pr-followup` items (one line each; `/next` will get them).
 3. **Recently closed** — items closed since the last run, with what proved them done.

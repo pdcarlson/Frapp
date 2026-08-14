@@ -181,17 +181,23 @@ is unavailable in that state and the sign-in screen says so.
 
 ## Infisical → Provider Syncs
 
-| # | Infisical env | Destination | What gets synced |
-|---|---|---|---|
-| 1 | staging | Vercel → frapp-web (Preview scope) | `NEXT_PUBLIC_*` vars |
-| 2 | production | Vercel → frapp-web (Production scope) | `NEXT_PUBLIC_*` vars |
-| 3 | staging | Vercel → frapp-landing (Preview scope) | `NEXT_PUBLIC_APP_URL` |
-| 4 | production | Vercel → frapp-landing (Production scope) | `NEXT_PUBLIC_APP_URL` |
-| 5 | staging | Render → frapp-api-staging | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
-| 6 | production | Render → frapp-api-prod | `SUPABASE_*`, `STRIPE_*`, `SENTRY_*`, `PORT`, `NODE_ENV` |
-| 7 | per-env | GitHub environment-scoped secrets (transitional) | `RENDER_DEPLOY_HOOK_URL`, `API_HEALTHCHECK_URL`, `SUPABASE_*` |
+**The sync inventory lives in one place: [`SECRETS_MANAGEMENT.md` §5 "Configure Secret Syncs"](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs).** Go there for the
+per-sync source environment, secret path, destination scope, and git branch, plus how to verify all
+of it against the dashboards.
 
-**6 of 10 free-tier integrations used** (web + landing Vercel syncs; no separate docs Vercel project in active use) — as of **2026-03-22**; re-check in **Infisical → Integrations** (or your Infisical billing/plan view) before treating the count as current.
+This section used to carry its own copy of that table and drifted badly enough to send a reader
+looking for problems that did not exist while missing ones that did. Two facts it asserted were
+false, and both are worth naming so they are not reintroduced here:
+
+* It claimed the Vercel syncs carry only `NEXT_PUBLIC_*` variables. They do not. **Every sync reads
+  secret path `/` and pushes the entire source environment** — Infisical has no per-key filter. The
+  frontend Vercel projects therefore receive backend credentials they never use. Narrowing this is
+  tracked in **#834**.
+* It listed a GitHub Actions sync. There is none — `deploy-api.yml` *pulls* from Infisical at job
+  time. See "GitHub Actions is not a sync" in `SECRETS_MANAGEMENT.md`.
+
+There are **6 live syncs**. Do not restate their configuration here; link instead. A second copy of
+provider state in a second file has no mechanism to stay true.
 
 ---
 

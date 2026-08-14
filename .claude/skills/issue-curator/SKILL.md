@@ -54,10 +54,13 @@ close, re-label, comment on, re-body, mark-duplicate, set priority, or split **o
 ## Phase 1 — Maintenance pass (`suggestion` issues)
 
 Pull the open suggestion set (`list_issues` with `labels: ["suggestion"]`, state OPEN) and triage
-each — **except issues whose marker fingerprint starts `fp=pr-followup/`**: those are owned by the
-weekly [`pr-followups`](../pr-followups/SKILL.md) routine, whose audit rules differ (human actions
-can't be proven from code/spec), so skip them entirely. Pick **exactly one** action per issue,
-grounded in **current code and `spec/`** (not a hunch):
+each — **except issues whose marker fingerprint starts `fp=pr-followup/` or `fp=human/`**: those
+are owned by the weekly [`pr-followups`](../pr-followups/SKILL.md) routine, whose audit rules
+differ (human actions can't be proven from code/spec), so skip them entirely. Issues labeled
+**`scope:production`** are **parked by owner decision** (2026-08-10; see the label roster in
+[`ROUTINES.md`](../../../docs/internal/ci-cd/ROUTINES.md)), not aging — never mark them `stale`,
+never raise their priority for age, and never file duplicates of them. Pick **exactly one** action
+per issue, grounded in **current code and `spec/`** (not a hunch):
 
 | Situation (must be provable from code/spec) | Action |
 | --- | --- |
@@ -174,7 +177,10 @@ Every issue this routine **creates**:
 **Dedup (idempotent re-runs).** Fingerprint `fp = <area>/<slug(title)>` anchored to
 `file=<primary-path>` (no line number). Before creating: `search_issues` (open **and** closed) for
 the `fp=` string; if found → **skip** (or refresh the open one). Legacy `cursor-suggestion`
-markers use the same `fp=` format and count as matches. Embed the marker:
+markers use the same `fp=` format and count as matches. **Also search the finding's key terms
+against `[human]` titles** — if an open `fp=human/` blocker already tracks the same action
+(dashboard toggles and advisor findings are the usual overlap), skip: filing a promotable twin
+would route `/next` into a wall the held issue already documents. Embed the marker:
 `<!-- agent-suggestion: v1 fp=<area>/<slug> file=<path> -->`.
 
 ### Agent brief
