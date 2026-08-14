@@ -7,6 +7,7 @@ import { join } from "node:path";
 import {
   ALERT_ISSUE_LABELS,
   ALERT_ISSUE_TITLE,
+  buildAlertIssueBody,
   classifyDrift,
   describeTarget,
   fetchAppliedMigrations,
@@ -307,6 +308,12 @@ test("overallStatus ranks drift over unknown over clean", () => {
   assert.equal(overallStatus([{ status: "unknown" }, { status: "drift" }]), "drift");
 });
 
+test("overallStatus never calls zero targets clean", () => {
+  // Reporting "clean" for an empty result set would close an open alert on the
+  // strength of having checked nothing.
+  assert.equal(overallStatus([]), "unknown");
+});
+
 // ── describeTarget ──────────────────────────────────────────────────────────
 
 test("describeTarget distinguishes in-sync, graced, drifting and unreadable", () => {
@@ -326,6 +333,50 @@ test("describeTarget distinguishes in-sync, graced, drifting and unreadable", ()
     describeTarget({ status: "unknown", error: "HTTP 401" }),
     /could not be read — HTTP 401/,
   );
+});
+
+// ── buildAlertIssueBody ─────────────────────────────────────────────────────
+
+test("buildAlertIssueBody keeps the blank lines Markdown needs", () => {
+  // Regression: the body was originally built with a trailing
+  // `.filter(line => line !== "")` (copied from deploy-alert.mjs), which drops
+  // the intentional spacers along with the conditional ones and collapses the
+  // whole issue into one run-together paragraph.
+  const body = buildAlertIssueBody({
+    results: [
+      {
+        label: "production",
+        status: "drift",
+        withinGrace: [],
+        overdue: [{ version: "20260809120000", name: "folders" }],
+        foreign: [{ version: "20260228000000", name: "enable_rls" }],
+      },
+    ],
+    graceHours: 24,
+    runUrl: "https://example.test/run/1",
+  });
+
+  // A heading must be followed by a blank line, and the table must be preceded
+  // by one, or GitHub renders neither as intended.
+  assert.match(body, /### Current state\n\n\| Environment \| Verdict \|/);
+  assert.match(body, /\n\n#### `production`\n\n- \*\*Foreign/);
+  assert.match(body, /\n\n### How to act on this\n\n/);
+  assert.match(body, /\n\n- Run: https:\/\/example\.test\/run\/1\n/);
+
+  // No two non-blank lines that were meant to be separate paragraphs may end up
+  // adjacent: the closing sentence of the intro and the "Do not claim" warning.
+  assert.match(body, /in sync\.\n\nDo not claim this issue as backlog work/);
+});
+
+test("buildAlertIssueBody omits the run line entirely when there is no run URL", () => {
+  const body = buildAlertIssueBody({
+    results: [{ label: "staging", status: "clean", withinGrace: [], overdue: [], foreign: [] }],
+    graceHours: 24,
+    runUrl: "",
+  });
+  assert.equal(body.includes("- Run:"), false);
+  // …and does not leave a dangling blank block where it would have been.
+  assert.equal(body.includes("\n\n\n"), false);
 });
 
 // ── runMigrationDriftCheck ──────────────────────────────────────────────────

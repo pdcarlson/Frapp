@@ -268,6 +268,10 @@ export function classifyDrift({ local, remote, nowMs, graceMs }) {
  * (the alert means "a database is drifting", which is not what was observed).
  */
 export function overallStatus(results) {
+  // Zero results is zero evidence. Reporting "clean" here would close an open
+  // alert on the strength of having checked nothing — the CLI guards against an
+  // empty target list, and this is the same guarantee for any other caller.
+  if (results.length === 0) return "unknown";
   if (results.some((r) => r.status === "drift")) return "drift";
   if (results.some((r) => r.status === "unknown")) return "unknown";
   return "clean";
@@ -355,7 +359,10 @@ export function buildRunSummary({ status, results, graceHours, runUrl }) {
 
 export function buildAlertIssueBody({ results, graceHours, runUrl }) {
   const drifting = results.filter((r) => r.status === "drift");
-  return [
+  // Built with push, never with a trailing `.filter(line => line !== "")` —
+  // that idiom drops the intentional blank lines too, and Markdown collapses
+  // the result into one run-together paragraph.
+  const lines = [
     "## A deployed database no longer matches `supabase/migrations/`",
     "",
     "This issue is **opened and closed automatically** by",
@@ -399,12 +406,14 @@ export function buildAlertIssueBody({ results, graceHours, runUrl }) {
     "`docs/internal/ops/DB_PROMOTION_RUNBOOK.md` § reconciling a foreign migration row.",
     "",
     `_Pending migrations are tolerated for ${graceHours}h after their version timestamp._`,
-    runUrl ? `\n- Run: ${runUrl}` : "",
+  ];
+
+  if (runUrl) lines.push("", `- Run: ${runUrl}`);
+  lines.push(
     "",
     "Background: #833 (this detector), #832 (production migration backlog), #763 (deploy visibility).",
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
+  );
+  return lines.join("\n");
 }
 
 export function buildAlertCommentBody({ results, graceHours, runUrl, reopened }) {
@@ -660,7 +669,10 @@ async function main() {
     process.exit(1);
   }
 
-  const graceHours = Number(process.env.PENDING_GRACE_HOURS ?? DEFAULT_PENDING_GRACE_HOURS);
+  // `||` not `??`: an env var set to the empty string must fall back to the
+  // default, not coerce to a 0-hour grace window that alerts on every migration
+  // the moment it merges.
+  const graceHours = Number(process.env.PENDING_GRACE_HOURS || DEFAULT_PENDING_GRACE_HOURS);
   if (!Number.isFinite(graceHours) || graceHours < 0) {
     console.error("Error: PENDING_GRACE_HOURS must be a non-negative number.");
     process.exit(1);
