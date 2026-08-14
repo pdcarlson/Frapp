@@ -23,5 +23,9 @@
     "noUncheckedIndexedAccess": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // Specs are excluded from the build, as in `packages/validation`. Without
+  // this `tsc` emits `dist/*.spec.js`, which ships inside the package that
+  // `apps/api` consumes AND gets picked up by this package's own vitest run —
+  // where the compiled CommonJS copy fails on `require("vitest")`.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts"]
 }
