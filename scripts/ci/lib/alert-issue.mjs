@@ -120,7 +120,13 @@ export async function raiseAlert({
   // The previous body is handed to the builder so a caller can merge state it
   // keeps there (see staging-conformance.mjs's failing-assertion marker)
   // instead of clobbering it with only what is true this run.
-  if (refreshBodyOnRaise) patch.body = buildIssueBody(target.body ?? null);
+  //
+  // On a REOPEN the previous body is deliberately withheld: the alert was
+  // closed, and a close is proof that everything the old body recorded had
+  // recovered. Carrying that state into a new incident resurrects a settled
+  // gate, and any of those items that cannot be asserted now would keep the
+  // new alert open forever.
+  if (refreshBodyOnRaise) patch.body = buildIssueBody(reopened ? null : (target.body ?? null));
   if (Object.keys(patch).length > 0) {
     const { ok: patchOk } = await ghRequest({
       token,

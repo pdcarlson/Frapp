@@ -56,6 +56,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { findAlertIssues, raiseAlert, resolveAlert } from "./lib/alert-issue.mjs";
+import { ghRequest } from "./ci-wake.mjs";
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -515,7 +516,12 @@ export function canResolveAlert({ results, failingIds }) {
   const passing = new Set(
     results.filter((r) => r.status === PASS).map((r) => r.id),
   );
-  return failingIds.every((id) => passing.has(id));
+  // Ids the suite no longer emits at all — a check renamed or deleted since
+  // the alert was raised — are not evidence of an unrecovered failure, and
+  // nothing could ever mark them passing. Without this they are sticky
+  // forever and the alert can never close.
+  const known = new Set(results.map((r) => r.id));
+  return failingIds.filter((id) => known.has(id)).every((id) => passing.has(id));
 }
 
 const ICON = { [PASS]: "✅", [FAIL]: "❌", [SKIPPED]: "⏭️" };
@@ -585,8 +591,21 @@ export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
     "",
     "### Failing assertions",
     "",
-    ...failed.map((r) => `- **${r.label}** — ${r.detail}`),
+    ...(failed.length > 0
+      ? failed.map((r) => `- **${r.label}** — ${r.detail}`)
+      : ["_Nothing is failing right now._"]),
     "",
+    ...(carriedOver.length > 0
+      ? [
+          "### Not yet shown to have recovered",
+          "",
+          "These were failing when this alert was last raised and still cannot be asserted, so the",
+          "alert stays open. They are what is holding it open — not the list above.",
+          "",
+          ...carriedOver.map((id) => `- \`${id}\``),
+          "",
+        ]
+      : []),
     "### Why this workflow exists",
     "",
     "Every other check in this repo is push-triggered, so environment drift was invisible until",
@@ -788,6 +807,20 @@ export async function runStagingConformance({
     // Summary written here, with the real outcome — a run that leaves the
     // alert open must not print "conformant" at the top of the page.
     writeSummary(buildRunSummary({ outcome: "unproven-recovery", results, runUrl }));
+
+    // Record what this run DID prove. The marker only ever narrows on a
+    // failing raise, so without this an assertion proven passing today is
+    // forgotten, and two gated assertions that pass on alternating days keep
+    // the alert open forever even though each was individually shown healthy.
+    for (const issue of openAlerts) {
+      await ghRequest({
+        token,
+        fetchImpl,
+        method: "PATCH",
+        path: `/repos/${repo}/issues/${issue.number}`,
+        body: { body: buildAlertIssueBody({ results, runUrl, previousBody: issue.body }) },
+      });
+    }
     logger.log?.(
       `::warning::Nothing failed, but ${unresolved.join(", ")} could not be asserted — ` +
         "leaving the alert open.",

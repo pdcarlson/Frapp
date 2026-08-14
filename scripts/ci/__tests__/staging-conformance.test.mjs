@@ -544,7 +544,12 @@ test("a run where the alert's failing check merely SKIPPED does not close it", a
   });
   assert.equal(outcome, "unproven-recovery");
   assert.deepEqual(alert.closed, []);
-  assert.equal(calls.filter((c) => c.method === "PATCH").length, 0, "must not close the issue");
+  // A body refresh IS expected here — it records what this run proved so the
+  // marker narrows. What must not happen is a close.
+  const closes = calls.filter(
+    (c) => c.method === "PATCH" && /"state":"closed"/.test(c.body ?? ""),
+  );
+  assert.equal(closes.length, 0, "must not close the issue");
   assert.match(summary, /not cleared/);
 });
 
@@ -916,4 +921,139 @@ test("a failed body refresh does not suppress the failure comment", async () => 
   assert.equal(alert.action, "commented", "the alert is already open; a cosmetic refresh failing must not abort");
   assert.equal(alert.bodyRefreshFailed, true, "but it must be surfaced");
   assert.ok(calls.some((c) => c.url.includes("/comments")), "today's failure must still be recorded");
+});
+
+// ── Round-3: the alert must not become permanently unclosable ────────────────
+// Three sequences, each proven by simulation during review to strand the P1
+// open forever on a healthy staging. An alert that can never clear is the
+// alert-fatigue failure this file's own rationale calls the worst outcome.
+
+test("a reopen starts from a clean marker — a close is proof the old one recovered", async () => {
+  // d1 auth-signin fails -> alert opens, marker [auth-signin].
+  // d2 all pass -> closed. The CLOSED body still carries the old marker.
+  // d3 the smoke credential is removed (its documented default state).
+  // d4 auth-hook fails -> reopen. The stale auth-signin must NOT come back,
+  //    or it can never be cleared and the alert is stuck forever.
+  const closedBody = buildAlertIssueBody({
+    results: [{ id: "auth-signin", status: FAIL, label: "sign-in", detail: "broken" }],
+    runUrl: "",
+    previousBody: null,
+  });
+  const { fetchImpl, calls } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 901, state: "closed", title: ALERT_ISSUE_TITLE, body: closedBody }],
+    },
+    { method: "PATCH", path: "/issues/901", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      async () => ({ id: "auth-hook", label: "hook", status: FAIL, detail: "disabled" }),
+      async () => ({ id: "auth-signin", label: "sign-in", status: SKIPPED, detail: "not provisioned" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  const patch = calls.find((c) => c.method === "PATCH");
+  const ids = parseFailingIds(JSON.parse(patch.body).body);
+  assert.deepEqual(ids, ["auth-hook"], "the settled incident's marker must not be resurrected");
+});
+
+test("a marker id the suite no longer emits cannot strand the alert", () => {
+  // A check renamed or deleted after the alert was raised can never be marked
+  // passing, so requiring it would keep the alert open forever.
+  const results = [{ id: "project-status", status: PASS }];
+  assert.equal(
+    canResolveAlert({ results, failingIds: ["legacy-check"] }),
+    true,
+    "an id the suite no longer runs is not evidence of an unrecovered failure",
+  );
+  assert.equal(
+    canResolveAlert({ results, failingIds: ["legacy-check", "project-status"] }),
+    true,
+  );
+});
+
+test("unproven-recovery records what it proved, so alternating passes converge", async () => {
+  // d1: A and B both fail -> marker [A,B].
+  // d2: A passes, B skipped -> unproven-recovery. A's proof must be kept.
+  // d3: A skipped, B passes -> the marker should now be empty and it closes.
+  // Without recording d2's proof the marker stays [A,B] forever.
+  const day1 = buildAlertIssueBody({
+    results: [
+      { id: "a", status: FAIL, label: "A", detail: "x" },
+      { id: "b", status: FAIL, label: "B", detail: "y" },
+    ],
+    runUrl: "",
+    previousBody: null,
+  });
+  assert.deepEqual(parseFailingIds(day1).sort(), ["a", "b"]);
+
+  // Day 2 through the real orchestrator.
+  const d2 = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 902, state: "open", title: ALERT_ISSUE_TITLE, body: day1 }],
+    },
+    { method: "PATCH", path: "/issues/902", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  const r2 = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl: d2.fetchImpl,
+    checks: [
+      async () => ({ id: "a", label: "A", status: PASS, detail: "" }),
+      async () => ({ id: "b", label: "B", status: SKIPPED, detail: "cannot assert" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(r2.outcome, "unproven-recovery");
+  const day2 = JSON.parse(d2.calls.find((c) => c.method === "PATCH").body).body;
+  assert.deepEqual(parseFailingIds(day2), ["b"], "A was proven passing and must drop out");
+
+  // Day 3: B passes, A can no longer be asserted. Marker is [b], b passes -> close.
+  const d3 = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 902, state: "open", title: ALERT_ISSUE_TITLE, body: day2 }],
+    },
+    { method: "POST", path: "/comments", body: {} },
+    { method: "PATCH", path: "/issues/902", body: {} },
+  ]);
+  const r3 = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl: d3.fetchImpl,
+    checks: [
+      async () => ({ id: "a", label: "A", status: SKIPPED, detail: "cannot assert" }),
+      async () => ({ id: "b", label: "B", status: PASS, detail: "" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(r3.outcome, "healthy");
+  assert.deepEqual(r3.alert.closed, [902], "each was proven in turn; the alert must converge");
+});
+
+test("the alert body names what is actually holding it open", () => {
+  const previousBody = `\`${FAILING_MARKER} auth-signin\``;
+  const body = buildAlertIssueBody({
+    results: [
+      { id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" },
+      { id: "auth-signin", status: SKIPPED, label: "sign-in", detail: "not provisioned" },
+    ],
+    runUrl: "",
+    previousBody,
+  });
+  assert.match(body, /Not yet shown to have recovered/);
+  assert.match(body, /auth-signin/);
 });
