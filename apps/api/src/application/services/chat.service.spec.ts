@@ -1435,6 +1435,87 @@ describe('ChatService', () => {
       created_at: '2026-01-01T12:00:00.000Z',
     };
 
+    describe('poll-card vote validation (#871)', () => {
+      // The card payload the composer writes (apps/web/lib/chat/dispatch.ts):
+      // options carry ids, and the deadline is `closes_at`.
+      const pollMessage = {
+        ...baseMessage,
+        kind: 'poll',
+        payload: {
+          question: 'Formal venue?',
+          options: [
+            { id: 'opt-a', label: 'The Lodge' },
+            { id: 'opt-b', label: 'Riverside' },
+          ],
+          closes_at: null,
+        },
+      };
+
+      const vote = (payload: Record<string, unknown>) =>
+        service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+          action_type: 'vote',
+          payload,
+        });
+
+      it('rejects a vote on a closed poll', async () => {
+        mockMessageRepo.findById.mockResolvedValue({
+          ...pollMessage,
+          payload: {
+            ...pollMessage.payload,
+            closes_at: '2020-01-01T00:00:00.000Z',
+          },
+        } as never);
+
+        await expect(vote({ option_id: 'opt-a' })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects an option that is not on the card', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+
+        await expect(vote({ option_id: 'opt-z' })).rejects.toThrow(
+          /Invalid option/,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('rejects several selections on a single-choice card', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+
+        await expect(vote({ option_id: ['opt-a', 'opt-b'] })).rejects.toThrow(
+          /exactly one option/,
+        );
+        expect(mockActionRepo.create).not.toHaveBeenCalled();
+      });
+
+      it('still records a valid vote', async () => {
+        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockActionRepo.create.mockResolvedValue({
+          ...baseAction,
+          action_type: 'vote',
+        });
+
+        await expect(vote({ option_id: 'opt-a' })).resolves.toMatchObject({
+          deduplicated: false,
+        });
+        expect(mockActionRepo.create).toHaveBeenCalled();
+      });
+
+      it('leaves non-vote actions on a poll card alone', async () => {
+        // Reactions on a poll card are not votes and must not be rule-checked.
+        mockMessageRepo.findById.mockResolvedValue(pollMessage as never);
+        mockActionRepo.create.mockResolvedValue(baseAction);
+
+        await expect(
+          service.recordMessageAction('msg-1', 'ch-1', 'user-1', {
+            action_type: 'reaction:👍',
+          }),
+        ).resolves.toMatchObject({ deduplicated: false });
+      });
+    });
+
     it('records a reaction and returns deduplicated:false on the happy path', async () => {
       mockActionRepo.create.mockResolvedValue(baseAction);
 

@@ -43,6 +43,7 @@ import { asArray, getErrorMessage } from "@/lib/utils";
 import {
   useOrgConfig,
   usePatchOrgConfig,
+  usePendingConfigKeys,
   type OrgDues,
 } from "@/lib/hooks/use-org-config";
 import { SettingsOrgTab } from "@/components/settings/settings-org-tab";
@@ -139,6 +140,9 @@ function SettingsPageContent() {
   const semestersQuery = useSemesters();
   const updateChapter = useUpdateChapter();
   const patchOrgConfig = usePatchOrgConfig();
+  // Which settings are saving, not merely whether something is. One shared
+  // `isPending` used to disable every control on every tab at once (#881).
+  const pendingConfigKeys = usePendingConfigKeys();
   const rollover = useSemesterRollover();
   const createPortal = useCreatePortal();
 
@@ -443,7 +447,11 @@ function SettingsPageContent() {
                   patchConfig(diff, "Organization settings saved")
                 }
                 savingProfile={updateChapter.isPending}
-                savingConfig={patchOrgConfig.isPending}
+                savingConfig={
+                  pendingConfigKeys.has("branding") ||
+                  pendingConfigKeys.has("vocabulary") ||
+                  pendingConfigKeys.has("org_archetype")
+                }
               />,
             )}
 
@@ -588,7 +596,7 @@ function SettingsPageContent() {
               <SettingsModulesTab
                 enabledModules={enabledModules}
                 canManage={canManage}
-                isSaving={patchOrgConfig.isPending}
+                pendingModuleKeys={pendingConfigKeys}
                 onToggle={(key, enabled) =>
                   patchConfig(
                     { enabled_modules: { [key]: enabled } },
@@ -618,7 +626,7 @@ function SettingsPageContent() {
               <SettingsWorkflowsTab
                 workflows={workflows}
                 canManage={canManage}
-                isSaving={patchOrgConfig.isPending}
+                isSaving={pendingConfigKeys.has("workflows")}
                 onSave={(next) =>
                   patchConfig({ workflows: next }, "Workflows saved")
                 }
@@ -631,7 +639,7 @@ function SettingsPageContent() {
               <SettingsDuesTab
                 dues={dues}
                 canManage={canManage}
-                isSaving={patchOrgConfig.isPending}
+                isSaving={pendingConfigKeys.has("dues")}
                 onSave={(next) => patchConfig({ dues: next }, "Dues saved")}
               />,
             )}
@@ -697,7 +705,7 @@ function SettingsPageContent() {
               <SettingsPrivacyTab
                 analyticsOptOut={config?.analytics_opt_out === true}
                 canManage={canManage}
-                isSaving={patchOrgConfig.isPending}
+                isSaving={pendingConfigKeys.has("analytics_opt_out")}
                 onToggle={(optOut) =>
                   patchConfig(
                     { analytics_opt_out: optOut },
