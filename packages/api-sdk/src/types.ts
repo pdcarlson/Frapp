@@ -2111,7 +2111,9 @@ export interface components {
             university: string;
         };
         BrandingColorsDto: {
+            /** @example #4B2E2E */
             dark?: string;
+            /** @example #C9A56F */
             accent?: string;
         };
         BrandingDto: {

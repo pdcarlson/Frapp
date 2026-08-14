@@ -279,6 +279,21 @@ export class ChapterConfigService {
       mergedBranding = deepMerge(existing.branding, dto.branding);
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
+
+      const readAccent = (branding: unknown): string | undefined =>
+        (branding as { colors?: { accent?: string } } | undefined)?.colors
+          ?.accent;
+      const previousAccent = readAccent(existing.branding);
+      const nextAccent = readAccent(mergedBranding);
+
+      // #795: mirror the authoritative accent into the legacy column. Diffed
+      // against the previous *branding* accent rather than against
+      // `existing.accent_color`, because `getConfig`'s select does not read that
+      // column and widening it would change the GET /config response.
+      if (typeof nextAccent === 'string' && nextAccent !== previousAccent) {
+        diff['accent_color'] = { from: previousAccent ?? null, to: nextAccent };
+        update['accent_color'] = nextAccent;
+      }
     }
     if (dto.beta_config !== undefined) {
       const merged = deepMerge(existing.beta_config, dto.beta_config);

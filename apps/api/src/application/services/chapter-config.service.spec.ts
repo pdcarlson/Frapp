@@ -378,6 +378,42 @@ describe('ChapterConfigService — dues', () => {
   });
 });
 
+describe('ChapterConfigService — branding accent (#795)', () => {
+  describe('patchConfig', () => {
+    it('mirrors the branding accent into the legacy accent_color column', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { colors: { accent: '#8B0000' } },
+      });
+
+      // Two writes, not one: the config update, then a second from
+      // `recomputePalette` persisting `theme_palette`. Any branding change
+      // triggers that recompute, so the mirror has to ride on the first call.
+      expect(supabase.chapterUpdate).toHaveBeenCalledTimes(2);
+      const update = supabase.chapterUpdate.mock.calls[0][0];
+      expect(update.accent_color).toBe('#8B0000');
+      expect(update.branding).toMatchObject({ colors: { accent: '#8B0000' } });
+
+      const auditRow = supabase.auditInsert.mock.calls[0][0];
+      expect(auditRow.diff.accent_color).toEqual({ from: null, to: '#8B0000' });
+    });
+
+    it('does not write the column for a branding PATCH that leaves the accent alone', async () => {
+      const supabase = makeSupabase([]);
+      const service = await buildService(supabase);
+
+      await service.patchConfig(CHAPTER_ID, 'user-1', {
+        branding: { greek_letters: 'ΦΓΔ' },
+      });
+
+      const update = supabase.chapterUpdate.mock.calls[0]?.[0] ?? {};
+      expect(update).not.toHaveProperty('accent_color');
+    });
+  });
+});
+
 describe('ChapterConfigService — analytics opt-out', () => {
   describe('getConfig', () => {
     it('returns the chapter analytics_opt_out flag (defaulting off)', async () => {

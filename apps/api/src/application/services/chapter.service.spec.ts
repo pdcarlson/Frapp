@@ -610,11 +610,48 @@ describe('ChapterService', () => {
       accent_color: '#1E293B',
     });
 
+    // The accent is mirrored into `branding.colors.accent` in the same write.
+    // `branding.colors` is authoritative (#795) and this is the one path that
+    // sets the column directly, so without the mirror a Settings edit would
+    // leave the two stores disagreeing.
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
       name: 'Alpha Updated',
       accent_color: '#1E293B',
+      branding: { colors: { accent: '#1E293B' } },
     });
     expect(result).toEqual(updatedChapter);
+  });
+
+  it('preserves other branding keys when mirroring the accent', async () => {
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      branding: {
+        greek_letters: 'ΦΓΔ',
+        colors: { dark: '#4B2E2E', accent: '#8B0000' },
+      },
+    } as never);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+
+    await service.update('ch-1', { accent_color: '#1E293B' });
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      accent_color: '#1E293B',
+      branding: {
+        greek_letters: 'ΦΓΔ',
+        colors: { dark: '#4B2E2E', accent: '#1E293B' },
+      },
+    });
+  });
+
+  it('does not touch branding when the update carries no accent', async () => {
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+
+    await service.update('ch-1', { name: 'Renamed' });
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      name: 'Renamed',
+    });
+    expect(mockChapterRepo.findById).not.toHaveBeenCalled();
   });
 
   it('should reject accent_color that fails WCAG contrast', async () => {

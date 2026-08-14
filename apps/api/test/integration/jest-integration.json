@@ -5,6 +5,9 @@
   "testRegex": ".integration-spec.ts$",
   "globalSetup": "<rootDir>/global-setup.ts",
   "maxWorkers": 1,
+  "moduleNameMapper": {
+    "^(\\.{1,2}/.*)\\.js$": "$1"
+  },
   "transform": {
     "^.+\\.(t|j)s$": [
       "ts-jest",

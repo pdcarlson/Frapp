@@ -78,6 +78,34 @@ Post-apply production checks:
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
+## 2026-08-14: Backfill `chapters.accent_color` from branding (#795)
+
+### 20260814120000_backfill_chapter_accent_color_from_branding.sql
+
+* **Purpose**: Data-only repair. The onboarding wizard wrote the officer's chosen accent into
+  `chapters.branding.colors.accent` and into the derived `theme_palette`, but never into the
+  `chapters.accent_color` column, which kept its schema default `#2563EB`. Every surface reading
+  the column — the web dashboard shell, mobile chapter branding, the membership summary in
+  `packages/hooks` — rendered Royal Blue for a chapter that had chosen something else, while
+  `theme_palette` readers were branded correctly. The API now treats `branding.colors.accent` as
+  authoritative and mirrors it into the column on all three write paths, so this only repairs rows
+  written before that.
+* **Shape**: single `UPDATE`, no DDL, no locks beyond the touched rows. Idempotent and re-runnable:
+  it matches only rows whose branding holds a well-formed `#RRGGBB` accent differing from the
+  column, and uses `is distinct from` so a NULL column is handled rather than skipped.
+* **Not yet applied.** This lands as a file only; promotion follows the order at the top of this
+  runbook. Nothing was run against a hosted project as part of the change that introduced it.
+* **Checks** (after promotion):
+  - Rows still disagreeing — expect 0:
+    `select count(*) from public.chapters where branding->'colors'->>'accent' ~ '^#[0-9A-Fa-f]{6}$' and accent_color is distinct from branding->'colors'->>'accent';`
+  - Rows repaired, before/after: `select count(*) from public.chapters where accent_color = '#2563EB';`
+    should fall by the number of chapters that had chosen a custom accent.
+* **Rollback**: no schema change to revert. The previous per-row values are not recoverable from
+  the migration itself, so capture them first if that matters:
+  `create table tmp_accent_backup as select id, accent_color from public.chapters;`
+  Restoring is an `UPDATE … FROM` off that table. In practice the pre-state is the schema default
+  for affected rows, which carried no information.
+
 ## 2026-08-10: Staging migration backlog cleared — two blockers behind the #696 credential
 
 On 2026-08-10 the first CI-driven migration since 2026-02-28 ran successfully against `frapp-staging` ([run 31318329969 attempt 4](https://github.com/pdcarlson/Frapp/actions/runs/31318329969)), applying **38** migrations in a single push. `schema_migrations` went from 1 row to 39 — it held 2 before the foreign row described below was removed. Post-apply state: public tables 29 → 44, public functions 1 → 15, storage buckets 0 → 7 (`backwork, branding, chat, documents, profiles, reports, service`).
