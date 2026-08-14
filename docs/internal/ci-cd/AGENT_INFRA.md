@@ -53,6 +53,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | Deploy outcome      | `.github/workflows/deploy-api.yml` → terminal `deploy-outcome` job — the only job in that workflow with a write scope (job-scoped `issues: write`; the workflow-level grant stays `contents: read`). Writes a step summary + annotation saying whether the run **deployed** or **declined to deploy**, and upserts one `routine-state` alert issue on failure, closing it on the next successful deploy. Logic in `scripts/ci/deploy-alert.mjs` (tests: `scripts/ci/__tests__/deploy-alert.test.mjs`). **Not** a required check. See "Deploy visibility" below. |
 | Deploy verification | `.github/workflows/verify-deployments.yml` — post-push Render + Vercel state polling                                                                  |
 | Migration drift     | `.github/workflows/check-migration-drift.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Compares each deployed database's `schema_migrations` against `supabase/migrations/` and upserts one `routine-state` alert issue, closing it when every environment is back in sync. Job-scoped `issues: write`; workflow-level grant stays `contents: read`. Logic in `scripts/ci/check-migration-drift.mjs` (tests: `scripts/ci/__tests__/check-migration-drift.test.mjs`). **Not** a required check. See "Schema drift detection" below. |
+| Staging conformance | `.github/workflows/staging-conformance.yml` — **scheduled** (daily 07:00 UTC) + `workflow_dispatch`. Asserts live `frapp-staging` state rather than a push: project `ACTIVE_HEALTHY`, `custom_access_token_hook` enabled *and* pointed at the right function, every Infisical secret sync succeeded, and an end-to-end sign-in whose JWT carries `active_chapter_id`. **Migration parity is deliberately NOT checked here** — `check-migration-drift.yml` above owns it end to end; see "Scheduled conformance" below. Upserts its own `routine-state` alert issue on drift and closes it on recovery. Logic in `scripts/ci/staging-conformance.mjs` (tests: `scripts/ci/__tests__/staging-conformance.test.mjs`). **Not** a required check — it verifies an environment, not a diff. |
 | Release tags        | `.github/workflows/release.yml` — main → production merge                                                                                             |
 | Docs                | `.github/workflows/docs.yml` — PR docs/spec sync (`check-docs-impact.mjs`)                                                                            |
 | CI wake             | `.github/workflows/ci-wake.yml` — `workflow_run` on CI / Docs spec sync / Links completion (PR runs only): classifies infra-vs-code failure, auto-requeues infra failures (≤3 total attempts), upserts one PR wake comment. Logic in `scripts/ci/ci-wake.mjs` (tests: `scripts/ci/__tests__/ci-wake.test.mjs`). **Not** a required check. See "PR babysitting" below. |
@@ -353,9 +354,10 @@ stay silent).
 `unknown` — a target the Management API could not be read — does **neither**. An API blip must not
 close a live alert (that is how a real outage gets silenced) and must not open one either (nothing
 was observed to be drifting). `unknown` still exits non-zero, so a check that cannot run is a red
-run rather than a quiet pass. This is the one watchdog in `scripts/ci/` that exits non-zero at all:
-the others annotate a run that is already red, whereas this script *is* the run, so green has to
-mean "the databases were checked and match".
+run rather than a quiet pass. Along with `staging-conformance.mjs` it is one of the two watchdogs
+in `scripts/ci/` that exit non-zero at all — both *are* the check, so green has to mean "it was
+checked and it matched". The rest (`deploy-alert`, `ci-wake`, `pr-base-sync`) only annotate a run
+that is already red, and deliberately exit 0 so a watchdog never adds noise of its own.
 
 **Read-only by construction.** It calls the Management API's migration-history endpoint
 (`GET /v1/projects/{ref}/database/migrations` — the stable endpoint, not the Beta `database/query`
@@ -367,6 +369,113 @@ source `run-migration.mjs` uses), which is why the job injects twice and capture
 the second injection overwrites it. The Infisical slug for production is **`prod`**, not
 `production`. Like the deploy alert, the tracking issue carries `routine-state` so `/next` §0.2
 never claims it as backlog work.
+
+### Scheduled conformance (`scripts/ci/staging-conformance.mjs`)
+
+Deploy visibility above fixes *"a push failed and nobody noticed."* This fixes the other half:
+**nobody pushed, and the environment rotted anyway.** Until this workflow, every verification in the
+repo was push-triggered, so a quiet week and a healthy week produced identical evidence. The four
+incidents that motivated it ([#838](https://github.com/pdcarlson/Frapp/issues/838)) all share that
+shape:
+
+- `frapp-staging` sat **38 migrations / ~5.5 months** behind with every workflow green.
+- The Infisical credential was invalid for **71+ days** (#696/#763).
+- Both Vercel staging secret syncs were pointed at a git branch named `preview` that has never
+  existed in this repository, and failed on that for months with nothing reporting it. Read
+  [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) §5 before drawing conclusions from
+  that: it records "staging received nothing, so the breakage was accidentally protective" as a
+  **misreading not to repeat** — `frapp-web` was read directly on 2026-08-12 and does hold the
+  backend store — while also marking `frapp-landing` as *expected-but-unconfirmed*, since it was
+  never inspected variable-by-variable. Neither "staging is empty" nor "both projects are
+  confirmed full" is supported; confirm before relying on either.
+- `custom_access_token_hook` was never enabled after #643 shipped, so `ChapterGuard` silently fell
+  back to the client-supplied `x-chapter-id` header — the pre-#643 trust model (#805).
+
+Runs daily at 07:00 UTC (`workflow_dispatch` for on-demand), asserting four properties of live
+`frapp-staging`. Scope is **staging only**: `frapp-prod` is intentionally `INACTIVE` while production
+is deferred, and alerting on that would be alerting on a decision (#814).
+
+**Three outcomes, and the third is the point.** A check that cannot run must never look like a check
+that passed:
+
+| Outcome | Meaning | Effect |
+| --- | --- | --- |
+| `pass` | asserted against live staging, and it held | counts toward health |
+| `fail` | asserted, and it did not hold | reds the run, raises the alert |
+| `skipped` | could not assert (missing credential, or not yet built) | reported separately, **never** folded into the pass count |
+
+Two rules follow from that, both about **not closing an alert on weak evidence**:
+
+1. A run where *everything* skipped classifies as **`inconclusive`**, not healthy, and cannot close
+   an open alert — a run that proved nothing is not evidence of recovery. Same rule the
+   `deploy-alert` no-op draws, for the same reason.
+2. Recovery is judged **per assertion, not by counting**. The alert body carries a visible
+   `` `conformance-failing: <ids>` `` marker naming what it was raised for, refreshed on every
+   raise, and the alert closes only when those exact assertions **PASS** again. Without this, an
+   alert raised by `auth-hook` would close as "recovered" on a later run where `auth-hook` merely
+   *skipped* — its credential deleted or renamed — and unrelated checks passed. Deleting a secret
+   would resolve the alert. A run in that state reports **`unproven-recovery`**: green (nothing
+   failed), but the alert stays open and the summary says why.
+
+The marker is a visible backticked line rather than an HTML comment on purpose: #800 established
+that HTML comments do not survive the GitHub MCP round-trip agents read issues through.
+
+⚠️ **GitHub disables `schedule:` triggers after 60 days of repository inactivity**, emailing the
+owner only. That ceiling is exactly backwards for this workflow — a long quiet stretch silently
+turns off the thing that watches quiet stretches, and it is the only workflow here affected (every
+other one is push- or `workflow_run`-triggered). If the repo goes dormant, re-enable it from the
+Actions tab.
+
+Two assertions ship degraded on purpose, each saying so in the step summary:
+
+- **Migration parity is owned by `check-migration-drift.yml`, not by this workflow.**
+  [#833](https://github.com/pdcarlson/Frapp/issues/833) was expected to land as a plain
+  `npm run check:*` script this workflow would call. It landed as a **complete sibling
+  watchdog** instead: its own daily schedule, its own `routine-state` alert issue, and coverage
+  of production as well as staging. Calling its script from here would run the same comparison
+  twice a day, let one real drift open two P1 alerts, and — because that script upserts and
+  closes its own alert as a side effect — have this workflow mutating another watchdog's
+  incident state. So the row is reported, not run: it shows as SKIPPED with a pointer, which
+  asserts nothing and cannot close this workflow's alert. Deleting the row instead would have
+  been worse; the table is meant to be a complete inventory of what is watched.
+- **End-to-end sign-in** — the only row that exercises behaviour rather than configuration, covering
+  migration, grants, RLS, and hook resolution in one probe — needs `STAGING_SMOKE_USER_EMAIL` /
+  `STAGING_SMOKE_USER_PASSWORD`, which are not provisioned (#893). **The smoke user must have
+  exactly one chapter membership:** a correctly-working hook returns a token with *no* claim when
+  the user resolves to no chapter, so a zero-membership user is indistinguishable from a disabled
+  hook. The check resolves that ambiguity in the safe direction — a claimless token is reported as
+  **FAIL** naming both possible causes, never as a pass — so provisioning a zero-membership user
+  produces a red run and a P1 blaming the hook on a healthy environment. Give it exactly one.
+
+The Infisical injection step runs with `continue-on-error: true`, which is load-bearing rather than
+lax: a revoked machine identity is the single most likely drift class, and failing the job at that
+step would kill the run *before* the script could report it and raise the alert — a red run with no
+issue, for the exact incident this workflow was built for.
+
+Note what a green Infisical row does and does not mean. Its classification is three-way and closed
+at both ends: any sync reporting `failed` is a FAIL; **every** sync reporting `succeeded` is a PASS;
+anything else is SKIPPED. Infisical's status enum is `pending | running | succeeded | failed` plus
+null before a sync has ever run — read from the open-source backend, **not observed against the live
+API**, which is precisely why an unrecognised status skips rather than passes. The middle case cuts
+both ways: calling "not succeeded" broken would open a P1 for a sync caught mid-window, while
+calling it green would hide a sync wedged in `pending` because its destination token was revoked —
+the #834 signature going undetected. A skip asserts nothing, reds nothing, and cannot close an open
+alert, which is the honest answer to "we do not know yet."
+
+Even a PASS does **not** assert the destinations hold the right values;
+[`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) records the hard-won rule that "a
+sync that reports Failed today tells you nothing about what it delivered before it broke — check the
+destination, not the sync status." An unrecognised Infisical response shape **fails closed**, because
+reading an unparseable response as "no failing syncs" would rebuild the silent green.
+
+The alert issue is titled *"Staging conformance is failing — frapp-staging has drifted"*
+(`routine-state`, `area:ci`, `P1`) and follows the same upsert contract as the deploy alert: created
+if absent, reopened if closed, otherwise commented, and closed on the next clean run. It shares
+`scripts/ci/lib/alert-issue.mjs` with the deploy alert. (`check-migration-drift.mjs` landed
+concurrently carrying its own copy of that upsert logic — consolidating it onto the shared lib is
+tracked in [#909](https://github.com/pdcarlson/Frapp/issues/909), not done here, so this PR does not
+rewrite a watchdog that merged hours ago.) Unlike the deploy watchdog this script **is** the check,
+so a confirmed drift exits non-zero and reds the run.
 
 ### Applied permission allows
 

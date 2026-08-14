@@ -23,6 +23,7 @@
     "check:migration-drift": "node scripts/ci/check-migration-drift.mjs",
     "sync:brand-assets": "node scripts/sync-brand-assets.mjs",
     "check:brand-assets": "node scripts/check-brand-assets.mjs",
+    "check:staging-conformance": "node scripts/ci/staging-conformance.mjs",
     "check:chapter-directory-seed": "node scripts/check-chapter-directory-seed.mjs",
     "load:chapter-directory": "node scripts/load-chapter-directory.mjs",
     "configure:branch-protection": "node scripts/configure-branch-protection.mjs",

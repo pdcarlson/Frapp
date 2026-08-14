@@ -8,6 +8,43 @@
 
 > **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
 
+## Automated GitHub-issue alerts
+
+Three watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
+token, and the issue thread doubles as the incident log. Each upserts **one** tracking issue (created
+if absent, reopened if closed, otherwise commented). All three carry `routine-state`, which `/next` §0.2
+treats as never-claimable — they track live state, not a unit of work, so do not pick them up as
+backlog.
+
+| Alert issue title | Raised by | Means | Clears when |
+| --- | --- | --- | --- |
+| *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
+| *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:00 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
+| *Database schema drift — a deployed database no longer matches supabase/migrations/* | `check-migration-drift.yml` (daily 07:00 UTC) | a deployed database's `schema_migrations` does not match `supabase/migrations/` — behind, or carrying a version that exists nowhere in the repo | every environment is back in sync |
+
+**Two scheduled watchdogs, two separate concerns.** `check-migration-drift.yml` owns migration
+parity for *every* environment; `staging-conformance.yml` owns everything else about staging and
+deliberately does **not** re-run the drift comparison, so one real drift raises exactly one alert.
+If both alerts are open at once they are telling you about different problems.
+
+**Read the conformance alert's clearing condition literally — an open issue does not always mean
+"broken right now."** It closes only when the specific assertions it names pass, not merely when
+nothing fails, because an assertion that stops being *runnable* would otherwise read as a recovery
+(deleting a credential would resolve the alert). So an alert can stay open on a staging that is
+fine, because the thing it was raised for can no longer be checked. The daily run in that state is
+**green and exits 0** while the issue stays open, and its step summary says
+*"Nothing failed, but the open alert is not cleared"* — check the latest run's summary before
+opening an investigation.
+
+One conformance assertion is **not runnable** as of this workflow's merge: the end-to-end sign-in
+needs a smoke credential that is not provisioned (#893), so it reports SKIPPED and a broken sign-in
+chain is **not** currently detected by it. Migration parity is not missing — it is covered by the
+migration-drift row above.
+
+No watchdog closes on a run that proved nothing: a no-op deploy run and an all-skipped
+conformance run both leave an open alert open. Mechanics and rationale:
+[`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § "Deploy visibility" and § "Scheduled conformance".
+
 ## Critical alerts
 
 - API health check down
