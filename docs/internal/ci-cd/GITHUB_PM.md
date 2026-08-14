@@ -192,6 +192,90 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   is mandatory). Dedup for any filing path must also search `[human]` titles so a held blocker
   doesn't get a promotable twin. Full rule:
   [`AGENTS.md`](../../../AGENTS.md#filing-follow-up-work-as-github-issues).
+- **Before rewriting an existing body, read it with `search_issues`** — never `issue_read` or
+  `list_issues`, both of which corrupt what they return. See
+  [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
+  below; it is the canonical statement of that rule and the routines defer to it.
+
+## Reading a body you intend to rewrite (MCP read fidelity)
+
+**Only `search_issues` returns an issue body faithfully. `issue_read` and `list_issues` both
+corrupt it.** Any edit sourced from those two silently destroys content — most visibly the `fp=`
+dedup marker, but code snippets too, which are unrecoverable.
+
+The damage is **entirely on read**. Stored bodies on GitHub are intact; nothing needs back-filling,
+and a body rewritten from a `search_issues` read round-trips byte-for-byte.
+
+| Read path | HTML comments (`fp=` markers) | HTML/JSX tags | `'` `"` `&` | Safe to re-body from? |
+| --- | --- | --- | --- | --- |
+| `issue_read method:get` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
+| `list_issues fields:["body"]` | ❌ stripped | ❌ stripped | ❌ → `&#39;` `&#34;` `&amp;` | **No** |
+| `search_issues fields:["number","title","body"]` | ✅ intact | ✅ intact | ✅ literal | **Yes** |
+
+Three independent corruption vectors, found across three separate runs (2026-08-09, -08-10, -08-12)
+because each one masks the others:
+
+1. **HTML comments are deleted** — the `<!-- agent-suggestion: v1 fp=… -->` marker vanishes, so a
+   rewrite drops it and the curator re-files the issue as net-new on its next run.
+2. **Unrecognised tags are deleted**, including JSX *inside fenced code blocks* — a ` ```tsx ` fence
+   comes back as blank lines. This one is unrecoverable by convention: a dropped marker can be
+   reconstructed from `fp=<area>/<slug>`, a dropped snippet cannot.
+3. **`'`, `"`, `&` are entity-escaped** — inside code fences the quoted JSON, SQL, and shell stop
+   being copy-pasteable.
+
+The tag sanitizer is **allowlist-based, not blanket** — `<br>` survives while `<Tabs.Screen …/>`
+does not, which is why the defect reads as intermittent and went three rounds before being pinned.
+
+### Re-verifying this (the probe)
+
+Four calls, on two fixture issues chosen because each carries content the others miss. Re-run it if
+the MCP version changes or a read looks suspicious:
+
+| Step | Call | Expected on a faithful read |
+| --- | --- | --- |
+| 1 | `search_issues` `"Ship mobile Backwork browse and upload"`, `fields:["number","title","body"]` | #357's ` ```tsx ` fence holds five `<Tabs.Screen name="chat" ... />` lines; `Frapp's` has a literal `'` |
+| 2 | `issue_read method:get` on **#357** | Contrast: fence is six blank lines, marker absent, `Frapp&#39;s` |
+| 3 | `search_issues` `"Backfill missing fp= dedup markers legacy"` | #697's body contains a literal `<!-- agent-suggestion: v1 fp=docs/backfill-missing-dedup-markers … -->` and nested `<issue id="…">` tags |
+| 4 | `WebFetch` `https://github.com/pdcarlson/Frapp/issues/357` | Out-of-band ground truth — the rendered page must agree with step 1, not step 2 |
+
+Last verified **2026-08-14** (all three vectors, against the table above). The 2026-08-11 check
+that preceded it covered only vector 1, which is why two subsequent triage runs still refused to
+write: a rule naming just HTML comments gives an agent no cover when the body holds a `tsx` fence.
+State which vectors a re-verification covered, so the next one extends this rather than re-deriving it.
+
+### The write side is faithful too (proven end to end)
+
+Read fidelity alone doesn't license a rewrite — `issue_write` also has to store what it is given.
+It does. Proven 2026-08-14 on a throwaway fixture (#888, closed) carrying all three vectors at
+once, by performing **the exact edit the blocked runs refused**: adding an `### Agent brief`
+section to a body containing an `fp=` marker, a `tsx` fence with JSX, and quotes/ampersands.
+
+`create → search_issues → edit → issue_write → search_issues` returned the body byte-identical
+apart from the intended addition: marker present, `<Tabs.Screen name="chat" options={{ title:
+'Chat' }} />` intact, `it's a "quoted" phrase with Rationale & impact` intact. `WebFetch` on the
+rendered page agreed on every visible element. So a brief backfill sourced from `search_issues` is
+safe, and criteria of the form *"a marker known to exist survives a simulated refresh"* are met.
+
+(HTML comments are invisible in rendered HTML by design, so `WebFetch` cannot confirm the marker —
+`search_issues`, which reads the stored body, is the authority for that one. Don't read a
+`WebFetch` miss as a dropped marker.)
+
+### Using it
+
+`search_issues` is a **semantic** search, not fetch-by-number. Query it with distinctive words from
+the target's own title, then **confirm the returned `number` is the issue you mean** before using
+the body. If the issue doesn't come back, **skip the body edit and leave a comment instead** —
+never fall back to `issue_read` to source a rewrite. After writing, confirm the marker survived.
+
+**It is index-backed, so it lags writes.** A just-created or just-edited issue can be missing from
+`search_issues` results for a short window — observed 2026-08-14 on a seconds-old issue, which
+returned `total_count: 0` and then resolved normally moments later. Two consequences: never treat
+an empty result on a fresh issue as "the issue has no marker" (that misreads as the bootstrap
+trigger for the PR Follow-ups tracking issue), and when a write must be read back to confirm, allow
+for a retry rather than concluding the write failed.
+
+This unblocks **#697** (backfill `fp=` markers on legacy Cursor-filed suggestions), which was held
+pending a lossless path, and it is why routines may resume Agent-brief backfills.
 
 ## Ownership boundary (organize broadly, destroy narrowly)
 

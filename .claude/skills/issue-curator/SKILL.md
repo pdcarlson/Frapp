@@ -77,15 +77,19 @@ makes it so. Otherwise mark **`stale`** and leave it open. When in doubt, do not
 **Label writes replace the whole set.** `issue_write`'s `labels` field overwrites — always send
 the union of the existing labels plus your change, never just the addition.
 
-**Reading a body you intend to rewrite.** `issue_read method:get` **strips HTML comments** from the
-body it returns, so the `fp=` marker is invisible in its output even when the issue has one.
-Refreshing or splitting a body from that text silently deletes the marker, which breaks dedup and
-causes a re-file on the next run. **Source the raw body from `search_issues`
-(`fields: ["number","title","body"]`), which returns HTML comments intact**, and confirm the marker
-is present in what you send back. Verified 2026-08-11. Because `search_issues` matches
-*semantically* rather than by number, query it with distinctive words from the target's own title
-and **verify the returned `number` is the issue you mean**; if it does not come back, skip the
-rewrite rather than falling back to `issue_read`.
+**Reading a body you intend to rewrite.** **Source it from `search_issues`
+(`fields: ["number","title","body"]`) — never `issue_read` or `list_issues`.** Those two corrupt a
+body three ways on read: HTML comments deleted (your `fp=` marker), unrecognised tags deleted
+(including JSX inside ` ```tsx ` fences), and `'`/`"`/`&` entity-escaped. Refreshing or splitting
+from that text silently destroys content — the marker breaks dedup and causes a re-file, and a
+dropped code snippet is **unrecoverable**, unlike a marker you could rebuild from `fp=<area>/<slug>`.
+`search_issues` returns all three intact (verified 2026-08-14; full table, the probe to re-verify,
+and the reasoning: [`GITHUB_PM.md` → Reading a body you intend to rewrite](../../../docs/internal/ci-cd/GITHUB_PM.md#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)).
+
+Because `search_issues` matches *semantically* rather than by number, query it with distinctive
+words from the target's own title and **verify the returned `number` is the issue you mean**; if it
+does not come back, skip the rewrite rather than falling back to `issue_read`. Confirm the marker
+survived in what you sent back.
 
 **Legacy markers.** Older suggestions carry a `<!-- cursor-suggestion: v1 fp=… -->` marker from a
 previous automation platform. It is equivalent to the current `agent-suggestion` marker — dedup
