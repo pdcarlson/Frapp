@@ -10,9 +10,12 @@
 //     runs skipped every job and reported success (#696, #763).
 //   * Both Vercel staging secret syncs were pointed at a git branch named
 //     `preview` that has never existed here, and failed on that for months
-//     with nothing reporting it. (They deliver now, since the repoint to
-//     `main` — see SECRETS_MANAGEMENT.md §5, which records the opposite
-//     reading as a misreading not to repeat.)
+//     with nothing reporting it. (See SECRETS_MANAGEMENT.md §5 before drawing
+//     conclusions: `frapp-web` was read directly on 2026-08-12 and does hold
+//     the backend store; `frapp-landing` was never inspected variable-by-
+//     variable, so its contents remain inferred. The doc records "staging got
+//     nothing, so it was accidentally protective" as a misreading not to
+//     repeat.)
 //   * custom_access_token_hook was never enabled after #643 shipped, so
 //     ChapterGuard silently fell back to the client-supplied x-chapter-id
 //     header — the pre-#643 trust model (#805).
@@ -83,10 +86,12 @@ export const SKIPPED = "skipped";
 /**
  * Sync states that mean "this sync is broken right now".
  *
- * Infisical's `SecretSyncStatus` enum is exactly `pending | running |
- * succeeded | failed` (plus `null` before a sync has ever run), so this set is
- * deliberately the single real failure state rather than a defensive list of
- * spellings that never occur.
+ * Infisical's `SecretSyncStatus` enum is `pending | running | succeeded |
+ * failed` (plus `null` before a sync has ever run). That was read from the
+ * open-source backend's `secret-sync-types.ts`, NOT observed against the live
+ * API — no call has been made from this branch. The classifier is written so
+ * that an unrecognised status skips rather than passes, which is what keeps a
+ * wrong enum from becoming a silent green.
  */
 export const FAILING_SYNC_STATUSES = new Set(["failed"]);
 
@@ -97,6 +102,7 @@ export const FAILING_SYNC_STATUSES = new Set(["failed"]);
  * writing no summary and raising no alert.
  */
 const FETCH_TIMEOUT_MS = 20_000;
+const CHILD_TIMEOUT_MS = 120_000;
 const withTimeout = (init = {}) => ({
   ...init,
   signal: init.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -130,11 +136,18 @@ export function parseFailingIds(body) {
 }
 
 /**
- * Secrets must never reach an alert issue body. The job injects the whole
- * staging store (`secret-path: "/"`, `include-imports: true`), and GitHub's
- * log masking does NOT apply to issue bodies written through the REST API, so
- * any text originating outside this file — notably a delegated child process's
- * stderr — is scrubbed before it can be reported.
+ * Scrubs text that originates outside this file — notably a delegated child
+ * process's stderr — before it can reach an alert issue body. The job injects
+ * the whole staging store (`secret-path: "/"`, `include-imports: true`), and
+ * GitHub's log masking does NOT apply to issue bodies written via the REST API.
+ *
+ * Know what this does and does not cover. It masks (a) values of env vars whose
+ * NAME matches the pattern below and are at least 8 characters, and (b)
+ * `//user:password@` credentials in a URL. It is therefore **name-driven, not
+ * content-driven**: a secret whose variable name matches none of those words
+ * passes through verbatim. This is a reduction in blast radius, not a
+ * guarantee — the durable rule is that a delegated script must not print
+ * credentials on failure in the first place.
  */
 export function redactSecrets(text, env = process.env) {
   let out = String(text ?? "");
@@ -145,7 +158,7 @@ export function redactSecrets(text, env = process.env) {
     .filter(([name, value]) =>
       typeof value === "string" &&
       value.length >= 8 &&
-      /KEY|SECRET|TOKEN|PASSWORD|DSN/i.test(name))
+      /KEY|SECRET|TOKEN|PASSWORD|DSN|HOOK_URL|WEBHOOK|CREDENTIAL/i.test(name))
     .map(([, value]) => value)
     // Longest first, so a value containing another is not partly replaced.
     .sort((a, b) => b.length - a.length);
@@ -291,14 +304,23 @@ export async function checkInfisicalSyncs({
     );
   }
 
-  // Infisical's SecretSyncStatus is exactly pending | running | succeeded |
-  // failed, plus null for a sync that has never run (auto-sync off, or newly
-  // created). Only `failed` means broken.
+  // Infisical's SecretSyncStatus enum is `pending | running | succeeded |
+  // failed` (read from the open-source backend's secret-sync-types.ts, not
+  // observed live), plus null for a sync that has never run.
   //
-  // Treating "not succeeded" as broken raised a P1 for two routine states: a
-  // sync mid-window at 07:00, and the morning after Infisical's daily retry
-  // sweep flips failed -> pending. A workflow whose own premise is that a muted
-  // alert is worse than none must not cry wolf on a healthy store.
+  // Classification is deliberately three-way and closed at both ends:
+  //   any `failed`            -> FAIL
+  //   every sync `succeeded`  -> PASS
+  //   anything else           -> SKIPPED (we cannot assert the property)
+  //
+  // The middle case matters twice over. Calling "not succeeded" broken would
+  // open a P1 for a sync caught mid-window, or for one flipped back to
+  // `pending` by the daily retry sweep in Infisical's queue worker (read from
+  // its source, not observed here). But calling it PASS is worse: a status
+  // this code does not recognise — or a sync wedged in `pending` because its
+  // destination token was revoked — would report green while not delivering,
+  // which is the #834 signature going undetected. A skip asserts nothing,
+  // reds nothing, and cannot close an open alert, which is the honest answer.
   const statusOf = (sync) => String(sync?.syncStatus ?? "").toLowerCase();
   const failedSyncs = syncs.filter((sync) => FAILING_SYNC_STATUSES.has(statusOf(sync)));
   const settled = syncs.filter((sync) => statusOf(sync) === "succeeded");
@@ -313,23 +335,18 @@ export async function checkInfisicalSyncs({
     );
     return result("infisical-syncs", label, FAIL, `failing syncs: ${names.join(", ")}`);
   }
-  if (settled.length === 0) {
-    // Nothing has completed a sync, so there is no sync state to assert. That
-    // is a skip, not a pass — and a skip cannot close an open alert.
+  if (settled.length < syncs.length) {
+    const unsettled = syncs
+      .filter((sync) => statusOf(sync) !== "succeeded")
+      .map((s) => `${s?.name ?? "unnamed"}=${s?.syncStatus ?? "never-run"}`);
     return result(
       "infisical-syncs",
       label,
       SKIPPED,
-      `all ${syncs.length} syncs are pending/running/never-run — no settled sync state to assert`,
+      `cannot assert every sync succeeded — ${unsettled.join(", ")}`,
     );
   }
-  const inFlight = syncs.length - settled.length;
-  return result(
-    "infisical-syncs",
-    label,
-    PASS,
-    `${settled.length} succeeded, none failing` + (inFlight ? `, ${inFlight} pending/running` : ""),
-  );
+  return result("infisical-syncs", label, PASS, `all ${settled.length} syncs succeeded`);
 }
 
 /**
@@ -409,7 +426,17 @@ export async function checkAuthSignIn({
 export async function checkSchemaDrift({
   scriptPath = join(REPO_ROOT, "scripts", "check-schema-drift.mjs"),
   exists = existsSync,
-  run = (path) => execFileSync(process.execPath, [path], { encoding: "utf8", stdio: "pipe" }),
+  // Bounded like the provider fetches. execFileSync is synchronous and blocks
+  // the event loop, so an AbortSignal could not help it — the child needs its
+  // own timeout, or a wedged connection to a paused staging project runs out
+  // the job's 10 minutes and produces a red run with no summary and no alert.
+  run = (path) =>
+    execFileSync(process.execPath, [path], {
+      encoding: "utf8",
+      stdio: "pipe",
+      timeout: CHILD_TIMEOUT_MS,
+      killSignal: "SIGKILL",
+    }),
   redact = redactSecrets,
 } = {}) {
   const label = "Applied migrations match supabase/migrations/";
@@ -527,8 +554,25 @@ export function buildRunSummary({ outcome, results, runUrl }) {
   return lines.join("\n");
 }
 
-export function buildAlertIssueBody({ results, runUrl }) {
+/**
+ * @param previousBody the alert's existing body on a refresh, or null on create.
+ *
+ * The marker is the UNION of what is failing now and what the alert already
+ * recorded but still cannot be shown to pass. Writing only the current failure
+ * set reintroduced the very bug the marker exists to prevent, one run later:
+ * an alert raised for `auth-hook` whose next run failed on something else would
+ * drop `auth-hook` from the gate, and the run after that would close it while
+ * the hook was still disabled. An id leaves the marker only by PASSing.
+ */
+export function buildAlertIssueBody({ results, runUrl, previousBody = null }) {
   const { failed } = classifyConformance(results);
+  const passingNow = new Set(
+    results.filter((r) => r.status === PASS).map((r) => r.id),
+  );
+  const carriedOver = parseFailingIds(previousBody).filter(
+    (id) => !passingNow.has(id),
+  );
+  const markerIds = [...new Set([...failed.map((r) => r.id), ...carriedOver])];
   const lines = [
     "## Staging conformance is failing",
     "",
@@ -557,7 +601,7 @@ export function buildAlertIssueBody({ results, runUrl }) {
     "",
     // Machine-readable and deliberately visible: HTML comments do not survive
     // the GitHub MCP round-trip that agents read issues through (#800).
-    `\`${FAILING_MARKER} ${failed.map((r) => r.id).join(",")}\``,
+    `\`${FAILING_MARKER} ${markerIds.join(",")}\``,
   ];
   // Only the optional trailing run link is conditional. A blanket
   // `.filter(line => line !== "")` stripped every intentional blank line and
@@ -688,7 +732,10 @@ export async function runStagingConformance({
       title: ALERT_ISSUE_TITLE,
       labels: ALERT_ISSUE_LABELS,
       lookupLabel: ALERT_ISSUE_LOOKUP_LABEL,
-      buildIssueBody: () => buildAlertIssueBody({ results, runUrl }),
+      // previousBody is null on create and the existing body on refresh; the
+      // builder merges its marker so an unresolved assertion is never dropped.
+      buildIssueBody: (previousBody) =>
+        buildAlertIssueBody({ results, runUrl, previousBody }),
       buildCommentBody: ({ reopened }) => buildAlertCommentBody({ results, runUrl, reopened }),
       // The body carries the failing-assertion marker that gates recovery, so
       // it must track the CURRENT failure set, not the first one ever seen.
@@ -696,9 +743,17 @@ export async function runStagingConformance({
     });
     logger.log?.(
       alert.action === "failed"
-        ? "[staging-conformance] could not write the alert issue"
+        ? "::error::Staging conformance failed and the alert issue could not be written."
         : `[staging-conformance] alert issue #${alert.issueNumber} ${alert.action}`,
     );
+    if (alert.bodyRefreshFailed) {
+      // The body carries the marker that gates recovery, so a stale one can let
+      // a later run close the alert early.
+      logger.log?.(
+        "::warning::Alert comment posted, but its body could not be refreshed — " +
+          "the failing-assertion marker may be stale.",
+      );
+    }
     return { outcome, results, alert };
   }
 
@@ -755,6 +810,14 @@ export async function runStagingConformance({
   });
   if (alert.action === "closed") {
     logger.log?.(`[staging-conformance] closed alert issue(s): ${alert.closed.join(", ")}`);
+  } else if (alert.action === "failed") {
+    // Surfaced, not swallowed. Silently dropping this leaves a P1 open on a
+    // healthy environment, collecting one duplicate "recovered" comment a day,
+    // while the run reports conformant.
+    logger.log?.(
+      "::error::Staging is conformant but the alert issue could not be closed. " +
+        "It is still open; close it by hand if this persists.",
+    );
   }
   return { outcome, results, alert };
 }

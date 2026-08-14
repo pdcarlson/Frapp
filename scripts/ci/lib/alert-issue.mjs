@@ -105,7 +105,7 @@ export async function raiseAlert({
         // unrepresentable (one hard-coded constant served both roles); keeping
         // it unrepresentable is the point.
         labels: [...new Set([lookupLabel, ...(labels ?? [])])],
-        body: buildIssueBody(),
+        body: buildIssueBody(null),
       },
     });
     return ok
@@ -114,13 +114,14 @@ export async function raiseAlert({
   }
 
   const reopened = target.state !== "open";
+  let bodyRefreshFailed = false;
   const patch = {};
   if (reopened) patch.state = "open";
-  if (refreshBodyOnRaise) patch.body = buildIssueBody();
+  // The previous body is handed to the builder so a caller can merge state it
+  // keeps there (see staging-conformance.mjs's failing-assertion marker)
+  // instead of clobbering it with only what is true this run.
+  if (refreshBodyOnRaise) patch.body = buildIssueBody(target.body ?? null);
   if (Object.keys(patch).length > 0) {
-    // Checked, not fire-and-forget. A failed reopen leaves the alert CLOSED
-    // while the caller logs "reopened" — a live outage with no open alert,
-    // which is the dangerous direction for this module's whole contract.
     const { ok: patchOk } = await ghRequest({
       token,
       fetchImpl,
@@ -128,7 +129,14 @@ export async function raiseAlert({
       path: `/repos/${repo}/issues/${target.number}`,
       body: patch,
     });
-    if (!patchOk) return { action: "failed", issueNumber: target.number };
+    // Only a failed REOPEN aborts. It is checked rather than fire-and-forget
+    // because reporting "reopened" on an issue that is still closed means a
+    // live outage with no open alert — the dangerous direction for this
+    // module's contract. A failed body refresh is cosmetic by comparison: the
+    // alert is already open and reachable, so bailing out here would suppress
+    // the comment that records what actually failed today.
+    if (!patchOk && reopened) return { action: "failed", issueNumber: target.number };
+    if (!patchOk) bodyRefreshFailed = true;
   }
 
   const { ok } = await ghRequest({
@@ -143,6 +151,10 @@ export async function raiseAlert({
   return {
     action: reopened ? "reopened" : "commented",
     issueNumber: target.number,
+    // Reported only to callers that opted into body refresh, so the return
+    // shape stays byte-identical for the ones that did not — which is what
+    // keeps deploy-alert.test.mjs a valid regression net over this module.
+    ...(refreshBodyOnRaise ? { bodyRefreshFailed } : {}),
   };
 }
 

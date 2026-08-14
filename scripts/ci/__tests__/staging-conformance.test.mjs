@@ -600,7 +600,12 @@ test("the comment builders render the failing assertions and distinguish a reope
 
 // ── Infisical status classification ─────────────────────────────────────────
 
-test("pending / running / never-run syncs are not treated as failures", async () => {
+test("pending / running / never-run syncs are neither a failure nor a pass", async () => {
+  // Not FAIL: a sync caught mid-window must not open a P1 about a healthy
+  // store. Not PASS either: a sync wedged in `pending` because its destination
+  // token was revoked is exactly the #834 signature, and calling that green —
+  // which also lets it close an open alert — is the silent failure this
+  // workflow exists to end.
   const result = await checkInfisicalSyncs({
     clientId: "c",
     clientSecret: "s",
@@ -609,13 +614,45 @@ test("pending / running / never-run syncs are not treated as failures", async ()
       secretSyncs: [
         { name: "render-api-staging", syncStatus: "succeeded" },
         { name: "vercel-web-staging", syncStatus: "pending" },
-        { name: "vercel-landing-staging", syncStatus: "running" },
         { name: "brand-new-sync", syncStatus: null },
       ],
     }),
   });
-  assert.equal(result.status, PASS, "a sync mid-window must not open a P1");
-  assert.match(result.detail, /pending\/running/);
+  assert.equal(result.status, SKIPPED);
+  assert.match(result.detail, /vercel-web-staging=pending/);
+  assert.match(result.detail, /brand-new-sync=never-run/);
+});
+
+test("an unrecognised sync status skips rather than passing", async () => {
+  // The enum was read from Infisical's source, never observed live. If it is
+  // wrong, the classifier must fail safe.
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    fetchImpl: infisicalFetch({
+      secretSyncs: [
+        { name: "render-api-staging", syncStatus: "succeeded" },
+        { name: "vercel-web-staging", syncStatus: "not_synced" },
+      ],
+    }),
+  });
+  assert.equal(result.status, SKIPPED, "an unknown status must never read as green");
+});
+
+test("PASS requires every sync to have settled succeeded", async () => {
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    fetchImpl: infisicalFetch({
+      secretSyncs: [
+        { name: "a", syncStatus: "succeeded" },
+        { name: "b", syncStatus: "succeeded" },
+      ],
+    }),
+  });
+  assert.equal(result.status, PASS);
 });
 
 test("a store where nothing has ever settled is SKIPPED, not PASS", async () => {
@@ -628,6 +665,21 @@ test("a store where nothing has ever settled is SKIPPED, not PASS", async () => 
     }),
   });
   assert.equal(result.status, SKIPPED);
+});
+
+test("a failing sync still FAILs even when every other sync is unsettled", async () => {
+  const result = await checkInfisicalSyncs({
+    clientId: "c",
+    clientSecret: "s",
+    projectId: "p",
+    fetchImpl: infisicalFetch({
+      secretSyncs: [
+        { name: "vercel-landing-staging", syncStatus: "failed" },
+        { name: "b", syncStatus: "pending" },
+      ],
+    }),
+  });
+  assert.equal(result.status, FAIL, "a real failure must outrank the cannot-assert case");
 });
 
 test("a failing sync surfaces lastSyncMessage, redacted", async () => {
@@ -755,4 +807,113 @@ test("an empty INFISICAL_PROJECT_ID falls back to .infisical.json rather than sk
   assert.equal(syncRow.status, PASS, "must assert, not skip, on an empty env var");
   const syncCall = seen.find((u) => String(u).includes("secret-syncs"));
   assert.match(syncCall, new RegExp(`projectId=${readWorkspaceId()}`));
+});
+
+// ── The recovery gate's second half: keeping the marker current ──────────────
+// Verified by mutation during review: with `refreshBodyOnRaise: true` deleted
+// from the raise call, the whole suite stayed green while the gate silently
+// reverted to the bug it was added to fix. These tests fail if it is removed.
+
+test("re-raising onto an open alert refreshes its body, and the marker accumulates", async () => {
+  const openAlert = {
+    number: 900,
+    state: "open",
+    title: ALERT_ISSUE_TITLE,
+    body: `\`${FAILING_MARKER} auth-hook\``,
+  };
+  const { fetchImpl, calls } = makeFetchMock([
+    { method: "GET", path: "/issues?state=all", body: [openAlert] },
+    { method: "PATCH", path: "/issues/900", body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [
+      // A different check fails today; auth-hook can no longer be asserted.
+      async () => ({ id: "infisical-syncs", label: "syncs", status: FAIL, detail: "broken" }),
+      async () => ({ id: "auth-hook", label: "hook", status: SKIPPED, detail: "credential gone" }),
+    ],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+
+  const patch = calls.find((c) => c.method === "PATCH");
+  assert.ok(patch, "an open alert's body must be refreshed so the marker tracks current state");
+  const ids = parseFailingIds(JSON.parse(patch.body).body);
+  assert.ok(ids.includes("infisical-syncs"), "today's failure joins the marker");
+  assert.ok(
+    ids.includes("auth-hook"),
+    "yesterday's unresolved failure must NOT be dropped — it only leaves the marker by PASSing",
+  );
+});
+
+test("an id leaves the marker only by passing", () => {
+  const previousBody = `\`${FAILING_MARKER} auth-hook,project-status\``;
+  const body = buildAlertIssueBody({
+    results: [
+      { id: "auth-hook", status: PASS, label: "hook", detail: "" },
+      { id: "project-status", status: SKIPPED, label: "status", detail: "no credential" },
+      { id: "infisical-syncs", status: FAIL, label: "syncs", detail: "broken" },
+    ],
+    runUrl: "",
+    previousBody,
+  });
+  assert.deepEqual(
+    parseFailingIds(body).sort(),
+    ["infisical-syncs", "project-status"],
+    "auth-hook passed so it drops; project-status only skipped so it stays",
+  );
+});
+
+test("the three-day regression the marker exists to prevent", async () => {
+  // Day 1 auth-hook fails. Day 2 a different check fails while auth-hook is
+  // unassertable. Day 3 that other check recovers, auth-hook still unassertable.
+  // Day 3 must NOT close the alert.
+  const day1 = buildAlertIssueBody({
+    results: [{ id: "auth-hook", status: FAIL, label: "hook", detail: "disabled" }],
+    runUrl: "",
+    previousBody: null,
+  });
+  const day2 = buildAlertIssueBody({
+    results: [
+      { id: "auth-hook", status: SKIPPED, label: "hook", detail: "credential gone" },
+      { id: "infisical-syncs", status: FAIL, label: "syncs", detail: "broken" },
+    ],
+    runUrl: "",
+    previousBody: day1,
+  });
+  const day3Results = [
+    { id: "auth-hook", status: SKIPPED, label: "hook", detail: "credential gone" },
+    { id: "infisical-syncs", status: PASS, label: "syncs", detail: "" },
+  ];
+  assert.equal(
+    canResolveAlert({ results: day3Results, failingIds: parseFailingIds(day2) }),
+    false,
+    "the hook may still be disabled; nothing has shown otherwise",
+  );
+});
+
+test("a failed body refresh does not suppress the failure comment", async () => {
+  const { fetchImpl, calls } = makeFetchMock([
+    {
+      method: "GET",
+      path: "/issues?state=all",
+      body: [{ number: 900, state: "open", title: ALERT_ISSUE_TITLE, body: "" }],
+    },
+    { method: "PATCH", path: "/issues/900", status: 502, body: {} },
+    { method: "POST", path: "/comments", body: {} },
+  ]);
+  const { alert } = await runStagingConformance({
+    token: "t",
+    repo: "o/r",
+    fetchImpl,
+    checks: [async () => ({ id: "auth-hook", label: "hook", status: FAIL, detail: "disabled" })],
+    writeSummary: () => {},
+    logger: quiet,
+  });
+  assert.equal(alert.action, "commented", "the alert is already open; a cosmetic refresh failing must not abort");
+  assert.equal(alert.bodyRefreshFailed, true, "but it must be surfaced");
+  assert.ok(calls.some((c) => c.url.includes("/comments")), "today's failure must still be recorded");
 });

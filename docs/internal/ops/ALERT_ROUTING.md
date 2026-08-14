@@ -12,17 +12,31 @@
 
 Two watchdogs alert through GitHub Issues rather than a provider channel — no new service, no new
 token, and the issue thread doubles as the incident log. Both upsert **one** tracking issue (created
-if absent, reopened if closed, otherwise commented) and close it on recovery, so **an open alert
-issue means that thing is broken right now**. Both carry `routine-state`, which `/next` §0.2 treats
-as never-claimable — they track live state, not a unit of work, so do not pick them up as backlog.
+if absent, reopened if closed, otherwise commented). Both carry `routine-state`, which `/next` §0.2
+treats as never-claimable — they track live state, not a unit of work, so do not pick them up as
+backlog.
 
 | Alert issue title | Raised by | Means | Clears when |
 | --- | --- | --- | --- |
 | *Deploy API is failing — pushes are not reaching the environment* | `deploy-outcome` job, `deploy-api.yml` | the last `Deploy API` run that tried to deploy did not succeed | a later run deploys successfully |
-| *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:00 UTC) | live `frapp-staging` no longer matches what the repo expects — paused project, disabled auth hook, failing secret sync, migration drift, or a broken sign-in chain | the next scheduled run asserts clean |
+| *Staging conformance is failing — frapp-staging has drifted* | `staging-conformance.yml` (daily 07:00 UTC) | at least one assertion about live `frapp-staging` **failed** — paused project, disabled auth hook, or a failing secret sync | the assertions named in the issue's own `conformance-failing:` marker **pass again** |
 
-Neither closes on a run that proved nothing: a no-op deploy run and an all-skipped conformance run
-both leave an open alert open. Mechanics and rationale:
+**Read the conformance alert's clearing condition literally — an open issue does not always mean
+"broken right now."** It closes only when the specific assertions it names pass, not merely when
+nothing fails, because an assertion that stops being *runnable* would otherwise read as a recovery
+(deleting a credential would resolve the alert). So an alert can stay open on a staging that is
+fine, because the thing it was raised for can no longer be checked. The daily run in that state is
+**green and exits 0** while the issue stays open, and its step summary says
+*"Nothing failed, but the open alert is not cleared"* — check the latest run's summary before
+opening an investigation.
+
+Two of the five conformance assertions are **not runnable** as of this workflow's merge: migration
+parity is delegated to #833, and the end-to-end sign-in needs a smoke credential that is not
+provisioned (#893). Both report SKIPPED, so migration drift and a broken sign-in chain are **not**
+currently detected — the "Means" column above lists only what actually fires today.
+
+Neither watchdog closes on a run that proved nothing: a no-op deploy run and an all-skipped
+conformance run both leave an open alert open. Mechanics and rationale:
 [`AGENT_INFRA.md`](../ci-cd/AGENT_INFRA.md) § "Deploy visibility" and § "Scheduled conformance".
 
 ## Critical alerts

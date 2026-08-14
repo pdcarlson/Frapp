@@ -328,10 +328,13 @@ shape:
 - `frapp-staging` sat **38 migrations / ~5.5 months** behind with every workflow green.
 - The Infisical credential was invalid for **71+ days** (#696/#763).
 - Both Vercel staging secret syncs were pointed at a git branch named `preview` that has never
-  existed in this repository, and failed on that for months with nothing reporting it. (They
-  deliver now, since the repoint to `main` — [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md)
-  §5 records the "staging received nothing, so it was accidentally protective" reading as a
-  **misreading not to repeat**: the staging Vercel projects do hold the full backend store.)
+  existed in this repository, and failed on that for months with nothing reporting it. Read
+  [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) §5 before drawing conclusions from
+  that: it records "staging received nothing, so the breakage was accidentally protective" as a
+  **misreading not to repeat** — `frapp-web` was read directly on 2026-08-12 and does hold the
+  backend store — while also marking `frapp-landing` as *expected-but-unconfirmed*, since it was
+  never inspected variable-by-variable. Neither "staging is empty" nor "both projects are
+  confirmed full" is supported; confirm before relying on either.
 - `custom_access_token_hook` was never enabled after #643 shipped, so `ChapterGuard` silently fell
   back to the client-supplied `x-chapter-id` header — the pre-#643 trust model (#805).
 
@@ -389,12 +392,17 @@ lax: a revoked machine identity is the single most likely drift class, and faili
 step would kill the run *before* the script could report it and raise the alert — a red run with no
 issue, for the exact incident this workflow was built for.
 
-Note what a green Infisical row does and does not mean. It asserts *no sync is currently failing* —
-the #834 signature. Infisical's status enum is `pending | running | succeeded | failed` (plus null
-before a sync has ever run), and only `failed` counts as broken: a sync caught mid-window at 07:00,
-or the morning after Infisical's daily retry sweep flips `failed → pending`, must not open a P1
-about a healthy store. If nothing has settled at all, the row is SKIPPED, not PASS. The row does
-**not** assert the destinations hold the right values;
+Note what a green Infisical row does and does not mean. Its classification is three-way and closed
+at both ends: any sync reporting `failed` is a FAIL; **every** sync reporting `succeeded` is a PASS;
+anything else is SKIPPED. Infisical's status enum is `pending | running | succeeded | failed` plus
+null before a sync has ever run — read from the open-source backend, **not observed against the live
+API**, which is precisely why an unrecognised status skips rather than passes. The middle case cuts
+both ways: calling "not succeeded" broken would open a P1 for a sync caught mid-window, while
+calling it green would hide a sync wedged in `pending` because its destination token was revoked —
+the #834 signature going undetected. A skip asserts nothing, reds nothing, and cannot close an open
+alert, which is the honest answer to "we do not know yet."
+
+Even a PASS does **not** assert the destinations hold the right values;
 [`SECRETS_MANAGEMENT.md`](../environment/SECRETS_MANAGEMENT.md) records the hard-won rule that "a
 sync that reports Failed today tells you nothing about what it delivered before it broke — check the
 destination, not the sync status." An unrecognised Infisical response shape **fails closed**, because
