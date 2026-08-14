@@ -196,7 +196,7 @@ Passing **another chapter's id returns 200 with your own chapter's config** rath
 data crosses a tenant boundary — the response is always the caller's own chapter — but the URL
 asserts something the handler does not honour, which is exactly the shape a future refactor
 misreads. The fix is a one-line `_id !== chapterId → 403` assertion, or dropping `:id` from the path
-(a breaking route change). Tracked separately; not changed here because the route shape is a
+(a breaking route change). Tracked in **#866**; not changed here because the route shape is a
 public-API decision.
 
 ### 5.2 `chat_messages` Realtime subscription is RLS-blind
@@ -205,7 +205,8 @@ public-API decision.
 user-JWT client. That table is default-deny, so Postgres Changes delivers **no rows** to it. This
 fails safe — nothing leaks — but it means the subscription cannot be the live-message transport it
 appears to be. Worth confirming which path actually carries new messages before anyone "fixes" the
-RLS by adding a policy, which *would* widen access. Tracked separately.
+RLS by adding a policy, which *would* widen access. Tracked in **#867**, which also records why a
+broad `authenticated` policy is the wrong fix if one turns out to be needed.
 
 ---
 
