@@ -727,6 +727,7 @@ export type BackfillMessagesQuery = z.infer<typeof BackfillMessagesQuerySchema>;
 export {
   hashUserIdForAnalytics,
   hashChapterIdForAnalytics,
+  hashIpForObservability,
   hmacSha256Hex,
   assertContentFreeProperties,
   ContentFreePropertyError,
