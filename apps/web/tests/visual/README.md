@@ -56,6 +56,52 @@ entry below each time a chunk touches a dashboard surface (or, when nothing
 changed, record why the existing baseline still applies) so reviewers don't
 re-investigate the same surface.
 
+### `/backwork` — #911's no-chapter guard, regenerated
+
+**Status:** baseline **regenerated** (`backwork-main-content-linux.png`),
+verified on the same Chromium revision CI installs.
+
+**Why it moved:** `829cb46` (#911) added an early return to
+`apps/web/components/backwork/backwork-page.tsx` — the fix for #873, where
+`useBackworkResources` is `enabled: !!chapterId` and a disabled TanStack query
+stays `pending` forever, so the spinner never stopped for a member with no
+active chapter. This harness has no session, so `activeChapterId` is `null`,
+the guard fires, and `<main>` is header + `EmptyState` ("No chapter selected")
+at 1112×332. The old baseline was 1112×846 and showed Filters plus a Resources
+card reading *"Loading backwork…"* — it was a photograph of the very bug #873
+removed. Diff before regeneration: 13,736 px (ratio 0.02). **The page is
+correct; only the baseline was stale.** The full 16-test run passed after the
+regen, so no other surface was disturbed.
+
+This is the same shape as the `/points` and `/chat` entries below: under this
+harness the route renders its no-chapter branch, so the baseline attests to
+that branch rather than to the real page. Restoring real coverage would mean
+seeding `localStorage["frapp-active-chapter"]`, which would flip every route
+that gates on `activeChapterId` (`/settings` renders its "Select an active
+chapter" card today) and invalidate several passing baselines at once — worth
+its own issue, not a side effect of a baseline refresh.
+
+**Chromium revision used:** `chromium-headless-shell v1223` (Chrome Headless
+Shell 148.0.7778.96), `@playwright/test` 1.60.0 — the same revision
+`npx playwright install chromium` resolves in the `web-visual-regression` job.
+
+**Sandbox note:** the cloud sandbox pre-installs revision 1194 (Chromium 141)
+at `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, which Playwright 1.60 refuses
+to launch. Running the suite against 1194 anyway produced **8 spurious failures
+of 16** at ratios of 0.02–0.04 — above the 0.01 `maxDiffPixelRatio` — on routes
+CI passes, so a baseline regenerated on it would be a wrong fixture even if it
+happened to pass. As with `/points`, the Playwright CDN was reachable here, so
+1223 was fetched and used. After that, this sandbox reproduced CI exactly:
+15 passed / 1 failed with byte-identical dimensions and pixel count.
+
+Regenerate command used:
+
+```bash
+cd apps/web
+CI=true npx playwright test tests/visual/dashboard-routes.spec.ts \
+  --grep "/backwork" --update-snapshots
+```
+
 ### `/points` — FRA-235 preview-fallback removal, regenerated
 
 **Status:** baseline **regenerated** (`points-main-content-linux.png`), verified

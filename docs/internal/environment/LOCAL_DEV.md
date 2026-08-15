@@ -85,11 +85,31 @@ win — the defaults are only used to let CI capture baselines without
 credentials. See [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
 for the rationale and for how to refresh snapshots locally.
 
-When GitHub’s **`web-visual-regression`** job fails with small `<main>` width
-drifts (often a few pixels vs. committed Linux baselines), refresh from
-`apps/web` with the same **`CI=true`** Playwright uses in CI:
+When GitHub’s **`web-visual-regression`** job fails, refresh from `apps/web`
+with the same **`CI=true`** Playwright uses in CI:
 `CI=true npx playwright test --update-snapshots`, then commit the updated
 `*-snapshots/*-linux.png` files.
+
+**Check the browser revision first — `CI=true` alone is not enough.** Playwright
+pins a Chromium build, and a baseline regenerated on any other build drifts past
+the 0.01 `maxDiffPixelRatio` and is a wrong fixture even when it happens to pass.
+The cloud sandbox pre-installs revision **1194** at
+`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`, which Playwright 1.60 refuses to
+launch; forcing it produced **8 spurious failures of 16** on routes CI passes.
+Run `npx playwright install chromium` to fetch the pinned revision (1223 as of
+1.60.0) before regenerating, and confirm the rest of the suite still passes.
+Once on the right build, this sandbox reproduces CI's results exactly.
+
+**When you cannot regenerate locally**, the `web-visual-regression` job uploads
+`apps/web/test-results/` as the `playwright-visual-results` artifact on failure
+(14-day retention). It contains each failing route's `-actual.png` and
+`-diff.png`, rendered by CI's own browser — download and commit the `-actual`
+as the new baseline. Before that artifact existed, a failure printed only image
+dimensions and a diff ratio, so the render itself was unreachable (#936).
+
+Every regenerated baseline needs a per-route attestation in
+[`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
+recording why it moved and the Chromium revision used.
 
 `apps/web/proxy.ts` (Next.js 16 middleware) reads Supabase env per request and
 falls back to passthrough when the vars are missing, so the module is safe to
