@@ -19,8 +19,23 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Dependabot PRs are exempt: they change package.json / package-lock.json
+      # and nothing else, so check-docs-impact.mjs would fail every one of them
+      # (non-docs files touched, no docs touched) — and `docs-spec-sync` is a
+      # REQUIRED check under `enforce_admins: true`, so those PRs would be
+      # permanently unmergeable rather than merely red.
+      #
+      # This skips the STEP, never the job. A skipped job never reports its
+      # check run, which would leave the PR blocked on a required check that
+      # never arrives — strictly worse than the failure it replaces. Skipping
+      # the step keeps the job, and therefore `docs-spec-sync`, green.
+      #
+      # Keyed on the PR author rather than `github.actor` so a human re-running
+      # the workflow doesn't flip the exemption off mid-PR.
       - name: Enforce docs/spec sync (PR only)
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request'
+          && github.event.pull_request.user.login != 'dependabot[bot]'
         run: node scripts/check-docs-impact.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
 
       - name: Enforce docs/spec structure (PR only)
