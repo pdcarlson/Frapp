@@ -13,7 +13,11 @@ import { getHeaderValue } from '../types/request-context.types';
  * Exported so tests derive the expected bucket from the same set the guard
  * uses, rather than from a copy that could drift away from it.
  */
-export const READ_THROTTLE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+export const READ_THROTTLE_METHODS: ReadonlySet<string> = new Set([
+  'GET',
+  'HEAD',
+  'OPTIONS',
+]);
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {
