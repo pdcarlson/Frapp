@@ -61,9 +61,14 @@ export class EventController {
     @Body() dto: CreateEventDto,
   ) {
     return this.eventService.create({
+      // Server-decided keys go last so they win the spread. With the DTO
+      // spread last instead, adding a `chapter_id` property to CreateEventDto
+      // would silently let a caller write into another chapter — the whitelist
+      // pipe is what stops that today, and this ordering is what stops it if
+      // the DTO ever changes.
+      ...dto,
       chapter_id: chapterId,
       created_by: createdBy,
-      ...dto,
     });
   }
 

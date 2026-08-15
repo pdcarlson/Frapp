@@ -13,6 +13,28 @@ The API in `apps/api` follows a strict layered structure:
 
 For list query parameters named `limit` (or similar caps), keep `@IsInt()` on the query DTO so non-integers still fail validation, document the effective 1–200 range in `@ApiPropertyOptional` (`minimum` / `maximum`), and **clamp** out-of-range integers in the application service using the shared constants in `apps/api/src/domain/constants/list-query-limits.ts`. That way HTTP clients get predictable pages without a 400 for a slightly high `limit`, while OpenAPI still documents the bounded page size.
 
+### Never trust the client
+
+The global `ValidationPipe` runs `whitelist: true` + `forbidNonWhitelisted: true` (`apps/api/src/main.ts`), so an unexpected property is rejected with a 400 rather than silently dropped. Two conventions keep that baseline honest:
+
+**Every request-DTO property needs a real constraint, not just a gate.** A property with no decorators at all is safe — whitelisting strips it before a service ever sees it. The dangerous shape is a property carrying only `@IsOptional()` / `@ValidateIf()` / `@Allow()`: the gate is enough to survive whitelisting, and then nothing checks the value. Put a type check behind every gate, and a range/length/enum bound wherever the column has a real domain — money and point amounts get bounds on **both** sides, and ids that reach a uuid column get `@IsUUID()` so a malformed value is a 400 at the edge instead of a 500 from Postgres. `apps/api/src/interface/dtos/dto-constraint-coverage.spec.ts` enforces **the gate rule** automatically across every DTO — it walks the directory, so a new `*.dto.ts` is covered the moment it lands, and it fails in CI naming the offending property. The other two rules on this line (bounds on both sides, `@IsUUID()` for uuid-backed ids) are **not** derived: the same file pins them with a hand-maintained table of specific properties, so adding a uuid-backed `@IsString()` id or an unbounded amount elsewhere passes CI. Add a row when you add such a field — and when you find one that is missing, that is a real bug, not a test-maintenance chore.
+
+**Server-decided keys go last in a write payload.** Controllers that build a write by spreading a DTO alongside values the server owns (`chapter_id`, `created_by`, `uploader_id`) must order it so the server's values win:
+
+```ts
+// correct — the server's chapter scoping cannot be overridden
+return this.eventService.create({ ...dto, chapter_id: chapterId, created_by: createdBy });
+
+// wrong — safe only until CreateEventDto grows a `chapter_id` property
+return this.eventService.create({ chapter_id: chapterId, ...dto });
+```
+
+Whitelisting already blocks a hostile `chapter_id` today, so the ordering is a second line rather than the only one — but it is the line that still holds if a DTO later grows one of those property names, which would otherwise turn into a cross-tenant write with nothing to catch it.
+
+The two halves need two different tests, because the ordering is **unreachable over HTTP**: whitelisting rejects a colliding key before the controller runs, so an end-to-end request cannot tell `{ ...dto, chapter_id }` from `{ chapter_id, ...dto }`. `apps/api/test/mass-assignment.e2e-spec.ts` covers the whitelisting half (and imports `VALIDATION_PIPE_OPTIONS` from `apps/api/src/interface/pipes/validation-pipe.options.ts`, the same object `main.ts` uses, so loosening a flag there fails that suite rather than a local copy of it). `apps/api/src/interface/controllers/write-payload-ordering.spec.ts` covers the ordering half by calling the controller methods directly with a DTO that carries the hostile key — the shape a future DTO change would produce. Both were verified to fail when their respective regression is reintroduced.
+
+Zod schemas in `packages/validation` are shared with the web and mobile forms for UX. They are **not** enforcement — a curl request never runs them — so any rule that matters server-side must also exist on the DTO.
+
 For optional boolean **query** parameters, validate with `@IsBooleanQueryString()` from `apps/api/src/interface/decorators/is-boolean-query-string.decorator.ts` so the allowed literals stay aligned with OpenAPI (`true`, `false`, `1`, `0`) and are not tied to `class-validator`'s `@IsBooleanString()` / `validator.isBoolean` behavior. Controllers must not coerce with `=== 'true'` alone — use `parseBooleanQueryParam` from `apps/api/src/interface/utils/query-boolean.ts` so the service receives the same truth value the client was allowed to send. Query DTO fields should be typed as `BooleanStringQueryValue` (exported from the same module) so TypeScript matches what validation accepts.
 
 ```text

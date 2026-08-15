@@ -5,29 +5,44 @@ import {
   IsUUID,
   IsIn,
   IsDateString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  INVOICE_AMOUNT_MAX_CENTS,
+  INVOICE_DESCRIPTION_MAX_LENGTH,
+  INVOICE_TITLE_MAX_LENGTH,
+} from '../../domain/constants/field-limits';
 
 export class CreateFinancialInvoiceDto {
   @ApiProperty({ description: 'Member user ID to invoice' })
   @IsUUID()
   user_id: string;
 
-  @ApiProperty({ description: 'Invoice title (e.g. "Fall 2026 Dues")' })
+  @ApiProperty({
+    description: 'Invoice title (e.g. "Fall 2026 Dues")',
+    maxLength: INVOICE_TITLE_MAX_LENGTH,
+  })
   @IsString()
-  @MaxLength(255)
+  @MaxLength(INVOICE_TITLE_MAX_LENGTH)
   title: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: INVOICE_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(INVOICE_DESCRIPTION_MAX_LENGTH)
   description?: string;
 
-  @ApiProperty({ description: 'Amount in cents (e.g. 15000 = $150.00)' })
+  @ApiProperty({
+    description: 'Amount in cents (e.g. 15000 = $150.00)',
+    minimum: 1,
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsInt()
   @Min(1)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   amount: number;
 
   @ApiProperty({ description: 'Due date (ISO date string)' })
@@ -36,21 +51,27 @@ export class CreateFinancialInvoiceDto {
 }
 
 export class UpdateFinancialInvoiceDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: INVOICE_TITLE_MAX_LENGTH })
   @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @MaxLength(INVOICE_TITLE_MAX_LENGTH)
   title?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: INVOICE_DESCRIPTION_MAX_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(INVOICE_DESCRIPTION_MAX_LENGTH)
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Amount in cents' })
+  @ApiPropertyOptional({
+    description: 'Amount in cents',
+    minimum: 1,
+    maximum: INVOICE_AMOUNT_MAX_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(INVOICE_AMOUNT_MAX_CENTS)
   amount?: number;
 
   @ApiPropertyOptional()

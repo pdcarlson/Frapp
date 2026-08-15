@@ -3,10 +3,12 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
 
 export class CreateServiceEntryDto {
   @ApiProperty({ description: 'Date of service (YYYY-MM-DD)' })
@@ -20,6 +22,12 @@ export class CreateServiceEntryDto {
   })
   @IsInt()
   @Min(1)
+  // Bounds the SERVICE ledger row, and does so provably: the award is
+  // `floor(duration_minutes / minutesPerPoint)` and minutesPerPoint is @Min(1),
+  // so the row can never exceed this number. Submitting a service entry needs
+  // no special grant, which makes this the widest-open ledger input of all.
+  // 100,000 minutes is ~69 days for a single entry — far beyond any real one.
+  @Max(POINTS_ADJUSTMENT_MAX)
   duration_minutes: number;
 
   @ApiProperty({ description: 'Description of the service performed' })

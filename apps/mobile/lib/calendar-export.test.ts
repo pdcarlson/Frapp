@@ -213,9 +213,7 @@ describe("calendar-export", () => {
       Platform.OS = "ios";
 
       const FileSystem = await import("expo-file-system/legacy");
-      // @ts-expect-error mocking
       FileSystem.cacheDirectory = null;
-      // @ts-expect-error mocking
       FileSystem.documentDirectory = null;
 
       const { exportEventToCalendar } = await import("./calendar-export");
@@ -234,9 +232,7 @@ describe("calendar-export", () => {
       expect(result).toBe(false);
 
       // restore
-      // @ts-expect-error mocking
       FileSystem.cacheDirectory = "file:///cache/";
-      // @ts-expect-error mocking
       FileSystem.documentDirectory = "file:///document/";
     });
 
