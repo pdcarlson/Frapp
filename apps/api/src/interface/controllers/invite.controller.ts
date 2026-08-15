@@ -17,6 +17,10 @@ import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier, GraceBlocked } from '../decorators/subscription.decorator';
 import {
+  ThrottleExpensiveWrite,
+  ThrottleFanOutWrite,
+} from '../decorators/throttle-profiles.decorator';
+import {
   CurrentUser,
   CurrentChapterId,
 } from '../decorators/current-user.decorator';
@@ -50,6 +54,7 @@ export class InviteController {
   }
 
   @Post('batch')
+  @ThrottleExpensiveWrite()
   @UseGuards(ChapterGuard, PermissionsGuard)
   @RequirePermissions(SystemPermissions.MEMBERS_INVITE)
   @GraceBlocked()
@@ -68,6 +73,7 @@ export class InviteController {
   }
 
   @Post('redeem')
+  @ThrottleFanOutWrite()
   @ApiOperation({ summary: 'Redeem an invite token to join a chapter' })
   async redeem(
     @CurrentUser('id') userId: string,

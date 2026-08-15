@@ -399,7 +399,7 @@ Configurable alerts via the monitoring provider:
 - **Linting:** ESLint (shared config), Prettier for formatting.
 - **Type safety:** TypeScript strict mode across all apps and packages.
 - **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
-- **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint — keyed on the authenticated user (Supabase JWT `sub`, after verifying the token's HS256 signature against `SUPABASE_JWT_SECRET`), falling back to client IP for unauthenticated, invalid, or expired tokens so a forged/rotating `sub` cannot evade the limit — at 100 req/min read and 30 req/min write; a standard `Retry-After` header (seconds) accompanies every `429`. The Stripe webhook route is exempt (see Security Note below). File upload MIME type validation.
+- **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint — keyed on the authenticated user (Supabase JWT `sub`, after verifying the token's HS256 signature against `SUPABASE_JWT_SECRET`), falling back to client IP for unauthenticated, invalid, or expired tokens so a forged/rotating `sub` cannot evade the limit — at 100 req/min read and 30 req/min write, with stricter static overrides on expensive and fan-out routes (see [`spec/behavior/README.md` § Per-route rate limits](../behavior/README.md#per-route-rate-limits)); a standard `Retry-After` header (seconds) accompanies every `429`. The Stripe webhook route is exempt (see Security Note below). File upload MIME type validation.
 
 ## Database Performance
 
@@ -414,7 +414,7 @@ This ensures greater type safety and consistency across `apps/api` DTOs, service
 
 ## Security Note (2024-03-26)
 
-Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`. Exception: `WebhookController` (`POST /v1/webhooks/stripe`) opts out with `@SkipThrottle({ read: true, write: true })` — the route is unauthenticated so it would be throttled per IP, and Stripe deliveries burst from a small shared IP pool; Stripe signature verification is the abuse control there. The named-keys decorator form is required because the app registers named `read`/`write` throttlers (a bare `@SkipThrottle()` only sets the `default` key and skips nothing).
+Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`. The guard's storage key is `sha256(ClassName-HandlerName-throttlerName-tracker)`, so the two registered buckets are counted **per handler**, not across the app — which is why stricter limits are expressed as per-route `@Throttle` overrides of `read`/`write` (`interface/decorators/throttle-profiles.decorator.ts`) rather than as a third named throttler, which would be registered globally and run on every route. Exception: `WebhookController` (`POST /v1/webhooks/stripe`) opts out with `@SkipThrottle({ read: true, write: true })` — the route is unauthenticated so it would be throttled per IP, and Stripe deliveries burst from a small shared IP pool; Stripe signature verification is the abuse control there. The named-keys decorator form is required because the app registers named `read`/`write` throttlers (a bare `@SkipThrottle()` only sets the `default` key and skips nothing).
 
 ---
 
