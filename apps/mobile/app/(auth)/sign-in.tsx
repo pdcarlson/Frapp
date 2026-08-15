@@ -357,7 +357,7 @@ function createStyles(tokens: FrappTokens) {
     primaryButton: {
       marginTop: 16,
       borderRadius: tokens.radius.md,
-      backgroundColor: tokens.color.brand.royalBlue,
+      backgroundColor: tokens.color.brand.bronze,
       paddingVertical: 12,
       alignItems: "center",
     },

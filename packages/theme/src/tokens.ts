@@ -53,15 +53,45 @@ const SHARED_TOKENS = {
   },
 } as const;
 
+/**
+ * The three brand colors, each reachable under its real name and its legacy one.
+ *
+ * The legacy keys are literally wrong — `navy` has held a warm near-black since
+ * the bone/bronze rebrand, `royalBlue` a deep bronze, `emerald` a moss green.
+ * They stay because `royalBlue` is on a rendered path in `apps/web` (it is the
+ * fallback accent in `accent.ts`, drawn by the dashboard shell and the settings
+ * accent picker), and `apps/web` and `apps/landing` are frozen on the legacy
+ * palette until their own reskin. Removing them is tracked as follow-up work.
+ */
+type FrappBrandPalette = {
+  /** Warm near-black. The darkest neutral in the palette. */
+  ink: string;
+  /** Deep bronze — the platform accent, and the fallback when a chapter's fails. */
+  bronze: string;
+  /** Muted green, used for positive and success states. */
+  moss: string;
+  /** @deprecated Misnamed since the bone/bronze rebrand — this is `ink`. */
+  navy: string;
+  /** @deprecated Misnamed since the bone/bronze rebrand — this is `bronze`. */
+  royalBlue: string;
+  /** @deprecated Misnamed since the bone/bronze rebrand — this is `moss`. */
+  emerald: string;
+};
+
+/**
+ * Builds both spellings from one value each, so an alias cannot drift from the
+ * key it aliases — the failure mode that would quietly repaint `apps/web`.
+ */
+function brandPalette(
+  ink: string,
+  bronze: string,
+  moss: string,
+): FrappBrandPalette {
+  return { ink, bronze, moss, navy: ink, royalBlue: bronze, emerald: moss };
+}
+
 type FrappColorPalette = {
-  brand: {
-    /* Renamed conceptually from "navy" to "ink" — keys kept stable so
-       mobile consumers do not have to re-import. Values now map to the
-       bone/bronze/ink palette. */
-    navy: string;
-    royalBlue: string;
-    emerald: string;
-  };
+  brand: FrappBrandPalette;
   surface: {
     canvas: string;
     card: string;
@@ -108,11 +138,7 @@ export type FrappTokens = {
 } & typeof SHARED_TOKENS;
 
 const LIGHT_COLORS: FrappColorPalette = {
-  brand: {
-    navy: "#1F1A15", /* ink — deep warm near-black */
-    royalBlue: "#7A5A2F", /* deep bronze — replaces royal blue */
-    emerald: "#3D6B4A", /* moss — replaces emerald */
-  },
+  brand: brandPalette("#1F1A15", "#7A5A2F", "#3D6B4A"),
   surface: {
     canvas: "#FAF7F2", /* bone */
     card: "#FFFFFF",
@@ -155,11 +181,7 @@ const LIGHT_COLORS: FrappColorPalette = {
 };
 
 const DARK_COLORS: FrappColorPalette = {
-  brand: {
-    navy: "#1A1611",
-    royalBlue: "#D6B988", /* bone-bronze, legible on dark */
-    emerald: "#7DB58E",
-  },
+  brand: brandPalette("#1A1611", "#D6B988", "#7DB58E"),
   surface: {
     canvas: "#181410",
     card: "#221E18",

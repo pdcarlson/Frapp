@@ -135,6 +135,18 @@ jobs:
       - name: Shared validation package tests
         run: npm run test -w @repo/validation
 
+      # Same reasoning as above, and the same trap: `packages/theme` and
+      # `packages/chapter-theme` have no runner of their own, so the contrast
+      # math they both now import would be tested by nothing without this step.
+      - name: Shared color package tests
+        run: npm run test -w @repo/color
+
+      # The accent engine. Its contrast guarantee is only as good as the exact
+      # behaviour of the vendored generator, so a dependency bump is precisely
+      # what this suite exists to catch.
+      - name: Chapter theme package tests
+        run: npm run test -w @repo/chapter-theme
+
       - name: Brand assets (icon sync)
         run: npm run check:brand-assets
 

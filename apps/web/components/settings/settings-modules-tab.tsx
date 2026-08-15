@@ -23,7 +23,12 @@ type Props = {
   canManage: boolean;
   /** Persist a single module toggle through `usePatchOrgConfig`. */
   onToggle: (moduleKey: string, enabled: boolean) => void;
-  isSaving?: boolean;
+  /**
+   * Config leaves currently saving, from `usePendingConfigKeys()`. Each switch
+   * consults its own `enabled_modules.<key>` entry, so saving one module no
+   * longer disables its siblings — or the other settings tabs (#881).
+   */
+  pendingModuleKeys?: ReadonlySet<string>;
 };
 
 /**
@@ -56,7 +61,7 @@ export function SettingsModulesTab({
   enabledModules,
   canManage,
   onToggle,
-  isSaving,
+  pendingModuleKeys,
 }: Props) {
   const enabledCount = MODULE_CATALOG.filter((m) =>
     moduleIsOn(enabledModules, m.key),
@@ -80,7 +85,7 @@ export function SettingsModulesTab({
           enabledModules={enabledModules}
           canManage={canManage}
           onToggle={onToggle}
-          isSaving={isSaving}
+          pendingModuleKeys={pendingModuleKeys}
         />
         <ModuleGroup
           title="Chapter Pro"
@@ -88,7 +93,7 @@ export function SettingsModulesTab({
           enabledModules={enabledModules}
           canManage={canManage}
           onToggle={onToggle}
-          isSaving={isSaving}
+          pendingModuleKeys={pendingModuleKeys}
         />
       </CardContent>
     </Card>
@@ -101,14 +106,14 @@ function ModuleGroup({
   enabledModules,
   canManage,
   onToggle,
-  isSaving,
+  pendingModuleKeys,
 }: {
   title: string;
   modules: readonly ModuleCatalogEntry[];
   enabledModules: Record<string, boolean>;
   canManage: boolean;
   onToggle: (moduleKey: string, enabled: boolean) => void;
-  isSaving?: boolean;
+  pendingModuleKeys?: ReadonlySet<string>;
 }) {
   return (
     <section className="space-y-2">
@@ -123,7 +128,7 @@ function ModuleGroup({
             on={moduleIsOn(enabledModules, m.key)}
             canManage={canManage}
             onToggle={onToggle}
-            isSaving={isSaving}
+            pendingModuleKeys={pendingModuleKeys}
           />
         ))}
       </ul>
@@ -136,13 +141,13 @@ function ModuleRow({
   on,
   canManage,
   onToggle,
-  isSaving,
+  pendingModuleKeys,
 }: {
   module: ModuleCatalogEntry;
   on: boolean;
   canManage: boolean;
   onToggle: (moduleKey: string, enabled: boolean) => void;
-  isSaving?: boolean;
+  pendingModuleKeys?: ReadonlySet<string>;
 }) {
   const [open, setOpen] = useState(false);
   const hasSubFeatures = m.subFeatures.length > 0;
@@ -198,7 +203,9 @@ function ModuleRow({
           ) : (
             <Switch
               checked={on}
-              disabled={!canManage || isSaving}
+              disabled={
+                !canManage || pendingModuleKeys?.has(`enabled_modules.${m.key}`)
+              }
               onCheckedChange={(next) => onToggle(m.key, next)}
               aria-label={`${m.label} enabled`}
             />

@@ -25,8 +25,8 @@ import { useChapterBranding } from "./chapter-branding";
 
 /** The crimson `spec/behavior/branding.md` uses as its worked example. */
 const CRIMSON = "#8B0000";
-const LIGHT_BRAND = frappLightTokens.color.brand.royalBlue;
-const DARK_BRAND = frappDarkTokens.color.brand.royalBlue;
+const LIGHT_BRAND = frappLightTokens.color.brand.bronze;
+const DARK_BRAND = frappDarkTokens.color.brand.bronze;
 
 type ChapterPayload = Record<string, unknown> | null;
 

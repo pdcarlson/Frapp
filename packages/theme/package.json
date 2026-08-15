@@ -7,7 +7,14 @@
     "./tailwind": "./src/tailwind.config.ts",
     "./globals.css": "./src/globals.css",
     "./tokens": "./src/tokens.ts",
-    "./accent": "./src/accent.ts"
+    "./accent": "./src/accent.ts",
+    "./signet": "./src/signet.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@repo/color": "*"
   },
   "devDependencies": {
     "tailwindcss": "^3.4.17",

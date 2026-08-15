@@ -43,6 +43,7 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -219,6 +220,7 @@ export function BackworkPage() {
     file: null,
   });
   const [uploading, setUploading] = useState(false);
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
 
   const resourcesQuery = useBackworkResources({
     search: appliedFilters.search || undefined,
@@ -383,6 +385,28 @@ export function BackworkPage() {
     } finally {
       setUploading(false);
     }
+  }
+
+  // `useBackworkResources` is `enabled: !!chapterId`, and a disabled TanStack
+  // query stays `pending` forever rather than resolving. Without this the
+  // spinner below never stops for a member with no active chapter — it is not
+  // loading, it is waiting for something that will never arrive. Every hook
+  // above must run before this return, hence its position (#873).
+  if (!activeChapterId) {
+    return (
+      <div className="space-y-6">
+        <header>
+          <h2 className="text-2xl font-semibold tracking-tight">Backwork</h2>
+          <p className="text-sm text-muted-foreground">
+            Shared coursework archive.
+          </p>
+        </header>
+        <EmptyState
+          title="No chapter selected"
+          description="Pick a chapter from the switcher to browse its backwork."
+        />
+      </div>
+    );
   }
 
   return (

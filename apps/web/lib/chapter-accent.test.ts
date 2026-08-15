@@ -13,8 +13,8 @@ import { frappLightTokens, frappDarkTokens } from "@repo/theme/tokens";
 
 const LIGHT_SURFACE = frappLightTokens.color.surface.card;
 const DARK_SURFACE = frappDarkTokens.color.surface.card;
-const LIGHT_BRAND = frappLightTokens.color.brand.royalBlue;
-const DARK_BRAND = frappDarkTokens.color.brand.royalBlue;
+const LIGHT_BRAND = frappLightTokens.color.brand.bronze;
+const DARK_BRAND = frappDarkTokens.color.brand.bronze;
 
 /** The crimson `spec/behavior/branding.md` uses as its worked example. */
 const CRIMSON = "#8B0000";

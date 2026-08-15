@@ -610,21 +610,73 @@ describe('ChapterService', () => {
       accent_color: '#1E293B',
     });
 
+    // The accent is mirrored into `branding.colors.accent` in the same write.
+    // `branding.colors` is authoritative (#795) and this is the one path that
+    // sets the column directly, so without the mirror a Settings edit would
+    // leave the two stores disagreeing.
     expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
       name: 'Alpha Updated',
       accent_color: '#1E293B',
+      branding: { colors: { accent: '#1E293B' } },
     });
     expect(result).toEqual(updatedChapter);
   });
 
-  it('should reject accent_color that fails WCAG contrast', async () => {
-    await expect(
-      service.update('ch-1', { accent_color: '#E2E8F0' }),
-    ).rejects.toThrow(BadRequestException);
-    await expect(
-      service.update('ch-1', { accent_color: '#E2E8F0' }),
-    ).rejects.toThrow(/WCAG AA contrast/);
-    expect(mockChapterRepo.update).not.toHaveBeenCalled();
+  it('preserves other branding keys when mirroring the accent', async () => {
+    mockChapterRepo.findById.mockResolvedValue({
+      id: 'ch-1',
+      branding: {
+        greek_letters: 'ΦΓΔ',
+        colors: { dark: '#4B2E2E', accent: '#8B0000' },
+      },
+    } as never);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+
+    await service.update('ch-1', { accent_color: '#1E293B' });
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      accent_color: '#1E293B',
+      branding: {
+        greek_letters: 'ΦΓΔ',
+        colors: { dark: '#4B2E2E', accent: '#1E293B' },
+      },
+    });
+  });
+
+  it('does not touch branding when the update carries no accent', async () => {
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+
+    await service.update('ch-1', { name: 'Renamed' });
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      name: 'Renamed',
+    });
+    expect(mockChapterRepo.findById).not.toHaveBeenCalled();
+  });
+
+  it('accepts a low-contrast accent rather than gating it on save', async () => {
+    // This route used to reject anything under 4.5:1 on the light surface. It
+    // no longer does, and that is deliberate: `accent_color` is a mirror of
+    // `branding.colors.accent`, which is the accent engine's seed and is not
+    // gated — the seed never paints, and gating it rejects 49 of the 50 real
+    // chapters in the directory seed.
+    //
+    // Gating only this path was worse than gating none: onboarding and the
+    // config PATCH both write the column without checking, so a chapter could
+    // hold an accent this route then refused, leaving the officer unable to
+    // save anything in Settings (the form resends the stored value). Legibility
+    // is enforced at render time by `resolveChapterAccentColor`, which
+    // substitutes an accessible fallback per surface.
+    mockChapterRepo.findById.mockResolvedValue({ id: 'ch-1' } as never);
+    mockChapterRepo.update.mockResolvedValue({ id: 'ch-1' } as never);
+
+    // #C9A56F is 2.16:1 on bone and is the most common accent in the seed.
+    await service.update('ch-1', { accent_color: '#C9A56F' });
+
+    expect(mockChapterRepo.update).toHaveBeenCalledWith('ch-1', {
+      accent_color: '#C9A56F',
+      branding: { colors: { accent: '#C9A56F' } },
+    });
   });
 
   it('should generate logo upload URL', async () => {

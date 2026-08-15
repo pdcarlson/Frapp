@@ -23,7 +23,6 @@ import {
 } from '../../domain/adapters/storage.interface';
 import { Chapter } from '../../domain/entities/chapter.entity';
 import type { Member } from '../../domain/entities/member.entity';
-import { checkWcagContrast } from '../../domain/utils/wcag';
 import {
   DEFAULT_SYSTEM_ROLES,
   DEFAULT_CHANNELS,
@@ -40,7 +39,6 @@ const ALLOWED_LOGO_CONTENT_TYPES = new Set([
   'image/webp',
 ]);
 const ALLOWED_LOGO_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
-const LIGHT_MODE_BACKGROUND = '#F8FAFC';
 const CHANNEL_SEEDING_ERROR_MESSAGE =
   'Unable to create default chat channels for this chapter';
 
@@ -233,14 +231,45 @@ export class ChapterService {
   }
 
   async update(id: string, data: Partial<Chapter>): Promise<Chapter> {
-    if (data.accent_color) {
-      if (!checkWcagContrast(data.accent_color, LIGHT_MODE_BACKGROUND)) {
-        throw new BadRequestException(
-          'accent_color does not meet WCAG AA contrast requirements (4.5:1) against the light mode background (#F8FAFC). Please choose a darker color.',
-        );
-      }
+    if (!data.accent_color) {
+      return this.chapterRepo.update(id, data);
     }
-    return this.chapterRepo.update(id, data);
+
+    // No contrast gate here any more, and its removal is the point rather than
+    // an oversight. `accent_color` is now a mirror of `branding.colors.accent`,
+    // which is deliberately not contrast-gated (spec/behavior/branding.md): it
+    // is the accent engine's seed, and gating it would reject 49 of the 50 real
+    // chapters in the directory seed.
+    //
+    // Keeping the gate on only this path made the column reachable in a state
+    // it then refused to accept: onboarding, the config PATCH, and the backfill
+    // all write it without checking, so a chapter created with a light gold
+    // could never re-save its own accent from Settings — the form resends the
+    // stored value and got a 400 telling the officer to pick a darker color
+    // they had never picked. One value cannot have two different validities
+    // depending on which door it came through.
+    //
+    // Legibility is still guaranteed where it matters: `resolveChapterAccentColor`
+    // re-validates per surface at render time and substitutes an accessible
+    // fallback, so an illegible stored accent is never actually painted.
+
+    // `branding.colors.accent` is the authoritative accent (#795) and this
+    // column mirrors it, so a Settings edit — the one path that writes the
+    // column directly — has to carry the value back the other way. Without
+    // this the two stores diverge the moment anyone touches Settings, which is
+    // exactly how the original bug presented.
+    const existing = await this.chapterRepo.findById(id);
+    const branding = (existing?.branding ?? {}) as {
+      colors?: Record<string, string>;
+    };
+
+    return this.chapterRepo.update(id, {
+      ...data,
+      branding: {
+        ...branding,
+        colors: { ...(branding.colors ?? {}), accent: data.accent_color },
+      },
+    });
   }
 
   async requestLogoUploadUrl(

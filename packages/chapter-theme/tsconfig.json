@@ -2,8 +2,30 @@
   "extends": "@repo/typescript-config/base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    // The shared base config includes DOM in `lib`. This package is called from
+    // the NestJS API, where `document` or `window` would compile clean here and
+    // throw there, so DOM is dropped deliberately. Paired with an ESLint
+    // `no-restricted-globals` rule, since a type-level guard alone would not
+    // catch a global reached through `globalThis`.
+    "lib": ["es2022"],
+    // Relaxed for `src/vendor/generate-radix-colors.ts`, upstream code written
+    // without this flag: it raises 16 "possibly undefined" errors indexing into
+    // fixed-length scale arrays. `exclude` cannot help — the file is reached
+    // through an import, not root discovery — and the alternatives were worse.
+    // `@ts-nocheck` would blind us to the failure that actually matters (a
+    // breaking change in `colorjs.io`'s API, found on resync), and annotating 16
+    // lines would destroy the byte-for-byte provenance diff.
+    //
+    // The vendored file typechecks cleanly under full `strict` with every other
+    // flag on — verified — so this drops one extra-strict opt-in, not real
+    // safety. The contrast math it feeds lives in `@repo/color`, which keeps it.
+    "noUncheckedIndexedAccess": false
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  // Specs are excluded from the build, as in `packages/validation`. Without
+  // this `tsc` emits `dist/*.spec.js`, which ships inside the package that
+  // `apps/api` consumes AND gets picked up by this package's own vitest run —
+  // where the compiled CommonJS copy fails on `require("vitest")`.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts"]
 }

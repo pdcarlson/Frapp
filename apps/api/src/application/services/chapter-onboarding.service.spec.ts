@@ -146,6 +146,33 @@ describe('ChapterOnboardingService', () => {
     expect(payload.config.theme_palette).toBeDefined();
   });
 
+  describe('accent_color mirror (#795)', () => {
+    it("writes the wizard's accent to the column, not just to branding", async () => {
+      await service.onboard('user-1', directoryDto);
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      // Before this, the column kept its schema default `#2563EB`, so every
+      // surface reading `accent_color` — the dashboard shell, mobile branding,
+      // the membership summary — showed Royal Blue for a chapter that had
+      // picked something else. Only `theme_palette` readers saw the real color,
+      // which is why it stayed invisible on web.
+      expect(payload.config.accent_color).toBe('#C9A56F');
+    });
+
+    it('leaves the column unset when the wizard collects no accent', async () => {
+      await service.onboard('user-1', {
+        ...directoryDto,
+        branding: { greek_letters: 'ΣΦΕ' },
+      });
+
+      const [, payload] = chapterService.create.mock.calls[0];
+      // Absent, not defaulted here: the column's own schema default applies,
+      // and writing a value the officer never chose would be worse than leaving
+      // it to the render fallback.
+      expect(payload.config.accent_color).toBeUndefined();
+    });
+  });
+
   it('records the onboarding-submitted activation milestone (#267)', async () => {
     await service.onboard('user-1', directoryDto);
 

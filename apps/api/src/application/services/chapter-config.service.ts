@@ -279,6 +279,25 @@ export class ChapterConfigService {
       mergedBranding = deepMerge(existing.branding, dto.branding);
       diff['branding'] = { from: existing.branding, to: mergedBranding };
       update['branding'] = mergedBranding;
+
+      const readAccent = (branding: unknown): string | undefined =>
+        (branding as { colors?: { accent?: string } } | undefined)?.colors
+          ?.accent;
+      const previousAccent = readAccent(existing.branding);
+      const nextAccent = readAccent(mergedBranding);
+
+      // #795: mirror the authoritative accent into the legacy column.
+      //
+      // No separate `accent_color` diff entry: `getConfig`'s select does not
+      // read that column, so the only "previous" value available here is the
+      // branding accent, and on exactly the legacy rows this mirror exists to
+      // repair those two disagree. Recording the branding value as the column's
+      // prior state would put a number in the audit log that the column never
+      // held. The branding diff above already records the accent change, which
+      // is the authoritative one.
+      if (typeof nextAccent === 'string' && nextAccent !== previousAccent) {
+        update['accent_color'] = nextAccent;
+      }
     }
     if (dto.beta_config !== undefined) {
       const merged = deepMerge(existing.beta_config, dto.beta_config);

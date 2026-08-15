@@ -65,6 +65,12 @@ export class ChapterOnboardingService {
       legal_accepted_at: new Date().toISOString(),
       legal_policy_version: LEGAL_POLICY_VERSION,
       legal_accepted_by: userId,
+      // #795: the wizard's accent never reached `chapters.accent_color`, so the
+      // column kept its schema default `#2563EB` and every surface reading it —
+      // the dashboard shell, mobile branding, the membership summary — showed
+      // Royal Blue for a chapter that had chosen something else. `branding` is
+      // authoritative; this mirrors it into the column in the same INSERT.
+      ...(colors.accent ? { accent_color: colors.accent } : {}),
       ...(themePalette
         ? {
             theme_palette: themePalette as unknown as Record<string, unknown>,

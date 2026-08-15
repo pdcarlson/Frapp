@@ -6,21 +6,45 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
+/** Matches the `accent_color` column's own validation in `chapter.dto.ts`. */
+const HEX_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/;
+
+/**
+ * Both fields are format-validated but NOT contrast-gated — they are the accent
+ * engine's inputs, and the raw seed never paints UI. Reasoning and the measured
+ * impact of gating them: `spec/behavior/branding.md`.
+ *
+ * The format check is not cosmetic. These were bare `@IsString()`, so a value
+ * like `"crimson"` reached `derivePalette`, which silently substituted bronze —
+ * the #840 failure mode, where 50 seed rows missing a leading `#` all became
+ * platform bronze with nothing recording it.
+ */
 export class BrandingColorsDto {
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    example: '#4B2E2E',
+    pattern: HEX_COLOR_PATTERN.source,
+  })
   @IsOptional()
   @IsString()
+  @Matches(HEX_COLOR_PATTERN, { message: 'dark must be a hex color (#RRGGBB)' })
   dark?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    example: '#C9A56F',
+    pattern: HEX_COLOR_PATTERN.source,
+  })
   @IsOptional()
   @IsString()
+  @Matches(HEX_COLOR_PATTERN, {
+    message: 'accent must be a hex color (#RRGGBB)',
+  })
   accent?: string;
 }
 
