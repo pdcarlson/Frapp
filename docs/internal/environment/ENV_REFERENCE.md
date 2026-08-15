@@ -118,7 +118,7 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/web |
 | `NEXT_PUBLIC_API_URL` | `${API_URL}` | apps/web |
 | `NEXT_PUBLIC_APP_URL` | `${APP_URL}` | apps/landing |
-| `NEXT_PUBLIC_LANDING_URL` | `${LANDING_URL}` | apps/web — optional; defaults to `https://frapp.live` when unset |
+| `NEXT_PUBLIC_LANDING_URL` | the landing site's base URL, entered **directly** — unlike the rows above it is *not* a reference, because there is no canonical `LANDING_URL` in the grid | apps/web — optional; omit it entirely and the code falls back to `https://frapp.live` |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/web |
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
