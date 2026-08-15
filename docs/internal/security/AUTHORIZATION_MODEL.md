@@ -157,7 +157,7 @@ a client that genuinely reads the table directly.
 
 | Table | Policy | Effect |
 | --- | --- | --- |
-| `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. **This is the one table where RLS is the only gate**: the web reads it directly (`apps/web/lib/chat/realtime-manager.ts`, 2 call sites) |
+| `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. **This is the one table where RLS is the only gate**: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |

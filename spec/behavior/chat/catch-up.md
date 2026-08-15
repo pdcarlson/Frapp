@@ -205,7 +205,7 @@ surfaces it is the only part the reader sees.
 It is **not** optional, but the mechanism is not the one a reader might assume.
 `MessageRenderer` has a `default:` branch routing unknown kinds to `TextRenderer`, and that is a
 real guard — but on web it is **unreachable for a genuinely new kind**, because
-`apps/web/lib/chat/types.ts` carries its own copy of the kind list behind `coerceKind`
+`packages/chat-core/src/types.ts` carries its own copy of the kind list behind `coerceKind`
 (`find(k => k === kind) ?? "text"`), applied in `normalizeRow` before any renderer runs. An
 unrecognized kind is rewritten to `text` upstream, so the row renders as its `content` — the same
 user-visible outcome, by a different path.
@@ -217,7 +217,7 @@ adding it to all three:
 | --- | --- | --- |
 | `apps/api/src/domain/entities/chat.entity.ts` | `@IsIn(...)` in `chat.dto.ts` — **the live send gate** | API rejects the send, loudly |
 | `packages/validation/src/index.ts` | `SendChatMessageSchema`. Currently referenced by nothing but its own `z.infer` — it is the shared contract for non-Nest consumers, not an active gate | Nothing fails today; the shared contract silently diverges |
-| `apps/web/lib/chat/types.ts` | `coerceKind` in `normalizeRow` | Row arrives rewritten to `text`, so the renderer never fires no matter how correct it is |
+| `packages/chat-core/src/types.ts` | `coerceKind` in `normalizeRow` | Row arrives rewritten to `text`, so the renderer never fires no matter how correct it is |
 
 The middle row is the dangerous one precisely *because* nothing fails: skipping it ships a divergence
 that only bites a future consumer.
