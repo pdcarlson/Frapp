@@ -20,32 +20,13 @@
  */
 
 import Dexie, { type Table } from "dexie";
+// Row shapes are canonical in `@repo/chat-core` (the `OutboxStore` port).
+import type { NewOutboxRow, OutboxRow, OutboxStore } from "@repo/chat-core";
 
 export interface DraftRow {
   channelId: string;
   body: string;
   updatedAt: number;
-}
-
-export type OutboxStatus = "queued" | "failed";
-
-export interface OutboxRow {
-  clientId: string;
-  channelId: string;
-  /** Plain-text message content sent on the wire. */
-  body: string;
-  /**
-   * Persisted message intent so a flushed retry reconstructs the *full*
-   * payload — not just the body. Optional for forward-compat with rows
-   * written by older clients.
-   */
-  kind?: string;
-  payload?: Record<string, unknown> | null;
-  replyToId?: string | null;
-  attempts: number;
-  queuedAt: number;
-  status: OutboxStatus;
-  lastError?: string;
 }
 
 class ChatDB extends Dexie {
@@ -99,10 +80,7 @@ export async function clearDraft(channelId: string): Promise<void> {
   await db.drafts.delete(channelId);
 }
 
-export async function enqueueOutbox(
-  row: Omit<OutboxRow, "attempts" | "status" | "queuedAt"> &
-    Partial<Pick<OutboxRow, "attempts" | "status" | "queuedAt">>,
-): Promise<OutboxRow> {
+async function enqueueOutbox(row: NewOutboxRow): Promise<OutboxRow> {
   const db = getChatDB();
   const full: OutboxRow = {
     attempts: 0,
@@ -115,7 +93,7 @@ export async function enqueueOutbox(
   return full;
 }
 
-export async function markOutboxFailed(
+async function markOutboxFailed(
   clientId: string,
   error: string,
 ): Promise<void> {
@@ -131,7 +109,7 @@ export async function markOutboxFailed(
   });
 }
 
-export async function bumpOutboxAttempt(
+async function bumpOutboxAttempt(
   clientId: string,
   error: string,
 ): Promise<void> {
@@ -146,7 +124,7 @@ export async function bumpOutboxAttempt(
   });
 }
 
-export async function requeueOutbox(clientId: string): Promise<void> {
+async function requeueOutbox(clientId: string): Promise<void> {
   const db = getChatDB();
   if (!db) return;
   const existing = await db.outbox.get(clientId);
@@ -154,21 +132,21 @@ export async function requeueOutbox(clientId: string): Promise<void> {
   await db.outbox.put({ ...existing, status: "queued", lastError: undefined });
 }
 
-export async function dequeueOutbox(clientId: string): Promise<void> {
+async function dequeueOutbox(clientId: string): Promise<void> {
   const db = getChatDB();
   if (!db) return;
   await db.outbox.delete(clientId);
 }
 
 /** All queued rows ordered FIFO — drives the in-order flush loop. */
-export async function listQueuedOutbox(): Promise<OutboxRow[]> {
+async function listQueuedOutbox(): Promise<OutboxRow[]> {
   const db = getChatDB();
   if (!db) return [];
   return db.outbox.where("status").equals("queued").sortBy("queuedAt");
 }
 
 /** All outbox rows for a channel (queued + failed), used on boot to hydrate the cache. */
-export async function listOutboxForChannel(
+async function listOutboxForChannel(
   channelId: string,
 ): Promise<OutboxRow[]> {
   const db = getChatDB();
@@ -183,3 +161,19 @@ export async function getOutboxRow(
   if (!db) return undefined;
   return db.outbox.get(clientId);
 }
+
+/**
+ * The web `OutboxStore`: the Dexie functions above, surfaced through the
+ * platform port `@repo/chat-core` consumes (`ChatActionContext.outbox`). A
+ * module const so React callers can close over it without memoization.
+ */
+export const dexieOutboxStore: OutboxStore = {
+  enqueue: enqueueOutbox,
+  dequeue: dequeueOutbox,
+  requeue: requeueOutbox,
+  markFailed: markOutboxFailed,
+  bumpAttempt: bumpOutboxAttempt,
+  listQueued: listQueuedOutbox,
+  listForChannel: listOutboxForChannel,
+  clearDraft,
+};

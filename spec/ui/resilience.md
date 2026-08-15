@@ -164,7 +164,7 @@ Supabase Realtime (preferred)
 
 Polling reuses that same gap-recovery fetch on a timer rather than a second
 code path, so a message delivered by both a poll and the reconnect backfill
-merges to one entry. Implementation: `apps/web/lib/chat/realtime-manager.ts`
+merges to one entry. Implementation: `packages/chat-core/src/realtime-manager.ts`
 (`POLL_DEGRADE_AFTER_MS`, `POLL_INTERVAL_MS`, `ConnectionStatus === "polling"`).
 
 ### 3.3 Message Ordering
@@ -280,7 +280,7 @@ When two admins edit the same resource simultaneously:
 > reconnect-attempt budget), and the banner copy is §3.2's
 > *"Real-time updates paused. Polling for new messages."*
 >
-> Implemented in `apps/web/lib/chat/realtime-manager.ts` — `POLL_DEGRADE_AFTER_MS`
+> Implemented in `packages/chat-core/src/realtime-manager.ts` — `POLL_DEGRADE_AFTER_MS`
 > / `POLL_INTERVAL_MS`, surfaced through the `"polling"` `ConnectionStatus`.
 > Reconnect backoff keeps running underneath the poll loop, so recovery is
 > automatic and polling stops on the next `SUBSCRIBED`.
@@ -382,9 +382,10 @@ useEffect(() => {
 > unconditional `teardown()` — before every attach, tags attaches with an epoch
 > so overlapping reopens cannot interleave, and contains attach failures in the
 > reconnect backoff rather than letting them reach a React render pass. See
-> `releaseTopic` in `apps/web/lib/realtime/topic-registry.ts` — the single
-> implementation, shared by both attach paths — and `attachChannel` in
-> `apps/web/lib/chat/realtime-manager.ts`.
+> `releaseTopic` in `packages/chat-core/src/topic-registry.ts` — the single
+> implementation, shared by both attach paths (web's
+> `lib/realtime/topic-registry.ts` re-exports it) — and `attachChannel` in
+> `packages/chat-core/src/realtime-manager.ts`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
 > derives its topic from `table` + `filter` alone, so an effect re-run driven by

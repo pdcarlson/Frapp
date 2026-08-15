@@ -16,9 +16,11 @@ import { useFrappClient } from "@repo/hooks";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { browserNetworkState } from "@repo/chat-core";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
 import { chatRealtime } from "./realtime-manager";
 import { flushOutbox } from "./chat-client";
+import { dexieOutboxStore } from "./offline-queue";
 import type { RawChatMessage } from "./types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -63,17 +65,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // channel may be active yet (e.g. drafts on a backgrounded channel).
   useEffect(() => {
     if (!userId) return;
-    const ctx = { queryClient, apiClient, supabase, userId, toast };
-    void flushOutbox(ctx);
-    const onOnline = () => void flushOutbox(ctx);
-    if (typeof window !== "undefined") {
-      window.addEventListener("online", onOnline);
-    }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("online", onOnline);
-      }
+    const ctx = {
+      queryClient,
+      apiClient,
+      supabase,
+      userId,
+      toast,
+      outbox: dexieOutboxStore,
     };
+    void flushOutbox(ctx);
+    // Trigger and gate ride the same connectivity signal: `flushOutbox`
+    // consults the NetworkState port internally, so subscribe through the
+    // same port rather than hand-rolling a window listener beside it.
+    return browserNetworkState.subscribe((online) => {
+      if (online) void flushOutbox(ctx);
+    });
   }, [queryClient, apiClient, supabase, userId, toast]);
 
   return <>{children}</>;

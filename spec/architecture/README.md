@@ -34,6 +34,7 @@ Frapp/
     landing/        # Next.js marketing site (frapp.live)
   packages/
     api-sdk/        # Generated API client + TypeScript types
+    chat-core/      # Platform-neutral chat hot path (cache, send client, realtime manager) behind injected adapters
     hooks/          # Shared React hooks (use-members, use-frapp-client, etc.)
     ui/             # Shared React components (button, card, etc.)
     theme/          # Tailwind config + global styles (light + dark mode)
@@ -104,6 +105,7 @@ Frapp/
 | Package                   | Purpose                                                                   |
 | ------------------------- | ------------------------------------------------------------------------- |
 | `@repo/api-sdk`           | Auto-generated TypeScript client from OpenAPI spec. Used by web + mobile. |
+| `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. Web today; mobile with Signet Phase 2 (#937). |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
 | `@repo/theme`             | Tailwind config presets, global CSS, light/dark mode color tokens.        |
@@ -420,7 +422,7 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`. The guar
 
 ## 12. Chat Hot-Path Architecture
 
-Chat is the spine of the product (see [`product/positioning.md`](../product/positioning.md)), so the architecture is biased for chat latency, reliability, and offline tolerance. The decisions below are recorded as ADRs; this overview is the durable framing they hang off.
+Chat is the spine of the product (see [`product/positioning.md`](../product/positioning.md)), so the architecture is biased for chat latency, reliability, and offline tolerance. The decisions below are recorded as ADRs; this overview is the durable framing they hang off. The client half of the hot path lives in `packages/chat-core` (normalized cache, optimistic send client, realtime manager, and the shared topic registry) behind injected platform adapters; `apps/web/lib/chat/` keeps the web glue — the React provider and hook, and the Dexie outbox.
 
 ### Hot path vs cold path
 
@@ -519,7 +521,7 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 **Decision:** When `action_type === 'vote'` and the unique index `(message_id, user_id, action_type)` rejects the INSERT, the chat-react handler (originally the Edge Function, now `ChatService.recordMessageAction` per ADR-11 / #416) performs an UPDATE on the existing row — overwriting `payload` (the new `option_id`) and refreshing `created_at` — and returns `{ action, deduplicated:false, updated:true }`. The unique index stays in place; only `action_type='vote'` takes the UPDATE branch. Emoji reactions (`action_type` starts with `reaction:`) keep the 23505 → select-existing dedup path unchanged.
 
-**Rationale:** A poll lets a user change their vote (Mon → Tue). The brief calls vote-change idempotent, but a second INSERT would either duplicate the row or fail; an UPDATE on the existing row keeps "one vote per user per message" enforced by the DB constraint while still letting the option_id move. Distinguishing insert vs UPDATE in the response shape lets the optimistic client merge the new payload onto the same row (`applyActionUpdate` in `apps/web/lib/chat/cache.ts`) without re-inserting into the action list. **Alternatives considered:** (a) per-option `action_type='vote:<option_id>'` — multiplies the action surface and means vote-change is "delete old + insert new", two round-trips; (b) a separate `chat_poll_votes` table — duplicates the dedup index and forks the renderer's data source.
+**Rationale:** A poll lets a user change their vote (Mon → Tue). The brief calls vote-change idempotent, but a second INSERT would either duplicate the row or fail; an UPDATE on the existing row keeps "one vote per user per message" enforced by the DB constraint while still letting the option_id move. Distinguishing insert vs UPDATE in the response shape lets the optimistic client merge the new payload onto the same row (`applyActionUpdate` in `packages/chat-core/src/cache.ts`) without re-inserting into the action list. **Alternatives considered:** (a) per-option `action_type='vote:<option_id>'` — multiplies the action surface and means vote-change is "delete old + insert new", two round-trips; (b) a separate `chat_poll_votes` table — duplicates the dedup index and forks the renderer's data source.
 
 **Consequences:** The `chat_message_actions` row id stays stable across vote-changes, so Postgres Changes broadcasts the new payload as a single UPDATE event. Realtime listeners that only handle INSERT must be extended (the web manager already routes UPDATE through the same path). Poll renderers read tallies from `message.actions` (raw rows with payloads), not from `message.reactions` (aggregated user lists by action_type), because the per-option breakdown is in the payload.
 
@@ -541,7 +543,7 @@ outbox(clientId PK, channelId, body, kind?, payload?, replyToId?, attempts, queu
 
 ### ADR-10: Supabase Realtime Presence is the presence source — no custom broadcast topic (Chunk 05)
 
-**Decision:** Presence on `chat:channel:<id>` uses Supabase Realtime's built-in Presence API: the web client calls `channel.track({ userId, ts })` from the `SUBSCRIBED` callback in `realtime-manager.ts`; the push worker opens a service-role subscription on the same topic and reads `presenceState()` per channel before fanout.
+**Decision:** Presence on `chat:channel:<id>` uses Supabase Realtime's built-in Presence API: the web client calls `channel.track({ userId, ts })` from the `SUBSCRIBED` callback in `packages/chat-core/src/realtime-manager.ts` (pinned by that package's `presence-contract.test.ts`); the push worker opens a service-role subscription on the same topic and reads `presenceState()` per channel before fanout.
 
 **Rationale:** A bespoke broadcast topic (e.g. `presence:channel:<id>` with manual heartbeats) would re-implement what Realtime Presence already does — connect/disconnect tracking, a state aggregator, automatic cleanup on socket drop — and create a second source of truth that can drift from the actual subscription state. Presence on the chat channel topic is automatic; we already pay the realtime cost for messages on the same topic. **Alternatives considered:** (a) custom broadcast topic with periodic `still-here` pings — duplicates Presence with more bugs; (b) a global presence map maintained by the API via REST heartbeats — loses ephemerality, creates DB write amplification (ADR-02 anti-pattern); (c) skip presence and always push — trains users to mute notifications (ADR-04 anti-pattern).
 
@@ -967,11 +969,11 @@ The palette is rebuilt **server-side** whenever `branding.colors` changes (via `
 
 ## 16. Mobile Chat Architecture
 
-The Expo app opens directly into chat and holds real-time parity with web on reactions, inline cards, voice memos, and presence. The hot-path client (`chat-client.ts`) and the rich-message renderer registry are shared across platforms; mobile abstracts the platform-specific layers behind thin seams rather than forking.
+The Expo app opens directly into chat and holds real-time parity with web on reactions, inline cards, voice memos, and presence. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked; the rich-message renderer registry is shared as a contract (`@repo/chat-integrations`) with framework-bound renderers per app.
 
 ### Storage layer (the Dexie analogue)
 
-Web persists composer state in IndexedDB via Dexie (ADR-05); mobile uses the native equivalents behind the same storage interface:
+Web persists composer state in IndexedDB via Dexie (ADR-05); mobile uses the native equivalents behind the same storage interface (the `OutboxStore` port in `@repo/chat-core`):
 
 - **Drafts + outbound send/action queue:** AsyncStorage. Persist between cold launches so a force-quit mid-compose never loses input, and a queued message flushes in order on reconnect (idempotent on `client_message_id`, same dedupe index as web).
 - **Inbound message cache:** SQLite (`op-sqlite` or `expo-sqlite`) — last N messages per channel for offline reads and fast cold-start render.
