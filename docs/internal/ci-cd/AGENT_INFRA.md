@@ -174,6 +174,14 @@ therefore accept a newer React silently, hoist it, and kill `apps/mobile` on fir
 [`AGENTS.md` § Gotchas](../../../AGENTS.md) and PR #842. These packages move as a version-locked set
 through a planned Expo SDK upgrade (#289), never as isolated bumps.
 
+**The membership rule**, since the list is not simply "everything RN-shaped": a package belongs in it
+if it is either (a) exact-version-locked to React (`react`, `react-dom`, `react-test-renderer`) or
+(b) a native module whose binary must match the Expo SDK's prebuilt set (`react-native*`, the
+`expo-*` client packages, `@expo/*`, `@react-native-async-storage/*`). JS-only libraries on caret
+ranges stay updatable even when they look RN-adjacent — `@react-navigation/native` and `nativewind`
+are deliberately **not** ignored, because a bad bump there fails `check-types` or a test rather than
+dying silently on a device.
+
 Two traps for whoever edits that list next:
 
 - **Do not collapse the Expo entries into `expo-*`.** That glob also matches `expo-server-sdk`, an
@@ -189,6 +197,32 @@ Two traps for whoever edits that list next:
 `@types/react` is deliberately **not** ignored: it is types-only, carries no runtime equality
 assertion, and a bad bump fails `npm run check-types` in CI — which is precisely the safety net that
 makes auto-updates tolerable.
+
+**Dependabot does not manage the root `overrides` block.** Those entries (`handlebars`, `undici`,
+`path-to-regexp`, … — added by #861 to force patched versions of *transitive* dependencies) are
+invisible to it, so they neither get bumped nor get cleaned up as the direct dependencies that pulled
+them in move on. Reviewing that block is a manual job; `npm run check:npm-audit` is what tells you an
+override is no longer doing its work.
+
+### Dependabot PRs are exempt from the docs/spec sync gate
+
+`.github/workflows/docs.yml` skips `check-docs-impact.mjs` when the PR author is `dependabot[bot]`.
+Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
+`package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
+touches non-`docs/` files without touching `docs/`, and **`docs-spec-sync` is a required status check**
+(`scripts/configure-branch-protection.mjs`) under `enforce_admins: true`. Every Dependabot PR would
+therefore have been permanently unmergeable — blocked, with no admin override.
+
+Two things to preserve if you ever edit that condition:
+
+- **Skip the step, never the job.** A skipped job never reports its check run, so the PR would block
+  forever on a required check that never arrives — worse than the failure being replaced. The
+  step-level `if` keeps the job, and therefore `docs-spec-sync`, green.
+- **Key on `github.event.pull_request.user.login`, not `github.actor`.** The actor changes when a
+  human re-runs the workflow, which would silently flip the exemption off mid-PR.
+
+`check-docs-structure.mjs` needs no exemption — it only inspects newly *added* paths under `docs/`
+and `spec/`, of which a dependency bump has none, so it passes trivially.
 
 ### Alerts and security updates are a repo Settings toggle
 
