@@ -53,11 +53,15 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 > What `--all` cannot do is walk refs the clone does not have — and **this, not the flag, is the
 > real way an audit under-reports.** Two traps, neither caught by the obvious check:
 >
-> | Clone shape | `--is-shallow-repository` | Commits scanned here |
+> | Clone shape | `--is-shallow-repository` | Commits scanned (measured 2026-08-15) |
 > | --- | --- | --- |
 > | Shallow (`--depth`, many CI/cloud sandboxes) | `true` | as few as 1 |
 > | Full-depth but `--single-branch` / only `main` fetched | **`false`** | 445 of 1659 |
 > | All heads + PR refs | `false` | 1659 |
+>
+> These are absolute counts from one day; they grow as commits land. **The ratio is the point, not
+> the number** — if your own run reports far fewer than the remote's history should yield, suspect
+> the ref set before anything else.
 >
 > The middle row is the dangerous one: `git rev-parse --is-shallow-repository` says `false`,
 > `git fetch --unshallow` errors as a no-op, and the scan reports clean having covered ~27% of
