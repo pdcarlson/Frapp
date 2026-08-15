@@ -32,13 +32,16 @@ type AuthSessionContextValue = {
   /** Resolved from the access token's `active_chapter_id` claim; see below. */
   chapterId: string | null;
   /**
-   * True while the claim read is still in flight.
+   * True while the first claim read for the current token is still in flight.
    *
    * `chapterId` is `null` both before the claim has been read and after it has
-   * resolved to "no chapter", and those two states need opposite handling: the
-   * routing gate sends the second to the chapter picker, so treating the first
-   * as the second would flash the picker on every cold start. Callers gating on
-   * `chapterId === null` MUST wait for this to be false.
+   * resolved to "no chapter", and a caller that treats those alike will act on
+   * a not-yet-known answer. Anything gating on `chapterId === null` MUST wait
+   * for this to be false — `lib/auth-gate.ts` is the one place that does, and
+   * it is where the consequences are documented.
+   *
+   * It goes false on a bounded timeout as well as on settle, so a hung network
+   * cannot leave a caller waiting forever.
    */
   isChapterResolving: boolean;
   /** False when `EXPO_PUBLIC_SUPABASE_*` are missing — sign-in cannot work. */
@@ -54,6 +57,12 @@ type AuthSessionContextValue = {
 };
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null);
+
+/**
+ * How long the routing gate will wait on the first chapter-claim read before
+ * letting the app through without it.
+ */
+const CLAIM_READ_TIMEOUT_MS = 8_000;
 
 const NOT_CONFIGURED_MESSAGE =
   "Supabase is not configured. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY.";
@@ -254,6 +263,22 @@ export function AuthSessionProvider({
     let cancelled = false;
     setIsChapterResolving(true);
 
+    // Stop *waiting* on the claim after a bounded delay — but keep listening.
+    //
+    // The routing gate renders nothing while the first read is in flight, and
+    // this read is a real network call with no timeout of its own (React
+    // Native's fetch has no default, and auth-js falls back to `getUser` here
+    // because Hermes has no WebCrypto `subtle`). A captive portal accepts the
+    // connection and then never answers, which would otherwise leave a blank
+    // screen behind an already-hidden splash for as long as the socket hangs.
+    //
+    // Proceeding without the claim is safe by design — see `lib/auth-gate.ts`.
+    // The request is deliberately not aborted: if it lands later, the claim
+    // still applies.
+    const resolveTimer = setTimeout(() => {
+      if (!cancelled) setIsChapterResolving(false);
+    }, CLAIM_READ_TIMEOUT_MS);
+
     supabase.auth
       .getClaims()
       .then(({ data, error }) => {
@@ -278,10 +303,12 @@ export function AuthSessionProvider({
         // Each run owns its own `cancelled`, so a superseded read can never
         // clear the flag out from under the newer one that replaced it.
         if (!cancelled) setIsChapterResolving(false);
+        clearTimeout(resolveTimer);
       });
 
     return () => {
       cancelled = true;
+      clearTimeout(resolveTimer);
     };
   }, [supabase, accessToken]);
 
