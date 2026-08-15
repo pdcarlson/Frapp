@@ -28,6 +28,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleExpensiveWrite } from '../decorators/throttle-profiles.decorator';
 import { CurrentChapterId } from '../decorators/current-user.decorator';
 import {
   AttendanceReportDto,
@@ -183,6 +184,7 @@ export class ReportController {
   ) {}
 
   @Post('attendance')
+  @ThrottleExpensiveWrite()
   @ApiOperation({ summary: 'Generate attendance report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -207,6 +209,7 @@ export class ReportController {
   }
 
   @Post('points')
+  @ThrottleExpensiveWrite()
   @ApiOperation({ summary: 'Generate points report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -230,6 +233,7 @@ export class ReportController {
   }
 
   @Post('roster')
+  @ThrottleExpensiveWrite()
   @ApiOperation({ summary: 'Generate member roster data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)
@@ -246,6 +250,7 @@ export class ReportController {
   }
 
   @Post('service')
+  @ThrottleExpensiveWrite()
   @ApiOperation({ summary: 'Generate service hours report data' })
   @ApiQuery(FORMAT_QUERY)
   @ApiCreatedResponse(EXPORT_RESPONSE)

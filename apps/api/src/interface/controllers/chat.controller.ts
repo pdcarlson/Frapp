@@ -24,6 +24,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -377,6 +378,7 @@ export class ChatController {
   // ── File Upload ────────────────────────────────────────────────────
 
   @Post(':id/upload-url')
+  @ThrottleFanOutWrite()
   @ApiOperation({
     summary: 'Generate a signed upload URL for a chat file attachment',
   })
