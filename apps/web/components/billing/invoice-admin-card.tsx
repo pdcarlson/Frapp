@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
   useCreateInvoice,
@@ -39,10 +39,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
-import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-state";
 
 type Invoice = {
   id: string;
@@ -65,9 +69,6 @@ type MemberSummary = {
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
 
-/** Ties every disabled invoice write control to the sentence explaining it. */
-const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
-
 function statusVariant(
   status: Invoice["status"],
 ): "default" | "outline" | "secondary" | "destructive" {
@@ -88,9 +89,8 @@ export function InvoiceAdminCard() {
   // `POST /v1/invoices` carries no `@FreeTier`, so it is paid-ops and the
   // trigger has to mirror the subscription gate (#858). Reads only — the
   // server guard is still the enforcement.
-  const { state: subscription, isPending: subscriptionPending } =
-    useSubscriptionWriteState();
-  const canWriteInvoices = subscription.allowed && !subscriptionPending;
+  const gate = useSubscriptionGate();
+  const createDialog = useGatedDialog(gate);
   const invoicesQuery = useInvoices();
   const overdueQuery = useOverdueInvoices();
   const membersQuery = useMembers();
@@ -126,26 +126,6 @@ export function InvoiceAdminCard() {
   }, [members]);
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
-  const [createOpen, setCreateOpen] = useState(false);
-
-  const noticeRef = useRef<HTMLParagraphElement>(null);
-
-  // A background refetch (or the chapter query simply resolving) can revoke the
-  // write after the dialog is already open. Radix's `onOpenChange` never fires
-  // for that, so without this the user finishes a form that is guaranteed to
-  // 403 — the exact late failure the gate exists to remove.
-  //
-  // Focus has to be placed deliberately. Radix returns focus to the trigger on
-  // close, but the trigger goes `disabled` in this same commit, so `.focus()`
-  // on it is a no-op and focus would fall to `<body>` — restarting keyboard
-  // navigation at the top of the document. Send it to the notice instead, which
-  // is both focusable and the explanation for what just happened.
-  useEffect(() => {
-    if (!createOpen || canWriteInvoices) return;
-    setCreateOpen(false);
-    const frame = requestAnimationFrame(() => noticeRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [createOpen, canWriteInvoices]);
   const [draft, setDraft] = useState({
     user_id: "",
     title: "",
@@ -202,7 +182,7 @@ export function InvoiceAdminCard() {
         description:
           "Set the status to OPEN to notify the member and start tracking.",
       });
-      setCreateOpen(false);
+      createDialog.setOpen(false);
       setDraft({
         user_id: "",
         title: "",
@@ -312,32 +292,17 @@ export function InvoiceAdminCard() {
                   <SelectItem value="OVERDUE">OVERDUE</SelectItem>
                 </SelectContent>
               </Select>
-              <Dialog
-                open={createOpen}
-                onOpenChange={(next) => {
-                  // Gate the trigger, never the submit (§5 rule 1): a dialog
-                  // must never open onto an action that cannot succeed. Radix
-                  // only calls this on an open/close *request*, so it cannot
-                  // react to the subscription flipping underneath an open
-                  // dialog — the effect above handles that case.
-                  if (next && !canWriteInvoices) return;
-                  setCreateOpen(next);
-                }}
-              >
+              <Dialog {...createDialog.dialogProps}>
                 <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="gap-2"
-                    disabled={!canWriteInvoices}
-                    aria-describedby={
-                      canWriteInvoices ? undefined : SUBSCRIPTION_NOTICE_ID
-                    }
-                  >
+                  <Button size="sm" className="gap-2" {...gate.controlProps()}>
                     <Plus className="h-4 w-4" />
                     Create invoice
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent
+                  className="sm:max-w-lg"
+                  {...createDialog.contentProps}
+                >
                   <DialogHeader>
                     <DialogTitle>Create member invoice</DialogTitle>
                     <DialogDescription>
@@ -440,7 +405,7 @@ export function InvoiceAdminCard() {
                   <DialogFooter>
                     <Button
                       variant="outline"
-                      onClick={() => setCreateOpen(false)}
+                      onClick={() => createDialog.setOpen(false)}
                       disabled={createInvoice.isPending}
                     >
                       Cancel
@@ -448,7 +413,7 @@ export function InvoiceAdminCard() {
                     <Button
                       form="invoice-create-form"
                       type="submit"
-                      disabled={createInvoice.isPending || !canWriteInvoices}
+                      {...gate.controlProps(createInvoice.isPending)}
                     >
                       {createInvoice.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -466,31 +431,21 @@ export function InvoiceAdminCard() {
               recoverable, and hiding invoicing entirely would read as a
               missing feature rather than an explainable state.
             */}
-            {!canWriteInvoices ? (
-              <p
-                id={SUBSCRIPTION_NOTICE_ID}
-                ref={noticeRef}
-                tabIndex={-1}
-                // `status` so a screen reader hears the reason when the write is
-                // revoked under an open dialog — that close is otherwise silent.
-                role="status"
-                className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
-              >
-                {subscriptionPending ? (
-                  <>
-                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
-                    Checking this chapter&apos;s subscription…
-                  </>
-                ) : subscription.allowed ? null : (
-                  <>
-                    {subscription.reason}{" "}
-                    {subscription.recoverable
-                      ? "Use the subscription card at the top of this page to restore invoicing."
-                      : "Reopen the subscription from the billing portal to restore invoicing."}
-                  </>
-                )}
-              </p>
-            ) : null}
+            <SubscriptionNotice
+              gate={gate}
+              feature="invoicing"
+              // Billing supplies its own recovery sentence: §5 rule 3 says never
+              // gate a user out of the screen that ungates them, and the default
+              // copy would link this screen to itself. The subscription card is
+              // directly above.
+              recovery={
+                gate.state.allowed
+                  ? null
+                  : gate.state.recoverable
+                    ? "Use the subscription card at the top of this page to restore invoicing."
+                    : "Reopen the subscription from the billing portal to restore invoicing."
+              }
+            />
             {invoicesQuery.isPending ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -551,14 +506,9 @@ export function InvoiceAdminCard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={
-                              !canWriteInvoices || transitioningId === invoice.id
-                            }
-                            aria-describedby={
-                              canWriteInvoices
-                                ? undefined
-                                : SUBSCRIPTION_NOTICE_ID
-                            }
+                            {...gate.controlProps(
+                              transitioningId === invoice.id,
+                            )}
                             onClick={() => void transition(invoice, "OPEN")}
                           >
                             Send (mark OPEN)
@@ -568,15 +518,9 @@ export function InvoiceAdminCard() {
                           <>
                             <Button
                               size="sm"
-                              disabled={
-                                !canWriteInvoices ||
-                                transitioningId === invoice.id
-                              }
-                              aria-describedby={
-                                canWriteInvoices
-                                  ? undefined
-                                  : SUBSCRIPTION_NOTICE_ID
-                              }
+                              {...gate.controlProps(
+                                transitioningId === invoice.id,
+                              )}
                               onClick={() => void transition(invoice, "PAID")}
                             >
                               Mark paid
@@ -584,15 +528,9 @@ export function InvoiceAdminCard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={
-                                !canWriteInvoices ||
-                                transitioningId === invoice.id
-                              }
-                              aria-describedby={
-                                canWriteInvoices
-                                  ? undefined
-                                  : SUBSCRIPTION_NOTICE_ID
-                              }
+                              {...gate.controlProps(
+                                transitioningId === invoice.id,
+                              )}
                               onClick={() => void transition(invoice, "VOID")}
                             >
                               Void

@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const { mockCurrentChapter, mockTransitionMutate } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
@@ -54,27 +55,17 @@ vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { InvoiceAdminCard } = await import("./invoice-admin-card");
 
-// Mirrors the constant in the component; asserted rather than imported so a
-// rename that breaks the wiring shows up as a test failure.
-const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
+const chapter = chapterSubscription(mockCurrentChapter);
 
 function setChapter(
   subscription_status: string,
   past_due_since: string | null = null,
 ) {
-  mockCurrentChapter.mockReturnValue({
-    data: { subscription_status, past_due_since },
-    isPending: false,
-    isError: false,
-  });
+  chapter.raw(subscription_status, past_due_since);
 }
 
 function setChapterLoading() {
-  mockCurrentChapter.mockReturnValue({
-    data: undefined,
-    isPending: true,
-    isError: false,
-  });
+  chapter.loading();
 }
 
 function trigger() {
@@ -155,9 +146,13 @@ describe("InvoiceAdminCard subscription gating", () => {
     // But a disabled control with no explanation is its own dead end (§5
     // rule 2), so the pending state says what it is waiting for.
     expect(screen.getByText(/checking this chapter/i)).toBeInTheDocument();
-    expect(trigger()).toHaveAttribute(
-      "aria-describedby",
-      SUBSCRIPTION_NOTICE_ID,
+    // The id is generated per gate now, so assert the wiring rather than a
+    // literal — a `useId` value would make the old assertion a rename canary
+    // for nothing.
+    const describedBy = trigger().getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /checking this chapter/i,
     );
   });
 
