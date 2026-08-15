@@ -42,6 +42,7 @@ import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
+import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-state";
 
 type Invoice = {
   id: string;
@@ -64,6 +65,9 @@ type MemberSummary = {
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
 
+/** Ties the disabled Create-invoice trigger to the sentence explaining it. */
+const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
+
 function statusVariant(
   status: Invoice["status"],
 ): "default" | "outline" | "secondary" | "destructive" {
@@ -81,6 +85,12 @@ function statusVariant(
 
 export function InvoiceAdminCard() {
   const { toast } = useToast();
+  // `POST /v1/invoices` carries no `@FreeTier`, so it is paid-ops and the
+  // trigger has to mirror the subscription gate (#858). Reads only — the
+  // server guard is still the enforcement.
+  const { state: subscription, isPending: subscriptionPending } =
+    useSubscriptionWriteState();
+  const canCreateInvoice = subscription.allowed && !subscriptionPending;
   const invoicesQuery = useInvoices();
   const overdueQuery = useOverdueInvoices();
   const membersQuery = useMembers();
@@ -269,9 +279,28 @@ export function InvoiceAdminCard() {
                   <SelectItem value="OVERDUE">OVERDUE</SelectItem>
                 </SelectContent>
               </Select>
-              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <Dialog
+                open={createOpen}
+                onOpenChange={(next) => {
+                  // Gate the trigger, never the submit (§5 rule 1): a dialog
+                  // must never open onto an action that cannot succeed. The
+                  // disabled button covers the pointer path; this covers
+                  // programmatic opens and a state flip while it is open.
+                  if (next && !canCreateInvoice) return;
+                  setCreateOpen(next);
+                }}
+              >
                 <DialogTrigger asChild>
-                  <Button size="sm" className="gap-2">
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    disabled={!canCreateInvoice}
+                    aria-describedby={
+                      subscription.allowed
+                        ? undefined
+                        : SUBSCRIPTION_NOTICE_ID
+                    }
+                  >
                     <Plus className="h-4 w-4" />
                     Create invoice
                   </Button>
@@ -400,6 +429,22 @@ export function InvoiceAdminCard() {
             </div>
           </CardHeader>
           <CardContent>
+            {/*
+              Disable, don't hide (§5 rule 4): a lapsed subscription is
+              recoverable, and hiding invoicing entirely would read as a
+              missing feature rather than an explainable state.
+            */}
+            {!subscription.allowed ? (
+              <p
+                id={SUBSCRIPTION_NOTICE_ID}
+                className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+              >
+                {subscription.reason}{" "}
+                {subscription.recoverable
+                  ? "Complete checkout at the top of this page to unlock invoicing."
+                  : "Contact support from the billing portal to reopen this chapter."}
+              </p>
+            ) : null}
             {invoicesQuery.isPending ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

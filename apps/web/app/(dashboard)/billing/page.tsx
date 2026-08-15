@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { useBillingStatus, useCurrentUser, useInvoices } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { InvoiceAdminCard } from "@/components/billing/invoice-admin-card";
+import { SubscriptionCheckoutCard } from "@/components/billing/subscription-checkout-card";
 import {
   PayInvoiceDialog,
   type PayableInvoice,
@@ -146,6 +147,15 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6">
+      {/*
+        First on the page on purpose: when a chapter is locked, the control that
+        unlocks it is the only thing on this screen that can succeed. Suspense
+        because the card reads `?checkout=` via `useSearchParams`.
+      */}
+      <Suspense fallback={null}>
+        <SubscriptionCheckoutCard />
+      </Suspense>
+
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
