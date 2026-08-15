@@ -83,3 +83,7 @@ vi.mock("expo-splash-screen", () => ({
   preventAutoHideAsync: vi.fn().mockResolvedValue(true),
   hideAsync: vi.fn().mockResolvedValue(true),
 }));
+
+vi.mock("react-native-keyboard-controller", () => ({
+  KeyboardProvider: "KeyboardProvider",
+}));

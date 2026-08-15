@@ -17,6 +17,7 @@ import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
 import { AuthSessionProvider } from "@/lib/auth-session";
+import { KeyboardProviderGuarded } from "@/lib/keyboard";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
 // Hold the splash until Figtree is registered, so no screen ever paints in the
@@ -76,9 +77,11 @@ export default function RootLayout() {
           <AuthSessionProvider>
             <FrappProvider>
               <AnalyticsProvider>
-                <BottomSheetModalProvider>
-                  <RootLayoutContent />
-                </BottomSheetModalProvider>
+                <KeyboardProviderGuarded>
+                  <BottomSheetModalProvider>
+                    <RootLayoutContent />
+                  </BottomSheetModalProvider>
+                </KeyboardProviderGuarded>
               </AnalyticsProvider>
             </FrappProvider>
           </AuthSessionProvider>
