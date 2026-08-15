@@ -607,7 +607,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-visual-results
-          path: apps/web/test-results/
+          # `test-results/` carries the per-route `-actual`/`-expected`/`-diff`
+          # PNGs; `playwright-report/` is the HTML reporter's output, without
+          # which the download cannot be opened with `npx playwright
+          # show-report` and is just a pile of loose images.
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
           if-no-files-found: ignore
           retention-days: 14
 

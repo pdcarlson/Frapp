@@ -101,11 +101,17 @@ Run `npx playwright install chromium` to fetch the pinned revision (1223 as of
 Once on the right build, this sandbox reproduces CI's results exactly.
 
 **When you cannot regenerate locally**, the `web-visual-regression` job uploads
-`apps/web/test-results/` as the `playwright-visual-results` artifact on failure
-(14-day retention). It contains each failing route's `-actual.png` and
-`-diff.png`, rendered by CI's own browser — download and commit the `-actual`
-as the new baseline. Before that artifact existed, a failure printed only image
-dimensions and a diff ratio, so the render itself was unreachable (#936).
+`apps/web/test-results/` and `apps/web/playwright-report/` as the
+`playwright-visual-results` artifact on failure (14-day retention). It contains
+each failing route's `-actual.png` and `-diff.png`, rendered by CI's own browser
+— download and commit the `-actual` as the new baseline, or open the bundled
+HTML report with `npx playwright show-report`. Before that artifact existed, a
+failure printed only image dimensions and a diff ratio, so the render itself was
+unreachable (#936).
+
+Note the job is path-gated: it runs on every push to `main`, and on pull
+requests only when the `web` filter matches (`apps/web/**`, `packages/**`,
+`package-lock.json`, `turbo.json`), so a docs- or API-only PR skips it.
 
 Every regenerated baseline needs a per-route attestation in
 [`apps/web/tests/visual/README.md`](../../../apps/web/tests/visual/README.md)
