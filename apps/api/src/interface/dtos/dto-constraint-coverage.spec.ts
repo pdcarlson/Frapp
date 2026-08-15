@@ -166,6 +166,9 @@ describe('DTO constraint coverage (#849)', () => {
     ['CreateTaskDto', 'point_reward', 'ledger write above the ceiling', 2e9],
     ['ListPollsQueryDto', 'channel_id', 'non-uuid channel', 'not-a-uuid'],
     ['StartStudySessionDto', 'geofence_id', 'non-uuid geofence', 'not-a-uuid'],
+    // The study rate is a ledger input too; the computed total is #948.
+    ['CreateGeofenceDto', 'points_per_interval', 'unbounded award rate', 2e9],
+    ['UpdateGeofenceDto', 'points_per_interval', 'unbounded award rate', 2e9],
   ])('%s.%s rejects an %s', async (className, prop, _why, hostileValue) => {
     // Asserted by *validating a value*, not by naming decorators: composing
     // these bounds into a custom decorator later is a refactor, and a test

@@ -26,13 +26,18 @@ export const ROLE_KEY_MAX_LENGTH = 64;
  * service only *flags* large adjustments against the anomaly threshold — it
  * never rejects them — so validation is the only ceiling.
  *
- * This binds **every** path that writes `point_transactions.amount`, not just
- * the manual one: a direct adjustment, an event's `point_value` (written once
- * per check-in), and a task's `point_reward`. Capping only the manual path
- * would leave the wider `events:create` grant able to mint amounts that
- * `points:adjust` cannot, and the ledger is append-only — corrections are
- * themselves adjustments bound by this same constant, so an uncapped write is
- * not fully reversible through the API.
+ * Four paths write `point_transactions.amount`, and this binds the request
+ * field on each: a direct adjustment, an event's `point_value` (written once
+ * per check-in), a task's `point_reward`, and a study geofence's
+ * `points_per_interval`. Capping only the manual path would leave the wider
+ * `events:create` grant able to mint amounts that `points:adjust` cannot, and
+ * the ledger is append-only — corrections are themselves adjustments bound by
+ * this same constant, so an uncapped write is not fully reversible.
+ *
+ * One caveat, stated rather than glossed: the study path's ledger amount is a
+ * *computed product* (`intervals × points_per_interval`), so bounding the input
+ * does not bound the row — a long enough session still multiplies past this
+ * ceiling. Clamping the computed award is a product decision tracked in #948.
  *
  * It also keeps the value inside `int4`: `point_transactions.amount` and
  * `events.point_value` are both `int`, so an unbounded `@IsInt()` overflows

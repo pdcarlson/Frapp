@@ -6,11 +6,13 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
 
 export class GeofenceCoordinateDto {
   @ApiProperty()
@@ -48,6 +50,11 @@ export class CreateGeofenceDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  // Multiplied by the interval count into a point_transactions row, so it is a
+  // ledger input. Capping the rate does not bound the product (a long enough
+  // session still multiplies past the ceiling) — clamping the computed award is
+  // #948; this closes the single-input case and the int4 overflow behind it.
+  @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
   @ApiPropertyOptional({ default: 15 })
@@ -95,6 +102,11 @@ export class UpdateGeofenceDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  // Multiplied by the interval count into a point_transactions row, so it is a
+  // ledger input. Capping the rate does not bound the product (a long enough
+  // session still multiplies past the ceiling) — clamping the computed award is
+  // #948; this closes the single-input case and the int4 overflow behind it.
+  @Max(POINTS_ADJUSTMENT_MAX)
   points_per_interval?: number;
 
   @ApiPropertyOptional()
