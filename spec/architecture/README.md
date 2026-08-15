@@ -398,7 +398,7 @@ Configurable alerts via the monitoring provider:
 - **Testing:** TDD encouraged. Minimum 80% line coverage for API modules.
 - **Linting:** ESLint (shared config), Prettier for formatting.
 - **Type safety:** TypeScript strict mode across all apps and packages.
-- **Validation:** Global ValidationPipe (class-validator) on API; Zod schemas shared to clients.
+- **Validation:** Global ValidationPipe (class-validator) on API, running `whitelist` + `forbidNonWhitelisted` so unexpected properties are rejected rather than dropped; every request-DTO property carries a real constraint behind any `@IsOptional()` gate, and controllers order write payloads so server-decided keys (`chapter_id`, `created_by`) win over the spread DTO. Zod schemas shared to clients are UX only, never enforcement. See `docs/guides/api-architecture.md` § Never trust the client.
 - **Security:** No hardcoded secrets. Input validation on all endpoints. SQL injection prevented by parameterized queries. CORS configured per environment. Rate limiting per user per endpoint — keyed on the authenticated user (Supabase JWT `sub`, after verifying the token's HS256 signature against `SUPABASE_JWT_SECRET`), falling back to client IP for unauthenticated, invalid, or expired tokens so a forged/rotating `sub` cannot evade the limit — at 100 req/min read and 30 req/min write, with stricter static overrides on expensive and fan-out routes (see [`spec/behavior/README.md` § Per-route rate limits](../behavior/README.md#per-route-rate-limits)); a standard `Retry-After` header (seconds) accompanies every `429`. The Stripe webhook route is exempt (see Security Note below). File upload MIME type validation.
 
 ## Database Performance

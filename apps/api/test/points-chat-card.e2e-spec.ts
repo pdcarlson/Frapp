@@ -13,10 +13,12 @@ import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
 import { ChapterGuard } from '../src/interface/guards/chapter.guard';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
 import { createSupabaseMock } from './helpers/supabase-mock.factory';
+import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
 
 const V1 = '/v1';
 const CHANNEL_ID = '11111111-1111-4111-8111-111111111111';
 const CLIENT_MESSAGE_ID = '22222222-2222-4222-8222-222222222222';
+const TARGET_USER_ID = '33333333-3333-4333-8333-333333333333';
 
 class AuthGuardStub implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
@@ -59,7 +61,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
     adjustPoints: jest.fn().mockResolvedValue({
       id: 'pt-1',
       chapter_id: 'chapter-1',
-      user_id: 'user-2',
+      user_id: TARGET_USER_ID,
       amount: 5,
       category: 'MANUAL',
       description: 'great work',
@@ -86,14 +88,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
     await app.init();
   });
 
@@ -111,7 +106,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({
-        target_user_id: 'user-2',
+        target_user_id: TARGET_USER_ID,
         amount: 5,
         category: 'MANUAL',
         reason: 'great work',
@@ -123,7 +118,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
     expect(pointsServiceMock.adjustPoints).toHaveBeenCalledWith(
       expect.objectContaining({
         chapterId: 'chapter-1',
-        targetUserId: 'user-2',
+        targetUserId: TARGET_USER_ID,
         adminUserId: 'admin-1',
         amount: 5,
         category: 'MANUAL',
@@ -140,7 +135,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({
-        target_user_id: 'user-2',
+        target_user_id: TARGET_USER_ID,
         amount: 5,
         category: 'MANUAL',
         reason: 'dashboard reward',
@@ -161,7 +156,7 @@ describe('Points chat card — adjust endpoint wiring (e2e)', () => {
       .set('authorization', 'Bearer token')
       .set('x-chapter-id', 'chapter-1')
       .send({
-        target_user_id: 'user-2',
+        target_user_id: TARGET_USER_ID,
         amount: 5,
         category: 'MANUAL',
         reason: 'great work',

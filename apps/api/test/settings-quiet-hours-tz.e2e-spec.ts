@@ -11,6 +11,7 @@ import { NotificationController } from '../src/interface/controllers/notificatio
 import { NotificationService } from '../src/application/services/notification.service';
 import { AuthService } from '../src/application/services/auth.service';
 import { SupabaseAuthGuard } from '../src/interface/guards/supabase-auth.guard';
+import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
 
 const V1 = '/v1';
 
@@ -70,14 +71,7 @@ describe('PATCH /v1/settings — quiet_hours_tz validation (#687)', () => {
 
     app = moduleFixture.createNestApplication();
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
     await app.init();
   });
 

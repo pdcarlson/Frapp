@@ -5,10 +5,12 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
 import { TaskStatus } from '../../domain/entities/task.entity';
 
 export class CreateTaskDto {
@@ -34,6 +36,8 @@ export class CreateTaskDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  // Awarded to the ledger on completion — same ceiling as a manual adjustment.
+  @Max(POINTS_ADJUSTMENT_MAX)
   point_reward?: number;
 
   @ApiPropertyOptional({

@@ -117,8 +117,9 @@ export class FinancialInvoiceController {
     @Body() dto: CreateFinancialInvoiceDto,
   ) {
     return this.invoiceService.create({
-      chapter_id: chapterId,
+      // Server-decided keys last — see the note in event.controller.ts.
       ...dto,
+      chapter_id: chapterId,
     });
   }
 
