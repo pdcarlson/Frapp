@@ -99,10 +99,18 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Gate | Enforced server-side by | Client must |
 | --- | --- | --- |
 | Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) |
-| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason |
+| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionWriteState`, `apps/web/lib/hooks/use-subscription-write-state.ts`) |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
-Permission and module gating already have client counterparts — `<Can>` for permissions, and the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)). **Subscription state is the gap:** it is enforced only on the server, so every subscription-gated action currently fails late by default. Any new subscription-gated flow must close that gap itself.
+All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionWriteState` for subscription state.
+
+**Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
+
+**The subscription mirror is a predicate, not a wrapper.** `subscriptionWriteState()` (`apps/web/lib/subscription.ts`) reproduces the guard branch-for-branch — the three structured codes, the 3-day `past_due` grace window, and the `@FreeTier` / `@GraceBlocked` carve-outs — and the hook feeds it the active chapter. It is shaped as a hook rather than a `<Can>`-style wrapper because §5 rule 4 requires *disabling* the control, which means the caller needs the reason, not just a boolean. Pass the `writeClass` matching the route's decorators; `paid` is the default and the safe one.
+
+Unlike `<Can>`, the subscription mirror **fails open** while the chapter is loading or its fetch failed: an unresolved permission may be one the user never holds, but an unresolved subscription most likely belongs to a paying chapter, and disabling its paid surface over a slow fetch is worse than the late 403 the gate exists to avoid.
+
+Rollout is incremental. Billing consumes it today; extending it to the remaining paid-ops write surfaces is tracked separately, and any new subscription-gated flow is expected to adopt it rather than re-solve this per screen.
 
 ### What "fail fast" means concretely
 
