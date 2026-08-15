@@ -184,6 +184,23 @@ either is missing `getSupabaseClient()` returns `null` instead of throwing, so
 `npm run check-types` / `npm run test` and a bare `expo start` still work. Sign-in
 is unavailable in that state and the sign-in screen says so.
 
+### Client-exposure audit
+
+**Everything in the three tables above is public by design.** A `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix
+means the value is inlined into a bundle any user can read — so the prefix is the decision, and it is
+irreversible once shipped. The set is deliberately small: two Supabase anon values (public by
+Supabase's design, gated by RLS and the API's own guards), three URLs, and the Stripe **publishable**
+key. No secret belongs here; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
+
+Audited **2026-08-15** (#851) against production builds of `apps/web` and `apps/landing` and the
+`apps/mobile` config: gitleaks found nothing in either client bundle, none of 15 server-only variable
+names appeared in the emitted output, and mobile reads only the three `EXPO_PUBLIC_*` values listed
+here. Full method and re-run instructions:
+[`SECRET_SCANNING.md` § Audit history](../ci-cd/SECRET_SCANNING.md#audit-history).
+
+When adding a client-read variable, the prefix decision is the security review — see the checklist at
+the end of this document, and re-run the audit if you add one that could carry a credential.
+
 ---
 
 ## Infisical → Provider Syncs

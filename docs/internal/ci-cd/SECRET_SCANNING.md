@@ -38,10 +38,17 @@ brew install gitleaks
 Run a scan manually:
 
 ```bash
-npm run check:secrets                                    # full-history audit
+npm run check:secrets                                    # full-history audit (every ref)
 node scripts/scan-secrets.mjs --staged                   # staged changes (what the hook runs)
 node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 ```
+
+> **The audit needs a complete clone.** `check:secrets` scans **every ref** (`--log-opts=--all`),
+> not just the checked-out branch — an unmerged branch's history counts. Git can only walk the
+> commits it actually has, so running it in a shallow checkout (`--depth`, and some CI/cloud
+> sandboxes by default) silently scans a fraction and reports clean. Check with
+> `git rev-parse --is-shallow-repository`; if it says `true`, run `git fetch --unshallow` first.
+> The three incremental layers above are unaffected — they only ever scan a diff.
 
 ## When gitleaks flags something
 
@@ -55,8 +62,55 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
   3. For a batch of pre-existing accepted findings, commit a `/.gitleaks-baseline.json`
      (`scan-secrets.mjs` passes `--baseline-path` automatically when that file exists).
 
-Keep the allowlist tight — broad path globs hide real leaks. A full-history audit at adoption found no
-existing secrets, so no baseline ships by default.
+Keep the allowlist tight — broad path globs hide real leaks.
+
+A `/.gitleaks-baseline.json` **does** ship, holding two accepted historical false positives — see the
+audit record below for what they are and why. It is generated `--redact`, so it carries fingerprints
+and no secret values. Baseline entries are pinned to a specific commit + file + rule, so they suppress
+only those exact findings; a newly introduced secret is still caught. Regenerate it only alongside an
+audit record entry:
+
+```bash
+.cache/gitleaks/gitleaks git --no-banner --redact -c .gitleaks.toml --log-opts=--all \
+  --report-format json --report-path .gitleaks-baseline.json --exit-code 0
+```
+
+## Audit history
+
+The three layers above gate *new* commits. They cannot prove the two things only a full sweep can:
+that nothing secret survives in history, and that nothing secret reaches a browser bundle. Record
+every such audit here so the claim stays checkable.
+
+### 2026-08-15 — full-history + browser-bundle audit (#851)
+
+**Result: no Frapp secrets in git history, and none in any client bundle. Rotation list: empty.**
+
+| Scope | Method | Result |
+| --- | --- | --- |
+| Git history, **all refs** | `gitleaks 8.30.1`, repo config, 1087 commits / 20.9 MB | 2 findings, **both false positives** (below) |
+| `apps/web` client bundle | production build, `gitleaks dir` over `.next/static` | no leaks |
+| `apps/landing` client bundle | production build, `gitleaks dir` over `.next/static` | no leaks |
+| `apps/web` + `apps/landing` | swept emitted client output for 15 server-only variable *names* | none present |
+| `apps/mobile` | every `process.env.*` read in source + `eas.json` | only the three documented `EXPO_PUBLIC_*` values |
+
+Both history findings are accepted into `/.gitleaks-baseline.json`:
+
+1. `stripe-access-token` — `scripts/check-api-contract-drift.mjs` @ `9b4ffd5`. A literal placeholder
+   string used as the `STRIPE_SECRET_KEY` fallback for the OpenAPI export, which never calls Stripe.
+   No key material. Already neutralised on `main`, which now uses prefix-free placeholders.
+2. `generic-api-key` — `apps/api/README.md` @ `6a2d71c`. The stock `nest new` scaffold README,
+   carrying **upstream `nestjs/nest`'s own public CI badge token** — boilerplate, not a Frapp
+   credential. Replaced wholesale by a real README.
+
+Method notes, so a re-run is comparable:
+
+* The client-bundle sweep was run on a build using **placeholder** env values, so it proves *which
+  variables reach the browser*, not which values. That is the durable property — whether a variable
+  is client-visible is decided by its `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix and where it is read, not
+  by its value. A positive control confirmed the sweep's sensitivity: the injected public
+  placeholders were found inlined in the web bundle.
+* This audit is what surfaced the `--log-opts=--all` gap — before it, `check:secrets` scanned 481 of
+  1087 commits. Any audit predating 2026-08-15 covered one branch only.
 
 ## Required check / branch protection
 
