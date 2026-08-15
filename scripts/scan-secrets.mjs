@@ -9,8 +9,7 @@
  * Modes (argv):
  *   --staged                   scan staged changes only (pre-commit)
  *   --base <sha> --head <sha>  scan the base..head commit range (CI / local gate)
- *   (none)                     scan every ref's full history (audit) — requires a
- *                              complete clone; a shallow one silently under-reports
+ *   (none)                     scan full history (audit)
  *
  * Flags:
  *   --soft-missing  when the gitleaks binary can't be found/installed, print
@@ -61,16 +60,8 @@ export function buildGitleaksArgs({ mode, base, head, configPath, baselinePath }
   } else if (mode === "range") {
     // Scan only the commits introduced by head relative to base.
     args.push(`--log-opts=${base}..${head}`);
-  } else {
-    // mode "full": every ref, not just the checked-out branch. Bare `gitleaks git`
-    // walks HEAD's ancestry only, so a secret committed to a branch that was never
-    // merged is invisible to it — on this repo that was 481 commits scanned out of
-    // 1087. `--all` is what makes this an audit of the repository rather than of
-    // one branch. Note this needs a complete clone: in a shallow checkout git can
-    // only walk the commits present, so an audit run there under-reports. See
-    // docs/internal/ci-cd/SECRET_SCANNING.md.
-    args.push("--log-opts=--all");
   }
+  // mode "full": no extra args — `gitleaks git` scans the whole history.
   return args;
 }
 

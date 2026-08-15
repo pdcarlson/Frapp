@@ -186,20 +186,30 @@ is unavailable in that state and the sign-in screen says so.
 
 ### Client-exposure audit
 
-**Everything in the three tables above is public by design.** A `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix
-means the value is inlined into a bundle any user can read — so the prefix is the decision, and it is
-irreversible once shipped. The set is deliberately small: two Supabase anon values (public by
-Supabase's design, gated by RLS and the API's own guards), three URLs, and the Stripe **publishable**
-key. No secret belongs here; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
+**Every *prefixed* variable in the three tables above is public by design.** A
+`NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix means the value is inlined into a bundle any user can read — so
+the prefix is the decision, and it is irreversible once shipped. The prefixed set is deliberately
+small: two Supabase anon values (public by Supabase's design, gated by RLS and the API's own guards),
+three URLs, and the Stripe **publishable** key. No secret belongs there; `ANALYTICS_HMAC_SALT` is the
+worked example of why, above.
+
+`SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in
+`proxy.ts` (middleware, server-side), is CI-only, and is ignored when `NODE_ENV` is `production`. It
+is not client-visible and must never gain a prefix.
 
 Audited **2026-08-15** (#851) against production builds of `apps/web` and `apps/landing` and the
-`apps/mobile` config: gitleaks found nothing in either client bundle, none of 15 server-only variable
-names appeared in the emitted output, and mobile reads only the three `EXPO_PUBLIC_*` values listed
-here. Full method and re-run instructions:
+`apps/mobile` config: none of 15 server-only variable names appeared in the emitted client output,
+gitleaks found nothing in either client bundle, and mobile reads only the three `EXPO_PUBLIC_*`
+values listed here. **The name check is the load-bearing one** — the audit built with placeholder
+env values, so it establishes which variables reach the browser, not which values do; a clean
+gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
+method, caveats, and re-run instructions:
 [`SECRET_SCANNING.md` § Audit history](../ci-cd/SECRET_SCANNING.md#audit-history).
 
-When adding a client-read variable, the prefix decision is the security review — see the checklist at
-the end of this document, and re-run the audit if you add one that could carry a credential.
+**Adding a client-read variable? The prefix decision is the security review.** Step 3 of *Adding a
+New Variable* at the end of this document is mechanical — it tells you how to add the reference, not
+whether you should. Before you do: confirm the value is safe in a bundle any user can read, add it to
+the table above with its justification, and re-run the audit above if it could carry a credential.
 
 ---
 
