@@ -1,4 +1,5 @@
 import { Redirect, Tabs } from "expo-router";
+import type { ColorValue } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ChapterHeaderTitle } from "@/components/chapter-header-title";
 import { useAuthSession } from "@/lib/auth-session";
@@ -7,9 +8,11 @@ import { useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
 
+// `color` is ColorValue, not string: expo-router hands tabBarIcon the resolved
+// tab tint, which RN 0.86 types as ColorValue (string | OpaqueColorValue).
 const tabIcon = (
   iconName: keyof typeof Ionicons.glyphMap,
-  color: string,
+  color: ColorValue,
   size = TAB_ICON_SIZE,
 ) => <Ionicons name={iconName} size={size} color={color} />;
 

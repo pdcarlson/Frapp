@@ -40,7 +40,7 @@ That method always applies `.limit()` using `LIST_QUERY_LIMIT_*` from `apps/api/
 
 ### Remaining moderate advisories (deferred, tracked as issues)
 
-- **Expo SDK 54 → 56 upgrade** (closes ~16 of the 26 remaining moderates): #289
+- ~~**Expo SDK 54 → 56 upgrade** (closes ~16 of the 26 remaining moderates): #289~~ — **done**, as SDK 54 → **57**. See "Expo SDK 57 upgrade" below.
 - **`@swc/cli` 0.7 → 0.8 in `apps/api`**: #290
 - ~~**Outstanding `next` moderate advisories (web + landing)**: #291~~ — **closed.** See "Next.js advisory cleanup" below.
 - **`geist` (apps/web)**: #292
@@ -98,6 +98,22 @@ Starting point (measured 2026-08-13 on `main`): **61 total — 4 critical, 19 hi
 **Posture of record (2026-08-13, head of this sweep): 39 total — 0 critical, 12 high, 27 moderate, 0 low.** Every remaining high/critical *package* finding is the Expo SDK 54 chain, whose root causes are exactly four advisories (`image-size` ×2, `postcss` ×2) fixed only by the Expo SDK 57 major upgrade (#289). Remaining moderates: the Expo chain (#289) and the `@sentry/nestjs`/OpenTelemetry chain (#682).
 
 > **Superseded 2026-08-14 by the `@sentry/nestjs` major bump (#682), below: 22 total — 0 critical, 12 high, 10 moderate, 0 low.** The high count is unchanged because it was always entirely the Expo chain; the 17 cleared moderates were the OpenTelemetry subtree. The Expo chain (#289) is now the *only* remaining source of package findings.
+
+### Expo SDK 57 upgrade (#289)
+
+**Posture of record (2026-08-15, head of the SDK 57 upgrade): 23 total — 0 critical, 14 high, 9 moderate, 0 low.** Read the *advisory* count, not the package count: **unique advisories fell 7 → 3**. The raw `high` figure went 12 → 14 while getting strictly better, because the surviving root cause fans out through slightly more packages in the SDK 57 tree than it did in SDK 54. Counting packages instead of advisories inverts the sign of this change — don't.
+
+`apps/mobile` moved from Expo SDK 54 (`expo@54.0.33`, RN 0.81.5) to **SDK 57** (`expo@57.0.13`, RN 0.86.2). Target versions came from `expo@57.0.13`'s `bundledNativeModules.json`, which is the authority for an SDK's pinned peer set.
+
+What the bump actually resolved, against the four allowlisted highs it was filed to clear:
+
+- **Cleared (2):** both `postcss` advisories — `GHSA-6g55-p6wh-862q` (arbitrary file read via `sourceMappingURL`) and `GHSA-r28c-9q8g-f849` (path traversal via source-map auto-loading). They lived in the copy nested under `@expo/metro-config`, which SDK 57 no longer pins to a vulnerable version. Both entries are **deleted** from `scripts/npm-audit-allowlist.json`.
+- **Not cleared (2):** both `image-size` advisories — `GHSA-w3rx-r6r6-pgpr` and `GHSA-5p2g-fcmc-qvqq`. **These have no upstream fix at any version:** the advisories cover `<=2.0.2` and `2.0.2` is the newest published release, while `metro` requires `image-size: ^1.0.2` in both `0.84.4` (shipped via `@expo/metro`) and `0.87.0` (current latest). No Expo or Metro release escapes it. Their allowlist entries are **kept**, with the reason text corrected — it previously claimed "fix requires the Expo SDK 57 major upgrade", which this upgrade disproved — and re-pointed to **#923**, which carries the policy decision. `expires` was deliberately left at 2026-11-15: failing closed is what forces a human to make that call.
+
+Two gotchas worth not re-learning:
+
+- **The React pin moves with the SDK.** SDK 57 requires React `19.2.3` exactly. Because the root `overrides` entry is global, mobile cannot take it while the override holds the old version — so all six manifests move in one commit. The pin stays *exact*; see [`AGENTS.md`](../../../AGENTS.md) § gotchas.
+- **`npm install` alone silently keeps the old SDK.** `@expo/vector-icons` declares `expo-font: ">=14.0.4"` as a peer, and the previous SDK's `expo-font` still satisfies it, so npm leaves the whole SDK 54 chain hoisted at the root beside SDK 57 — with its vulnerabilities. Audit numbers taken in that state are wrong (they read *worse*: 28 findings / 7 advisories). Confirm a single `node_modules/expo` at the expected version before trusting any measurement. A blanket `rm -rf package-lock.json` fixes it but floats ~212 unrelated packages including silent majors; prune and re-resolve just the Expo/React/Metro entries instead.
 
 ### The gate (`dependency-audit`, issue #618)
 
