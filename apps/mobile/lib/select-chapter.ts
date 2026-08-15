@@ -45,13 +45,22 @@ export function useSelectChapter() {
         return false;
       }
 
-      // `refreshSession` RESOLVES with `{ error }` on auth and network failures
-      // rather than rejecting — only non-auth errors throw. A bare `await`
-      // inside the try above therefore reports success for a refresh that
-      // failed, which is worse than it sounds: the caller would stop showing a
-      // spinner only when the screen changed, and the screen only changes when
-      // the claim arrives, which it never would.
-      const { error } = await supabase.auth.refreshSession();
+      // `refreshSession` reports failure BOTH ways, so both have to be handled.
+      //
+      // It RESOLVES with `{ error }` for auth and network failures — the common
+      // case, and the one a bare `await` silently reports as success. But it
+      // also *throws* for anything that is not an `AuthError`: notably the
+      // 5s storage-lock acquire timeout, which is raised outside
+      // `_refreshSession`'s own try and so is never converted. Left unhandled
+      // that escapes to an unhandled rejection, and the tap looks like it did
+      // nothing at all.
+      let error: { message: string } | null = null;
+      try {
+        ({ error } = await supabase.auth.refreshSession());
+      } catch (thrown) {
+        error =
+          thrown instanceof Error ? thrown : { message: "Session refresh failed" };
+      }
 
       if (error) {
         // Note the asymmetry with the branch above: activation already

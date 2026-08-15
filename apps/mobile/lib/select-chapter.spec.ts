@@ -24,6 +24,8 @@ const mockState = vi.hoisted(() => ({
    * path it was written to cover.
    */
   refreshError: null as { message: string } | null,
+  /** Non-AuthError rejection — e.g. the 5s storage-lock acquire timeout. */
+  refreshThrows: null as Error | null,
   client: null as {
     auth: {
       refreshSession: () => Promise<{ error: { message: string } | null }>;
@@ -55,10 +57,12 @@ beforeEach(() => {
   mockState.calls = [];
   mockState.activateError = null;
   mockState.refreshError = null;
+  mockState.refreshThrows = null;
   mockState.client = {
     auth: {
       refreshSession: vi.fn(async () => {
         mockState.calls.push("refreshSession");
+        if (mockState.refreshThrows) throw mockState.refreshThrows;
         return { error: mockState.refreshError };
       }),
     },
@@ -107,6 +111,18 @@ describe("useSelectChapter", () => {
 
     await expect(selectChapter("chapter-a")).resolves.toBe(false);
     expect(mockState.calls).toEqual([]);
+  });
+
+  it("reports failure when the refresh THROWS rather than resolving", async () => {
+    // `refreshSession` rethrows anything that is not an AuthError — the storage
+    // lock's 5s acquire timeout is raised outside its own try and so is never
+    // converted. Unhandled, that escapes as a rejected promise and the tap
+    // looks like it did nothing while the server's active chapter HAS changed.
+    mockState.refreshThrows = new Error("lock acquire timeout");
+    const selectChapter = renderSelect();
+
+    await expect(selectChapter("chapter-a")).resolves.toBe(false);
+    expect(mockState.calls).toEqual(["activate:chapter-a", "refreshSession"]);
   });
 
   it("never throws, so a caller cannot roll back a completed action", async () => {

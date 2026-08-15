@@ -79,7 +79,16 @@ export default function ChapterPicker() {
       // and it could not be relied on anyway, since no token carries the new
       // claim while `custom_access_token_hook` is disabled (#805). An earlier
       // version waited for that redirect and spun forever.
-      router.replace("/(tabs)");
+      //
+      // Prefer going back over replacing: arriving from More means `(tabs)` is
+      // already on the stack underneath, and replacing would leave a second
+      // copy on top of the first. Replace is the fallback for arriving by deep
+      // link, where there is nothing to go back to.
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)");
+      }
     } finally {
       // Always clear. The screen usually unmounts before this matters, but
       // "usually" is what stranded members on a dead list of disabled rows.

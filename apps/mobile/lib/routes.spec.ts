@@ -28,12 +28,15 @@ const appDir = path.join(here, "..", "app");
 const scanRoots = [appDir, here, path.join(here, "..", "components")];
 
 function walk(dir: string): string[] {
-  // Matches the form already used in apps/api's dto-constraint-coverage spec.
-  // The per-entry `statSync` this replaces also followed symlinks, so a
-  // symlinked directory under app/ would have recursed forever.
-  return readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => path.join(entry.parentPath, entry.name));
+  // The string form, matching `apps/api/.../dto-constraint-coverage.spec.ts`.
+  // `withFileTypes` would be tidier but needs `Dirent.parentPath`, which only
+  // exists from Node 20.12 — and `package.json` engines allows >=18, so a
+  // contributor on 18 or 20.11 would get a TypeError at collection time and
+  // lose both guards in this file. CI's floating Node 20 would never show it.
+  // Directories are harmless here: every caller filters by file extension.
+  return readdirSync(dir, { recursive: true })
+    .map(String)
+    .map((entry) => path.join(dir, entry));
 }
 
 function isRouteFile(file: string): boolean {
@@ -144,11 +147,19 @@ describe("tab bar", () => {
   //
   // Splitting bounds each chunk at the next registration, so a chunk holds
   // exactly one `Tabs.Screen` plus the whitespace and comments trailing it —
-  // no end-marker to guess at, and prop order does not matter.
+  // no end-marker to guess at, and `name` may sit anywhere among the element's
+  // own attributes.
   const registrations = layout
     .split("<Tabs.Screen")
     .slice(1)
-    .map((options) => ({ name: /name="([^"]+)"/.exec(options)?.[1], options }))
+    .map((options) => ({
+      // Read `name` only from this element's own attributes — everything up to
+      // the first nested tag. A `tabBarIcon` renders a glyph component, and
+      // `<Ionicons name="home" />` inside one would otherwise be picked up as
+      // the registration's name.
+      name: /name="([^"]+)"/.exec(options.split("<")[0])?.[1],
+      options,
+    }))
     .filter((r): r is { name: string; options: string } => Boolean(r.name));
 
   it("registers exactly the four locked tabs as visible", () => {

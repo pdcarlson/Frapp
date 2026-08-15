@@ -156,15 +156,22 @@ export function AuthSessionProvider({
   );
   const [session, setSession] = useState<Session | null>(null);
   const [chapterId, setChapterId] = useState<string | null>(null);
-  // Seeded true whenever a client exists, NOT false. This flag flips inside the
-  // claim effect, and effects flush children-first — so a `false` seed leaves
-  // one committed render where status is already "authenticated" and chapterId
-  // is still null, which the gate reads as "no chapter" and redirects to the
-  // picker before the provider's own effect ever runs. Starting true means the
-  // gate holds until the read has actually happened.
-  const [isChapterResolving, setIsChapterResolving] = useState(
-    () => supabase !== null,
-  );
+  /**
+   * Whether the *first* chapter-claim read for the current account has finished.
+   *
+   * Deliberately not "a read is in flight". The claim is re-read on every token
+   * change — the hourly auto-refresh, every foreground, every chapter switch —
+   * and the routing gate renders nothing while resolving. Gating on in-flight
+   * would therefore blank and remount the whole tab navigator about once an
+   * hour, losing composer drafts and scroll position. A re-read only ever
+   * confirms or changes a chapter, so only the first one is worth waiting for.
+   *
+   * The distinction is load-bearing rather than theoretical: `chapterId` is
+   * always null in the current production configuration (#805 is open, so no
+   * token carries the claim), which means "we already have a chapter" cannot be
+   * the thing that skips the wait — this has to be.
+   */
+  const [hasReadChapterClaim, setHasReadChapterClaim] = useState(false);
   const [callbackError, setCallbackError] = useState<string | null>(null);
 
   const url = Linking.useURL();
@@ -231,6 +238,8 @@ export function AuthSessionProvider({
 
   useEffect(() => {
     setChapterId(null);
+    // The new account has not been read for yet, so the gate must wait again.
+    setHasReadChapterClaim(false);
   }, [userId]);
 
   /**
@@ -241,10 +250,11 @@ export function AuthSessionProvider({
    * the API rejects *every* request with 403 `chapter.context.mismatch`.
    * Reading the claim makes disagreement impossible by construction.
    *
-   * `null` is a safe resolution, not a failure: the hook already resolves a
-   * sole membership server-side, so single-chapter members work regardless.
-   * Only a multi-chapter member with no persisted selection lands here, and
-   * they get routed to `(auth)/chapter-picker` (#764).
+   * `null` is a safe resolution, not a failure: the API resolves a sole
+   * membership server-side when no claim is present, so single-chapter members
+   * work regardless. A multi-chapter member with no selection reaches the
+   * picker from the More hub (#764) — see `lib/auth-gate.ts` for why that is
+   * not a forced redirect.
    *
    * Selecting a chapter goes through `lib/select-chapter.ts`, which activates
    * server-side and then refreshes the session — the new token arrives here as
@@ -256,12 +266,14 @@ export function AuthSessionProvider({
 
     if (!accessToken) {
       setChapterId(null);
-      setIsChapterResolving(false);
+      // Do NOT mark the claim as read here. This branch runs on mount, before
+      // `getSession()` has resolved, and marking it read would let the gate
+      // commit a render of the whole tab navigator on the next tick — which
+      // then blanks and remounts the moment the real read starts.
       return;
     }
 
     let cancelled = false;
-    setIsChapterResolving(true);
 
     // Stop *waiting* on the claim after a bounded delay — but keep listening.
     //
@@ -276,7 +288,7 @@ export function AuthSessionProvider({
     // The request is deliberately not aborted: if it lands later, the claim
     // still applies.
     const resolveTimer = setTimeout(() => {
-      if (!cancelled) setIsChapterResolving(false);
+      if (!cancelled) setHasReadChapterClaim(true);
     }, CLAIM_READ_TIMEOUT_MS);
 
     supabase.auth
@@ -302,7 +314,7 @@ export function AuthSessionProvider({
       .finally(() => {
         // Each run owns its own `cancelled`, so a superseded read can never
         // clear the flag out from under the newer one that replaced it.
-        if (!cancelled) setIsChapterResolving(false);
+        if (!cancelled) setHasReadChapterClaim(true);
         clearTimeout(resolveTimer);
       });
 
@@ -393,9 +405,13 @@ export function AuthSessionProvider({
     await clearAuthToken();
     setSession(null);
     setChapterId(null);
-    setIsChapterResolving(false);
+    setHasReadChapterClaim(false);
     setStatus("unauthenticated");
   }, [supabase]);
+
+  // Only the first read blocks, and only while signed in — see the state's own
+  // comment for why an in-flight re-read must not.
+  const isChapterResolving = status === "authenticated" && !hasReadChapterClaim;
 
   const value = useMemo<AuthSessionContextValue>(
     () => ({
