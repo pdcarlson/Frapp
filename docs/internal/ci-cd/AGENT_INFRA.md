@@ -60,6 +60,7 @@ it. Design + policy: [`GITHUB_PM.md`](GITHUB_PM.md).
 | PR base sync        | `.github/workflows/pr-base-sync.yml` — `push` to `main`: sweeps open PRs targeting it (cap 20, logged); behind + clean PRs are auto-updated via the update-branch API **only when the `PR_BASE_SYNC_TOKEN` PAT secret exists** (default-token pushes trigger no CI), otherwise — and always for conflicts — upserts one `<!-- frapp-base-sync -->` wake comment telling the watching agent to merge `main` itself. Logic in `scripts/ci/pr-base-sync.mjs` (tests: `scripts/ci/__tests__/pr-base-sync.test.mjs`). **Not** a required check. See "Base-branch sync" below. |
 | Branch protection   | `npm run configure:branch-protection` (prefers `GITHUB_PAT`); see `CONTRIBUTING.md`                                                                   |
 | AI code review      | **Local pre-push gate**, not CI — `.claude/hooks/pre-push-review-gate.sh` blocks pushing a HEAD until that HEAD has been reviewed (keyed on a `.cache/diff-review/<SHA>` marker, not on attempt count) — `/diff-review` (always agent-invocable; writes the marker) or `/code-review` (richer, but model-invocable only when the turn's prompt carries `/code-review` whitespace-delimited on both sides, which backticks and trailing punctuation defeat; does not write the marker) (ADR-14 2026-06-04 amendment; the `claude-review.yml` CI workflow was removed). See `AI_CODE_REVIEW_RUNBOOK.md` |
+| Dependency updates  | `.github/dependabot.yml` — one root `npm` entry (the workspaces share the root lockfile), **weekly** on Monday 09:00 UTC. Minor+patch collapse into a single grouped PR; majors stay individual. The React/React Native/Expo families are ignored — they move only via a planned SDK upgrade. **Not** a required check (it opens PRs, it doesn't gate them). See "Dependency updates (Dependabot)" below. |
 | Vercel              | Deploys from `main` / `production` only (PR previews disabled via repo config)                                                                        |
 
 **PR review policy:** `main` — no required human approval; `production` — required approval + resolved conversations.
@@ -140,6 +141,61 @@ prebuild step is what would mask the regression, exactly as above. `npm audit` a
 `check:migration-safety` need no build at all. Conflating these three cases is what caused #683.
 
 Testing workflows and CI parity: [`.claude/skills/testing/SKILL.md`](../../../.claude/skills/testing/SKILL.md).
+
+## Dependency updates (Dependabot)
+
+Config: [`.github/dependabot.yml`](../../../.github/dependabot.yml). This is the automated half of
+the supply-chain story; the blocking half is `npm run check:npm-audit` (above), which fails CI on any
+non-allowlisted high/critical advisory.
+
+**One ecosystem entry, at the root.** `apps/*` and `packages/*` are npm workspaces resolving through
+a single root `package-lock.json`, so one `npm` entry covers all sixteen. Per-workspace entries would
+open duplicate PRs against the same lockfile — don't add them.
+
+**Schedule and noise floor.** Weekly, Monday 09:00 UTC, `open-pull-requests-limit: 5`. Minor and
+patch updates are grouped into **one** PR (`npm-minor-and-patch`); majors are deliberately left
+ungrouped so each arrives as its own reviewable diff. Every Dependabot PR costs a babysit cycle under
+the [Autonomous PR lifecycle](../../../AGENTS.md), which is why grouping is aggressive.
+
+**Who babysits.** Nobody special — Dependabot PRs flow through the normal lifecycle: CI runs (`npm
+ci`, lint, type-check, `api-tests`, `web-tests`, `api-docker-build`) plus the audit gate, and an
+agent triages red checks infra-vs-code exactly as for a human-authored PR. Commits land as
+`chore(deps): …` / `chore(deps-dev): …`; PRs are labelled `area:deps` and carry no release label, so
+they take the default `release:patch` bump.
+
+### The ignore list is a runtime constraint, not a preference
+
+`react`, `react-dom`, `react-test-renderer`, the `react-native*` family and the Expo client packages
+are ignored. React is pinned to an **exact** `19.1.0` in every workspace plus a root `overrides`
+entry: React Native 0.81.5 bundles `react-native-renderer` 19.1.0, which asserts exact version
+equality with `react` at runtime, while its peer range (`^19.1.0`) does not express that. npm will
+therefore accept a newer React silently, hoist it, and kill `apps/mobile` on first render with
+"Invalid hook call" — a failure **only booting the app on a device catches**, never CI. See
+[`AGENTS.md` § Gotchas](../../../AGENTS.md) and PR #842. These packages move as a version-locked set
+through a planned Expo SDK upgrade (#289), never as isolated bumps.
+
+Two traps for whoever edits that list next:
+
+- **Do not collapse the Expo entries into `expo-*`.** That glob also matches `expo-server-sdk`, an
+  `apps/api` dependency (the push-delivery client) with no relationship to the mobile SDK lock.
+  Globbing it would freeze the API's push library silently and indefinitely. The client packages are
+  listed individually for exactly this reason; if an SDK upgrade adds a new one, append it.
+- **Ignore conditions also suppress Dependabot _security_ updates.** A CVE in React, React Native or
+  an Expo client package will **not** open a PR automatically. This is an accepted trade — an
+  isolated security bump in that set breaks the runtime — but it is a real gap, so it is written down
+  rather than left implicit. `check:npm-audit` still fails CI on such an advisory, so it surfaces
+  loudly; carrying the fix means doing an SDK-aligned upgrade, not a one-package bump.
+
+`@types/react` is deliberately **not** ignored: it is types-only, carries no runtime equality
+assertion, and a bad bump fails `npm run check-types` in CI — which is precisely the safety net that
+makes auto-updates tolerable.
+
+### Alerts and security updates are a repo Settings toggle
+
+Dependabot **alerts** and **security updates** live in repo Settings → Advanced Security, not in this
+file, and an agent session cannot read or flip them: `GET /repos/pdcarlson/Frapp/vulnerability-alerts`
+returns `403` through the agent proxy, and the GitHub MCP exposes no repo-security-settings tool.
+Confirming those toggles is tracked as a `[human]` issue (#921).
 
 ## Claude Code project settings
 
