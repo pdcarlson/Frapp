@@ -8,7 +8,16 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { Response } from 'express';
 import { getHeaderValue } from '../types/request-context.types';
 
-const READ_THROTTLE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+/**
+ * Methods counted against the `read` bucket; everything else is a `write`.
+ * Exported so tests derive the expected bucket from the same set the guard
+ * uses, rather than from a copy that could drift away from it.
+ */
+export const READ_THROTTLE_METHODS: ReadonlySet<string> = new Set([
+  'GET',
+  'HEAD',
+  'OPTIONS',
+]);
 
 @Injectable()
 export class CustomThrottlerGuard extends ThrottlerGuard {

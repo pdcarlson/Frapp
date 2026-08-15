@@ -20,6 +20,7 @@ import {
   RequirePermissions,
 } from '../decorators/permissions.decorator';
 import { FreeTier } from '../decorators/subscription.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import {
   CurrentUser,
@@ -120,6 +121,7 @@ export class ChapterController {
   }
 
   @Post('current/logo-url')
+  @ThrottleFanOutWrite()
   @UseGuards(SupabaseAuthGuard, ChapterGuard, PermissionsGuard)
   @RequireAnyOfPermissions(
     SystemPermissions.ROLES_MANAGE,

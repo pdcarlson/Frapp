@@ -21,6 +21,7 @@ import { SupabaseAuthGuard } from '../guards/supabase-auth.guard';
 import { ChapterGuard } from '../guards/chapter.guard';
 import { AuthSyncInterceptor } from '../interceptors/auth-sync.interceptor';
 import { FreeTier } from '../decorators/subscription.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentUser,
   CurrentChapterId,
@@ -90,6 +91,7 @@ export class UserController {
   }
 
   @Post('me/avatar-url')
+  @ThrottleFanOutWrite()
   @UseGuards(ChapterGuard)
   @ApiOperation({ summary: 'Get signed upload URL for profile photo' })
   async requestAvatarUploadUrl(
