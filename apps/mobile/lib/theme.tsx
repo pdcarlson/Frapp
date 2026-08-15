@@ -50,11 +50,17 @@ export const MONO_FONT_FAMILY = Platform.select({
  * `...typeRole(tokens.typography.role.body)` instead of hand-picking sizes or
  * weights — arithmetic on a role token (e.g. `size - 2`) is a defect per
  * foundations.md §7, exactly as a raw hex value is.
+ *
+ * Deliberately NO `fontWeight`: the per-weight family already encodes it, and
+ * a numeric 700 alongside an expo-font-registered family makes Android resolve
+ * a BOLD style variant that was never registered — falling back to the system
+ * sans with synthetic bold instead of Figtree (RN ReactFontManager caches the
+ * wrong typeface for the family from then on). `fontWeight` belongs only next
+ * to system families like `MONO_FONT_FAMILY`, which do resolve weights.
  */
 export function typeRole(role: SignetTypeRole): TextStyle {
   return {
     fontSize: role.size,
-    fontWeight: String(role.weight) as TextStyle["fontWeight"],
     fontFamily: FIGTREE_FAMILY[role.weight],
     ...(role.lineHeight !== undefined ? { lineHeight: role.lineHeight } : {}),
   };

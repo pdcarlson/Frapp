@@ -49,7 +49,14 @@ function loadKeyboardController(): KeyboardControllerModule | null {
 
   try {
     cachedModule = loader();
-  } catch {
+  } catch (error) {
+    // Outside Expo Go the module is expected to exist, so a load failure is a
+    // real linking problem (e.g. a dev-client built before this package was
+    // added) — surface it instead of silently impersonating the Go fallback.
+    console.warn(
+      "react-native-keyboard-controller failed to load; using the fallback keyboard path.",
+      error,
+    );
     cachedModule = null;
   }
 

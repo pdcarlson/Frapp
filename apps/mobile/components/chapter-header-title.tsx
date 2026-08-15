@@ -1,7 +1,8 @@
 import type { StyleProp, TextStyle } from "react-native";
 import { Animated, Image, StyleSheet, View } from "react-native";
+import { signetDarkTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { fontFamilyFor, useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const LOGO_SIZE = 24;
 
@@ -76,11 +77,9 @@ const styles = StyleSheet.create({
     height: LOGO_SIZE,
     borderRadius: 4,
   },
-  // The title role (18/600) from foundations.md §7; static because this
-  // StyleSheet is module-scope and the role values are fixed constants.
+  // Static because this StyleSheet is module-scope; the Signet tokens are
+  // fixed constants, so composing the role here is equivalent to the hook.
   title: {
-    fontSize: 18,
-    fontWeight: "600",
-    fontFamily: fontFamilyFor(600),
+    ...typeRole(signetDarkTokens.typography.role.title),
   },
 });

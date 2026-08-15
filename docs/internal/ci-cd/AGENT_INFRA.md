@@ -178,9 +178,9 @@ through a planned Expo SDK upgrade (#289), never as isolated bumps.
 if it is either (a) exact-version-locked to React (`react`, `react-dom`, `react-test-renderer`) or
 (b) a native module whose binary must match the Expo SDK's prebuilt set (`react-native*`, the
 `expo-*` client packages, `@expo/*`, `@react-native-async-storage/*`). JS-only libraries on caret
-ranges stay updatable even when they look RN-adjacent — `@react-navigation/native` and `nativewind`
-are deliberately **not** ignored, because a bad bump there fails `check-types` or a test rather than
-dying silently on a device.
+ranges stay updatable even when they look RN-adjacent — `@react-navigation/native` and
+`@gorhom/bottom-sheet` are deliberately **not** ignored, because a bad bump there fails
+`check-types` or a test rather than dying silently on a device.
 
 Two traps for whoever edits that list next:
 

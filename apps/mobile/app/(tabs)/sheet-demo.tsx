@@ -154,7 +154,13 @@ export default function SheetDemoScreen() {
         <BottomSheetView style={styles.sheetBody}>
           <View style={styles.sheetHeaderRow}>
             <Text style={styles.sheetTitle}>Demo sheet</Text>
-            <Pressable accessibilityRole="button" onPress={closeSheet}>
+            {/* hitSlop meets the ≥44px floor while keeping §9's compact visual
+                (the #939 ruling pattern). */}
+            <Pressable
+              accessibilityRole="button"
+              onPress={closeSheet}
+              hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+            >
               <Text style={styles.sheetCancel}>Cancel</Text>
             </Pressable>
           </View>
@@ -268,16 +274,17 @@ function createStyles(tokens: SignetTokens, accent: string) {
       alignItems: "center",
       justifyContent: "space-between",
     },
-    // 19/700 is the §9 sheet-header slot, drawn in the reference — component
-    // tables win over the §7 scale for component chrome.
+    // 19/700 and 14.5 are the §9 sheet-header slot values, drawn in the
+    // reference — component tables win over the §7 scale for component chrome.
+    // No fontWeight next to a per-weight family (see typeRole's doc).
     sheetTitle: {
       fontSize: 19,
-      fontWeight: "700",
       fontFamily: fontFamilyFor(700),
       color: tokens.color.text.foreground,
     },
     sheetCancel: {
-      ...typeRole(tokens.typography.role.label),
+      fontSize: 14.5,
+      fontFamily: fontFamilyFor(600),
       color: tokens.color.text.muted,
     },
     sheetBodyText: {

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import React from "react";
 import { renderHook } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import {
   avatarRadius,
@@ -36,7 +36,6 @@ describe("typeRole", () => {
   it("produces a complete text style with the per-weight Figtree family", () => {
     expect(typeRole(signetDarkTokens.typography.role.body)).toEqual({
       fontSize: 16,
-      fontWeight: "400",
       fontFamily: "Figtree_400Regular",
       lineHeight: 25,
     });
@@ -45,7 +44,6 @@ describe("typeRole", () => {
   it("omits lineHeight for roles that do not specify one", () => {
     expect(typeRole(signetDarkTokens.typography.role.label)).toEqual({
       fontSize: 14,
-      fontWeight: "600",
       fontFamily: "Figtree_600SemiBold",
     });
   });
@@ -54,9 +52,14 @@ describe("typeRole", () => {
     expect(typeRole(signetDarkTokens.typography.role.display).fontFamily).toBe(
       "Figtree_700Bold",
     );
-    expect(typeRole(signetDarkTokens.typography.role.display).fontWeight).toBe(
-      "700",
-    );
+  });
+
+  it("never emits fontWeight — the per-weight family encodes it", () => {
+    // A numeric weight next to an expo-font-registered family makes Android
+    // resolve an unregistered BOLD variant and fall back to the system sans.
+    for (const role of Object.values(signetDarkTokens.typography.role)) {
+      expect(typeRole(role)).not.toHaveProperty("fontWeight");
+    }
   });
 });
 
@@ -82,5 +85,21 @@ describe("token helpers", () => {
   it("mono resolves to a native system stack, never a bundled font", () => {
     // Platform is mocked as iOS suite-wide.
     expect(MONO_FONT_FAMILY).toBe("Menlo");
+  });
+
+  it("mono falls back to the generic monospace stack off-iOS", async () => {
+    vi.resetModules();
+    vi.doMock("react-native", () => ({
+      Platform: {
+        OS: "android",
+        select: (opts: Record<string, unknown>) => opts.default,
+      },
+    }));
+
+    const androidTheme = await import("./theme");
+    expect(androidTheme.MONO_FONT_FAMILY).toBe("monospace");
+
+    vi.doUnmock("react-native");
+    vi.resetModules();
   });
 });
