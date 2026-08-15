@@ -20,11 +20,8 @@
  */
 
 import Dexie, { type Table } from "dexie";
+// Row shapes are canonical in `@repo/chat-core` (the `OutboxStore` port).
 import type { NewOutboxRow, OutboxRow, OutboxStore } from "@repo/chat-core";
-
-// Row shapes are canonical in `@repo/chat-core` (the `OutboxStore` port);
-// re-exported here so existing importers keep working.
-export type { OutboxRow, OutboxStatus } from "@repo/chat-core";
 
 export interface DraftRow {
   channelId: string;

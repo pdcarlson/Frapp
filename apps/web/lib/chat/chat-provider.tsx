@@ -16,8 +16,8 @@ import { useFrappClient } from "@repo/hooks";
 import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
+import { browserNetworkState } from "@repo/chat-core";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
-import { isTopicOccupied, releaseTopic } from "@/lib/realtime/topic-registry";
 import { chatRealtime } from "./realtime-manager";
 import { flushOutbox } from "./chat-client";
 import { dexieOutboxStore } from "./offline-queue";
@@ -41,10 +41,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       queryClient,
       supabase,
       viewerId: userId ?? null,
-      // Inject the canonical registry so both web attach paths (chat here,
-      // `useRealtimeTable` elsewhere) free topics through one implementation
-      // (#817) — the manager's built-in fallback stays unused on web.
-      topics: { isTopicOccupied, releaseTopic },
       backfill: async (channelId, since) => {
         const { data, error } = await apiClient.GET(
           "/v1/channels/{id}/messages",
@@ -78,15 +74,12 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       outbox: dexieOutboxStore,
     };
     void flushOutbox(ctx);
-    const onOnline = () => void flushOutbox(ctx);
-    if (typeof window !== "undefined") {
-      window.addEventListener("online", onOnline);
-    }
-    return () => {
-      if (typeof window !== "undefined") {
-        window.removeEventListener("online", onOnline);
-      }
-    };
+    // Trigger and gate ride the same connectivity signal: `flushOutbox`
+    // consults the NetworkState port internally, so subscribe through the
+    // same port rather than hand-rolling a window listener beside it.
+    return browserNetworkState.subscribe((online) => {
+      if (online) void flushOutbox(ctx);
+    });
   }, [queryClient, apiClient, supabase, userId, toast]);
 
   return <>{children}</>;

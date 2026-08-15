@@ -67,9 +67,11 @@ import {
   browserNetworkState,
   type KeyValueStore,
   type NetworkState,
-  type TopicRegistry,
 } from "./adapters";
-import { defaultTopicRegistry } from "./default-topic-registry";
+import {
+  isTopicOccupied as isRealtimeTopicOccupied,
+  releaseTopic as releaseRealtimeTopic,
+} from "./topic-registry";
 
 export type ConnectionStatus = "live" | "polling" | "reconnecting" | "offline";
 
@@ -104,15 +106,11 @@ export interface ManagerContext {
   viewerId?: string | null;
   /**
    * Platform ports. Omitted fields fall back to the browser implementations
-   * (`localStorage`, `navigator.onLine` + window online/offline events) and
-   * to the package's own `defaultTopicRegistry`. The web glue injects
-   * `topics` from `apps/web/lib/realtime/topic-registry.ts` so both of its
-   * attach paths free topics through the one canonical implementation
-   * (#817); mobile injects all three.
+   * (`localStorage`, `navigator.onLine` + window online/offline events) —
+   * web runs on the defaults; mobile injects both.
    */
   kv?: KeyValueStore;
   net?: NetworkState;
-  topics?: TopicRegistry;
 }
 
 interface PerChannelState {
@@ -157,6 +155,11 @@ class ChatRealtimeManager {
     this.ensureTypingTick();
     const net = ctx.net ?? browserNetworkState;
     this.offline = net.isOffline();
+    // Re-configure without destroy() must not stack subscriptions. The old
+    // window.addEventListener wiring was naturally idempotent (stable handler
+    // refs); `subscribe` mints a fresh closure per call, so release the
+    // previous one first.
+    this.netUnsub?.();
     this.netUnsub = net.subscribe((online) =>
       online ? this.handleOnline() : this.handleOffline(),
     );
@@ -292,32 +295,41 @@ class ChatRealtimeManager {
     }, 1500);
   }
 
-  /** The injected registry, or the package's own stateless fallback. */
-  private topicRegistry(): TopicRegistry {
-    return this.ctx?.topics ?? defaultTopicRegistry;
-  }
-
   /** The injected key-value store, or the browser default. */
   private kvStore(): KeyValueStore {
     return this.ctx?.kv ?? browserKeyValueStore;
   }
 
+  // The cursor is best-effort by design ("degrade silently" — the backfill
+  // falls back to its default window). The pre-extraction code guaranteed
+  // that at the call site with its own try/catch, so keep the guarantee here
+  // rather than trusting every injected store to be no-throw: one call site
+  // sits inside the Supabase postgres_changes dispatch, where an escaping
+  // storage error would abort frame processing after the cache merge.
   private readLastSeen(channelId: string): string | null {
-    return this.kvStore().get(LAST_SEEN_PREFIX + channelId);
+    try {
+      return this.kvStore().get(LAST_SEEN_PREFIX + channelId);
+    } catch {
+      return null;
+    }
   }
 
   private writeLastSeen(channelId: string, messageId: string | null): void {
-    if (!messageId) this.kvStore().remove(LAST_SEEN_PREFIX + channelId);
-    else this.kvStore().set(LAST_SEEN_PREFIX + channelId, messageId);
+    try {
+      if (!messageId) this.kvStore().remove(LAST_SEEN_PREFIX + channelId);
+      else this.kvStore().set(LAST_SEEN_PREFIX + channelId, messageId);
+    } catch {
+      // Storage unavailable — the next backfill just reads a wider window.
+    }
   }
 
   /**
    * Is anything still registered under this topic? A `ctx` guard over the
-   * injected registry.
+   * shared registry helper.
    */
   private isTopicOccupied(topic: string): boolean {
     if (!this.ctx) return false;
-    return this.topicRegistry().isTopicOccupied(this.ctx.supabase, topic);
+    return isRealtimeTopicOccupied(this.ctx.supabase, topic);
   }
 
   /**
@@ -325,10 +337,9 @@ class ChatRealtimeManager {
    * instance.
    *
    * The mechanism — and why the unconditional `teardown()` is load-bearing —
-   * lives in the injected `TopicRegistry`: on web that is
-   * `apps/web/lib/realtime/topic-registry.ts`, which
-   * `lib/realtime/supabase-realtime.ts` shares so both attach paths free
-   * topics identically (#817); elsewhere it is `./default-topic-registry`.
+   * lives in `./topic-registry`, which web's non-chat realtime
+   * (`lib/realtime/supabase-realtime.ts`) shares via its re-export shim so
+   * both attach paths free topics identically (#817).
    *
    * `unsubscribe()` resolves rather than rejects and is bounded by the client's
    * own timeout, so this cannot wedge a reattach — and the poll fallback
@@ -337,7 +348,7 @@ class ChatRealtimeManager {
   private async releaseTopic(topic: string): Promise<void> {
     const supabase = this.ctx?.supabase;
     if (!supabase) return;
-    await this.topicRegistry().releaseTopic(supabase, topic);
+    await releaseRealtimeTopic(supabase, topic);
   }
 
   /**

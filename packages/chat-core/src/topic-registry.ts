@@ -1,28 +1,30 @@
 /**
- * Fallback `TopicRegistry`, used when `ManagerContext.topics` is not injected.
+ * Topic-registry helpers shared by every Supabase Realtime attach path.
  *
- * LOCKSTEP COPY — `apps/web/lib/realtime/topic-registry.ts` is canonical. The
- * registry cannot move here because the non-chat realtime attach path
- * (`lib/realtime/supabase-realtime.ts`) shares it, and a package must not
- * import the app back. The web chat glue injects that canonical module
- * (`chat-provider.tsx`), so exactly one implementation is live in the web
- * bundle (#817's invariant); this copy serves the package's own tests and
- * platforms that have no registry of their own. Both are stateless over the
- * client's channel registry — **if you edit one, edit the other.**
+ * Moved here from `apps/web/lib/realtime/topic-registry.ts` with the chat
+ * extraction (#937 S3); that path is now a re-export shim, so the non-chat
+ * web realtime (`lib/realtime/supabase-realtime.ts`, everything on
+ * `useRealtimeTable`) and the chat manager in this package share this one
+ * implementation — the #817 invariant, now enforced by imports instead of a
+ * lockstep comment.
  *
- * Why freeing a topic matters (condensed from the canonical header):
- * `RealtimeClient.channel(topic)` hands back the *existing* instance while one
- * is still registered under `realtime:<topic>`, and `removeChannel()` only
- * calls `teardown()` — the step that actually unregisters — when
- * `unsubscribe()` resolves `"ok"`. A cleanup immediately followed by a
- * re-attach therefore gets the old channel back: a `joined`/`joining` reuse
- * makes `.on("postgres_changes", …)` throw (#783), and a `leaving`/`errored`
- * reuse attaches silently and never delivers a row. Callers free the topic
- * before minting on it.
+ * Why freeing a topic matters: `RealtimeClient.channel(topic)` hands back the
+ * *existing* instance while one is still registered under `realtime:<topic>`,
+ * and `removeChannel()` only calls `teardown()` — the step that actually
+ * unregisters it — when `unsubscribe()` resolves `"ok"`. So a cleanup
+ * immediately followed by a re-attach on the same topic gets the old,
+ * already-subscribed channel back. That reuse fails two distinct ways:
+ *
+ *   - a reused `joined`/`joining` instance makes `.on("postgres_changes", …)`
+ *     **throw** (`RealtimeChannel.on`) — which took the dashboard shell down in
+ *     #783, and reaches every `useRealtimeTable` consumer per #817; and
+ *   - a reused `leaving`/`errored` instance throws nothing but never delivers a
+ *     row, so the subscription looks attached and stays silent.
+ *
+ * Both callers therefore free a topic before minting on it.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { TopicRegistry } from "./adapters";
 
 /** The client registers channels under a `realtime:` prefix. */
 function registryTopic(topic: string): string {
@@ -36,7 +38,10 @@ function registryTopic(topic: string): string {
  * the old one back, so callers use it to decide whether to pay for a teardown
  * at all — a first join is the common case and stays synchronous.
  */
-function isTopicOccupied(client: SupabaseClient, topic: string): boolean {
+export function isTopicOccupied(
+  client: SupabaseClient,
+  topic: string,
+): boolean {
   const wanted = registryTopic(topic);
   return client.getChannels().some((channel) => channel.topic === wanted);
 }
@@ -52,7 +57,10 @@ function isTopicOccupied(client: SupabaseClient, topic: string): boolean {
  * `unsubscribe()` resolves rather than rejects and is bounded by the client's
  * own timeout, so this cannot wedge a re-attach.
  */
-async function releaseTopic(client: SupabaseClient, topic: string): Promise<void> {
+export async function releaseTopic(
+  client: SupabaseClient,
+  topic: string,
+): Promise<void> {
   const wanted = registryTopic(topic);
   // `getChannels()` returns the client's live array and teardown mutates it,
   // so iterate a snapshot.
@@ -70,8 +78,3 @@ async function releaseTopic(client: SupabaseClient, topic: string): Promise<void
     }
   }
 }
-
-export const defaultTopicRegistry: TopicRegistry = {
-  isTopicOccupied,
-  releaseTopic,
-};

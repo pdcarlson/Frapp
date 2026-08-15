@@ -217,23 +217,14 @@ export async function sendMessage(
     replyToId: args.replyToId ?? null,
   } as const;
 
-  const offline = (ctx.net ?? browserNetworkState).isOffline();
-  if (offline) {
-    await ctx.outbox.enqueue({
-      clientId,
-      channelId: args.channelId,
-      body: args.content,
-      ...intent,
-    });
-    return;
-  }
-
   await ctx.outbox.enqueue({
     clientId,
     channelId: args.channelId,
     body: args.content,
     ...intent,
   });
+  // Offline: the row is safely queued; the reconnect flush will POST it.
+  if ((ctx.net ?? browserNetworkState).isOffline()) return;
 
   try {
     const { data, error, response } = await ctx.apiClient.POST(

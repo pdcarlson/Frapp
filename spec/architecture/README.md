@@ -105,7 +105,7 @@ Frapp/
 | Package                   | Purpose                                                                   |
 | ------------------------- | ------------------------------------------------------------------------- |
 | `@repo/api-sdk`           | Auto-generated TypeScript client from OpenAPI spec. Used by web + mobile. |
-| `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` / topic-registry ports. Web today; mobile with Signet Phase 2 (#937). |
+| `@repo/chat-core`         | Platform-neutral chat hot path — normalized cache, optimistic send client, realtime manager, shared topic registry — behind injected `KeyValueStore` / `NetworkState` / `OutboxStore` ports. Web today; mobile with Signet Phase 2 (#937). |
 | `@repo/hooks`             | Shared React hooks wrapping api-sdk with TanStack Query.                  |
 | `@repo/ui`                | Shared UI components (buttons, cards, inputs). Used by web + landing.     |
 | `@repo/theme`             | Tailwind config presets, global CSS, light/dark mode color tokens.        |
@@ -422,7 +422,7 @@ Rate limiting is enforced globally via `ThrottlerGuard` in `AppModule`. The guar
 
 ## 12. Chat Hot-Path Architecture
 
-Chat is the spine of the product (see [`product/positioning.md`](../product/positioning.md)), so the architecture is biased for chat latency, reliability, and offline tolerance. The decisions below are recorded as ADRs; this overview is the durable framing they hang off. The client half of the hot path lives in `packages/chat-core` (normalized cache, optimistic send client, realtime manager) behind injected platform adapters; `apps/web/lib/chat/` keeps the web glue — the React provider and hook, the Dexie outbox, and the injected topic registry.
+Chat is the spine of the product (see [`product/positioning.md`](../product/positioning.md)), so the architecture is biased for chat latency, reliability, and offline tolerance. The decisions below are recorded as ADRs; this overview is the durable framing they hang off. The client half of the hot path lives in `packages/chat-core` (normalized cache, optimistic send client, realtime manager, and the shared topic registry) behind injected platform adapters; `apps/web/lib/chat/` keeps the web glue — the React provider and hook, and the Dexie outbox.
 
 ### Hot path vs cold path
 
@@ -969,7 +969,7 @@ The palette is rebuilt **server-side** whenever `branding.colors` changes (via `
 
 ## 16. Mobile Chat Architecture
 
-The Expo app opens directly into chat and holds real-time parity with web on reactions, inline cards, voice memos, and presence. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`, topic registry) rather than forked; the rich-message renderer registry is shared as a contract (`@repo/chat-integrations`) with framework-bound renderers per app.
+The Expo app opens directly into chat and holds real-time parity with web on reactions, inline cards, voice memos, and presence. The hot-path client and realtime manager are shared across platforms as `@repo/chat-core`, with the platform-specific layers injected through its adapter ports (`KeyValueStore`, `NetworkState`, `OutboxStore`) rather than forked; the rich-message renderer registry is shared as a contract (`@repo/chat-integrations`) with framework-bound renderers per app.
 
 ### Storage layer (the Dexie analogue)
 

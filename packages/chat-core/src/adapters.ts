@@ -15,8 +15,6 @@
  * `ChatActionContext` without one is a compile error rather than a no-op.
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-
 /** Small synchronous string store — `localStorage`-shaped. */
 export interface KeyValueStore {
   get(key: string): string | null;
@@ -32,16 +30,6 @@ export interface NetworkState {
    * back online. Returns an unsubscribe.
    */
   subscribe(onChange: (online: boolean) => void): () => void;
-}
-
-/**
- * The topic-occupancy helpers the realtime manager frees topics through
- * before minting a channel. See `defaultTopicRegistry` for the fallback and
- * for why the web glue injects its own implementation instead.
- */
-export interface TopicRegistry {
-  isTopicOccupied(client: SupabaseClient, topic: string): boolean;
-  releaseTopic(client: SupabaseClient, topic: string): Promise<void>;
 }
 
 export type OutboxStatus = "queued" | "failed";

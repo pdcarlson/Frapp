@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./adapters": "./src/adapters.ts",
+    "./topic-registry": "./src/topic-registry.ts",
     "./types": "./src/types.ts",
     "./cache": "./src/cache.ts",
     "./dispatch": "./src/dispatch.ts",
