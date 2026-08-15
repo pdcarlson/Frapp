@@ -73,9 +73,16 @@ export function mergeServerRow(
   const byId = { ...cache.byId };
   let order = cache.order;
 
-  // Carry reactions from whichever prior entry exists (server key wins).
+  // Carry reactions AND hydrated action rows from whichever prior entry
+  // exists (server key wins). Server message rows never carry actions —
+  // `normalizeRow` always emits `actions: []`; the rows arrive only via the
+  // initial-load hydration and the actions channel — so a re-merge of the
+  // same message (backfill overlap on a missing last-seen cursor, or a
+  // pin/edit UPDATE echo) must not wipe them: the actions channel only
+  // delivers *new* inserts, so a wiped tally has no self-heal path.
   const prior = byId[serverKey] ?? byId[clientKey];
   const reactions = prior?.reactions ?? {};
+  const actions = prior?.actions ?? incoming.actions;
 
   // Drop a distinct optimistic entry (key === client_message_id !== server id).
   if (clientKey !== serverKey && byId[clientKey]) {
@@ -83,7 +90,7 @@ export function mergeServerRow(
     order = order.filter((k) => k !== clientKey);
   }
 
-  byId[serverKey] = { ...incoming, reactions };
+  byId[serverKey] = { ...incoming, actions, reactions };
   const next: ChannelCache = { ...cache, byId, order };
   return { ...next, order: withOrderedKey(next, serverKey) };
 }
