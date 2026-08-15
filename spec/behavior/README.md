@@ -78,6 +78,21 @@ All API errors follow a consistent shape:
 - All data access is scoped by `chapter_id`. No cross-chapter data access is possible through any endpoint.
 - Webhook endpoints (Stripe) verify signatures before processing. Invalid signatures return 401 and are logged as security events.
 - File uploads are scanned for allowed MIME types. Disallowed types are rejected before storage.
-- Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Chapter-configurable overrides for specific endpoints (e.g. chat send message may have a higher limit). Exception: `POST /v1/webhooks/stripe` is exempt from rate limiting — Stripe delivers bursts from a small shared IP pool and the route is unauthenticated, so IP-keyed throttling would 429 real billing events; signature verification (invalid → 401) is the abuse control on that route.
+- Rate limiting is applied per user per endpoint to prevent abuse. Default: 100 requests/minute for read endpoints, 30 requests/minute for write endpoints. Every handler holds its own counter per caller, so these are per-endpoint ceilings rather than one shared pool. Selected routes carry stricter static limits (table below); the limits are **not** chapter-configurable — no product surface exposes them. Exception: `POST /v1/webhooks/stripe` is exempt from rate limiting — Stripe delivers bursts from a small shared IP pool and the route is unauthenticated, so IP-keyed throttling would 429 real billing events; signature verification (invalid → 401) is the abuse control on that route.
+
+### Per-route rate limits
+
+Routes whose cost or blast radius is not proportional to the request. Everything not listed sits on the 100/30 default.
+
+| Route | Limit | Why |
+| --- | --- | --- |
+| `POST /v1/reports/attendance`, `/points`, `/roster`, `/service` | 5/min | Full-chapter aggregation plus export rendering. |
+| `POST /v1/invites/batch` | 5/min | Mints `count` invite tokens in one call. |
+| `POST /v1/invites/redeem` | 10/min | Token-guessing surface. |
+| `POST /v1/events`, `PATCH /v1/events/:id` | 10/min | Each one pushes a notification to every member of the chapter. |
+| `POST /v1/documents/upload-url`, `POST /v1/backwork/upload-url`, `POST /v1/channels/:id/upload-url` | 10/min | Mints signed object-storage URLs. |
+| `GET /v1/search` | 20/min | Four leading-wildcard `ILIKE` scans per call. |
+
+`POST /v1/points/adjust` is deliberately absent: its abuse control is the 50-adjustments-per-hour anti-fraud rule in the points service (see [`points.md`](points.md)), not the throttler. `POST /v1/channels/:id/messages` also fans out push notifications but keeps the 30/min default — it is the chat send path, and a lower ceiling would degrade normal use.
 - Passwords are never stored by Frapp. Authentication is delegated entirely to Supabase Auth.
 - All secrets (Supabase keys, Stripe keys) are injected via environment variables. Never committed to version control. Never logged.

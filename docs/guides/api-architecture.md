@@ -74,6 +74,33 @@ Interceptors:
 - **LoggingInterceptor** — structured JSON logging with latency and status code.
 - **(Future) AuthSyncInterceptor** — syncs Supabase Auth metadata into our `users` table.
 
+### Rate limiting
+
+`CustomThrottlerGuard` is registered as the global `APP_GUARD`, so it runs **before** the chain above — that is why it reads the bearer token itself (verifying the HS256 signature) instead of using `request.supabaseUser`, which is not populated yet.
+
+Two named buckets are registered in `AppModule`: `read` at 100/min and `write` at 30/min. The guard's `handleRequest` gates them by method, so `read` applies to `GET`/`HEAD`/`OPTIONS` and `write` to everything else.
+
+**These are per-endpoint, not app-wide.** The storage key is `sha256(ClassName-HandlerName-throttlerName-tracker)`, so each handler counts independently for each caller. It is a common misreading of the config — worth knowing before you reason about a limit.
+
+**Stricter per-route limits** live in `src/interface/decorators/throttle-profiles.decorator.ts` as three named profiles, applied at the handler:
+
+| Profile | Limit | For |
+| --- | --- | --- |
+| `@ThrottleExpensiveWrite()` | 5/min | Full-chapter aggregation, export rendering, bulk token minting. |
+| `@ThrottleFanOutWrite()` | 10/min | Cheap request, expensive consequence — chapter-wide push, signed storage URLs, credential guesses. |
+| `@ThrottleExpensiveRead()` | 20/min | Reads whose database cost is superlinear in caller input. |
+
+The canonical list of which routes carry which profile is [`spec/behavior/README.md` § Per-route rate limits](../../spec/behavior/README.md#per-route-rate-limits).
+
+When you throttle a new route:
+
+- **Match the profile to the HTTP method.** A `read` profile on a `POST` route is silently inert — the `read` bucket is method-gated off, so the route quietly keeps the 30/min default. `custom-throttler.guard.spec.ts` asserts the increment call count precisely to catch this.
+- **Add a row to the table in that spec section**, and a case to the table-driven suite in `custom-throttler.guard.spec.ts`. The suite names real controller handlers, so a decorator deleted in a later refactor fails the build rather than silently restoring the default.
+- **Prefer overriding `read`/`write` to registering a new named throttler.** A new named bucket is registered globally and therefore runs on every route in the app; keeping it off the other handlers means teaching `CustomThrottlerGuard` another gating rule.
+- **Do not stack a throttle on a route that already has a domain-level limit.** `POST /v1/points/adjust` enforces 50 adjustments/hour inside `PointsService`; a second control with different semantics on the same route makes the effective limit unreadable.
+
+Opting a route **out** requires the named-key form — `@SkipThrottle({ read: true, write: true })`. A bare `@SkipThrottle()` sets only the `default` key, which matches neither registered bucket, and skips nothing. `POST /v1/webhooks/stripe` is the only route that does this; its abuse control is Stripe signature verification.
+
 ## 3. Adding a new module
 
 Example: adding a `polls` module.
