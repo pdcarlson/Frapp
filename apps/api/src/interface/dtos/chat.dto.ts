@@ -164,8 +164,17 @@ export class SendMessageDto {
   @IsUUID()
   reply_to_id?: string;
 
-  @ApiPropertyOptional()
+  /**
+   * Free-form client annotations, persisted verbatim onto the message row.
+   * `@IsObject` is the type check `payload` above already carries — without it
+   * this was the one request-DTO property in the API with a gate but no
+   * constraint, so a caller could store a bare string or array in a column the
+   * readers treat as an object. Overall size stays bounded by the body parser's
+   * default 100 kB JSON limit.
+   */
+  @ApiPropertyOptional({ type: Object })
   @IsOptional()
+  @IsObject()
   metadata?: Record<string, any>;
 }
 
@@ -192,8 +201,12 @@ export class ChatMessageActionDto {
 }
 
 export class EditMessageDto {
-  @ApiProperty()
+  // Same bound as SendMessageDto.content — without it an edit could grow a
+  // message past the limit its original POST was held to.
+  @ApiProperty({ maxLength: 10_000 })
   @IsString()
+  @MinLength(1)
+  @MaxLength(10_000)
   content: string;
 }
 

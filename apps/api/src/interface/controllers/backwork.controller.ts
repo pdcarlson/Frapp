@@ -70,9 +70,10 @@ export class BackworkController {
     @Body() dto: ConfirmBackworkUploadDto,
   ) {
     return this.backworkService.confirmUpload({
+      // Server-decided keys last — see the note in event.controller.ts.
+      ...dto,
       chapter_id: chapterId,
       uploader_id: userId,
-      ...dto,
     });
   }
 

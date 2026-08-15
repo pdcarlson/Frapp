@@ -2165,6 +2165,7 @@ export interface components {
             color?: string;
         };
         TransferPresidencyDto: {
+            /** Format: uuid */
             target_member_id: string;
         };
         BetaConfigDto: {
@@ -2480,6 +2481,7 @@ export interface components {
             excuse_reason?: string;
         };
         AdjustPointsDto: {
+            /** Format: uuid */
             target_user_id: string;
             amount: number;
             /** @enum {string} */

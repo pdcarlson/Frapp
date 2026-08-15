@@ -5,10 +5,22 @@ import {
   IsUUID,
   IsIn,
   IsDateString,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+/**
+ * Ceiling for an invoice amount, in cents. Anchored to Stripe's own per-charge
+ * maximum for USD (99,999,999 = $999,999.99): an invoice above it could never
+ * be paid through the checkout path anyway, so accepting one only stores a row
+ * that is guaranteed to fail at payment time.
+ */
+const MAX_INVOICE_AMOUNT_CENTS = 99_999_999;
+
+/** Free-text note rendered on the invoice; capped so the column stays bounded. */
+const MAX_INVOICE_DESCRIPTION_LENGTH = 2000;
 
 export class CreateFinancialInvoiceDto {
   @ApiProperty({ description: 'Member user ID to invoice' })
@@ -20,14 +32,20 @@ export class CreateFinancialInvoiceDto {
   @MaxLength(255)
   title: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: MAX_INVOICE_DESCRIPTION_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_INVOICE_DESCRIPTION_LENGTH)
   description?: string;
 
-  @ApiProperty({ description: 'Amount in cents (e.g. 15000 = $150.00)' })
+  @ApiProperty({
+    description: 'Amount in cents (e.g. 15000 = $150.00)',
+    minimum: 1,
+    maximum: MAX_INVOICE_AMOUNT_CENTS,
+  })
   @IsInt()
   @Min(1)
+  @Max(MAX_INVOICE_AMOUNT_CENTS)
   amount: number;
 
   @ApiProperty({ description: 'Due date (ISO date string)' })
@@ -42,15 +60,21 @@ export class UpdateFinancialInvoiceDto {
   @MaxLength(255)
   title?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ maxLength: MAX_INVOICE_DESCRIPTION_LENGTH })
   @IsOptional()
   @IsString()
+  @MaxLength(MAX_INVOICE_DESCRIPTION_LENGTH)
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Amount in cents' })
+  @ApiPropertyOptional({
+    description: 'Amount in cents',
+    minimum: 1,
+    maximum: MAX_INVOICE_AMOUNT_CENTS,
+  })
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(MAX_INVOICE_AMOUNT_CENTS)
   amount?: number;
 
   @ApiPropertyOptional()

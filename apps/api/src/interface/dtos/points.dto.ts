@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -18,13 +19,21 @@ import {
 } from '../../domain/utils/points-window';
 
 export class AdjustPointsDto {
-  @ApiProperty()
-  @IsString()
+  // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
+  // ledger insert puts this straight into a uuid FK, so a malformed id fails in
+  // Postgres and surfaces as a 500 instead of the 400 it is.
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
   target_user_id: string;
 
-  @ApiProperty()
+  // Bounded on both sides. The service only *flags* large adjustments against
+  // the anomaly threshold (points.service.ts) — it never rejects them — so
+  // without a ceiling the negative bound below was the only real limit and a
+  // single call could write an arbitrarily large balance.
+  @ApiProperty({ minimum: -100000, maximum: 100000 })
   @IsInt()
   @Min(-100000)
+  @Max(100000)
   amount: number;
 
   @ApiProperty({ enum: ['MANUAL', 'FINE'] })

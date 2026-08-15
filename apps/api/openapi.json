@@ -5377,7 +5377,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "permissions": {
             "type": "array",
@@ -5401,7 +5402,8 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "permissions": {
             "type": "array",
@@ -5421,7 +5423,8 @@
         "type": "object",
         "properties": {
           "target_member_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -6369,7 +6372,8 @@
         "type": "object",
         "properties": {
           "content": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 10000
           }
         },
         "required": [
@@ -6448,10 +6452,13 @@
         "type": "object",
         "properties": {
           "target_user_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "amount": {
-            "type": "number"
+            "type": "number",
+            "minimum": -100000,
+            "maximum": 100000
           },
           "category": {
             "type": "string",
@@ -6525,11 +6532,14 @@
             "description": "Invoice title (e.g. \"Fall 2026 Dues\")"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "amount": {
             "type": "number",
-            "description": "Amount in cents (e.g. 15000 = $150.00)"
+            "description": "Amount in cents (e.g. 15000 = $150.00)",
+            "minimum": 1,
+            "maximum": 99999999
           },
           "due_date": {
             "type": "string",
@@ -6550,11 +6560,14 @@
             "type": "string"
           },
           "description": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 2000
           },
           "amount": {
             "type": "number",
-            "description": "Amount in cents"
+            "description": "Amount in cents",
+            "minimum": 1,
+            "maximum": 99999999
           },
           "due_date": {
             "type": "string"
