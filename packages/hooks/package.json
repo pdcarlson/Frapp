@@ -14,7 +14,7 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@tanstack/react-query": "^5.90.21",
-    "react": "19.1.0"
+    "react": "19.2.3"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

@@ -5,32 +5,16 @@
       "ghsa": "GHSA-w3rx-r6r6-pgpr",
       "package": "image-size",
       "severity": "high",
-      "reason": "ICNS parser infinite-loop DoS in image-size, reachable only through the Expo/Metro bundler toolchain (dev/build-time, not production runtime). Fix requires the Expo SDK 57 major upgrade.",
-      "trackedBy": "#289",
+      "reason": "ICNS parser infinite-loop DoS in image-size, reachable only through the Metro bundler (dev/build-time, never in the shipped app). NO UPSTREAM FIX EXISTS: the advisory covers <=2.0.2 and 2.0.2 is the newest published version, while metro requires image-size ^1.0.2 in both 0.84.4 (current, via @expo/metro) and 0.87.0 (latest). Measured 2026-08-15 on the Expo SDK 57 upgrade — the SDK bump did NOT clear this, so it can only be resolved by a policy decision, not another upgrade.",
+      "trackedBy": "#923",
       "expires": "2026-11-15"
     },
     {
       "ghsa": "GHSA-5p2g-fcmc-qvqq",
       "package": "image-size",
       "severity": "high",
-      "reason": "JXL/HEIF parser infinite-loop DoS in image-size, same Expo/Metro build-time chain as GHSA-w3rx-r6r6-pgpr. Fix requires the Expo SDK 57 major upgrade.",
-      "trackedBy": "#289",
-      "expires": "2026-11-15"
-    },
-    {
-      "ghsa": "GHSA-6g55-p6wh-862q",
-      "package": "postcss",
-      "severity": "high",
-      "reason": "postcss arbitrary-file-read via sourceMappingURL, in the copy nested under @expo/metro-config (build-time). The app-facing postcss copies (web/landing/vite) are already on patched versions; only the Expo chain pins the vulnerable one. Fix requires the Expo SDK 57 major upgrade.",
-      "trackedBy": "#289",
-      "expires": "2026-11-15"
-    },
-    {
-      "ghsa": "GHSA-r28c-9q8g-f849",
-      "package": "postcss",
-      "severity": "high",
-      "reason": "postcss path traversal via source-map auto-loading, same @expo/metro-config nested copy as GHSA-6g55-p6wh-862q. Fix requires the Expo SDK 57 major upgrade.",
-      "trackedBy": "#289",
+      "reason": "JXL/HEIF parser infinite-loop DoS in image-size, same unavoidable Metro build-time chain as GHSA-w3rx-r6r6-pgpr, and equally unfixable — see that entry for the measurement. Expiry deliberately NOT extended past 2026-11-15: failing closed is what forces #923's decision to be made by a person.",
+      "trackedBy": "#923",
       "expires": "2026-11-15"
     }
   ]
