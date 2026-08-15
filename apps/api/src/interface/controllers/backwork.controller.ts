@@ -24,6 +24,7 @@ import {
   RequirePermissions,
 } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -48,6 +49,7 @@ export class BackworkController {
   constructor(private readonly backworkService: BackworkService) {}
 
   @Post('upload-url')
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.BACKWORK_UPLOAD)
   @ApiOperation({ summary: 'Request a signed upload URL' })
   async requestUploadUrl(
