@@ -9,7 +9,10 @@ import {
   getStorageToken,
 } from '@nestjs/throttler';
 import { createHmac } from 'node:crypto';
-import { CustomThrottlerGuard } from './custom-throttler.guard';
+import {
+  CustomThrottlerGuard,
+  READ_THROTTLE_METHODS,
+} from './custom-throttler.guard';
 import { WebhookController } from '../controllers/webhook.controller';
 import { ReportController } from '../controllers/report.controller';
 import { SearchController } from '../controllers/search.controller';
@@ -18,6 +21,9 @@ import { EventController } from '../controllers/event.controller';
 import { ChapterDocumentController } from '../controllers/chapter-document.controller';
 import { BackworkController } from '../controllers/backwork.controller';
 import { ChatController } from '../controllers/chat.controller';
+import { ChapterController } from '../controllers/chapter.controller';
+import { ServiceEntryController } from '../controllers/service-entry.controller';
+import { UserController } from '../controllers/user.controller';
 
 // Expose the protected members under test.
 class TestableGuard extends CustomThrottlerGuard {
@@ -304,28 +310,86 @@ describe('CustomThrottlerGuard', () => {
   // this suite red instead of quietly restoring the 30/min default.
   describe('per-route throttle overrides', () => {
     interface RouteCase {
+      /** `"<METHOD> <path>"` — the method half drives the request and bucket. */
       route: string;
       cls: new (...args: never[]) => unknown;
       handler: (...args: never[]) => unknown;
-      method: string;
-      bucket: 'read' | 'write';
       limit: number;
     }
 
-    const R = ReportController.prototype;
+    /**
+     * Cases carry no explicit bucket: which one applies is *derived* from the
+     * HTTP method, exactly as `handleRequest` derives it. Stating it separately
+     * would let a case assert a method/bucket pair the guard would never
+     * produce, and the test would still pass.
+     */
+    const bucketFor = (method: string): 'read' | 'write' =>
+      READ_THROTTLE_METHODS.has(method) ? 'read' : 'write';
+
+    const route = (
+      r: string,
+      cls: new (...args: never[]) => unknown,
+      handler: (...args: never[]) => unknown,
+      limit: number,
+    ): RouteCase => ({ route: r, cls, handler, limit });
+
+    const RP = ReportController.prototype;
+    const IN = InviteController.prototype;
+    const EV = EventController.prototype;
+    const CD = ChapterDocumentController.prototype;
+    const BW = BackworkController.prototype;
+    const CT = ChatController.prototype;
+    const CP = ChapterController.prototype;
+    const SE = ServiceEntryController.prototype;
+    const US = UserController.prototype;
+    const SR = SearchController.prototype;
+
     const cases: RouteCase[] = [
-      { route: 'POST /reports/attendance', cls: ReportController, handler: R.attendance, method: 'POST', bucket: 'write', limit: 5 },
-      { route: 'POST /reports/points', cls: ReportController, handler: R.points, method: 'POST', bucket: 'write', limit: 5 },
-      { route: 'POST /reports/roster', cls: ReportController, handler: R.roster, method: 'POST', bucket: 'write', limit: 5 },
-      { route: 'POST /reports/service', cls: ReportController, handler: R.service, method: 'POST', bucket: 'write', limit: 5 },
-      { route: 'POST /invites/batch', cls: InviteController, handler: InviteController.prototype.createBatch, method: 'POST', bucket: 'write', limit: 5 },
-      { route: 'POST /invites/redeem', cls: InviteController, handler: InviteController.prototype.redeem, method: 'POST', bucket: 'write', limit: 10 },
-      { route: 'POST /events', cls: EventController, handler: EventController.prototype.create, method: 'POST', bucket: 'write', limit: 10 },
-      { route: 'PATCH /events/:id', cls: EventController, handler: EventController.prototype.update, method: 'PATCH', bucket: 'write', limit: 10 },
-      { route: 'POST /documents/upload-url', cls: ChapterDocumentController, handler: ChapterDocumentController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
-      { route: 'POST /backwork/upload-url', cls: BackworkController, handler: BackworkController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
-      { route: 'POST /channels/:id/upload-url', cls: ChatController, handler: ChatController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
-      { route: 'GET /search', cls: SearchController, handler: SearchController.prototype.search, method: 'GET', bucket: 'read', limit: 20 },
+      route('POST /reports/attendance', ReportController, RP.attendance, 5),
+      route('POST /reports/points', ReportController, RP.points, 5),
+      route('POST /reports/roster', ReportController, RP.roster, 5),
+      route('POST /reports/service', ReportController, RP.service, 5),
+      route('POST /invites/batch', InviteController, IN.createBatch, 5),
+      route('POST /invites/redeem', InviteController, IN.redeem, 10),
+      route('POST /events', EventController, EV.create, 10),
+      route('PATCH /events/:id', EventController, EV.update, 10),
+      route(
+        'POST /documents/upload-url',
+        ChapterDocumentController,
+        CD.requestUploadUrl,
+        10,
+      ),
+      route(
+        'POST /backwork/upload-url',
+        BackworkController,
+        BW.requestUploadUrl,
+        10,
+      ),
+      route(
+        'POST /channels/:id/upload-url',
+        ChatController,
+        CT.requestUploadUrl,
+        10,
+      ),
+      route(
+        'POST /chapters/current/logo-url',
+        ChapterController,
+        CP.requestLogoUploadUrl,
+        10,
+      ),
+      route(
+        'POST /service-entries/proof-upload-url',
+        ServiceEntryController,
+        SE.requestProofUploadUrl,
+        10,
+      ),
+      route(
+        'POST /users/me/avatar-url',
+        UserController,
+        US.requestAvatarUploadUrl,
+        10,
+      ),
+      route('GET /search', SearchController, SR.search, 20),
     ];
 
     let overrideGuard: TestableGuard;
@@ -337,7 +401,7 @@ describe('CustomThrottlerGuard', () => {
         getHandler: () => c.handler,
         switchToHttp: () => ({
           getRequest: () => ({
-            method: c.method,
+            method: c.route.split(' ')[0],
             headers: {},
             ip: '1.2.3.4',
           }),
@@ -370,26 +434,23 @@ describe('CustomThrottlerGuard', () => {
       await overrideGuard.onModuleInit();
     });
 
-    it.each(cases)(
-      '$route counts against $bucket at $limit/min',
-      async (c) => {
-        await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
+    it.each(cases)('$route is capped at $limit/min', async (c) => {
+      await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
 
-        // Exactly one bucket runs: the other is method-gated off. Asserting the
-        // count as well as the args is what catches a profile applied to the
-        // wrong bucket (e.g. a `read` profile on a POST route), which would
-        // leave the route on the untouched 30/min default with no other symptom.
-        expect(increment).toHaveBeenCalledTimes(1);
-        // increment(key, ttl, limit, blockDuration, throttlerName)
-        expect(increment).toHaveBeenCalledWith(
-          expect.any(String),
-          60_000,
-          c.limit,
-          60_000,
-          c.bucket,
-        );
-      },
-    );
+      // Exactly one bucket runs: the other is method-gated off. Asserting the
+      // count as well as the args is what catches a profile applied to the
+      // wrong bucket (e.g. a `read` profile on a POST route), which would
+      // leave the route on the untouched 30/min default with no other symptom.
+      expect(increment).toHaveBeenCalledTimes(1);
+      // increment(key, ttl, limit, blockDuration, throttlerName)
+      expect(increment).toHaveBeenCalledWith(
+        expect.any(String),
+        60_000,
+        c.limit,
+        60_000,
+        bucketFor(c.route.split(' ')[0]),
+      );
+    });
 
     it('throws 429 once the storage reports the override exhausted', async () => {
       increment.mockResolvedValue({
@@ -410,14 +471,14 @@ describe('CustomThrottlerGuard', () => {
       }
       await expect(
         overrideGuard.canActivate(
-          ctxFor({
-            route: 'POST /undecorated',
-            cls: UndecoratedController,
-            handler: UndecoratedController.prototype.handle,
-            method: 'POST',
-            bucket: 'write',
-            limit: 30,
-          }),
+          ctxFor(
+            route(
+              'POST /undecorated',
+              UndecoratedController,
+              UndecoratedController.prototype.handle,
+              30,
+            ),
+          ),
         ),
       ).resolves.toBe(true);
       expect(increment).toHaveBeenCalledWith(
