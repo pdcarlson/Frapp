@@ -1,19 +1,20 @@
 import { ScreenShell } from "@/components/screen-shell";
-import { NavTile } from "@/components/nav-tile";
 import { TaskLoopCard } from "@/components/task-loop-card";
 
+/**
+ * s14 — Notifications.
+ *
+ * The deep-link destination map that used to lead this screen is gone with
+ * `notification-targets.tsx`: notification preferences live in Settings (s16)
+ * and opt-in happens through the contextual primer on s03
+ * (spec/ui/mobile/screens.md:57).
+ */
 export default function NotificationsScreen() {
   return (
     <ScreenShell
       title="Notification Center"
       subtitle="Unread activity, delivery priority, and deep-link readiness across chapter workflows."
     >
-      <NavTile
-        href="/notification-targets"
-        title="Open deep-link destination map"
-        description="Preview where event, chat, points, and task notifications route."
-        accessibilityHint="Open notification deep-link destination preview."
-      />
       <TaskLoopCard
         category="Events"
         state="synced"

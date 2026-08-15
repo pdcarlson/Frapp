@@ -27,13 +27,16 @@ URL Configuration (#765), or the link opens the web app instead.
 
 ## 2) Primary tab routes
 
+The bar carries four tabs. Home and Points were removed and Profile left the bar
+in the S2 nav restructure (#957) — see
+[`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md).
+
 | Screen | Control | Expected outcome |
 |---|---|---|
-| Home (`/(tabs)`) | All nav tiles/links | Opens target route |
-| Chat (`/(tabs)/chat`) | Open #general thread preview | Opens `chat-thread` route |
+| Chat (`/(tabs)`) | Open #general thread preview | Opens `chat-thread` route |
 | Events (`/(tabs)/events`) | Open event details | Opens `event-details` route |
-| Points (`/(tabs)/points`) | Open leaderboard details | Opens `points-details` route |
-| More (`/(tabs)/more`) | Each utility tile | Opens selected utility route |
+| Tasks (`/(tabs)/tasks`) | Back to more | Opens `more` route |
+| More (`/(tabs)/more`) | Each row | Opens selected route (several are stubs) |
 
 ## 3) Detail routes with action controls
 
@@ -42,8 +45,7 @@ URL Configuration (#765), or the link opens the web app instead.
 | Event details | Add to Calendar (.ics) | Starts `.ics` export flow or surfaces retry guidance |
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
-| Points details | Time-window chips | Changes active chip + swaps leaderboard dataset |
-| Notification targets | Target rows | Opens mapped destination route |
+| Chapter picker | Chapter row (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |
 
 ## 4) Interaction quality assertions
 

@@ -15,8 +15,8 @@ Visual truth: [`../design-system/reference/canvas-screens.dc.html`](../design-sy
 
 - There is **no Home tab**. This is a locked decision; do not reintroduce one.
 - Known stale reference: panel 4g ("Mobile chrome") of [`../design-system/reference/signet-design-system.dc.html`](../design-system/reference/signet-design-system.dc.html) draws a 5-tab bar. It is wrong — the Canvas header and all 23 screens lock 4 tabs, and Canvas wins per the precedence rules in [`../README.md`](../README.md).
-- Today's implementation (`apps/mobile/app/(tabs)/_layout.tsx`) shows six tabs — Home, Chat, Events, Points, Profile, More. It collapses to the 4-tab bar when the app is rebuilt against this spec; Points and Profile leave the bar per [`screens.md`](screens.md).
-- Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md).
+- The bar previously showed six tabs — Home, Chat, Events, Points, Profile, More. It now shows these four; Home and Points are gone as screens, and Profile moved to the More hub per [`screens.md`](screens.md).
+- Tab icons are duotone per [`../design-system/iconography.md`](../design-system/iconography.md); active/inactive treatment and colors per [`../design-system/foundations.md`](../design-system/foundations.md). They are custom `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`, transcribed from the tab bar drawn in the Canvas reference — not an off-the-shelf icon pack.
 - Every route outside these four is hidden from the bar (`href: null`) and reached by navigation.
 
 ## More hub (s09)
@@ -31,12 +31,21 @@ Rows as drawn, top to bottom. Row anatomy: duotone icon, label, trailing status,
 | Documents | `documents.tsx` (s12) | — |
 | Directory | `directory.tsx` (s13) | — |
 | Notifications | `notifications.tsx` (s14) | unread-count badge |
+| Service hours | `service-hours.tsx` (host of the s20 sheet) | — |
 | Settings | `preferences.tsx` (s16) | — |
+| Chapter | `(auth)/chapter-picker.tsx` | — |
 | **Admin section** (role-gated, labeled with the viewer's role, e.g. "ADMIN · PRESIDENT") | | |
 | Host check-in | `host-check-in.tsx` (s22) | — |
 | Adjust points | opens s23 sheet | — |
 
 The admin section renders only for members whose role grants the underlying permissions; ordinary members never see it.
+
+Two rows above are not drawn in Canvas and exist for reachability:
+
+- **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
+- **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why that would be an outage while #805 is open), so it needs a door.
+
+**Implementation status.** Every row above is routed except the **admin section**, which is deliberately not wired: its links are role-gated and the gate lands with the cluster that owns those screens, and shipping ungated admin entries to every member is worse than shipping them late. Rows marked "Routed, stub" in [`screens.md`](screens.md) open a placeholder — the navigation is real, the screen is not.
 
 ## Global entries outside the tab bar
 
@@ -51,6 +60,21 @@ The admin section renders only for members whose role grants the underlying perm
 
 ## Typed routes
 
-- `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`): route strings are compile-checked against the file tree.
-- Because of that, all renames and removals in [`screens.md`](screens.md) MUST land in **one PR** — typed routes reject a partial rename, leaving half the app's links broken.
-- `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects.
+- `typedRoutes` is enabled (`experiments.typedRoutes` in `apps/mobile/app.json`), so route strings are compile-checked against the file tree **during local development**.
+- **They are not checked in CI.** The generated types live in `.expo/types` and `expo-env.d.ts`, both gitignored (`apps/mobile/.gitignore`) and written only by `expo start`. CI runs a bare `tsc`, and with those files absent `Href` widens back to `string` — a nonexistent path assigned to `Href` type-checks clean. Do not rely on the compiler to catch a bad route on a branch.
+- **`apps/mobile/lib/routes.spec.ts` is the guard that actually runs.** It walks the real route tree and resolves route literals against it, and asserts the tab bar registers exactly the four locked tabs with a backing file behind every registration. A rename that misses a call site fails there.
+- **Know what that guard does not cover.** It matches *double-quoted string literals* at `href="…"`, `href: "…"`, `asRoute("…")`, and `router.replace|push|navigate("…")`. A route built from a template literal, a variable, or a prop is invisible to it — `components/nav-tile.tsx` takes `href` as a prop, so only its call sites are checked, not the component. It also only checks that literals resolve, never that a route has an inbound link, so an orphaned route stays green. When you add a route, add its entry point in the same change; neither gate will remind you.
+- All renames and removals in [`screens.md`](screens.md) MUST still land in **one PR** — a partial rename leaves half the app's links broken whether or not a compiler notices.
+- `asRoute()` in `apps/mobile/lib/href.ts` is the sanctioned escape hatch for static paths that typed-route generation misses. It MUST NOT be used to paper over a route the type-checker correctly rejects. Note it takes a plain `string`, so it defeats the dev-time check entirely — `routes.spec.ts` is what keeps its call sites honest.
+
+## Hotspot freeze
+
+Seven files are **frozen** now that the nav restructure has landed:
+
+`app/_layout.tsx` · `app/(tabs)/_layout.tsx` · `lib/theme.tsx` · `components/screen-shell.tsx` · `lib/href.ts` · `package.json` · `app.json`
+
+- Slices that build screens **only add files**. They do not edit the seven.
+- Every known future route is already registered in `app/(tabs)/_layout.tsx` as a hidden `Tabs.Screen` (`href: null`) with a stub backing file, so adding a screen means filling in the stub, never touching the layout. A `Tabs.Screen` without a file throws at runtime, which is why the stubs exist rather than the registrations alone.
+- Changes that genuinely need one of the seven — a new dependency, a config plugin, a new shared prop — go through a single integrator as a small standalone PR, not as part of a feature slice.
+
+The point is contention: these files are the ones every parallel slice would otherwise edit at once, and a rename or a prop added in two branches at the same time is a merge conflict in the one place that breaks the whole app.

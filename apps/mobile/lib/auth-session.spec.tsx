@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type AuthChangeHandler = (
   event: string,
-  session: { access_token: string; user: { email: string } } | null,
+  session: { access_token: string; user: { email: string; id?: string } } | null,
 ) => void;
 
 const mockState = vi.hoisted(() => ({
@@ -14,10 +14,17 @@ const mockState = vi.hoisted(() => ({
   /** Session returned by getSession() on mount. */
   initialSession: null as {
     access_token: string;
-    user: { email: string };
+    user: { email: string; id?: string };
   } | null,
   claims: null as Record<string, unknown> | null,
   claimsError: null as { message: string } | null,
+  /**
+   * When set, `getClaims` blocks until the test releases it. Without this the
+   * mocked read settles inside the same `act()` that triggered it, so the
+   * in-flight window — the only place a gate-blocking regression is visible —
+   * cannot be observed at all.
+   */
+  claimsGate: null as (() => void) | null,
   authChangeHandlers: [] as AuthChangeHandler[],
   signInWithPasswordResult: { error: null as { message: string } | null },
   signInWithOtpResult: { error: null as { message: string } | null },
@@ -70,10 +77,17 @@ vi.mock("./supabase", async () => {
           },
         };
       }),
-      getClaims: vi.fn(async () => ({
-        data: mockState.claims ? { claims: mockState.claims } : null,
-        error: mockState.claimsError,
-      })),
+      getClaims: vi.fn(async () => {
+        if (mockState.claimsGate) {
+          await new Promise<void>((release) => {
+            mockState.claimsGate = release;
+          });
+        }
+        return {
+          data: mockState.claims ? { claims: mockState.claims } : null,
+          error: mockState.claimsError,
+        };
+      }),
       signInWithPassword: vi.fn(
         async (input: { email: string; password: string }) => {
           mockState.signInWithPasswordCalls.push(input);
@@ -112,7 +126,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 function emitAuthChange(
-  session: { access_token: string; user: { email: string } } | null,
+  session: { access_token: string; user: { email: string; id?: string } } | null,
 ) {
   for (const handler of [...mockState.authChangeHandlers]) {
     handler(session ? "SIGNED_IN" : "SIGNED_OUT", session);
@@ -147,6 +161,7 @@ beforeEach(async () => {
   mockState.initialSession = null;
   mockState.claims = null;
   mockState.claimsError = null;
+  mockState.claimsGate = null;
   mockState.authChangeHandlers = [];
   mockState.signInWithPasswordResult = { error: null };
   mockState.signInWithOtpResult = { error: null };
@@ -279,7 +294,7 @@ describe("AuthSessionProvider — chapter context", () => {
     expect(result.current.chapterId).toBeNull();
   });
 
-  it("resolves null rather than guessing when claim verification errors", async () => {
+  it("does not invent a chapter when the very first claim read errors", async () => {
     mockState.initialSession = SESSION;
     mockState.claims = { active_chapter_id: "chapter-uuid-1" };
     mockState.claimsError = { message: "jwks unreachable" };
@@ -287,7 +302,91 @@ describe("AuthSessionProvider — chapter context", () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    // Nothing to fall back to, so null — but note this is "retain what we had",
+    // not "null on error"; the next test is the half that distinguishes them.
     expect(result.current.chapterId).toBeNull();
+  });
+
+  it("retains the resolved chapter when a later claim read fails", async () => {
+    mockState.initialSession = SESSION;
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    // `getClaims` is a real network round trip on this platform, and it re-runs
+    // on every token refresh and every foreground. Demoting to null on failure
+    // would make a flaky connection look like "this member has no chapter" —
+    // which the routing gate would act on.
+    mockState.claimsError = { message: "network down" };
+    await act(async () => {
+      emitAuthChange({ ...SESSION, access_token: "access-token-2" });
+    });
+
+    await waitFor(() => expect(result.current.isChapterResolving).toBe(false));
+    expect(result.current.chapterId).toBe("chapter-uuid-1");
+  });
+
+  it("does not re-block the gate when a later token refresh re-reads the claim", async () => {
+    // The regression this pins is an outage-shaped one. The routing gate renders
+    // nothing while the first claim read is pending, and the claim is re-read on
+    // every token change — the hourly auto-refresh and every foreground. If a
+    // re-read set the flag again, the whole tab navigator would unmount roughly
+    // once an hour, losing composer drafts and scroll position.
+    //
+    // Note the claim is deliberately ABSENT here: that is production's current
+    // shape (#805 is open, so no token carries it), and it is exactly the case
+    // where "we already have a chapter" cannot be what skips the wait.
+    mockState.initialSession = SESSION;
+    mockState.claims = { sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() => expect(result.current.isChapterResolving).toBe(false));
+
+    // Hold the next read open so the in-flight window is observable. If the
+    // flag tracked "a read is in flight" rather than "the first read is done",
+    // it would be true right here — and the gate would be rendering nothing.
+    mockState.claimsGate = () => {};
+    await act(async () => {
+      emitAuthChange({ ...SESSION, access_token: "access-token-2" });
+    });
+
+    expect(result.current.isChapterResolving).toBe(false);
+
+    // Release inside `act` and let it settle here. Releasing after the test body
+    // returns lands the resulting state update in whatever test runs next,
+    // which is a genuine cross-test leak — it made the suite fail roughly one
+    // run in six.
+    await act(async () => {
+      const release = mockState.claimsGate;
+      mockState.claimsGate = null;
+      release?.();
+    });
+  });
+
+  it("drops the chapter when a different account signs in", async () => {
+    mockState.initialSession = { ...SESSION, user: { ...SESSION.user, id: "user-1" } };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    // A magic link can swap accounts with no sign-out in between. Retention is
+    // scoped to one user precisely so the next member does not inherit this
+    // chapter while their own claim read is still in flight or failing.
+    mockState.claimsError = { message: "network down" };
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "other@university.edu", id: "user-2" },
+      });
+    });
+
+    await waitFor(() => expect(result.current.chapterId).toBeNull());
   });
 });
 

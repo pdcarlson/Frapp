@@ -10,9 +10,14 @@ const LOGO_SIZE = 24;
  * Header title for chapter-scoped screens: the chapter crest beside a label.
  *
  * Per `spec/behavior/branding.md`, a chapter with no logo falls back to text,
- * so the label always renders and the image is purely additive. `label`
- * overrides the chapter name for screens that need to keep their own title
- * (Chat stays "Chat"); Home leaves it unset and shows the chapter itself.
+ * so the label always renders and the image is purely additive.
+ *
+ * `label` overrides the chapter name for a screen that needs to keep its own
+ * title. Nothing passes it today: the Home tab it was written for is gone, and
+ * Chat — the one screen that still mounts this — is now the home route and
+ * deliberately shows the chapter crest and name rather than the word "Chat"
+ * (`spec/ui/mobile/navigation.md`). Do not "restore" `label="Chat"`; that would
+ * replace the chapter identity with a literal string.
  *
  * Mount this as an element -- `headerTitle: () => <ChapterHeaderTitle />` --
  * never as `headerTitle: ChapterHeaderTitle`. React Navigation *calls*

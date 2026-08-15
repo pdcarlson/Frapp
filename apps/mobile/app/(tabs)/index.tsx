@@ -1,47 +1,47 @@
 import { ScreenShell } from "@/components/screen-shell";
-import { FeedSummaryCard, TaskLoopCard } from "@/components/task-loop-card";
+import { NavTile } from "@/components/nav-tile";
+import { TaskLoopCard } from "@/components/task-loop-card";
 
-export default function HomeScreen() {
+export default function ChatHomeScreen() {
   return (
     <ScreenShell
-      title="Activity Feed"
-      subtitle="A unified chapter pulse with clear sync states, next actions, and high-signal updates."
+      title="Chat"
+      subtitle="Role-aware channels with delivery state visibility for every message action."
     >
-      <FeedSummaryCard
-        balance="186 pts"
-        rank="#4 chapter-wide"
-        period="Month to date"
+      <NavTile
+        href="/chat-thread"
+        title="Open #general thread preview"
+        description="Inspect sending, sent, and retry-needed message states in one place."
+        accessibilityHint="Open sample chat thread with delivery status states."
       />
       <TaskLoopCard
-        category="Events"
-        state="pending"
-        title="Chapter Meeting check-in opens in 12 minutes"
-        body="42 members confirmed. Role-targeted attendance will auto-award points after check-in."
-        meta="Grace window: 15 minutes after start."
-        actionHint="Open event and pre-check your attendance status."
-      />
-      <TaskLoopCard
-        category="Announcements"
+        category="Pinned"
         state="synced"
-        title="Exec dues timeline posted in #announcements"
-        body="Leadership shared this week’s payment milestones and member outreach assignments."
-        meta="Delivered to all members • 2 minutes ago"
+        title="#announcements posting rules are active"
+        body="Only officers can post. New messages are routed as chapter-wide notifications."
+        meta="Permission gate: announcements:post"
       />
       <TaskLoopCard
-        category="Backwork"
-        state="cached"
-        title="Rush Week Guide is available from cache"
-        body="The latest document remains accessible while connectivity is unstable."
-        meta="Last synced at 5:42 PM"
-        actionHint="Reconnect to fetch newly uploaded revisions."
+        category="#general"
+        state="pending"
+        title="1 outgoing message is waiting for confirmation"
+        body="“Reminder: submit service hours before Sunday.” will appear once server timestamp returns."
+        meta="Queued locally • sent from unstable network"
       />
       <TaskLoopCard
-        category="Points"
+        category="Direct message"
         state="retry"
-        title="One transaction failed to sync"
-        body="Your +10 attendance award is queued and will retry automatically."
-        meta="Auto-retry in 30 seconds"
-        actionHint="Keep Frapp open or tap retry from My Points."
+        title="Delivery failed for one DM attachment"
+        body="File upload paused when connection dropped. Retry is available without rewriting your message."
+        meta="Retry attempts: 2 of 3"
+        actionHint="Tap the failed message to resume upload."
+      />
+      <TaskLoopCard
+        category="Presence"
+        state="cached"
+        title="Member online indicators are from cache"
+        body="Live presence will refresh when heartbeat updates resume."
+        meta="Last presence sync 48 seconds ago"
       />
     </ScreenShell>
   );

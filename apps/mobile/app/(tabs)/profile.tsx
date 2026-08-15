@@ -1,5 +1,4 @@
-import { Link, useRouter } from "expo-router";
-import { asRoute } from "@/lib/href";
+import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
@@ -34,11 +33,9 @@ export default function ProfileScreen() {
         title="Notifications"
         body="Set quiet hours and category-level push preferences for announcements, events, points, and tasks."
       />
-      <Link href={asRoute("/onboarding-tour")} asChild>
-        <Pressable style={styles.tutorialButton}>
-          <Text style={styles.tutorialText}>Revisit onboarding tutorial</Text>
-        </Pressable>
-      </Link>
+      {/* The "revisit onboarding tutorial" entry left with
+          `onboarding-tour.tsx`, which the first-run screen (s03) replaces
+          (spec/ui/mobile/screens.md:58). */}
       <Pressable
         accessibilityRole="button"
         onPress={() => {
@@ -68,21 +65,6 @@ function createStyles(tokens: SignetTokens) {
     signOutText: {
       ...typeRole(tokens.typography.role.label),
       color: tokens.color.semantic.destructive,
-    },
-    tutorialButton: {
-      marginTop: tokens.spacing.xs,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tint(tokens.color.semantic.info, 0.3),
-      backgroundColor: tint(tokens.color.semantic.info),
-      paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    tutorialText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.semantic.info,
     },
   });
 }
