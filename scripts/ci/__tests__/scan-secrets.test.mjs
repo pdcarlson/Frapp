@@ -29,9 +29,18 @@ test("range mode scans only base..head via --log-opts", () => {
   assert.ok(!args.includes("--staged"));
 });
 
-test("full mode scans whole history (no range/staged flags)", () => {
+test("full mode scans every ref, not just the checked-out branch", () => {
   const args = buildGitleaksArgs({ mode: "full", configPath: CONFIG });
-  assert.deepEqual(args, ["git", "--no-banner", "--redact", "-c", CONFIG]);
+  assert.deepEqual(args, ["git", "--no-banner", "--redact", "-c", CONFIG, "--log-opts=--all"]);
+});
+
+// The audit's whole value is covering history the three incremental layers can't reach.
+// Without --all, `gitleaks git` walks HEAD's ancestry only and an unmerged branch's
+// secrets never get looked at — the bug this asserts against.
+test("full mode does not narrow the walk to one branch", () => {
+  const args = buildGitleaksArgs({ mode: "full", configPath: CONFIG });
+  assert.ok(!args.some((a) => a.startsWith("--log-opts=") && a !== "--log-opts=--all"));
+  assert.ok(!args.includes("--staged"));
 });
 
 // ── Cross-cutting guarantees ────────────────────────────────────────────────
