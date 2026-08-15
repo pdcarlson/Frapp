@@ -44,7 +44,7 @@ export function useChapterBranding(): ChapterBranding {
   const { tokens } = useFrappTheme();
 
   const surface = tokens.color.surface.card;
-  const brandAccent = tokens.color.brand.bronze;
+  const brandAccent = tokens.color.gold.house;
   const chapter = data as Record<string, unknown> | undefined;
   const accentColor = readString(chapter, "accent_color");
 

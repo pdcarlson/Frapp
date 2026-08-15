@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 export type TaskLoopState = "synced" | "pending" | "retry" | "cached";
 
@@ -82,128 +82,119 @@ export function FeedSummaryCard({
   );
 }
 
-function createLoopStateStyles(tokens: FrappTokens) {
+function createLoopStateStyles(tokens: SignetTokens) {
   return {
     synced: {
       label: "Synced",
-      backgroundColor: tokens.color.feedback.successBackground,
-      borderColor: tokens.color.feedback.successBorder,
-      textColor: tokens.color.feedback.successText,
-      cardAccent: tokens.color.feedback.successBorder,
+      backgroundColor: tint(tokens.color.semantic.success),
+      borderColor: tint(tokens.color.semantic.success, 0.3),
+      textColor: tokens.color.semantic.success,
+      cardAccent: tint(tokens.color.semantic.success, 0.3),
     },
     pending: {
       label: "Pending",
-      backgroundColor: tokens.color.feedback.warningBackground,
-      borderColor: tokens.color.feedback.warningBorder,
-      textColor: tokens.color.feedback.warningText,
-      cardAccent: tokens.color.feedback.warningBorder,
+      backgroundColor: tint(tokens.color.semantic.warning),
+      borderColor: tint(tokens.color.semantic.warning, 0.3),
+      textColor: tokens.color.semantic.warning,
+      cardAccent: tint(tokens.color.semantic.warning, 0.3),
     },
     retry: {
       label: "Retry needed",
-      backgroundColor: tokens.color.feedback.errorBackground,
-      borderColor: tokens.color.feedback.errorBorder,
-      textColor: tokens.color.feedback.errorText,
-      cardAccent: tokens.color.feedback.errorBorder,
+      backgroundColor: tint(tokens.color.semantic.destructive),
+      borderColor: tint(tokens.color.semantic.destructive, 0.3),
+      textColor: tokens.color.semantic.destructive,
+      cardAccent: tint(tokens.color.semantic.destructive, 0.3),
     },
     cached: {
       label: "Cached",
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
-      borderColor: tokens.color.feedback.infoBorderStrong,
-      textColor: tokens.color.feedback.infoTextInteractive,
-      cardAccent: tokens.color.feedback.infoBorderStrong,
+      backgroundColor: tint(tokens.color.semantic.info),
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      textColor: tokens.color.semantic.info,
+      cardAccent: tint(tokens.color.semantic.info, 0.3),
     },
   } as const;
 }
 
-function createStyles(tokens: FrappTokens, accent: string) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     card: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       borderLeftWidth: 4,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     headerRow: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     category: {
-      fontSize: tokens.type.label - 1,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
       letterSpacing: 0.4,
       textTransform: "uppercase",
     },
     statePill: {
-      borderRadius: 999,
+      borderRadius: tokens.radius.chip,
       borderWidth: 1,
-      paddingHorizontal: 8,
+      paddingHorizontal: tokens.spacing.sm,
       paddingVertical: 3,
     },
     stateText: {
-      fontSize: tokens.type.label - 1,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.caption),
     },
     title: {
-      fontSize: 16,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
     },
     body: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     meta: {
-      fontSize: tokens.type.meta,
-      lineHeight: 18,
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
     actionHint: {
       marginTop: 2,
-      fontSize: tokens.type.meta,
-      fontWeight: "600",
+      ...typeRole(tokens.typography.role.label),
       color: accent,
     },
     summaryCard: {
-      borderRadius: tokens.radius.xl,
+      borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.xl,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      fontSize: tokens.type.label,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.4,
       textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     summaryBalance: {
-      fontSize: 30,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
+      ...typeRole(tokens.typography.role.display),
+      color: tokens.color.text.foreground,
       letterSpacing: -0.6,
     },
     summaryMetaRow: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryMetaText: {
-      fontSize: tokens.type.meta,
-      fontWeight: "600",
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     summaryMetaDivider: {
-      fontSize: tokens.type.meta,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
   });
 }

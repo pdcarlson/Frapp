@@ -16,7 +16,7 @@ export default function MoreScreen() {
       <NavTile
         href="/preferences"
         title="Preferences"
-        description="Quiet hours, theme mode, and communication defaults."
+        description="Quiet hours and communication defaults."
         accessibilityHint="Manage quiet hours and category notification controls."
       />
       <NavTile

@@ -3,8 +3,8 @@ import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
-import { FrappTokens } from "@repo/theme/tokens";
-import { useFrappTheme } from "@/lib/theme";
+import { SignetTokens } from "@repo/theme/signet";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 export default function ServiceHoursScreen() {
   const { tokens } = useFrappTheme();
@@ -62,45 +62,44 @@ export default function ServiceHoursScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     summaryCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       textTransform: "uppercase",
       letterSpacing: 0.3,
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     summaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
+      ...typeRole(tokens.typography.role.headline),
       letterSpacing: -0.3,
-      color: tokens.color.feedback.infoTextStrong,
+      color: tokens.color.text.foreground,
     },
     summaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     backButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     backButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

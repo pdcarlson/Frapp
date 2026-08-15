@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ChapterHeaderTitle } from "@/components/chapter-header-title";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
 
@@ -53,9 +53,12 @@ export default function TabLayout() {
           paddingTop: 6,
           paddingBottom: 6,
           backgroundColor: tokens.color.surface.card,
-          borderTopColor: tokens.color.surface.border,
+          borderTopColor: tokens.color.border.hairline,
         },
-        headerTitleStyle: { fontWeight: "700", color: tokens.color.text.primary },
+        headerTitleStyle: {
+          ...typeRole(tokens.typography.role.title),
+          color: tokens.color.text.foreground,
+        },
         headerStyle: { backgroundColor: tokens.color.surface.card },
       }}
     >
@@ -202,6 +205,14 @@ export default function TabLayout() {
         name="notification-targets"
         options={{
           title: "Notification Destinations",
+          href: null,
+        }}
+      />
+      {/* THROWAWAY (#937 S1): Expo Go smoke screen, deleted before Phase 2 exit. */}
+      <Tabs.Screen
+        name="sheet-demo"
+        options={{
+          title: "Sheet Demo",
           href: null,
         }}
       />

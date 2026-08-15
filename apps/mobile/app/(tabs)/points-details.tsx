@@ -1,12 +1,12 @@
 import { Link } from "expo-router";
 import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { useMemo, useState } from "react";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { MONO_FONT_FAMILY, tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type LeaderboardWindow = "all-time" | "semester" | "month";
 
@@ -141,104 +141,105 @@ export default function PointsDetailsScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens, accent: string) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     windowCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 10,
+      gap: tokens.spacing.sm,
     },
     windowLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
       color: tokens.color.text.muted,
     },
     windowButtonRow: {
       flexDirection: "row",
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     windowButton: {
       flex: 1,
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.muted,
-      paddingVertical: 9,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     windowButtonActive: {
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
-      borderColor: tokens.color.feedback.infoBorderStrong,
+      backgroundColor: tint(tokens.color.semantic.info),
+      borderColor: tint(tokens.color.semantic.info, 0.3),
     },
     windowButtonText: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.mutedForeground,
     },
     windowButtonTextActive: {
-      color: tokens.color.feedback.infoTextInteractive,
+      color: tokens.color.semantic.info,
     },
     tableCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     tableTitle: {
-      fontSize: 15,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     tableRows: {
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     tableRow: {
       flexDirection: "row",
       alignItems: "center",
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.chipLarge,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.muted,
-      paddingHorizontal: 10,
-      paddingVertical: 8,
-      gap: 8,
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.sm,
+      paddingVertical: tokens.spacing.sm,
+      gap: tokens.spacing.sm,
     },
     rankCell: {
       width: 34,
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     memberCell: {
       flex: 1,
-      fontSize: 13,
-      fontWeight: "600",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
+    // Points cells are a mono role (foundations.md §7): mono takes the size of
+    // the role it sits in, with the system mono stack, never a bundled font.
     pointsCell: {
-      fontSize: 13,
+      fontSize: tokens.typography.role.label.size,
+      fontFamily: MONO_FONT_FAMILY,
       fontWeight: "700",
       color: accent,
     },
     backButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     backButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

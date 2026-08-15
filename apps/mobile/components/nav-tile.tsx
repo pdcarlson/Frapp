@@ -1,8 +1,8 @@
 import { Link } from "expo-router";
 import { Pressable, StyleSheet, Text } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { asRoute } from "@/lib/href";
-import { useFrappTheme } from "@/lib/theme";
+import { typeRole, useFrappTheme } from "@/lib/theme";
 
 type NavTileProps = {
   href: string;
@@ -35,27 +35,25 @@ export function NavTile({
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     tile: {
-      minHeight: 52,
-      borderRadius: tokens.radius.lg,
+      minHeight: tokens.touch.minimum,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
       justifyContent: "center",
     },
     tileTitle: {
-      fontSize: 16,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
     },
     tileDescription: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

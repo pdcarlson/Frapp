@@ -2,12 +2,12 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Link } from "expo-router";
 import { asRoute } from "@/lib/href";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
 import { exportEventToCalendar } from "@/lib/calendar-export";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 export default function EventDetailsScreen() {
   const { tokens } = useFrappTheme();
@@ -116,65 +116,67 @@ export default function EventDetailsScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens, accent: string) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     summaryCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     summaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
+      ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
       letterSpacing: -0.3,
     },
     summaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     primaryButton: {
-      marginTop: 4,
-      borderRadius: tokens.radius.md,
+      marginTop: tokens.spacing.xs,
+      borderRadius: tokens.radius.control,
       backgroundColor: accent,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.button,
       alignItems: "center",
+      justifyContent: "center",
     },
     primaryButtonDisabled: {
       opacity: 0.6,
     },
     primaryButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.inverse,
+      ...typeRole(tokens.typography.role.label),
+      // Chapter accents clear AA against the dark card, so the darkest surface
+      // step is the legible on-accent text until the engine's on-primary lands.
+      color: tokens.color.surface.background,
     },
     feedbackText: {
-      marginTop: 6,
-      fontSize: 12,
-      color: tokens.color.feedback.errorText,
+      marginTop: tokens.spacing.xs,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
     secondaryButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     secondaryButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }
