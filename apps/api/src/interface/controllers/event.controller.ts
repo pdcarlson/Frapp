@@ -22,6 +22,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -51,6 +52,7 @@ export class EventController {
   }
 
   @Post()
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.EVENTS_CREATE)
   @ApiOperation({ summary: 'Create an event' })
   async create(
@@ -66,6 +68,7 @@ export class EventController {
   }
 
   @Patch(':id')
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
   @ApiOperation({ summary: 'Update an event' })
   async update(

@@ -21,6 +21,7 @@ import {
   RequireAnyOfPermissions,
 } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -115,6 +116,7 @@ export class ServiceEntryController {
   }
 
   @Post('proof-upload-url')
+  @ThrottleFanOutWrite()
   @UseGuards(PermissionsGuard)
   @RequirePermissions(SystemPermissions.SERVICE_LOG)
   @ApiOperation({ summary: 'Get signed upload URL for a service proof file' })
