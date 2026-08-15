@@ -184,6 +184,46 @@ either is missing `getSupabaseClient()` returns `null` instead of throwing, so
 `npm run check-types` / `npm run test` and a bare `expo start` still work. Sign-in
 is unavailable in that state and the sign-in screen says so.
 
+### Client-exposure audit
+
+**Every *prefixed* variable in the three tables above is public by design.** A
+`NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix means the value is inlined into a bundle any user can read — so
+the prefix is the decision, and it is irreversible once shipped.
+
+The prefixed set is deliberately small. It is **exactly these nine variables** — enumerated by name
+rather than summarised, so it can be diffed against a bundle without interpretation:
+
+| | |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` · `EXPO_PUBLIC_SUPABASE_URL` | project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon key — public by Supabase's design, gated by RLS and the API's own guards |
+| `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
+| `NEXT_PUBLIC_APP_URL` | landing → app URL |
+| `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **The one entry with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key (`pk_…`) — the secret key stays API-only |
+
+Nine variables over **five** canonical values plus that one direct-set URL; each
+`NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair is an Infisical reference to the same canonical value. No secret
+belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
+
+`SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in
+`proxy.ts` (middleware, server-side), is CI-only, and is ignored when `NODE_ENV` is `production`. It
+is not client-visible and must never gain a prefix.
+
+Audited **2026-08-15** (#851) against production builds of `apps/web` and `apps/landing` and the
+`apps/mobile` config: none of 15 server-only variable names appeared in the emitted client output,
+gitleaks found nothing in either client bundle, and mobile reads only the three `EXPO_PUBLIC_*`
+values listed here. **The name check is the load-bearing one** — the audit built with placeholder
+env values, so it establishes which variables reach the browser, not which values do; a clean
+gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
+method, caveats, and re-run instructions:
+[`SECRET_SCANNING.md` § Audit history](../ci-cd/SECRET_SCANNING.md#audit-history).
+
+**Adding a client-read variable? The prefix decision is the security review.** Step 3 of *Adding a
+New Variable* at the end of this document is mechanical — it tells you how to add the reference, not
+whether you should. Before you do: confirm the value is safe in a bundle any user can read, add it to
+the table above with its justification, and re-run the audit above if it could carry a credential.
+
 ---
 
 ## Infisical → Provider Syncs
