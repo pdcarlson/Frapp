@@ -21,7 +21,12 @@ import {
   type RawChatMessage,
   type RawChatMessageAction,
 } from "./types";
-import { emptyCache, mergeServerRows, selectMessages } from "./cache";
+import {
+  applyReactionInsert,
+  emptyCache,
+  mergeServerRows,
+  selectMessages,
+} from "./cache";
 import { chatRealtime, type ConnectionStatus } from "./realtime-manager";
 import {
   actOnCard,
@@ -128,10 +133,13 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
           .select("*")
           .in("message_id", messageIds);
         if (actions) {
-          const next = { ...cache };
-          let mutated = { ...next };
+          // The canonical merge, not a local copy: it also appends each raw
+          // row to `message.actions`, which the poll-card tallies read — a
+          // local variant that skipped that step left reloaded polls at zero
+          // votes until a live echo happened to re-deliver them.
+          let mutated = cache;
           for (const action of actions as RawChatMessageAction[]) {
-            mutated = applyInsertSafe(mutated, action);
+            mutated = applyReactionInsert(mutated, action);
           }
           cache = mutated;
         }
@@ -324,35 +332,5 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
     discard,
     dispatchSlash,
     act,
-  };
-}
-
-// Local helper that mirrors `applyReactionInsert` but accepts an arbitrary
-// shape; avoids a circular import in the hook's queryFn closure.
-function applyInsertSafe(
-  cache: ChannelCache,
-  action: RawChatMessageAction,
-): ChannelCache {
-  if (cache.actionIndex[action.id]) return cache;
-  const message = cache.byId[action.message_id];
-  if (!message) return cache;
-  const current = message.reactions[action.action_type] ?? [];
-  const reactions = {
-    ...message.reactions,
-    [action.action_type]: current.includes(action.user_id)
-      ? current
-      : [...current, action.user_id],
-  };
-  return {
-    ...cache,
-    byId: { ...cache.byId, [action.message_id]: { ...message, reactions } },
-    actionIndex: {
-      ...cache.actionIndex,
-      [action.id]: {
-        messageKey: action.message_id,
-        actionType: action.action_type,
-        userId: action.user_id,
-      },
-    },
   };
 }
