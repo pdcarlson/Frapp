@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -28,10 +28,12 @@ const appDir = path.join(here, "..", "app");
 const scanRoots = [appDir, here, path.join(here, "..", "components")];
 
 function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((entry) => {
-    const full = path.join(dir, entry);
-    return statSync(full).isDirectory() ? walk(full) : [full];
-  });
+  // Matches the form already used in apps/api's dto-constraint-coverage spec.
+  // The per-entry `statSync` this replaces also followed symlinks, so a
+  // symlinked directory under app/ would have recursed forever.
+  return readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name));
 }
 
 function isRouteFile(file: string): boolean {
@@ -70,6 +72,9 @@ const validHrefs = new Set(routeFiles.flatMap(hrefVariants));
 const LITERAL_PATTERNS = [
   /asRoute\(\s*"([^"]+)"\s*\)/g,
   /href="([^"]+)"/g,
+  // Object-property form. A role-gated row list is naturally written as
+  // `[{ href: "/host-check-in", … }]`, which the JSX-attribute pattern misses.
+  /href:\s*"([^"]+)"/g,
   /router\.(?:replace|push|navigate)\(\s*"([^"]+)"\s*\)/g,
 ];
 
@@ -77,13 +82,11 @@ type Usage = { file: string; href: string };
 
 function collectUsages(): Usage[] {
   const usages: Usage[] = [];
-  const seen = new Set<string>();
 
+  // The three scan roots are disjoint siblings, so no dedupe is needed.
   for (const root of scanRoots) {
     for (const file of walk(root)) {
       if (!/\.tsx?$/.test(file) || file.includes(".spec.")) continue;
-      if (seen.has(file)) continue;
-      seen.add(file);
 
       const source = readFileSync(file, "utf8");
       for (const pattern of LITERAL_PATTERNS) {
@@ -132,9 +135,21 @@ describe("route literals", () => {
 describe("tab bar", () => {
   const layout = readFileSync(path.join(appDir, "(tabs)", "_layout.tsx"), "utf8");
 
-  const registrations = [
-    ...layout.matchAll(/<Tabs\.Screen\s+name="([^"]+)"([\s\S]*?)\/>/g),
-  ].map((match) => ({ name: match[1], options: match[2] }));
+  // Split on the element start rather than matching a whole element. The
+  // previous pattern (`<Tabs.Screen\s+name="…"([\s\S]*?)/>`) required `name=` to
+  // be the first prop and ended its options capture at the first `/>` — which is
+  // the nested `<ChatGlyph />` on every visible tab. Either quirk dropped a
+  // registration from this list entirely, and a dropped registration silently
+  // passes the very check that exists to catch it.
+  //
+  // Splitting bounds each chunk at the next registration, so a chunk holds
+  // exactly one `Tabs.Screen` plus the whitespace and comments trailing it —
+  // no end-marker to guess at, and prop order does not matter.
+  const registrations = layout
+    .split("<Tabs.Screen")
+    .slice(1)
+    .map((options) => ({ name: /name="([^"]+)"/.exec(options)?.[1], options }))
+    .filter((r): r is { name: string; options: string } => Boolean(r.name));
 
   it("registers exactly the four locked tabs as visible", () => {
     const visible = registrations

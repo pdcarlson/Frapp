@@ -14,8 +14,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mockState = vi.hoisted(() => ({
   calls: [] as string[],
   activateError: null as Error | null,
-  refreshError: null as Error | null,
-  client: null as { auth: { refreshSession: () => Promise<void> } } | null,
+  /**
+   * Modelled on the REAL contract, which is the whole point of this field.
+   *
+   * `GoTrueClient._refreshSession` catches every `AuthError` — network failures
+   * included — and RESOLVES with `{ data, error }`. It does not reject. An
+   * earlier version of this suite mocked it as throwing, so it passed against
+   * code that never inspected the returned error: a false green on exactly the
+   * path it was written to cover.
+   */
+  refreshError: null as { message: string } | null,
+  client: null as {
+    auth: {
+      refreshSession: () => Promise<{ error: { message: string } | null }>;
+    };
+  } | null,
 }));
 
 vi.mock("@repo/hooks", () => ({
@@ -46,7 +59,7 @@ beforeEach(() => {
     auth: {
       refreshSession: vi.fn(async () => {
         mockState.calls.push("refreshSession");
-        if (mockState.refreshError) throw mockState.refreshError;
+        return { error: mockState.refreshError };
       }),
     },
   };
@@ -76,12 +89,14 @@ describe("useSelectChapter", () => {
     expect(mockState.calls).toEqual(["activate:chapter-a"]);
   });
 
-  it("reports failure when the refresh itself fails", async () => {
-    mockState.refreshError = new Error("network down");
+  it("reports failure when the refresh RESOLVES with an error", async () => {
+    mockState.refreshError = { message: "network down" };
     const selectChapter = renderSelect();
 
-    // Activation succeeded server-side, but the token in hand still carries the
-    // previous claim, so the caller must not treat this as a completed switch.
+    // The regression guard. `refreshSession` resolving with `{ error }` rather
+    // than rejecting means a bare `await` inside a try/catch reports success
+    // for a failed refresh — and the picker then waits forever for a navigation
+    // that cannot come, because the token still carries the previous claim.
     await expect(selectChapter("chapter-a")).resolves.toBe(false);
     expect(mockState.calls).toEqual(["activate:chapter-a", "refreshSession"]);
   });

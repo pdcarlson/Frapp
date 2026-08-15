@@ -4,6 +4,7 @@ import {
   ChatGlyph,
   EventsGlyph,
   MoreGlyph,
+  TabLabel,
   TasksGlyph,
   type TabGlyphProps,
 } from "@/components/tab-glyphs";
@@ -39,11 +40,6 @@ export default function TabLayout() {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
-  // No claim means nothing in this group can address a chapter (#764).
-  if (destination === "picker") {
-    return <Redirect href="/(auth)/chapter-picker" />;
-  }
-
   const glyphPaint = (focused: boolean): TabGlyphProps => ({
     focused,
     accent,
@@ -64,10 +60,13 @@ export default function TabLayout() {
         },
         // iconography.md §1 rule 2: the active tab pairs the accent duotone
         // glyph with a 700-weight label, and takes no pill or container shape.
-        tabBarLabelStyle: {
-          ...typeRole(tokens.typography.role.caption),
-          fontSize: 10.5,
-        },
+        // The weight has to come from the label component, not
+        // `tabBarLabelStyle` — that is one static style for both states.
+        tabBarLabel: ({ focused, color, children }) => (
+          <TabLabel focused={focused} color={color}>
+            {children}
+          </TabLabel>
+        ),
         headerTitleStyle: {
           ...typeRole(tokens.typography.role.title),
           color: tokens.color.text.foreground,

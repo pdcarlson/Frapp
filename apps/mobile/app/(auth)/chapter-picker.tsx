@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Redirect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Pressable,
@@ -18,48 +19,81 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * (spec/ui/mobile/screens.md:46), so it reuses s02's visual language, which in
  * turn is the existing `(auth)` card language from s01.
  *
- * Only a multi-chapter member with no persisted selection ever reaches this:
- * `custom_access_token_hook` resolves a sole membership server-side, so a
- * single-chapter member always has a claim and the routing gate never sends
- * them here (spec/behavior/multi-tenancy.md).
+ * Reached deliberately, from the More hub — **not** forced on members whose
+ * token lacks an `active_chapter_id` claim. `lib/auth-gate.ts` explains why
+ * that distinction is load-bearing rather than a preference: no token carries
+ * the claim while `custom_access_token_hook` is disabled (#805), so a forced
+ * redirect would trap every member on a screen that cannot satisfy its own
+ * exit condition.
  *
- * There is no local write on selection — see `lib/select-chapter.ts`. Once the
- * refreshed token carries the claim, `(auth)/_layout` redirects into `(tabs)`
- * on its own, which is why this screen never navigates.
+ * There is no local write on selection — see `lib/select-chapter.ts`. When the
+ * refreshed token does carry the claim, `(auth)/_layout` redirects into
+ * `(tabs)`; when it does not, this screen says so rather than waiting forever.
  */
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const { signOut } = useAuthSession();
+  const router = useRouter();
+  const { status, signOut } = useAuthSession();
   const selectChapter = useSelectChapter();
 
   const { data, isPending, isError, refetch } = useListChapters();
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [selectError, setSelectError] = useState<string | null>(null);
 
-  async function handleSelect(chapterId: string) {
-    setPendingId(chapterId);
+  async function handleSignOut() {
+    await signOut();
+    // Navigate explicitly rather than waiting for the gate: the gate only ever
+    // redirects *out* of this group, so signing out here would otherwise leave
+    // the member staring at a chapter list whose every action now 401s.
+    router.replace("/(auth)/sign-in");
+  }
+
+  // A stale `frapp://chapter-picker` opened while signed out would otherwise
+  // render a list query that 401s, behind a "Try again" that can never succeed.
+  if (status === "unauthenticated") {
+    return <Redirect href="/(auth)/sign-in" />;
+  }
+
+  async function handleSelect(nextChapterId: string) {
+    setPendingId(nextChapterId);
     setSelectError(null);
 
-    const ok = await selectChapter(chapterId);
+    try {
+      const ok = await selectChapter(nextChapterId);
 
-    if (!ok) {
-      // Deliberately stay put. The selection is best-effort and writes nothing
-      // locally on failure, so retrying is safe and nothing needs undoing.
-      setSelectError("Could not switch chapters. Check your connection and try again.");
+      if (!ok) {
+        // Nothing local was written, so retrying is safe and nothing needs
+        // undoing.
+        setSelectError(
+          "Could not switch chapters. Check your connection and try again.",
+        );
+        return;
+      }
+
+      // Success still has a failure mode, and it is the one that used to hang
+      // this screen: the switch is only *visible* once a reissued token carries
+      // the new `active_chapter_id` claim, and no token carries it while
+      // `custom_access_token_hook` is disabled (#805). An earlier version left
+      // the row spinner running forever waiting for a navigation that could
+      // never happen. Say so instead.
+      setSelectError(
+        "Selected. If your chapter does not change, your account is not set up for chapter switching yet — contact an officer.",
+      );
+    } finally {
+      // Always clear. The screen usually unmounts before this matters, but
+      // "usually" is what stranded members on a dead list of disabled rows.
       setPendingId(null);
     }
-    // On success the refreshed claim moves the routing gate, so this screen
-    // unmounts underneath us — clearing `pendingId` here would be a state
-    // update on an unmounted component.
   }
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Choose your chapter</Text>
+      {/* Reachable from More by any member, so the copy cannot assert that
+          they belong to more than one chapter. */}
       <Text style={styles.subtitle}>
-        Your account belongs to more than one chapter. Pick the one you want to
-        open.
+        Pick the chapter you want to open.
       </Text>
 
       <View style={styles.card}>
@@ -136,11 +170,14 @@ export default function ChapterPicker() {
 
         {selectError ? <Text style={styles.errorText}>{selectError}</Text> : null}
 
+        {/* Never disabled, and it navigates rather than trusting the gate to
+            move us. Sign-out is the escape hatch — gating it on `pendingId`
+            meant any stuck selection left the member with no way off this
+            screen at all. */}
         <Pressable
           accessibilityRole="button"
-          disabled={pendingId !== null}
           onPress={() => {
-            void signOut();
+            void handleSignOut();
           }}
           style={styles.secondaryButton}
         >
@@ -229,7 +266,7 @@ function createStyles(tokens: SignetTokens) {
       borderColor: tint(tokens.color.gold.house, 0.3),
       paddingHorizontal: tokens.spacing.lg,
       paddingVertical: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
+      minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
     },
@@ -238,7 +275,7 @@ function createStyles(tokens: SignetTokens) {
       color: tokens.color.gold.house,
     },
     secondaryButton: {
-      minHeight: tokens.touch.minimum,
+      minHeight: tokens.touch.button,
       alignItems: "center",
       justifyContent: "center",
     },

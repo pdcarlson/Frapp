@@ -147,7 +147,15 @@ export function AuthSessionProvider({
   );
   const [session, setSession] = useState<Session | null>(null);
   const [chapterId, setChapterId] = useState<string | null>(null);
-  const [isChapterResolving, setIsChapterResolving] = useState(false);
+  // Seeded true whenever a client exists, NOT false. This flag flips inside the
+  // claim effect, and effects flush children-first — so a `false` seed leaves
+  // one committed render where status is already "authenticated" and chapterId
+  // is still null, which the gate reads as "no chapter" and redirects to the
+  // picker before the provider's own effect ever runs. Starting true means the
+  // gate holds until the read has actually happened.
+  const [isChapterResolving, setIsChapterResolving] = useState(
+    () => supabase !== null,
+  );
   const [callbackError, setCallbackError] = useState<string | null>(null);
 
   const url = Linking.useURL();
@@ -230,17 +238,21 @@ export function AuthSessionProvider({
       .getClaims()
       .then(({ data, error }) => {
         if (cancelled) return;
-        if (error || !data?.claims) {
-          setChapterId(null);
-          return;
-        }
+        // A failed *read* is not a resolved absence, and the two must not
+        // collapse: the gate evicts a member with no chapter to the picker, so
+        // nulling here on a network blip would throw someone out of the app
+        // mid-use. `getClaims` is a real round trip on this platform — Hermes
+        // has no WebCrypto `subtle`, so auth-js falls back to `getUser()` — and
+        // it re-runs on every hourly refresh and every foreground. Keep the
+        // last known chapter and let the next token try again.
+        if (error || !data?.claims) return;
         const claim = data.claims[ACTIVE_CHAPTER_CLAIM];
         setChapterId(
           typeof claim === "string" && claim.length > 0 ? claim : null,
         );
       })
       .catch(() => {
-        if (!cancelled) setChapterId(null);
+        // Same reasoning as above — retain, do not demote.
       })
       .finally(() => {
         // Each run owns its own `cancelled`, so a superseded read can never

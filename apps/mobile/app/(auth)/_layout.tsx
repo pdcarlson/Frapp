@@ -1,6 +1,21 @@
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, usePathname } from "expo-router";
 import { resolveAuthGate } from "@/lib/auth-gate";
 import { useAuthSession } from "@/lib/auth-session";
+
+/**
+ * Pin the group's anchor to sign-in.
+ *
+ * With one screen in here this was implicit. It stopped being so when the group
+ * grew to four: expo-router's `sortRoutes` breaks ties on route-name *length*,
+ * so the anchor silently became `join` — the shortest name, and a stub. The
+ * anchor is what sits under a screen reached by deep link, so backing out of
+ * `frapp://chapter-picker` would have landed on an unbuilt screen instead of
+ * sign-in. (`anchor` is this version's name for it; `initialRouteName` is still
+ * read as a fallback.)
+ */
+export const unstable_settings = {
+  anchor: "sign-in",
+};
 
 /**
  * The `(auth)` group is the pre-chapter-context stack, not merely the
@@ -8,18 +23,19 @@ import { useAuthSession } from "@/lib/auth-session";
  *
  * It used to redirect every authenticated member straight to `(tabs)`, which
  * was correct while `sign-in` was the only screen here. It stopped being
- * correct once the group gained post-auth screens: `chapter-picker` (#764) is
- * by definition reached while signed in, and s02/s03 (join, welcome) sit on the
- * same side of the boundary. An unconditional redirect makes all three
+ * correct once the group gained post-auth screens: the chapter picker (#764) is
+ * by definition reached while signed in, so an unconditional redirect makes it
  * unreachable.
  *
- * So the gate now keys on *chapter context* rather than on session alone: a
- * member with a resolved chapter belongs in `(tabs)`; a member without one has
- * business here. `(tabs)/_layout.tsx` holds the mirror of this rule, and the
- * two do not loop — each redirects only on the condition the other admits.
+ * `PRE_CHAPTER_ROUTES` is the exemption list — screens an authenticated member
+ * is allowed to sit on. Everything else in the group still bounces to `(tabs)`
+ * once they have a session, so sign-in cannot be reopened over a live one.
  */
+const PRE_CHAPTER_ROUTES = ["/chapter-picker", "/join", "/welcome"];
+
 export default function AuthLayout() {
   const { status, chapterId, isChapterResolving } = useAuthSession();
+  const pathname = usePathname();
   const destination = resolveAuthGate({ status, chapterId, isChapterResolving });
 
   if (destination === "hold") {
@@ -27,8 +43,9 @@ export default function AuthLayout() {
   }
 
   // `tabs` is the only destination outside this group, so it is the only one
-  // that redirects. "sign-in" and "picker" both live here and simply render.
-  if (destination === "tabs") {
+  // that redirects — and not when the member deliberately opened one of the
+  // post-auth screens that lives here.
+  if (destination === "tabs" && !PRE_CHAPTER_ROUTES.includes(pathname)) {
     return <Redirect href="/(tabs)" />;
   }
 

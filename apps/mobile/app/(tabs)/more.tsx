@@ -8,16 +8,16 @@ import { NavTile } from "@/components/nav-tile";
  * Profile leads because it leaves the tab bar in this slice and More becomes
  * its only entry point.
  *
- * Two deliberate departures from that table, both to be closed by cluster C4:
+ * Two deliberate departures from that table:
  *
- * - **Service hours** is not in the spec's row list, but `service-hours.tsx` is
- *   a live route that hosts the s20 sheet, and #937 puts it in C4's scope. It
- *   keeps a row here so the route does not become unreachable; the spec table
- *   is the thing that is incomplete.
  * - **The admin section** (host check-in, adjust points) is omitted. It is
  *   role-gated, and the gate belongs to C2/C4 — shipping the links now would
  *   expose admin affordances to every member, which is worse than shipping them
  *   late.
+ * - **Chapter** is an extra row, and it is the only entry to the chapter picker
+ *   (#764). The picker is deliberately not forced on members whose token lacks
+ *   an `active_chapter_id` claim — see `lib/auth-gate.ts` for why that would be
+ *   an outage rather than a feature while #805 is open — so it needs a door.
  *
  * Destinations that are still stubs are marked as such in their own files; this
  * slice restructures navigation only.
@@ -75,6 +75,12 @@ export default function MoreScreen() {
         title="Settings"
         description="Quiet hours and communication defaults."
         accessibilityHint="Manage quiet hours and category notification controls."
+      />
+      <NavTile
+        href="/(auth)/chapter-picker"
+        title="Chapter"
+        description="Switch between the chapters you belong to."
+        accessibilityHint="Choose which chapter to open."
       />
       <InfoCard
         title="Coming next"

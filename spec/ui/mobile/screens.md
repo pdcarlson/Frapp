@@ -1,4 +1,4 @@
-> **TARGET SPEC (partially built).** Every route below now exists in `apps/mobile` and the navigation between them is complete, but most screens are stubs — see the Status column for which. Implementation is tracked in GitHub Issues — do not file spec-vs-implementation drift issues against these documents ([`README.md`](README.md)).
+> **TARGET SPEC (partially built).** Every route below now exists in `apps/mobile`, but most screens are stubs and several have no entry point yet — see the Status column, and note that `ask` (opened from the ✦ pill), `check-in` (from an event), `host-check-in` (role-gated), `join` and `welcome` are registered without an inbound link, pending the slices that own them. Implementation is tracked in GitHub Issues — do not file spec-vs-implementation drift issues against these documents ([`README.md`](README.md)).
 
 # Mobile Screen Inventory (s01–s23)
 

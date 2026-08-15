@@ -6,9 +6,10 @@ import {
 } from "./auth-gate";
 
 /**
- * #764 / #957. Two properties matter here and neither is obvious from reading
+ * #764 / #957. Three properties matter here, and none is obvious from reading
  * the layouts: a member must never be parked on a screen they cannot act on,
- * and the two gates must never redirect into each other.
+ * the two gates must never redirect into each other, and a missing chapter
+ * claim must never be fatal.
  */
 
 const RESOLVED = { isChapterResolving: false } as const;
@@ -45,34 +46,28 @@ describe("resolveAuthGate", () => {
   });
 
   /**
-   * The single-chapter branch of #764's acceptance criteria. Such a member
-   * always carries a claim, because `custom_access_token_hook` resolves a sole
-   * membership server-side — so the picker is unreachable for them, which is
-   * what "never sees the picker" means at the routing layer.
+   * The outage guard, and the reason this file exists in its current shape.
+   *
+   * `custom_access_token_hook` is not enabled in production (#805), so no token
+   * carries `active_chapter_id` today — and the API is fine with that, because
+   * `ChapterGuard` auto-resolves a sole membership when neither the claim nor
+   * `x-chapter-id` is present. A gate that demanded the claim would strand every
+   * member on a picker that cannot possibly satisfy it, since activating a
+   * chapter produces no claim while the hook is off. The rollback playbook also
+   * prescribes disabling that hook during an auth incident, so this would fire
+   * exactly when the app most needs to work.
    */
-  it("never routes a member who has a chapter to the picker", () => {
-    for (const chapterId of ["chapter-a", "00000000-0000-0000-0000-000000000001"]) {
-      expect(
-        resolveAuthGate({ status: "authenticated", chapterId, ...RESOLVED }),
-      ).not.toBe("picker");
-    }
-  });
-
-  /** The multi-chapter branch: no claim, so the picker is the only way on. */
-  it("routes an authenticated member with no chapter to the picker", () => {
+  it("lets a member through when the claim is absent but resolved", () => {
     expect(
       resolveAuthGate({
         status: "authenticated",
         chapterId: null,
         ...RESOLVED,
       }),
-    ).toBe("picker");
+    ).toBe("tabs");
   });
 
-  it("holds instead of showing the picker while the claim is still resolving", () => {
-    // The regression this pins: `chapterId` is null during the read too, so a
-    // gate that ignored `isChapterResolving` would flash the picker at every
-    // cold start for members who have a perfectly good chapter.
+  it("holds on the first read instead of painting the wrong thing", () => {
     expect(
       resolveAuthGate({
         status: "authenticated",
@@ -80,14 +75,22 @@ describe("resolveAuthGate", () => {
         isChapterResolving: true,
       }),
     ).toBe("hold");
+  });
 
+  /**
+   * A re-read must not blank the app. The claim is re-read on every token
+   * change — the hourly auto-refresh and every foreground — and `hold` renders
+   * nothing, so holding here would unmount the tab navigator about once an hour
+   * and dump the member back on the Chat tab mid-use.
+   */
+  it("does not hold while re-resolving a chapter it already has", () => {
     expect(
       resolveAuthGate({
         status: "authenticated",
         chapterId: "chapter-a",
         isChapterResolving: true,
       }),
-    ).toBe("hold");
+    ).toBe("tabs");
   });
 });
 
@@ -109,8 +112,7 @@ describe("the two layouts cannot loop", () => {
   // How each layout reacts to a destination. `(auth)` redirects only when the
   // answer is outside its group, and `(tabs)` only when it is inside `(auth)`.
   const authRedirects = (d: AuthGateDestination) => d === "tabs";
-  const tabsRedirects = (d: AuthGateDestination) =>
-    d === "sign-in" || d === "picker";
+  const tabsRedirects = (d: AuthGateDestination) => d === "sign-in";
 
   it("never has both gates redirecting for the same state", () => {
     for (const state of everyState) {
@@ -124,9 +126,25 @@ describe("the two layouts cannot loop", () => {
 
   it("resolves every reachable state to exactly one destination", () => {
     for (const state of everyState) {
-      expect(["hold", "sign-in", "picker", "tabs"]).toContain(
-        resolveAuthGate(state),
-      );
+      expect(["hold", "sign-in", "tabs"]).toContain(resolveAuthGate(state));
+    }
+  });
+
+  /**
+   * The cold-start flash. `chapterId` is null before the claim read finishes as
+   * well as after it finds nothing, so a provider that seeded its resolving
+   * flag `false` would produce one committed render of the post-read state
+   * before the read had happened. That render must not be a redirect.
+   */
+  it("never redirects out of the tabs purely for a missing chapter", () => {
+    for (const isChapterResolving of resolving) {
+      expect(
+        resolveAuthGate({
+          status: "authenticated",
+          chapterId: null,
+          isChapterResolving,
+        }),
+      ).not.toBe("sign-in");
     }
   });
 });

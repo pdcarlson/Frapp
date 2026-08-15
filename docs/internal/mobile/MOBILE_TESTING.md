@@ -93,12 +93,17 @@ device run, check:
 - [ ] **`frapp://event-details` still resolves** — export an `.ics` from an event
       and open it. This is the one filename contract in the app; a break here is
       invisible until a member taps a calendar entry.
-- [ ] **Multi-chapter member** (needs a real account in 2+ chapters, and #805 —
-      the access-token hook — enabled): sign in, land on the chapter picker, pick
-      one, and arrive in the tabs with chapter data loading. Then force-quit and
-      reopen: it should go straight to the tabs, **not** flash the picker.
-- [ ] **Single-chapter member**: signs in straight to the tabs, never sees the
-      picker.
+- [ ] **Single-chapter member**: signs in straight to the tabs and is never
+      asked to choose. This must hold **with `custom_access_token_hook` still
+      disabled** (#805) — the API auto-resolves a sole membership server-side,
+      and the app must not require the claim. Force-quit and reopen: straight to
+      the tabs, no picker flash.
+- [ ] **Chapter picker** (More → Chapter): opens for any member, lists their
+      chapters, and Sign out works from it even mid-selection.
+- [ ] **Multi-chapter switch** (needs an account in 2+ chapters **and** #805
+      enabled): pick a chapter and arrive in the tabs with that chapter's data.
+      With #805 still disabled the picker should say the account is not set up
+      for switching rather than spin.
 
 ## Unit tests
 

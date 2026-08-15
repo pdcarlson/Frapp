@@ -39,13 +39,28 @@ export function useSelectChapter() {
 
       try {
         await activateChapter.mutateAsync(chapterId);
-        await supabase.auth.refreshSession();
       } catch {
-        // Best-effort, matching web. Returning false lets the caller surface a
-        // retry without unwinding anything: nothing local was written, so a
-        // failed attempt leaves the member exactly where they started rather
-        // than pointing `x-chapter-id` at a chapter the un-refreshed token
-        // still disagrees with — which would 403 every subsequent request.
+        // Nothing happened server-side, so the member is exactly where they
+        // started and a retry is safe.
+        return false;
+      }
+
+      // `refreshSession` RESOLVES with `{ error }` on auth and network failures
+      // rather than rejecting — only non-auth errors throw. A bare `await`
+      // inside the try above therefore reports success for a refresh that
+      // failed, which is worse than it sounds: the caller would stop showing a
+      // spinner only when the screen changed, and the screen only changes when
+      // the claim arrives, which it never would.
+      const { error } = await supabase.auth.refreshSession();
+
+      if (error) {
+        // Note the asymmetry with the branch above: activation already
+        // succeeded, so the server's idea of the active chapter HAS changed
+        // while we report failure. That is the honest answer for right now —
+        // the token in hand still carries the old claim, so the switch has not
+        // taken effect — but the next token issuance will pick the new chapter
+        // up. Nothing local was written either way, so `x-chapter-id` never
+        // disagrees with the token and no request 403s in the meantime.
         return false;
       }
 
