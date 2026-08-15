@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
+import { Platform } from "react-native";
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
@@ -87,19 +88,22 @@ describe("token helpers", () => {
     expect(MONO_FONT_FAMILY).toBe("Menlo");
   });
 
-  it("mono falls back to the generic monospace stack off-iOS", async () => {
-    vi.resetModules();
-    vi.doMock("react-native", () => ({
-      Platform: {
-        OS: "android",
-        select: (opts: Record<string, unknown>) => opts.default,
-      },
-    }));
+  it("mono falls back to the generic monospace stack off-iOS", () => {
+    // No doMock/registry surgery (doUnmock would evict the suite-wide
+    // react-native mock for the rest of this file): the suite mock's
+    // Platform.select is a vi.fn, so the options object theme.tsx passed at
+    // import time is recorded — assert the non-iOS branch from it directly.
+    const monoCall = vi
+      .mocked(Platform.select)
+      .mock.calls.find(
+        ([opts]) =>
+          (opts as Record<string, unknown>).ios === "Menlo" &&
+          "default" in (opts as Record<string, unknown>),
+      );
 
-    const androidTheme = await import("./theme");
-    expect(androidTheme.MONO_FONT_FAMILY).toBe("monospace");
-
-    vi.doUnmock("react-native");
-    vi.resetModules();
+    expect(monoCall).toBeDefined();
+    expect((monoCall?.[0] as Record<string, unknown>).default).toBe(
+      "monospace",
+    );
   });
 });

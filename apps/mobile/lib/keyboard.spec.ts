@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // The module caches its load attempt, so each test re-imports a fresh copy.
@@ -85,13 +87,17 @@ describe("keyboard isolation module", () => {
     // static ESM import invisible to every test while crashing Expo Go at
     // launch (lint exempts lib/keyboard.tsx by design), so pin the source
     // shape itself: only the lazy require inside the loader is allowed.
+    // fileURLToPath, not URL.pathname — pathname keeps percent-encoding, so a
+    // checkout under a path with a space would ENOENT here.
     const source = readFileSync(
-      new URL("./keyboard.tsx", import.meta.url).pathname,
+      join(dirname(fileURLToPath(import.meta.url)), "keyboard.tsx"),
       "utf8",
     );
 
+    // `export ... from` is a static import to Metro too, and subpath
+    // specifiers load the package just the same — ban all of them.
     expect(source).not.toMatch(
-      /^import[^;]*["']react-native-keyboard-controller["']/m,
+      /^(import|export)[^;]*["']react-native-keyboard-controller(\/[^"']*)?["']/m,
     );
     expect(source).toMatch(/require\("react-native-keyboard-controller"\)/);
   });
