@@ -26,9 +26,11 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * redirect would trap every member on a screen that cannot satisfy its own
  * exit condition.
  *
- * There is no local write on selection — see `lib/select-chapter.ts`. When the
- * refreshed token does carry the claim, `(auth)/_layout` redirects into
- * `(tabs)`; when it does not, this screen says so rather than waiting forever.
+ * There is no local write on selection — see `lib/select-chapter.ts`. Because
+ * the gate exempts this route, it will not push the member back out when a
+ * switch lands, so every exit here is an explicit `router.replace`: to `(tabs)`
+ * on success, to sign-in on sign-out. Nothing waits on a redirect that may
+ * never come.
  */
 export default function ChapterPicker() {
   const { tokens } = useFrappTheme();
@@ -71,15 +73,13 @@ export default function ChapterPicker() {
         return;
       }
 
-      // Success still has a failure mode, and it is the one that used to hang
-      // this screen: the switch is only *visible* once a reissued token carries
-      // the new `active_chapter_id` claim, and no token carries it while
-      // `custom_access_token_hook` is disabled (#805). An earlier version left
-      // the row spinner running forever waiting for a navigation that could
-      // never happen. Say so instead.
-      setSelectError(
-        "Selected. If your chapter does not change, your account is not set up for chapter switching yet — contact an officer.",
-      );
+      // Leave under our own steam rather than waiting to be redirected. The
+      // gate exempts this route so a member can open it deliberately from More,
+      // which also means it will not push them back out when the switch lands —
+      // and it could not be relied on anyway, since no token carries the new
+      // claim while `custom_access_token_hook` is disabled (#805). An earlier
+      // version waited for that redirect and spun forever.
+      router.replace("/(tabs)");
     } finally {
       // Always clear. The screen usually unmounts before this matters, but
       // "usually" is what stranded members on a dead list of disabled rows.

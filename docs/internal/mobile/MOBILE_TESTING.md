@@ -101,9 +101,9 @@ device run, check:
 - [ ] **Chapter picker** (More → Chapter): opens for any member, lists their
       chapters, and Sign out works from it even mid-selection.
 - [ ] **Multi-chapter switch** (needs an account in 2+ chapters **and** #805
-      enabled): pick a chapter and arrive in the tabs with that chapter's data.
-      With #805 still disabled the picker should say the account is not set up
-      for switching rather than spin.
+      enabled): pick a chapter and land back in the tabs with that chapter's
+      data. With #805 still disabled the pick should still return you to the
+      tabs rather than spin — the chapter just will not change.
 
 ## Unit tests
 
