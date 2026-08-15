@@ -287,6 +287,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: npm run test -w packages/ui
 
+      - name: Run chat-core package tests
+        if: ${{ !cancelled() }}
+        run: npm run test -w packages/chat-core
+
   # ── API Docker image (same path as Render native Dockerfile builds) ─────
   api-docker-build:
     runs-on: ubuntu-latest
