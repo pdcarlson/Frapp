@@ -26,18 +26,27 @@ export const ROLE_KEY_MAX_LENGTH = 64;
  * service only *flags* large adjustments against the anomaly threshold — it
  * never rejects them — so validation is the only ceiling.
  *
- * Four paths write `point_transactions.amount`, and this binds the request
- * field on each: a direct adjustment, an event's `point_value` (written once
- * per check-in), a task's `point_reward`, and a study geofence's
- * `points_per_interval`. Capping only the manual path would leave the wider
- * `events:create` grant able to mint amounts that `points:adjust` cannot, and
- * the ledger is append-only — corrections are themselves adjustments bound by
- * this same constant, so an uncapped write is not fully reversible.
+ * The rule: **every client-supplied value that reaches a
+ * `point_transactions` write carries this ceiling at its request field.** Not
+ * only the manual path — capping that alone would leave broader grants able to
+ * mint amounts `points:adjust` cannot, and the ledger is append-only, so
+ * corrections are themselves adjustments bound by this same constant and an
+ * uncapped write is not fully reversible.
  *
- * One caveat, stated rather than glossed: the study path's ledger amount is a
- * *computed product* (`intervals × points_per_interval`), so bounding the input
- * does not bound the row — a long enough session still multiplies past this
- * ceiling. Clamping the computed award is a product decision tracked in #948.
+ * Deliberately not a list. Three review rounds each enumerated the award paths
+ * and each undercounted — attendance, tasks, study, and service accrual all
+ * write this column, some through Postgres RPCs rather than a service. The
+ * authoritative enumeration is the table in `dto-constraint-coverage.spec.ts`,
+ * which fails in CI; prose that counts them rots silently. When you add an
+ * award path, add its row there.
+ *
+ * One real exception, stated rather than glossed: a study award is
+ * `intervals × points_per_interval`, and the interval count comes from
+ * server-measured session length rather than the request, so bounding the input
+ * cannot bound the row. Clamping that computed award is a product decision
+ * tracked in #948. Service accrual looks similar but is not: its award is
+ * `floor(duration_minutes / minutesPerPoint)` with `minutesPerPoint >= 1`, so
+ * capping `duration_minutes` bounds the row provably.
  *
  * It also keeps the value inside `int4`: `point_transactions.amount` and
  * `events.point_value` are both `int`, so an unbounded `@IsInt()` overflows
