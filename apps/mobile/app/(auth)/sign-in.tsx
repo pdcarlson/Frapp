@@ -102,8 +102,9 @@ export default function SignIn() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Sign in to your chapter</Text>
         <Text style={styles.cardBody}>
-          Use your chapter email. Your chapter is resolved from your account, so
-          there is nothing else to pick.
+          Use your chapter email. Most accounts resolve to a single chapter
+          automatically; if yours belongs to more than one, you will pick after
+          signing in.
         </Text>
 
         <Text style={styles.inputLabel}>Chapter email</Text>

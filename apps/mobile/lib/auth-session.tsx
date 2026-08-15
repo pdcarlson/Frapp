@@ -31,6 +31,16 @@ type AuthSessionContextValue = {
   email: string | null;
   /** Resolved from the access token's `active_chapter_id` claim; see below. */
   chapterId: string | null;
+  /**
+   * True while the claim read is still in flight.
+   *
+   * `chapterId` is `null` both before the claim has been read and after it has
+   * resolved to "no chapter", and those two states need opposite handling: the
+   * routing gate sends the second to the chapter picker, so treating the first
+   * as the second would flash the picker on every cold start. Callers gating on
+   * `chapterId === null` MUST wait for this to be false.
+   */
+  isChapterResolving: boolean;
   /** False when `EXPO_PUBLIC_SUPABASE_*` are missing — sign-in cannot work. */
   isConfigured: boolean;
   /** Why the last magic-link callback failed, if it did. Cleared on retry. */
@@ -137,6 +147,7 @@ export function AuthSessionProvider({
   );
   const [session, setSession] = useState<Session | null>(null);
   const [chapterId, setChapterId] = useState<string | null>(null);
+  const [isChapterResolving, setIsChapterResolving] = useState(false);
   const [callbackError, setCallbackError] = useState<string | null>(null);
 
   const url = Linking.useURL();
@@ -196,17 +207,24 @@ export function AuthSessionProvider({
    * `null` is a safe resolution, not a failure: the hook already resolves a
    * sole membership server-side, so single-chapter members work regardless.
    * Only a multi-chapter member with no persisted selection lands here, and
-   * they need an explicit picker (filed as a follow-up).
+   * they get routed to `(auth)/chapter-picker` (#764).
+   *
+   * Selecting a chapter goes through `lib/select-chapter.ts`, which activates
+   * server-side and then refreshes the session — the new token arrives here as
+   * a changed `accessToken` and this effect re-reads the claim. That is why
+   * there is still no local override: the claim stays the only source.
    */
   useEffect(() => {
     if (!supabase) return;
 
     if (!accessToken) {
       setChapterId(null);
+      setIsChapterResolving(false);
       return;
     }
 
     let cancelled = false;
+    setIsChapterResolving(true);
 
     supabase.auth
       .getClaims()
@@ -223,6 +241,11 @@ export function AuthSessionProvider({
       })
       .catch(() => {
         if (!cancelled) setChapterId(null);
+      })
+      .finally(() => {
+        // Each run owns its own `cancelled`, so a superseded read can never
+        // clear the flag out from under the newer one that replaced it.
+        if (!cancelled) setIsChapterResolving(false);
       });
 
     return () => {
@@ -311,6 +334,7 @@ export function AuthSessionProvider({
     await clearAuthToken();
     setSession(null);
     setChapterId(null);
+    setIsChapterResolving(false);
     setStatus("unauthenticated");
   }, [supabase]);
 
@@ -319,6 +343,7 @@ export function AuthSessionProvider({
       status,
       email: session?.user?.email ?? null,
       chapterId,
+      isChapterResolving,
       isConfigured: configured,
       callbackError,
       signInWithPassword,
@@ -329,6 +354,7 @@ export function AuthSessionProvider({
       callbackError,
       chapterId,
       configured,
+      isChapterResolving,
       sendMagicLink,
       session?.user?.email,
       signInWithPassword,

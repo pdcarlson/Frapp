@@ -6,7 +6,7 @@ import { TaskLoopCard } from "@/components/task-loop-card";
 import { SignetTokens } from "@repo/theme/signet";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
-export default function TaskCenterScreen() {
+export default function TasksScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 

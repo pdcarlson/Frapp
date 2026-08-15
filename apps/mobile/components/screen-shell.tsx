@@ -7,10 +7,25 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 type ScreenShellProps = {
   title: string;
   subtitle: string;
+  /**
+   * Trailing control rendered on the title row, right-aligned and vertically
+   * centred against the title.
+   *
+   * Added in S2 because this file freezes afterwards (#937's hotspot protocol)
+   * and three drawn screens need it: the ✦ Ask pill on s04 and s06, and the `+`
+   * on s08 (spec/ui/mobile/navigation.md:44). Optional, so every existing call
+   * site is unaffected.
+   */
+  headerAction?: ReactNode;
   children: ReactNode;
 };
 
-export function ScreenShell({ title, subtitle, children }: ScreenShellProps) {
+export function ScreenShell({
+  title,
+  subtitle,
+  headerAction,
+  children,
+}: ScreenShellProps) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
@@ -18,7 +33,12 @@ export function ScreenShell({ title, subtitle, children }: ScreenShellProps) {
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>{title}</Text>
+            {headerAction ? (
+              <View style={styles.headerAction}>{headerAction}</View>
+            ) : null}
+          </View>
           <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
         {children}
@@ -69,10 +89,19 @@ function createStyles(tokens: SignetTokens) {
     header: {
       marginBottom: tokens.spacing.xs,
     },
+    headerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: tokens.spacing.sm,
+    },
     title: {
+      flex: 1,
       color: tokens.color.text.foreground,
       ...typeRole(tokens.typography.role.title),
       letterSpacing: -0.4,
+    },
+    headerAction: {
+      flexShrink: 0,
     },
     subtitle: {
       marginTop: tokens.spacing.xs,

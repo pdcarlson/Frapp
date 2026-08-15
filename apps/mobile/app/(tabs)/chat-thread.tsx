@@ -175,7 +175,7 @@ export default function ChatThreadScreen() {
         </View>
       </View>
 
-      <Link href={asRoute("/chat")} asChild>
+      <Link href={asRoute("/")} asChild>
         <Pressable style={styles.backButton}>
           <Text style={styles.backButtonText}>Back to chat overview</Text>
         </Pressable>
