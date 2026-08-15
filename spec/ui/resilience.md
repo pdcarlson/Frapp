@@ -382,8 +382,9 @@ useEffect(() => {
 > unconditional `teardown()` — before every attach, tags attaches with an epoch
 > so overlapping reopens cannot interleave, and contains attach failures in the
 > reconnect backoff rather than letting them reach a React render pass. See
-> `releaseTopic` in `apps/web/lib/realtime/topic-registry.ts` — the single
-> implementation, shared by both attach paths — and `attachChannel` in
+> `releaseTopic` in `packages/chat-core/src/topic-registry.ts` — the single
+> implementation, shared by both attach paths (web's
+> `lib/realtime/topic-registry.ts` re-exports it) — and `attachChannel` in
 > `packages/chat-core/src/realtime-manager.ts`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
