@@ -7,11 +7,15 @@
 3. After authentication, enters chapter details (name, university).
 4. **Accepts Terms of Service and Privacy Policy** (required checkbox).
 5. API creates chapter with `subscription_status: incomplete`.
-6. API creates a Stripe Customer, stores `stripe_customer_id` on the chapter.
-7. API generates a Stripe Checkout URL (with `chapter_id` in metadata).
-8. User completes payment on Stripe.
-9. Stripe webhook (`checkout.session.completed`) fires; API activates chapter (`subscription_status: active`).
-10. Default system roles and default channels (#general, #announcements, #alumni) are seeded.
+6. Default system roles and default channels (#general, #announcements, #alumni) are seeded.
+
+Payment is **not** part of chapter creation. Nothing in the onboarding path touches Stripe — the chapter lands at `incomplete` and stays there until someone starts checkout explicitly:
+
+7. An officer with `billing:manage` opens `/billing` and starts checkout from the subscription card. `POST /v1/billing/checkout` creates the Stripe Customer (storing `stripe_customer_id`) if the chapter has none, then returns a Checkout URL carrying `chapter_id` in metadata.
+8. User completes payment on Stripe and is returned to `/billing?checkout=success`.
+9. Stripe webhook (`checkout.session.completed`) fires; API activates chapter (`subscription_status: active`). The redirect does **not** activate the chapter — the client polls for the webhook rather than assuming it has landed.
+
+Checkout is offered only while the chapter is `incomplete`. A chapter that has lapsed to `past_due` or `canceled` already has a subscription, and recovery for those states is the Customer Portal — see [`spec/behavior/billing.md`](../behavior/billing.md) §Edge cases for why a second checkout is not a safe recovery path.
 
 ## Chapter Lifecycle
 

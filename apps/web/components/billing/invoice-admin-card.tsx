@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
   useCreateInvoice,
@@ -42,6 +42,7 @@ import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import { formatCurrency } from "@/lib/currency";
+import { useSubscriptionWriteState } from "@/lib/hooks/use-subscription-write-state";
 
 type Invoice = {
   id: string;
@@ -64,6 +65,9 @@ type MemberSummary = {
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
 
+/** Ties every disabled invoice write control to the sentence explaining it. */
+const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
+
 function statusVariant(
   status: Invoice["status"],
 ): "default" | "outline" | "secondary" | "destructive" {
@@ -81,6 +85,12 @@ function statusVariant(
 
 export function InvoiceAdminCard() {
   const { toast } = useToast();
+  // `POST /v1/invoices` carries no `@FreeTier`, so it is paid-ops and the
+  // trigger has to mirror the subscription gate (#858). Reads only — the
+  // server guard is still the enforcement.
+  const { state: subscription, isPending: subscriptionPending } =
+    useSubscriptionWriteState();
+  const canWriteInvoices = subscription.allowed && !subscriptionPending;
   const invoicesQuery = useInvoices();
   const overdueQuery = useOverdueInvoices();
   const membersQuery = useMembers();
@@ -117,6 +127,25 @@ export function InvoiceAdminCard() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
+
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+
+  // A background refetch (or the chapter query simply resolving) can revoke the
+  // write after the dialog is already open. Radix's `onOpenChange` never fires
+  // for that, so without this the user finishes a form that is guaranteed to
+  // 403 — the exact late failure the gate exists to remove.
+  //
+  // Focus has to be placed deliberately. Radix returns focus to the trigger on
+  // close, but the trigger goes `disabled` in this same commit, so `.focus()`
+  // on it is a no-op and focus would fall to `<body>` — restarting keyboard
+  // navigation at the top of the document. Send it to the notice instead, which
+  // is both focusable and the explanation for what just happened.
+  useEffect(() => {
+    if (!createOpen || canWriteInvoices) return;
+    setCreateOpen(false);
+    const frame = requestAnimationFrame(() => noticeRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [createOpen, canWriteInvoices]);
   const [draft, setDraft] = useState({
     user_id: "",
     title: "",
@@ -135,8 +164,22 @@ export function InvoiceAdminCard() {
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }, [invoices, statusFilter, overdueIds]);
 
+  // One mutation object backs every row, so the in-flight guard has to be
+  // scoped by id — otherwise a transition on one invoice disables all of them.
+  const transitioningId = transitionStatus.isPending
+    ? transitionStatus.variables?.id
+    : undefined;
+
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!draft.user_id) {
+      toast({
+        title: "Pick a member",
+        description: "An invoice has to be addressed to someone.",
+        variant: "destructive",
+      });
+      return;
+    }
     const dollars = Number(draft.amount);
     if (!Number.isFinite(dollars) || dollars <= 0) {
       toast({
@@ -269,9 +312,27 @@ export function InvoiceAdminCard() {
                   <SelectItem value="OVERDUE">OVERDUE</SelectItem>
                 </SelectContent>
               </Select>
-              <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <Dialog
+                open={createOpen}
+                onOpenChange={(next) => {
+                  // Gate the trigger, never the submit (§5 rule 1): a dialog
+                  // must never open onto an action that cannot succeed. Radix
+                  // only calls this on an open/close *request*, so it cannot
+                  // react to the subscription flipping underneath an open
+                  // dialog — the effect above handles that case.
+                  if (next && !canWriteInvoices) return;
+                  setCreateOpen(next);
+                }}
+              >
                 <DialogTrigger asChild>
-                  <Button size="sm" className="gap-2">
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    disabled={!canWriteInvoices}
+                    aria-describedby={
+                      canWriteInvoices ? undefined : SUBSCRIPTION_NOTICE_ID
+                    }
+                  >
                     <Plus className="h-4 w-4" />
                     Create invoice
                   </Button>
@@ -387,7 +448,7 @@ export function InvoiceAdminCard() {
                     <Button
                       form="invoice-create-form"
                       type="submit"
-                      disabled={createInvoice.isPending}
+                      disabled={createInvoice.isPending || !canWriteInvoices}
                     >
                       {createInvoice.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -400,6 +461,36 @@ export function InvoiceAdminCard() {
             </div>
           </CardHeader>
           <CardContent>
+            {/*
+              Disable, don't hide (§5 rule 4): a lapsed subscription is
+              recoverable, and hiding invoicing entirely would read as a
+              missing feature rather than an explainable state.
+            */}
+            {!canWriteInvoices ? (
+              <p
+                id={SUBSCRIPTION_NOTICE_ID}
+                ref={noticeRef}
+                tabIndex={-1}
+                // `status` so a screen reader hears the reason when the write is
+                // revoked under an open dialog — that close is otherwise silent.
+                role="status"
+                className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
+              >
+                {subscriptionPending ? (
+                  <>
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Checking this chapter&apos;s subscription…
+                  </>
+                ) : subscription.allowed ? null : (
+                  <>
+                    {subscription.reason}{" "}
+                    {subscription.recoverable
+                      ? "Use the subscription card at the top of this page to restore invoicing."
+                      : "Reopen the subscription from the billing portal to restore invoicing."}
+                  </>
+                )}
+              </p>
+            ) : null}
             {invoicesQuery.isPending ? (
               <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -450,10 +541,24 @@ export function InvoiceAdminCard() {
                         {overdueRow ? (
                           <Badge variant="destructive">OVERDUE</Badge>
                         ) : null}
+                        {/*
+                          `POST /v1/invoices/:id/status` is paid-ops too, so
+                          these mirror the same gate as the create trigger.
+                          Gating only Create would leave the card claiming
+                          writes are blocked while still offering three of them.
+                        */}
                         {invoice.status === "DRAFT" ? (
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={
+                              !canWriteInvoices || transitioningId === invoice.id
+                            }
+                            aria-describedby={
+                              canWriteInvoices
+                                ? undefined
+                                : SUBSCRIPTION_NOTICE_ID
+                            }
                             onClick={() => void transition(invoice, "OPEN")}
                           >
                             Send (mark OPEN)
@@ -463,6 +568,15 @@ export function InvoiceAdminCard() {
                           <>
                             <Button
                               size="sm"
+                              disabled={
+                                !canWriteInvoices ||
+                                transitioningId === invoice.id
+                              }
+                              aria-describedby={
+                                canWriteInvoices
+                                  ? undefined
+                                  : SUBSCRIPTION_NOTICE_ID
+                              }
                               onClick={() => void transition(invoice, "PAID")}
                             >
                               Mark paid
@@ -470,6 +584,15 @@ export function InvoiceAdminCard() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={
+                                !canWriteInvoices ||
+                                transitioningId === invoice.id
+                              }
+                              aria-describedby={
+                                canWriteInvoices
+                                  ? undefined
+                                  : SUBSCRIPTION_NOTICE_ID
+                              }
                               onClick={() => void transition(invoice, "VOID")}
                             >
                               Void

@@ -595,6 +595,28 @@ jobs:
       - name: Run dashboard visual regression suite
         run: npm run test:visual -w apps/web
 
+      # A pixel-diff check that publishes no pixels cannot be debugged from its
+      # logs: the failure prints image dimensions and a diff ratio, while the
+      # actual render and the diff are written to `test-results/` and discarded
+      # with the runner. Refreshing a baseline also requires CI's own render —
+      # Playwright pins a Chromium build, so a snapshot regenerated on any other
+      # machine drifts past `maxDiffPixelRatio` and is a wrong fixture even if it
+      # happens to pass. Uploading on failure is what makes both possible (#936).
+      - name: Upload visual regression results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-visual-results
+          # `test-results/` carries the per-route `-actual`/`-expected`/`-diff`
+          # PNGs; `playwright-report/` is the HTML reporter's output, without
+          # which the download cannot be opened with `npx playwright
+          # show-report` and is just a pile of loose images.
+          path: |
+            apps/web/test-results/
+            apps/web/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
   # ── Branch policy enforcement (PRs to production only) ─────────────────
   branch-policy:
     if: github.event_name == 'pull_request' && github.base_ref == 'production'
