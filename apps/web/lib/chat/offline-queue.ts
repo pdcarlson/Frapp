@@ -20,32 +20,16 @@
  */
 
 import Dexie, { type Table } from "dexie";
+import type { NewOutboxRow, OutboxRow, OutboxStore } from "@repo/chat-core";
+
+// Row shapes are canonical in `@repo/chat-core` (the `OutboxStore` port);
+// re-exported here so existing importers keep working.
+export type { OutboxRow, OutboxStatus } from "@repo/chat-core";
 
 export interface DraftRow {
   channelId: string;
   body: string;
   updatedAt: number;
-}
-
-export type OutboxStatus = "queued" | "failed";
-
-export interface OutboxRow {
-  clientId: string;
-  channelId: string;
-  /** Plain-text message content sent on the wire. */
-  body: string;
-  /**
-   * Persisted message intent so a flushed retry reconstructs the *full*
-   * payload — not just the body. Optional for forward-compat with rows
-   * written by older clients.
-   */
-  kind?: string;
-  payload?: Record<string, unknown> | null;
-  replyToId?: string | null;
-  attempts: number;
-  queuedAt: number;
-  status: OutboxStatus;
-  lastError?: string;
 }
 
 class ChatDB extends Dexie {
@@ -99,10 +83,7 @@ export async function clearDraft(channelId: string): Promise<void> {
   await db.drafts.delete(channelId);
 }
 
-export async function enqueueOutbox(
-  row: Omit<OutboxRow, "attempts" | "status" | "queuedAt"> &
-    Partial<Pick<OutboxRow, "attempts" | "status" | "queuedAt">>,
-): Promise<OutboxRow> {
+export async function enqueueOutbox(row: NewOutboxRow): Promise<OutboxRow> {
   const db = getChatDB();
   const full: OutboxRow = {
     attempts: 0,
@@ -183,3 +164,19 @@ export async function getOutboxRow(
   if (!db) return undefined;
   return db.outbox.get(clientId);
 }
+
+/**
+ * The web `OutboxStore`: the Dexie functions above, surfaced through the
+ * platform port `@repo/chat-core` consumes (`ChatActionContext.outbox`). A
+ * module const so React callers can close over it without memoization.
+ */
+export const dexieOutboxStore: OutboxStore = {
+  enqueue: enqueueOutbox,
+  dequeue: dequeueOutbox,
+  requeue: requeueOutbox,
+  markFailed: markOutboxFailed,
+  bumpAttempt: bumpOutboxAttempt,
+  listQueued: listQueuedOutbox,
+  listForChannel: listOutboxForChannel,
+  clearDraft,
+};

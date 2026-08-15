@@ -38,6 +38,7 @@ import { dispatchSlashCommand, type ResolveMember } from "./dispatch";
 import type { SlashCommand } from "@repo/chat-integrations";
 import {
   clearDraft,
+  dexieOutboxStore,
   getOutboxRow,
   loadDraft,
   saveDraft,
@@ -92,7 +93,15 @@ export function useChatChannel(channelId: string | null): UseChatChannelResult {
   );
 
   const ctx = useMemo(
-    () => ({ queryClient, apiClient, supabase, userId, toast }),
+    // `dexieOutboxStore` is a module const, so it is not a dependency.
+    () => ({
+      queryClient,
+      apiClient,
+      supabase,
+      userId,
+      toast,
+      outbox: dexieOutboxStore,
+    }),
     [queryClient, apiClient, supabase, userId, toast],
   );
 

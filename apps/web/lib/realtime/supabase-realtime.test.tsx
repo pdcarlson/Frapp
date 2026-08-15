@@ -8,7 +8,8 @@ import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
  * Regression cover for #817: `attachRealtimeChannel` re-attaching on a topic it
  * has not actually freed yet.
  *
- * The fake below is the one from `lib/chat/realtime-manager.test.ts` — the same
+ * The fake below is the one from
+ * `packages/chat-core/src/realtime-manager.test.ts` — the same
  * two library behaviours #783 turned on, which is what makes the bug
  * observable at all:
  *

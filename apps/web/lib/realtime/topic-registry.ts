@@ -20,9 +20,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *     row, so the subscription looks attached and stays silent.
  *
  * Both callers therefore free a topic before minting on it. This module is the
- * one implementation: `lib/chat/realtime-manager.ts` for chat, and
- * `lib/realtime/supabase-realtime.ts` for everything built on
+ * one implementation live in the web bundle: injected into the chat realtime
+ * manager (`@repo/chat-core`) by `lib/chat/chat-provider.tsx`, and imported
+ * directly by `lib/realtime/supabase-realtime.ts` for everything built on
  * `useRealtimeTable`.
+ *
+ * LOCKSTEP COPY: `packages/chat-core/src/default-topic-registry.ts` carries a
+ * byte-equivalent fallback for platforms that inject nothing (and for the
+ * package's own tests). This file stays canonical — if you edit one, edit the
+ * other.
  */
 
 /** The client registers channels under a `realtime:` prefix. */

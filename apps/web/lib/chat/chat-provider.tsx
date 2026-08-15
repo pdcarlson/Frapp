@@ -17,8 +17,10 @@ import { useChapterTheme } from "@/lib/hooks/use-chapter-theme";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useToast } from "@/hooks/use-toast";
 import { getRealtimeClient } from "@/lib/realtime/supabase-realtime";
+import { isTopicOccupied, releaseTopic } from "@/lib/realtime/topic-registry";
 import { chatRealtime } from "./realtime-manager";
 import { flushOutbox } from "./chat-client";
+import { dexieOutboxStore } from "./offline-queue";
 import type { RawChatMessage } from "./types";
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
@@ -39,6 +41,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       queryClient,
       supabase,
       viewerId: userId ?? null,
+      // Inject the canonical registry so both web attach paths (chat here,
+      // `useRealtimeTable` elsewhere) free topics through one implementation
+      // (#817) — the manager's built-in fallback stays unused on web.
+      topics: { isTopicOccupied, releaseTopic },
       backfill: async (channelId, since) => {
         const { data, error } = await apiClient.GET(
           "/v1/channels/{id}/messages",
@@ -63,7 +69,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   // channel may be active yet (e.g. drafts on a backgrounded channel).
   useEffect(() => {
     if (!userId) return;
-    const ctx = { queryClient, apiClient, supabase, userId, toast };
+    const ctx = {
+      queryClient,
+      apiClient,
+      supabase,
+      userId,
+      toast,
+      outbox: dexieOutboxStore,
+    };
     void flushOutbox(ctx);
     const onOnline = () => void flushOutbox(ctx);
     if (typeof window !== "undefined") {
