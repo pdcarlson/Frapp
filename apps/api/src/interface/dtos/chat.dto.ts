@@ -12,6 +12,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CHAT_MESSAGE_CONTENT_MAX_LENGTH } from '../../domain/constants/field-limits';
 import { CHAT_MESSAGE_KINDS } from '../../domain/entities/chat.entity';
 
 const CHANNEL_TYPES = ['PUBLIC', 'PRIVATE', 'ROLE_GATED'] as const;
@@ -134,10 +135,10 @@ export class SendMessageDto {
   @IsUUID()
   client_message_id: string;
 
-  @ApiProperty()
+  @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
   @IsString()
   @MinLength(1)
-  @MaxLength(10_000)
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
 
   /**
@@ -203,10 +204,10 @@ export class ChatMessageActionDto {
 export class EditMessageDto {
   // Same bound as SendMessageDto.content — without it an edit could grow a
   // message past the limit its original POST was held to.
-  @ApiProperty({ maxLength: 10_000 })
+  @ApiProperty({ minLength: 1, maxLength: CHAT_MESSAGE_CONTENT_MAX_LENGTH })
   @IsString()
   @MinLength(1)
-  @MaxLength(10_000)
+  @MaxLength(CHAT_MESSAGE_CONTENT_MAX_LENGTH)
   content: string;
 }
 

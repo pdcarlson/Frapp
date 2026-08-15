@@ -17,6 +17,7 @@ import {
   POINTS_WINDOWS,
   type PointsWindow,
 } from '../../domain/utils/points-window';
+import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
 
 export class AdjustPointsDto {
   // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
@@ -30,10 +31,13 @@ export class AdjustPointsDto {
   // the anomaly threshold (points.service.ts) — it never rejects them — so
   // without a ceiling the negative bound below was the only real limit and a
   // single call could write an arbitrarily large balance.
-  @ApiProperty({ minimum: -100000, maximum: 100000 })
+  @ApiProperty({
+    minimum: -POINTS_ADJUSTMENT_MAX,
+    maximum: POINTS_ADJUSTMENT_MAX,
+  })
   @IsInt()
-  @Min(-100000)
-  @Max(100000)
+  @Min(-POINTS_ADJUSTMENT_MAX)
+  @Max(POINTS_ADJUSTMENT_MAX)
   amount: number;
 
   @ApiProperty({ enum: ['MANUAL', 'FINE'] })
@@ -79,9 +83,15 @@ const TRANSACTION_CATEGORIES = [
 ] as const;
 
 export class ListPointTransactionsQueryDto {
-  @ApiPropertyOptional({ description: 'Filter to a single member' })
+  @ApiPropertyOptional({
+    description: 'Filter to a single member',
+    format: 'uuid',
+  })
   @IsOptional()
-  @IsString()
+  // Same rule as AdjustPointsDto.target_user_id: this reaches
+  // `.eq('user_id', …)` on a uuid column, so an unvalidated string fails in
+  // Postgres as a 500 rather than here as a 400.
+  @IsUUID()
   user_id?: string;
 
   @ApiPropertyOptional({ enum: TRANSACTION_CATEGORIES })

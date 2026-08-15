@@ -9,13 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-
-/**
- * Role names are chapter-authored labels rendered in member lists and the role
- * picker. The cap keeps an unbounded string out of the column and out of every
- * surface that renders it; it is far above any real role name.
- */
-const ROLE_NAME_MAX_LENGTH = 100;
+import { ROLE_NAME_MAX_LENGTH } from '../../domain/constants/field-limits';
 
 export class CreateRoleDto {
   @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })

@@ -2736,6 +2736,7 @@
             "in": "query",
             "description": "Filter to a single member",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           },
@@ -5611,10 +5612,12 @@
         "properties": {
           "key": {
             "type": "string",
-            "description": "Machine-readable slug, unique per chapter"
+            "description": "Machine-readable slug, unique per chapter",
+            "maxLength": 64
           },
           "label": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "rank": {
             "type": "number",
@@ -5636,7 +5639,8 @@
         "type": "object",
         "properties": {
           "label": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100
           },
           "rank": {
             "type": "number"
@@ -6336,7 +6340,9 @@
             "format": "uuid"
           },
           "content": {
-            "type": "string"
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
           },
           "kind": {
             "type": "string",
@@ -6373,6 +6379,7 @@
         "properties": {
           "content": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 10000
           }
         },

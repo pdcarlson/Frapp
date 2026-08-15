@@ -122,3 +122,4 @@ Custom member fields declare a `visibility` of `self` / `chapter` / `exec` / `pr
 - If a role is deleted while members still hold it, those members lose the permissions from that role on their next request (no stale cached permissions).
 - If a chapter has only one member (the President), that member cannot remove themselves or cancel the presidency.
 - Role names must be unique within a chapter. Attempting to create a duplicate returns 409 Conflict.
+- Role names are capped at **100 characters** (409's sibling failure: a longer name returns 400). The same cap applies to a custom role's `label`, and its machine-readable `key` is capped at 64 — all three are chapter-authored strings that render in member lists and the role picker.

@@ -28,6 +28,7 @@ Application logic talks to an `IBillingProvider` interface, never directly to th
 ## Member Invoices (Dues)
 
 - Admins with `billing:manage` create invoices for individual members (e.g. semester dues).
+- **Field bounds** (rejected with 400 at the edge, so a client form can pre-validate against them): `amount` is in cents and must be **1 – 99,999,999** — the upper bound is Stripe's own per-charge maximum for USD ($999,999.99), above which the PaymentIntent could never be created, so accepting the invoice would only defer the failure to payment time. `title` is capped at 255 characters and `description` at 2,000.
 - Invoice statuses: DRAFT (not yet sent), OPEN (sent, awaiting payment), PAID, VOID.
 - Payments tracked via Stripe PaymentIntents. Webhook confirms payment and moves invoice to PAID.
 - Overdue invoices: an invoice counts as overdue once it is OPEN past its `due_date` **plus the chapter's dues grace period** (the `wf_dues_grace` workflow, enabled with a 7-day threshold by default — see the runtime-enforcement rules in [`settings/customization.md`](settings/customization.md)); a notification is sent to the member and the invoice is flagged as overdue in the admin dashboard.

@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import { readdirSync } from 'fs';
 import { join } from 'path';
-import { getMetadataStorage, ValidationTypes } from 'class-validator';
+import { getMetadataStorage, validate, ValidationTypes } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
 
 /**
  * Criterion 1 of #849 asked for "a DTO audit table (or lint rule) showing every
@@ -39,8 +40,11 @@ function loadDtoClasses(): DtoClass[] {
   const dir = __dirname;
   const classes: DtoClass[] = [];
 
-  for (const file of readdirSync(dir).sort()) {
-    if (!file.endsWith('.dto.ts') || file.endsWith('.spec.ts')) continue;
+  // Recursive so a reorganisation into `dtos/<domain>/` subfolders keeps every
+  // DTO audited. A flat read would quietly stop covering the moved files while
+  // still finding enough classes to clear the floor below.
+  for (const file of readdirSync(dir, { recursive: true }).map(String).sort()) {
+    if (!file.endsWith('.dto.ts')) continue;
     // Synchronous require, as in test/ai-evals/harness/registry.ts: `import()`
     // stays a true dynamic import under ts-jest and would need
     // --experimental-vm-modules on the whole runner for this one file.
@@ -99,8 +103,11 @@ describe('DTO constraint coverage (#849)', () => {
 
   it('finds the DTO classes to audit', () => {
     // A refactor that moves or renames the DTO directory would otherwise make
-    // this suite vacuously pass with nothing to check.
-    expect(classes.length).toBeGreaterThan(30);
+    // this suite vacuously pass with nothing to check. The floor sits just
+    // under the real count (94 at the time of writing) rather than at a token
+    // value, so losing a chunk of the directory fails here instead of silently
+    // shrinking what the next test audits.
+    expect(classes.length).toBeGreaterThan(80);
   });
 
   it('no property survives whitelisting with only a gate decorator', () => {
@@ -122,35 +129,43 @@ describe('DTO constraint coverage (#849)', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('the privileged-value fields keep their bounds', () => {
-    // These are the specific properties #849 called out as server-decided or
-    // money-shaped. Asserting them by name means a later "cleanup" that drops a
-    // bound has to delete a test that says why the bound is there.
-    const expectations: Array<[string, string, string[]]> = [
-      ['AdjustPointsDto', 'amount', ['min', 'max']],
-      ['AdjustPointsDto', 'target_user_id', ['isUuid']],
-      ['CreateFinancialInvoiceDto', 'amount', ['min', 'max']],
-      ['UpdateFinancialInvoiceDto', 'amount', ['min', 'max']],
-      ['TransferPresidencyDto', 'target_member_id', ['isUuid']],
-      ['SendMessageDto', 'metadata', ['isObject']],
-    ];
+  it.each([
+    ['AdjustPointsDto', 'amount', 2_147_483_647, 'award above the ceiling'],
+    ['AdjustPointsDto', 'amount', -2_147_483_648, 'fine below the floor'],
+    ['AdjustPointsDto', 'target_user_id', 'not-a-uuid', 'non-uuid target'],
+    ['CreateFinancialInvoiceDto', 'amount', 100_000_000, 'unpayable amount'],
+    ['UpdateFinancialInvoiceDto', 'amount', 100_000_000, 'unpayable amount'],
+    [
+      'ListPointTransactionsQueryDto',
+      'user_id',
+      'not-a-uuid',
+      'non-uuid filter',
+    ],
+    [
+      'TransferPresidencyDto',
+      'target_member_id',
+      'not-a-uuid',
+      'non-uuid target',
+    ],
+    ['SendMessageDto', 'metadata', 'a string, not an object', 'untyped blob'],
+    ['CreateRoleDto', 'name', 'x'.repeat(101), 'oversized role name'],
+    ['UpdateRoleDto', 'name', 'x'.repeat(101), 'oversized role name'],
+    ['CreateCustomRoleDto', 'label', 'x'.repeat(101), 'oversized role label'],
+    ['UpdateCustomRoleDto', 'label', 'x'.repeat(101), 'oversized role label'],
+  ])('%s.%s rejects a %s', async (className, prop, hostileValue, _why) => {
+    // Asserted by *validating a value*, not by naming decorators: composing
+    // these bounds into a custom decorator later is a refactor, and a test
+    // that failed on that would be measuring the implementation rather than
+    // the rule. These are the properties #849 called out as server-decided,
+    // money-shaped, or unbounded.
+    const cls = classes.find((c) => c.name === className);
+    expect(cls).toBeDefined();
 
-    const missing: string[] = [];
+    const errors = await validate(
+      plainToInstance(cls as DtoClass, { [prop]: hostileValue }),
+      { whitelist: true, forbidNonWhitelisted: true },
+    );
 
-    for (const [className, prop, required] of expectations) {
-      const cls = classes.find((c) => c.name === className);
-      if (!cls) {
-        missing.push(`${className} (class not found)`);
-        continue;
-      }
-      const names = (constraintsByProperty(cls).get(prop) ?? []).map(
-        (v) => v.name,
-      );
-      for (const req of required) {
-        if (!names.includes(req)) missing.push(`${className}.${prop}: @${req}`);
-      }
-    }
-
-    expect(missing).toEqual([]);
+    expect(errors.map((e) => e.property)).toContain(prop);
   });
 });

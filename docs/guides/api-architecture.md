@@ -29,7 +29,9 @@ return this.eventService.create({ ...dto, chapter_id: chapterId, created_by: cre
 return this.eventService.create({ chapter_id: chapterId, ...dto });
 ```
 
-Whitelisting already blocks a hostile `chapter_id` today, so the ordering is a second line rather than the only one — but it is the line that still holds if a DTO later grows one of those property names, which would otherwise turn into a cross-tenant write with nothing to catch it. `apps/api/test/mass-assignment.e2e-spec.ts` asserts both halves.
+Whitelisting already blocks a hostile `chapter_id` today, so the ordering is a second line rather than the only one — but it is the line that still holds if a DTO later grows one of those property names, which would otherwise turn into a cross-tenant write with nothing to catch it.
+
+The two halves need two different tests, because the ordering is **unreachable over HTTP**: whitelisting rejects a colliding key before the controller runs, so an end-to-end request cannot tell `{ ...dto, chapter_id }` from `{ chapter_id, ...dto }`. `apps/api/test/mass-assignment.e2e-spec.ts` covers the whitelisting half (and imports `VALIDATION_PIPE_OPTIONS` from `apps/api/src/interface/pipes/validation-pipe.options.ts`, the same object `main.ts` uses, so loosening a flag there fails that suite rather than a local copy of it). `apps/api/src/interface/controllers/write-payload-ordering.spec.ts` covers the ordering half by calling the controller methods directly with a DTO that carries the hostile key — the shape a future DTO change would produce. Both were verified to fail when their respective regression is reintroduced.
 
 Zod schemas in `packages/validation` are shared with the web and mobile forms for UX. They are **not** enforcement — a curl request never runs them — so any rule that matters server-side must also exist on the DTO.
 
