@@ -118,7 +118,6 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/web |
 | `NEXT_PUBLIC_API_URL` | `${API_URL}` | apps/web |
 | `NEXT_PUBLIC_APP_URL` | `${APP_URL}` | apps/landing |
-| `NEXT_PUBLIC_LANDING_URL` | the landing site's base URL, entered **directly** — unlike the rows above it is *not* a reference, because there is no canonical `LANDING_URL` in the grid | apps/web — optional; omit it entirely and the code falls back to `https://frapp.live` |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/web |
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
@@ -199,11 +198,13 @@ rather than summarised, so it can be diffed against a bundle without interpretat
 | `NEXT_PUBLIC_SUPABASE_URL` · `EXPO_PUBLIC_SUPABASE_URL` | project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon key — public by Supabase's design, gated by RLS and the API's own guards |
 | `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
-| `NEXT_PUBLIC_APP_URL` · `NEXT_PUBLIC_LANDING_URL` | sibling-site URLs |
+| `NEXT_PUBLIC_APP_URL` | landing → app URL |
+| `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **The one entry with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key (`pk_…`) — the secret key stays API-only |
 
-(Six canonical values; the `NEXT_PUBLIC_`/`EXPO_PUBLIC_` pairs are Infisical references to the same
-one.) No secret belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
+Nine variables over **five** canonical values plus that one direct-set URL; each
+`NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair is an Infisical reference to the same canonical value. No secret
+belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in
 `proxy.ts` (middleware, server-side), is CI-only, and is ignored when `NODE_ENV` is `production`. It

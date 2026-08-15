@@ -100,6 +100,7 @@ In **all three environments**, add these references (they're the same in every e
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
 | `NEXT_PUBLIC_API_URL`           | `${API_URL}`                       |
 | `NEXT_PUBLIC_APP_URL`           | `${APP_URL}`                       |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
 | `EXPO_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
 | `EXPO_PUBLIC_API_URL`           | `${API_URL}`                       |
