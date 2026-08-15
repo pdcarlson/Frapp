@@ -205,6 +205,26 @@ export function AuthSessionProvider({
   }, [accessToken]);
 
   /**
+   * Drop the chapter the moment the account changes.
+   *
+   * The claim effect below deliberately *retains* the last known chapter when a
+   * read fails, so a network blip cannot evict a member mid-use. That retention
+   * must not survive a change of user: a magic link signs a different account in
+   * through `onAuthStateChange` without any sign-out, and a failed first read
+   * would otherwise leave the previous member's chapter in place. The API
+   * rejects it (`ChapterGuard` re-checks membership and answers 403
+   * `chapter.context.invalid`, so nothing leaks) — but the app would be
+   * inexplicably broken until a read finally succeeded.
+   *
+   * Declared before the claim effect so it clears first when both run.
+   */
+  const userId = session?.user?.id ?? null;
+
+  useEffect(() => {
+    setChapterId(null);
+  }, [userId]);
+
+  /**
    * Chapter context comes from the token claim, never from a local pick.
    *
    * Per `spec/behavior/multi-tenancy.md`, the `active_chapter_id` claim is

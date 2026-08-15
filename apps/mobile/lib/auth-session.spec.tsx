@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type AuthChangeHandler = (
   event: string,
-  session: { access_token: string; user: { email: string } } | null,
+  session: { access_token: string; user: { email: string; id?: string } } | null,
 ) => void;
 
 const mockState = vi.hoisted(() => ({
@@ -14,7 +14,7 @@ const mockState = vi.hoisted(() => ({
   /** Session returned by getSession() on mount. */
   initialSession: null as {
     access_token: string;
-    user: { email: string };
+    user: { email: string; id?: string };
   } | null,
   claims: null as Record<string, unknown> | null,
   claimsError: null as { message: string } | null,
@@ -112,7 +112,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 function emitAuthChange(
-  session: { access_token: string; user: { email: string } } | null,
+  session: { access_token: string; user: { email: string; id?: string } } | null,
 ) {
   for (const handler of [...mockState.authChangeHandlers]) {
     handler(session ? "SIGNED_IN" : "SIGNED_OUT", session);
@@ -279,7 +279,7 @@ describe("AuthSessionProvider — chapter context", () => {
     expect(result.current.chapterId).toBeNull();
   });
 
-  it("resolves null rather than guessing when claim verification errors", async () => {
+  it("does not invent a chapter when the very first claim read errors", async () => {
     mockState.initialSession = SESSION;
     mockState.claims = { active_chapter_id: "chapter-uuid-1" };
     mockState.claimsError = { message: "jwks unreachable" };
@@ -287,7 +287,54 @@ describe("AuthSessionProvider — chapter context", () => {
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
     await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    // Nothing to fall back to, so null — but note this is "retain what we had",
+    // not "null on error"; the next test is the half that distinguishes them.
     expect(result.current.chapterId).toBeNull();
+  });
+
+  it("retains the resolved chapter when a later claim read fails", async () => {
+    mockState.initialSession = SESSION;
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    // `getClaims` is a real network round trip on this platform, and it re-runs
+    // on every token refresh and every foreground. Demoting to null on failure
+    // would make a flaky connection look like "this member has no chapter" —
+    // which the routing gate would act on.
+    mockState.claimsError = { message: "network down" };
+    await act(async () => {
+      emitAuthChange({ ...SESSION, access_token: "access-token-2" });
+    });
+
+    await waitFor(() => expect(result.current.isChapterResolving).toBe(false));
+    expect(result.current.chapterId).toBe("chapter-uuid-1");
+  });
+
+  it("drops the chapter when a different account signs in", async () => {
+    mockState.initialSession = { ...SESSION, user: { ...SESSION.user, id: "user-1" } };
+    mockState.claims = { active_chapter_id: "chapter-uuid-1", sub: "user-1" };
+
+    const { result } = renderHook(() => useAuthSession(), { wrapper });
+    await waitFor(() =>
+      expect(result.current.chapterId).toBe("chapter-uuid-1"),
+    );
+
+    // A magic link can swap accounts with no sign-out in between. Retention is
+    // scoped to one user precisely so the next member does not inherit this
+    // chapter while their own claim read is still in flight or failing.
+    mockState.claimsError = { message: "network down" };
+    await act(async () => {
+      emitAuthChange({
+        access_token: "access-token-2",
+        user: { email: "other@university.edu", id: "user-2" },
+      });
+    });
+
+    await waitFor(() => expect(result.current.chapterId).toBeNull());
   });
 });
 
