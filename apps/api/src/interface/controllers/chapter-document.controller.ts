@@ -21,6 +21,7 @@ import { ChapterGuard } from '../guards/chapter.guard';
 import { PermissionsGuard } from '../guards/permissions.guard';
 import { RequirePermissions } from '../decorators/permissions.decorator';
 import { RequireModule } from '../decorators/module.decorator';
+import { ThrottleFanOutWrite } from '../decorators/throttle-profiles.decorator';
 import {
   CurrentChapterId,
   CurrentUser,
@@ -45,6 +46,7 @@ export class ChapterDocumentController {
   ) {}
 
   @Post('upload-url')
+  @ThrottleFanOutWrite()
   @RequirePermissions(SystemPermissions.CHAPTER_DOCS_UPLOAD)
   @ApiOperation({ summary: 'Get signed upload URL' })
   async requestUploadUrl(

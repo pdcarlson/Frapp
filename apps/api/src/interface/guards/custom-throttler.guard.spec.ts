@@ -11,6 +11,13 @@ import {
 import { createHmac } from 'node:crypto';
 import { CustomThrottlerGuard } from './custom-throttler.guard';
 import { WebhookController } from '../controllers/webhook.controller';
+import { ReportController } from '../controllers/report.controller';
+import { SearchController } from '../controllers/search.controller';
+import { InviteController } from '../controllers/invite.controller';
+import { EventController } from '../controllers/event.controller';
+import { ChapterDocumentController } from '../controllers/chapter-document.controller';
+import { BackworkController } from '../controllers/backwork.controller';
+import { ChatController } from '../controllers/chat.controller';
 
 // Expose the protected members under test.
 class TestableGuard extends CustomThrottlerGuard {
@@ -287,6 +294,151 @@ describe('CustomThrottlerGuard', () => {
       // Exactly once: the write throttler increments; the read throttler is
       // method-gated off for POST by handleRequest.
       expect(increment).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // #850. These pin the per-route limits themselves, not the mechanism: each
+  // case names a real controller handler and the limit it must reach the
+  // storage with, so deleting a `@Throttle*` decorator — or moving a route
+  // between HTTP methods, which silently changes which bucket applies — turns
+  // this suite red instead of quietly restoring the 30/min default.
+  describe('per-route throttle overrides', () => {
+    interface RouteCase {
+      route: string;
+      cls: new (...args: never[]) => unknown;
+      handler: (...args: never[]) => unknown;
+      method: string;
+      bucket: 'read' | 'write';
+      limit: number;
+    }
+
+    const R = ReportController.prototype;
+    const cases: RouteCase[] = [
+      { route: 'POST /reports/attendance', cls: ReportController, handler: R.attendance, method: 'POST', bucket: 'write', limit: 5 },
+      { route: 'POST /reports/points', cls: ReportController, handler: R.points, method: 'POST', bucket: 'write', limit: 5 },
+      { route: 'POST /reports/roster', cls: ReportController, handler: R.roster, method: 'POST', bucket: 'write', limit: 5 },
+      { route: 'POST /reports/service', cls: ReportController, handler: R.service, method: 'POST', bucket: 'write', limit: 5 },
+      { route: 'POST /invites/batch', cls: InviteController, handler: InviteController.prototype.createBatch, method: 'POST', bucket: 'write', limit: 5 },
+      { route: 'POST /invites/redeem', cls: InviteController, handler: InviteController.prototype.redeem, method: 'POST', bucket: 'write', limit: 10 },
+      { route: 'POST /events', cls: EventController, handler: EventController.prototype.create, method: 'POST', bucket: 'write', limit: 10 },
+      { route: 'PATCH /events/:id', cls: EventController, handler: EventController.prototype.update, method: 'PATCH', bucket: 'write', limit: 10 },
+      { route: 'POST /documents/upload-url', cls: ChapterDocumentController, handler: ChapterDocumentController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
+      { route: 'POST /backwork/upload-url', cls: BackworkController, handler: BackworkController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
+      { route: 'POST /channels/:id/upload-url', cls: ChatController, handler: ChatController.prototype.requestUploadUrl, method: 'POST', bucket: 'write', limit: 10 },
+      { route: 'GET /search', cls: SearchController, handler: SearchController.prototype.search, method: 'GET', bucket: 'read', limit: 20 },
+    ];
+
+    let overrideGuard: TestableGuard;
+    let increment: jest.Mock;
+
+    const ctxFor = (c: RouteCase): ExecutionContext =>
+      ({
+        getClass: () => c.cls,
+        getHandler: () => c.handler,
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method: c.method,
+            headers: {},
+            ip: '1.2.3.4',
+          }),
+          getResponse: () => ({ header: jest.fn() }),
+        }),
+      }) as unknown as ExecutionContext;
+
+    beforeEach(async () => {
+      increment = jest.fn().mockResolvedValue({
+        totalHits: 1,
+        timeToExpire: 60,
+        isBlocked: false,
+        timeToBlockExpire: 0,
+      });
+      const moduleRef: TestingModule = await Test.createTestingModule({
+        providers: [
+          TestableGuard,
+          Reflector,
+          {
+            provide: getOptionsToken(),
+            useValue: [
+              { name: 'read', ttl: 60_000, limit: 100 },
+              { name: 'write', ttl: 60_000, limit: 30 },
+            ],
+          },
+          { provide: getStorageToken(), useValue: { increment } },
+        ],
+      }).compile();
+      overrideGuard = moduleRef.get(TestableGuard);
+      await overrideGuard.onModuleInit();
+    });
+
+    it.each(cases)(
+      '$route counts against $bucket at $limit/min',
+      async (c) => {
+        await expect(overrideGuard.canActivate(ctxFor(c))).resolves.toBe(true);
+
+        // Exactly one bucket runs: the other is method-gated off. Asserting the
+        // count as well as the args is what catches a profile applied to the
+        // wrong bucket (e.g. a `read` profile on a POST route), which would
+        // leave the route on the untouched 30/min default with no other symptom.
+        expect(increment).toHaveBeenCalledTimes(1);
+        // increment(key, ttl, limit, blockDuration, throttlerName)
+        expect(increment).toHaveBeenCalledWith(
+          expect.any(String),
+          60_000,
+          c.limit,
+          60_000,
+          c.bucket,
+        );
+      },
+    );
+
+    it('throws 429 once the storage reports the override exhausted', async () => {
+      increment.mockResolvedValue({
+        totalHits: 6,
+        timeToExpire: 60,
+        isBlocked: true,
+        timeToBlockExpire: 31,
+      });
+
+      await expect(
+        overrideGuard.canActivate(ctxFor(cases[0])),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+    });
+
+    it('leaves undecorated routes on the default write limit', async () => {
+      class UndecoratedController {
+        handle(): void {}
+      }
+      await expect(
+        overrideGuard.canActivate(
+          ctxFor({
+            route: 'POST /undecorated',
+            cls: UndecoratedController,
+            handler: UndecoratedController.prototype.handle,
+            method: 'POST',
+            bucket: 'write',
+            limit: 30,
+          }),
+        ),
+      ).resolves.toBe(true);
+      expect(increment).toHaveBeenCalledWith(
+        expect.any(String),
+        60_000,
+        30,
+        60_000,
+        'write',
+      );
+    });
+
+    it('gives each handler its own counter key', async () => {
+      // The per-handler key is what makes a route-level limit meaningful; if
+      // keys collapsed, the 5/min on one report route would be shared by all
+      // four and this file's whole premise would be wrong.
+      await overrideGuard.canActivate(ctxFor(cases[0]));
+      await overrideGuard.canActivate(ctxFor(cases[1]));
+
+      const [firstKey] = increment.mock.calls[0] as [string];
+      const [secondKey] = increment.mock.calls[1] as [string];
+      expect(firstKey).not.toEqual(secondKey);
     });
   });
 
