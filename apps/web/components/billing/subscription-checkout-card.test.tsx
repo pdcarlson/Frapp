@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -166,6 +166,67 @@ describe("SubscriptionCheckoutCard", () => {
       screen.getByRole("button", { name: /manage billing/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/activating your chapter/i)).not.toBeInTheDocument();
+  });
+
+  it("never offers checkout after the activation poll times out", async () => {
+    // This chapter has already paid — the webhook is just late. Falling through
+    // to the normal locked card here would hand it a live "Complete checkout"
+    // button, and a second checkout mints a second live subscription.
+    vi.useFakeTimers();
+    try {
+      setChapter("incomplete");
+      setParam("success");
+      renderCard();
+
+      // Burn the whole 10 x 3s budget. Each tick has to be flushed separately:
+      // a tick only schedules the next one after React commits the new attempt.
+      for (let i = 0; i < 11; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(3_000);
+        });
+      }
+
+      expect(screen.getByText(/still waiting on stripe/i)).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /complete checkout/i }),
+      ).not.toBeInTheDocument();
+      // But it must still offer a way forward, both for the paid case and for
+      // someone who landed here on a stale bookmark.
+      expect(
+        screen.getByRole("button", { name: /check again/i }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: /haven't paid yet/i }),
+      ).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls after a portal return so a fixed payment is not left showing past_due", () => {
+    setChapter("past_due");
+    setParam("returned");
+    renderCard();
+
+    expect(screen.getByText(/checking stripe/i)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /manage billing/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps rendering from cached status when a background refetch fails", () => {
+    // v5 reports isError while retaining data; blanking the card there would
+    // remove the only control that unlocks the chapter.
+    mockCurrentChapter.mockReturnValue({
+      data: { subscription_status: "incomplete" },
+      isPending: false,
+      isError: true,
+    });
+    renderCard();
+
+    expect(
+      screen.getByRole("button", { name: /complete checkout/i }),
+    ).toBeInTheDocument();
   });
 
   it("treats a cancelled return as neutral, not as a failure", () => {

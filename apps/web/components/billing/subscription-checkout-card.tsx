@@ -27,11 +27,12 @@ import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state
 const ACTIVATION_POLL_INTERVAL_MS = 3_000;
 const ACTIVATION_POLL_ATTEMPTS = 10;
 
-type CheckoutOutcome = "success" | "cancelled" | null;
+type CheckoutOutcome = "success" | "cancelled" | "returned" | null;
 
 function readOutcome(value: string | null): CheckoutOutcome {
   if (value === "success") return "success";
   if (value === "cancelled") return "cancelled";
+  if (value === "returned") return "returned";
   return null;
 }
 
@@ -61,20 +62,32 @@ export function SubscriptionCheckoutCard() {
   const queryClient = useQueryClient();
   const outcome = readOutcome(searchParams.get("checkout"));
 
-  const { status, isPending, isError } = useChapterSubscription();
+  // `status` alone is the gate: it is null exactly when nothing has been
+  // established (loading, failed with no cache, no chapter, or an unmodeled
+  // value), and non-null whenever there is a cached answer worth rendering.
+  const { status } = useChapterSubscription();
   const currentUserQuery = useCurrentUser();
   const createCheckout = useCreateCheckout();
   const createPortal = useCreatePortal();
 
-  // Only `incomplete` can be waiting on a first activation. Keying this on the
-  // URL param alone let a stale `/billing?checkout=success` bookmark hijack the
-  // screen of a chapter that had since lapsed, hiding its recovery path.
-  const awaitingActivation = outcome === "success" && status === "incomplete";
+  const lapsed = status === "past_due" || status === "canceled";
+
+  // Two ways to be waiting on Stripe: a first activation via Checkout, or a
+  // lapsed chapter that just fixed its payment in the Portal. Both confirm over
+  // a webhook, so both need the poll — otherwise the page sits on a stale
+  // `past_due` for the chapter query's five-minute staleTime.
+  //
+  // Keyed on the status as well as the URL param: keying on the param alone let
+  // a stale `/billing?checkout=success` bookmark hijack the screen of a chapter
+  // that had since lapsed, hiding its recovery path.
+  const awaiting =
+    (outcome === "success" && status === "incomplete") ||
+    (outcome === "returned" && lapsed);
 
   // Each tick schedules the next by advancing `attempt`, so the effect stops
   // on its own once the status flips or the budget runs out.
   const [attempt, setAttempt] = useState(0);
-  const isPolling = awaitingActivation && attempt < ACTIVATION_POLL_ATTEMPTS;
+  const isPolling = awaiting && attempt < ACTIVATION_POLL_ATTEMPTS;
 
   useEffect(() => {
     if (!isPolling) return;
@@ -132,7 +145,7 @@ export function SubscriptionCheckoutCard() {
   async function openPortal() {
     try {
       const result = await createPortal.mutateAsync({
-        return_url: `${window.location.origin}/billing`,
+        return_url: `${window.location.origin}/billing?checkout=returned`,
       });
       const url =
         result && typeof result === "object" && "url" in result
@@ -156,10 +169,15 @@ export function SubscriptionCheckoutCard() {
   // most likely a paying chapter behind a slow or failed fetch, and telling one
   // its subscription is inactive — then offering a checkout button that 400s
   // with "already has an active subscription" — is worse than showing nothing.
-  if (isPending || isError || status === null) return null;
+  //
+  // Deliberately keyed on `status` alone rather than on `isPending`/`isError`:
+  // a query that already has data and then fails a background refetch reports
+  // `isError` while retaining that data, and blanking the card there would
+  // remove the only control that unlocks the chapter (§5 rule 3).
+  if (status === null) return null;
 
   if (status === "active") {
-    if (outcome !== "success") return null;
+    if (outcome !== "success" && outcome !== "returned") return null;
     return (
       <Card className="border-success/45 bg-success/10">
         <CardHeader>
@@ -175,24 +193,55 @@ export function SubscriptionCheckoutCard() {
     );
   }
 
-  if (awaitingActivation && attempt < ACTIVATION_POLL_ATTEMPTS) {
+  if (awaiting) {
+    const exhausted = attempt >= ACTIVATION_POLL_ATTEMPTS;
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Payment received — activating your chapter
+            {exhausted ? null : <Loader2 className="h-4 w-4 animate-spin" />}
+            {exhausted
+              ? "Still waiting on Stripe"
+              : outcome === "returned"
+                ? "Checking Stripe for your update"
+                : "Payment received — activating your chapter"}
           </CardTitle>
           <CardDescription>
-            Stripe confirms subscriptions in the background, so this can take a
-            few seconds. Paid features unlock as soon as it lands.
+            {exhausted
+              ? "Stripe hasn't confirmed yet. This is usually a short delay — check again below. If it persists, contact support with your Stripe receipt rather than paying a second time."
+              : "Stripe confirms changes in the background, so this can take a few seconds. Paid features unlock as soon as it lands."}
           </CardDescription>
         </CardHeader>
+        {exhausted ? (
+          <CardContent className="flex flex-wrap items-center gap-3">
+            {/*
+              Deliberately NOT a checkout button. This branch is reached by a
+              chapter that has just paid, and `POST /v1/billing/checkout` would
+              mint a second subscription rather than reject the duplicate (see
+              the docblock above). Re-checking is the safe recovery; someone who
+              never actually paid can clear the stale return marker instead.
+            */}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setAttempt(0);
+                void queryClient.invalidateQueries({ queryKey: ["chapters"] });
+                void queryClient.invalidateQueries({ queryKey: ["billing"] });
+              }}
+            >
+              Check again
+            </Button>
+            <a
+              href="/billing"
+              className="text-sm text-muted-foreground underline underline-offset-4"
+            >
+              I haven&apos;t paid yet
+            </a>
+          </CardContent>
+        ) : null}
       </Card>
     );
   }
-
-  const lapsed = status === "past_due" || status === "canceled";
 
   return (
     <Card className="border-primary/40">
@@ -212,9 +261,6 @@ export function SubscriptionCheckoutCard() {
               : "Chapter subscription is not active; complete checkout to use this feature. Dues, invoices, and the paid modules unlock as soon as payment clears."}
           {outcome === "cancelled" && !lapsed
             ? " Your last checkout was cancelled — no charge was made."
-            : null}
-          {awaitingActivation
-            ? " Stripe has your payment, but the confirmation hasn't reached us yet. If the chapter is still locked in a minute, contact support with your Stripe receipt."
             : null}
         </CardDescription>
       </CardHeader>

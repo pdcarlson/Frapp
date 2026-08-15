@@ -2,8 +2,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, mockTransitionMutate } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  mockTransitionMutate: vi.fn().mockResolvedValue({}),
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -33,7 +34,11 @@ vi.mock("@repo/hooks", () => ({
   useOverdueInvoices: () => ({ data: [], isError: false }),
   useMembers: () => ({ data: [] }),
   useCreateInvoice: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useTransitionInvoiceStatus: () => ({ mutateAsync: vi.fn() }),
+  useTransitionInvoiceStatus: () => ({
+    mutateAsync: mockTransitionMutate,
+    isPending: false,
+    variables: undefined,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
@@ -48,6 +53,10 @@ vi.mock("@/components/shared/can", () => ({
 vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 
 const { InvoiceAdminCard } = await import("./invoice-admin-card");
+
+// Mirrors the constant in the component; asserted rather than imported so a
+// rename that breaks the wiring shows up as a test failure.
+const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
 
 function setChapter(
   subscription_status: string,
@@ -143,6 +152,13 @@ describe("InvoiceAdminCard subscription gating", () => {
     expect(
       screen.queryByText(/subscription is not active/i),
     ).not.toBeInTheDocument();
+    // But a disabled control with no explanation is its own dead end (§5
+    // rule 2), so the pending state says what it is waiting for.
+    expect(screen.getByText(/checking this chapter/i)).toBeInTheDocument();
+    expect(trigger()).toHaveAttribute(
+      "aria-describedby",
+      SUBSCRIPTION_NOTICE_ID,
+    );
   });
 
   it("gates the other paid-ops writes, not just Create", () => {
@@ -178,6 +194,18 @@ describe("InvoiceAdminCard subscription gating", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+  });
+
+  it("scopes the in-flight guard per row, so one transition does not freeze the rest", async () => {
+    // A single mutation object backs every row: an unscoped `isPending` would
+    // disable all of them, and no guard at all lets a double click fire two
+    // POSTs where the second is a PAID->PAID the API rejects.
+    setChapter("active");
+    render(<InvoiceAdminCard />);
+
+    expect(screen.getByRole("button", { name: /mark paid/i })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: /mark paid/i }));
+    expect(mockTransitionMutate).toHaveBeenCalledTimes(1);
   });
 
   it("fails open when the chapter record cannot be read", () => {

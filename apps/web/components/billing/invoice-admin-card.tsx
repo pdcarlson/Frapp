@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
   useCreateInvoice,
@@ -65,7 +65,7 @@ type MemberSummary = {
 
 type StatusFilter = "ALL" | "DRAFT" | "OPEN" | "PAID" | "VOID" | "OVERDUE";
 
-/** Ties the disabled Create-invoice trigger to the sentence explaining it. */
+/** Ties every disabled invoice write control to the sentence explaining it. */
 const SUBSCRIPTION_NOTICE_ID = "invoice-create-subscription-notice";
 
 function statusVariant(
@@ -128,12 +128,23 @@ export function InvoiceAdminCard() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
 
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+
   // A background refetch (or the chapter query simply resolving) can revoke the
   // write after the dialog is already open. Radix's `onOpenChange` never fires
   // for that, so without this the user finishes a form that is guaranteed to
   // 403 — the exact late failure the gate exists to remove.
+  //
+  // Focus has to be placed deliberately. Radix returns focus to the trigger on
+  // close, but the trigger goes `disabled` in this same commit, so `.focus()`
+  // on it is a no-op and focus would fall to `<body>` — restarting keyboard
+  // navigation at the top of the document. Send it to the notice instead, which
+  // is both focusable and the explanation for what just happened.
   useEffect(() => {
-    if (createOpen && !canWriteInvoices) setCreateOpen(false);
+    if (!createOpen || canWriteInvoices) return;
+    setCreateOpen(false);
+    const frame = requestAnimationFrame(() => noticeRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
   }, [createOpen, canWriteInvoices]);
   const [draft, setDraft] = useState({
     user_id: "",
@@ -153,8 +164,22 @@ export function InvoiceAdminCard() {
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
   }, [invoices, statusFilter, overdueIds]);
 
+  // One mutation object backs every row, so the in-flight guard has to be
+  // scoped by id — otherwise a transition on one invoice disables all of them.
+  const transitioningId = transitionStatus.isPending
+    ? transitionStatus.variables?.id
+    : undefined;
+
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!draft.user_id) {
+      toast({
+        title: "Pick a member",
+        description: "An invoice has to be addressed to someone.",
+        variant: "destructive",
+      });
+      return;
+    }
     const dollars = Number(draft.amount);
     if (!Number.isFinite(dollars) || dollars <= 0) {
       toast({
@@ -305,9 +330,7 @@ export function InvoiceAdminCard() {
                     className="gap-2"
                     disabled={!canWriteInvoices}
                     aria-describedby={
-                      subscription.allowed
-                        ? undefined
-                        : SUBSCRIPTION_NOTICE_ID
+                      canWriteInvoices ? undefined : SUBSCRIPTION_NOTICE_ID
                     }
                   >
                     <Plus className="h-4 w-4" />
@@ -443,15 +466,29 @@ export function InvoiceAdminCard() {
               recoverable, and hiding invoicing entirely would read as a
               missing feature rather than an explainable state.
             */}
-            {!subscription.allowed ? (
+            {!canWriteInvoices ? (
               <p
                 id={SUBSCRIPTION_NOTICE_ID}
+                ref={noticeRef}
+                tabIndex={-1}
+                // `status` so a screen reader hears the reason when the write is
+                // revoked under an open dialog — that close is otherwise silent.
+                role="status"
                 className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground"
               >
-                {subscription.reason}{" "}
-                {subscription.recoverable
-                  ? "Use the subscription card at the top of this page to restore invoicing."
-                  : "Reopen the subscription from the billing portal to restore invoicing."}
+                {subscriptionPending ? (
+                  <>
+                    <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
+                    Checking this chapter&apos;s subscription…
+                  </>
+                ) : subscription.allowed ? null : (
+                  <>
+                    {subscription.reason}{" "}
+                    {subscription.recoverable
+                      ? "Use the subscription card at the top of this page to restore invoicing."
+                      : "Reopen the subscription from the billing portal to restore invoicing."}
+                  </>
+                )}
               </p>
             ) : null}
             {invoicesQuery.isPending ? (
@@ -514,9 +551,11 @@ export function InvoiceAdminCard() {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={!canWriteInvoices}
+                            disabled={
+                              !canWriteInvoices || transitioningId === invoice.id
+                            }
                             aria-describedby={
-                              subscription.allowed
+                              canWriteInvoices
                                 ? undefined
                                 : SUBSCRIPTION_NOTICE_ID
                             }
@@ -529,9 +568,12 @@ export function InvoiceAdminCard() {
                           <>
                             <Button
                               size="sm"
-                              disabled={!canWriteInvoices}
+                              disabled={
+                                !canWriteInvoices ||
+                                transitioningId === invoice.id
+                              }
                               aria-describedby={
-                                subscription.allowed
+                                canWriteInvoices
                                   ? undefined
                                   : SUBSCRIPTION_NOTICE_ID
                               }
@@ -542,9 +584,12 @@ export function InvoiceAdminCard() {
                             <Button
                               size="sm"
                               variant="outline"
-                              disabled={!canWriteInvoices}
+                              disabled={
+                                !canWriteInvoices ||
+                                transitioningId === invoice.id
+                              }
                               aria-describedby={
-                                subscription.allowed
+                                canWriteInvoices
                                   ? undefined
                                   : SUBSCRIPTION_NOTICE_ID
                               }
