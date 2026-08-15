@@ -152,17 +152,28 @@ patterns; tokens, components, icons, and copy come from
 writing a screen. The constraints below are the ones most often violated by web habits:
 
 - **Typed `StyleSheet` token factories, not NativeWind.** A screen calls `useFrappTheme()`
-  (`apps/mobile/lib/theme.tsx`) and passes the tokens to a `createStyles(tokens: FrappTokens)`
-  factory that returns a `StyleSheet` — see `apps/mobile/components/nav-tile.tsx`. There is zero
-  `className` usage in `apps/mobile`; `nativewind` remains a dependency with config files left in
-  place, but it MUST NOT style Signet surfaces.
-- **No raw hex in screen code.** Every color comes from `@repo/theme/tokens` via `getFrappTokens()`.
-  A color literal in a screen or component is a defect.
+  (`apps/mobile/lib/theme.tsx`) and passes the tokens to a `createStyles(tokens: SignetTokens)`
+  factory that returns a `StyleSheet` — see `apps/mobile/components/nav-tile.tsx`. NativeWind was
+  removed entirely in S1 of #937 (configs, deps, and the tsconfig `nativewind-env.d.ts` entry) and
+  MUST NOT come back on a Signet surface.
+- **Signet is dark-only.** The theme context is `{ tokens: SignetTokens }` from
+  `@repo/theme/signet` — there is no light/dark preference, no `resolvedTheme`, and no
+  `useColorScheme` in the theme layer. Provider chain (outer→inner): `GestureHandlerRootView` >
+  `SafeAreaProvider` > `FrappThemeProvider` > `AuthSessionProvider` > `FrappProvider` >
+  `AnalyticsProvider` > `KeyboardProviderGuarded` > `BottomSheetModalProvider`.
+- **No raw hex in screen code, no hand-set type.** Colors come from the Signet tokens; type is set
+  only through `typeRole(tokens.typography.role.X)` (which carries the per-weight Figtree family —
+  `fontSize`/`fontWeight` literals or arithmetic on a role token are defects). Semantic fills use
+  `tint(hue)` (~13% default, 0.3 for borders); mono uses `MONO_FONT_FAMILY`; avatars use
+  `avatarRadius(size)`. All helpers live in `apps/mobile/lib/theme.tsx`. Figtree loads in
+  `app/_layout.tsx` from `@expo-google-fonts/figtree` behind a splash hold.
 - **Expo Go is the only current run path** (`npm run start -w apps/mobile`, then scan from a
   physical device or local emulator — it cannot be verified headless). Modules that do not run in Go
   — Stripe React Native, remote push, `react-native-keyboard-controller` — MUST sit behind an
   isolation module that does a runtime environment check and degrades gracefully, so importing a
-  screen never crashes Go. Screen code MUST NOT import them directly.
+  screen never crashes Go. Screen code MUST NOT import them directly — an ESLint
+  `no-restricted-imports` error enforces this; the keyboard module is `apps/mobile/lib/keyboard.tsx`
+  (`KeyboardProviderGuarded` / `getKeyboardPath`).
 
 Everything else — component variants, states, iconography, copy — is specified in the docs linked
 above and is not restated here.

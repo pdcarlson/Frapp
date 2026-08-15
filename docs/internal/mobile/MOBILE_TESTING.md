@@ -50,11 +50,36 @@ is the script. Note that in Expo Go the deep-link scheme is `exp://`, not
 `frapp://`, so the magic-link rows in §1 are unreachable regardless of the
 Supabase redirect allowlist — use the password sign-in path.
 
+### 4. S1 foundation smoke (`sheet-demo`)
+
+S1 of #937 (the Signet foundation cutover) could not be device-verified from the
+cloud session that built it, so its proof is a throwaway screen: navigate to
+`/sheet-demo` (hidden `href: null` route — from any screen's URL bar in Expo Go,
+or temporarily deep-link `exp://.../--/sheet-demo`). Verify:
+
+- [ ] The app **boots** — no crash at launch means the provider stack
+      (gesture-handler root, safe-area, guarded keyboard, sheet host) and the
+      splash-held Figtree load are sound.
+- [ ] The **Figtree specimen** renders visibly different weights for 400/600/700
+      (Android is the honest test — it cannot fake weights from one file), and
+      the mono line renders in a monospace face.
+- [ ] The **keyboard path** line reads `fallback` in Expo Go (it must never read
+      `native` there; `native` is correct only in a future EAS dev build).
+- [ ] **Open bottom sheet** presents the gorhom sheet with grabber, header, and
+      Cancel; it drags and dismisses; typing in the field keeps it visible above
+      the keyboard.
+
+The screen is deleted before the Phase 2 exit gate (#808 supersedes it).
+
 ## Unit tests
 
 The `apps/mobile` workspace is configured with Vitest. `vitest.setup.ts` mocks the
-native Expo modules (`expo-file-system/legacy`, `expo-sharing`) and the
-`react-native` platform globals.
+native Expo modules (`expo-file-system/legacy`, `expo-sharing`, `expo-font`,
+`expo-splash-screen`), the S1 native additions (`react-native-gesture-handler`,
+`react-native-safe-area-context`, `@gorhom/bottom-sheet`,
+`react-native-keyboard-controller`, `@expo-google-fonts/figtree`), and the
+`react-native` platform globals (including `StyleSheet` and string component
+stand-ins for Signet token-factory tests).
 
 ```bash
 npm run test -w apps/mobile
