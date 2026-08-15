@@ -25,9 +25,11 @@ import {
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
 
+// Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
+// field is `subscription_status`; this type previously called it `status`, so
+// the badge below rendered "unknown" for every chapter, including active ones.
 type BillingStatusPreview = {
-  status: string;
-  chapter_id: string;
+  subscription_status: string;
   stripe_customer_id?: string | null;
   subscription_id?: string | null;
 };
@@ -170,7 +172,9 @@ export default function BillingPage() {
           <div className="rounded-lg border border-border p-4">
             <p className="text-xs text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
-              <Badge className="capitalize">{billingStatus?.status ?? "unknown"}</Badge>
+              <Badge className="capitalize">
+                {billingStatus?.subscription_status ?? "unknown"}
+              </Badge>
             </div>
           </div>
           <div className="rounded-lg border border-border p-4">

@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, CreditCard, Loader2 } from "lucide-react";
-import { useBillingStatus, useCreateCheckout, useCurrentUser } from "@repo/hooks";
+import { useCreateCheckout, useCreatePortal, useCurrentUser } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -15,7 +16,7 @@ import {
 import { Can } from "@/components/shared/can";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
-import { isSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription";
+import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 
 /**
  * Stripe confirms the subscription over a webhook, not on the redirect, so the
@@ -34,36 +35,6 @@ function readOutcome(value: string | null): CheckoutOutcome {
   return null;
 }
 
-function lockedCopy(status: SubscriptionStatus): {
-  title: string;
-  description: string;
-  cta: string;
-} {
-  switch (status) {
-    case "past_due":
-      return {
-        title: "Payment is past due",
-        description:
-          "Chapter subscription is past due; write actions are blocked until payment is resolved. Complete checkout to restore them.",
-        cta: "Resolve payment",
-      };
-    case "canceled":
-      return {
-        title: "Subscription canceled",
-        description:
-          "This chapter is read-only. Start a new subscription to unlock dues, invoices, and the rest of the paid modules.",
-        cta: "Restart subscription",
-      };
-    default:
-      return {
-        title: "Activate your chapter subscription",
-        description:
-          "Chapter subscription is not active; complete checkout to use this feature. Dues, invoices, and the paid modules unlock as soon as payment clears.",
-        cta: "Complete checkout",
-      };
-  }
-}
-
 /**
  * The chapter's way out of `subscription_status: incomplete` (#860).
  *
@@ -73,40 +44,53 @@ function lockedCopy(status: SubscriptionStatus): {
  * this card existed the API kept that door open and the client never built it,
  * so a chapter could complete onboarding and never reach `active`.
  *
- * Reads its own state through the same query keys the billing page already
- * mounts, so mounting it costs no extra request.
+ * **Checkout is offered for `incomplete` only.** A chapter that has lapsed to
+ * `past_due` or `canceled` already has a Stripe customer and a subscription,
+ * and `POST /v1/billing/checkout` rejects only `active`
+ * (`billing.service.ts:112`) while `StripeService.createCheckoutSession` passes
+ * `customer_email` rather than the stored `stripe_customer_id` — so a second
+ * checkout mints a second customer and a second live subscription while Stripe
+ * keeps dunning the first. `spec/behavior/billing.md` promises those are
+ * deduplicated; they are not. Lapsed chapters therefore go to the Customer
+ * Portal, which is both the correct recovery (update the card on the existing
+ * subscription) and incapable of double-subscribing.
  */
 export function SubscriptionCheckoutCard() {
   const { toast } = useToast();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const outcome = readOutcome(searchParams.get("checkout"));
 
-  const statusQuery = useBillingStatus();
+  const { status, isPending, isError } = useChapterSubscription();
   const currentUserQuery = useCurrentUser();
   const createCheckout = useCreateCheckout();
+  const createPortal = useCreatePortal();
 
-  const rawStatus = (statusQuery.data as { status?: unknown } | undefined)
-    ?.status;
-  const status: SubscriptionStatus = isSubscriptionStatus(rawStatus)
-    ? rawStatus
-    : "incomplete";
-  const isActive = status === "active";
+  // Only `incomplete` can be waiting on a first activation. Keying this on the
+  // URL param alone let a stale `/billing?checkout=success` bookmark hijack the
+  // screen of a chapter that had since lapsed, hiding its recovery path.
+  const awaitingActivation = outcome === "success" && status === "incomplete";
 
   // Each tick schedules the next by advancing `attempt`, so the effect stops
   // on its own once the status flips or the budget runs out.
   const [attempt, setAttempt] = useState(0);
-  const awaitingActivation = outcome === "success" && !isActive;
   const isPolling = awaitingActivation && attempt < ACTIVATION_POLL_ATTEMPTS;
-  const { refetch } = statusQuery;
 
   useEffect(() => {
     if (!isPolling) return;
     const timer = setTimeout(() => {
-      void refetch();
+      // Invalidate rather than refetch one query: `subscription_status` is read
+      // by the chapter payload (this card, every subscription gate) and by
+      // `/v1/billing/status` (the IDs on this page). Refreshing only one leaves
+      // the page contradicting itself for the chapter query's 5-minute
+      // staleTime — "Subscription active" above a control still saying the
+      // chapter is not subscribed.
+      void queryClient.invalidateQueries({ queryKey: ["chapters"] });
+      void queryClient.invalidateQueries({ queryKey: ["billing"] });
       setAttempt((n) => n + 1);
     }, ACTIVATION_POLL_INTERVAL_MS);
     return () => clearTimeout(timer);
-  }, [isPolling, attempt, refetch]);
+  }, [isPolling, attempt, queryClient]);
 
   async function startCheckout() {
     const email = (currentUserQuery.data as { email?: string } | undefined)
@@ -114,8 +98,7 @@ export function SubscriptionCheckoutCard() {
     if (!email) {
       toast({
         title: "Couldn't start checkout",
-        description:
-          "Your account email hasn't loaded yet. Retry in a moment.",
+        description: "Your account email hasn't loaded yet. Retry in a moment.",
         variant: "destructive",
       });
       return;
@@ -146,9 +129,37 @@ export function SubscriptionCheckoutCard() {
     }
   }
 
-  if (isActive && outcome !== "success") return null;
+  async function openPortal() {
+    try {
+      const result = await createPortal.mutateAsync({
+        return_url: `${window.location.origin}/billing`,
+      });
+      const url =
+        result && typeof result === "object" && "url" in result
+          ? (result as { url?: string }).url
+          : null;
+      if (!url) throw new Error("Billing portal did not return a URL.");
+      window.location.assign(url);
+    } catch (error) {
+      toast({
+        title: "Couldn't open billing portal",
+        description: getErrorMessage(
+          error,
+          "Confirm billing:manage permission and an active Stripe customer.",
+        ),
+        variant: "destructive",
+      });
+    }
+  }
 
-  if (isActive) {
+  // Fail open, matching `useSubscriptionWriteState`. An unresolved status is
+  // most likely a paying chapter behind a slow or failed fetch, and telling one
+  // its subscription is inactive — then offering a checkout button that 400s
+  // with "already has an active subscription" — is worse than showing nothing.
+  if (isPending || isError || status === null) return null;
+
+  if (status === "active") {
+    if (outcome !== "success") return null;
     return (
       <Card className="border-success/45 bg-success/10">
         <CardHeader>
@@ -164,44 +175,46 @@ export function SubscriptionCheckoutCard() {
     );
   }
 
-  if (awaitingActivation) {
-    const stillWaiting = attempt >= ACTIVATION_POLL_ATTEMPTS;
+  if (awaitingActivation && attempt < ACTIVATION_POLL_ATTEMPTS) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-lg">
-            {stillWaiting ? null : <Loader2 className="h-4 w-4 animate-spin" />}
-            {stillWaiting
-              ? "Payment received — activation is still pending"
-              : "Payment received — activating your chapter"}
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Payment received — activating your chapter
           </CardTitle>
           <CardDescription>
-            {stillWaiting
-              ? "Stripe has your payment, but the confirmation hasn't reached us yet. Refresh in a minute; if the chapter is still locked after that, contact support with your Stripe receipt."
-              : "Stripe confirms subscriptions in the background, so this can take a few seconds. Paid features unlock as soon as it lands."}
+            Stripe confirms subscriptions in the background, so this can take a
+            few seconds. Paid features unlock as soon as it lands.
           </CardDescription>
         </CardHeader>
-        {stillWaiting ? (
-          <CardContent>
-            <Button variant="outline" onClick={() => void refetch()}>
-              Check again
-            </Button>
-          </CardContent>
-        ) : null}
       </Card>
     );
   }
 
-  const copy = lockedCopy(status);
+  const lapsed = status === "past_due" || status === "canceled";
 
   return (
     <Card className="border-primary/40">
       <CardHeader>
-        <CardTitle className="text-lg">{copy.title}</CardTitle>
+        <CardTitle className="text-lg">
+          {status === "past_due"
+            ? "Payment past due"
+            : status === "canceled"
+              ? "Subscription canceled"
+              : "Activate your chapter subscription"}
+        </CardTitle>
         <CardDescription>
-          {copy.description}
-          {outcome === "cancelled"
+          {status === "past_due"
+            ? "Chapter subscription is past due; write actions are blocked until payment is resolved. Update your payment method to restore them."
+            : status === "canceled"
+              ? "This chapter is read-only. Reopen the subscription from the billing portal to unlock dues, invoices, and the paid modules."
+              : "Chapter subscription is not active; complete checkout to use this feature. Dues, invoices, and the paid modules unlock as soon as payment clears."}
+          {outcome === "cancelled" && !lapsed
             ? " Your last checkout was cancelled — no charge was made."
+            : null}
+          {awaitingActivation
+            ? " Stripe has your payment, but the confirmation hasn't reached us yet. If the chapter is still locked in a minute, contact support with your Stripe receipt."
             : null}
         </CardDescription>
       </CardHeader>
@@ -210,23 +223,39 @@ export function SubscriptionCheckoutCard() {
           permission="billing:manage"
           deniedFallback={
             <p className="text-sm text-muted-foreground">
-              A chapter officer with <code>billing:manage</code> can complete
-              checkout and unlock these features.
+              A chapter officer with <code>billing:manage</code> can{" "}
+              {lapsed ? "resolve this" : "complete checkout"} and unlock these
+              features.
             </p>
           }
         >
-          <Button
-            onClick={() => void startCheckout()}
-            disabled={createCheckout.isPending}
-            className="gap-2"
-          >
-            {createCheckout.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <CreditCard className="h-4 w-4" />
-            )}
-            {copy.cta}
-          </Button>
+          {lapsed ? (
+            <Button
+              onClick={() => void openPortal()}
+              disabled={createPortal.isPending}
+              className="gap-2"
+            >
+              {createPortal.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              Manage billing in Stripe
+            </Button>
+          ) : (
+            <Button
+              onClick={() => void startCheckout()}
+              disabled={createCheckout.isPending}
+              className="gap-2"
+            >
+              {createCheckout.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="h-4 w-4" />
+              )}
+              Complete checkout
+            </Button>
+          )}
         </Can>
       </CardContent>
     </Card>

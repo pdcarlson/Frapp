@@ -83,8 +83,9 @@ export type SubscriptionWriteState =
     };
 
 /**
- * FRA-109: a chapter that lapses to `past_due` gets a 3-day grace window
- * before the hard read-only lock. Mirrors `GRACE_PERIOD_MS` in the guard.
+ * A chapter that lapses to `past_due` gets a 3-day grace window before the hard
+ * read-only lock (`spec/behavior/billing.md`, `spec/product/onboarding.md`).
+ * Mirrors `GRACE_PERIOD_MS` in `ChapterGuard`; the two must move together.
  */
 export const SUBSCRIPTION_GRACE_PERIOD_MS = 3 * 24 * 60 * 60 * 1000;
 

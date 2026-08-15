@@ -19,7 +19,13 @@
 | Webhook arrives before database commit        | Use upsert logic in the webhook handler; retry naturally on the next Stripe delivery.                                                          |
 | Subscription lapses to `past_due`             | 3-day grace period. During grace: read access continues, invite/create actions blocked. After grace or upon `canceled`: hard lock (read-only). |
 | Chapter has active members when canceled      | All members retain read access. No new actions. Data preserved indefinitely for re-activation.                                                 |
-| Duplicate checkout attempts                   | Deduplicate by `stripe_customer_id` + chapter; prevent creating multiple subscriptions for the same chapter.                                   |
+| Duplicate checkout attempts                   | Deduplicate by `stripe_customer_id` + chapter; prevent creating multiple subscriptions for the same chapter. **Not implemented — see below.** |
+
+### Known gap: duplicate checkout is not deduplicated
+
+The dedup row above states intent, not current behavior. `BillingService.createCheckoutSession` rejects only `subscription_status === 'active'`, and `StripeService.createCheckoutSession` passes `customer_email` rather than the chapter's stored `stripe_customer_id` — so Stripe mints a **new** customer and a **new** subscription on every call, and `handleCheckoutCompleted` then overwrites `stripe_customer_id` / `subscription_id`, orphaning the previous subscription where nothing in the app can see or cancel it.
+
+Until that is closed, **checkout must only be offered while a chapter is `incomplete`.** `past_due` and `canceled` chapters already own a subscription, so their recovery path is the Customer Portal (`POST /v1/billing/portal`), which updates the existing subscription and cannot double-subscribe. The web client enforces this in `apps/web/components/billing/subscription-checkout-card.tsx`; it is a UX affordance, not a boundary, so the server gap remains real for any direct API caller.
 
 ## Billing Adapter Pattern
 

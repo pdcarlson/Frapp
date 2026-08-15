@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertCircle, Loader2, Plus } from "lucide-react";
 import {
   useCreateInvoice,
@@ -90,7 +90,7 @@ export function InvoiceAdminCard() {
   // server guard is still the enforcement.
   const { state: subscription, isPending: subscriptionPending } =
     useSubscriptionWriteState();
-  const canCreateInvoice = subscription.allowed && !subscriptionPending;
+  const canWriteInvoices = subscription.allowed && !subscriptionPending;
   const invoicesQuery = useInvoices();
   const overdueQuery = useOverdueInvoices();
   const membersQuery = useMembers();
@@ -127,6 +127,14 @@ export function InvoiceAdminCard() {
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
+
+  // A background refetch (or the chapter query simply resolving) can revoke the
+  // write after the dialog is already open. Radix's `onOpenChange` never fires
+  // for that, so without this the user finishes a form that is guaranteed to
+  // 403 — the exact late failure the gate exists to remove.
+  useEffect(() => {
+    if (createOpen && !canWriteInvoices) setCreateOpen(false);
+  }, [createOpen, canWriteInvoices]);
   const [draft, setDraft] = useState({
     user_id: "",
     title: "",
@@ -283,10 +291,11 @@ export function InvoiceAdminCard() {
                 open={createOpen}
                 onOpenChange={(next) => {
                   // Gate the trigger, never the submit (§5 rule 1): a dialog
-                  // must never open onto an action that cannot succeed. The
-                  // disabled button covers the pointer path; this covers
-                  // programmatic opens and a state flip while it is open.
-                  if (next && !canCreateInvoice) return;
+                  // must never open onto an action that cannot succeed. Radix
+                  // only calls this on an open/close *request*, so it cannot
+                  // react to the subscription flipping underneath an open
+                  // dialog — the effect above handles that case.
+                  if (next && !canWriteInvoices) return;
                   setCreateOpen(next);
                 }}
               >
@@ -294,7 +303,7 @@ export function InvoiceAdminCard() {
                   <Button
                     size="sm"
                     className="gap-2"
-                    disabled={!canCreateInvoice}
+                    disabled={!canWriteInvoices}
                     aria-describedby={
                       subscription.allowed
                         ? undefined
@@ -416,7 +425,7 @@ export function InvoiceAdminCard() {
                     <Button
                       form="invoice-create-form"
                       type="submit"
-                      disabled={createInvoice.isPending}
+                      disabled={createInvoice.isPending || !canWriteInvoices}
                     >
                       {createInvoice.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -441,8 +450,8 @@ export function InvoiceAdminCard() {
               >
                 {subscription.reason}{" "}
                 {subscription.recoverable
-                  ? "Complete checkout at the top of this page to unlock invoicing."
-                  : "Contact support from the billing portal to reopen this chapter."}
+                  ? "Use the subscription card at the top of this page to restore invoicing."
+                  : "Reopen the subscription from the billing portal to restore invoicing."}
               </p>
             ) : null}
             {invoicesQuery.isPending ? (
@@ -495,10 +504,22 @@ export function InvoiceAdminCard() {
                         {overdueRow ? (
                           <Badge variant="destructive">OVERDUE</Badge>
                         ) : null}
+                        {/*
+                          `POST /v1/invoices/:id/status` is paid-ops too, so
+                          these mirror the same gate as the create trigger.
+                          Gating only Create would leave the card claiming
+                          writes are blocked while still offering three of them.
+                        */}
                         {invoice.status === "DRAFT" ? (
                           <Button
                             size="sm"
                             variant="outline"
+                            disabled={!canWriteInvoices}
+                            aria-describedby={
+                              subscription.allowed
+                                ? undefined
+                                : SUBSCRIPTION_NOTICE_ID
+                            }
                             onClick={() => void transition(invoice, "OPEN")}
                           >
                             Send (mark OPEN)
@@ -508,6 +529,12 @@ export function InvoiceAdminCard() {
                           <>
                             <Button
                               size="sm"
+                              disabled={!canWriteInvoices}
+                              aria-describedby={
+                                subscription.allowed
+                                  ? undefined
+                                  : SUBSCRIPTION_NOTICE_ID
+                              }
                               onClick={() => void transition(invoice, "PAID")}
                             >
                               Mark paid
@@ -515,6 +542,12 @@ export function InvoiceAdminCard() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={!canWriteInvoices}
+                              aria-describedby={
+                                subscription.allowed
+                                  ? undefined
+                                  : SUBSCRIPTION_NOTICE_ID
+                              }
                               onClick={() => void transition(invoice, "VOID")}
                             >
                               Void

@@ -106,11 +106,15 @@ All three gate classes now have a client counterpart — `<Can>` for permissions
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 
-**The subscription mirror is a predicate, not a wrapper.** `subscriptionWriteState()` (`apps/web/lib/subscription.ts`) reproduces the guard branch-for-branch — the three structured codes, the 3-day `past_due` grace window, and the `@FreeTier` / `@GraceBlocked` carve-outs — and the hook feeds it the active chapter. It is shaped as a hook rather than a `<Can>`-style wrapper because §5 rule 4 requires *disabling* the control, which means the caller needs the reason, not just a boolean. Pass the `writeClass` matching the route's decorators; `paid` is the default and the safe one.
+**The subscription mirror is a predicate, not a wrapper.** `subscriptionWriteState()` (`apps/web/lib/subscription.ts`) reproduces the guard branch-for-branch — all four structured codes (`chapter.subscription.required` / `write_locked` / `invite_blocked` / `canceled`), the 3-day `past_due` grace window, and the `@FreeTier` / `@GraceBlocked` carve-outs — and `useSubscriptionWriteState` feeds it the active chapter. It is shaped as a hook rather than a `<Can>`-style wrapper because §5 rule 4 requires *disabling* the control, which means the caller needs the reason, not just a boolean. Pass the `writeClass` matching the route's decorators; `paid` is the default and the safe one.
+
+**Gate every write on the surface, not just the headline one.** A screen that disables its primary action while leaving sibling writes live is worse than one that gates nothing: it states that writes are blocked and then offers three. The invoice card gates its create trigger, its dialog submit, and its per-row status transitions off one predicate, because all four hit routes behind the same guard.
+
+**Read subscription state from one place.** `useSubscriptionWriteState` and any status-driven card must share a single query. Two sources for the same fact let one half of a screen report `active` while the other still says locked.
 
 Unlike `<Can>`, the subscription mirror **fails open** while the chapter is loading or its fetch failed: an unresolved permission may be one the user never holds, but an unresolved subscription most likely belongs to a paying chapter, and disabling its paid surface over a slow fetch is worse than the late 403 the gate exists to avoid.
 
-Rollout is incremental. Billing consumes it today; extending it to the remaining paid-ops write surfaces is tracked separately, and any new subscription-gated flow is expected to adopt it rather than re-solve this per screen.
+Rollout is incremental. Billing consumes it today; extending it to the remaining paid-ops write surfaces is tracked by [#841](https://github.com/pdcarlson/Frapp/issues/841), which carries the enumerated route inventory. Any new subscription-gated flow is expected to adopt the hook rather than re-solve this per screen.
 
 ### What "fail fast" means concretely
 

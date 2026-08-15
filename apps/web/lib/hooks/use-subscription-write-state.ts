@@ -5,9 +5,56 @@ import { useChapterStore } from "@/lib/stores/chapter-store";
 import {
   isSubscriptionStatus,
   subscriptionWriteState,
+  type SubscriptionStatus,
   type SubscriptionWriteClass,
   type SubscriptionWriteState,
 } from "@/lib/subscription";
+
+export type ChapterSubscription = {
+  /**
+   * `null` means "not established" — still loading, the fetch failed, no active
+   * chapter, or a status this client does not model. Callers must never render
+   * a blocked explanation from `null`; it asserts a reason nothing proved.
+   */
+  status: SubscriptionStatus | null;
+  pastDueSince: string | null;
+  isPending: boolean;
+  isError: boolean;
+};
+
+/**
+ * Single reader for the active chapter's subscription state.
+ *
+ * Everything subscription-related on the client goes through here so there is
+ * exactly one cache behind it. An earlier revision had the checkout card read
+ * `GET /v1/billing/status` while the gate read the chapter payload, which is
+ * how the card and the control beneath it ended up able to disagree about
+ * whether the same chapter was active.
+ */
+export function useChapterSubscription(): ChapterSubscription {
+  const activeChapterId = useChapterStore((s) => s.activeChapterId);
+  const { data, isPending, isError } = useCurrentChapter({
+    chapterId: activeChapterId,
+    enabled: Boolean(activeChapterId),
+  });
+
+  // Read defensively: `useCurrentChapter` returns the raw SDK response with no
+  // schema applied, and neither field is on the inferred type. `past_due_since`
+  // reaches the client only because `SupabaseChapterRepository.findById` does
+  // `select('*')` and the service spreads the whole row — narrowing that
+  // projection (as `ChapterGuard` already does) would silently drop it, which
+  // the predicate's fail-open grace check absorbs rather than reports.
+  const raw = data as Record<string, unknown> | undefined;
+  const rawStatus = raw?.["subscription_status"];
+  const rawPastDue = raw?.["past_due_since"];
+
+  return {
+    status: isSubscriptionStatus(rawStatus) ? rawStatus : null,
+    pastDueSince: typeof rawPastDue === "string" ? rawPastDue : null,
+    isPending: Boolean(activeChapterId) && isPending,
+    isError,
+  };
+}
 
 export type UseSubscriptionWriteStateResult = {
   /** What the server would do with a write to a route in this class. */
@@ -45,29 +92,20 @@ export type UseSubscriptionWriteStateResult = {
 export function useSubscriptionWriteState(
   writeClass: SubscriptionWriteClass = "paid",
 ): UseSubscriptionWriteStateResult {
-  const activeChapterId = useChapterStore((s) => s.activeChapterId);
-  const { data, isPending, isError } = useCurrentChapter({
-    chapterId: activeChapterId,
-    enabled: Boolean(activeChapterId),
-  });
+  const { status, pastDueSince, isPending } = useChapterSubscription();
 
-  // `CurrentChapterPayloadSchema` is `.passthrough()`, so `past_due_since`
-  // reaches the client but is not on the inferred type. Read it defensively —
-  // a missing value is handled by the predicate's fail-open grace check.
-  const raw = data as Record<string, unknown> | undefined;
-  const status = raw?.["subscription_status"];
-  const pastDueSince = raw?.["past_due_since"];
-
-  if (!activeChapterId || isError || !isSubscriptionStatus(status)) {
-    return { state: { allowed: true }, isPending: false };
+  // `isPending` is reported alongside the provisional verdict rather than
+  // folded into it. Collapsing the two is what made an earlier revision's
+  // loading contract unreachable: the in-flight case *is* the case where the
+  // status has not resolved, so returning a hardcoded `false` there meant no
+  // caller could ever see `isPending: true` and the gate stayed open through
+  // the whole fetch — the exact late rejection this hook exists to prevent.
+  if (status === null) {
+    return { state: { allowed: true }, isPending };
   }
 
   return {
-    state: subscriptionWriteState({
-      status,
-      pastDueSince: typeof pastDueSince === "string" ? pastDueSince : null,
-      writeClass,
-    }),
+    state: subscriptionWriteState({ status, pastDueSince, writeClass }),
     isPending,
   };
 }
