@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "expo-router";
 import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type MessageState = "sent" | "sending" | "retry";
 
@@ -184,166 +184,164 @@ export default function ChatThreadScreen() {
   );
 }
 
-function createMessageStateStyles(tokens: FrappTokens) {
+function createMessageStateStyles(tokens: SignetTokens) {
   return {
     sent: {
       label: "Sent",
-      backgroundColor: tokens.color.feedback.successBackground,
-      borderColor: tokens.color.feedback.successBorder,
-      textColor: tokens.color.feedback.successText,
+      backgroundColor: tint(tokens.color.semantic.success),
+      borderColor: tint(tokens.color.semantic.success, 0.3),
+      textColor: tokens.color.semantic.success,
     },
     sending: {
       label: "Sending",
-      backgroundColor: tokens.color.feedback.warningBackground,
-      borderColor: tokens.color.feedback.warningBorder,
-      textColor: tokens.color.feedback.warningText,
+      backgroundColor: tint(tokens.color.semantic.warning),
+      borderColor: tint(tokens.color.semantic.warning, 0.3),
+      textColor: tokens.color.semantic.warning,
     },
     retry: {
       label: "Retry needed",
-      backgroundColor: tokens.color.feedback.errorBackground,
-      borderColor: tokens.color.feedback.errorBorder,
-      textColor: tokens.color.feedback.errorText,
+      backgroundColor: tint(tokens.color.semantic.destructive),
+      borderColor: tint(tokens.color.semantic.destructive, 0.3),
+      textColor: tokens.color.semantic.destructive,
     },
   } as const;
 }
 
-function createStyles(tokens: FrappTokens, accent: string) {
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
     threadSummaryCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     threadSummaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     threadSummaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
+      ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
       letterSpacing: -0.3,
     },
     threadSummaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     messageBubble: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.bubble,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       padding: tokens.spacing.lg,
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     messageBubbleIncoming: {
       backgroundColor: tokens.color.surface.card,
     },
     messageBubbleOutgoing: {
-      backgroundColor: tokens.color.feedback.infoBackground,
-      borderColor: tokens.color.feedback.infoBorder,
+      backgroundColor: tint(tokens.color.semantic.info),
+      borderColor: tint(tokens.color.semantic.info, 0.3),
     },
     messageHeader: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     messageAuthor: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     messageTime: {
-      fontSize: 12,
+      ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,
     },
     messageBody: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     statePill: {
       alignSelf: "flex-start",
-      borderRadius: 999,
+      borderRadius: tokens.radius.chip,
       borderWidth: 1,
-      paddingHorizontal: 8,
+      paddingHorizontal: tokens.spacing.sm,
       paddingVertical: 3,
     },
     statePillText: {
-      fontSize: 11,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.caption),
     },
     composerCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 10,
+      gap: tokens.spacing.sm,
     },
     composerLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
       color: tokens.color.text.muted,
     },
     composerText: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     composerActions: {
       flexDirection: "row",
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     retryButton: {
       flex: 1,
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.errorBorder,
-      backgroundColor: tokens.color.feedback.errorBackground,
-      paddingVertical: 10,
+      borderColor: tint(tokens.color.semantic.destructive, 0.3),
+      backgroundColor: tint(tokens.color.semantic.destructive),
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     retryButtonDisabled: {
       opacity: 0.65,
     },
     retryButtonText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: tokens.color.feedback.errorText,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.semantic.destructive,
     },
     sendButton: {
       flex: 1,
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       backgroundColor: accent,
-      paddingVertical: 10,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     sendButtonText: {
-      fontSize: 12,
-      fontWeight: "700",
-      color: tokens.color.text.inverse,
+      ...typeRole(tokens.typography.role.label),
+      // Chapter accents clear AA against the dark card, so the darkest surface
+      // step is the legible on-accent text until the engine's on-primary lands.
+      color: tokens.color.surface.background,
     },
     backButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     backButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

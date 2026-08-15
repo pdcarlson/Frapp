@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
-import { useFrappTheme } from "@/lib/theme";
+import { SignetTokens } from "@repo/theme/signet";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 type NetworkBannerProps = {
   isOnline: boolean | null;
@@ -34,30 +34,29 @@ export function NetworkBanner({
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     container: {
-      paddingHorizontal: 16,
-      paddingVertical: 8,
+      paddingHorizontal: tokens.spacing.lg,
+      paddingVertical: tokens.spacing.sm,
       borderBottomWidth: 1,
     },
     text: {
-      fontSize: 12,
-      fontWeight: "600",
+      ...typeRole(tokens.typography.role.caption),
     },
     offlineContainer: {
-      backgroundColor: tokens.color.feedback.errorBackground,
-      borderBottomColor: tokens.color.feedback.errorBorder,
+      backgroundColor: tint(tokens.color.semantic.destructive),
+      borderBottomColor: tint(tokens.color.semantic.destructive, 0.3),
     },
     degradedContainer: {
-      backgroundColor: tokens.color.feedback.warningBackground,
-      borderBottomColor: tokens.color.feedback.warningBorder,
+      backgroundColor: tint(tokens.color.semantic.warning),
+      borderBottomColor: tint(tokens.color.semantic.warning, 0.3),
     },
     offlineText: {
-      color: tokens.color.feedback.errorText,
+      color: tokens.color.semantic.destructive,
     },
     degradedText: {
-      color: tokens.color.feedback.warningText,
+      color: tokens.color.semantic.warning,
     },
   });
 }

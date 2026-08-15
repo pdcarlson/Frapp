@@ -1,22 +1,15 @@
 import { Link, useRouter } from "expo-router";
 import { asRoute } from "@/lib/href";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { FrappTokens } from "@repo/theme/tokens";
+import { Pressable, StyleSheet, Text } from "react-native";
+import { SignetTokens } from "@repo/theme/signet";
 import { InfoCard, ScreenShell } from "@/components/screen-shell";
 import { useAuthSession } from "@/lib/auth-session";
-import { ThemePreference, useFrappTheme } from "@/lib/theme";
-
-const THEME_OPTIONS: Array<{ key: ThemePreference; label: string }> = [
-  { key: "system", label: "System" },
-  { key: "light", label: "Light" },
-  { key: "dark", label: "Dark" },
-];
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 export default function ProfileScreen() {
   const router = useRouter();
   const { email, signOut } = useAuthSession();
-  const { themePreference, resolvedTheme, setThemePreference, tokens } =
-    useFrappTheme();
+  const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
 
   async function handleSignOut() {
@@ -41,39 +34,6 @@ export default function ProfileScreen() {
         title="Notifications"
         body="Set quiet hours and category-level push preferences for announcements, events, points, and tasks."
       />
-      <View style={styles.themeCard}>
-        <Text style={styles.themeTitle}>Theme mode</Text>
-        <Text style={styles.themeBody}>
-          Manual override applies immediately. Current resolved mode:{" "}
-          {resolvedTheme === "dark" ? "Dark" : "Light"}.
-        </Text>
-        <View style={styles.themeOptionRow}>
-          {THEME_OPTIONS.map((themeOption) => {
-            const selected = themePreference === themeOption.key;
-            return (
-              <Pressable
-                key={themeOption.key}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setThemePreference(themeOption.key)}
-                style={[
-                  styles.themeOptionButton,
-                  selected ? styles.themeOptionButtonActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.themeOptionText,
-                    selected ? styles.themeOptionTextActive : null,
-                  ]}
-                >
-                  {themeOption.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
       <Link href={asRoute("/onboarding-tour")} asChild>
         <Pressable style={styles.tutorialButton}>
           <Text style={styles.tutorialText}>Revisit onboarding tutorial</Text>
@@ -92,79 +52,37 @@ export default function ProfileScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    themeCard: {
-      borderRadius: tokens.radius.lg,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: 8,
-    },
-    themeTitle: {
-      fontSize: tokens.type.section - 2,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
-    },
-    themeBody: {
-      fontSize: tokens.type.body - 1,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
-    },
-    themeOptionRow: {
-      marginTop: 4,
-      flexDirection: "row",
-      gap: 8,
-    },
-    themeOptionButton: {
-      flex: 1,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.muted,
-      paddingVertical: 9,
-      alignItems: "center",
-    },
-    themeOptionButtonActive: {
-      borderColor: tokens.color.feedback.infoBorderStrong,
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
-    },
-    themeOptionText: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.secondary,
-    },
-    themeOptionTextActive: {
-      color: tokens.color.feedback.infoTextInteractive,
-    },
     signOutButton: {
-      marginTop: 4,
-      borderRadius: tokens.radius.md,
+      marginTop: tokens.spacing.xs,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.errorBorder,
-      backgroundColor: tokens.color.feedback.errorBackground,
-      paddingVertical: 12,
+      borderColor: tint(tokens.color.semantic.destructive, 0.3),
+      backgroundColor: tint(tokens.color.semantic.destructive),
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     signOutText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.feedback.errorText,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.semantic.destructive,
     },
     tutorialButton: {
-      marginTop: 4,
-      borderRadius: tokens.radius.md,
+      marginTop: tokens.spacing.xs,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
-      paddingVertical: 12,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     tutorialText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.feedback.infoTextInteractive,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.semantic.info,
     },
   });
 }

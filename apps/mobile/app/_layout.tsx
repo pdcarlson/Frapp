@@ -9,16 +9,17 @@ import { AuthSessionProvider } from "@/lib/auth-session";
 import { FrappThemeProvider, useFrappTheme } from "@/lib/theme";
 
 function RootLayoutContent() {
-  const { resolvedTheme, tokens } = useFrappTheme();
+  const { tokens } = useFrappTheme();
   const networkState = useNetworkState();
 
   return (
-    <View style={{ flex: 1, backgroundColor: tokens.color.surface.canvas }}>
+    <View style={{ flex: 1, backgroundColor: tokens.color.surface.background }}>
       <NetworkBanner
         isOnline={networkState.isConnected ?? null}
         isInternetReachable={networkState.isInternetReachable ?? null}
       />
-      <StatusBar style={resolvedTheme === "dark" ? "light" : "dark"} />
+      {/* Signet is dark-only, so the status bar is statically light-on-dark. */}
+      <StatusBar style="light" />
       <Stack>
         <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

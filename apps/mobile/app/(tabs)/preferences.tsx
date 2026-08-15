@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Pressable,
   StyleSheet,
   Switch,
   Text,
@@ -9,10 +8,10 @@ import {
 } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
 import { TaskLoopCard } from "@/components/task-loop-card";
-import { FrappTokens } from "@repo/theme/tokens";
+import { SignetTokens } from "@repo/theme/signet";
 import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { ThemePreference, useFrappTheme } from "@/lib/theme";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type PreferenceState,
   type QuietHoursWindow,
@@ -62,18 +61,12 @@ const PREFERENCE_ROWS: PreferenceRow[] = [
   },
 ];
 
-const THEME_OPTIONS: Array<{ key: ThemePreference; label: string }> = [
-  { key: "system", label: "System" },
-  { key: "light", label: "Light" },
-  { key: "dark", label: "Dark" },
-];
-
 type PreferenceToggleRowProps = {
   title: string;
   description: string;
   value: boolean;
   onValueChange: (value: boolean) => void;
-  tokens: FrappTokens;
+  tokens: SignetTokens;
   accent: string;
   styles: ReturnType<typeof createStyles>;
 };
@@ -97,8 +90,8 @@ function PreferenceToggleRow({
         value={value}
         onValueChange={onValueChange}
         trackColor={{
-          false: tokens.color.surface.border,
-          true: tokens.color.feedback.infoBorderStrong,
+          false: tokens.color.border.input,
+          true: tint(tokens.color.semantic.info, 0.3),
         }}
         thumbColor={value ? accent : tokens.color.surface.card}
       />
@@ -111,7 +104,7 @@ type QuietHoursCardProps = {
   onEnabledChange: (value: boolean) => void;
   quietHoursWindow: QuietHoursWindow;
   onWindowChange: (next: QuietHoursWindow) => void;
-  tokens: FrappTokens;
+  tokens: SignetTokens;
   accent: string;
   styles: ReturnType<typeof createStyles>;
 };
@@ -182,8 +175,8 @@ function QuietHoursCard({
           onValueChange={onEnabledChange}
           accessibilityLabel="Quiet hours"
           trackColor={{
-            false: tokens.color.surface.border,
-            true: tokens.color.feedback.infoBorderStrong,
+            false: tokens.color.border.input,
+            true: tint(tokens.color.semantic.info, 0.3),
           }}
           thumbColor={enabled ? accent : tokens.color.surface.card}
         />
@@ -261,8 +254,7 @@ function QuietHoursCard({
 }
 
 export default function PreferencesScreen() {
-  const { tokens, themePreference, resolvedTheme, setThemePreference } =
-    useFrappTheme();
+  const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const {
@@ -343,40 +335,6 @@ export default function PreferencesScreen() {
         />
       ))}
 
-      <View style={styles.themeCard}>
-        <Text style={styles.themeLabel}>Theme override</Text>
-        <Text style={styles.themeDescription}>
-          System is the default. Manual override persists locally for reliable
-          preview testing.
-        </Text>
-        <View style={styles.themeOptionRow}>
-          {THEME_OPTIONS.map((themeOption) => {
-            const selected = themePreference === themeOption.key;
-            return (
-              <Pressable
-                key={themeOption.key}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setThemePreference(themeOption.key)}
-                style={[
-                  styles.themeOptionButton,
-                  selected ? styles.themeOptionButtonActive : null,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.themeOptionText,
-                    selected ? styles.themeOptionTextActive : null,
-                  ]}
-                >
-                  {themeOption.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
       <TaskLoopCard
         category="Quiet hours"
         state={quietHoursSync}
@@ -416,13 +374,6 @@ export default function PreferencesScreen() {
         meta={categoryMeta}
       />
       <TaskLoopCard
-        category="Theme"
-        state="cached"
-        title={`Theme mode: ${themePreference}`}
-        body={`Current resolved appearance is ${resolvedTheme}. Manual override persists on this device.`}
-        meta="Theme preference synced to local settings storage"
-      />
-      <TaskLoopCard
         category="Integrity"
         state={persistenceFailed ? "retry" : "cached"}
         title={
@@ -445,56 +396,54 @@ export default function PreferencesScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     summaryCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      fontSize: tokens.type.label,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     summaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
-      color: tokens.color.feedback.infoTextStrong,
+      ...typeRole(tokens.typography.role.headline),
+      color: tokens.color.text.foreground,
       letterSpacing: -0.3,
     },
     summaryMeta: {
-      fontSize: tokens.type.meta,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     toggleCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 10,
+      gap: tokens.spacing.sm,
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
     },
     toggleTextStack: {
       flex: 1,
-      gap: 4,
-      paddingRight: 12,
+      gap: tokens.spacing.xs,
+      paddingRight: tokens.spacing.md,
     },
     quietHoursCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 12,
+      gap: tokens.spacing.md,
     },
     quietHoursHeaderRow: {
       flexDirection: "row",
@@ -503,91 +452,44 @@ function createStyles(tokens: FrappTokens) {
     },
     quietHoursFieldRow: {
       flexDirection: "row",
-      gap: 12,
+      gap: tokens.spacing.md,
     },
     quietHoursField: {
       flex: 1,
     },
     quietHoursFieldLabel: {
-      fontSize: tokens.type.label,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
-      color: tokens.color.text.secondary,
+      color: tokens.color.text.mutedForeground,
     },
     quietHoursInput: {
-      marginTop: 6,
-      borderRadius: tokens.radius.md,
+      marginTop: tokens.spacing.xs,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.muted,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 15,
-      color: tokens.color.text.primary,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
+      minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
     },
     quietHoursHint: {
-      fontSize: tokens.type.meta,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.mutedForeground,
     },
     quietHoursHintError: {
-      fontSize: tokens.type.meta,
-      fontWeight: "600",
-      color: tokens.color.feedback.errorText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
     },
     toggleTitle: {
-      fontSize: tokens.type.section - 2,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     toggleDescription: {
-      fontSize: tokens.type.body - 1,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
-    },
-    themeCard: {
-      borderRadius: tokens.radius.lg,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: 8,
-    },
-    themeLabel: {
-      fontSize: tokens.type.section - 2,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
-    },
-    themeDescription: {
-      fontSize: tokens.type.body - 1,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
-    },
-    themeOptionRow: {
-      marginTop: 4,
-      flexDirection: "row",
-      gap: 8,
-    },
-    themeOptionButton: {
-      flex: 1,
-      borderRadius: tokens.radius.md,
-      borderWidth: 1,
-      borderColor: tokens.color.surface.border,
-      backgroundColor: tokens.color.surface.muted,
-      paddingVertical: 9,
-      alignItems: "center",
-    },
-    themeOptionButtonActive: {
-      borderColor: tokens.color.feedback.infoBorderStrong,
-      backgroundColor: tokens.color.feedback.infoBackgroundStrong,
-    },
-    themeOptionText: {
-      fontSize: 13,
-      fontWeight: "700",
-      color: tokens.color.text.secondary,
-    },
-    themeOptionTextActive: {
-      color: tokens.color.feedback.infoTextInteractive,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
   });
 }

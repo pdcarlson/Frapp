@@ -2,8 +2,8 @@ import { Link } from "expo-router";
 import { asRoute } from "@/lib/href";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ScreenShell } from "@/components/screen-shell";
-import { FrappTokens } from "@repo/theme/tokens";
-import { useFrappTheme } from "@/lib/theme";
+import { SignetTokens } from "@repo/theme/signet";
+import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 const TARGETS = [
   {
@@ -65,66 +65,64 @@ export default function NotificationTargetsScreen() {
   );
 }
 
-function createStyles(tokens: FrappTokens) {
+function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
     summaryCard: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.feedback.infoBorder,
-      backgroundColor: tokens.color.feedback.infoBackground,
+      borderColor: tint(tokens.color.semantic.info, 0.3),
+      backgroundColor: tint(tokens.color.semantic.info),
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      fontSize: 12,
-      fontWeight: "700",
+      ...typeRole(tokens.typography.role.label),
       letterSpacing: 0.3,
       textTransform: "uppercase",
-      color: tokens.color.feedback.infoText,
+      color: tokens.color.semantic.info,
     },
     summaryValue: {
-      fontSize: 22,
-      fontWeight: "800",
+      ...typeRole(tokens.typography.role.headline),
       letterSpacing: -0.3,
-      color: tokens.color.feedback.infoTextStrong,
+      color: tokens.color.text.foreground,
     },
     summaryMeta: {
-      fontSize: 13,
-      color: tokens.color.feedback.infoText,
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.info,
     },
     targetList: {
-      gap: 8,
+      gap: tokens.spacing.sm,
     },
     targetRow: {
-      borderRadius: tokens.radius.lg,
+      borderRadius: tokens.radius.card,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
-      gap: 6,
+      gap: tokens.spacing.xs,
+      minHeight: tokens.touch.minimum,
     },
     targetLabel: {
-      fontSize: 15,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
     targetDescription: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: tokens.color.text.secondary,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.mutedForeground,
     },
     backButton: {
-      borderRadius: tokens.radius.md,
+      borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.surface.border,
+      borderColor: tokens.color.border.hairline,
       backgroundColor: tokens.color.surface.card,
-      paddingVertical: 12,
+      paddingVertical: tokens.spacing.md,
+      minHeight: tokens.touch.minimum,
       alignItems: "center",
+      justifyContent: "center",
     },
     backButtonText: {
-      fontSize: 14,
-      fontWeight: "700",
-      color: tokens.color.text.primary,
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.foreground,
     },
   });
 }

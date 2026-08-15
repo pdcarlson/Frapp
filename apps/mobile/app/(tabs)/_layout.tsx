@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { ChapterHeaderTitle } from "@/components/chapter-header-title";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { fontFamilyFor, useFrappTheme } from "@/lib/theme";
 
 const TAB_ICON_SIZE = 20;
 
@@ -53,9 +53,15 @@ export default function TabLayout() {
           paddingTop: 6,
           paddingBottom: 6,
           backgroundColor: tokens.color.surface.card,
-          borderTopColor: tokens.color.surface.border,
+          borderTopColor: tokens.color.border.hairline,
         },
-        headerTitleStyle: { fontWeight: "700", color: tokens.color.text.primary },
+        // The title role (18/600); chapter-header-title.tsx mirrors these values.
+        headerTitleStyle: {
+          fontSize: 18,
+          fontWeight: "600",
+          fontFamily: fontFamilyFor(600),
+          color: tokens.color.text.foreground,
+        },
         headerStyle: { backgroundColor: tokens.color.surface.card },
       }}
     >

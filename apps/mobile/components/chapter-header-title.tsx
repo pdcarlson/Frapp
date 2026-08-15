@@ -1,7 +1,7 @@
 import type { StyleProp, TextStyle } from "react-native";
 import { Animated, Image, StyleSheet, View } from "react-native";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { useFrappTheme } from "@/lib/theme";
+import { fontFamilyFor, useFrappTheme } from "@/lib/theme";
 
 const LOGO_SIZE = 24;
 
@@ -57,7 +57,7 @@ export function ChapterHeaderTitle({
         // `style` last: a custom headerTitle bypasses the headerTitleStyle
         // that screenOptions applies to a plain string title, so without
         // forwarding it these two screens would silently stop tracking it.
-        style={[styles.title, { color: tokens.color.text.primary }, style]}
+        style={[styles.title, { color: tokens.color.text.foreground }, style]}
       >
         {title}
       </Animated.Text>
@@ -76,8 +76,11 @@ const styles = StyleSheet.create({
     height: LOGO_SIZE,
     borderRadius: 4,
   },
+  // The title role (18/600) from foundations.md §7; static because this
+  // StyleSheet is module-scope and the role values are fixed constants.
   title: {
-    fontWeight: "700",
-    fontSize: 17,
+    fontSize: 18,
+    fontWeight: "600",
+    fontFamily: fontFamilyFor(600),
   },
 });
