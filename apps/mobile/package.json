@@ -14,13 +14,13 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "^2.2.0",
-    "@react-navigation/native": "^7.1.8",
+    "@react-navigation/native": "^7.3.16",
     "@repo/api-sdk": "*",
     "@repo/hooks": "*",
     "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
-    "@supabase/supabase-js": "^2.49.1",
-    "@tanstack/react-query": "^5.90.21",
+    "@supabase/supabase-js": "^2.112.3",
+    "@tanstack/react-query": "^5.101.4",
     "expo": "~54.0.33",
     "expo-constants": "~18.0.13",
     "expo-file-system": "~19.0.17",
@@ -33,7 +33,7 @@
     "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "expo-web-browser": "~15.0.10",
-    "nativewind": "^4.2.1",
+    "nativewind": "^4.2.6",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
@@ -51,7 +51,7 @@
     "eslint": "^9.39.1",
     "react-test-renderer": "19.1.0",
     "typescript": "~5.9.2",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.10"
   },
   "private": true
 }
