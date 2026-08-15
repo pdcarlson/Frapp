@@ -50,9 +50,9 @@ Use only these icon sizes in product UI:
 - Badge/status companion icons: 14–16px max.
 - Avoid custom in-between values unless there is a documented accessibility
   reason.
-- The shipping legacy mobile app renders tab icons at 20px (`TAB_ICON_SIZE` in
-  `apps/mobile/app/(tabs)/_layout.tsx`); the Canvas screens lock tab glyphs at
-  24px for the reskin.
+- Mobile tab glyphs are 24px (`TAB_GLYPH_SIZE` in
+  `apps/mobile/components/tab-glyphs.tsx`), matching the Canvas lock. The
+  pre-reskin bar drew them at 20px.
 
 ---
 
@@ -86,10 +86,18 @@ duotone. Interim rules:
 - **Web (Lucide)** — keep the default stroke weight; do not restyle individual
   icons.
 - **Mobile (Ionicons)** — outline variants for navigation and neutral states;
-  fill variants only for explicit active/high-emphasis affordances.
+  fill variants only for explicit active/high-emphasis affordances. **The tab
+  bar has left this interim path**: its four glyphs are now duotone
+  `react-native-svg` components in `apps/mobile/components/tab-glyphs.tsx`,
+  transcribed from the Canvas reference. Ionicons remains the interim pack for
+  in-screen icons until each screen is reskinned.
 - Do not mix icon packs within a single surface.
 - Surfaces built or rebuilt under the Signet reskin use the duotone recipe
   (§1); legacy surfaces keep their pack until reskinned.
+- Note the interim outline/fill pairs below are a *deliberate* violation of §1
+  rule 1, which forbids swapping to a filled variant. They are tolerated only
+  while a surface still rides an off-the-shelf pack; a reskinned surface
+  recolors one glyph instead.
 
 ---
 
@@ -98,21 +106,29 @@ duotone. Interim rules:
 This map is the source of truth for intent → icon selection. No ad hoc
 substitutions.
 
-### 6.1 Mobile (Ionicons)
+### 6.1 Mobile tab bar (duotone, shipped)
 
-Shipping pairs live in `TAB_ICON_NAMES` in `apps/mobile/app/(tabs)/_layout.tsx`.
-The Signet reskin collapses the tab bar to four tabs — Chat, Events, Tasks,
-More (see [mobile navigation](../mobile/navigation.md)).
+The tab bar is reskinned. Its four glyphs live in
+`apps/mobile/components/tab-glyphs.tsx` as `react-native-svg` components at
+24px, with geometry transcribed from the tab bar drawn in
+[`reference/canvas-screens.dc.html`](reference/canvas-screens.dc.html). There is
+one component per tab and it recolors between states per §1 rule 1 — there is no
+second, filled variant to swap to.
 
-| Semantic intent | Inactive / neutral | Active / emphasis | In the 4-tab nav? |
-|---|---|---|---|
-| Chat tab (home) | `chatbubbles-outline` | `chatbubbles` | Yes |
-| Events tab | `calendar-outline` | `calendar` | Yes |
-| Tasks tab | `checkmark-circle-outline` | `checkmark-circle` | Yes — new; pair matches the Canvas circle-check glyph, not yet shipped |
-| More tab | `ellipsis-horizontal-circle-outline` | `ellipsis-horizontal-circle` | Yes |
-| Home tab | `home-outline` | `home` | No — legacy, retired with the Home tab |
-| Points tab | `trophy-outline` | `trophy` | No — legacy, leaves the tab bar |
-| Profile tab | `person-outline` | `person` | No — legacy, leaves the tab bar |
+| Semantic intent | Glyph | Notes |
+|---|---|---|
+| Chat tab (home) | Speech bubble with tail | |
+| Events tab | Calendar body; rules and hangers stay stroke-only | |
+| Tasks tab | Circle-check; the checkmark stays stroke-only | |
+| More tab | **2×2 grid of rounded squares** | Not an ellipsis. Canvas draws the grid, and Canvas wins for visuals — the earlier `ellipsis-horizontal-circle` mapping here was wrong. |
+
+Retired with the 4-tab collapse: the Home, Points, and Profile tabs. Home and
+Points no longer exist as screens; Profile moved into the More hub.
+
+### 6.1.1 Mobile in-screen icons (Ionicons, interim)
+
+Screens that have not been reskinned yet still draw Ionicons per §5. Each
+cluster replaces its own as it rebuilds; there is no separate icon migration.
 
 ### 6.2 Web Dashboard (Lucide)
 

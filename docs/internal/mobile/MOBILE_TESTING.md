@@ -69,7 +69,36 @@ or temporarily deep-link `exp://.../--/sheet-demo`). Verify:
       Cancel; it drags and dismisses; typing in the field keeps it visible above
       the keyboard.
 
-The screen is deleted before the Phase 2 exit gate (#808 supersedes it).
+The screen is deleted before the Phase 2 exit gate (#808 supersedes it). It
+deliberately survived the S2 nav restructure: it is still the only device smoke
+vehicle anyone has, and no one has yet run it.
+
+### 5. S2 navigation smoke
+
+S2 (#957) moved every route at once and could not be device-verified either. The
+bundle builds and `lib/routes.spec.ts` proves every route literal resolves
+against the file tree, but neither proves the app *navigates*. On the first
+device run, check:
+
+- [ ] The app opens on **Chat** — chat is home, and there is no Home tab.
+- [ ] The tab bar shows exactly **four** tabs: Chat, Events, Tasks, More.
+- [ ] Tab glyphs are **duotone at 24px** and the active one **recolors** rather
+      than switching to a solid shape. The More glyph is a 2×2 grid, not an
+      ellipsis. The active label is heavier than the inactive ones.
+- [ ] Every **More** row opens its destination; the stub rows say so rather than
+      erroring.
+- [ ] **Profile** is reachable from More and gone from the tab bar.
+- [ ] A deleted path (`exp://.../--/points`, `--/task-center`) lands on home via
+      `+not-found` instead of an error screen.
+- [ ] **`frapp://event-details` still resolves** — export an `.ics` from an event
+      and open it. This is the one filename contract in the app; a break here is
+      invisible until a member taps a calendar entry.
+- [ ] **Multi-chapter member** (needs a real account in 2+ chapters, and #805 —
+      the access-token hook — enabled): sign in, land on the chapter picker, pick
+      one, and arrive in the tabs with chapter data loading. Then force-quit and
+      reopen: it should go straight to the tabs, **not** flash the picker.
+- [ ] **Single-chapter member**: signs in straight to the tabs, never sees the
+      picker.
 
 ## Unit tests
 
@@ -80,6 +109,13 @@ native Expo modules (`expo-file-system/legacy`, `expo-sharing`, `expo-font`,
 `react-native-keyboard-controller`, `@expo-google-fonts/figtree`), and the
 `react-native` platform globals (including `StyleSheet` and string component
 stand-ins for Signet token-factory tests).
+
+Two suites are static rather than render-based, and deliberately so:
+`lib/routes.spec.ts` walks the real route tree to check every route literal —
+it is what stands in for typed routes, which do not bind under CI's bare `tsc`
+(see [`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md)) —
+and `lib/auth-gate.spec.ts` enumerates every session/chapter state to prove the
+two routing gates cannot redirect into each other.
 
 ```bash
 npm run test -w apps/mobile

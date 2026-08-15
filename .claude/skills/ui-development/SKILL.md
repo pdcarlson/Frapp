@@ -174,6 +174,17 @@ writing a screen. The constraints below are the ones most often violated by web 
   screen never crashes Go. Screen code MUST NOT import them directly — an ESLint
   `no-restricted-imports` error enforces this; the keyboard module is `apps/mobile/lib/keyboard.tsx`
   (`KeyboardProviderGuarded` / `getKeyboardPath`).
+- **Seven files are frozen — building a screen means ADDING files.** `app/_layout.tsx`,
+  `app/(tabs)/_layout.tsx`, `lib/theme.tsx`, `components/screen-shell.tsx`, `lib/href.ts`,
+  `package.json`, `app.json`. Every planned route is already registered hidden (`href: null`) with a
+  stub backing file, so a screen slice fills in the stub and never touches the tab layout. If you
+  genuinely need one of the seven — a new dependency, a config plugin, a new shared prop — that is a
+  separate integrator PR, not part of your slice. Full rule:
+  [`spec/ui/mobile/navigation.md`](../../../spec/ui/mobile/navigation.md) § Hotspot freeze.
+- **Route strings are not compile-checked in CI.** `typedRoutes` is on, but the generated types are
+  gitignored and only `expo start` writes them, so under a bare `tsc` `Href` is just `string`.
+  `apps/mobile/lib/routes.spec.ts` is the guard that actually runs — if you add or move a route, it
+  is what tells you a link went stale.
 
 Everything else — component variants, states, iconography, copy — is specified in the docs linked
 above and is not restated here.
