@@ -62,10 +62,23 @@ npm run test -w apps/mobile
 
 ## Gotchas
 
-**Do not widen the React version range.** React is pinned to an exact `19.1.0` in
-every workspace and in the root `overrides`. React Native 0.81.5 bundles
-`react-native-renderer` 19.1.0, which asserts *exact* equality with `react` at
-runtime, but declares its peer range as `^19.1.0` — so npm will happily resolve a
+**Do not widen the React version range.** React is pinned to an exact `19.2.3` in
+every workspace and in the root `overrides`. React Native 0.86.2 bundles
+`react-native-renderer` 19.2.3, which asserts *exact* equality with `react` at
+runtime, but declares its peer range as `^19.2.0` — so npm will happily resolve a
 newer React, hoist it to the repo root, and leave the mobile app dead on first
 render with "Invalid hook call" followed by "Incompatible React versions". Unit
 tests, lint, and typecheck all pass in that state; only booting the app catches it.
+
+The exact version is not frozen forever — it moves with each Expo SDK upgrade.
+Read the correct target for an SDK from `expo/bundledNativeModules.json` (it lists
+`react`, `react-dom`, and `react-native` together) and move all six manifests plus
+the root `overrides` in one commit. A root `overrides` entry is global, so mobile
+cannot take a newer React while the override holds the old one.
+
+**Upgrading the SDK requires regenerating the lockfile.** `@expo/vector-icons`
+declares `expo-font: ">=14.0.4"` as a *peer*, which the previous SDK's `expo-font`
+still satisfies — so a plain `npm install` keeps the whole old SDK chain hoisted at
+the root next to the new one, vulnerabilities included. Use
+`rm -rf node_modules package-lock.json && npm install`, then verify a single
+`node_modules/expo` at the expected version before trusting any audit numbers.
