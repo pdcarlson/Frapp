@@ -61,14 +61,20 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 >
 > The middle row is the dangerous one: `git rev-parse --is-shallow-repository` says `false`,
 > `git fetch --unshallow` errors as a no-op, and the scan reports clean having covered ~27% of
-> history. **Do not use shallowness as the completeness check.** Before recording an audit, fetch
-> everything and confirm the ref count:
+> history. **Do not use shallowness as the completeness check.** Instead, fetch everything and
+> check that you hold as many refs as the remote offers:
 >
 > ```bash
 > git fetch origin '+refs/heads/*:refs/remotes/origin/*' '+refs/pull/*/head:refs/remotes/pr/*'
-> git for-each-ref --format='%(refname)' 'refs/remotes/**' | wc -l   # compare against the remote
-> git rev-list --count --all
+> # local refs vs what the remote actually has — these two should agree
+> git for-each-ref --format='%(refname)' 'refs/remotes/**' | wc -l
+> { git ls-remote --heads origin; git ls-remote origin 'refs/pull/*/head'; } | wc -l
 > ```
+>
+> **Compare refs, not commit counts.** `git rev-list --count --all` will *not* match the "commits
+> scanned" figure gitleaks prints — gitleaks' default `--diff-filter=tuxdb` skips merge commits and
+> some patch types, so on a fully-fetched clone here `rev-list --count --all` reads ~1998 against
+> gitleaks' ~1659. Both are correct; they count different things. Chasing that gap is a dead end.
 >
 > PR refs matter: a secret pushed to a pull request that was closed or whose branch was deleted is
 > still on the remote and still fetchable, but a plain `git clone` never retrieves it. The three
@@ -88,21 +94,30 @@ node scripts/scan-secrets.mjs --base <sha> --head <sha>  # a commit range
 
 Keep the allowlist tight — broad path globs hide real leaks.
 
-A `/.gitleaks-baseline.json` **does** ship, holding two accepted historical false positives — see the
-audit record below for what they are and why. Without it `npm run check:secrets` exits non-zero on
-every run, which is why the audit command was unusable as a recorded check before 2026-08-15.
+A `/.gitleaks-baseline.json` **does** ship, holding the **five** accepted historical false positives
+triaged in the audit record below. Without it `npm run check:secrets` exits non-zero on every run,
+which is why the audit command was unusable as a recorded check before 2026-08-15.
 
 It is generated `--redact`, so it carries fingerprints and no secret values. Entries are pinned to a
 specific commit + file + rule, so they suppress only those exact findings; a newly introduced secret
-is still caught (verified with a token-shaped probe). Regenerate it only alongside an audit record
-entry, and keep the flags identical to the ones `buildGitleaksArgs` builds for `full` mode — baseline
-matching compares findings field by field, so a scan invoked differently from the generator will fail
-to match its own entries:
+is still caught (verified with a token-shaped probe). Regenerate it only alongside a new audit record
+entry, **from a clone with the full ref set** — regenerating from a partial clone silently drops the
+entries whose commits it cannot reach, and the result red-lights `check:secrets` for everyone else:
 
 ```bash
+# Note: deliberately WITHOUT --baseline-path, and note the temporary move.
+mv .gitleaks-baseline.json .gitleaks-baseline.json.bak
 .cache/gitleaks/gitleaks git --no-banner --redact -c .gitleaks.toml \
   --report-format json --report-path .gitleaks-baseline.json --exit-code 0
 ```
+
+> **Do not "align" this command with `buildGitleaksArgs`.** Full mode adds `--baseline-path` whenever
+> the file exists (`scan-secrets.mjs:148`), and a generator run with that flag filters every finding
+> against the baseline already on disk and writes **`[]`** — with `--exit-code 0` suppressing any
+> complaint. Committing that empty array silently un-accepts all five findings. Moving the file aside
+> first (above) makes the run independent of whatever is already committed. Otherwise the flags must
+> match the scan's, because baseline matching compares findings field by field — which is also why
+> `--redact` appears on both sides.
 
 ## Audit history
 

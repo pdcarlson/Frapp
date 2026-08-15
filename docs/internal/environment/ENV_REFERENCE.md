@@ -188,10 +188,21 @@ is unavailable in that state and the sign-in screen says so.
 
 **Every *prefixed* variable in the three tables above is public by design.** A
 `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix means the value is inlined into a bundle any user can read — so
-the prefix is the decision, and it is irreversible once shipped. The prefixed set is deliberately
-small: two Supabase anon values (public by Supabase's design, gated by RLS and the API's own guards),
-three URLs, and the Stripe **publishable** key. No secret belongs there; `ANALYTICS_HMAC_SALT` is the
-worked example of why, above.
+the prefix is the decision, and it is irreversible once shipped.
+
+The prefixed set is deliberately small. It is **exactly these nine variables** — enumerated by name
+rather than summarised, so it can be diffed against a bundle without interpretation:
+
+| | |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` · `EXPO_PUBLIC_SUPABASE_URL` | project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon key — public by Supabase's design, gated by RLS and the API's own guards |
+| `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
+| `NEXT_PUBLIC_APP_URL` · `NEXT_PUBLIC_LANDING_URL` | sibling-site URLs |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key (`pk_…`) — the secret key stays API-only |
+
+(Six canonical values; the `NEXT_PUBLIC_`/`EXPO_PUBLIC_` pairs are Infisical references to the same
+one.) No secret belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
 
 `SUPABASE_AUTH_BYPASS` is the one **unprefixed** entry in the `apps/web` table: it is read in
 `proxy.ts` (middleware, server-side), is CI-only, and is ignored when `NODE_ENV` is `production`. It

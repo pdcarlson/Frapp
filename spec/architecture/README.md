@@ -837,12 +837,12 @@ an agent cannot observe permission prompts. Decision record, probe table, and mi
 
 - A new **required** `secret-scan` check, rollout-gated like the ADR-14 review gate: codified in `configure-branch-protection.mjs` but enforced only once the job exists on the target branch and has run green (applying branch protection is a manual PAT step). Until applied it still runs and surfaces failures, just non-blocking.
 - Devs get the hook automatically on `npm install` (the `prepare` script sets `core.hooksPath`). The binary lands in a gitignored `.cache/gitleaks/` on first scan, or any `gitleaks` on `PATH` (e.g. Homebrew) is used. Offline, the hook/local-gate degrade to a warning (`--soft-missing`); CI is the hard gate. Emergency bypass: `git commit --no-verify`.
-- False positives are managed via inline `gitleaks:allow`, a tight `/.gitleaks.toml` `[allowlist]`, or an optional `/.gitleaks-baseline.json` (auto-detected). The pinned version lives once in `scripts/install-gitleaks.sh` (`GITLEAKS_VERSION`); bumping it updates all three layers.
+- False positives are managed via inline `gitleaks:allow`, a tight `/.gitleaks.toml` `[allowlist]`, or `/.gitleaks-baseline.json` (auto-detected) — the baseline is no longer hypothetical: one ships, with five accepted fingerprints, and deleting it turns the audit command red. The pinned version lives once in `scripts/install-gitleaks.sh` (`GITLEAKS_VERSION`); bumping it updates all three layers.
 
 **Trigger to revisit:**
 
 - The repo re-opens or adopts GitHub Advanced Security → native push protection returns and the CI job can become redundant.
-- Recurring false positives or a need for shared org config → tune `.gitleaks.toml`, adopt a baseline, or move to a managed scanner.
+- Recurring false positives or a need for shared org config → tune `.gitleaks.toml`, re-baseline (a baseline is already adopted), or move to a managed scanner.
 - Metered-minute pressure → the job is already minimal, but it can be folded into an existing job or made `paths`-aware.
 
 ---
