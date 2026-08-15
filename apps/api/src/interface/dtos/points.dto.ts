@@ -7,6 +7,7 @@ import {
   IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -17,7 +18,10 @@ import {
   POINTS_WINDOWS,
   type PointsWindow,
 } from '../../domain/utils/points-window';
-import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
+import {
+  POINTS_ADJUSTMENT_MAX,
+  POINTS_REASON_MAX_LENGTH,
+} from '../../domain/constants/field-limits';
 
 export class AdjustPointsDto {
   // UUID-validated for the reason UpdateMemberRolesDto.custom_role_ids is: the
@@ -44,9 +48,12 @@ export class AdjustPointsDto {
   @IsEnum(['MANUAL', 'FINE'])
   category: 'MANUAL' | 'FINE';
 
-  @ApiProperty()
+  // Capped because this is interpolated into the points chat card's content
+  // and posted through PointsService directly, bypassing SendMessageDto's cap.
+  @ApiProperty({ maxLength: POINTS_REASON_MAX_LENGTH })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(POINTS_REASON_MAX_LENGTH)
   reason: string;
 
   @ApiPropertyOptional({

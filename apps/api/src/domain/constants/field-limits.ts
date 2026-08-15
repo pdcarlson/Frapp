@@ -22,11 +22,32 @@ export const ROLE_NAME_MAX_LENGTH = 100;
 export const ROLE_KEY_MAX_LENGTH = 64;
 
 /**
- * Manual points adjustment magnitude, applied symmetrically. The service only
- * *flags* large adjustments against the anomaly threshold — it never rejects
- * them — so this is the only ceiling on a single ledger write.
+ * Points magnitude for a single ledger write, applied symmetrically. The
+ * service only *flags* large adjustments against the anomaly threshold — it
+ * never rejects them — so validation is the only ceiling.
+ *
+ * This binds **every** path that writes `point_transactions.amount`, not just
+ * the manual one: a direct adjustment, an event's `point_value` (written once
+ * per check-in), and a task's `point_reward`. Capping only the manual path
+ * would leave the wider `events:create` grant able to mint amounts that
+ * `points:adjust` cannot, and the ledger is append-only — corrections are
+ * themselves adjustments bound by this same constant, so an uncapped write is
+ * not fully reversible through the API.
+ *
+ * It also keeps the value inside `int4`: `point_transactions.amount` and
+ * `events.point_value` are both `int`, so an unbounded `@IsInt()` overflows
+ * inside Postgres and surfaces as a 500 rather than a 400 at the edge.
  */
 export const POINTS_ADJUSTMENT_MAX = 100_000;
+
+/**
+ * Reason attached to a manual adjustment. Capped because it is not only stored:
+ * `PointsService` interpolates it into the points chat card's `content`
+ * (`"<verb> N points to <member>: <reason>"`) and posts that through the
+ * service directly, never through `SendMessageDto` — so without a bound here
+ * the chat column's own cap below is trivially side-stepped.
+ */
+export const POINTS_REASON_MAX_LENGTH = 500;
 
 /**
  * Invoice amount in cents. Anchored to Stripe's own per-charge maximum for USD
@@ -34,6 +55,9 @@ export const POINTS_ADJUSTMENT_MAX = 100_000;
  * created, so accepting the invoice would only defer the failure to payment.
  */
 export const INVOICE_AMOUNT_MAX_CENTS = 99_999_999;
+
+/** Invoice title, shared by create and update so the two cannot diverge. */
+export const INVOICE_TITLE_MAX_LENGTH = 255;
 
 /** Free-text invoice description. */
 export const INVOICE_DESCRIPTION_MAX_LENGTH = 2_000;

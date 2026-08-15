@@ -6,10 +6,12 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
 
 export class CreateEventDto {
   @ApiProperty()
@@ -39,6 +41,9 @@ export class CreateEventDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  // Written to point_transactions.amount once per check-in, so it is a ledger
+  // write and carries the same ceiling as a manual adjustment.
+  @Max(POINTS_ADJUSTMENT_MAX)
   point_value?: number;
 
   @ApiPropertyOptional({ default: false })
@@ -112,6 +117,9 @@ export class UpdateEventDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  // Written to point_transactions.amount once per check-in, so it is a ledger
+  // write and carries the same ceiling as a manual adjustment.
+  @Max(POINTS_ADJUSTMENT_MAX)
   point_value?: number;
 
   @ApiPropertyOptional()

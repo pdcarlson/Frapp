@@ -4652,6 +4652,7 @@
             "in": "query",
             "description": "Scope results to a single channel.",
             "schema": {
+              "format": "uuid",
               "type": "string"
             }
           },
@@ -6475,7 +6476,8 @@
             ]
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 500
           },
           "channel_id": {
             "type": "string",
@@ -6536,7 +6538,8 @@
           },
           "title": {
             "type": "string",
-            "description": "Invoice title (e.g. \"Fall 2026 Dues\")"
+            "description": "Invoice title (e.g. \"Fall 2026 Dues\")",
+            "maxLength": 255
           },
           "description": {
             "type": "string",
@@ -6564,7 +6567,8 @@
         "type": "object",
         "properties": {
           "title": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 255
           },
           "description": {
             "type": "string",
@@ -6918,7 +6922,8 @@
         "type": "object",
         "properties": {
           "geofence_id": {
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "lat": {
             "type": "number"

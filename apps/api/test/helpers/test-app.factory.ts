@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../src/app.module';
 import { createSupabaseMock } from './supabase-mock.factory';
+import { VALIDATION_PIPE_OPTIONS } from '../../src/interface/pipes/validation-pipe.options';
 
 export async function createTestApp(options?: {
   supabaseAuthUser?: { id: string; email?: string | null } | null;
@@ -24,14 +25,7 @@ export async function createTestApp(options?: {
 
   const app = moduleFixture.createNestApplication();
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
 
   options?.configureApp?.(app);
   await app.init();

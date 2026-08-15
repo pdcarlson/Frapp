@@ -1,6 +1,7 @@
 import {
   IsArray,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
@@ -14,6 +15,7 @@ import { ROLE_NAME_MAX_LENGTH } from '../../domain/constants/field-limits';
 export class CreateRoleDto {
   @ApiProperty({ maxLength: ROLE_NAME_MAX_LENGTH })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(ROLE_NAME_MAX_LENGTH)
   name: string;
 

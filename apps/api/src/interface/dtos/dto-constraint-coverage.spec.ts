@@ -129,41 +129,61 @@ describe('DTO constraint coverage (#849)', () => {
     expect(offenders).toEqual([]);
   });
 
+  // [class, property, what makes the value hostile, the value]. The reason
+  // comes third because jest fills `%s` positionally — with the value there,
+  // four cases were named after 101 literal `x` characters and no case could
+  // be selected with `-t`.
   it.each([
-    ['AdjustPointsDto', 'amount', 2_147_483_647, 'award above the ceiling'],
-    ['AdjustPointsDto', 'amount', -2_147_483_648, 'fine below the floor'],
-    ['AdjustPointsDto', 'target_user_id', 'not-a-uuid', 'non-uuid target'],
-    ['CreateFinancialInvoiceDto', 'amount', 100_000_000, 'unpayable amount'],
-    ['UpdateFinancialInvoiceDto', 'amount', 100_000_000, 'unpayable amount'],
+    ['AdjustPointsDto', 'amount', 'award above the ceiling', 2_147_483_647],
+    ['AdjustPointsDto', 'amount', 'fine below the floor', -2_147_483_648],
+    ['AdjustPointsDto', 'target_user_id', 'non-uuid target', 'not-a-uuid'],
+    ['AdjustPointsDto', 'reason', 'unbounded reason', 'x'.repeat(501)],
+    ['CreateFinancialInvoiceDto', 'amount', 'unpayable amount', 100_000_000],
+    ['UpdateFinancialInvoiceDto', 'amount', 'unpayable amount', 100_000_000],
+    ['CreateFinancialInvoiceDto', 'title', 'oversized title', 'x'.repeat(256)],
     [
       'ListPointTransactionsQueryDto',
       'user_id',
-      'not-a-uuid',
       'non-uuid filter',
+      'not-a-uuid',
     ],
     [
       'TransferPresidencyDto',
       'target_member_id',
-      'not-a-uuid',
       'non-uuid target',
+      'not-a-uuid',
     ],
-    ['SendMessageDto', 'metadata', 'a string, not an object', 'untyped blob'],
-    ['CreateRoleDto', 'name', 'x'.repeat(101), 'oversized role name'],
-    ['UpdateRoleDto', 'name', 'x'.repeat(101), 'oversized role name'],
-    ['CreateCustomRoleDto', 'label', 'x'.repeat(101), 'oversized role label'],
-    ['UpdateCustomRoleDto', 'label', 'x'.repeat(101), 'oversized role label'],
-  ])('%s.%s rejects a %s', async (className, prop, hostileValue, _why) => {
+    ['SendMessageDto', 'metadata', 'untyped blob', 'a string, not an object'],
+    ['CreateRoleDto', 'name', 'oversized role name', 'x'.repeat(101)],
+    ['CreateRoleDto', 'name', 'empty role name', ''],
+    ['UpdateRoleDto', 'name', 'oversized role name', 'x'.repeat(101)],
+    ['CreateCustomRoleDto', 'label', 'oversized role label', 'x'.repeat(101)],
+    ['UpdateCustomRoleDto', 'label', 'oversized role label', 'x'.repeat(101)],
+    ['CreateCustomRoleDto', 'key', 'oversized role key', 'x'.repeat(65)],
+    // Every path that writes point_transactions.amount, not just the manual one.
+    ['CreateEventDto', 'point_value', 'ledger write above the ceiling', 2e9],
+    ['UpdateEventDto', 'point_value', 'ledger write above the ceiling', 2e9],
+    ['CreateTaskDto', 'point_reward', 'ledger write above the ceiling', 2e9],
+    ['ListPollsQueryDto', 'channel_id', 'non-uuid channel', 'not-a-uuid'],
+    ['StartStudySessionDto', 'geofence_id', 'non-uuid geofence', 'not-a-uuid'],
+  ])('%s.%s rejects an %s', async (className, prop, _why, hostileValue) => {
     // Asserted by *validating a value*, not by naming decorators: composing
     // these bounds into a custom decorator later is a refactor, and a test
     // that failed on that would be measuring the implementation rather than
     // the rule. These are the properties #849 called out as server-decided,
     // money-shaped, or unbounded.
+    //
+    // `validate` runs with NO whitelist options on purpose. Under
+    // `forbidNonWhitelisted` an *undeclared* property yields an error whose
+    // `.property` is that same name ("property X should not exist"), so this
+    // assertion passed whether the bound existed or not — deleting a decorator,
+    // or typo-ing a row, left the whole table green. Without the option a
+    // property with no constraints produces no error at all, and the row fails.
     const cls = classes.find((c) => c.name === className);
     expect(cls).toBeDefined();
 
     const errors = await validate(
       plainToInstance(cls as DtoClass, { [prop]: hostileValue }),
-      { whitelist: true, forbidNonWhitelisted: true },
     );
 
     expect(errors.map((e) => e.property)).toContain(prop);

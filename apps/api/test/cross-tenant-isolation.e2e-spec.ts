@@ -30,6 +30,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PermissionsGuard } from '../src/interface/guards/permissions.guard';
+import { VALIDATION_PIPE_OPTIONS } from '../src/interface/pipes/validation-pipe.options';
 import {
   createTableAwareSupabaseMock,
   type SeededTables,
@@ -168,14 +169,7 @@ describe('Cross-tenant isolation (e2e)', () => {
       type: VersioningType.URI,
       defaultVersion: '1',
     });
-    instance.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: { enableImplicitConversion: true },
-      }),
-    );
+    instance.useGlobalPipes(new ValidationPipe(VALIDATION_PIPE_OPTIONS));
     await instance.init();
     return instance;
   }

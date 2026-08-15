@@ -2642,6 +2642,7 @@ export interface components {
             pause_grace_minutes?: number;
         };
         StartStudySessionDto: {
+            /** Format: uuid */
             geofence_id: string;
             lat: number;
             lng: number;

@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -113,8 +114,9 @@ export class UpdateGeofenceDto {
 }
 
 export class StartStudySessionDto {
-  @ApiProperty()
-  @IsString()
+  // Reaches the geofence uuid PK filter; unvalidated it is a 500, not a 400.
+  @ApiProperty({ format: 'uuid' })
+  @IsUUID()
   geofence_id: string;
 
   @ApiProperty()

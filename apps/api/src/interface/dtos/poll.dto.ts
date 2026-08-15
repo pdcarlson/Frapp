@@ -4,6 +4,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   MinLength,
@@ -58,9 +59,14 @@ export class VoteDto {
 }
 
 export class ListPollsQueryDto {
-  @ApiPropertyOptional({ description: 'Scope results to a single channel.' })
+  @ApiPropertyOptional({
+    description: 'Scope results to a single channel.',
+    format: 'uuid',
+  })
   @IsOptional()
-  @IsString()
+  // Reaches `.eq('channel_id', …)` on a uuid column; an unvalidated string
+  // fails in Postgres as a 500 rather than here as a 400.
+  @IsUUID()
   channel_id?: string;
 
   @ApiPropertyOptional({
