@@ -79,6 +79,12 @@ const LITERAL_PATTERNS = [
   // `[{ href: "/host-check-in", … }]`, which the JSX-attribute pattern misses.
   /href:\s*"([^"]+)"/g,
   /router\.(?:replace|push|navigate)\(\s*"([^"]+)"\s*\)/g,
+  // Object form. A route that takes a param has to be navigated as
+  // `router.push({ pathname: "/chat-thread", params: { channelId } })`, which
+  // every pattern above misses — the href is not a bare string literal at the
+  // call site. Added with #937 C1, whose chat list is the first screen to
+  // navigate with a param; without it the s04 → s05 link was invisible here.
+  /pathname:\s*"([^"]+)"/g,
 ];
 
 type Usage = { file: string; href: string };

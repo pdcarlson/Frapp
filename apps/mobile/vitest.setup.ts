@@ -1,3 +1,4 @@
+import React from "react";
 import { vi } from "vitest";
 
 // Mock global variables for Expo
@@ -54,6 +55,42 @@ vi.mock("react-native", () => ({
   ActivityIndicator: "ActivityIndicator",
   KeyboardAvoidingView: "KeyboardAvoidingView",
 }));
+
+// expo-router ships untranspiled source, so importing any screen or any
+// component that navigates fails to parse under vitest. Mocked suite-wide for
+// the same reason the native modules below are: a spec should be able to import
+// a screen without pulling the router's real module graph in. `useRouter` hands
+// back stable `vi.fn()`s so a spec can assert on navigation via
+// `vi.mocked(useRouter)().push`.
+//
+// That `router` is one shared object for the whole file, and `clearMocks` is off
+// globally (see vitest.config.ts for why), so **a spec asserting on navigation
+// must clear it itself** — `beforeEach(() => vi.clearAllMocks())` — or calls
+// accumulate across tests and `toHaveBeenCalledWith` passes from an earlier one.
+// The same applies to any `useLocalSearchParams` return value a spec stubs in.
+vi.mock("expo-router", () => {
+  const router = {
+    push: vi.fn(),
+    replace: vi.fn(),
+    navigate: vi.fn(),
+    back: vi.fn(),
+  };
+  return {
+    useRouter: () => router,
+    // Runs the effect immediately and on every callback-identity change, which
+    // is the focused-screen behavior; the real one additionally re-runs on
+    // refocus, which a headless test never triggers.
+    useFocusEffect: (callback: () => undefined | (() => void)) => {
+      React.useEffect(callback, [callback]);
+    },
+    useLocalSearchParams: vi.fn(() => ({})),
+    usePathname: vi.fn(() => "/"),
+    Link: "Link",
+    Redirect: "Redirect",
+    Tabs: "Tabs",
+    Stack: "Stack",
+  };
+});
 
 // Chat adapter dependencies (#937 C1). Both are mocked suite-wide because the
 // adapters are imported transitively by the chat screens, and loading either

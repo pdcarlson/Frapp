@@ -24,6 +24,7 @@ import {
   removeLocalPlaceholder,
   type ChatActionContext,
 } from "./chat-client";
+import { randomClientId } from "./random-id";
 
 export interface DispatchResult {
   ok: boolean;
@@ -56,8 +57,9 @@ interface DispatchArgs {
 }
 
 function makeOptionId(): string {
-  // Avoid `crypto.randomUUID()` here so the option id stays stable in
-  // server-rendered or test environments without a Web Crypto polyfill.
+  // A poll option id only has to be unique within one message's option list, so
+  // it stays a short readable token rather than a full UUID. (`randomClientId()`
+  // is the right call for anything the server dedupes on.)
   return Math.random().toString(36).slice(2, 10);
 }
 
@@ -200,7 +202,7 @@ async function dispatchPoints(
     parsed.value.action === "grant"
       ? parsed.value.amount
       : -parsed.value.amount;
-  const clientMessageId = crypto.randomUUID();
+  const clientMessageId = randomClientId();
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -265,7 +267,7 @@ async function dispatchTask(
     };
   }
 
-  const clientMessageId = crypto.randomUUID();
+  const clientMessageId = randomClientId();
 
   insertLocalPlaceholder(ctx, {
     channelId,
@@ -351,7 +353,7 @@ async function dispatchEvent(
     return { ok: false, error: "Couldn't read the event date or time" };
   }
 
-  const clientMessageId = crypto.randomUUID();
+  const clientMessageId = randomClientId();
 
   insertLocalPlaceholder(ctx, {
     channelId,
