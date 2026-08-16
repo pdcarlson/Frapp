@@ -1,17 +1,22 @@
-import type { ErrorEvent } from '@sentry/nestjs';
+import type { ErrorEvent, NodeOptions } from '@sentry/nestjs';
 import { pseudonymizeIp, pseudonymizeUserId } from './pseudonyms';
 
 /**
  * PII scrubbing for everything leaving the API for Sentry (issue #481).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
- * classes, and this module is the single enforcement point for both **on error
- * events**. It is wired as `beforeSend` (via `sentry-options.ts`), which the SDK
- * invokes for error events only — transaction events go to
- * `beforeSendTransaction`, which is not set, so nothing below applies to them.
- * That gap is tracked in #896; it is not fixable by pointing
- * `beforeSendTransaction` here, because `spans` is absent from
- * {@link EVENT_KEY_ALLOWLIST} and would be dropped.
+ * classes, and this module is the single enforcement point for both — across
+ * **both event classes**. The SDK routes those classes to two different hooks,
+ * so this module exports two entry points, wired in `sentry-options.ts`:
+ * {@link scrubSentryEvent} as `beforeSend` for error events, and
+ * {@link scrubSentryTransaction} as `beforeSendTransaction` for transaction
+ * (tracing) events.
+ *
+ * They cannot be the same function. `spans` is absent from
+ * {@link EVENT_KEY_ALLOWLIST}, so pointing `beforeSendTransaction` at
+ * {@link scrubSentryEvent} would deliver every transaction with its trace
+ * payload silently emptied — the event still arrives, so nothing looks broken
+ * (#896).
  *
  * The two classes:
  *
@@ -336,6 +341,160 @@ export function scrubSentryEvent(event: ErrorEvent): ErrorEvent | null {
     // survive are exactly `EVENT_KEY_ALLOWLIST`, which is a subset of
     // `ErrorEvent`'s own, plus the rebuilt fields assigned below it.
     return scrubbed as unknown as ErrorEvent;
+  } catch {
+    return null;
+  }
+}
+
+// ── Transaction events ───────────────────────────────────────────────────────
+
+/**
+ * Derived from the option type rather than imported by name.
+ *
+ * `@sentry/node` re-exports `ErrorEvent` but neither `TransactionEvent` nor
+ * `SpanJSON`, so there is no name to import here. Naming them through the hook
+ * this module is wired into keeps both in lockstep with the installed SDK: if
+ * the signature changes, this stops compiling instead of silently scrubbing a
+ * shape the SDK no longer sends.
+ */
+type TransactionEvent = Parameters<
+  NonNullable<NodeOptions['beforeSendTransaction']>
+>[0];
+type TransactionSpan = NonNullable<TransactionEvent['spans']>[number];
+
+/**
+ * Top-level keys that may survive on a transaction event.
+ *
+ * The error-event allowlist plus the two keys that only exist on this class.
+ * `spans` is the whole reason a separate scrubber exists — it carries the trace
+ * payload, and dropping it would leave a delivered-but-empty transaction.
+ */
+const TRANSACTION_KEY_ALLOWLIST = new Set([
+  ...EVENT_KEY_ALLOWLIST,
+  'spans',
+  'measurements',
+]);
+
+/**
+ * Span fields that are pure identity, timing, or status — no user data.
+ *
+ * `description` and `op` are swept separately, `data` is rebuilt below, and
+ * `links` is dropped by omission because span links carry their own free-form
+ * attribute bags.
+ */
+const SPAN_FIELD_ALLOWLIST = new Set([
+  'span_id',
+  'parent_span_id',
+  'trace_id',
+  'start_timestamp',
+  'timestamp',
+  'status',
+  'origin',
+  'exclusive_time',
+  'is_segment',
+  'segment_id',
+  'measurements',
+]);
+
+/**
+ * Span attributes that may survive, by exact key.
+ *
+ * This is the one place this module keeps part of a `data` bag rather than
+ * dropping it wholesale, and the divergence is deliberate. {@link
+ * scrubTraceContext} drops `trace.data` entirely because on an *error* event
+ * the trace context is incidental metadata. On a *transaction* the spans are
+ * the payload, so dropping every attribute would gut the trace this scrubber
+ * exists to preserve.
+ *
+ * It stays an allowlist to stay safe: OpenTelemetry attribute keys are
+ * open-ended and routinely carry `http.url`, `url.query`, and `db.statement`,
+ * every one of which is exactly the leak the free-text sweep closes elsewhere.
+ * Anything not named here is dropped unread, and the survivors are swept anyway
+ * — an allowlisted key is not a promise that a provider filled it sensibly.
+ */
+const SPAN_DATA_KEY_ALLOWLIST = new Set([
+  'http.request.method',
+  'http.response.status_code',
+  'db.system',
+  'sentry.op',
+  'sentry.origin',
+  'sentry.source',
+]);
+
+function scrubSpan(span: TransactionSpan): TransactionSpan {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(span)) {
+    if (SPAN_FIELD_ALLOWLIST.has(key)) out[key] = value;
+  }
+
+  // Kept but swept — the route and operation are what make a span readable.
+  if (typeof span.description === 'string') {
+    out.description = redactFreeText(span.description);
+  }
+  if (typeof span.op === 'string') out.op = redactFreeText(span.op);
+
+  // `data` is non-optional on the SDK's span type, so it is always rebuilt
+  // rather than omitted — an absent bag would not satisfy the shape.
+  const data: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(span.data ?? {})) {
+    if (!SPAN_DATA_KEY_ALLOWLIST.has(key)) continue;
+    data[key] = typeof value === 'string' ? redactFreeText(value) : value;
+  }
+  out.data = data;
+
+  return out as unknown as TransactionSpan;
+}
+
+/**
+ * `beforeSendTransaction`: the transaction-event counterpart of
+ * {@link scrubSentryEvent} (issue #896).
+ *
+ * Same doctrine, same primitives, same fail-closed contract — a throw returns
+ * `null` and the transaction is dropped rather than emitted uninspected. The
+ * difference is structural: the allowlist keeps `spans`, and each span is
+ * rebuilt field-by-field, because span descriptions and attributes carry the
+ * same query strings and identifiers the error path already sweeps.
+ */
+export function scrubSentryTransaction(
+  event: TransactionEvent,
+): TransactionEvent | null {
+  try {
+    const scrubbed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(event)) {
+      if (TRANSACTION_KEY_ALLOWLIST.has(key)) {
+        scrubbed[key] = value;
+      }
+    }
+
+    // The transaction name is a route, so it loses its query string exactly as
+    // it does on the error path.
+    if (event.transaction) scrubbed.transaction = pathOnly(event.transaction);
+    if (event.tags) scrubbed.tags = scrubTags(event.tags);
+    if (event.contexts) scrubbed.contexts = scrubContexts(event.contexts);
+    // `spans` is on the allowlist above, so it has already been copied through
+    // verbatim by this point. Reassign when it is a real array, and drop it
+    // outright when it is not — otherwise a malformed non-array value would
+    // ride out on the allowlist copy without ever meeting {@link scrubSpan}.
+    if (Array.isArray(event.spans)) {
+      scrubbed.spans = event.spans.map(scrubSpan);
+    } else {
+      delete scrubbed.spans;
+    }
+
+    const request = scrubRequest(event.request);
+    if (request && Object.keys(request).length > 0) scrubbed.request = request;
+
+    const breadcrumbs = scrubBreadcrumbs(event.breadcrumbs);
+    if (breadcrumbs?.length) scrubbed.breadcrumbs = breadcrumbs;
+
+    // Identical rule to the error path: an id survives only when it is already
+    // a pseudonym, never because something upstream put a raw one there.
+    const userId = event.user?.id;
+    if (typeof userId === 'string' && /^[0-9a-f]{64}$/.test(userId)) {
+      scrubbed.user = { id: userId };
+    }
+
+    return scrubbed as unknown as TransactionEvent;
   } catch {
     return null;
   }

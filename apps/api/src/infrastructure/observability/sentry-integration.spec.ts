@@ -171,9 +171,9 @@ describe('Sentry SDK integration', () => {
           delete process.env.SENTRY_TRACES_SAMPLE_RATE;
         else process.env.SENTRY_TRACES_SAMPLE_RATE = previous;
       }
-      // Asserting the concrete default matters beyond correctness: transaction
-      // events bypass the scrubber entirely (#896), so a silent rate increase
-      // widens a known-unscrubbed path. A malformed value yields NaN, which
+      // Asserting the concrete default matters beyond correctness: the rate
+      // governs how much of the transaction path is exercised, and that path
+      // has its own scrubber since #896. A malformed value yields NaN, which
       // the SDK reads as tracing-enabled — #904.
     });
 
@@ -196,6 +196,36 @@ describe('Sentry SDK integration', () => {
         {},
       );
       expect(JSON.stringify(out)).not.toContain(email);
+    });
+
+    it('wires a transaction hook that keeps the span tree', () => {
+      // The companion to the guard above, and the reason it is not enough on
+      // its own. `beforeSendTransaction: scrubSentryEvent` — the exact wrong
+      // fix #896 warns about — *passes* that test: it redacts the transaction
+      // name just fine, then silently drops `spans`, which is absent from its
+      // allowlist. The transaction still ships, so nothing looks broken while
+      // every trace arrives empty. Only asserting survival catches it.
+      const hook = options().beforeSendTransaction;
+      expect(hook).toBeDefined();
+
+      const out = hook!(
+        {
+          type: 'transaction',
+          transaction: '/v1/chapters',
+          spans: [
+            {
+              span_id: 'span0001',
+              trace_id: 'trace001',
+              start_timestamp: 1,
+              op: 'http.client',
+              data: {},
+            },
+          ],
+        } as unknown as Parameters<NonNullable<typeof hook>>[0],
+        {},
+      );
+
+      expect((out as { spans?: unknown[] } | null)?.spans).toHaveLength(1);
     });
   });
 

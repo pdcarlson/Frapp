@@ -1,6 +1,10 @@
 import type { ErrorEvent } from '@sentry/nestjs';
 import { hashUserIdForAnalytics, hmacSha256Hex } from '@repo/validation';
-import { redactFreeText, scrubSentryEvent } from './sentry-scrubbing';
+import {
+  redactFreeText,
+  scrubSentryEvent,
+  scrubSentryTransaction,
+} from './sentry-scrubbing';
 
 const SALT = 'test-salt-for-scrubbing';
 const USER_UUID = '3f2a1b4c-5d6e-4f70-8a9b-0c1d2e3f4a5b';
@@ -255,6 +259,192 @@ describe('scrubSentryEvent', () => {
     };
 
     expect(scrubSentryEvent(hostile as unknown as ErrorEvent)).toBeNull();
+  });
+});
+
+/**
+ * The transaction half of the same contract (#896).
+ *
+ * Transaction events reach Sentry through `beforeSendTransaction`, a hook the
+ * SDK keeps separate from `beforeSend`. The assertions below are phrased the
+ * same whole-payload way as the error-event ones above, plus one the error path
+ * has no analogue for: **the span tree has to survive**. The plausible wrong fix
+ * here — reusing `scrubSentryEvent` — still delivers every transaction, just
+ * with `spans` silently dropped, so a test that only checked for absent PII
+ * would pass while tracing was dead.
+ */
+describe('scrubSentryTransaction', () => {
+  const originalSalt = process.env.ANALYTICS_HMAC_SALT;
+
+  beforeEach(() => {
+    process.env.ANALYTICS_HMAC_SALT = SALT;
+  });
+
+  afterAll(() => {
+    if (originalSalt === undefined) delete process.env.ANALYTICS_HMAC_SALT;
+    else process.env.ANALYTICS_HMAC_SALT = originalSalt;
+  });
+
+  type Transaction = Parameters<typeof scrubSentryTransaction>[0];
+
+  function transaction(overrides: Record<string, unknown>): Transaction {
+    return {
+      type: 'transaction',
+      transaction: '/v1/chapters',
+      ...overrides,
+    } as unknown as Transaction;
+  }
+
+  it('keeps the span tree rather than dropping it', () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            parent_span_id: 'root0000',
+            trace_id: 'trace123',
+            start_timestamp: 1,
+            timestamp: 2,
+            op: 'db.query',
+            status: 'ok',
+            data: {},
+          },
+          {
+            span_id: 'bbbb2222',
+            trace_id: 'trace123',
+            start_timestamp: 2,
+            op: 'http.client',
+            data: {},
+          },
+        ],
+      }),
+    );
+
+    // The regression this whole separate scrubber exists to prevent.
+    expect(scrubbed?.spans).toHaveLength(2);
+    expect(scrubbed?.spans?.[0]).toMatchObject({
+      span_id: 'aaaa1111',
+      parent_span_id: 'root0000',
+      trace_id: 'trace123',
+      op: 'db.query',
+      status: 'ok',
+    });
+    expect(scrubbed?.spans?.[1]).toMatchObject({ span_id: 'bbbb2222' });
+  });
+
+  it('emits no raw email, uuid, or ip from any part of a transaction', () => {
+    const email = 'member@example.com';
+    const ip = '203.0.113.7';
+
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        transaction: `/v1/chapters/${CHAPTER_UUID}?notify=${email}`,
+        request: {
+          url: `https://api.frapp.live/v1/chapters?email=${email}`,
+          method: 'GET',
+          headers: { 'x-custom-note': `contact ${email} from ${ip}` },
+        },
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            trace_id: 'trace123',
+            start_timestamp: 1,
+            op: 'http.client',
+            description: `GET /v1/members/${USER_UUID}?token=super-secret`,
+            data: {
+              'http.url': `https://api.frapp.live/v1/members?email=${email}`,
+              'url.query': `email=${email}`,
+              'db.statement': `select * from members where email = '${email}'`,
+              'http.response.status_code': 200,
+            },
+          },
+        ],
+      }),
+    );
+
+    const out = JSON.stringify(scrubbed);
+    expect(out).not.toContain(email);
+    expect(out).not.toContain(USER_UUID);
+    expect(out).not.toContain(CHAPTER_UUID);
+    expect(out).not.toContain(ip);
+    expect(out).not.toContain('super-secret');
+    expect(out).not.toContain('select * from members');
+  });
+
+  it('drops non-allowlisted span attributes but keeps the safe ones', () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [
+          {
+            span_id: 'aaaa1111',
+            trace_id: 'trace123',
+            start_timestamp: 1,
+            data: {
+              'http.request.method': 'POST',
+              'http.response.status_code': 500,
+              'http.url': 'https://api.frapp.live/v1/x?token=super-secret',
+              'url.query': 'token=super-secret',
+              'db.statement': 'select 1',
+            },
+            links: [{ attributes: { note: 'member@example.com' } }],
+          },
+        ],
+      }),
+    );
+
+    const data = scrubbed?.spans?.[0]?.data as Record<string, unknown>;
+    expect(data).toEqual({
+      'http.request.method': 'POST',
+      'http.response.status_code': 500,
+    });
+    // `links` carries its own free-form attribute bag, so it goes by omission.
+    expect(scrubbed?.spans?.[0]).not.toHaveProperty('links');
+    expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
+  });
+
+  it('strips the query string from the transaction name', () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({ transaction: '/v1/reports?access_token=super-secret' }),
+    );
+
+    expect(scrubbed?.transaction).toBe('/v1/reports');
+  });
+
+  it('drops non-allowlisted top-level keys but keeps tracing metadata', () => {
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [],
+        measurements: { lcp: { value: 12, unit: 'millisecond' } },
+        transaction_info: { source: 'route' },
+        start_timestamp: 1,
+        server_name: 'api-1',
+        breadcrumbs: [{ message: 'hello' }],
+        // Not on the allowlist — an SDK or integration extra.
+        somethingNew: 'leaky@example.com',
+      }),
+    );
+
+    expect(scrubbed).not.toHaveProperty('somethingNew');
+    expect(JSON.stringify(scrubbed)).not.toContain('leaky@example.com');
+    expect(scrubbed).toMatchObject({
+      type: 'transaction',
+      measurements: { lcp: { value: 12, unit: 'millisecond' } },
+      transaction_info: { source: 'route' },
+      server_name: 'api-1',
+    });
+  });
+
+  it('drops the transaction entirely if scrubbing throws', () => {
+    const hostile = {
+      type: 'transaction',
+      get spans(): never {
+        throw new Error('exploding getter');
+      },
+    };
+
+    expect(
+      scrubSentryTransaction(hostile as unknown as Transaction),
+    ).toBeNull();
   });
 });
 
