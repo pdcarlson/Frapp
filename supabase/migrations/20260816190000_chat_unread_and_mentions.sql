@@ -62,9 +62,19 @@ create index if not exists idx_channel_read_receipts_user
 -- non-service roles. The API holds the service-role key and enforces access in
 -- the application layer, so this function is only ever reached through it.
 --
--- `set search_path = public` is mandatory on a `security definer` function: it
--- runs with the owner's rights, so a caller-controlled `search_path` could
--- otherwise resolve `chat_messages` to an attacker-owned relation.
+-- Pinning `search_path` is mandatory on a `security definer` function: it runs
+-- with the owner's rights, so a caller-controlled path could otherwise resolve
+-- `chat_messages` to a relation the caller owns.
+--
+-- `pg_temp` is listed **last** on purpose. Writing `set search_path = public`
+-- alone is not equivalent and is the trap: the temp schema is searched *first*
+-- whenever it is not named explicitly, so a caller who can run
+-- `create temp table chat_messages (...)` in their session has the definer
+-- function read their forged rows. Naming it last demotes it behind `public`.
+-- (Not reachable today — execute is granted to `service_role` only, which is
+-- already privileged — but the guarantee should hold on its own terms rather
+-- than depend on the grant. Note the other `security definer` migrations in
+-- this repo still use the bare form; fixing those is a separate sweep.)
 create or replace function public.get_channel_unread_counts(
   p_chapter_id uuid,
   p_user_id    uuid
@@ -73,7 +83,7 @@ returns table (channel_id uuid, unread_count bigint, mention_count bigint)
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, pg_temp
 as $$
   select
     c.id,

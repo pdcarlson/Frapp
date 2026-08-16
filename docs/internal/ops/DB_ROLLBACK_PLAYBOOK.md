@@ -105,8 +105,7 @@ After any rollback event:
   -- 1. the read path (drop this AFTER the API is back on a pre-C1 revision)
   DROP FUNCTION IF EXISTS public.get_channel_unread_counts(uuid, uuid);
 
-  -- 2. the indexes
-  DROP INDEX IF EXISTS public.idx_chat_messages_mentions;
+  -- 2. the index
   DROP INDEX IF EXISTS public.idx_channel_read_receipts_user;
 
   -- 3. the column — see the data caveat before running this one
@@ -115,8 +114,8 @@ After any rollback event:
 * **Order**: **redeploy the API first, then the database.** This is the coordinated shape, not the additive one. `GET /v1/channels/unread` calls the function directly, so dropping it under a running C1 API turns that route into a 500 on every request. Roll the API back to a pre-C1 revision first and the route disappears with it; then the DB drop is unobserved. The reverse order is the only way to make this user-visible. (Blast radius depends on what is calling it — as of this migration the endpoint exists but no client consumes it yet; the mobile channel list and the web badge land later in C1, after which every channel-list render hits it.)
 * **Note**: the `mentions` half degrades gracefully in *both* directions, which is worth knowing before you panic. The push worker reads `row.mentions ?? []`, so a missing column simply means no message is ever treated as a mention — the same behavior the product had before this migration, since the worker was previously casting over a column that never existed and always resolving to empty. Dropping the column cannot therefore break push; it only returns the `mentions` tier to never firing.
 * **Data caveat**: **dropping the column is not recoverable by re-applying.** `mentions` is resolved at send time against chapter membership as it stood at that moment, so re-adding the column gives every historical message an empty array. The raw `@`-text survives in `content`, so a backfill is *possible*, but it would resolve against today's membership — a member who has since left, been renamed, or whose display name now collides with another's would resolve differently or not at all. If you only need to stop a bad mention resolution rather than remove the feature, `UPDATE chat_messages SET mentions = '{}'` on the affected rows and leave the schema alone.
-* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost nothing but the GIN index's write amplification on `chat_messages` inserts.
-* **Partial rollback to avoid**: dropping `idx_chat_messages_mentions` while leaving the function and the API in place. The mention count is an array-membership test (`p_user_id = any (m.mentions)`), which btree cannot serve and which then degrades to a sequential scan of every non-deleted message in the chapter on every channel-list load.
+* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost essentially nothing to leave in place. There is no index on `chat_messages` to pay for — see below.
+* **Do not "restore" an index on `chat_messages.mentions`.** An earlier draft of this migration created a GIN index there and it was removed deliberately, so its absence is not an oversight to correct during a rollback. The mention tally is computed inside an aggregate `filter (where ...)`, which is not a row-selection predicate, so the planner cannot consult an index for it at all — the plan is a seq scan with the index present and without it. Adding one back buys nothing and costs write amplification on the product's hottest insert path. If a future *row-predicate* query needs it (a "my mentions" inbox), it must be spelled `mentions @> array[$1]`, which GIN can serve; the equivalent-looking `$1 = any (mentions)` cannot and seq-scans regardless.
 
 ## Rollback the activation funnel table
 

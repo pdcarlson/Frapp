@@ -43,6 +43,31 @@ describe("extractMentionTokens", () => {
     expect(extractMentionTokens(`@${"a".repeat(120)}`)).toEqual([]);
   });
 
+  it("does not swallow trailing punctuation into the token", () => {
+    // `jane.` matches no resolution tier, so absorbing the period silently
+    // dropped every mention that ended a sentence.
+    expect(extractMentionTokens("hey @jane.")).toEqual(["jane"]);
+    expect(extractMentionTokens("ping @bob...")).toEqual(["bob"]);
+    expect(extractMentionTokens("@bob-")).toEqual(["bob"]);
+    expect(extractMentionTokens("@jane, @bob!")).toEqual(["jane", "bob"]);
+  });
+
+  it("keeps punctuation that is inside a name", () => {
+    expect(extractMentionTokens("@O'Brien and @Mary-Jane")).toEqual([
+      "O'Brien",
+      "Mary-Jane",
+    ]);
+  });
+
+  it("tokenises a non-ASCII name", () => {
+    // An ASCII-only pattern produced no token here at all.
+    expect(extractMentionTokens("hola @Ángela")).toEqual(["Ángela"]);
+  });
+
+  it("still ignores an email whose local part is non-ASCII", () => {
+    expect(extractMentionTokens("josé@example.com")).toEqual([]);
+  });
+
   it("returns nothing for prose with no mention", () => {
     expect(extractMentionTokens("meet me @ noon")).toEqual([]);
   });
@@ -79,6 +104,28 @@ describe("matchMentionCandidate", () => {
     // display-name-first-word match for exactly one member. The earlier tier
     // must settle it before the prefix tier ever runs.
     expect(matchMentionCandidate(all, "jane")).toBe(JANE);
+  });
+
+  it("matches a name carrying an apostrophe or hyphen", () => {
+    const list = [
+      { user_id: "u-ob", display_name: "Sean O'Brien" },
+      { user_id: "u-mj", display_name: "Mary-Jane Watson" },
+    ];
+    // Punctuation inside the name is no longer a barrier: these all fold to the
+    // same comparable core. Before, only `@sean` reached Sean at all.
+    expect(matchMentionCandidate(list, "sean")?.user_id).toBe("u-ob");
+    expect(matchMentionCandidate(list, "seanobrien")?.user_id).toBe("u-ob");
+    expect(matchMentionCandidate(list, "sean o'brien")?.user_id).toBe("u-ob");
+    expect(matchMentionCandidate(list, "mary-jane")?.user_id).toBe("u-mj");
+    expect(matchMentionCandidate(list, "maryjane")?.user_id).toBe("u-mj");
+  });
+
+  it("does not match on surname alone", () => {
+    // Not a bug — the tiers are id, full name, first word, prefix. Surname
+    // matching is a product decision (it would make `@smith` ambiguous across
+    // a chapter), so it stays out until someone asks for it.
+    const list = [{ user_id: "u-ob", display_name: "Sean O'Brien" }];
+    expect(matchMentionCandidate(list, "obrien")).toBeNull();
   });
 
   it("returns null for an unknown token", () => {

@@ -17,6 +17,8 @@ import { NotificationService } from '../../application/services/notification.ser
 import { BurstBundler } from './burst-bundler';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
 import { decidePush } from './push-rules';
+import { canAccessChannel } from '@repo/validation';
+import { RbacService } from '../../application/services/rbac.service';
 
 interface ChatMessageRow {
   id: string;
@@ -37,6 +39,10 @@ interface ChannelRow {
   chapter_id: string;
   name: string;
   is_read_only: boolean | null;
+  /** Needed to decide who may read this channel — see `handleMessage`. */
+  type: string;
+  member_ids: string[] | null;
+  required_permissions: string[] | null;
 }
 
 /**
@@ -72,6 +78,7 @@ export class ChatPushWorkerService
     private readonly memberRepo: IMemberRepository,
     private readonly notificationService: NotificationService,
     private readonly prefRepo: ChatNotificationPreferenceRepository,
+    private readonly rbac: RbacService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -134,9 +141,28 @@ export class ChatPushWorkerService
       if (!channel) return;
 
       const members = await this.memberRepo.findByChapter(channel.chapter_id);
-      const recipientIds = members
+      const candidateIds = members
         .map((m) => m.user_id)
         .filter((uid): uid is string => !!uid && uid !== row.sender_id);
+      if (candidateIds.length === 0) return;
+
+      // Narrow the chapter roster to people who may actually READ this channel.
+      //
+      // This is a disclosure boundary, not an optimisation. The push payload
+      // carries a 200-character preview of the body and `notifyUser` also
+      // persists a notification row, so notifying a non-member hands them the
+      // content of a channel they cannot open. It matters most for a mention:
+      // `decidePush` returns 'send' on `hasMention` *before* the level check
+      // (`push-rules.ts`), so a mention overrides even an explicit `off`.
+      //
+      // Until C1 this was inert rather than safe — `hasMention` was always
+      // false because the worker read a `mentions` field that did not exist —
+      // so resolving mentions for real is exactly what would have turned a
+      // latent chapter-wide fan-out into a real one.
+      const recipientIds = await this.filterCanReadChannel(
+        channel,
+        candidateIds,
+      );
       if (recipientIds.length === 0) return;
 
       const presenceMap = this.readPresence(channel.id);
@@ -191,12 +217,71 @@ export class ChatPushWorkerService
     }
   }
 
+  /**
+   * Reduce candidates to those allowed to `read` the channel, via the shared
+   * `canAccessChannel` predicate — the same one the chat and poll surfaces
+   * authorize through, so the push audience cannot drift from the read
+   * audience.
+   *
+   * Permissions are fetched only for a ROLE_GATED channel, and only then per
+   * candidate; PUBLIC short-circuits and DM/GROUP_DM/PRIVATE are decided by
+   * `member_ids` alone.
+   */
+  private async filterCanReadChannel(
+    channel: ChannelRow,
+    candidateIds: string[],
+  ): Promise<string[]> {
+    const shape = {
+      id: channel.id,
+      type: channel.type,
+      member_ids: channel.member_ids,
+      required_permissions: channel.required_permissions,
+    };
+
+    if (shape.type === 'PUBLIC') return candidateIds;
+
+    const needsPermissions = shape.type === 'ROLE_GATED';
+    const allowed: string[] = [];
+    for (const userId of candidateIds) {
+      let permissions: string[] = [];
+      if (needsPermissions) {
+        try {
+          permissions = await this.rbac.getEffectivePermissions(
+            channel.chapter_id,
+            userId,
+          );
+        } catch (err) {
+          // Fail closed: an unresolved permission set must not become a push.
+          this.logger.warn(
+            `chat-push: permission lookup failed for ${userId}; skipping`,
+            err,
+          );
+          continue;
+        }
+      }
+      if (
+        canAccessChannel({
+          channel: shape,
+          userId,
+          isChapterMember: true,
+          permissions,
+          operation: 'read',
+        })
+      ) {
+        allowed.push(userId);
+      }
+    }
+    return allowed;
+  }
+
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
     const cached = this.channelCache.get(channelId);
     if (cached) return cached;
     const { data, error } = await this.supabase
       .from('chat_channels')
-      .select('id, chapter_id, name, is_read_only')
+      .select(
+        'id, chapter_id, name, is_read_only, type, member_ids, required_permissions',
+      )
       .eq('id', channelId)
       .maybeSingle();
     if (error || !data) {

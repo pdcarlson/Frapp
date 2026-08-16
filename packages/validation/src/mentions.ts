@@ -32,7 +32,17 @@ const MAX_TOKEN_LENGTH = 64;
  * which the `firstWord` tier below resolves when it is unambiguous. Matching
  * across spaces would make `@jane and bob` try to resolve "jane and bob".
  *
- * The leading boundary stops `email@example.com` from producing a token.
+ * The lookbehind stops `email@example.com` from producing a token. It is
+ * Unicode-aware rather than `\w`-based, or `josé@example.com` would slip
+ * through: `é` is not `\w`, so it would read as a word boundary and hand back
+ * `example.com`.
+ *
+ * The body is Unicode too, for the same reason in reverse — `\w` is ASCII, so
+ * an ASCII-only pattern cannot match `@Ángela` at all, and a name like
+ * `O'Brien` would tokenise as `O`. Apostrophes (both kinds), hyphens and dots
+ * are allowed *inside* a token but the token must **end** on a letter or digit,
+ * so `@jane.` at the end of a sentence yields `jane` rather than `jane.` —
+ * which no tier would have matched, silently dropping the mention.
  *
  * The run is captured whole rather than capped at `MAX_TOKEN_LENGTH`, so that
  * an over-long run is *rejected* below instead of silently truncated to the
@@ -40,14 +50,27 @@ const MAX_TOKEN_LENGTH = 64;
  * happily resolve it to a member the author never named. Message length is
  * already bounded upstream, so the open-ended run is safe.
  */
-const MENTION_TOKEN = /(^|[^\w@])@([\w][\w.-]*)/g;
+const MENTION_TOKEN =
+  /(?<![\p{L}\p{N}_@])@(\p{L}[\p{L}\p{N}_'’.-]*[\p{L}\p{N}]|\p{L})/gu;
+
+/**
+ * Fold a name or token to its comparable core: lowercase, and everything that
+ * is not a letter or digit removed.
+ *
+ * This is what lets `@obrien` reach "Sean O'Brien" and `@maryjane` reach
+ * "Mary-Jane Watson". Comparing raw strings would make any name carrying an
+ * apostrophe or hyphen reachable only by its first word.
+ */
+function fold(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
 
 /** Every distinct `@`-token in a message body, in order of first appearance. */
 export function extractMentionTokens(content: string): string[] {
   const seen = new Set<string>();
   const tokens: string[] = [];
   for (const match of content.matchAll(MENTION_TOKEN)) {
-    const token = match[2];
+    const token = match[1];
     if (!token || token.length > MAX_TOKEN_LENGTH) continue;
     const key = token.toLowerCase();
     if (seen.has(key)) continue;
@@ -75,17 +98,20 @@ export function matchMentionCandidate<T extends MentionCandidate>(
 ): T | null {
   const needle = token.trim().toLowerCase();
   if (needle.length === 0) return null;
+  const folded = fold(token);
 
   const lower = (s: string) => s.toLowerCase();
-  const noSpace = (s: string) => s.toLowerCase().replace(/\s+/g, "");
   const firstWord = (s: string) => s.toLowerCase().split(/\s+/)[0] ?? "";
 
   const tiers: Array<(m: T) => boolean> = [
     (m) => m.user_id.toLowerCase() === needle,
     (m) => lower(m.display_name) === needle,
-    (m) => noSpace(m.display_name) === needle,
+    // Folded comparison, so punctuation in a name is not a barrier to naming
+    // them: `@obrien` → "Sean O'Brien", `@maryjane` → "Mary-Jane Watson".
+    (m) => folded.length > 0 && fold(m.display_name) === folded,
     (m) => firstWord(m.display_name) === needle,
-    (m) => lower(m.display_name).startsWith(needle),
+    (m) => fold(firstWord(m.display_name)) === folded,
+    (m) => folded.length > 0 && fold(m.display_name).startsWith(folded),
   ];
 
   for (const pred of tiers) {
