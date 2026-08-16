@@ -22,14 +22,15 @@ import {
   PayInvoiceDialog,
   type PayableInvoice,
 } from "@/components/billing/pay-invoice-dialog";
+import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state";
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
 
-// Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
-// field is `subscription_status`; this type previously called it `status`, so
-// the badge below rendered "unknown" for every chapter, including active ones.
+// Mirrors what `BillingService.getChapterBillingStatus` actually returns, minus
+// `subscription_status` — that one field now comes from `useChapterSubscription`
+// so the badge and the gates beneath it cannot disagree (#841). The Stripe
+// identifiers have no other source, so the query stays for them.
 type BillingStatusPreview = {
-  subscription_status: string;
   stripe_customer_id?: string | null;
   subscription_id?: string | null;
 };
@@ -61,6 +62,12 @@ export default function BillingPage() {
   const statusQuery = useBillingStatus();
   const invoicesQuery = useInvoices();
   const currentUserQuery = useCurrentUser();
+  // One reader for subscription state across the whole client (§5, "read
+  // subscription state from one place"). `GET /v1/billing/status` and the
+  // chapter payload are two caches over one fact, and they resolve
+  // independently — so the badge here could read `active` while the invoice
+  // card beneath it was still rendering its locked notice, or the reverse.
+  const { status: subscriptionStatus } = useChapterSubscription();
   // `currentUserQuery` belongs in this gate: the Pay affordance is gated on
   // `invoice.user_id === currentUserId`, so rendering the table before the
   // caller's identity resolves would briefly show a member their own OPEN
@@ -173,7 +180,7 @@ export default function BillingPage() {
             <p className="text-xs text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
               <Badge className="capitalize">
-                {billingStatus?.subscription_status ?? "unknown"}
+                {subscriptionStatus ?? "unknown"}
               </Badge>
             </div>
           </div>

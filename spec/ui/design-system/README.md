@@ -99,7 +99,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Gate | Enforced server-side by | Client must |
 | --- | --- | --- |
 | Permission | `@RequirePermissions` → `PermissionsGuard` (`apps/api/src/interface/guards/permissions.guard.ts`) | Hide or disable the control (`<Can>`, `apps/web/components/shared/can.tsx`) |
-| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionWriteState`, `apps/web/lib/hooks/use-subscription-write-state.ts`) |
+| Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
 All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionWriteState` for subscription state.
@@ -114,7 +114,37 @@ All three gate classes now have a client counterpart — `<Can>` for permissions
 
 Unlike `<Can>`, the subscription mirror **fails open** while the chapter is loading or its fetch failed: an unresolved permission may be one the user never holds, but an unresolved subscription most likely belongs to a paying chapter, and disabling its paid surface over a slow fetch is worse than the late 403 the gate exists to avoid.
 
-Rollout is incremental. Billing consumes it today; extending it to the remaining paid-ops write surfaces is tracked by [#841](https://github.com/pdcarlson/Frapp/issues/841), which carries the enumerated route inventory. Any new subscription-gated flow is expected to adopt the hook rather than re-solve this per screen.
+**Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the five things a correct gated control needs: the pending fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
+
+Rollout is complete across `apps/web`. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+
+#### The gated surface (enumerated)
+
+A controller is subscription-gated only if `ChapterGuard` is in its guard chain **and** it carries no `@FreeTier` / `@SubscriptionExempt`. Client and server can be diffed by grepping one string — the guard's structured codes.
+
+| Paid-ops controller | Writes | Web surface |
+| --- | --- | --- |
+| `attendance` | 3 | `components/events/attendance-panel.tsx` |
+| `backwork` | 4 | `components/backwork/backwork-page.tsx` |
+| `chapter-document` | 6 | `components/documents/documents-page.tsx` |
+| `event` | 3 | `components/events/event-editor-dialog.tsx` |
+| `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-admin-card.tsx` |
+| `points` | 1 | `components/points-adjustment-dialog.tsx` |
+| `poll` | 3 | `components/polls/polls-page.tsx` |
+| `report` | 4 | `components/reports/reports-page.tsx` |
+| `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
+| `service-entry` | 4 | `components/service/service-page.tsx` |
+| `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
+| `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
+| `task` | 5 | `components/tasks/tasks-board.tsx` |
+
+**12 files / 13 controller classes / 41 writes.** `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
+
+**Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The two `@GraceBlocked` routes are `POST /invites` and `POST /invites/batch`.
+
+**Exempt:** `billing` (whole class — the recovery path) and `POST /invoices/:id/payment-intent`.
+
+**Not chapter-guarded at all**, so never subscription-gated despite carrying writes: `analytics`, `notification`, `chapter-directory`, `webhook`, and `POST /chapters`, `POST /chapters/onboard`, `POST /chapters/:id/activate`. Gating these would lock a lapsed chapter out of settings and push registration it is entitled to — over-gating is a worse defect than the late 403.
 
 ### What "fail fast" means concretely
 
