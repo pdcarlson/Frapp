@@ -171,8 +171,20 @@ Reads the `NEXT_PUBLIC_*` references:
 > **Why `NEXT_PUBLIC_SENTRY_DSN` is a literal, not an Infisical `${…}` reference.** The other
 > `NEXT_PUBLIC_*` rows above resolve to a canonical value shared with the API. This one must not:
 > `SENTRY_DSN` is `frapp-api`'s DSN, and pointing the browser at it would merge two projects'
-> events. Enter the `frapp-web` DSN directly. A DSN is public by design (it is in every client
-> bundle) — it authorizes *writing* events, not reading them.
+> events. Type the `frapp-web` DSN in as a literal value. A DSN is public by design (it is in every
+> client bundle) — it authorizes *writing* events, not reading them.
+>
+> **It still goes in Infisical, not in Vercel's dashboard.** Infisical is the canonical store and
+> Vercel is a sync *destination*; a value set directly on the Vercel project lives outside the one
+> place that is supposed to hold it and is invisible to every other environment. Add it to the
+> **Staging** and **Production** Infisical environments and let `vercel-web-staging` /
+> `vercel-web-production` carry it (inventory: [`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
+> Leave the **local** environment unset — no DSN means `Sentry.init` is never called, which is what
+> keeps local dev, tests, and CI reporting nowhere.
+>
+> Note the blast radius (#834): every sync reads path `/` and pushes its **whole** source
+> environment, so `frapp-landing` receives this key too. It is inert there — `apps/landing` never
+> reads it, so Next has nothing to inline — but it is one more key riding a sync that cannot filter.
 >
 > ⚠️ **`ANALYTICS_HMAC_SALT` must never gain a `NEXT_PUBLIC_` twin**, including for Sentry. The
 > browser scrubber deliberately holds no salt and redacts identifiers instead of hashing them; the
