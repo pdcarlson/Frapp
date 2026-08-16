@@ -55,10 +55,13 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
 | `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
-| `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)                    |
+| `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build) |
+| `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
+| `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
 † `dependency-audit` becomes a *required* check via the standard rollout step: after the job first runs green on the target branch, an admin re-runs `npm run configure:branch-protection` (see [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). Until then the job runs and reports on every PR but is not yet merge-blocking.
-| `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
+
+‡ `doc-paths` is deliberately **not** required yet. It scans the whole tree rather than the PR diff (a citation breaks when the file it names moves — a change on the other side of the reference), so as a required check it could block a PR over a citation in a doc that PR never touched. Promote it the same way as `dependency-audit`: uncomment `"doc-paths"` in `DOCS_CHECKS` and re-run `npm run configure:branch-protection`. See [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ### Vercel deployment policy
 

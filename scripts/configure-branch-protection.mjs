@@ -55,6 +55,15 @@ const CI_CHECKS = [
 
 const DOCS_CHECKS = [
   "docs-spec-sync",
+  // Doc path citations: fails when a doc cites a repo path that resolves
+  // nowhere, covering the gap the `Links` gate leaves (lychee validates
+  // markdown links and heading anchors, never `` `inline/code.ts` `` paths).
+  // ROLLOUT: same caveat as secret-scan — required only once the doc-paths job
+  // exists on the target branch and has run green. Deliberately NOT a step
+  // inside docs-spec-sync: this check is whole-tree, so as a required check it
+  // can block a PR over a citation in a doc that PR never touched. Keep it
+  // reporting-only until that trade is accepted knowingly.
+  // "doc-paths",
 ];
 
 const ALL_REQUIRED_CHECKS = [...CI_CHECKS, ...DOCS_CHECKS];
