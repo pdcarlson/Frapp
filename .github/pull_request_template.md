@@ -28,7 +28,7 @@
 - [ ] This PR keeps `spec/` and implementation in sync (divergence is a bug).
 - [ ] If this PR changes non-doc files, it also updates related files in `docs/` and/or `spec/` (satisfies `check-docs-impact.mjs`).
 - [ ] If I changed API/domain/workflows, I updated `docs/` and/or `spec/` in the same change set.
-- [ ] If I changed API source, I regenerated `openapi.json` and `api-sdk/types.ts`.
+- [ ] If I changed API source, I regenerated `openapi.json` and `packages/api-sdk/src/types.ts`.
 - [ ] If targeting `production`, this PR source branch is `main`.
 - [ ] If I changed `supabase/migrations/**`, I also updated rollback docs.
 - [ ] No secrets committed (`.env*`, credentials, private keys).

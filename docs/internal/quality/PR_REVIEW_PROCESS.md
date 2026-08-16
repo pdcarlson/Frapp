@@ -14,7 +14,7 @@ Large infrastructure PRs are hard to review, hard to debug, and can leave checks
 3. **Stable check names**
    - If workflow/job names change, update:
      - `scripts/configure-branch-protection.mjs`
-     - `docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
+     - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
      - `CONTRIBUTING.md`
 4. **No required workflow-level `paths` filters**
    - Required checks must always report a result on protected-branch PRs.
@@ -53,7 +53,7 @@ Use this order so each PR has a single failure domain:
 
 1. **PR A — Branch protection + runbook only**
    - `scripts/configure-branch-protection.mjs`
-   - `docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
+   - `docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`
 2. **PR B — CI workflow only**
    - `.github/workflows/ci.yml`
 3. **PR C — Docs workflow/check behavior only**
