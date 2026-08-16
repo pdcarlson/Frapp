@@ -133,7 +133,8 @@ describe('Sentry SDK integration', () => {
 
     it('disables the SDK-level PII collection switch', () => {
       // Under v10 this flag is a key-name filter, not a collection switch, so
-      // it is a floor rather than the whole PII story — `beforeSend` is. #896.
+      // it is a floor rather than the whole PII story — the two scrubber hooks
+      // are, one per event class (#896).
       expect(options().sendDefaultPii).toBe(false);
     });
 

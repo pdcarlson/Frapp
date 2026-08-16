@@ -342,8 +342,57 @@ describe('scrubSentryTransaction', () => {
         request: {
           url: `https://api.frapp.live/v1/chapters?email=${email}`,
           method: 'GET',
-          headers: { 'x-custom-note': `contact ${email} from ${ip}` },
+          // `x-request-id` is on HEADER_ALLOWLIST *and* honoured from inbound
+          // requests by request-id.middleware, so it is the header that proves
+          // the value sweep. A non-allowlisted one would only prove the drop.
+          headers: {
+            'x-request-id': `retry-for-${email}`,
+            'x-custom-note': `contact ${email} from ${ip}`,
+          },
+          query_string: `notify=${email}`,
+          env: { REMOTE_ADDR: ip },
+          cookies: { session: 'super-secret' },
+          data: { body: email },
         },
+        // Every real transaction carries this: the SDK builds contexts.trace
+        // from the root span, and the root span is NOT in `spans`, so this bag
+        // is the highest-volume PII surface on the whole event.
+        contexts: {
+          trace: {
+            trace_id: 'trace123',
+            span_id: 'root0000',
+            op: 'http.server',
+            status: 'ok',
+            description: `GET /v1/chapters/${CHAPTER_UUID}?notify=${email}`,
+            data: {
+              'http.target': `/v1/chapters/${CHAPTER_UUID}?notify=${email}`,
+              'http.url': `https://api.frapp.live/v1/chapters?email=${email}`,
+              'client.address': ip,
+              'http.request.method': 'GET',
+              'http.response.status_code': 500,
+            },
+          },
+        },
+        tags: { note: `escalate to ${email}` },
+        breadcrumbs: [{ message: `looked up ${email}` }],
+        user: { id: USER_UUID, email, ip_address: ip },
+        // Inherited onto the transaction allowlist from the error one, so they
+        // are copied through by the key loop and are only safe because they are
+        // rebuilt afterwards. `vars` is the sharpest edge — a snapshot of local
+        // variables, i.e. arbitrary request payload.
+        message: `checkout failed for ${email}`,
+        exception: {
+          values: [
+            {
+              type: 'Error',
+              value: `no row for ${email} token=sk_live_FAKEfixtureNOTREAL`, // gitleaks:allow
+              stacktrace: {
+                frames: [{ filename: '/a.ts', vars: { pw: 'hunter2' } }],
+              },
+            },
+          ],
+        },
+        measurements: { [`lookup ${email}`]: { value: 3, unit: 'none' } },
         spans: [
           {
             span_id: 'aaaa1111',
@@ -351,11 +400,16 @@ describe('scrubSentryTransaction', () => {
             start_timestamp: 1,
             op: 'http.client',
             description: `GET /v1/members/${USER_UUID}?token=super-secret`,
+            measurements: { [`rows for ${email}`]: { value: 1, unit: 'none' } },
             data: {
               'http.url': `https://api.frapp.live/v1/members?email=${email}`,
               'url.query': `email=${email}`,
               'db.statement': `select * from members where email = '${email}'`,
               'http.response.status_code': 200,
+              // OTel permits array- and object-valued attributes; an
+              // allowlisted key is no promise the value is a plain string.
+              'http.request.method': ['GET', email],
+              'db.system': { note: email },
             },
           },
         ],
@@ -369,6 +423,102 @@ describe('scrubSentryTransaction', () => {
     expect(out).not.toContain(ip);
     expect(out).not.toContain('super-secret');
     expect(out).not.toContain('select * from members');
+    expect(out).not.toContain('sk_live_FAKEfixtureNOTREAL'); // gitleaks:allow
+    expect(out).not.toContain('hunter2');
+    // A raw user id must not survive even as a pseudonym-shaped field.
+    expect(scrubbed?.user).toBeUndefined();
+    // Absence assertions alone are satisfied by dropping everything, which is
+    // the "delivered but silently emptied" failure the span test guards. The
+    // swept-but-surviving fields have to be pinned too.
+    expect(scrubbed?.breadcrumbs?.[0]?.message).toBe(
+      'looked up [redacted:email]',
+    );
+    expect(scrubbed?.tags?.note).toBe('escalate to [redacted:email]');
+    expect(scrubbed?.spans).toHaveLength(1);
+  });
+
+  it('keeps the root span attributes that live only on contexts.trace', () => {
+    // The counterpart to the assertion above: proving PII is gone is only half
+    // the contract, because dropping the bag wholesale also passes that. The
+    // root span is absent from `spans`, so if this is dropped the one span an
+    // operator opens first has no method and no status code.
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        contexts: {
+          trace: {
+            trace_id: 'trace123',
+            span_id: 'root0000',
+            op: 'http.server',
+            data: {
+              'http.request.method': 'GET',
+              'http.response.status_code': 500,
+              'http.url': 'https://api.frapp.live/v1/x?token=super-secret',
+            },
+          },
+        },
+      }),
+    );
+
+    const trace = scrubbed?.contexts?.trace as Record<string, unknown>;
+    expect(trace.data).toEqual({
+      'http.request.method': 'GET',
+      'http.response.status_code': 500,
+    });
+    expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
+  });
+
+  it('carries the dynamic sampling context the SDK reads back after the hook', () => {
+    // `createEventEnvelopeHeaders` reads this *after* beforeSendTransaction
+    // returns, so a rebuilt event that omits it silently costs every
+    // transaction its `trace` envelope header. Only the routing fields survive
+    // — the same bag holds `normalizedRequest`, a full request object.
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        sdkProcessingMetadata: {
+          dynamicSamplingContext: {
+            trace_id: 'trace123',
+            public_key: 'abc123',
+            sample_rate: '0.1',
+            environment: 'production',
+            transaction: `/v1/chapters?notify=member@example.com`,
+          },
+          spanCountBeforeProcessing: 7,
+          normalizedRequest: {
+            url: 'https://api.frapp.live/v1/x?token=super-secret',
+            headers: { cookie: 'session=super-secret' },
+          },
+        },
+      }),
+    );
+
+    const meta = scrubbed?.sdkProcessingMetadata as Record<string, unknown>;
+    expect(meta.dynamicSamplingContext).toEqual({
+      trace_id: 'trace123',
+      public_key: 'abc123',
+      sample_rate: '0.1',
+      environment: 'production',
+      transaction: '/v1/chapters',
+    });
+    expect(meta.spanCountBeforeProcessing).toBe(7);
+    expect(meta).not.toHaveProperty('normalizedRequest');
+    expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
+  });
+
+  it('survives a malformed span without losing the whole transaction', () => {
+    // `Object.entries(null)` throws, and the map runs inside the fail-closed
+    // try — so an unguarded bad element would drop every good span with it.
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        spans: [
+          null,
+          { span_id: 'good0001', trace_id: 't1', start_timestamp: 1, data: {} },
+        ],
+      }),
+    );
+
+    expect(scrubbed).not.toBeNull();
+    expect(scrubbed?.spans).toHaveLength(2);
+    expect(scrubbed?.spans?.[1]).toMatchObject({ span_id: 'good0001' });
   });
 
   it('drops non-allowlisted span attributes but keeps the safe ones', () => {
