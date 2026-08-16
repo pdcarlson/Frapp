@@ -4,7 +4,15 @@
 
 - **Critical production alerts:** on-call paging channel
 - **Non-critical staging alerts:** engineering notifications channel
-- **Error tracking:** Sentry project alerts — org `frapp-live`, project `frapp-api`
+- **Error tracking:** Sentry project alerts — org `frapp-live`, projects `frapp-api` (NestJS API) and `frapp-web` (Next dashboard)
+
+> **`frapp-web` is not provisioned yet.** `apps/web` ships the reporting code (#865) but the project
+> itself could not be created from an agent session: the Sentry MCP's `create_project` returns
+> `HTTP 403 {"detail": "Your organization has disabled this feature for members."}`, so it needs a
+> human with org-owner rights — see [#970](https://github.com/pdcarlson/Frapp/issues/970). Until it exists and its DSN
+> is set as `NEXT_PUBLIC_SENTRY_DSN` in Vercel, `apps/web` initializes Sentry not at all and no web
+> alert rule can be created. Two projects rather than one deliberately: a browser error and a server
+> error have different owners, different noise profiles, and different alert thresholds.
 
 > **Sentry alert rules are dashboard-only.** Sentry's issue-alert-rule API answers `HTTP 410 {"message":"This API no longer exists."}`, so no agent or script can create, read, or verify a rule. Every rule below has to be created by a human in the Sentry UI, and its existence cannot be asserted in CI — treat the dashboard as the source of truth and re-check it by hand when routing changes.
 
