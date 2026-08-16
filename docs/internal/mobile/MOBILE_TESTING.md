@@ -148,3 +148,38 @@ still satisfies — so a plain `npm install` keeps the whole old SDK chain hoist
 the root next to the new one, vulnerabilities included. Use
 `rm -rf node_modules package-lock.json && npm install`, then verify a single
 `node_modules/expo` at the expected version before trusting any audit numbers.
+
+**A `waitFor` on a derived flag can be satisfied by the wrong state.**
+`useAuthSession` exposes `isChapterResolving` as
+`status === "authenticated" && !hasReadChapterClaim`
+([`lib/auth-session.tsx`](../../../apps/mobile/lib/auth-session.tsx)), so it reads
+`false` during `hydrating` just as it does once the first claim read has landed.
+`await waitFor(() => expect(result.current.isChapterResolving).toBe(false))`
+therefore returns before `getSession()` has resolved and before any claim read has
+been issued — the wait passes for a reason the test did not intend, and whatever it
+was meant to sequence is still ahead of it. Assert `status === "authenticated"` in
+the same `waitFor` so the pre-authentication state cannot satisfy it.
+
+The bare form is still fine where an earlier wait has already pinned the state it
+would otherwise pass on — the test above it waits for `chapterId` to reach a real
+value first, which cannot happen before authentication *and* a completed read. The
+rule is that something must rule out the early state, not that the flag may never
+be waited on alone.
+
+This was the whole of #976, a ~1-in-6 `mobile-validate` failure that only ever
+reproduced in the full nine-file run — `lib/auth-session.spec.tsx` alone passes
+27/27, because whether `getSession()`'s microtasks drain before `waitFor` first
+samples depends on scheduling pressure from the other suites. The rate scales with
+machine load: on an otherwise idle box the pre-fix test failed about 1 run in 12,
+and on a busy 4-core one it failed 10 in 14. So treat "passes in isolation, fails in
+the suite" as a symptom of an under-specified wait, not as proof of cross-test
+leakage — #976 was originally diagnosed as a leaked claim gate, and the `act()`
+containment added for that theory never moved the rate.
+
+**A test double that parks a call needs one resolver per parked call.** The same
+spec holds `getClaims` open to make the in-flight window observable. Storing a
+single resolver on the mock state looked sufficient, but the claim effect re-runs on
+every token change, so a token refresh parks a second read while the mount read is
+still behind the gate — and the second park overwrote the first resolver, stranding
+a promise that could then never settle. Keep a list of waiters and release all of
+them.
