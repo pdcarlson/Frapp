@@ -13,7 +13,9 @@ This guide walks through the complete deployment setup: Vercel for frontends, Re
 - 🚧 Mobile store distribution is planned; local and EAS workflows are documented.
 
 Treat this guide as the target-state runbook plus current operational notes.
-For live rollout tracking, see `docs/internal/DEPLOYMENT_STATUS.md`.
+For live rollout tracking, see **GitHub Issues** — work status is not a doc
+([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4,
+[`../ci-cd/GITHUB_PM.md`](../ci-cd/GITHUB_PM.md)).
 
 ---
 
@@ -125,8 +127,8 @@ npx supabase db push
 
 Follow the internal promotion and rollback runbooks when promoting schema changes:
 
-- `docs/internal/DB_PROMOTION_RUNBOOK.md`
-- `docs/internal/DB_ROLLBACK_PLAYBOOK.md`
+- `docs/internal/ops/DB_PROMOTION_RUNBOOK.md`
+- `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`
 
 ### Collect Keys
 
@@ -504,7 +506,7 @@ After a push to `main` or `production`, `.github/workflows/verify-deployments.ym
 - **Render** (`verify-render-api`): fails on `build_failed` / `update_failed` / `pre_deploy_failed` or on "no deploy created for this SHA within 5 minutes" (autoDeploy-wiring red flag). Treats `canceled` / `deactivated` as neutral (superseded).
 - **Vercel web** (`verify-vercel-web`) and **Vercel landing** (`verify-vercel-landing`): fail on `ERROR`. Treat `CANCELED` as neutral (turbo-ignore skip). Treat "no deployment for this SHA within 3 minutes" as neutral, because turbo-ignore legitimately skips builds when nothing in the app tree changed.
 
-The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
+The workflow is currently advisory (not a required check). When a failure shows up in the Actions UI, the failure message will name the commit SHA and last observed state; open the linked Render / Vercel dashboard to read full deploy logs. Recipe for marking it required on `production` later: [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](GITHUB_BRANCH_PROTECTION_RUNBOOK.md#future-require-deploy-verification-on-production).
 
 Script implementations and unit tests live under [`scripts/ci/`](../../../scripts/ci/).
 
@@ -523,7 +525,7 @@ Script implementations and unit tests live under [`scripts/ci/`](../../../script
 
 3 permanent GitHub repository secrets bootstrap the Infisical connection: `INFISICAL_MACHINE_IDENTITY_ID`, `INFISICAL_CLIENT_SECRET`, and `INFISICAL_PROJECT_ID`. No GitHub environment-scoped deploy secrets are required once the workflow is using `Infisical/secrets-action`.
 
-See `docs/internal/ENV_REFERENCE.md` for the complete variable mapping.
+See `docs/internal/environment/ENV_REFERENCE.md` for the complete variable mapping.
 
 ---
 
@@ -536,7 +538,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 - **Canonical values stored once** per environment — no duplication.
 - **Secret references** handle framework prefixes (`NEXT_PUBLIC_SUPABASE_URL = ${SUPABASE_URL}`).
 - **No environment suffixes** — `RENDER_DEPLOY_HOOK_URL` has different values per Infisical environment.
-- **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
+- **No `.env.local` files needed** — local dev defaults to `npm run dev:stack` (Infisical CLI injects `local` secrets). See [`docs/internal/environment/LOCAL_DEV.md`](../environment/LOCAL_DEV.md).
 
 ### Sync Map (7 of 10 free-tier integrations; docs Vercel project retired)
 
@@ -550,7 +552,7 @@ All secrets are centrally managed in [Infisical](https://infisical.com) (free ti
 | 6   | production    | Render → frapp-api-prod                   |
 | 7   | per-env       | GitHub Actions (OIDC)                     |
 
-See `docs/internal/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/ENV_REFERENCE.md` for the complete variable list.
+See `docs/internal/environment/SECRETS_MANAGEMENT.md` for the full setup guide and `docs/internal/environment/ENV_REFERENCE.md` for the complete variable list.
 
 ---
 

@@ -15,7 +15,7 @@ description: >
 > runs, findings are filed as GitHub issues rather than fixed in place. `npm run lint` is read-only in
 > every workspace and will not touch your tree — `npm run lint:api:fix` is the only *lint* script
 > that writes, and no audit needs it. `npm run check:api-contract` does regenerate `openapi.json`
-> and `api-sdk/types.ts` when API-related files changed; treat those edits as throwaway
+> and `packages/api-sdk/src/types.ts` when API-related files changed; treat those edits as throwaway
 > (`git checkout -- .`) — never commit them.
 
 ---
