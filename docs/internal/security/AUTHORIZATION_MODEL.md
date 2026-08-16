@@ -147,17 +147,28 @@ a client that genuinely reads the table directly.
 
 | Enforcing layer | Tables | Count |
 | --- | --- | --- |
-| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `chat_messages`, `event_attendance`, `events`, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 41 |
-| **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions` | 1 |
+| **API only** (RLS on, no policy → default-deny; service-role bypasses) | `backwork_departments`, `backwork_professors`, `backwork_resources`, `channel_read_receipts`, `chapter_activation_milestones`, `chapter_custom_fields`, `chapter_custom_roles`, `chapter_directory`, `chapter_directory_requests`, `chapter_document_folders`, `chapter_documents`, `chapter_dues_config`, `chapter_service_config`, `chapter_workflows`, `chapters`, `chat_channel_categories`, `chat_channels`, `event_attendance`†, `events`†, `financial_invoices`, `financial_transactions`, `invites`, `member_custom_field_values`\*, `members`\*, `message_reactions`, `notification_preferences`, `notifications`†, `point_transactions`, `poll_votes`, `push_tokens`, `roles`, `scheduled_notification_dispatches`, `semester_archives`, `service_entries`, `stripe_webhook_events`, `study_geofences`, `study_sessions`, `tasks`, `user_settings`, `users`\* | 40 |
+| **RLS enforces** (read directly by a user-JWT client) | `chat_message_actions`, `chat_messages` | 2 |
 | **RLS enforces** (policy present, defense-in-depth) | `chat_notification_preferences` | 1 |
 
 \* carries a non-widening policy — see the notes below.
 
-### The policies that do exist (10 statements)
+† emits a **contentless change ping** over private Realtime broadcast (`notif:<user_id>`,
+`events:<chapter_id>`, `attendance:<event_id>`) so the web dashboard can invalidate its caches.
+The ping carries `{table, op}` and **no row data**, and the table itself stays default-deny — the
+refetch it triggers goes back through the API, which remains the enforcing layer. This is
+deliberately *not* a `postgres_changes` subscription: Realtime evaluates the same policy PostgREST
+does, so publishing these three would have opened them to direct browser reads and moved the
+enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
+`realtime.messages` (§ "The policies that do exist").
+
+### The policies that do exist (11 statements)
 
 | Table | Policy | Effect |
 | --- | --- | --- |
-| `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. **This is the one table where RLS is the only gate**: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
+| `chat_message_actions` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(message_id)` — per-row channel-membership check via a `SECURITY DEFINER` function mirroring `canAccessChannel`. RLS is the only gate here: the web reads it directly (`packages/chat-core/src/realtime-manager.ts`, 2 call sites) |
+| `chat_messages` | `_select` | `auth.role() = 'authenticated' AND can_read_chat_message(id)` — the same predicate applied to the message row itself. Added by `20260816140000_realtime_carrier_repair.sql` so the chat `postgres_changes` subscription can receive rows; RLS is the only gate, as above |
+| `realtime.messages` | `realtime_messages_scoped_select` | Authorises the three private change-ping topics by prefix (`notif:` / `events:` / `attendance:`), each behind a `SECURITY DEFINER` scope predicate (own user, chapter membership, event's chapter membership). Purely additive: `realtime.messages` had RLS on with **no** policy, which denied every private channel. Chat's typing/presence channels are *public* and bypass this table entirely |
 | `chat_message_actions` | `_insert`, `_delete` | `user_id in (select id from users where supabase_auth_id = auth.uid())` — own rows only |
 | `chat_notification_preferences` | `_select_own` | Own rows only |
 | `chapter_audit_log` | `_no_update`, `_no_delete` | `using (false)` — append-only, tightens rather than widens |
@@ -199,14 +210,31 @@ misreads. The fix is a one-line `_id !== chapterId → 403` assertion, or droppi
 (a breaking route change). Tracked in **#866**; not changed here because the route shape is a
 public-API decision.
 
-### 5.2 `chat_messages` Realtime subscription is RLS-blind
+### 5.2 The Realtime carrier was never connected — resolved 2026-08-16 (#867)
 
-`realtime-manager.ts:414-419` subscribes to `postgres_changes` on `public.chat_messages` with the
-user-JWT client. That table is default-deny, so Postgres Changes delivers **no rows** to it. This
-fails safe — nothing leaks — but it means the subscription cannot be the live-message transport it
-appears to be. Worth confirming which path actually carries new messages before anyone "fixes" the
-RLS by adding a policy, which *would* widen access. Tracked in **#867**, which also records why a
-broad `authenticated` policy is the wrong fix if one turns out to be needed.
+This section previously recorded that `chat_messages` is default-deny, so its `postgres_changes`
+subscription could not receive rows, and asked which path actually carried new messages. The answer
+turned out to sit one layer lower, and to be worse.
+
+Read-only against **both** deployed projects on 2026-08-16: the `supabase_realtime` publication
+contained **no tables at all** (`puballtables = false`, zero rows) on `frapp-prod` *and*
+`frapp-staging`, and `ALTER PUBLICATION` appeared in zero migrations repo-wide. A table absent from
+the publication never reaches Realtime through the WAL, so **no RLS policy could have rescued it**:
+every `postgres_changes` subscription in the product had been receiving nothing, in every
+environment, since the first deploy. Nothing carried new messages — `broadcast` was in use for
+typing indicators only, and the 5s REST poll arms only after a channel has been non-live for >10s,
+which never happened because the channel *joins* perfectly well and simply never fires.
+
+It still failed safe (nothing ever leaked), which is why it survived so long: the failure mode is a
+subscription that reports `SUBSCRIBED` and stays silent, indistinguishable from an idle one.
+
+Fixed by `20260816140000_realtime_carrier_repair.sql`, which deliberately treats the two classes of
+subscriber differently — see the `†` note under "Enforcing layer per table". Chat consumes the
+changed row, so it gets real replication plus the row-level policy #867 pre-authorised; the three
+dashboard subscriptions consume nothing but the fact of a change, so they get a contentless private
+broadcast and their tables stay API-enforced. The topic strings are a cross-substrate contract
+between that migration and `apps/web/lib/realtime/change-topics.ts`, pinned by
+`change-topics.test.ts` precisely because drift between them is silent.
 
 ---
 

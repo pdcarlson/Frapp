@@ -67,6 +67,36 @@ After any rollback event:
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 
+## Rollback the Realtime carrier repair
+
+* **Migration**: `20260816140000_realtime_carrier_repair.sql`
+* **Action**: everything this migration creates is additive and separately droppable. Full revert:
+  ```sql
+  -- 1. stop the change pings
+  DROP TRIGGER IF EXISTS realtime_notify_notifications    ON public.notifications;
+  DROP TRIGGER IF EXISTS realtime_notify_events           ON public.events;
+  DROP TRIGGER IF EXISTS realtime_notify_event_attendance ON public.event_attendance;
+  DROP FUNCTION IF EXISTS public.realtime_notify_notifications();
+  DROP FUNCTION IF EXISTS public.realtime_notify_events();
+  DROP FUNCTION IF EXISTS public.realtime_notify_event_attendance();
+
+  -- 2. de-authorise the private topics
+  DROP POLICY IF EXISTS "realtime_messages_scoped_select" ON realtime.messages;
+  DROP FUNCTION IF EXISTS public.realtime_can_read_user_scope(uuid);
+  DROP FUNCTION IF EXISTS public.realtime_can_read_chapter_scope(uuid);
+  DROP FUNCTION IF EXISTS public.realtime_can_read_event_scope(uuid);
+
+  -- 3. un-publish chat and re-close the table
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_messages;
+  ALTER PUBLICATION supabase_realtime DROP TABLE public.chat_message_actions;
+  DROP POLICY IF EXISTS "chat_messages_select" ON public.chat_messages;
+  ```
+  **Order matters in one direction only, and it is the harmless one.** Rolling the database back without redeploying the web app does not error: the three dashboard subscriptions simply stop receiving pings (a private channel with no authorising policy is denied), and chat's `postgres_changes` handler goes quiet. That is *precisely* the pre-migration behavior — see the note below — so a DB-only rollback degrades to "realtime never worked", which is where `main` sat before this landed. There is no 500, no broken route, and no user-visible error; only staleness until a manual refresh.
+* **Note**: **rolling back does not re-open a vulnerability — it narrows access.** The only widening this migration performs is the `chat_messages_select` policy, which lets the browser read `chat_messages` scoped to channel membership (mirroring the precedent `chat_message_actions` already set). Dropping it returns the table to default-deny. The `realtime.messages` policy is likewise purely additive: that table had RLS on with *no* policy, denying every private channel, and this migration grants exactly three topic families. Nothing predating the migration can be lost — no column, constraint, or row is touched anywhere.
+* **Prefer a roll-forward fix anyway.** Reverting restores the #867 defect in full: every `postgres_changes` subscription in the product receives nothing, in every environment, and does so *silently* — the channel joins, reports `SUBSCRIBED`, and never fires, which is indistinguishable from an idle one. That silence is what hid the bug from the first deploy until 2026-08-16. If you roll this back, say so loudly somewhere a human reads, because nothing in the app will tell you.
+* **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
+* **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
+
 ## Rollback the activation funnel table
 
 * **Migration**: `20260809001500_chapter_activation_milestones.sql`

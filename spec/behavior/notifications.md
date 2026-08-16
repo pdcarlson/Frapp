@@ -18,7 +18,7 @@ Other modules (Chat, Events, Study, Billing) call these methods without knowing 
 5. Send push notification via Expo Push Service with the appropriate priority.
 6. If delivery fails (invalid token, Expo error), remove the invalid token from `push_tokens`.
 
-Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) and subscribes to Supabase Realtime INSERT events on `public.notifications` filtered to the current user, so new rows appear without a manual refresh. Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
+Push delivery is mobile-only (Expo); **web push is intentionally out of scope** for this phase. The web dashboard surfaces the in-app history instead: its notification drawer reads `GET /v1/notifications` (optional `limit`) and subscribes to a **private Supabase Realtime broadcast** topic, `notif:<users.id>`, so new rows appear without a manual refresh. The ping carries `{table, op}` and **no row data** — it only tells the client to refetch, and the refetch goes through the API above, which stays the enforcing layer. It deliberately does *not* use `postgres_changes`: `notifications` is RLS-on with no policy, and the SELECT policy needed to make Postgres changes fire would equally expose the table to direct browser reads (see [`AUTHORIZATION_MODEL.md`](../../docs/internal/security/AUTHORIZATION_MODEL.md) §4 and #867). Tapping a row deep-links via the payload `target` and marks it read with `PATCH /v1/notifications/{id}/read`.
 
 ## Deep Linking
 

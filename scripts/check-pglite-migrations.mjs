@@ -195,12 +195,36 @@ const RLS_SMOKE = [
       rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
   },
   {
-    name: "RLS enabled on chat_messages + default-deny (no policies)",
-    sql: `select c.relrowsecurity as rls,
-                 (select count(*)::int from pg_policy p where p.polrelid = c.oid) as policies
-            from pg_class c where c.relname = 'chat_messages'`,
+    name: "RLS enabled on chat_messages",
+    sql: `select relrowsecurity from pg_class where relname = 'chat_messages'`,
+    ok: (rows) => rows.length === 1 && rows[0].relrowsecurity === true,
+  },
+  {
+    // Was "default-deny (no policies)" until 2026-08-16. That assertion was
+    // correct for the schema but described a table nothing could read — and the
+    // `postgres_changes` subscription that depended on reading it had been dead
+    // since the first deploy (#867: `supabase_realtime` held no tables at all in
+    // prod or staging). Repairing the carrier required publishing the table,
+    // and Realtime enforces RLS per subscriber, so a policy became mandatory.
+    //
+    // The landmark is therefore TIGHTENED, not dropped: "no policies" is no
+    // longer the invariant, but "no policy broader than channel membership"
+    // still is, and that is the property that actually protects the table now
+    // that the browser can reach it. Same construction and same caveats as the
+    // chat_message_actions assertion below — read its comment for why
+    // `rows.length === 1`, `polpermissive` and `polcmd in ('r','*')` are each
+    // load-bearing, and for why the expression match is a smoke test rather
+    // than a proof.
+    name: "chat_messages SELECT gated to authenticated AND scoped via can_read_chat_message (#867)",
+    sql: `select pg_get_expr(polqual, polrelid) as using_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_messages'
+             and p.polpermissive
+             and p.polcmd in ('r', '*')`,
     ok: (rows) =>
-      rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
+      rows.length === 1 &&
+      /can_read_chat_message\((?:\w+\.)?id\)/.test(rows[0].using_expr ?? "") &&
+      /authenticated/.test(rows[0].using_expr ?? ""),
   },
   {
     name: "RLS enabled on chat_message_actions",
@@ -443,6 +467,43 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   const EVCARD = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"; // event-card message
   const PCARD = "ffffffff-ffff-ffff-ffff-ffffffffffff"; // punctuation-name card
   const LATECARD = "99999999-9999-9999-9999-999999999999"; // card racing the scrub
+
+  // ─── change-ping tables stay writable without a `realtime` schema ──────────
+  //
+  // 20260816140000 (#867) puts AFTER-ROW triggers on notifications / events /
+  // event_attendance that call `realtime.send()`. plpgsql resolves that at RUN
+  // time, not CREATE time, so a migration referencing a schema this substrate
+  // does not have applies perfectly and then makes three core tables
+  // unwritable on the first insert — an AFTER trigger raising unwinds the
+  // caller's statement, `return null` notwithstanding.
+  //
+  // This tier exists because nothing else here writes to those three tables:
+  // every assertion above stayed green while inserts into them were broken,
+  // which is precisely how the defect reached review. Keep at least one write
+  // per ping table here.
+  try {
+    await db.exec(`
+      begin;
+      insert into chapters (id, name, university)
+        values ('11111111-1111-1111-1111-111111111111', 'Ping', 'RPI');
+      insert into users (id, supabase_auth_id, email, display_name)
+        values ('22222222-2222-2222-2222-222222222222', gen_random_uuid(), 'ping@example.com', 'Ping');
+      insert into notifications (chapter_id, user_id, title, body)
+        values ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', 't', 'b');
+      insert into events (id, chapter_id, name, start_time, end_time)
+        values ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
+                'probe', now(), now() + interval '1 hour');
+      insert into event_attendance (event_id, user_id, status)
+        values ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'PRESENT');
+      commit;
+    `);
+    console.log("OK    change-ping tables accept writes with no `realtime` schema");
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   change-ping tables accept writes with no \`realtime\` schema\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
 
   let seeded = false;
   try {

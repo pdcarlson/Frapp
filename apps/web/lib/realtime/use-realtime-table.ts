@@ -3,19 +3,29 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { attachRealtimeChannel } from "@/lib/realtime/supabase-realtime";
-
-type RealtimeEvent = "INSERT" | "UPDATE" | "DELETE" | "*";
+import {
+  CHANGE_EVENT,
+  changeTopic,
+  type ChangeTable,
+} from "@/lib/realtime/change-topics";
 
 type Options = {
-  /** Supabase table name in the `public` schema, e.g. `event_attendance`. */
-  table: string;
-  /** Optional `column=eq.value` filter, e.g. `event_id=eq.${eventId}`. */
-  filter?: string;
-  /** Defaults to `*` (all change events). */
-  event?: RealtimeEvent;
+  /** Table whose changes should invalidate. Must emit a ping — see `change-topics.ts`. */
+  table: ChangeTable;
   /**
-   * Query keys to invalidate on every matching change. Keys are passed
-   * straight to `queryClient.invalidateQueries({ queryKey })`.
+   * Id the ping is scoped to. Mirrors the column this subscription used to
+   * filter on: `users.id` for notifications, `chapters.id` for events,
+   * `events.id` for attendance.
+   *
+   * Nullable because both real sources are: `frappUser.userId` is `null` until
+   * the profile resolves and `activeChapterId` is `null` before a chapter is
+   * picked. A nullish scope suppresses the subscription entirely rather than
+   * minting a shared `notif:null` topic.
+   */
+  scopeId: string | null | undefined;
+  /**
+   * Query keys to invalidate on every change. Keys are passed straight to
+   * `queryClient.invalidateQueries({ queryKey })`.
    *
    * The same subscription can invalidate more than one key to keep caches
    * consistent (e.g. attendance changes invalidate the event detail too).
@@ -26,22 +36,31 @@ type Options = {
 };
 
 /**
- * Subscribe to Supabase Postgres changes on a single table and trigger
- * TanStack query invalidations when they arrive.
+ * Refetch-on-change for a scoped slice of a table.
  *
- * This is the primary realtime primitive for the dashboard: chat uses it for
- * message lists, notifications uses it for the bell badge, attendance uses
- * it for the live check-in pulse. Hooks that need the raw payload (e.g. chat
- * optimistic updates) can call `attachRealtimeChannel` directly.
+ * **Carrier: private broadcast, not `postgres_changes`.** This hook used to open
+ * a `postgres_changes` subscription, which never delivered anything in any
+ * environment — `supabase_realtime` contained no tables at all, verified against
+ * prod and staging on 2026-08-16 (#867). Publishing these tables would have
+ * fixed delivery, but Realtime evaluates the same RLS policy PostgREST does, so
+ * the SELECT policy needed to make the events flow would equally have opened
+ * `notifications` / `events` / `event_attendance` to direct browser reads —
+ * bypassing every guard that enforces access in the API today.
  *
- * The subscription is gated by `enabled` so we never attach to an invalid
- * filter (e.g. `event_id=eq.` with an empty event id), which would silently
- * match the entire table.
+ * These three subscribers never read the changed row: this hook's whole body is
+ * `invalidateQueries`, and the refetch goes back through the API where the real
+ * authorization lives. So the database sends a contentless
+ * `{table, op}` ping on a scoped private topic instead, and the tables stay
+ * default-deny. Chat is the opposite case — it merges `payload.new` into a
+ * cache — so it keeps `postgres_changes` plus a row-level policy.
+ *
+ * The subscription is gated by `enabled` and by a defined `scopeId`, so we never
+ * attach to a topic with an empty scope (`notif:`), which would be a topic other
+ * clients could collide on.
  */
 export function useRealtimeTable({
   table,
-  filter,
-  event = "*",
+  scopeId,
   invalidate = [],
   enabled = true,
 }: Options) {
@@ -49,39 +68,33 @@ export function useRealtimeTable({
 
   // Keep the latest invalidate value in a ref so the effect callback always
   // reads the current keys without needing a stable array reference.
+  //
+  // The ref is reassigned on every render, so the subscription NEVER needs to
+  // re-run when only the keys change — and it must not. Broadcast is
+  // fire-and-forget with no replay: a detach/re-attach cycle drops any ping
+  // landing inside it, permanently, and the REST poll cannot cover the gap
+  // because it only arms after a channel has been non-live for >10s, which a
+  // clean resubscribe never triggers. `attendance-panel.tsx` puts `chapterId`
+  // in its invalidate array, so keying the effect on the array's JSON would
+  // re-mint the `attendance:<eventId>` channel on every chapter switch — losing
+  // whichever check-in landed in that window and under-counting the roster
+  // until something unrelated invalidated it.
   const invalidateRef = useRef(invalidate);
   invalidateRef.current = invalidate;
 
-  // Serialize to a stable string so inline array literals don't cause the
-  // effect to re-run on every render.
-  const invalidateKey = JSON.stringify(invalidate);
-
   useEffect(() => {
-    if (!enabled) return undefined;
-    const topic = filter ? `${table}:${filter}` : `${table}:all`;
-    const detach = attachRealtimeChannel(topic, (channel) =>
-      channel.on(
-        "postgres_changes" as never,
-        // The Supabase types for `postgres_changes` require a literal event;
-        // the cast lets us accept the broader '*' union in a single hook.
-        {
-          event,
-          schema: "public",
-          table,
-          ...(filter ? { filter } : {}),
-        } as unknown as {
-          event: RealtimeEvent;
-          schema: string;
-          table: string;
-          filter?: string;
-        },
-        () => {
+    if (!enabled || !scopeId) return undefined;
+    const topic = changeTopic(table, scopeId);
+    const detach = attachRealtimeChannel(
+      topic,
+      (channel) =>
+        channel.on("broadcast", { event: CHANGE_EVENT }, () => {
           for (const key of invalidateRef.current) {
             queryClient.invalidateQueries({ queryKey: [...key] });
           }
-        },
-      ),
+        }),
+      { private: true },
     );
     return detach;
-  }, [enabled, event, filter, invalidateKey, queryClient, table]);
+  }, [enabled, queryClient, scopeId, table]);
 }
