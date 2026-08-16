@@ -151,8 +151,13 @@ describe('ChatPushWorkerService', () => {
       level: 'off',
     };
     findForUser.mockResolvedValue([pref]);
-    // `mentions` rides on the message row (the composer writes it); the worker
-    // reads it via a `MentionsCarrier` cast, so attach it and cast here too.
+    // `mentions` is a `users.id[]` column on `chat_messages`, resolved by the
+    // API at send time (C1 of #937).
+    //
+    // This test used to build `{ a: true }` and pass, because the worker read
+    // the field through a structural cast typed as a map — but no row has ever
+    // carried it, since the column did not exist. So the mute override was
+    // green here and had never fired once in production. Use the real shape.
     const row = {
       id: 'm1',
       channel_id: CHANNEL.id,
@@ -160,7 +165,7 @@ describe('ChatPushWorkerService', () => {
       content: 'hey @a can you cover tonight?',
       kind: 'text',
       created_at: '',
-      mentions: { a: true },
+      mentions: ['a'],
     };
     await service.handleMessage(row);
     expect(notifyUser).toHaveBeenCalledTimes(1);

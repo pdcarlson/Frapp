@@ -21,15 +21,23 @@ import { NotificationModule } from '../notification/notification.module';
 import { ChannelAccessModule } from '../channel-access/channel-access.module';
 import { RbacModule } from '../rbac/rbac.module';
 import { ActivationModule } from '../activation/activation.module';
+import { ChapterModule } from '../chapter/chapter.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   // RbacModule → RbacService, which the delete-message route uses to resolve
   // `channels:manage` for the spec'd moderation path.
+  // ChapterModule → MEMBER_REPOSITORY, and AuthModule → USER_REPOSITORY. Both
+  // are needed by `sendMessage`'s server-side `@`-mention resolution, which
+  // walks the chapter roster to turn an `@`-token into a `users.id`.
+  // `ChannelAccessModule` is not a substitute: it exports only its service.
   imports: [
     NotificationModule,
     ChannelAccessModule,
     RbacModule,
     ActivationModule,
+    ChapterModule,
+    AuthModule,
   ],
   controllers: [ChatController],
   providers: [

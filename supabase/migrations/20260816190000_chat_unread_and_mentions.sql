@@ -26,10 +26,23 @@
 alter table public.chat_messages
   add column if not exists mentions uuid[] not null default '{}';
 
--- GIN, because every query against this column is an array-membership test
--- (`p_user_id = any (mentions)`), which btree cannot serve.
-create index if not exists idx_chat_messages_mentions
-  on public.chat_messages using gin (mentions);
+-- No index on `mentions`, deliberately.
+--
+-- The obvious move is a GIN index, and it would be dead weight. The only reader
+-- is `get_channel_unread_counts` below, which tallies mentions inside an
+-- aggregate `filter (where ...)` over rows the join is already walking — an
+-- aggregate filter is not a row-selection predicate, so the planner cannot
+-- consult an index for it at all. Verified on 20k rows: the plan is a seq scan
+-- on `chat_messages` with the index present and with it absent.
+--
+-- It would also cost real write amplification on the product's hottest insert
+-- path for that nothing.
+--
+-- If a "my mentions" inbox is built later it *can* be indexed, but only if the
+-- predicate is spelled as containment: `mentions @> array[$1]` uses a GIN index
+-- (confirmed: Bitmap Index Scan), while the equivalent-looking
+-- `$1 = any (mentions)` does not and seq-scans regardless. Add the index in the
+-- change that adds that query, spelled to match it.
 
 -- ---------------------------------------------------------------------------
 -- 2. Index the lookup the unread count actually performs.

@@ -24,6 +24,11 @@ interface ChatMessageRow {
   sender_id: string;
   content: string | null;
   kind: string;
+  /**
+   * `users.id[]` resolved server-side at send time (C1 of #937). Optional
+   * because rows written before `20260816190000` predate the column.
+   */
+  mentions: string[] | null;
   created_at: string;
 }
 
@@ -32,11 +37,6 @@ interface ChannelRow {
   chapter_id: string;
   name: string;
   is_read_only: boolean | null;
-}
-
-interface MentionsCarrier {
-  /** Optional mention map: recipient user id → mentioned (boolean). */
-  mentions?: Record<string, boolean>;
 }
 
 /**
@@ -141,11 +141,12 @@ export class ChatPushWorkerService
 
       const presenceMap = this.readPresence(channel.id);
       const senderPreview = row.content?.slice(0, 200) ?? '';
-      // Mentions arrive in `payload.mentions` (the composer writes them when
-      // it parses `@user`); a missing map is treated as "no mentions" so the
-      // mentions tier defaults to skip. Concrete mention wiring lands with
-      // Chunk 09's directory work.
-      const mentions = (row as ChatMessageRow & MentionsCarrier).mentions ?? {};
+      // `chat_messages.mentions` is a `users.id[]` resolved by the API at send
+      // time. Until C1 this read went through a structural cast over a column
+      // that had never existed and was typed as a map, so it resolved to `{}`
+      // on every message and the mentions tier had never fired for anyone.
+      // A missing array still means "no mentions" — rows predating the column.
+      const mentions = row.mentions ?? [];
 
       for (const recipientId of recipientIds) {
         const prefs = await this.prefRepo.findForUser(
@@ -157,7 +158,7 @@ export class ChatPushWorkerService
             channelName: channel.name,
             messageKind: row.kind,
             recipientIsPresent: presenceMap.has(recipientId),
-            hasMention: Boolean(mentions[recipientId]),
+            hasMention: mentions.includes(recipientId),
             preferences: prefs,
           },
           channel.id,

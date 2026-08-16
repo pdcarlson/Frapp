@@ -119,6 +119,26 @@ export interface Database {
     };
     Views: Record<string, never>;
     Functions: {
+      /**
+       * `20260816190000` (C1 of #937). Unread and mention tallies for every
+       * channel in a chapter, for one viewer, in one round trip.
+       *
+       * Returns a row per channel in the chapter — including channels the
+       * viewer cannot access and including channels with nothing unread (as
+       * zero). Callers MUST filter to accessible channels; the service does
+       * this with the same predicate the rest of chat uses, rather than a
+       * second copy of the access rules in SQL.
+       *
+       * `p_user_id` is `users.id`, not `supabase_auth_id`.
+       */
+      get_channel_unread_counts: {
+        Args: { p_chapter_id: string; p_user_id: string };
+        Returns: {
+          channel_id: string;
+          unread_count: number;
+          mention_count: number;
+        }[];
+      };
       get_poll_vote_option_totals: {
         Args: { p_message_ids: string[] };
         Returns: {

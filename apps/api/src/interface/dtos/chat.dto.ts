@@ -229,3 +229,22 @@ export class RequestChatUploadUrlDto {
   @MaxLength(255)
   content_type: string;
 }
+
+export class ChannelUnreadCountDto {
+  @ApiProperty({ format: 'uuid' })
+  channel_id: string;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them.',
+  })
+  unread_count: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time.',
+  })
+  mention_count: number;
+}

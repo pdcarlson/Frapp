@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { VersioningType, Logger } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -43,11 +43,20 @@ async function exportOpenApi() {
   const document = SwaggerModule.createDocument(app, config);
   const outPath = join(__dirname, '..', 'openapi.json');
   writeFileSync(outPath, JSON.stringify(document, null, 2), 'utf-8');
-  Logger.log(`Wrote ${outPath}`, 'OpenAPIExport');
+  console.log(`[OpenAPIExport] wrote ${outPath}`);
   await app.close();
 }
 
 exportOpenApi().catch((err) => {
-  Logger.error(err, 'OpenAPIExport');
+  // `console`, not `Logger`: the app is created with `logger: false`, which
+  // disables Nest's logger process-wide — so the previous `Logger.error` here
+  // printed nothing and this script failed with exit 1 and no output at all.
+  // The failure it hides is the expensive kind: `NestFactory.create` bootstraps
+  // the real container, so a missing provider surfaces here and nowhere else
+  // (unit tests supply their own), and a silent exit 1 gives no clue which.
+  console.error(
+    '[OpenAPIExport] failed:',
+    err instanceof Error ? err.stack : err,
+  );
   process.exit(1);
 });

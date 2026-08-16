@@ -64,7 +64,34 @@ export interface ChatMessage {
   pinned_at: string | null;
   edited_at: string | null;
   is_deleted: boolean;
+  /**
+   * `users.id` of every member mentioned in `content`, resolved server-side at
+   * send time (C1 of #937).
+   *
+   * Server-side because it is a security boundary, not a convenience: mentions
+   * override a per-channel mute in the push rules, so a client-supplied list
+   * would let any member force a push to any other member in a channel they had
+   * deliberately muted. Unresolvable `@`-tokens are dropped silently — an `@` in
+   * prose is not an error.
+   *
+   * Optional for rows written before the column existed.
+   */
+  mentions?: string[] | null;
   created_at: string;
+}
+
+/**
+ * Unread and mention tallies for one channel, for one viewer.
+ *
+ * Computed on demand by `get_channel_unread_counts` rather than stored: the
+ * inputs are `channel_read_receipts.last_read_at` and the messages themselves,
+ * so a materialised counter would be a cache to invalidate on every send, edit,
+ * delete and read.
+ */
+export interface ChannelUnreadCount {
+  channel_id: string;
+  unread_count: number;
+  mention_count: number;
 }
 
 /**

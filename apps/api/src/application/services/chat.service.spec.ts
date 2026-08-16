@@ -26,6 +26,7 @@ import type {
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
 import type { IStorageProvider } from '../../domain/adapters/storage.interface';
 import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.interface';
+import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type {
   ChatChannel,
@@ -51,7 +52,11 @@ describe('ChatService', () => {
   let mockNotificationService: jest.Mocked<
     Pick<NotificationService, 'notifyUser' | 'notifyChapter'>
   >;
-  let mockMemberRepo: { findByUserAndChapter: jest.Mock };
+  let mockMemberRepo: {
+    findByUserAndChapter: jest.Mock;
+    findByChapter: jest.Mock;
+  };
+  let mockUserRepo: { findByIds: jest.Mock };
   let mockActivation: jest.Mocked<Pick<ActivationService, 'record'>>;
   let mockRbac: {
     getEffectivePermissions: jest.Mock;
@@ -154,6 +159,7 @@ describe('ChatService', () => {
     mockReadReceiptRepo = {
       findByChannelAndUser: jest.fn(),
       upsert: jest.fn(),
+      getUnreadCounts: jest.fn().mockResolvedValue([]),
     };
 
     mockStorageProvider = {
@@ -175,6 +181,14 @@ describe('ChatService', () => {
 
     mockMemberRepo = {
       findByUserAndChapter: jest.fn(),
+      // Mention resolution walks the chapter roster. Empty by default so the
+      // existing send tests resolve to no mentions; the mention tests below
+      // populate it alongside `mockUserRepo`.
+      findByChapter: jest.fn().mockResolvedValue([]),
+    };
+
+    mockUserRepo = {
+      findByIds: jest.fn().mockResolvedValue([]),
     };
 
     mockActivation = { record: jest.fn().mockResolvedValue(true) };
@@ -221,6 +235,7 @@ describe('ChatService', () => {
         },
         { provide: STORAGE_PROVIDER, useValue: mockStorageProvider },
         { provide: MEMBER_REPOSITORY, useValue: mockMemberRepo },
+        { provide: USER_REPOSITORY, useValue: mockUserRepo },
         { provide: SUPABASE_CLIENT, useValue: mockSupabase },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: RbacService, useValue: mockRbac },
@@ -1608,6 +1623,172 @@ describe('ChatService', () => {
           action_type: 'reaction:👍',
         }),
       ).rejects.toThrow('schema mismatch');
+    });
+  });
+  describe('getUnreadCounts', () => {
+    const PRIVATE_OTHERS: ChatChannel = {
+      ...baseChannel,
+      id: 'private-not-mine',
+      name: 'their-dm',
+      type: 'PRIVATE',
+      member_ids: ['someone-else', 'another'],
+    };
+
+    it('drops channels the caller cannot read', async () => {
+      // The RPC answers for every channel in the chapter on purpose, so this
+      // filter is the only thing standing between a member and the knowledge
+      // that two other members have an active private conversation. An unread
+      // count alone is enough to leak that.
+      mockChannelRepo.findByChapter.mockResolvedValue([
+        baseChannel,
+        PRIVATE_OTHERS,
+      ]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 3, mention_count: 1 },
+        { channel_id: PRIVATE_OTHERS.id, unread_count: 9, mention_count: 4 },
+      ]);
+
+      const result = await service.getUnreadCounts('ch-1', 'user-1');
+
+      expect(result).toEqual([
+        { channel_id: baseChannel.id, unread_count: 3, mention_count: 1 },
+      ]);
+    });
+
+    it('keeps a readable channel with nothing unread rather than dropping it', async () => {
+      // The list needs a row per channel to render; a zero is a real answer.
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 0, mention_count: 0 },
+      ]);
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual([
+        { channel_id: baseChannel.id, unread_count: 0, mention_count: 0 },
+      ]);
+    });
+
+    it('does not consult the access filter when the RPC returns nothing', async () => {
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([]);
+
+      await expect(service.getUnreadCounts('ch-1', 'user-1')).resolves.toEqual(
+        [],
+      );
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('returns nothing for a non-member rather than the whole chapter', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+      mockChannelRepo.findByChapter.mockResolvedValue([baseChannel]);
+      mockReadReceiptRepo.getUnreadCounts.mockResolvedValue([
+        { channel_id: baseChannel.id, unread_count: 5, mention_count: 0 },
+      ]);
+
+      await expect(service.getUnreadCounts('ch-1', 'ghost')).resolves.toEqual(
+        [],
+      );
+    });
+  });
+
+  describe('sendMessage — mention resolution', () => {
+    const roster = [
+      { id: 'user-1', display_name: 'Sender One' },
+      { id: 'user-2', display_name: 'Jane Doe' },
+      { id: 'user-3', display_name: 'Janet Roe' },
+    ];
+
+    function seedRoster() {
+      mockMemberRepo.findByChapter.mockResolvedValue(
+        roster.map((u, i) => ({ ...baseMember, id: `m${i}`, user_id: u.id })),
+      );
+      mockUserRepo.findByIds.mockResolvedValue(roster);
+    }
+
+    it('resolves a mention server-side and stores users.id', async () => {
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'hey @janedoe can you cover?',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: ['user-2'] }),
+      );
+    });
+
+    it('stores no mention when the token is ambiguous', async () => {
+      // "jan" prefixes both Jane and Janet. Guessing would notify the wrong
+      // member, and mentions override a per-channel mute — so it fails closed.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: '@jan you around?',
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('never trusts a client-supplied mention list', async () => {
+      // The whole point of resolving server-side: a forged list would let any
+      // member push to any other member in a channel they had muted.
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'no mentions here',
+        metadata: { mentions: ['user-2', 'user-3'] },
+      });
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
+    it('skips the roster lookup entirely when the body has no @', async () => {
+      seedRoster();
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await service.sendMessage({
+        channel_id: 'ch-chan-1',
+        chapter_id: 'ch-1',
+        sender_id: 'user-1',
+        content: 'plain message',
+      });
+
+      expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('still sends when the directory lookup fails', async () => {
+      // Losing a highlight is acceptable; losing the message is not.
+      mockMemberRepo.findByChapter.mockRejectedValue(
+        new Error('directory down'),
+      );
+      mockMessageRepo.create.mockResolvedValue(baseMessage);
+
+      await expect(
+        service.sendMessage({
+          channel_id: 'ch-chan-1',
+          chapter_id: 'ch-1',
+          sender_id: 'user-1',
+          content: 'hey @janedoe',
+        }),
+      ).resolves.toBeDefined();
+
+      expect(mockMessageRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ mentions: [] }),
+      );
     });
   });
 });

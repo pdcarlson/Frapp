@@ -25,6 +25,14 @@ import type {
   IMessageReactionRepository,
   IChannelReadReceiptRepository,
 } from '../../domain/repositories/chat.repository.interface';
+import {
+  MEMBER_REPOSITORY,
+  type IMemberRepository,
+} from '../../domain/repositories/member.repository.interface';
+import {
+  USER_REPOSITORY,
+  type IUserRepository,
+} from '../../domain/repositories/user.repository.interface';
 import { SUPABASE_CLIENT } from '../../infrastructure/supabase/supabase.provider';
 import type { FrappSupabaseClient } from '../../infrastructure/supabase/database.types';
 import { STORAGE_PROVIDER } from '../../domain/adapters/storage.interface';
@@ -36,8 +44,13 @@ import type {
   ChatMessageAction,
   ChatMessageKind,
   ChannelType,
+  ChannelUnreadCount,
 } from '../../domain/entities/chat.entity';
-import { allowsInThreadReplies, validateCardPollVote } from '@repo/validation';
+import {
+  allowsInThreadReplies,
+  resolveMentions,
+  validateCardPollVote,
+} from '@repo/validation';
 import { NotificationService } from './notification.service';
 import { ChannelAccessService } from './channel-access.service';
 import { ActivationService } from './activation.service';
@@ -221,6 +234,10 @@ export class ChatService {
     private readonly reactionRepo: IMessageReactionRepository,
     @Inject(CHANNEL_READ_RECEIPT_REPOSITORY)
     private readonly readReceiptRepo: IChannelReadReceiptRepository,
+    @Inject(MEMBER_REPOSITORY)
+    private readonly memberRepo: IMemberRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepo: IUserRepository,
     @Inject(STORAGE_PROVIDER)
     private readonly storageProvider: IStorageProvider,
     @Inject(SUPABASE_CLIENT)
@@ -461,6 +478,10 @@ export class ChatService {
     }
 
     const kind: ChatMessageKind = input.kind ?? 'text';
+    const mentions = await this.resolveMentionsForChapter(
+      input.chapter_id,
+      input.content,
+    );
 
     let message: ChatMessage;
     const deduplicated = false;
@@ -475,6 +496,7 @@ export class ChatService {
         client_message_id: input.client_message_id ?? null,
         reply_to_id: input.reply_to_id ?? null,
         metadata: input.metadata ?? {},
+        mentions,
       });
     } catch (error) {
       if (
@@ -546,6 +568,54 @@ export class ChatService {
         channelId: message.channel_id,
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+
+  /**
+   * Resolve `@`-tokens in a message body to `users.id[]`, server-side.
+   *
+   * This is authoritative, and deliberately not a client responsibility: a
+   * mention overrides a per-channel mute in the push rules, so a
+   * client-supplied list would let any member force a push to any other member
+   * in a channel they had muted on purpose.
+   *
+   * Candidates are the chapter roster. Scoping to the *channel* would be
+   * tighter, but it is not needed for safety — the push worker builds its
+   * recipient list from channel membership and only then asks whether each
+   * recipient was mentioned, so a stored mention of a non-member is inert. The
+   * chapter roster also keeps `@name` meaning the same thing in every channel,
+   * which is what a member typing it expects.
+   *
+   * Failure is swallowed: a directory lookup that errors must not take the send
+   * down with it. The message lands with no mentions, which costs a highlight
+   * and a push tier, not the message.
+   */
+  private async resolveMentionsForChapter(
+    chapterId: string,
+    content: string,
+  ): Promise<string[]> {
+    if (!content.includes('@')) return [];
+
+    try {
+      const members = await this.memberRepo.findByChapter(chapterId);
+      if (members.length === 0) return [];
+
+      const users = await this.userRepo.findByIds(
+        members.map((member) => member.user_id),
+      );
+      return resolveMentions(
+        content,
+        users.map((user) => ({
+          user_id: user.id,
+          display_name: user.display_name,
+        })),
+      );
+    } catch (error) {
+      this.logger.warn('Failed to resolve mentions; sending without them', {
+        chapterId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return [];
     }
   }
 
@@ -877,6 +947,32 @@ export class ChatService {
       userId,
       new Date().toISOString(),
     );
+  }
+
+  /**
+   * Unread and mention tallies per channel, for the channel list's badges.
+   *
+   * The RPC deliberately returns a row for every channel in the chapter,
+   * including ones the caller cannot see, so that the access rules live in
+   * exactly one place instead of being restated in SQL where they could drift.
+   * Filtering here is therefore load-bearing, not defensive: an unread count is
+   * enough on its own to reveal that a DM between two other members exists and
+   * is active. `filterAccessibleChannelIds` is the same batch predicate the
+   * chapter-wide poll list uses for that reason.
+   */
+  async getUnreadCounts(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelUnreadCount[]> {
+    const rows = await this.readReceiptRepo.getUnreadCounts(chapterId, userId);
+    if (rows.length === 0) return [];
+
+    const accessible = await this.channelAccess.filterAccessibleChannelIds(
+      chapterId,
+      userId,
+      rows.map((row) => row.channel_id),
+    );
+    return rows.filter((row) => accessible.has(row.channel_id));
   }
 
   // ── File Upload ─────────────────────────────────────────────────────
