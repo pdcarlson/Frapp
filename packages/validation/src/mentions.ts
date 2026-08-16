@@ -51,7 +51,7 @@ const MAX_TOKEN_LENGTH = 64;
  * already bounded upstream, so the open-ended run is safe.
  */
 const MENTION_TOKEN =
-  /(?<![\p{L}\p{N}_@])@(\p{L}[\p{L}\p{N}_'’.-]*[\p{L}\p{N}]|\p{L})/gu;
+  /(?<![\p{L}\p{N}\p{M}_@])@(\p{L}[\p{L}\p{M}\p{N}_'’.-]*[\p{L}\p{M}\p{N}]|\p{L}\p{M}*)/gu;
 
 /**
  * Fold a name or token to its comparable core: lowercase, and everything that
@@ -62,8 +62,21 @@ const MENTION_TOKEN =
  * apostrophe or hyphen reachable only by its first word.
  */
 function fold(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  return value
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
 }
+
+/**
+ * Shortest token allowed to resolve by *prefix*.
+ *
+ * A one-character prefix is not a mention, it is a coin flip: `@A` would match
+ * whichever single member happens to start with A. The exact tiers above still
+ * accept a one-character token, so a member genuinely named a single character
+ * stays reachable — this only stops the loosest tier from guessing.
+ */
+const MIN_PREFIX_LENGTH = 2;
 
 /** Every distinct `@`-token in a message body, in order of first appearance. */
 export function extractMentionTokens(content: string): string[] {
@@ -110,8 +123,14 @@ export function matchMentionCandidate<T extends MentionCandidate>(
     // them: `@obrien` → "Sean O'Brien", `@maryjane` → "Mary-Jane Watson".
     (m) => folded.length > 0 && fold(m.display_name) === folded,
     (m) => firstWord(m.display_name) === needle,
-    (m) => fold(firstWord(m.display_name)) === folded,
-    (m) => folded.length > 0 && fold(m.display_name).startsWith(folded),
+    (m) => folded.length > 0 && fold(firstWord(m.display_name)) === folded,
+    // Prefix is the only guessing tier, so it carries the length floor. Without
+    // it, any token that folds to a single character — which a truncated or
+    // single-letter mention does — resolves to whichever member happens to
+    // start that way, and a mention overrides an explicit mute.
+    (m) =>
+      folded.length >= MIN_PREFIX_LENGTH &&
+      fold(m.display_name).startsWith(folded),
   ];
 
   for (const pred of tiers) {

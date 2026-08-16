@@ -64,6 +64,22 @@ describe("extractMentionTokens", () => {
     expect(extractMentionTokens("hola @Ángela")).toEqual(["Ángela"]);
   });
 
+  it("keeps combining marks in the token", () => {
+    // Decomposed (NFD) input: "A" + U+0301, which is what a paste from many
+    // sources actually carries. Excluding \p{M} truncated the token to "A",
+    // which the prefix tier then resolved to an unrelated member whose name
+    // merely started with A -- a fail-open into the *wrong* person, and a
+    // mention overrides an explicit mute.
+    const NFD_ANGELA = "\u0041\u0301ngela"; // A + combining acute
+    expect(NFD_ANGELA).not.toBe("\u00C1ngela"); // really decomposed
+    expect(NFD_ANGELA.normalize("NFC")).toBe("\u00C1ngela");
+    expect(extractMentionTokens(`hola @${NFD_ANGELA}`)).toEqual([NFD_ANGELA]);
+
+    // Arabic with harakat truncated to its first letter the same way.
+    const HARAKAT = "\u0645\u064F\u062D\u064E\u0645"; // Arabic + harakat
+    expect(extractMentionTokens(`@${HARAKAT}`)).toEqual([HARAKAT]);
+  });
+
   it("still ignores an email whose local part is non-ASCII", () => {
     expect(extractMentionTokens("josé@example.com")).toEqual([]);
   });
@@ -118,6 +134,27 @@ describe("matchMentionCandidate", () => {
     expect(matchMentionCandidate(list, "sean o'brien")?.user_id).toBe("u-ob");
     expect(matchMentionCandidate(list, "mary-jane")?.user_id).toBe("u-mj");
     expect(matchMentionCandidate(list, "maryjane")?.user_id).toBe("u-mj");
+  });
+
+  it("resolves the same name whether it arrives as NFC or NFD", () => {
+    // Before the fold normalised, a decomposed token could not match a
+    // precomposed display name even when the two render identically -- and it
+    // did not merely miss, it fell through to the prefix tier and hit Aaron.
+    const list = [
+      { user_id: "u-an", display_name: "\u00C1ngela Ruiz" },
+      { user_id: "u-aa", display_name: "Aaron Webb" },
+    ];
+    expect(matchMentionCandidate(list, "\u00C1ngela")?.user_id).toBe("u-an");
+    expect(
+      matchMentionCandidate(list, "\u0041\u0301ngela")?.user_id,
+    ).toBe("u-an");
+  });
+
+  it("refuses to guess from a single-character prefix", () => {
+    // This is the shape a truncated token takes. Resolving it would notify
+    // whoever happens to sort first, which is worse than not resolving.
+    const list = [{ user_id: "u-aa", display_name: "Aaron Webb" }];
+    expect(matchMentionCandidate(list, "A")).toBeNull();
   });
 
   it("does not match on surname alone", () => {

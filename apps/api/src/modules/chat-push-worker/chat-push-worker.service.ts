@@ -20,6 +20,9 @@ import { decidePush } from './push-rules';
 import { canAccessChannel } from '@repo/validation';
 import { RbacService } from '../../application/services/rbac.service';
 
+/** How long a cached channel row may inform an authorization decision. */
+const CHANNEL_CACHE_TTL_MS = 30_000;
+
 interface ChatMessageRow {
   id: string;
   channel_id: string;
@@ -27,8 +30,12 @@ interface ChatMessageRow {
   content: string | null;
   kind: string;
   /**
-   * `users.id[]` resolved server-side at send time (C1 of #937). Optional
-   * because rows written before `20260816190000` predate the column.
+   * `users.id[]` resolved server-side at send time (C1 of #937).
+   *
+   * Nullable defensively, not because the DB can produce null: the column is
+   * `not null default '{}'`, so the migration backfilled every pre-existing
+   * row. This shape only guards a payload arriving from somewhere that does
+   * not set it.
    */
   mentions: string[] | null;
   created_at: string;
@@ -70,7 +77,22 @@ export class ChatPushWorkerService
   private messagesChannel: RealtimeChannel | null = null;
   private readonly presenceChannels = new Map<string, RealtimeChannel>();
   private readonly bundler = new BurstBundler();
-  private readonly channelCache = new Map<string, ChannelRow>();
+  /**
+   * Channel rows, cached to keep a hot channel from re-querying per message.
+   *
+   * Entries expire, and the TTL is load-bearing rather than tidiness: this row
+   * now carries `member_ids` and `required_permissions`, which are the inputs
+   * to the push audience decision. `required_permissions` is mutable at runtime
+   * (`PATCH /v1/channels/:id`), and the read path re-reads the channel on every
+   * request — so an unbounded cache would let an admin tighten a ROLE_GATED
+   * channel, lock people out of reading it, and have the worker keep pushing
+   * them its content until the process restarted. A short TTL bounds that
+   * divergence to the window below instead of "forever".
+   */
+  private readonly channelCache = new Map<
+    string,
+    { row: ChannelRow; expiresAt: number }
+  >();
 
   constructor(
     @Inject(SUPABASE_CLIENT) private readonly supabase: SupabaseClient,
@@ -171,7 +193,8 @@ export class ChatPushWorkerService
       // time. Until C1 this read went through a structural cast over a column
       // that had never existed and was typed as a map, so it resolved to `{}`
       // on every message and the mentions tier had never fired for anyone.
-      // A missing array still means "no mentions" — rows predating the column.
+      // A missing array still means "no mentions". The column is NOT NULL with
+      // a default, so this guards a malformed payload, not a historical row.
       const mentions = row.mentions ?? [];
 
       for (const recipientId of recipientIds) {
@@ -240,25 +263,42 @@ export class ChatPushWorkerService
 
     if (shape.type === 'PUBLIC') return candidateIds;
 
-    const needsPermissions = shape.type === 'ROLE_GATED';
+    // Only ROLE_GATED needs permissions, and then one lookup per candidate.
+    // Resolved concurrently: awaiting inside the loop made a single message
+    // into a role-gated channel cost one sequential round trip per member,
+    // on a realtime handler with no backpressure.
+    const permissionsByUser = new Map<string, string[] | null>();
+    if (shape.type === 'ROLE_GATED') {
+      const resolved = await Promise.all(
+        candidateIds.map(async (userId) => {
+          try {
+            return [
+              userId,
+              await this.rbac.getEffectivePermissions(
+                channel.chapter_id,
+                userId,
+              ),
+            ] as const;
+          } catch (err) {
+            // Fail closed: an unresolved permission set must not become a push.
+            this.logger.warn(
+              `chat-push: permission lookup failed for ${userId}; skipping`,
+              err,
+            );
+            return [userId, null] as const;
+          }
+        }),
+      );
+      for (const [userId, permissions] of resolved) {
+        permissionsByUser.set(userId, permissions);
+      }
+    }
+
     const allowed: string[] = [];
     for (const userId of candidateIds) {
-      let permissions: string[] = [];
-      if (needsPermissions) {
-        try {
-          permissions = await this.rbac.getEffectivePermissions(
-            channel.chapter_id,
-            userId,
-          );
-        } catch (err) {
-          // Fail closed: an unresolved permission set must not become a push.
-          this.logger.warn(
-            `chat-push: permission lookup failed for ${userId}; skipping`,
-            err,
-          );
-          continue;
-        }
-      }
+      const permissions =
+        shape.type === 'ROLE_GATED' ? permissionsByUser.get(userId) : [];
+      if (permissions == null) continue;
       if (
         canAccessChannel({
           channel: shape,
@@ -276,7 +316,7 @@ export class ChatPushWorkerService
 
   private async resolveChannel(channelId: string): Promise<ChannelRow | null> {
     const cached = this.channelCache.get(channelId);
-    if (cached) return cached;
+    if (cached && cached.expiresAt > Date.now()) return cached.row;
     const { data, error } = await this.supabase
       .from('chat_channels')
       .select(
@@ -289,7 +329,10 @@ export class ChatPushWorkerService
       return null;
     }
     const row: ChannelRow = data;
-    this.channelCache.set(channelId, row);
+    this.channelCache.set(channelId, {
+      row,
+      expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
+    });
     // Open a presence subscription on the same `chat:channel:<id>` topic the
     // web client uses (ADR-10) so we can read who's currently in the channel.
     this.ensurePresenceChannel(row.id);
@@ -385,7 +428,10 @@ export class ChatPushWorkerService
   // ── Internal test helpers ─────────────────────────────────────────────
   /** Cache a channel row in tests so `handleMessage` skips the DB lookup. */
   __setChannelForTest(channel: ChannelRow): void {
-    this.channelCache.set(channel.id, channel);
+    this.channelCache.set(channel.id, {
+      row: channel,
+      expiresAt: Date.now() + CHANNEL_CACHE_TTL_MS,
+    });
   }
   /** Seed a presence map for tests. */
   __setPresenceForTest(channelId: string, userIds: string[]): void {

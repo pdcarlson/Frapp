@@ -110,8 +110,10 @@ Post-apply production checks:
 * **Why `security definer`**: `chat_channels` and `channel_read_receipts` both have RLS enabled with
   **zero policies** (`00000000000000_initial_schema.sql:468,471`), which denies everything to
   non-service roles. The function is granted to `service_role` only — `public`, `anon` and
-  `authenticated` are explicitly revoked — and `search_path` is pinned to `public`, without which a
-  caller-controlled path could resolve `chat_messages` to another relation under the owner's rights.
+  `authenticated` are explicitly revoked — and `search_path` is pinned to `public, pg_temp` — with `pg_temp`
+  **last**, which is the part that matters: named implicitly it is searched *first*, so a session that can
+  `create temp table chat_messages (...)` would have the definer function read its forged rows. Verify with
+  `select proconfig from pg_proc where proname='get_channel_unread_counts';` — expect `{"search_path=public, pg_temp"}`.
   Per-channel access is filtered in the service against the same predicate the rest of chat uses,
   rather than duplicated in SQL where it would drift.
 * **Not yet applied.** This lands as a file only; promotion follows the order at the top of this
