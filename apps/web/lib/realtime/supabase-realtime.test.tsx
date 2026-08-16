@@ -34,12 +34,19 @@ interface FakeChannel {
   /** Prefixed `realtime:` exactly as the real client does. */
   topic: string;
   state: FakeChannelState;
+  /** The `config` the channel was minted with, so private-ness is assertable. */
+  config: { private?: boolean } | undefined;
 }
 
-function makeFakeChannel(topic: string, onTeardown: () => void): FakeChannel {
+function makeFakeChannel(
+  topic: string,
+  onTeardown: () => void,
+  config?: { private?: boolean },
+): FakeChannel {
   const channel: FakeChannel = {
     topic: `realtime:${topic}`,
     state: "closed",
+    config,
     on: vi.fn((type: string) => {
       if (
         type === "postgres_changes" &&
@@ -77,12 +84,16 @@ function makeFakeSupabase(): {
   /** Live registry, mirroring `RealtimeClient.channels`. */
   const registry = new Map<string, FakeChannel>();
   const supabase = {
-    channel: vi.fn((topic: string) => {
+    channel: vi.fn((topic: string, opts?: { config?: { private?: boolean } }) => {
       const existing = registry.get(topic);
       if (existing) return existing;
-      const channel = makeFakeChannel(topic, () => {
-        if (registry.get(topic) === channel) registry.delete(topic);
-      });
+      const channel = makeFakeChannel(
+        topic,
+        () => {
+          if (registry.get(topic) === channel) registry.delete(topic);
+        },
+        opts?.config,
+      );
       registry.set(topic, channel);
       created.push(channel);
       return channel;
@@ -249,7 +260,7 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
       ({ chapterId }: { chapterId: string }) =>
         useRealtimeTable({
           table: "event_attendance",
-          filter: "event_id=eq.evt-1",
+          scopeId: "evt-1",
           invalidate: [
             ["attendance", "evt-1"],
             ["events", chapterId, "evt-1"],
@@ -271,5 +282,56 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
     unmount();
     await flush();
     expect(created[1]!.teardown).toHaveBeenCalledTimes(1);
+  });
+
+  test("subscribes on the scoped topic as a PRIVATE channel", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    renderHook(
+      () =>
+        useRealtimeTable({
+          table: "notifications",
+          scopeId: "user-1",
+          invalidate: [["notifications"]],
+        }),
+      { wrapper },
+    );
+    await flush();
+
+    expect(created).toHaveLength(1);
+    // The topic half of the contract in `change-topics.ts`.
+    expect(created[0]!.topic).toBe("realtime:notif:user-1");
+    // `private` is a security control here, not a tuning knob: a public channel
+    // on this topic would hand every ping to anyone who guessed the string,
+    // because public channels bypass `realtime.messages` RLS entirely.
+    expect(created[0]!.config?.private).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("does not subscribe at all while the scope id is undefined", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    // `frappUser.userId` is undefined on first render. Attaching anyway would
+    // mint the topic `notif:undefined`, which every signed-out tab would share.
+    renderHook(
+      () =>
+        useRealtimeTable({
+          table: "notifications",
+          scopeId: undefined,
+          invalidate: [["notifications"]],
+        }),
+      { wrapper },
+    );
+    await flush();
+
+    expect(created).toHaveLength(0);
   });
 });

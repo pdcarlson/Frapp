@@ -77,6 +77,7 @@ function enqueue(topic: string, operation: () => Promise<void>): Promise<void> {
 export function attachRealtimeChannel(
   topic: string,
   configure: (channel: RealtimeChannel) => RealtimeChannel,
+  options: { private?: boolean } = {},
 ): () => void {
   const client = getRealtimeClient();
   let detached = false;
@@ -90,7 +91,16 @@ export function attachRealtimeChannel(
       // below would then have nothing to undo, so stop here instead.
       if (detached) return;
     }
-    const channel = client.channel(topic);
+    // `private: true` routes the subscription through `realtime.messages` RLS,
+    // which is what authorises the scoped change topics (see
+    // `change-topics.ts`). A public channel on those topics would hand every
+    // ping to anyone who guessed the string, so this flag is a security
+    // control, not a tuning knob. The JWT it authorises against is put on the
+    // socket by supabase-js itself — it calls `realtime.setAuth()` on init and
+    // on every auth transition — so there is nothing to wire here.
+    const channel = options.private
+      ? client.channel(topic, { config: { private: true } })
+      : client.channel(topic);
     // Claim it for cleanup *before* `configure` runs: the channel is already in
     // the client's registry by now, so a `configure` that throws would
     // otherwise strand it there with nothing holding a reference to release.

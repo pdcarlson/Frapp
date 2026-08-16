@@ -109,7 +109,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   // aggregate counts stay consistent.
   useRealtimeTable({
     table: "event_attendance",
-    filter: `event_id=eq.${eventId}`,
+    scopeId: eventId,
     invalidate: useMemo(
       () => [
         ["attendance", eventId],

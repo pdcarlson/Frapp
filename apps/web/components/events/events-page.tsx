@@ -70,7 +70,7 @@ export function EventsPage() {
   // invalidate another chapter's cache.
   useRealtimeTable({
     table: "events",
-    filter: activeChapterId ? `chapter_id=eq.${activeChapterId}` : undefined,
+    scopeId: activeChapterId,
     invalidate: [["events", activeChapterId]],
     enabled: Boolean(activeChapterId),
   });

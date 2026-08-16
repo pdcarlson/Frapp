@@ -95,7 +95,7 @@ export function DashboardNotificationDrawer({
   // UPDATE when it's marked read elsewhere) refreshes the list.
   useRealtimeTable({
     table: "notifications",
-    filter: frappUser.userId ? `user_id=eq.${frappUser.userId}` : undefined,
+    scopeId: frappUser.userId,
     invalidate: [["notifications"]],
     enabled: Boolean(frappUser.userId),
   });
