@@ -3,6 +3,29 @@ import { withSentryConfig } from "@sentry/nextjs";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   transpilePackages: ["@repo/theme", "@repo/ui"],
+  env: {
+    /**
+     * The Sentry environment tag, **derived** rather than configured.
+     *
+     * Vercel already knows which environment a deployment is: `VERCEL_ENV` is a
+     * system variable it sets at build time to `production` / `preview` /
+     * `development`. Requiring a hand-set `NEXT_PUBLIC_SENTRY_ENVIRONMENT` in
+     * Infisical would be a second copy of that fact, maintained by hand, in two
+     * environments — and its failure mode is silent: set it to `production` in
+     * the Staging environment by mistake and every staging error is tagged
+     * production forever, with nothing to catch it.
+     *
+     * `NODE_ENV` is not usable here for the opposite reason: Vercel Preview and
+     * Production are *both* `production` to Next, so it cannot tell them apart.
+     *
+     * Values listed under `env` are inlined into the bundle at build time
+     * regardless of prefix (Next `env` config), so this reaches the browser
+     * without an entry in any secret store. **Do not add
+     * `NEXT_PUBLIC_SENTRY_ENVIRONMENT` to Infisical** — this replacement happens
+     * at build time and would win over it silently.
+     */
+    NEXT_PUBLIC_SENTRY_ENVIRONMENT: process.env.VERCEL_ENV ?? "development",
+  },
 };
 
 /**

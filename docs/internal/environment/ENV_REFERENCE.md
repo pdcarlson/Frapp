@@ -163,7 +163,7 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/stripe.ts` | ❌ — optional; Stripe **publishable** key (`pk_…`) for the member dues payment sheet. When unset, `getStripe()` returns `null` and no Pay affordance renders — local dev, CI, and the production build prerender all run without it. Publishable by design (it is safe in a client bundle); the secret key stays API-only as `STRIPE_SECRET_KEY`. |
 | `NEXT_PUBLIC_SENTRY_DSN` | `lib/sentry/options.ts` (read by `instrumentation.ts` and `instrumentation-client.ts`) | ❌ — optional; **unset → `Sentry.init` is never called on any runtime**, so local dev, tests, and CI report nowhere. This is the `frapp-web` project's DSN, *not* the API's `frapp-api` one — the two projects are separate so a browser error and a server error do not land in the same stream. |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `lib/sentry/options.ts` (default: `development`) | ❌ — optional; tags events with the deploy environment. `NODE_ENV` is not reused because Vercel Preview and Production are both `production` to Next, and they should not share one Sentry environment. |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `lib/sentry/options.ts` — **derived, never configured** | 🚫 — **do not set this anywhere, including Infisical.** `next.config.js` maps it from Vercel's own `VERCEL_ENV` system variable under the `env` config, which inlines at build time and would silently win over any value you set. `NODE_ENV` cannot substitute: Vercel Preview and Production are *both* `production` to Next. |
 | `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` | `lib/sentry/options.ts` (default: `0.1`) | ❌ — optional; same default as the API's `SENTRY_TRACES_SAMPLE_RATE`. Carries the same #904 caveat: a malformed value yields `NaN`, which the SDK treats as tracing enabled. |
 | `SENTRY_AUTH_TOKEN` | `next.config.js` (build-time only, never bundled) | ❌ — optional; when absent, `withSentryConfig` skips source-map upload and the build still succeeds. Only needed in the deploy environment, where readable stack traces are wanted. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
@@ -181,6 +181,12 @@ Reads the `NEXT_PUBLIC_*` references:
 > `vercel-web-production` carry it (inventory: [`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
 > Leave the **local** environment unset — no DSN means `Sentry.init` is never called, which is what
 > keeps local dev, tests, and CI reporting nowhere.
+>
+> **The DSN is the only Sentry variable you set for `apps/web`.** The environment tag is derived
+> from `VERCEL_ENV` at build time (see the row above), and the sample rate has a working default.
+> Configuration that restates something the platform already knows is a second copy to keep true,
+> and its failure mode is silent — a Staging entry reading `production` mislabels every staging
+> event with nothing to catch it.
 >
 > Note the blast radius (#834): every sync reads path `/` and pushes its **whole** source
 > environment, so `frapp-landing` receives this key too. It is inert there — `apps/landing` never

@@ -85,6 +85,22 @@ export function webSentryDsn(): string | undefined {
 }
 
 /**
+ * The environment tag, derived at build time from Vercel's own `VERCEL_ENV`.
+ *
+ * `next.config.js` maps it in under `env`, so this read is replaced at build
+ * time and no secret-store entry exists for it. See that file for why it is
+ * derived rather than configured — briefly: Vercel already knows which
+ * environment a deployment is, and a hand-set copy fails silently when it
+ * disagrees.
+ *
+ * The `?? "development"` here is for the non-Next callers (vitest, which loads
+ * this module without the config's replacement applied), not a second default.
+ */
+function environment(): string {
+  return process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? "development";
+}
+
+/**
  * Options shared by every runtime the web app initializes Sentry in.
  *
  * `sendDefaultPii: false` matches the API. Under v10 that is a key-name filter,
@@ -94,7 +110,7 @@ export function webSentryDsn(): string | undefined {
 export function buildWebSentryOptions(dsn: string): BrowserOptions {
   return {
     dsn,
-    environment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? "development",
+    environment: environment(),
     tracesSampleRate: Number(
       process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
     ),
@@ -113,7 +129,7 @@ export function buildWebSentryOptions(dsn: string): BrowserOptions {
 export function buildServerSentryOptions(dsn: string): NodeOptions {
   return {
     dsn,
-    environment: process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT ?? "development",
+    environment: environment(),
     tracesSampleRate: Number(
       process.env.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.1",
     ),
