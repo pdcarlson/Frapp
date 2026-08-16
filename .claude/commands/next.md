@@ -420,6 +420,14 @@ it by reading the actual code → `{verdict: CONFIRMED|REFUTED|NEEDS_HUMAN, evid
 **CONFIRMED**; put **NEEDS_HUMAN** in the PR body under *Flagged for review* — that valve is what lets
 a run finish instead of stopping to ask. Its sub-agents inherit the session model.
 
+**The *Flagged for review* block is a record, not an ask.** Anything on it that needs Paul to *act
+or decide* — a dashboard toggle, a credential, an unmet acceptance criterion you are shipping
+around — also goes in your **end-of-run report as an explicit question**, per
+[`AGENTS.md`](../../AGENTS.md) § Filing follow-up work. A PR section is read after merge if at all;
+the report is the only thing guaranteed to be read. File the issue *and* ask. And if Paul is
+present and the action is small, just ask on the spot — a 15-second toggle is not worth a
+follow-up issue's lifecycle.
+
 ## Phase 4 — ship and sync
 
 Update the related real spec/docs **in this same PR** — doc-sync requires it, and the §1.2 drift items

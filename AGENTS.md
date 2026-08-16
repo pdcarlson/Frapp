@@ -65,6 +65,24 @@ Cloud-agent VMs are ephemeral and a single PR shouldn't balloon, so when work su
 > proof — the `suggestion` label is what permits that close, so never omit it. Never work around
 > a blocker silently, never leave it only in chat, and never make the next session re-discover it.
 
+> **Filing is necessary but not sufficient — end the run by *asking* (owner mandate 2026-08-16).**
+> An issue is durable, but it is not an interruption, and a blocker only the owner can clear does
+> nothing until the owner sees it. So when a run hits one:
+>
+> 1. **Keep building everything that does not depend on it.** Do not stall the whole unit on a
+>    blocker that gates one acceptance criterion.
+> 2. **File the issue as you go**, per the hard rule above.
+> 3. **Put it to the owner as an explicit question in your end-of-run report** — the last thing
+>    they read, phrased as a decision or an action with the exact steps, and `AskUserQuestion` when
+>    a choice is involved. **Not** as a subsection of a long PR body: a *Flagged for review* block
+>    is a record, not an ask, and it will be read after merge if at all.
+>
+> One interruption per run, at a predictable moment. The failure this closes is real: #865 shipped
+> with its blocker filed (#970), written up honestly, and still effectively invisible, because the
+> decision sat in a PR section instead of being asked. If the owner is present and the blocker is
+> small, asking on the spot beats all of this — a 15-second dashboard toggle is not worth a
+> follow-up issue's lifecycle.
+
 **When to file:**
 
 - A **proven human-only blocker** — per the hard rule above.
