@@ -1770,6 +1770,33 @@ describe('ChatService', () => {
       expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
     });
 
+    it('re-resolves mentions on edit', async () => {
+      // Without this the stored list describes text that no longer exists:
+      // editing someone in never counts toward their badge, and editing them
+      // out leaves a mention of a message that no longer names them.
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', 'now with @janedoe');
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ mentions: ['user-2'] }),
+      );
+    });
+
+    it('clears mentions when an edit removes them', async () => {
+      seedRoster();
+      mockMessageRepo.update.mockResolvedValue(baseMessage);
+
+      await service.editMessage('msg-1', 'ch-1', 'user-1', 'never mind');
+
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        'msg-1',
+        expect.objectContaining({ mentions: [] }),
+      );
+    });
+
     it('still sends when the directory lookup fails', async () => {
       // Losing a highlight is acceptable; losing the message is not.
       mockMemberRepo.findByChapter.mockRejectedValue(

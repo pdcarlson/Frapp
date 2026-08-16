@@ -738,8 +738,21 @@ export class ChatService {
       throw new BadRequestException('Cannot edit a deleted message');
     }
 
+    // Re-resolve mentions against the new body. Skipping this leaves the stored
+    // list describing text that no longer exists: editing `@jane` in never
+    // counts toward her badge, and editing her out leaves a mention of a
+    // message that no longer names her. `spec/behavior/chat/README.md` defines
+    // mention count as a subset of the unread set, which is only true if the
+    // two are recomputed together.
+    //
+    // No push fires on an edit, so adding a mention here highlights and counts
+    // but does not notify — the alternative, re-running the push tier on every
+    // edit, would make an edit a way to notify someone repeatedly.
+    const mentions = await this.resolveMentionsForChapter(chapterId, content);
+
     return this.messageRepo.update(messageId, {
       content,
+      mentions,
       edited_at: new Date().toISOString(),
     });
   }

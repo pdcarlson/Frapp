@@ -26,7 +26,19 @@ if (missingVars.length > 0) {
 }
 
 async function exportOpenApi() {
-  const app = await NestFactory.create(AppModule, { logger: false });
+  // `abortOnError: false` is what makes a bootstrap failure *visible*, and it
+  // is not optional here. With the default `true`, Nest logs the reason through
+  // the logger this call just disabled and then calls `process.exit(1)` itself
+  // — the promise never rejects, so the `.catch` below never runs and the
+  // script dies with exit 1 and zero output. Since `NestFactory.create` is the
+  // only place the real DI container is built (unit tests supply their own
+  // providers), that silence hides exactly the class of error this script is
+  // best placed to catch: a service injecting something its module does not
+  // provide, which would fail to boot in production.
+  const app = await NestFactory.create(AppModule, {
+    logger: false,
+    abortOnError: false,
+  });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   const config = new DocumentBuilder()
