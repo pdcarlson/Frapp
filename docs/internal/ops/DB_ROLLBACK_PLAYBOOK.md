@@ -97,6 +97,27 @@ After any rollback event:
 * **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
 * **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
 
+## Rollback the chat unread/mention slice
+
+* **Migration**: `20260816190000_chat_unread_and_mentions.sql`
+* **Action**: everything it adds is separately droppable.
+  ```sql
+  -- 1. the read path (drop this AFTER the API is back on a pre-C1 revision)
+  DROP FUNCTION IF EXISTS public.get_channel_unread_counts(uuid, uuid);
+
+  -- 2. the indexes
+  DROP INDEX IF EXISTS public.idx_chat_messages_mentions;
+  DROP INDEX IF EXISTS public.idx_channel_read_receipts_user;
+
+  -- 3. the column — see the data caveat before running this one
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS mentions;
+  ```
+* **Order**: **redeploy the API first, then the database.** This is the coordinated shape, not the additive one. `GET /v1/channels/unread` calls the function directly, so dropping it under a running C1 API turns that route into a 500 on every poll — and the mobile channel list calls it on mount. Roll the API back to a pre-C1 revision first and the route disappears with it; then the DB drop is unobserved. The reverse order is the only way to make this user-visible.
+* **Note**: the `mentions` half degrades gracefully in *both* directions, which is worth knowing before you panic. The push worker reads `row.mentions ?? []`, so a missing column simply means no message is ever treated as a mention — the same behavior the product had before this migration, since the worker was previously casting over a column that never existed and always resolving to empty. Dropping the column cannot therefore break push; it only returns the `mentions` tier to never firing.
+* **Data caveat**: **dropping the column is not recoverable by re-applying.** `mentions` is resolved at send time against chapter membership as it stood at that moment, so re-adding the column gives every historical message an empty array. The raw `@`-text survives in `content`, so a backfill is *possible*, but it would resolve against today's membership — a member who has since left, been renamed, or whose display name now collides with another's would resolve differently or not at all. If you only need to stop a bad mention resolution rather than remove the feature, `UPDATE chat_messages SET mentions = '{}'` on the affected rows and leave the schema alone.
+* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost nothing but the GIN index's write amplification on `chat_messages` inserts.
+* **Partial rollback to avoid**: dropping `idx_chat_messages_mentions` while leaving the function and the API in place. The mention count is an array-membership test (`p_user_id = any (m.mentions)`), which btree cannot serve and which then degrades to a sequential scan of every non-deleted message in the chapter on every channel-list load.
+
 ## Rollback the activation funnel table
 
 * **Migration**: `20260809001500_chapter_activation_milestones.sql`
