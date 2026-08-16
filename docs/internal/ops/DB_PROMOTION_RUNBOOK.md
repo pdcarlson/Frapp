@@ -89,13 +89,24 @@ Post-apply production checks:
   rows with no aggregation. Mentions did not exist as data at all — the push worker has been
   reading a `mentions` field off the message row through a structural cast over a column that never
   existed, so the `mentions` push tier has never fired for anyone. Mobile's channel list needs both
-  badges; web's #315 badge is wired off the same function.
-* **Shape**: additive only. One nullable-by-default column (`chat_messages.mentions uuid[] not null
-  default '{}'`), two indexes, one `security definer` function. No table created, no column dropped,
-  no data rewritten. The `alter table … add column … default '{}'` takes an `ACCESS EXCLUSIVE` lock
-  but does not rewrite the heap — Postgres has stored non-volatile defaults as catalog metadata
-  since 11 — so it is O(1) regardless of `chat_messages` size. Every statement is guarded
-  (`if not exists` / `create or replace`), so the file is re-runnable.
+  badges, and web's #315 badge is intended to read the same function rather than
+  grow a second definition of "unread" — neither client is wired to it yet as of
+  this migration.
+* **Shape**: additive only. One column (`chat_messages.mentions uuid[] not null default '{}'`), one
+  index, one `security definer` function. No table created, no column dropped, no data rewritten.
+  Every statement is guarded (`if not exists` / `create or replace`), so the file is re-runnable.
+* **Locks — the part worth reading before scheduling.** The `add column` is cheap: it takes an
+  `ACCESS EXCLUSIVE` lock but does not rewrite the heap, because Postgres stores a non-volatile
+  default as catalog metadata rather than materialising it per row (confirmed on PG 17.6 against a
+  50k-row table: `pg_relation_filenode` unchanged, `atthasmissing = t`). So it is O(1) in
+  `chat_messages` size and the exclusive lock is held only momentarily.
+  The index is the one to think about, because a plain `create index` (not `concurrently`) holds a
+  `SHARE` lock for the whole build, blocking every INSERT/UPDATE/DELETE on that table meanwhile.
+  Here it is on `channel_read_receipts`, which holds at most one row per member per channel, so the
+  build is short. **There is deliberately no index on `chat_messages`** — see the migration's own
+  comment for why a GIN index there would have been unusable *and* would have blocked chat sends
+  for the length of its build. If a future migration does index `chat_messages`, size the window
+  against that table's row count rather than assuming this entry's profile.
 * **Why `security definer`**: `chat_channels` and `channel_read_receipts` both have RLS enabled with
   **zero policies** (`00000000000000_initial_schema.sql:468,471`), which denies everything to
   non-service roles. The function is granted to `service_role` only — `public`, `anon` and

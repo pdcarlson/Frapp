@@ -132,7 +132,24 @@ Every message is written to `chat_messages` in Postgres **before** being broadca
 
 ## Read Receipts
 
-Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table. Unread count per channel = count of messages created after the user's last-read timestamp for that channel.
+Each user's last-read timestamp per channel is tracked in a `channel_read_receipts` table. Opening a channel stamps the cursor to server `now()`; there is no mark-read-to-a-specific-message.
+
+Unread count per channel = messages created after that cursor, **excluding two cases that would otherwise make the badge wrong**:
+
+- **The viewer's own messages never count.** Otherwise posting would light up your own badge until you reopened the channel you had just posted in.
+- **Deleted messages never count.** A badge that survives the deletion of the only message behind it cannot be cleared by reading.
+
+A member with no receipt for a channel has never opened it, so **every** message counts rather than none.
+
+Mention count is the subset of that same set which mentions the viewer.
+
+Both are computed server-side by `get_channel_unread_counts` and served from `GET /v1/channels/unread`, which returns one row per channel the caller can read — including channels with nothing unread, as zero. Clients MUST NOT re-derive either number locally: a second definition would disagree with this one on exactly the cases above.
+
+### Mentions
+
+`chat_messages.mentions` holds the `users.id` of everyone mentioned in the body, resolved **server-side at send time** against the chapter roster. This is a security boundary rather than a convenience: a mention overrides a per-channel mute in the push rules, so a client-supplied list would let any member force a push to any other member in a channel they had deliberately muted.
+
+Resolution is tiered and fails closed — exact user id, exact display name, name without spaces, first word, unique prefix — and **ambiguity at any tier resolves to nobody**. If two members share a first name, `@jane` mentions neither, because silently picking one notifies the wrong person while looking correct to the sender. Unresolvable tokens are dropped silently; an `@` in prose is not an error.
 
 ## Message Kinds and Actions
 
