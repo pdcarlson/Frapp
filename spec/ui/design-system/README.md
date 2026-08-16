@@ -102,7 +102,7 @@ For each of the three gate classes the API enforces, the client must mirror the 
 | Subscription | `ChapterGuard.enforceSubscription` (`apps/api/src/interface/guards/chapter.guard.ts`) | Disable the control and name the reason (`useSubscriptionGate`, `apps/web/components/shared/subscription-gate.tsx`) |
 | Module enabled | `ChapterGuard.enforceModule` | Hide the surface |
 
-All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionWriteState` for subscription state.
+All three gate classes now have a client counterpart — `<Can>` for permissions, the sidebar / Cmd+K / slash-command filtering for modules (module semantics: [`../../product/modules.md`](../../product/modules.md)), and `useSubscriptionGate` for subscription state.
 
 **Writes only.** `enforceSubscription` returns early for `GET`/`HEAD`/`OPTIONS`, so a lapsed chapter can still read everything it owns. Mirror the gate on write affordances; never gate a read surface on subscription state.
 
@@ -112,7 +112,9 @@ All three gate classes now have a client counterpart — `<Can>` for permissions
 
 **Read subscription state from one place.** `useSubscriptionWriteState` and any status-driven card must share a single query. Two sources for the same fact let one half of a screen report `active` while the other still says locked.
 
-Unlike `<Can>`, the subscription mirror **fails open** while the chapter is loading or its fetch failed: an unresolved permission may be one the user never holds, but an unresolved subscription most likely belongs to a paying chapter, and disabling its paid surface over a slow fetch is worse than the late 403 the gate exists to avoid.
+Unlike `<Can>`, the subscription mirror **fails open when the chapter cannot be established** — the fetch failed, no chapter is active, or the status is one this client does not model. An unresolved permission may be one the user never holds, so hiding is right; an unresolved subscription most likely belongs to a paying chapter, and locking its paid surface over a failed fetch is worse than the late 403 the gate exists to avoid.
+
+The **in-flight** window is the one exception, and it goes the other way: while the chapter query is still resolving, `useSubscriptionGate` holds the control disabled and says so ("Checking this chapter's subscription…"). That window is the most common path to the very 403 this gate prevents — a trigger that paints enabled for one round trip still lets a fast click reach a doomed form. Do not collapse the two: `allowed` folds in `isPending`, `state.allowed` does not.
 
 **Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the five things a correct gated control needs: the pending fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
@@ -138,7 +140,9 @@ A controller is subscription-gated only if `ChapterGuard` is in its guard chain 
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
 | `task` | 5 | `components/tasks/tasks-board.tsx` |
 
-**12 files / 13 controller classes / 41 writes.** `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
+**12 files / 13 controller classes / 45 gated writes** (46 non-GET routes, less the one `@SubscriptionExempt` payment-intent). `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
+
+Three of `chapter-document`'s six writes — folder create, rename and delete — have no client counterpart yet: the documents page derives its folder list from the loaded documents and its folder buttons are pure filters. A folder-management UI must adopt the gate when it lands.
 
 **Free-tier** (writes survive `incomplete`, and `past_due` inside grace): `chapter` · `chapter-config` · `chat` · `custom-field` · `custom-role` · `invite` · `member` · `rbac` · `search` · `user`. The two `@GraceBlocked` routes are `POST /invites` and `POST /invites/batch`.
 

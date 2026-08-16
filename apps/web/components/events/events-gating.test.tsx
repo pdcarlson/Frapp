@@ -38,7 +38,16 @@ vi.mock("@repo/hooks", () => ({
   useMembers: () => ({ data: MEMBERS, isPending: false, isError: false }),
   useUpdateAttendanceStatus: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAutoAbsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useEvents: () => ({ data: [], isLoading: false, isError: false, refetch: vi.fn() }),
 }));
+
+vi.mock("@/lib/providers/network-provider", () => ({
+  useNetwork: () => ({ isOffline: false }),
+}));
+
+// The detail sheet and the editor render their own gates; this block is about
+// the page-level triggers that own the editor's `open` state.
+vi.mock("./event-detail-sheet", () => ({ EventDetailSheet: () => null }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
@@ -58,6 +67,7 @@ vi.mock("@/lib/realtime/use-realtime-table", () => ({
 }));
 
 const { EventEditorDialog } = await import("./event-editor-dialog");
+const { EventsPage } = await import("./events-page");
 const { AttendancePanel } = await import("./attendance-panel");
 
 const chapter = chapterSubscription(mockCurrentChapter);
@@ -204,5 +214,52 @@ describe("AttendancePanel subscription gating", () => {
     expect(autoAbsentButton()).toBeEnabled();
     expect(rowStatusSelect()).toBeEnabled();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+
+describe("EventsPage subscription gating", () => {
+  // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops. The page owns the
+  // editor dialog's `open`, so §5 rule 1 lands here: the New Event button and
+  // the empty-state CTA are the triggers that must refuse to open it (#841).
+  beforeEach(() => vi.clearAllMocks());
+
+  const newEvent = () => screen.getByRole("button", { name: /new event/i });
+
+  it("disables both create entry points and names the blocker when incomplete", () => {
+    chapter.incomplete();
+    render(<EventsPage />);
+
+    expect(newEvent()).toBeDisabled();
+    // The empty-state CTA is the second way into the same dialog; gating only
+    // the header button would leave a live path to a doomed form.
+    expect(
+      screen.getByRole("button", { name: /create first event/i }),
+    ).toBeDisabled();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
+  });
+
+  it("leaves search and filters live while blocked", () => {
+    chapter.incomplete();
+    render(<EventsPage />);
+
+    expect(
+      screen.getByPlaceholderText(/search events/i),
+    ).toBeEnabled();
+  });
+
+  it("leaves both entry points alone on an active chapter", () => {
+    chapter.active();
+    render(<EventsPage />);
+
+    expect(newEvent()).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("fails open when the chapter record cannot be read", () => {
+    chapter.unreadable();
+    render(<EventsPage />);
+
+    expect(newEvent()).toBeEnabled();
   });
 });

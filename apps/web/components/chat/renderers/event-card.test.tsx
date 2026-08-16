@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { EventCard } from "./event-card";
 import type { ChatMessage } from "@/lib/chat/types";
@@ -11,11 +12,24 @@ const mockUseAttendance = vi.fn();
 const mockUseMyPermissions = vi.fn();
 const checkIn = vi.fn().mockResolvedValue(undefined);
 
+const { mockCurrentChapter } = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", () => ({
+  // Paid-ops writes on this surface now read the chapter subscription (#841);
+  // these cases predate the gate, so they run against an active chapter.
+  useCurrentChapter: () => mockCurrentChapter(),
   useAttendance: (id: string) => mockUseAttendance(id),
   useCheckIn: () => ({ mutateAsync: checkIn, isPending: false }),
   useMyPermissions: () => mockUseMyPermissions(),
 }));
+
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
+    selector({ activeChapterId: "chap-1" }),
+}));
+
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -45,8 +59,11 @@ function makeMessage(
   } as unknown as ChatMessage;
 }
 
+const chapter = chapterSubscription(mockCurrentChapter);
+
 describe("EventCard", () => {
   beforeEach(() => {
+    chapter.active();
     vi.clearAllMocks();
     mockUseAttendance.mockReturnValue({ data: [] });
     // Default to an attendance-viewer (admin) so the count tests exercise the
@@ -173,5 +190,74 @@ describe("EventCard", () => {
     expect(
       screen.queryByRole("button", { name: /check in/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+
+describe("EventCard subscription gating", () => {
+  // `POST /v1/events/:eventId/attendance/check-in` is on `AttendanceController`,
+  // which carries `ChapterGuard` with no `@FreeTier`. The card is rendered in
+  // chat, which IS free-tier — the host surface does not decide the gate (#841).
+  const inWindow = () => {
+    const now = Date.now();
+    return makeMessage({
+      start_time: new Date(now - 60_000).toISOString(),
+      end_time: new Date(now + 60_000).toISOString(),
+    });
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAttendance.mockReturnValue({ data: undefined });
+    mockUseMyPermissions.mockReturnValue({ data: { permissions: [] } });
+  });
+
+  it("disables check-in and names the blocker on a lapsed chapter", () => {
+    chapter.incomplete();
+    render(<EventCard message={inWindow()} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /check in/i })).toBeDisabled();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
+  });
+
+  it("does not dispatch the check-in while blocked", () => {
+    chapter.incomplete();
+    render(<EventCard message={inWindow()} isConfirmed />);
+
+    fireEvent.click(screen.getByRole("button", { name: /check in/i }));
+    expect(checkIn).not.toHaveBeenCalled();
+  });
+
+  it("leaves check-in alone on an active chapter", () => {
+    chapter.active();
+    render(<EventCard message={inWindow()} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /check in/i })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("fails open when the chapter record cannot be read", () => {
+    chapter.unreadable();
+    render(<EventCard message={inWindow()} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /check in/i })).toBeEnabled();
+  });
+
+  it("keeps the notice off cards outside the check-in window", () => {
+    // Otherwise a timeline of past events repeats one chapter-wide sentence
+    // under every card.
+    chapter.incomplete();
+    const now = Date.now();
+    render(
+      <EventCard
+        message={makeMessage({
+          start_time: new Date(now - 4 * 3_600_000).toISOString(),
+          end_time: new Date(now - 2 * 3_600_000).toISOString(),
+        })}
+        isConfirmed
+      />,
+    );
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

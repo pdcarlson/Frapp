@@ -1,4 +1,5 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Query state is swapped per test through these holders. `refetch` is shared so
@@ -26,10 +27,28 @@ const summaryQuery: QueryState = {
   refetch: summaryRefetch,
 };
 
+const { mockCurrentChapter } = vi.hoisted(() => ({
+  mockCurrentChapter: vi.fn(),
+}));
+
 vi.mock("@repo/hooks", () => ({
+  // Paid-ops writes on this surface now read the chapter subscription (#841);
+  // these cases predate the gate, so they run against an active chapter.
+  useCurrentChapter: () => mockCurrentChapter(),
+  useMyPermissions: () => ({
+    data: { permissions: ["billing:view"] },
+    isPending: false,
+    isError: false,
+  }),
   useLeaderboard: () => leaderboardQuery,
   useMyPoints: () => summaryQuery,
 }));
+
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
+    selector({ activeChapterId: "chap-1" }),
+}));
+
 
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
@@ -82,9 +101,12 @@ function expectNoFabricatedData() {
   expect(screen.queryByText("Late arrival adjustment")).not.toBeInTheDocument();
 }
 
+const chapter = chapterSubscription(mockCurrentChapter);
+
 beforeEach(() => {
   vi.clearAllMocks();
   setQueries({});
+  chapter.active();
 });
 
 describe("PointsPage failure states", () => {
@@ -186,5 +208,45 @@ describe("PointsPage success state", () => {
     expect(screen.getByText("No leaderboard entries")).toBeInTheDocument();
     expect(screen.getByText("No transactions in this window")).toBeInTheDocument();
     expectNoFabricatedData();
+  });
+});
+
+
+describe("PointsPage subscription gating", () => {
+  // `POST /v1/points/adjust` is paid-ops. `PointsAdjustmentDialog` gates its own
+  // fields, but this page owns `open`, so §5 rule 1 — never open onto a doomed
+  // form — has to be enforced at the trigger here (#841).
+  const adjust = () => screen.getByRole("button", { name: /adjust points/i });
+
+  it("disables the adjust trigger and names the blocker on a lapsed chapter", () => {
+    chapter.incomplete();
+    render(<PointsPage />);
+
+    expect(adjust()).toBeDisabled();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
+  });
+
+  it("leaves the ledger reads live while blocked", () => {
+    // A lapsed chapter keeps full visibility of its own history — the window
+    // filters are GETs and the guard returns early for reads.
+    chapter.incomplete();
+    render(<PointsPage />);
+
+    expect(screen.getByRole("button", { name: /semester/i })).toBeEnabled();
+  });
+
+  it("leaves the adjust trigger alone on an active chapter", () => {
+    chapter.active();
+    render(<PointsPage />);
+
+    expect(adjust()).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("fails open when the chapter record cannot be read", () => {
+    chapter.unreadable();
+    render(<PointsPage />);
+
+    expect(adjust()).toBeEnabled();
   });
 });
