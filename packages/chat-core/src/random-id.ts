@@ -12,7 +12,7 @@
  * checked for #937 C1, and what was not:
  *
  * - *Checked:* no JS-level polyfill exists anywhere in the graph this app
- *   bundles. Expo's WinterCG runtime (`expo/src/winter/runtime.native.ts`)
+ *   bundles. Expo's WinterCG runtime (`node_modules/expo/src/winter/runtime.native.ts`)
  *   installs `TextDecoder`, `URL`, `DOMException`, `structuredClone`, and
  *   `fetch` — and no `crypto`. `react-native@0.86` installs none either, and
  *   neither `expo-crypto` nor `react-native-get-random-values` is a dependency.
