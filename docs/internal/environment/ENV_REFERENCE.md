@@ -119,6 +119,7 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `NEXT_PUBLIC_API_URL` | `${API_URL}` | apps/web |
 | `NEXT_PUBLIC_APP_URL` | `${APP_URL}` | apps/landing |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/web |
+| `NEXT_PUBLIC_SENTRY_DSN` | _(literal DSN — see below, **not** a `${…}` reference)_ | apps/web |
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
 | `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
@@ -161,7 +162,40 @@ Reads the `NEXT_PUBLIC_*` references:
 | `NEXT_PUBLIC_API_URL` | `lib/providers/frapp-client-provider.tsx` (SDK base URL), `lib/providers/network-provider.tsx` (health poll — `/health` is the one route outside `/v1`) | ✅ |
 | `NEXT_PUBLIC_LANDING_URL` | `components/onboarding/chapter-wizard.tsx` | ❌ — optional; base URL of the marketing site for the legal links (Terms/Privacy/FERPA) in chapter onboarding. Defaults to `https://frapp.live` when unset. |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/stripe.ts` | ❌ — optional; Stripe **publishable** key (`pk_…`) for the member dues payment sheet. When unset, `getStripe()` returns `null` and no Pay affordance renders — local dev, CI, and the production build prerender all run without it. Publishable by design (it is safe in a client bundle); the secret key stays API-only as `STRIPE_SECRET_KEY`. |
+| `NEXT_PUBLIC_SENTRY_DSN` | `lib/sentry/options.ts` (read by `instrumentation.ts` and `instrumentation-client.ts`) | ❌ — optional; **unset → `Sentry.init` is never called on any runtime**, so local dev, tests, and CI report nowhere. This is the `frapp-web` project's DSN, *not* the API's `frapp-api` one — the two projects are separate so a browser error and a server error do not land in the same stream. |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | `lib/sentry/options.ts` — **derived, never configured** | 🚫 — **do not set this anywhere, including Infisical.** `next.config.js` maps it from Vercel's own `VERCEL_ENV` system variable under the `env` config, which inlines at build time and would silently win over any value you set. `NODE_ENV` cannot substitute: Vercel Preview and Production are *both* `production` to Next. |
+| `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` | `lib/sentry/options.ts` (default: `0.1`) | ❌ — optional; same default as the API's `SENTRY_TRACES_SAMPLE_RATE`. Carries the same #904 caveat: a malformed value yields `NaN`, which the SDK treats as tracing enabled. |
+| `SENTRY_AUTH_TOKEN` | `next.config.js` (build-time only, never bundled) | ❌ — optional; when absent, `withSentryConfig` skips source-map upload and the build still succeeds. Only needed in the deploy environment, where readable stack traces are wanted. |
 | `SUPABASE_AUTH_BYPASS` | `proxy.ts` | ❌ — CI-only flag (`"true"` skips auth redirects so Playwright visual tests can render protected pages; ignored when `NODE_ENV` is `production`) |
+
+> **Why `NEXT_PUBLIC_SENTRY_DSN` is a literal, not an Infisical `${…}` reference.** The other
+> `NEXT_PUBLIC_*` rows above resolve to a canonical value shared with the API. This one must not:
+> `SENTRY_DSN` is `frapp-api`'s DSN, and pointing the browser at it would merge two projects'
+> events. Type the `frapp-web` DSN in as a literal value. A DSN is public by design (it is in every
+> client bundle) — it authorizes *writing* events, not reading them.
+>
+> **It still goes in Infisical, not in Vercel's dashboard.** Infisical is the canonical store and
+> Vercel is a sync *destination*; a value set directly on the Vercel project lives outside the one
+> place that is supposed to hold it and is invisible to every other environment. Add it to the
+> **Staging** and **Production** Infisical environments and let `vercel-web-staging` /
+> `vercel-web-production` carry it (inventory: [`SECRETS_MANAGEMENT.md` §5](./SECRETS_MANAGEMENT.md#5-configure-secret-syncs)).
+> Leave the **local** environment unset — no DSN means `Sentry.init` is never called, which is what
+> keeps local dev, tests, and CI reporting nowhere.
+>
+> **The DSN is the only Sentry variable you set for `apps/web`.** The environment tag is derived
+> from `VERCEL_ENV` at build time (see the row above), and the sample rate has a working default.
+> Configuration that restates something the platform already knows is a second copy to keep true,
+> and its failure mode is silent — a Staging entry reading `production` mislabels every staging
+> event with nothing to catch it.
+>
+> Note the blast radius (#834): every sync reads path `/` and pushes its **whole** source
+> environment, so `frapp-landing` receives this key too. It is inert there — `apps/landing` never
+> reads it, so Next has nothing to inline — but it is one more key riding a sync that cannot filter.
+>
+> ⚠️ **`ANALYTICS_HMAC_SALT` must never gain a `NEXT_PUBLIC_` twin**, including for Sentry. The
+> browser scrubber deliberately holds no salt and redacts identifiers instead of hashing them; the
+> one pseudonym on a web event is fetched already-hashed from `GET /v1/analytics/identity`. See
+> `apps/web/lib/sentry/options.ts`.
 
 ### apps/landing (Next.js — Vercel)
 

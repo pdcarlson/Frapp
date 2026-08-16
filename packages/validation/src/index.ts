@@ -739,6 +739,17 @@ export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
 export { ACTIVATION_MILESTONES, activationMilestoneStep } from "./analytics";
 export type { ActivationMilestone } from "./analytics";
 
+// ── Sentry PII scrubbing (issues #481, #896, #865) ───────────────────────────
+// Shared rather than API-local because a browser bundle holds strictly more PII
+// than the server does, so `apps/web` must scrub to the *same* rules rather than
+// a second, looser copy of them. Parameterized by a pseudonymizer because the
+// HMAC salt is API-only on purpose and must never reach a client bundle.
+export { createSentryScrubber, NO_PSEUDONYMS } from "./sentry-scrubbing";
+export type {
+  ScrubbableEvent,
+  SentryPseudonymizer,
+} from "./sentry-scrubbing";
+
 // ── Time zones (issue #687) ──────────────────────────────────────────────────
 export {
   isSupportedTimeZone,
