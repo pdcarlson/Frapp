@@ -1,6 +1,6 @@
 # Mobile Interaction Patterns
 
-> Client-side mechanics behind the screens: bottom sheets, QR check-in, study sessions, dues payment, and push notifications. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
+> Client-side mechanics behind the screens: bottom sheets, QR check-in, study sessions, dues payment, chat, and push notifications. Server-side rules stay in [`../../behavior/`](../../behavior/README.md) — this doc links, never restates.
 
 Screen ids reference [`screens.md`](screens.md); surface rules (native-feel, Expo Go isolation, styling) are in [`README.md`](README.md).
 
@@ -41,11 +41,24 @@ Client obligations for the geofenced study timer. The session state machine, pau
 - **Copy says "chapter dues", never "subscription".** Member dues and the chapter's own Signet subscription are different billing concepts; the UI must never blur them. General copy rules: [`../design-system/writing.md`](../design-system/writing.md).
 - The whole payment path sits behind a runtime `isStripeAvailable` guard (Stripe RN does not run in Expo Go — isolation module per [`README.md`](README.md)). When unavailable, the screen still renders balance and history; the pay CTA explains that payment needs the installed app build.
 
+## Chat (s04 list, s05 thread)
+
+Message semantics, read receipts, unread, and mention resolution are owned by [`../../behavior/chat/README.md`](../../behavior/chat/README.md). The hot path itself is shared code — `@repo/chat-core`, which web consumes too — reached through three injected platform ports. Client rules:
+
+- **Inject `NetworkState`. Always.** It is _optional_ on both `ManagerContext` and `ChatActionContext`, and omitting it falls back to the browser implementation, whose probe is `navigator.onLine === false`. React Native defines `navigator` but never sets `onLine`, so that evaluates `undefined === false` and the adapter reports **permanently online** — every offline gate stops queueing and sends are attempted against a dead network. The fallback is silent, so a missed injection throws nothing; `lib/chat/adapters.spec.ts` pins it.
+- **Inject `KeyValueStore` too, and respect its seam.** The port is synchronous while AsyncStorage is not, so the mobile adapter serves reads from a boot-hydrated in-memory mirror and persists behind them. That is only sound because its sole consumer is the `chat:lastSeen:<channelId>` backfill cursor, where a miss widens the backfill rather than losing a message. A consumer needing real durability needs a different port.
+- **`OutboxStore` has no default, by design.** Constructing a `ChatActionContext` without one is a compile error rather than a silent no-op, because dropping queued sends is the failure it exists to prevent.
+- **Await the adapter boot before first read.** Both the mirror and the connectivity cache are synchronous ports over asynchronous platform APIs, so they need one hydrate/prime pass before the manager subscribes.
+- **The viewer id is `users.id`, not the auth uid.** `chat_messages.sender_id` references `users(id)`, so it comes from `useCurrentUser()` — not the Supabase auth uid in `lib/auth-session.tsx`. The wrong id renders and sends without error but breaks own-message styling and the RLS-scoped delete behind `unreact`.
+- **Wire chat from a hook, not a provider.** `app/_layout.tsx` is frozen ([`navigation.md`](navigation.md) § Hotspot freeze), so the runtime is a hook the chat screens call. `chatRealtime` is a module singleton that already refcounts per channel, so `configure` is an idempotent rebind and no screen calls `destroy()` — with no single owning provider, one screen unmounting must not tear the manager out from under another.
+- **Never re-derive unread.** Counts come from `GET /v1/channels/unread`; [`../../behavior/chat/README.md`](../../behavior/chat/README.md) § Read Receipts is explicit that clients MUST NOT compute them.
+- **Import `@repo/chat-core` by subpath.** The barrel additionally re-exports `./dispatch` → `@repo/chat-integrations`, whose `types` and `require` conditions point at a `dist/` that is never built (#989). It resolves today, but slash commands are not wired on mobile and the subpaths are the narrower contract.
+
 ## Push notifications
 
 Server-side routing, preferences, and delivery are owned by [`../../behavior/notifications.md`](../../behavior/notifications.md). Client rules:
 
-- **Android channel before permission.** Create the Android notification channel *before* requesting permission — on Android 13+ the prompt and delivery behave correctly only when the channel already exists.
+- **Android channel before permission.** Create the Android notification channel _before_ requesting permission — on Android 13+ the prompt and delivery behave correctly only when the channel already exists.
 - **Contextual primer, never at launch.** The opt-in primer appears at the first moment push has obvious value — first RSVP or first chat open — and on the first-run screen (s03) as a card, never as a cold launch-time OS prompt. Declining is a quiet "Not now"; the OS prompt fires only after the user accepts the primer.
 - **Cold-start dedup.** A notification tap that launches the app is read via `getLastNotificationResponseAsync`, then cleared with `clearLastNotificationResponseAsync` — otherwise the same tap re-navigates on every remount of the handler.
 - **Token lifecycle follows auth.** Register the push token on sign-in, deregister it on sign-out; a token MUST NOT outlive the session that created it.
