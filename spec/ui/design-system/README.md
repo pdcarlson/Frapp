@@ -118,7 +118,14 @@ The **in-flight** window is the one exception, and it goes the other way: while 
 
 **Use the shared primitive, not the raw hook.** `useSubscriptionGate` / `useGatedDialog` / `SubscriptionNotice` (`apps/web/components/shared/subscription-gate.tsx`) package the five things a correct gated control needs: the pending fold-in, the mid-flight revoke, the refusal to open, the `aria-describedby` wiring, and the notice. `useSubscriptionWriteState` remains the predicate underneath, for callers that need the verdict without a control. Pass your own busy flags to `controlProps(alsoDisabled)` rather than OR-ing them in afterwards — spreading the props and then writing your own `disabled` silently drops the gate.
 
-Rollout is complete across `apps/web`. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+Every paid-ops write **affordance** in `apps/web` is mirrored. Any new subscription-gated flow adopts the primitive rather than re-solving this per screen.
+
+Two gaps are known and tracked, not overlooked:
+
+- **The chat slash commands.** `/event`, `/task` and `/points` dispatch straight to `POST /v1/events`, `/v1/tasks` and `/v1/points/adjust` from `packages/chat-core/src/dispatch.ts`. The palette filters on module state only, and a *typed* command bypasses the palette entirely — so the gate has to sit on the dispatcher, not on a control, which is a different shape from everything above.
+- **Residual `chapter.subscription.*` errors.** Nothing yet reads the guard's structured codes off a rejected response to render the remedy alongside the message. That is the backstop for exactly the paths a client-side mirror cannot cover, the typed slash command among them.
+
+**`@FreeTier` is not "always allowed".** Free-tier writes still lock past the `past_due` grace window, and `canceled` is checked above the carve-out entirely. Only the invite surface mirrors this today; the other free-tier surfaces (members, roles, custom fields, chat, search) fail late on a canceled or long-lapsed chapter.
 
 #### The gated surface (enumerated)
 

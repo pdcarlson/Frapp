@@ -23,7 +23,7 @@ vi.mock("@repo/hooks", () => ({
   useRevokeInvite: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:view"] },
+    data: { permissions: ["billing:manage"] },
     isPending: false,
     isError: false,
   }),

@@ -24,7 +24,7 @@ vi.mock("@repo/hooks", () => ({
   // editing behaviour, so they all run against an active chapter.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:view"] },
+    data: { permissions: ["billing:manage"] },
     isPending: false,
     isError: false,
   }),

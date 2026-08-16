@@ -31,7 +31,7 @@ const { SubscriptionNotice, useGatedDialog, useSubscriptionGate } =
 
 const chapter = chapterSubscription(mockCurrentChapter);
 
-function grantBilling(permissions: string[] = ["billing:view"]) {
+function grantBilling(permissions: string[] = ["billing:manage"]) {
   mockMyPermissions.mockReturnValue({
     data: { permissions },
     isPending: false,

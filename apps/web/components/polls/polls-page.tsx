@@ -386,7 +386,7 @@ export function PollsPage() {
           working for a lapsed chapter — only casting and withdrawing votes
           stops, and this says why.
         */}
-        <SubscriptionNotice gate={gate} feature="voting and creating polls" />
+        <SubscriptionNotice gate={gate} feature="voting on polls" />
 
         {pollsQuery.isPending ? (
           <LoadingState message="Loading chapter polls..." />

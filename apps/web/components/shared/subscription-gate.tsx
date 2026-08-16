@@ -222,10 +222,12 @@ export type SubscriptionNoticeProps = {
  * Renders nothing when the write is permitted, so callers can mount it
  * unconditionally.
  *
- * The recovery link is itself wrapped in `<Can permission="billing:view">`: the
- * member who hits this on `/tasks` is usually not the member who can pay, and
- * sending them to a screen their own permission gate will bounce is a second
- * dead end rather than a recovery path.
+ * The recovery link is wrapped in `<Can permission="billing:manage">` — the
+ * permission the checkout card itself requires
+ * (`components/billing/subscription-checkout-card.tsx`), not the weaker
+ * `billing:view` that merely opens the screen. The member who hits this on
+ * /tasks is usually neither, and offering them a link to a page where the
+ * button is gated too is a second dead end rather than a recovery path.
  */
 export function SubscriptionNotice({
   gate,
@@ -286,7 +288,7 @@ function DefaultRecovery({
 
   return (
     <Can
-      permission="billing:view"
+      permission="billing:manage"
       fallback={askAnOfficer}
       deniedFallback={askAnOfficer}
     >

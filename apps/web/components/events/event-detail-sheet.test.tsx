@@ -16,7 +16,7 @@ vi.mock("@repo/hooks", () => ({
   // chapter's subscription now (#841). Existing cases default to active.
   useCurrentChapter: () => mockCurrentChapter(),
   useMyPermissions: () => ({
-    data: { permissions: ["billing:view"] },
+    data: { permissions: ["billing:manage"] },
     isPending: false,
     isError: false,
   }),
