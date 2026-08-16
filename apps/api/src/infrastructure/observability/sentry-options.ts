@@ -1,5 +1,5 @@
 import type { NodeOptions } from '@sentry/nestjs';
-import { scrubSentryEvent } from './sentry-scrubbing';
+import { scrubSentryEvent, scrubSentryTransaction } from './sentry-scrubbing';
 
 /**
  * The single source of truth for how Sentry is configured (issues #481, #682).
@@ -32,12 +32,17 @@ export function buildSentryOptions(dsn: string): NodeOptions {
     /**
      * Every **error** event leaves through here. See `sentry-scrubbing.ts` for
      * the rules and why they are allowlists.
-     *
-     * NOTE: the SDK routes only error events to `beforeSend`; transaction
-     * events go to `beforeSendTransaction`, which is deliberately not set yet —
-     * `scrubSentryEvent` would drop every span, because `spans` is not on its
-     * allowlist. Tracked in #896.
      */
     beforeSend: scrubSentryEvent,
+    /**
+     * Every **transaction** (tracing) event leaves through here. The SDK routes
+     * the two classes to two different hooks, so both must be set or one class
+     * ships unscrubbed — which is what #896 fixed.
+     *
+     * These are deliberately two functions rather than one: `scrubSentryEvent`
+     * would drop every span, because `spans` is not on its allowlist, and the
+     * transaction would still be delivered — just with an empty trace payload.
+     */
+    beforeSendTransaction: scrubSentryTransaction,
   };
 }

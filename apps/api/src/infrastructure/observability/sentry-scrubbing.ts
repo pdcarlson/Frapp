@@ -1,17 +1,22 @@
-import type { ErrorEvent } from '@sentry/nestjs';
+import type { ErrorEvent, NodeOptions } from '@sentry/nestjs';
 import { pseudonymizeIp, pseudonymizeUserId } from './pseudonyms';
 
 /**
  * PII scrubbing for everything leaving the API for Sentry (issue #481).
  *
  * `spec/behavior/observability.md` § Error Tracking splits identifiers into two
- * classes, and this module is the single enforcement point for both **on error
- * events**. It is wired as `beforeSend` (via `sentry-options.ts`), which the SDK
- * invokes for error events only — transaction events go to
- * `beforeSendTransaction`, which is not set, so nothing below applies to them.
- * That gap is tracked in #896; it is not fixable by pointing
- * `beforeSendTransaction` here, because `spans` is absent from
- * {@link EVENT_KEY_ALLOWLIST} and would be dropped.
+ * classes, and this module is the single enforcement point for both — across
+ * **both event classes**. The SDK routes those classes to two different hooks,
+ * so this module exports two entry points, wired in `sentry-options.ts`:
+ * {@link scrubSentryEvent} as `beforeSend` for error events, and
+ * {@link scrubSentryTransaction} as `beforeSendTransaction` for transaction
+ * (tracing) events.
+ *
+ * They cannot be the same function. `spans` is absent from
+ * {@link EVENT_KEY_ALLOWLIST}, so pointing `beforeSendTransaction` at
+ * {@link scrubSentryEvent} would deliver every transaction with its trace
+ * payload silently emptied — the event still arrives, so nothing looks broken
+ * (#896).
  *
  * The two classes:
  *
@@ -271,6 +276,14 @@ function scrubTraceContext(trace: Record<string, unknown>): typeof trace {
   if (typeof trace.description === 'string') {
     out.description = redactFreeText(trace.description);
   }
+  // On a transaction this context *is* the root span: the SDK omits the segment
+  // span from `event.spans`, so these attributes exist nowhere else. Dropping
+  // the bag wholesale — as this did while only error events reached here — left
+  // the one span an operator opens first with no method and no status code,
+  // while every child span kept theirs. Same allowlist as a child span's `data`,
+  // so the two cannot drift apart.
+  const attributes = scrubAttributes(trace.data);
+  if (Object.keys(attributes).length > 0) out.data = attributes;
   return out;
 }
 
@@ -336,6 +349,313 @@ export function scrubSentryEvent(event: ErrorEvent): ErrorEvent | null {
     // survive are exactly `EVENT_KEY_ALLOWLIST`, which is a subset of
     // `ErrorEvent`'s own, plus the rebuilt fields assigned below it.
     return scrubbed as unknown as ErrorEvent;
+  } catch {
+    return null;
+  }
+}
+
+// ── Transaction events ───────────────────────────────────────────────────────
+
+/**
+ * Derived from the option type rather than imported by name.
+ *
+ * `@sentry/node` re-exports `ErrorEvent` but neither `TransactionEvent` nor
+ * `SpanJSON`, so there is no name to import here. Naming them through the hook
+ * this module is wired into keeps both in lockstep with the installed SDK: if
+ * the signature changes, this stops compiling instead of silently scrubbing a
+ * shape the SDK no longer sends.
+ */
+type TransactionEvent = Parameters<
+  NonNullable<NodeOptions['beforeSendTransaction']>
+>[0];
+type TransactionSpan = NonNullable<TransactionEvent['spans']>[number];
+
+/**
+ * Top-level keys that may survive on a transaction event.
+ *
+ * The error-event allowlist plus the two keys that only exist on this class.
+ * `spans` is the whole reason a separate scrubber exists — it carries the trace
+ * payload, and dropping it would leave a delivered-but-empty transaction.
+ */
+const TRANSACTION_KEY_ALLOWLIST = new Set([
+  ...EVENT_KEY_ALLOWLIST,
+  'spans',
+  'measurements',
+]);
+
+/**
+ * Span fields that are pure identity, timing, or status — no user data.
+ *
+ * `description` and `op` are swept separately, `data` is rebuilt below, and
+ * `links` is dropped by omission because span links carry their own free-form
+ * attribute bags.
+ */
+const SPAN_FIELD_ALLOWLIST = new Set([
+  'span_id',
+  'parent_span_id',
+  'trace_id',
+  'start_timestamp',
+  'timestamp',
+  'status',
+  'origin',
+  'exclusive_time',
+  'is_segment',
+  'segment_id',
+  'measurements',
+]);
+
+/**
+ * Span attributes that may survive, by exact key.
+ *
+ * This is the one place this module keeps part of a `data` bag rather than
+ * dropping it wholesale, and the divergence is deliberate. {@link
+ * scrubTraceContext} drops `trace.data` entirely because on an *error* event
+ * the trace context is incidental metadata. On a *transaction* the spans are
+ * the payload, so dropping every attribute would gut the trace this scrubber
+ * exists to preserve.
+ *
+ * It stays an allowlist to stay safe: OpenTelemetry attribute keys are
+ * open-ended and routinely carry `http.url`, `url.query`, and `db.statement`,
+ * every one of which is exactly the leak the free-text sweep closes elsewhere.
+ * Anything not named here is dropped unread, and the survivors are swept anyway
+ * — an allowlisted key is not a promise that a provider filled it sensibly.
+ *
+ * `sentry.op` and `sentry.origin` are deliberately absent: `spanToJSON` derives
+ * the top-level `op` and `origin` from them and leaves the copies in `data`, so
+ * allowlisting them here would ship each value twice per span.
+ */
+const SPAN_DATA_KEY_ALLOWLIST = new Set([
+  'http.request.method',
+  'http.response.status_code',
+  'db.system',
+  'sentry.source',
+]);
+
+/**
+ * One allowlisted attribute value.
+ *
+ * OpenTelemetry permits array-valued attributes, and an instrumentation may put
+ * an object here regardless of the spec. Passing a non-string through untouched
+ * — which a `typeof value === 'string' ? redact : value` ternary does — means a
+ * nested email or token rides out under an allowlisted key, so anything that is
+ * not a string, number, or boolean is dropped, and arrays are swept elementwise.
+ */
+function scrubAttributeValue(value: unknown): unknown {
+  if (typeof value === 'string') return redactFreeText(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map(scrubAttributeValue)
+      .filter((entry) => entry !== undefined);
+  }
+  return undefined;
+}
+
+function scrubAttributes(bag: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!bag || typeof bag !== 'object') return out;
+  for (const [key, value] of Object.entries(bag as Record<string, unknown>)) {
+    if (!SPAN_DATA_KEY_ALLOWLIST.has(key)) continue;
+    const scrubbedValue = scrubAttributeValue(value);
+    if (scrubbedValue !== undefined) out[key] = scrubbedValue;
+  }
+  return out;
+}
+
+/**
+ * Measurements are `{ name: { value: number, unit: string } }`, and the *names*
+ * are author-supplied, so they are swept like any other free text rather than
+ * copied as keys.
+ */
+function scrubMeasurements(measurements: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!measurements || typeof measurements !== 'object') return out;
+  for (const [key, entry] of Object.entries(
+    measurements as Record<string, unknown>,
+  )) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { value, unit } = entry as { value?: unknown; unit?: unknown };
+    if (typeof value !== 'number') continue;
+    out[redactFreeText(key)] = {
+      value,
+      ...(typeof unit === 'string' ? { unit: redactFreeText(unit) } : {}),
+    };
+  }
+  return out;
+}
+
+/**
+ * Fields of the Dynamic Sampling Context that may survive.
+ *
+ * These read like Sentry's own routing metadata, and on a trace this process
+ * started they are. On a **continued** trace they are not: the whole DSC is
+ * parsed straight out of the caller's inbound `baggage` header, and
+ * `baggageHeaderToDynamicSamplingContext` applies no key or value filtering —
+ * so `release` and `environment` are whatever the client sent. Every allowlisted
+ * string is therefore swept, not just `transaction`; the allowlist bounds which
+ * keys survive, never what they contain.
+ */
+const DSC_FIELD_ALLOWLIST = new Set([
+  'trace_id',
+  'public_key',
+  'sample_rate',
+  'sample_rand',
+  'release',
+  'environment',
+  'sampled',
+  'org_id',
+]);
+
+/**
+ * `sdkProcessingMetadata`, rebuilt down to the two fields the SDK reads back
+ * *after* this hook returns.
+ *
+ * It is not on either allowlist, so the copy loop drops it — and that turned out
+ * to matter: `createEventEnvelopeHeaders` reads
+ * `event.sdkProcessingMetadata.dynamicSamplingContext` to build the envelope's
+ * `trace` header, and `client.js` reads back `spanCountBeforeProcessing` to
+ * compute how many spans a `beforeSend*` hook dropped. Returning an object
+ * without them silently cost every transaction its DSC — no server-side dynamic
+ * sampling, no trace-root attribution — and zeroed this scrubber's own
+ * dropped-span reporting.
+ *
+ * Carried field-by-field rather than passed through, because the same bag also
+ * holds `normalizedRequest` — a full request object, query string included.
+ * `capturedSpanScope` and `capturedSpanIsolationScope` are read at `client.js`
+ * before the hook runs, so dropping them here is safe.
+ */
+function scrubSdkProcessingMetadata(
+  metadata: unknown,
+): Record<string, unknown> | undefined {
+  if (!metadata || typeof metadata !== 'object') return undefined;
+  const source = metadata as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  const dsc = source.dynamicSamplingContext;
+  if (dsc && typeof dsc === 'object') {
+    const kept: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(dsc as Record<string, unknown>)) {
+      if (!DSC_FIELD_ALLOWLIST.has(key)) continue;
+      kept[key] = typeof value === 'string' ? redactFreeText(value) : value;
+    }
+    const dscTransaction = (dsc as Record<string, unknown>).transaction;
+    if (typeof dscTransaction === 'string') {
+      kept.transaction = pathOnly(dscTransaction);
+    }
+    if (Object.keys(kept).length > 0) out.dynamicSamplingContext = kept;
+  }
+
+  if (typeof source.spanCountBeforeProcessing === 'number') {
+    out.spanCountBeforeProcessing = source.spanCountBeforeProcessing;
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function scrubSpan(span: TransactionSpan): TransactionSpan {
+  const out: Record<string, unknown> = {};
+  // A non-object element would throw in `Object.entries` and, because the map
+  // runs inside the caller's try, would drop the entire transaction rather than
+  // the one bad span. Return an empty shell instead and let the rest survive.
+  if (!span || typeof span !== 'object') {
+    return { data: {} } as unknown as TransactionSpan;
+  }
+  for (const [key, value] of Object.entries(span)) {
+    if (!SPAN_FIELD_ALLOWLIST.has(key)) continue;
+    out[key] = key === 'measurements' ? scrubMeasurements(value) : value;
+  }
+
+  // Kept but swept — the route and operation are what make a span readable.
+  if (typeof span.description === 'string') {
+    out.description = redactFreeText(span.description);
+  }
+  if (typeof span.op === 'string') out.op = redactFreeText(span.op);
+
+  // `data` is non-optional on the SDK's span type, so it is always rebuilt
+  // rather than omitted — an absent bag would not satisfy the shape.
+  out.data = scrubAttributes(span.data);
+
+  return out as unknown as TransactionSpan;
+}
+
+/**
+ * `beforeSendTransaction`: the transaction-event counterpart of
+ * {@link scrubSentryEvent} (issue #896).
+ *
+ * Same doctrine, same primitives, same fail-closed contract — a throw returns
+ * `null` and the transaction is dropped rather than emitted uninspected. The
+ * difference is structural: the allowlist keeps `spans`, and each span is
+ * rebuilt field-by-field, because span descriptions and attributes carry the
+ * same query strings and identifiers the error path already sweeps.
+ */
+export function scrubSentryTransaction(
+  event: TransactionEvent,
+): TransactionEvent | null {
+  try {
+    const scrubbed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(event)) {
+      if (TRANSACTION_KEY_ALLOWLIST.has(key)) {
+        scrubbed[key] = value;
+      }
+    }
+
+    // `exception` and `message` are inherited from EVENT_KEY_ALLOWLIST, so the
+    // loop above has already copied them through verbatim. On the error path
+    // they are safe only because they are immediately overwritten with scrubbed
+    // versions — inheriting the allowlist without inheriting those two rebuilds
+    // is what let a raw stack-frame `vars` snapshot ride out of here. The SDK
+    // does not populate either on a transaction today, but `TransactionEvent
+    // extends Event` types both as legal, and this module allowlists precisely
+    // so that "the SDK does not do that today" is never load-bearing.
+    if (event.exception) scrubbed.exception = scrubException(event.exception);
+    if (event.message) scrubbed.message = redactFreeText(event.message);
+
+    // The transaction name is a route, so it loses its query string exactly as
+    // it does on the error path. Note the SDK downgrades `transaction_info
+    // .source` to `custom` whenever this hook changes the name, which it only
+    // does for names that contained an id or a query string — those are exactly
+    // the names that must not ship raw, so the lost URL clustering is accepted.
+    if (event.transaction) scrubbed.transaction = pathOnly(event.transaction);
+    if (event.tags) scrubbed.tags = scrubTags(event.tags);
+    if (event.contexts) scrubbed.contexts = scrubContexts(event.contexts);
+    // Author-set free text on either class, swept the same way.
+    if (Array.isArray(event.fingerprint)) {
+      scrubbed.fingerprint = event.fingerprint.map((part) =>
+        typeof part === 'string' ? redactFreeText(part) : part,
+      );
+    }
+    if (event.measurements) {
+      scrubbed.measurements = scrubMeasurements(event.measurements);
+    }
+
+    // Read back by the SDK *after* this returns — see the helper for why it is
+    // rebuilt rather than allowlisted.
+    const sdkMetadata = scrubSdkProcessingMetadata(event.sdkProcessingMetadata);
+    if (sdkMetadata) scrubbed.sdkProcessingMetadata = sdkMetadata;
+    // `spans` is on the allowlist above, so it has already been copied through
+    // verbatim by this point. Reassign when it is a real array, and drop it
+    // outright when it is not — otherwise a malformed non-array value would
+    // ride out on the allowlist copy without ever meeting {@link scrubSpan}.
+    if (Array.isArray(event.spans)) {
+      scrubbed.spans = event.spans.map(scrubSpan);
+    } else {
+      delete scrubbed.spans;
+    }
+
+    const request = scrubRequest(event.request);
+    if (request && Object.keys(request).length > 0) scrubbed.request = request;
+
+    const breadcrumbs = scrubBreadcrumbs(event.breadcrumbs);
+    if (breadcrumbs?.length) scrubbed.breadcrumbs = breadcrumbs;
+
+    // Identical rule to the error path: an id survives only when it is already
+    // a pseudonym, never because something upstream put a raw one there.
+    const userId = event.user?.id;
+    if (typeof userId === 'string' && /^[0-9a-f]{64}$/.test(userId)) {
+      scrubbed.user = { id: userId };
+    }
+
+    return scrubbed as unknown as TransactionEvent;
   } catch {
     return null;
   }
