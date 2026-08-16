@@ -195,12 +195,36 @@ const RLS_SMOKE = [
       rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
   },
   {
-    name: "RLS enabled on chat_messages + default-deny (no policies)",
-    sql: `select c.relrowsecurity as rls,
-                 (select count(*)::int from pg_policy p where p.polrelid = c.oid) as policies
-            from pg_class c where c.relname = 'chat_messages'`,
+    name: "RLS enabled on chat_messages",
+    sql: `select relrowsecurity from pg_class where relname = 'chat_messages'`,
+    ok: (rows) => rows.length === 1 && rows[0].relrowsecurity === true,
+  },
+  {
+    // Was "default-deny (no policies)" until 2026-08-16. That assertion was
+    // correct for the schema but described a table nothing could read — and the
+    // `postgres_changes` subscription that depended on reading it had been dead
+    // since the first deploy (#867: `supabase_realtime` held no tables at all in
+    // prod or staging). Repairing the carrier required publishing the table,
+    // and Realtime enforces RLS per subscriber, so a policy became mandatory.
+    //
+    // The landmark is therefore TIGHTENED, not dropped: "no policies" is no
+    // longer the invariant, but "no policy broader than channel membership"
+    // still is, and that is the property that actually protects the table now
+    // that the browser can reach it. Same construction and same caveats as the
+    // chat_message_actions assertion below — read its comment for why
+    // `rows.length === 1`, `polpermissive` and `polcmd in ('r','*')` are each
+    // load-bearing, and for why the expression match is a smoke test rather
+    // than a proof.
+    name: "chat_messages SELECT gated to authenticated AND scoped via can_read_chat_message (#867)",
+    sql: `select pg_get_expr(polqual, polrelid) as using_expr
+            from pg_policy p join pg_class c on c.oid = p.polrelid
+           where c.relname = 'chat_messages'
+             and p.polpermissive
+             and p.polcmd in ('r', '*')`,
     ok: (rows) =>
-      rows.length === 1 && rows[0].rls === true && rows[0].policies === 0,
+      rows.length === 1 &&
+      /can_read_chat_message\((?:\w+\.)?id\)/.test(rows[0].using_expr ?? "") &&
+      /authenticated/.test(rows[0].using_expr ?? ""),
   },
   {
     name: "RLS enabled on chat_message_actions",
