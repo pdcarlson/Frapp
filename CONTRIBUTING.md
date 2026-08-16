@@ -48,17 +48,20 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing + `@repo/validation` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                   |
 | `api-tests`          | API Jest unit tests                                                                                |
-| `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                                      |
+| `api-contract-check` | `openapi.json` + `packages/api-sdk/src/types.ts` freshness                                                      |
 | `migration-safety`   | Migration filename validation + promotion docs                                                     |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
 | `ci-scripts-tests`   | `node --test` unit tests for the deploy-gate/CI scripts under `scripts/ci/`                        |
 | `secret-scan`        | gitleaks over the PR/push commit range (ADR-13 push-protection replacement)                        |
 | `clean-checkout-typecheck` | Bare `npm ci` + typecheck + lint with no prebuilt packages (guards `turbo.json` `^build`)    |
 | `dependency-audit`   | npm audit gate: high/critical advisories not allowlisted in `scripts/npm-audit-allowlist.json` fail (ROLLOUT†) |
-| `docs-spec-sync`     | Docs/spec sync on PRs (`scripts/check-docs-impact.mjs` only; no docs app build)                    |
+| `docs-spec-sync`     | Docs/spec sync **and** structure on PRs (`scripts/check-docs-impact.mjs` + `scripts/check-docs-structure.mjs`; no docs app build) |
+| `doc-paths`          | Backticked repo-path citations in docs resolve to real files (`scripts/check-doc-paths.mjs`, whole-tree) — **reports only, not yet required** (ROLLOUT‡) |
+| `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
 
 † `dependency-audit` becomes a *required* check via the standard rollout step: after the job first runs green on the target branch, an admin re-runs `npm run configure:branch-protection` (see [`docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md`](docs/internal/ops/GITHUB_BRANCH_PROTECTION_RUNBOOK.md)). Until then the job runs and reports on every PR but is not yet merge-blocking.
-| `branch-policy`      | `production`-targeting PRs must come from `main` (required on `production` only)                   |
+
+‡ `doc-paths` is deliberately **not** required yet. It scans the whole tree rather than the PR diff (a citation breaks when the file it names moves — a change on the other side of the reference), so as a required check it could block a PR over a citation in a doc that PR never touched. Promote it the same way as `dependency-audit`: uncomment `"doc-paths"` in `DOCS_CHECKS` and re-run `npm run configure:branch-protection`. See [`docs/internal/ci-cd/DOCS_CI.md`](docs/internal/ci-cd/DOCS_CI.md).
 
 ### Vercel deployment policy
 
@@ -89,7 +92,7 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ## PR Workflow
 
-For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
+For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/quality/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
 
 ### 1. Create a feature branch
 
@@ -164,7 +167,7 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Update `docs/internal/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
+5. Update `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
 6. Commit the migration file and docs update together.
 
 CI validates migration filenames and requires promotion docs to be updated. Migrations are applied automatically in the deploy pipeline.

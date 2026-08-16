@@ -41,3 +41,28 @@ jobs:
       - name: Enforce docs/spec structure (PR only)
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-structure.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+  # Citation lint — a SEPARATE job, on purpose, for two reasons.
+  #
+  # 1. Blast radius. `docs-spec-sync` is a REQUIRED check under
+  #    `enforce_admins: true`. This check is whole-tree rather than diff-scoped
+  #    (a citation breaks when the file it names moves — a change on the *other*
+  #    side of the reference — so diffing would miss the case it exists to
+  #    catch). Whole-tree + required + no override means a PR renaming a source
+  #    file can be blocked by a citation in a doc it never touched. Landing it
+  #    as its own non-required job follows the rollout every other gate here
+  #    used (secret-scan, clean-checkout-typecheck, dependency-audit,
+  #    chapter-directory-seed): report first, become required via
+  #    `npm run configure:branch-protection` once it has run green on the
+  #    target branch.
+  # 2. A failure should say *citations*, not *docs sync*. Two different fixes.
+  doc-paths:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # No Dependabot exemption needed: the check reads the tree, not the diff,
+      # so a lockfile-only PR simply passes.
+      - name: Enforce doc path citations
+        run: node scripts/check-doc-paths.mjs

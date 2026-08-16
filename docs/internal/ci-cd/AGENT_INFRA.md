@@ -725,7 +725,9 @@ If a future chunk crosses a boundary the sandbox still can't reach (live Realtim
 - **Do not check the verification box.** Mark it blocked.
 - File or link a tracking issue (`#401` is the agent infra parent; #235 closed-as-subsumed by ADR-11 and should not be reopened — file a fresh issue scoped to the new gap).
 - In the chunk PR body, list each blocked step + the linked issue + which class of verification is missing.
-- In `STATUS.md`, set the chunk's notes column accordingly.
+- Record the same on the tracking issue — work status lives in **GitHub Issues**, not in a
+  status doc ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4,
+  [`GITHUB_PM.md`](GITHUB_PM.md)).
 
 ### Sandbox-blocked tooling — known list
 

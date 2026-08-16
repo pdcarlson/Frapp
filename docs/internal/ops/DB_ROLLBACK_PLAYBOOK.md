@@ -62,7 +62,8 @@ Action:
 
 After any rollback event:
 
-- update `docs/internal/DEPLOYMENT_STATUS.md` with incident notes
+- file the incident notes as a **GitHub issue** — work status is not a doc
+  ([`../DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md) rule 4)
 - create/update postmortem entry with timeline and root cause
 - add preventive checks to migration or CI workflow
 

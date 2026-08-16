@@ -81,7 +81,7 @@ npm run dev:stack
 
 If you are not using Infisical CLI injection, create a `.env.local` file for each app. Local Supabase keys come from `npx supabase status -o env`.
 
-See **[`docs/internal/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
+See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete list of every variable, per app, per environment.
 
 **Alternative (Infisical CLI):** Skip `.env.local` files entirely by injecting from Infisical:
 
@@ -159,7 +159,7 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `lint-and-typecheck` | ESLint + TypeScript across all workspaces; `npm run build -w apps/api` (`nest build`, Render parity); landing and `@repo/validation` unit tests | Yes        |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                     | Yes        |
 | `api-tests`          | API Jest unit tests (377+ tests)                                                                     | Yes (hard) |
-| `api-contract-check` | `openapi.json` and `api-sdk/types.ts` freshness                                                      | Yes        |
+| `api-contract-check` | `openapi.json` and `packages/api-sdk/src/types.ts` freshness                                                      | Yes        |
 | `migration-safety`   | Migration filename validation + promotion docs                                                       | Yes        |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                    | Yes        |
 | `ci-scripts-tests`   | CI scripts unit/integration tests                                                                    | Yes        |
@@ -168,13 +168,16 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes (after one-time rollout: admin re-runs `npm run configure:branch-protection` once the job is green on the target branch) |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
-### Additional Required Checks
+### Additional Docs Checks
 
-These checks are also required for merge:
+Both run in `.github/workflows/docs.yml`. Only `docs-spec-sync` is merge-blocking today — see
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for why `doc-paths` reports first and how it
+gets promoted:
 
-| Check            | Provider       | What it validates                               |
-| ---------------- | -------------- | ----------------------------------------------- |
-| `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
+| Check            | Provider       | What it validates                               | Required?  |
+| ---------------- | -------------- | ----------------------------------------------- | ---------- |
+| `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
+| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Not yet — reports only; whole-tree scope makes it blocking beyond the PR's own diff, so promotion is a deliberate step ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires
@@ -242,7 +245,7 @@ Production deployments run automatically after the `main` → `production` promo
 
 **Default:** Vercel (frontends) and Render (API) deployments run in parallel after merge. Database migrations always run before the API deploy (enforced by the deploy workflow's job dependency chain).
 
-**Exception — breaking API changes:** Use the split-PR flow in `docs/internal/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
+**Exception — breaking API changes:** Use the split-PR flow in `docs/internal/quality/PR_REVIEW_PROCESS.md` when compatibility is not maintained:
 
 1. Merge/deploy the backward-compatible API PR first.
 2. Verify the API health check passes.
@@ -276,7 +279,7 @@ Secrets are centrally managed in **Infisical** (free tier) with automatic syncs 
 
 Canonical values (e.g., `SUPABASE_URL`) are stored **once** per Infisical environment. Framework-specific names (e.g., `NEXT_PUBLIC_SUPABASE_URL`) are **secret references** that resolve to the canonical value automatically. No duplication, no environment suffixes.
 
-See **[`docs/internal/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md)** for the setup guide.
+See **[`docs/internal/environment/ENV_REFERENCE.md`](../../docs/internal/environment/ENV_REFERENCE.md)** for the complete variable list and **[`docs/internal/environment/SECRETS_MANAGEMENT.md`](../../docs/internal/environment/SECRETS_MANAGEMENT.md)** for the setup guide.
 
 ### Bootstrap Secrets (GitHub only)
 
@@ -297,7 +300,7 @@ npx infisical login       # One-time setup
 npm run dev:stack         # Default: API + web + landing (repo root)
 ```
 
-Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)**.
+Per-app Infisical commands, mobile, and no-Infisical fallback: **[`docs/internal/environment/LOCAL_DEV.md`](../../docs/internal/environment/LOCAL_DEV.md)**.
 
 ### Rules
 
@@ -338,7 +341,7 @@ Migrations run automatically as part of the deploy pipeline, after CI passes and
 - Migrations are version-controlled and applied in order.
 - Filenames must match pattern: `YYYYMMDDHHMMSS_snake_case_name.sql`.
 - Breaking schema changes require a migration plan (backward-compatible where possible; coordinate with API deploys).
-- Every migration should have a documented rollback strategy in `docs/internal/DB_ROLLBACK_PLAYBOOK.md`.
+- Every migration should have a documented rollback strategy in `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md`.
 - See `docs/internal/ops/DEPLOYMENT.md` for the full migration deployment workflow.
 
 ## Claude Code cloud sandbox (primary dev environment)
