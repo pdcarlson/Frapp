@@ -15,6 +15,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -60,6 +64,11 @@ export function EventDetailSheet({
   const eventId = typeof event?.id === "string" ? event.id : "";
   const eventQuery = useEvent(!usingPreviewData ? eventId : "");
   const deleteEventMutation = useDeleteEvent();
+  // `DELETE /v1/events/:id` and the `PATCH /v1/events/:id` behind "Edit event"
+  // are both paid-ops. Edit is gated here rather than only inside the editor
+  // dialog because this button *is* the trigger for that flow (§5 rule 1) —
+  // gating only the editor's submit would let the user reopen and refill it.
+  const gate = useSubscriptionGate();
   const rolesQuery = useRoles();
   const { toast } = useToast();
 
@@ -160,7 +169,7 @@ export function EventDetailSheet({
         <div className="mt-4 flex flex-wrap gap-2">
           <Button
             variant="outline"
-            disabled={!resolvedEvent}
+            {...gate.controlProps(!resolvedEvent)}
             onClick={() => {
               if (!resolvedEvent) return;
               onRequestEdit(resolvedEvent);
@@ -170,7 +179,7 @@ export function EventDetailSheet({
           </Button>
           <Button
             variant="destructive"
-            disabled={!canMutate || deleteEventMutation.isPending}
+            {...gate.controlProps(!canMutate || deleteEventMutation.isPending)}
             onClick={handleDelete}
           >
             {deleteEventMutation.isPending ? (
@@ -181,6 +190,8 @@ export function EventDetailSheet({
             Delete event
           </Button>
         </div>
+
+        <SubscriptionNotice gate={gate} feature="editing events" />
 
         <div className="mt-5 grid gap-3">
           <div className="rounded-md border border-border p-3">

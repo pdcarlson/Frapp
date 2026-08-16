@@ -3,12 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { TaskCard } from "./task-card";
 import type { ChatMessage } from "@/lib/chat/types";
+import { chapterSubscription } from "@/tests/chapter-subscription";
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 // The card is hook-driven (unlike the props-only settings tabs), so we stub
 // the data layer and the permission gate to isolate the rendering + gating.
 
 const mockUseTask = vi.fn();
+const mockCurrentChapter = vi.fn();
 const updateStatus = vi.fn().mockResolvedValue(undefined);
 const confirmTask = vi.fn().mockResolvedValue(undefined);
 const rejectTask = vi.fn().mockResolvedValue(undefined);
@@ -18,6 +20,15 @@ vi.mock("@repo/hooks", () => ({
   useUpdateTaskStatus: () => ({ mutateAsync: updateStatus, isPending: false }),
   useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
   useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
+  // The card's task routes are paid-ops, so it now reads the chapter's
+  // subscription (#841). Default every existing case to an active chapter so
+  // they assert the same behaviour they always did.
+  useCurrentChapter: () => mockCurrentChapter(),
+}));
+
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
+    selector({ activeChapterId: "chap-1" }),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -64,11 +75,14 @@ function makeMessage(overrides: Record<string, unknown> = {}): ChatMessage {
   } as unknown as ChatMessage;
 }
 
+const chapter = chapterSubscription(mockCurrentChapter);
+
 describe("TaskCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     canManage = false;
     mockUseTask.mockReturnValue({ data: undefined });
+    chapter.active();
   });
 
   it("renders the assignment snapshot (title, names, due, points)", () => {
@@ -162,5 +176,63 @@ describe("TaskCard", () => {
       />,
     );
     expect(screen.getByRole("button", { name: /start/i })).toBeDisabled();
+  });
+});
+
+describe("TaskCard subscription gating", () => {
+  // The card lives in chat, which is `@FreeTier`, but its buttons call
+  // `task.controller.ts`, which is paid-ops. The host surface does not decide
+  // the gate — the route does (#841).
+  beforeEach(() => {
+    vi.clearAllMocks();
+    canManage = false;
+    mockUseTask.mockReturnValue({ data: undefined });
+  });
+
+  it("disables the assignee's action and explains why on a lapsed chapter", () => {
+    chapter.incomplete();
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /start/i })).toBeDisabled();
+    expect(
+      screen.getByText(/subscription is not active/i),
+    ).toBeInTheDocument();
+  });
+
+  it("ties the disabled action to its explanation", () => {
+    chapter.incomplete();
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+
+    const describedBy = screen
+      .getByRole("button", { name: /start/i })
+      .getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /subscription is not active/i,
+    );
+  });
+
+  it("leaves the action alone on an active chapter", () => {
+    chapter.active();
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /start/i })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("fails open when the chapter record cannot be read", () => {
+    chapter.unreadable();
+    render(<TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />);
+
+    expect(screen.getByRole("button", { name: /start/i })).toBeEnabled();
+  });
+
+  it("keeps the notice off cards that offer this viewer no action", () => {
+    // A timeline would otherwise repeat one chapter-wide sentence under every
+    // task card, including ones the viewer could never act on.
+    chapter.incomplete();
+    render(<TaskCard message={makeMessage()} viewerId="someone-else" isConfirmed />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

@@ -127,10 +127,10 @@ describe("useSubscriptionGate", () => {
       </>,
     );
 
-    const [first, second] = screen.getAllByRole("status");
-    expect(first.id).toBeTruthy();
-    expect(second.id).toBeTruthy();
-    expect(first.id).not.toBe(second.id);
+    const ids = screen.getAllByRole("status").map((el) => el.id);
+    expect(ids).toHaveLength(2);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(2);
   });
 
   it("ORs the caller's own disabled conditions into the gate", () => {

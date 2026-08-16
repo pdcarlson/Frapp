@@ -13,6 +13,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -102,6 +106,18 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const createInviteMutation = useCreateInvite();
   const createBatchInvitesMutation = useBatchCreateInvites();
   const revokeInviteMutation = useRevokeInvite();
+  // `POST /invites` and `POST /invites/batch` are the repo's only two
+  // `@FreeTier` + `@GraceBlocked` routes (`invite.controller.ts:46,60`): they
+  // keep working while `incomplete`, and are blocked *by name* only inside the
+  // `past_due` grace window. That is the one gate class the rest of this sweep
+  // never exercises, so it gets the matching writeClass rather than the default.
+  //
+  // Deliberately gating the submit rather than the trigger, against §5 rule 1.
+  // Two reasons: the trigger is a caller-supplied node (`trigger` prop), and
+  // this dialog is mostly a read surface — the invite list — plus a revoke that
+  // is plain `@FreeTier` and must stay live during grace. Blocking the dialog
+  // from opening would take those away to gate one button inside it.
+  const gate = useSubscriptionGate("grace-blocked");
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
@@ -268,7 +284,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           <div className="flex items-end">
             <Button
               onClick={handleGenerateInvites}
-              disabled={hasLiveDataError || isSubmitting || roleOptions.length === 0}
+              {...gate.controlProps(
+                hasLiveDataError || isSubmitting || roleOptions.length === 0,
+              )}
               className="w-full"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -276,6 +294,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             </Button>
           </div>
         </div>
+
+        <SubscriptionNotice gate={gate} feature="issuing invites" />
 
         {generatedInvites.length > 0 ? (
           <div className="space-y-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
