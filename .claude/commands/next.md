@@ -142,13 +142,19 @@ issue, since a named issue may already be held. Several numbers claim as one bat
 the coherence test still apply, and if the named set doesn't honestly batch, say so in your reply and
 ask rather than silently splitting or silently shipping an incoherent PR. Backlog issues are
 claimable as usual; **`triage`-labeled issues never are, in any mode** (sole exception: the
-record-keeping claim in "Nothing discovered is dropped"). If you lose the race on a named issue,
+record-keeping claim in "Nothing discovered is dropped"). **§0.2 conditions 5–6 apply in named
+mode too** — a human naming an epic does not make it shippable, and condition 6's batch carve-out
+is exactly how a named parent+sub-issue pair is meant to go through. If you lose the race on a named issue,
 **report who holds it** — do not fall back to ranking, because the human picked the issues, not a
 category. Losing one member of a named batch does not abandon the rest: proceed with what you won —
 subject to §0.5's coherence escape when the lost member was the batch's point — and report the loss.
 
 **`/next --plan-only N`** — rank and emit N ready-to-paste `/next <number>` prompts, then stop.
-**Write nothing to the tracker** — no claims, no sweep, no advisory comments. This is how you spin
+**Write nothing to the tracker** — no claims, no sweep, no advisory comments. Do run §0.2
+condition 6's `issue_read get` on each issue you are about to emit: it is a **read**, so it does
+not breach that rule, and skipping it emits prompts that the receiving session will refuse at §0.5
+step 2 — a spun-up session holding a named issue it must not claim, which named mode has no
+defined behaviour for. This is how you spin
 up a batch of sessions without leaking N claims: each claim happens when its session actually
 starts. Carry each issue's Agent brief into its emitted prompt: prefix the prompt with `ultracode `
 when the brief says `ultracode:yes` (the pasted turn then starts with `ultracode`, not `/`, so the
@@ -179,7 +185,9 @@ housekeeping (§0.7) waits until after you hold the claim.
 **0.1 — Generate `CLAIM_ID`.** One `openssl rand -hex 4`, reused all run.
 
 **0.2 — Build the candidate set.** `list_issues(owner:"pdcarlson", repo:"frapp", state:OPEN)` —
-request the `labels` field and page as needed. An issue is a candidate when **all** hold:
+request the **`labels` and `title`** fields and page as needed (condition 5 reads `title`; omitting
+it silently makes that condition unevaluable, which fails **open**). An issue is a candidate when
+**all** hold:
 
 1. It carries **no state label** (`triage`, `in-progress`, `in-review` all disqualify — `triage`
    needs a human-accepted promotion and a priority first; `in-review` means a PR is already
@@ -194,10 +202,10 @@ request the `labels` field and page as needed. An issue is a candidate when **al
    nothing. A **closed, unmerged** PR does not disqualify: claim it and record
    `Prior art: PR #NNN (closed, unmerged)` in the claim comment. Treat a PR as authoritative only
    when it names the issue number.
-5. **No `[Epic]` or `[human]` tag in the title's leading bracket run** (request the `title` field
-   alongside `labels` — it costs nothing). An epic is a container for slices, not a unit of work:
-   shipping one slice under `Fixes #<epic>` closes the whole thing with its siblings unwritten. A
-   `[human]` item is by definition something no agent session can do.
+5. **No `[Epic]` or `[human]` tag in the title's leading bracket run**, matched
+   **case-insensitively**. An epic is a container for slices, not a unit of work: shipping one
+   slice under `Fixes #<epic>` closes the whole thing with its siblings unwritten. A `[human]`
+   item is by definition something no agent session can do.
 
    Match the **whole leading run of `[...]` tags**, not just the first one — `[pr-followup][human]
    Enable the custom_access_token_hook` (#805) does not *begin* with `[human]`, and neither do
@@ -206,20 +214,30 @@ request the `labels` field and page as needed. An issue is a candidate when **al
    `**Human action required — hold in triage`, for the older items that predate the prefix
    (see #908). Both conventions are load-bearing elsewhere — the curator and triage skills read
    them; `/next` was the one place that never did.
-6. It is **not a parent with children** — `has_children: true` disqualifies. `Blocked by #N` body
-   lines are the *only* dependency mechanism the rest of this filter understands, and epics do not
-   carry them: they express the same relationship as native sub-issue links, which nothing here
-   would otherwise read. Checking this needs `issue_read get`, so it is evaluated **lazily in
-   §0.5** against the candidate you are about to claim rather than across the whole list.
+6. It is **not a parent with unfinished children.** `Blocked by #N` body lines are the *only*
+   dependency mechanism the rest of this filter understands, and epics do not carry them: they
+   express the same relationship as native sub-issue links, which nothing here would otherwise
+   read. Checking this needs `issue_read get`, so it is evaluated **lazily in §0.5** against the
+   candidate you are about to claim rather than across the whole list.
 
-   Key on **`has_children`**, not on `sub_issues_summary`. Verified 2026-08-16 against this repo:
-   `issue_read get` returns `has_parent`/`has_children` on every issue, but returns
-   `sub_issues_summary` *only when children exist* (#426 → `has_children: true` plus
-   `{total: 21, completed: 6}`; #718 and #947 → neither field). The MCP tool's own description
-   calls the summary an **optional** relationship summary, so a condition written against it alone
-   fails **open** — silently claiming the epic — exactly where it matters most. Where the summary
-   is present, quote it in the skip line. A parent whose children are *all* closed is still not
-   work: that is a bookkeeping close, so report it under §0.7 housekeeping instead of claiming it.
+   **Gate on `has_children`, then narrow with `sub_issues_summary` when it is there.** Disqualify
+   when `has_children` is true, *unless* either:
+
+   - `sub_issues_summary` is present and `completed >= total` — every child is closed, so there
+     are no siblings left to strand and the parent is an ordinary (usually small) close-out. Claim
+     it normally.
+   - every still-open child is **itself a member of this claim's batch**. This is the inseparable
+     parent+sub-issue unit the invariant above sanctions ("add column" + "use column"): Phase 4
+     writes one `Fixes` line per member, so both close together and nothing is stranded. Without
+     this carve-out the two rules contradict each other and the invariant becomes unsatisfiable.
+
+   Gate on `has_children` rather than on the summary alone because the summary is **optional**.
+   Verified 2026-08-16 against this repo: `issue_read get` returns `has_parent`/`has_children` on
+   every issue, but returns `sub_issues_summary` *only when children exist* (#426 → `has_children:
+   true` plus `{total: 21, completed: 6}`; #718 and #947 → neither field). A condition written
+   against `total > completed` alone reads `undefined > undefined` → false whenever the summary is
+   missing, and fails **open** exactly where it matters most. Quote the summary in the skip line
+   when you have it.
 
 Read the body with `issue_read get` where the list is thin. Surface each candidate's **`Estimate:`**
 line and its **Agent brief** line (`depth:` / `model:` / `ultracode:`, when present) as sizing
@@ -250,10 +268,10 @@ claim is the comment; the `in-progress` label is a projection of it.** For each 
 order:
 
 1. `issue_read get_comments` — skip if a live claim exists.
-2. `issue_read get` — skip when `has_children` is true (§0.2 condition 6). This is the one filter
-   that cannot run off the list, and it runs **here**, before the first write, precisely because
-   "claim before you think" means a bad candidate is otherwise announced to the tracker before
-   anyone reads it. One extra call per claim attempt, not per candidate.
+2. `issue_read get` — apply §0.2 condition 6 (`has_children`, with its two carve-outs). This is
+   the one filter that cannot run off the list, and it runs **here**, before the first write,
+   precisely because "claim before you think" means a bad candidate is otherwise announced to the
+   tracker before anyone reads it. One extra call per claim attempt, not per candidate.
 3. **Post the claim comment first** (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM`
    for a §0.7 takeover).
 4. Then add the **`in-progress`** label (read-modify-write the full label set).

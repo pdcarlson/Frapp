@@ -111,16 +111,17 @@ honoring them; the triage routine adds/corrects the lines.
 **Epics and `[human]` items are never `/next` candidates, and labels are not what protects them.**
 Two structural rules, both enforced in `/next` §0.2:
 
-- **A parent with children is not work.** `issue_read get` → `has_children: true` disqualifies.
-  This exists because the two ways this repo expresses dependency never met: slices hang off an
-  epic as **native sub-issues**, while `/next` understood only **`Blocked by #N` body lines** —
-  and an epic does not carry `Blocked by` lines pointing at its own children, because that is
-  backwards from how epics decompose. The failure mode is specific and expensive: an agent claims
-  the epic, ships one coherent slice under `Fixes #<epic>`, and the merge closes it with the
-  remaining slices unwritten. **Key on `has_children`, not `sub_issues_summary`** — the latter is
-  documented as an *optional* summary and is returned only when children exist (verified
-  2026-08-16: #426 carries both, #718 and #947 carry neither), so a check written against it alone
-  fails open.
+- **A parent with unfinished children is not work.** `issue_read get` → `has_children: true`
+  disqualifies, unless `sub_issues_summary` shows every child closed, or every open child is in
+  the same claim batch (the inseparable parent+sub-issue unit). This exists because the two ways
+  this repo expresses dependency never met: slices hang off an epic as **native sub-issues**,
+  while `/next` understood only **`Blocked by #N` body lines** — and an epic does not carry
+  `Blocked by` lines pointing at its own children, because that is backwards from how epics
+  decompose. The failure mode is specific and expensive: an agent claims the epic, ships one
+  coherent slice under `Fixes #<epic>`, and the merge closes it with the remaining slices
+  unwritten. **Gate on `has_children`, not `sub_issues_summary` alone** — the latter is documented
+  as an *optional* summary and is returned only when children exist (verified 2026-08-16: #426
+  carries both, #718 and #947 carry neither), so a check written against it alone fails open.
 - **`[human]` items are held by their title, not by `triage`.** The hold rule below keys on the
   `[human]` prefix, but until 2026-08-16 the only thing that actually kept `/next` off them was
   the `triage` label — so any routine or human that promoted one exposed it (#709 was already
@@ -129,10 +130,19 @@ Two structural rules, both enforced in `/next` §0.2:
   with `[human]`. The `**Human action required — hold in triage` body opener is the third
   recognised form, for items predating the prefix (#908).
 
-Neither rule needs a new label, and **do not add an `epic` label** expecting it to help: the check
-reads the native sub-issue graph, which is the thing that is actually true. Adding `Blocked by #N`
-lines to an epic is still a valid *belt-and-braces* move and degrades honestly as slices land, but
-it is no longer required to keep the epic unclaimable.
+Neither rule needs a new label, and **do not add an `epic` label** expecting it to help: where an
+epic has real children, the graph check reads the thing that is actually true.
+
+**But know where each rule stops.** The graph check only sees epics that *have* sub-issues attached.
+**#718** and **#720** are both `[Epic]`, both `P2`, both in the Backlog — and both report
+`has_children: false`, because nobody ever attached their slices. For those two the entire guard is
+a title match, and a title is editable, easy to typo, and easy to omit when filing. So:
+
+- **Attach an epic's slices as native sub-issues when you file them.** That is what turns the
+  strong guard on. An epic with no children is indistinguishable from ordinary work.
+- **`Blocked by #N` lines remain worth adding** on an epic whose children are not attached — they
+  are the only structural guard such an epic has besides its title, and §1.1 re-verifies them
+  against the repo, so they degrade honestly as slices land.
 
 **Estimates** are an optional **`Estimate: <fibonacci>`** line in the body meta block (0,1,2,3,5,
 8,13,21) — sizing context for `/next`'s batching caps, never a filter or gate.
