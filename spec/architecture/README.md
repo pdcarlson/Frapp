@@ -15,7 +15,7 @@
 | Database       | PostgreSQL (via Supabase)                    | Supabase-hosted Postgres. Migrations via Supabase CLI.                                                                |
 | Auth           | Supabase Auth                                | Email/password, magic link, OAuth.                                                                                    |
 | Storage        | Supabase Storage                             | Seven private buckets (§7), all declared in migrations. Signed URLs only — no public access.                          |
-| Realtime       | Supabase Realtime                            | Postgres changes for chat. Broadcast for typing indicators. Presence for online status.                               |
+| Realtime       | Supabase Realtime                            | Postgres changes for chat + the audit-log worker (publication membership is required and was missing until #867). Private broadcast for dashboard change-pings. Broadcast for typing indicators. Presence for online status. |
 | Billing        | Stripe                                       | Subscriptions, checkout, webhooks, invoices.                                                                          |
 | Push           | Expo Push Service                            | Mobile push notifications via `expo-server-sdk`.                                                                      |
 | Observability  | Sentry + structured logging                  | Error tracking, request tracing, metrics.                                                                             |

@@ -468,6 +468,43 @@ console.log("\n=== Functional smoke: anonymize_user ===");
   const PCARD = "ffffffff-ffff-ffff-ffff-ffffffffffff"; // punctuation-name card
   const LATECARD = "99999999-9999-9999-9999-999999999999"; // card racing the scrub
 
+  // ─── change-ping tables stay writable without a `realtime` schema ──────────
+  //
+  // 20260816140000 (#867) puts AFTER-ROW triggers on notifications / events /
+  // event_attendance that call `realtime.send()`. plpgsql resolves that at RUN
+  // time, not CREATE time, so a migration referencing a schema this substrate
+  // does not have applies perfectly and then makes three core tables
+  // unwritable on the first insert — an AFTER trigger raising unwinds the
+  // caller's statement, `return null` notwithstanding.
+  //
+  // This tier exists because nothing else here writes to those three tables:
+  // every assertion above stayed green while inserts into them were broken,
+  // which is precisely how the defect reached review. Keep at least one write
+  // per ping table here.
+  try {
+    await db.exec(`
+      begin;
+      insert into chapters (id, name, university)
+        values ('11111111-1111-1111-1111-111111111111', 'Ping', 'RPI');
+      insert into users (id, supabase_auth_id, email, display_name)
+        values ('22222222-2222-2222-2222-222222222222', gen_random_uuid(), 'ping@example.com', 'Ping');
+      insert into notifications (chapter_id, user_id, title, body)
+        values ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222', 't', 'b');
+      insert into events (id, chapter_id, name, start_time, end_time)
+        values ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111',
+                'probe', now(), now() + interval '1 hour');
+      insert into event_attendance (event_id, user_id, status)
+        values ('33333333-3333-3333-3333-333333333333', '22222222-2222-2222-2222-222222222222', 'PRESENT');
+      commit;
+    `);
+    console.log("OK    change-ping tables accept writes with no `realtime` schema");
+  } catch (e) {
+    missing += 1;
+    console.log(
+      `ERR   change-ping tables accept writes with no \`realtime\` schema\n        ↳ ${String(e?.message ?? e).split("\n")[0]}`,
+    );
+  }
+
   let seeded = false;
   try {
     await db.exec(`

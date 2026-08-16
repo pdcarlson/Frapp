@@ -106,7 +106,21 @@ export function attachRealtimeChannel(
     // otherwise strand it there with nothing holding a reference to release.
     attached = channel;
     configure(channel);
-    channel.subscribe();
+    // Observe the join result. `private: true` introduces an authorization step
+    // that can DENY, and a denied channel is otherwise completely silent:
+    // phoenix flips to `errored` and re-joins on a backoff loop for the rest of
+    // the session with nothing logged and nothing shown.
+    //
+    // That is the same "joins, reports SUBSCRIBED, never fires" shape that hid
+    // the empty-publication bug (#867) for months, so it gets a log line rather
+    // than a comment. The concrete case: `activeChapterId` is persisted to
+    // localStorage, so a member removed from a chapter still asks for
+    // `events:<that chapter>` on their next login and is denied forever.
+    channel.subscribe((status) => {
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+        console.warn(`realtime: topic "${topic}" join ${status}`);
+      }
+    });
   });
 
   return () => {

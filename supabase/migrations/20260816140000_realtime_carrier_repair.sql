@@ -1,10 +1,11 @@
 -- Repair the Realtime carrier: nothing has ever been replicated (G1 / #867).
 --
--- Verified 2026-08-16 against BOTH deployed projects via read-only SQL:
---   frapp-prod    (unttyvyfezddlyafcydh) -- publication `supabase_realtime`
---                 contains NO TABLES AT ALL (puballtables = false, zero rows).
---   frapp-staging (hnoyzpidbmizhbqaiity) -- identical.
--- and `ALTER PUBLICATION` appears in ZERO migrations repo-wide.
+-- Verified 2026-08-16 against BOTH deployed projects via read-only SQL: the
+-- `supabase_realtime` publication contains NO TABLES AT ALL on production and
+-- staging alike (puballtables = false, zero rows), and `ALTER PUBLICATION`
+-- appears in ZERO migrations repo-wide.
+-- (Project refs deliberately not written here: they come from Infisical
+-- `SUPABASE_PROJECT_REF` and are not committed -- AGENT_INFRA.md § Project refs.)
 --
 -- Consequence: every `postgres_changes` subscription in the product has been
 -- receiving nothing, in every environment, since the first deploy. This is NOT
@@ -13,12 +14,14 @@
 -- via the WAL at all, so no RLS policy could have rescued it. That is outcome
 -- (c) in #937's G1 gate: "broken on web too, so fix the carrier first."
 --
--- Five subscriptions are dead. They split cleanly by whether the subscriber
--- needs the changed ROW or merely needs to know SOMETHING CHANGED:
+-- SIX subscriptions are dead. They split by whether the subscriber needs the
+-- changed ROW or merely needs to know SOMETHING CHANGED:
 --
 --   payload consumers -> postgres_changes + table RLS  (section 1)
 --     public.chat_messages         packages/chat-core/src/realtime-manager.ts:418
 --     public.chat_message_actions  ...:549,562  ("chat:actions:global")
+--     public.chapter_audit_log     apps/api/src/modules/chat-bridge-worker/  (service-role;
+--                                  RLS bypassed, so publication membership is the whole fix)
 --
 --   ping-only consumers -> private broadcast           (sections 2-4)
 --     public.notifications      apps/web/components/layout/dashboard-notification-drawer.tsx:96
@@ -70,6 +73,23 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chat_message_actions'
   ) then
     alter publication supabase_realtime add table public.chat_message_actions;
+  end if;
+
+  -- The sixth dead subscription, and the only server-side one:
+  -- `ChatBridgeWorkerService` (apps/api/src/modules/chat-bridge-worker/) has
+  -- been subscribed to `postgres_changes` INSERT on `chapter_audit_log` since it
+  -- shipped, mirroring config changes, role edits and billing transitions into
+  -- `#chapter-audit`. Same root cause, same silence: the channel joins and never
+  -- fires, so that channel has always been empty.
+  --
+  -- No RLS policy needed here, unlike the chat pair: this subscriber uses the
+  -- SERVICE-ROLE client, which bypasses RLS entirely. Publication membership is
+  -- the whole fix, and adding a policy would only widen the table for no reader.
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'chapter_audit_log'
+  ) then
+    alter publication supabase_realtime add table public.chapter_audit_log;
   end if;
 end
 $$;
@@ -185,18 +205,44 @@ as $$
   );
 $$;
 
--- Definer functions must not be executable by anon/PUBLIC beyond what we intend
--- (mirrors the revoke/grant hardening in 20260803150000 and issue #678).
+-- Definer functions must not be executable beyond what we intend (the hardening
+-- from 20260803150000 and #678).
+--
+-- `revoke ... from public` alone is NOT enough, and assuming it is was the
+-- defect this block exists to avoid: Postgres grants EXECUTE to PUBLIC by
+-- default, but Supabase ALSO installs a direct grant to `anon` and
+-- `authenticated` via `alter default privileges in schema public`. Revoking
+-- PUBLIC leaves that direct `anon` grant in place, so the function stays
+-- callable unauthenticated through PostgREST
+-- (`POST /rest/v1/rpc/realtime_can_read_chapter_scope`) by anyone holding the
+-- publishable key -- which ships in the web bundle.
+--
+-- It would return false today only because `auth.uid()` is NULL for anon. That
+-- is a property of the *plan shape*, not of the grant, and 20260803150000
+-- argues at length that this is exactly what must not be relied on: the moment
+-- someone adds a non-`auth.uid()` branch these become unauthenticated
+-- membership oracles with nothing behind them.
 do $$
+declare
+  v_fn text;
 begin
-  execute 'revoke execute on function public.realtime_can_read_user_scope(uuid) from public';
-  execute 'revoke execute on function public.realtime_can_read_chapter_scope(uuid) from public';
-  execute 'revoke execute on function public.realtime_can_read_event_scope(uuid) from public';
-  if exists (select 1 from pg_roles where rolname = 'authenticated') then
-    execute 'grant execute on function public.realtime_can_read_user_scope(uuid) to authenticated';
-    execute 'grant execute on function public.realtime_can_read_chapter_scope(uuid) to authenticated';
-    execute 'grant execute on function public.realtime_can_read_event_scope(uuid) to authenticated';
-  end if;
+  foreach v_fn in array array[
+    'public.realtime_can_read_user_scope(uuid)',
+    'public.realtime_can_read_chapter_scope(uuid)',
+    'public.realtime_can_read_event_scope(uuid)'
+  ]
+  loop
+    execute format('revoke all on function %s from public', v_fn);
+    if exists (select 1 from pg_roles where rolname = 'anon') then
+      execute format('revoke all on function %s from anon', v_fn);
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'authenticated') then
+      execute format('grant execute on function %s to authenticated', v_fn);
+    end if;
+    if exists (select 1 from pg_roles where rolname = 'service_role') then
+      execute format('grant execute on function %s to service_role', v_fn);
+    end if;
+  end loop;
 end
 $$;
 
@@ -215,6 +261,52 @@ $$;
 -- the same shape as the scoping the client already asked for.
 -- DELETE carries no NEW row, so the topic key is read from `coalesce(new, old)`.
 
+-- EVERY send is wrapped in its own exception block. This is load-bearing, and
+-- the naive spelling is actively dangerous:
+--
+--   1. An AFTER ROW trigger fires INSIDE the writing transaction, not after
+--      commit. `return null` does not change that -- the value is ignored for
+--      AFTER triggers, but an exception raised in the body still unwinds the
+--      caller's statement. So an unguarded `perform realtime.send(...)` makes a
+--      best-effort ping a hard availability dependency of three core write
+--      paths: every event create, every attendance check-in, every notification.
+--   2. `realtime.messages` is DAILY PARTITIONED by the Realtime service. If
+--      partition creation ever lags a UTC day boundary, the insert raises
+--      `no partition of relation "messages" found for row` -- and that 500s the
+--      member's check-in, for a ping nobody was waiting on.
+--   3. `realtime` does not exist on bare Postgres at all (CI's PGlite harness,
+--      any non-Supabase target). plpgsql resolves the call at RUNTIME, not at
+--      CREATE time, so the migration would apply cleanly and then make three
+--      core tables unwritable on first insert. Catching here covers that too,
+--      which is why the trigger creation below needs no schema guard.
+--
+-- The cost is one subtransaction per row. These three tables are low-write
+-- (notifications, events, attendance), so that is the right trade against
+-- 500-ing a write to deliver a cache-invalidation hint.
+-- FOR EACH STATEMENT over a transition table, NOT for each row.
+--
+-- Per-row was the obvious spelling and it is wrong at scale. `markAutoAbsent`
+-- (apps/api/src/application/services/attendance.service.ts) inserts one
+-- `event_attendance` row per member in a single `createMany` — 150 rows for a
+-- 150-member chapter, from one admin click. Per-row that becomes:
+--   * 150 trigger invocations, each opening its own `exception` subtransaction.
+--     Past 64 subxids the transaction is flagged suboverflowed and every other
+--     backend falls back to the pg_subtrans SLRU for visibility checks.
+--   * 150 broadcast frames on ONE topic, all saying the same thing.
+--   * 300 invalidations per viewer; TanStack v5 `invalidateQueries` defaults to
+--     `cancelRefetch: true`, so each frame aborts the in-flight attendance and
+--     event reads and restarts them.
+-- One click, ~300 aborted requests per open browser, to deliver a single bit of
+-- information. Statement-level with `select distinct` collapses all of it to one
+-- ping per distinct scope, which is exactly what the client needs.
+--
+-- THREE triggers per table: Postgres forbids a transition table on a trigger
+-- with more than one event, and they are operation-specific anyway --
+-- NEW TABLE does not exist for DELETE, OLD TABLE does not exist for INSERT.
+-- Both name the relation `changed`, so one function serves both. UPDATE rides
+-- the NEW side: the scope columns here (`user_id`, `chapter_id`, `event_id`) are
+-- effectively immutable, so a row moving between scopes is not a case worth
+-- doubling the trigger count for.
 create or replace function public.realtime_notify_notifications()
 returns trigger
 language plpgsql
@@ -222,14 +314,23 @@ security definer
 set search_path = public
 as $$
 declare
-  v_row public.notifications := coalesce(new, old);
+  v_scope uuid;
 begin
-  perform realtime.send(
-    jsonb_build_object('table', 'notifications', 'op', tg_op),
-    'change',
-    'notif:' || v_row.user_id::text,
-    true
-  );
+  begin
+    for v_scope in select distinct user_id from changed where user_id is not null
+    loop
+      perform realtime.send(
+        jsonb_build_object('table', 'notifications', 'op', tg_op),
+        'change',
+        'notif:' || v_scope::text,
+        true
+      );
+    end loop;
+  exception when others then
+    -- Deliberately swallowed: the client falls back to its normal refetch, and
+    -- a stale drawer is strictly better than a failed write.
+    null;
+  end;
   return null;
 end;
 $$;
@@ -241,14 +342,21 @@ security definer
 set search_path = public
 as $$
 declare
-  v_row public.events := coalesce(new, old);
+  v_scope uuid;
 begin
-  perform realtime.send(
-    jsonb_build_object('table', 'events', 'op', tg_op),
-    'change',
-    'events:' || v_row.chapter_id::text,
-    true
-  );
+  begin
+    for v_scope in select distinct chapter_id from changed where chapter_id is not null
+    loop
+      perform realtime.send(
+        jsonb_build_object('table', 'events', 'op', tg_op),
+        'change',
+        'events:' || v_scope::text,
+        true
+      );
+    end loop;
+  exception when others then
+    null;
+  end;
   return null;
 end;
 $$;
@@ -260,35 +368,78 @@ security definer
 set search_path = public
 as $$
 declare
-  v_row public.event_attendance := coalesce(new, old);
+  v_scope uuid;
 begin
-  perform realtime.send(
-    jsonb_build_object('table', 'event_attendance', 'op', tg_op),
-    'change',
-    'attendance:' || v_row.event_id::text,
-    true
-  );
+  begin
+    for v_scope in select distinct event_id from changed where event_id is not null
+    loop
+      perform realtime.send(
+        jsonb_build_object('table', 'event_attendance', 'op', tg_op),
+        'change',
+        'attendance:' || v_scope::text,
+        true
+      );
+    end loop;
+  exception when others then
+    null;
+  end;
   return null;
 end;
 $$;
 
--- AFTER ... FOR EACH ROW so the ping only fires on a committed change, and the
--- trigger cannot affect the write itself (the functions return null, which is
--- ignored for AFTER triggers).
+-- AFTER so the ping reflects a change that actually happened. Note this does NOT
+-- mean "after commit" -- see the block comment above for why each send carries
+-- its own exception handler.
 drop trigger if exists realtime_notify_notifications on public.notifications;
-create trigger realtime_notify_notifications
-  after insert or update or delete on public.notifications
-  for each row execute function public.realtime_notify_notifications();
+drop trigger if exists realtime_notify_notifications_ins on public.notifications;
+drop trigger if exists realtime_notify_notifications_upd on public.notifications;
+drop trigger if exists realtime_notify_notifications_del on public.notifications;
+create trigger realtime_notify_notifications_ins
+  after insert on public.notifications
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_notifications();
+create trigger realtime_notify_notifications_upd
+  after update on public.notifications
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_notifications();
+create trigger realtime_notify_notifications_del
+  after delete on public.notifications
+  referencing old table as changed
+  for each statement execute function public.realtime_notify_notifications();
 
 drop trigger if exists realtime_notify_events on public.events;
-create trigger realtime_notify_events
-  after insert or update or delete on public.events
-  for each row execute function public.realtime_notify_events();
+drop trigger if exists realtime_notify_events_ins on public.events;
+drop trigger if exists realtime_notify_events_upd on public.events;
+drop trigger if exists realtime_notify_events_del on public.events;
+create trigger realtime_notify_events_ins
+  after insert on public.events
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_events();
+create trigger realtime_notify_events_upd
+  after update on public.events
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_events();
+create trigger realtime_notify_events_del
+  after delete on public.events
+  referencing old table as changed
+  for each statement execute function public.realtime_notify_events();
 
 drop trigger if exists realtime_notify_event_attendance on public.event_attendance;
-create trigger realtime_notify_event_attendance
-  after insert or update or delete on public.event_attendance
-  for each row execute function public.realtime_notify_event_attendance();
+drop trigger if exists realtime_notify_event_attendance_ins on public.event_attendance;
+drop trigger if exists realtime_notify_event_attendance_upd on public.event_attendance;
+drop trigger if exists realtime_notify_event_attendance_del on public.event_attendance;
+create trigger realtime_notify_event_attendance_ins
+  after insert on public.event_attendance
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_event_attendance();
+create trigger realtime_notify_event_attendance_upd
+  after update on public.event_attendance
+  referencing new table as changed
+  for each statement execute function public.realtime_notify_event_attendance();
+create trigger realtime_notify_event_attendance_del
+  after delete on public.event_attendance
+  referencing old table as changed
+  for each statement execute function public.realtime_notify_event_attendance();
 
 -- ---------------------------------------------------------------------------
 -- 4. Authorise the three private topics on realtime.messages.

@@ -162,7 +162,7 @@ does, so publishing these three would have opened them to direct browser reads a
 enforcing layer out of the API. Topics are authorised by `realtime_messages_scoped_select` on
 `realtime.messages` (§ "The policies that do exist").
 
-### The policies that do exist (10 statements)
+### The policies that do exist (11 statements)
 
 | Table | Policy | Effect |
 | --- | --- | --- |

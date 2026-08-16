@@ -246,7 +246,7 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
     ({ useRealtimeTable } = await import("./use-realtime-table"));
   });
 
-  test("a changed invalidate key with a stable topic does not throw", async () => {
+  test("a changed invalidate key does NOT resubscribe (broadcast has no replay)", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -254,8 +254,14 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
       createElement(QueryClientProvider, { client: queryClient }, children);
 
     // `attendance-panel.tsx` shape: the topic is derived from `eventId` alone,
-    // but `invalidate` also carries `chapterId` — so a chapter switch re-runs
-    // the effect with an unchanged topic.
+    // but `invalidate` also carries `chapterId`, so a chapter switch changes the
+    // array without changing the topic.
+    //
+    // The channel must SURVIVE that. Broadcast is fire-and-forget with no
+    // replay, so a detach/re-attach drops any ping landing inside the cycle
+    // permanently — and the REST poll never covers it, since it only arms after
+    // >10s non-live and a clean resubscribe never goes non-live. The keys are
+    // read through a ref that is reassigned every render, so nothing is stale.
     const { rerender, unmount } = renderHook(
       ({ chapterId }: { chapterId: string }) =>
         useRealtimeTable({
@@ -274,14 +280,53 @@ describe("useRealtimeTable — effect re-run on an unchanged topic (#817)", () =
     rerender({ chapterId: "chapter-b" });
     await flush();
 
-    expect(created).toHaveLength(2);
-    expect(created[1]).not.toBe(created[0]);
-    expect(created[1]!.subscribe).toHaveBeenCalledTimes(1);
+    // Still exactly one channel, still the original instance, never torn down.
+    expect(created).toHaveLength(1);
+    expect(created[0]!.teardown).not.toHaveBeenCalled();
+    expect(created[0]!.subscribe).toHaveBeenCalledTimes(1);
     expect(warn).not.toHaveBeenCalled();
 
     unmount();
     await flush();
-    expect(created[1]!.teardown).toHaveBeenCalledTimes(1);
+    expect(created[0]!.teardown).toHaveBeenCalledTimes(1);
+  });
+
+  test("the handler invalidates the CURRENT keys after a rerender, not the ones it closed over", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+
+    // The other half of dropping `invalidateKey` from the deps: because the
+    // channel is no longer re-minted, the ref is the ONLY thing keeping the
+    // handler current. If it ever stopped being reassigned per render, this
+    // test is what catches it.
+    const { rerender } = renderHook(
+      ({ chapterId }: { chapterId: string }) =>
+        useRealtimeTable({
+          table: "event_attendance",
+          scopeId: "evt-1",
+          invalidate: [["events", chapterId, "evt-1"]],
+        }),
+      { wrapper, initialProps: { chapterId: "chapter-a" } },
+    );
+    await flush();
+    rerender({ chapterId: "chapter-b" });
+    await flush();
+
+    // Fire the broadcast handler the live channel registered.
+    const handler = created[0]!.on.mock.calls.find(
+      (call) => call[0] === "broadcast",
+    )?.[2] as (() => void) | undefined;
+    expect(handler).toBeTypeOf("function");
+    invalidateSpy.mockClear();
+    handler!();
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["events", "chapter-b", "evt-1"],
+    });
   });
 
   test("subscribes on the scoped topic as a PRIVATE channel", async () => {

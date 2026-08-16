@@ -388,10 +388,13 @@ useEffect(() => {
 > `packages/chat-core/src/realtime-manager.ts`.
 >
 > **The same rule binds every non-chat subscription.** `useRealtimeTable`
-> derives its topic from `table` + `filter` alone, so an effect re-run driven by
-> any *other* dependency — a changed invalidate key, a new `queryClient`, React
-> StrictMode's dev remount — reopens an unchanged topic and lands on exactly the
-> case above. `attachRealtimeChannel`
+> derives its topic from `table` + `scopeId` alone, so an effect re-run driven by
+> any *other* dependency — a new `queryClient`, React StrictMode's dev remount —
+> reopens an unchanged topic and lands on exactly the
+> case above. (A changed *invalidate key* deliberately no longer re-runs it: the
+> keys are read through a ref, and because the broadcast carrier has no replay,
+> a needless detach/re-attach would silently drop any ping landing inside the
+> cycle.) `attachRealtimeChannel`
 > (`apps/web/lib/realtime/supabase-realtime.ts`) therefore attaches through the
 > same release. Because a `useEffect` cleanup is synchronous and freeing a topic
 > is not, it serializes every attach and release for a topic through a per-topic
