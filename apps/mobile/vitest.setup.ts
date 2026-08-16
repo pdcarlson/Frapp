@@ -36,7 +36,7 @@ vi.mock("react-native", () => ({
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {
-    create: <T,>(styles: T) => styles,
+    create: <T>(styles: T) => styles,
     flatten: (style: unknown) => style,
     hairlineWidth: 1,
   },
@@ -46,6 +46,33 @@ vi.mock("react-native", () => ({
   Pressable: "Pressable",
   ScrollView: "ScrollView",
   TextInput: "TextInput",
+  // The chat thread windows its messages with a FlatList. As a string stand-in
+  // it renders its props but never invokes `renderItem`, so a test that needs
+  // to assert on rows should call the screen's row component directly rather
+  // than reaching into rendered output.
+  FlatList: "FlatList",
+  ActivityIndicator: "ActivityIndicator",
+  KeyboardAvoidingView: "KeyboardAvoidingView",
+}));
+
+// Chat adapter dependencies (#937 C1). Both are mocked suite-wide because the
+// adapters are imported transitively by the chat screens, and loading either
+// real module pulls native code into the node env.
+vi.mock("@react-native-async-storage/async-storage", () => ({
+  default: {
+    getItem: vi.fn().mockResolvedValue(null),
+    setItem: vi.fn().mockResolvedValue(undefined),
+    removeItem: vi.fn().mockResolvedValue(undefined),
+    getAllKeys: vi.fn().mockResolvedValue([]),
+    multiGet: vi.fn().mockResolvedValue([]),
+  },
+}));
+
+vi.mock("expo-network", () => ({
+  getNetworkStateAsync: vi
+    .fn()
+    .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+  addNetworkStateListener: vi.fn(() => ({ remove: vi.fn() })),
 }));
 
 // New-in-S1 native modules: mocked suite-wide so importing any file that
