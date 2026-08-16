@@ -20,14 +20,14 @@
   "dependencies": {
     "@repo/api-sdk": "*",
     "@repo/chat-integrations": "*",
-    "@supabase/supabase-js": "^2.49.1",
-    "@tanstack/react-query": "^5.90.21"
+    "@supabase/supabase-js": "^2.112.3",
+    "@tanstack/react-query": "^5.101.4"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "jsdom": "^29.0.0",
     "typescript": "5.9.2",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.10"
   }
 }
