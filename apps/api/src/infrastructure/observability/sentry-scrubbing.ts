@@ -485,8 +485,15 @@ function scrubMeasurements(measurements: unknown): Record<string, unknown> {
 }
 
 /**
- * Fields of the Dynamic Sampling Context that may survive. All are Sentry's own
- * routing metadata; `transaction` is the only free text and is swept below.
+ * Fields of the Dynamic Sampling Context that may survive.
+ *
+ * These read like Sentry's own routing metadata, and on a trace this process
+ * started they are. On a **continued** trace they are not: the whole DSC is
+ * parsed straight out of the caller's inbound `baggage` header, and
+ * `baggageHeaderToDynamicSamplingContext` applies no key or value filtering —
+ * so `release` and `environment` are whatever the client sent. Every allowlisted
+ * string is therefore swept, not just `transaction`; the allowlist bounds which
+ * keys survive, never what they contain.
  */
 const DSC_FIELD_ALLOWLIST = new Set([
   'trace_id',
@@ -528,7 +535,8 @@ function scrubSdkProcessingMetadata(
   if (dsc && typeof dsc === 'object') {
     const kept: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(dsc as Record<string, unknown>)) {
-      if (DSC_FIELD_ALLOWLIST.has(key)) kept[key] = value;
+      if (!DSC_FIELD_ALLOWLIST.has(key)) continue;
+      kept[key] = typeof value === 'string' ? redactFreeText(value) : value;
     }
     const dscTransaction = (dsc as Record<string, unknown>).transaction;
     if (typeof dscTransaction === 'string') {

@@ -504,6 +504,36 @@ describe('scrubSentryTransaction', () => {
     expect(JSON.stringify(scrubbed)).not.toContain('super-secret');
   });
 
+  it('sweeps dsc fields a caller can set through the baggage header', () => {
+    // On a *continued* trace the DSC is parsed straight out of the inbound
+    // `baggage` header and the SDK filters neither keys nor values, so
+    // `release` and `environment` are caller-controlled free text that lands in
+    // the envelope's `trace` header. Allowlisting a key is not a promise about
+    // what is in it — the same lesson as `exception`/`message` one level down.
+    const scrubbed = scrubSentryTransaction(
+      transaction({
+        sdkProcessingMetadata: {
+          dynamicSamplingContext: {
+            trace_id: 'trace123',
+            public_key: 'abc123',
+            environment: 'member@example.com',
+            release: `note-for-member@example.com-${USER_UUID}`,
+            sampled: 'true',
+          },
+        },
+      }),
+    );
+
+    const dsc = (scrubbed?.sdkProcessingMetadata as Record<string, unknown>)
+      .dynamicSamplingContext as Record<string, unknown>;
+    expect(dsc.environment).toBe('[redacted:email]');
+    expect(dsc.release).not.toContain('member@example.com');
+    expect(dsc.release).not.toContain(USER_UUID);
+    // Non-free-text routing fields are untouched.
+    expect(dsc.trace_id).toBe('trace123');
+    expect(dsc.sampled).toBe('true');
+  });
+
   it('survives a malformed span without losing the whole transaction', () => {
     // `Object.entries(null)` throws, and the map runs inside the fail-closed
     // try — so an unguarded bad element would drop every good span with it.
