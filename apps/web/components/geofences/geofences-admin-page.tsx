@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2, MapPin, Plus, Power, PowerOff, Trash2 } from "lucide-react";
 import {
   useCreateGeofence,
@@ -36,6 +36,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -106,6 +111,11 @@ function formatCoordinates(
 
 export function GeofencesAdminPage() {
   const { toast } = useToast();
+  // `StudyGeofenceController` carries no `@FreeTier`, so every write here is
+  // paid-ops and mirrors the subscription gate (#841). Reads are untouched —
+  // the server guard returns early for GET, so a lapsed chapter still sees its
+  // zones.
+  const gate = useSubscriptionGate();
   const geofencesQuery = useGeofences();
   const createGeofence = useCreateGeofence();
   const updateGeofence = useUpdateGeofence();
@@ -116,7 +126,7 @@ export function GeofencesAdminPage() {
     [geofencesQuery.data],
   );
 
-  const [createOpen, setCreateOpen] = useState(false);
+  const createDialog = useGatedDialog(gate);
   const [createDraft, setCreateDraft] = useState({
     name: "",
     coordinates: "",
@@ -126,6 +136,9 @@ export function GeofencesAdminPage() {
     pause_grace_minutes: "5",
   });
 
+  // `editTargetId` still says *which* zone is being edited; whether the editor
+  // is open now belongs to the gate, so a revoke mid-edit closes it.
+  const editDialog = useGatedDialog(gate);
   const [editTargetId, setEditTargetId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     name: string;
@@ -148,6 +161,15 @@ export function GeofencesAdminPage() {
     [geofences, editTargetId],
   );
 
+  // The editor used to be open exactly while `editTarget` existed, so a refetch
+  // that dropped the zone closed it. Open state moved to the gate, so that
+  // close has to be kept explicitly — otherwise the dialog lingers with no form
+  // and a Save that has nothing to save.
+  const { open: editorOpen, setOpen: setEditorOpen } = editDialog;
+  useEffect(() => {
+    if (editorOpen && !editTarget) setEditorOpen(false);
+  }, [editorOpen, setEditorOpen, editTarget]);
+
   function openEditor(geofence: Geofence) {
     setEditTargetId(geofence.id);
     setEditDraft({
@@ -158,6 +180,7 @@ export function GeofencesAdminPage() {
       min_session_minutes: String(geofence.min_session_minutes ?? 15),
       pause_grace_minutes: String(geofence.pause_grace_minutes ?? 5),
     });
+    editDialog.setOpen(true);
   }
 
   async function submitCreate(event: React.FormEvent<HTMLFormElement>) {
@@ -194,7 +217,7 @@ export function GeofencesAdminPage() {
         title: "Study zone created",
         description: `${createDraft.name} is now live for study sessions.`,
       });
-      setCreateOpen(false);
+      createDialog.setOpen(false);
       setCreateDraft({
         name: "",
         coordinates: "",
@@ -252,7 +275,7 @@ export function GeofencesAdminPage() {
         title: "Study zone updated",
         description: `${editDraft.name} saved.`,
       });
-      setEditTargetId(null);
+      editDialog.setOpen(false);
     } catch (error) {
       toast({
         title: "Couldn't save study zone",
@@ -357,14 +380,17 @@ export function GeofencesAdminPage() {
               inside the zone.
             </p>
           </div>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <Dialog {...createDialog.dialogProps}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" {...gate.controlProps()}>
                 <Plus className="h-4 w-4" />
                 New study zone
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+            <DialogContent
+              className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
+              {...createDialog.contentProps}
+            >
               <DialogHeader>
                 <DialogTitle>Create a study zone</DialogTitle>
                 <DialogDescription>
@@ -481,9 +507,10 @@ export function GeofencesAdminPage() {
                 </div>
               </form>
               <DialogFooter>
+                {/* Cancel only closes the dialog — not a write, so not gated. */}
                 <Button
                   variant="outline"
-                  onClick={() => setCreateOpen(false)}
+                  onClick={() => createDialog.setOpen(false)}
                   disabled={createGeofence.isPending}
                 >
                   Cancel
@@ -491,7 +518,7 @@ export function GeofencesAdminPage() {
                 <Button
                   form="geofence-create-form"
                   type="submit"
-                  disabled={createGeofence.isPending}
+                  {...gate.controlProps(createGeofence.isPending)}
                 >
                   {createGeofence.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -502,6 +529,12 @@ export function GeofencesAdminPage() {
             </DialogContent>
           </Dialog>
         </header>
+
+        {/*
+          Disable, don't hide (§5 rule 4): the zones themselves stay readable
+          and every write control stays visible, pointing at this one sentence.
+        */}
+        <SubscriptionNotice gate={gate} feature="managing geofences" />
 
         {geofences.length === 0 ? (
           <EmptyState
@@ -545,9 +578,16 @@ export function GeofencesAdminPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="flex flex-wrap gap-2">
+                  {/*
+                    PATCH and DELETE /v1/geofences/:id sit behind the same guard
+                    as the create route, so the row actions mirror the same
+                    gate — gating only "New study zone" would have the page
+                    claim writes are blocked while still offering three.
+                  */}
                   <Button
                     size="sm"
                     variant="outline"
+                    {...gate.controlProps()}
                     onClick={() => openEditor(zone)}
                   >
                     Edit
@@ -555,6 +595,7 @@ export function GeofencesAdminPage() {
                   <Button
                     size="sm"
                     variant="outline"
+                    {...gate.controlProps()}
                     onClick={() => void toggleActive(zone)}
                   >
                     {zone.is_active ? (
@@ -567,6 +608,7 @@ export function GeofencesAdminPage() {
                   <Button
                     size="sm"
                     variant="ghost"
+                    {...gate.controlProps()}
                     onClick={() => void handleDelete(zone)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -578,13 +620,11 @@ export function GeofencesAdminPage() {
           </div>
         )}
 
-        <Dialog
-          open={Boolean(editTarget)}
-          onOpenChange={(open) => {
-            if (!open) setEditTargetId(null);
-          }}
-        >
-          <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+        <Dialog {...editDialog.dialogProps}>
+          <DialogContent
+            className="max-h-[80vh] overflow-y-auto sm:max-w-lg"
+            {...editDialog.contentProps}
+          >
             <DialogHeader>
               <DialogTitle>Edit study zone</DialogTitle>
               <DialogDescription>
@@ -693,9 +733,10 @@ export function GeofencesAdminPage() {
               </form>
             ) : null}
             <DialogFooter>
+              {/* Cancel only closes the dialog — not a write, so not gated. */}
               <Button
                 variant="outline"
-                onClick={() => setEditTargetId(null)}
+                onClick={() => editDialog.setOpen(false)}
                 disabled={updateGeofence.isPending}
               >
                 Cancel
@@ -703,7 +744,7 @@ export function GeofencesAdminPage() {
               <Button
                 form="geofence-edit-form"
                 type="submit"
-                disabled={updateGeofence.isPending}
+                {...gate.controlProps(updateGeofence.isPending)}
               >
                 {updateGeofence.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

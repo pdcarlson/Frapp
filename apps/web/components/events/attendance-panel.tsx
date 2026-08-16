@@ -30,6 +30,10 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray } from "@/lib/utils";
 import { useRealtimeTable } from "@/lib/realtime/use-realtime-table";
@@ -91,6 +95,11 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
   const membersQuery = useMembers();
   const updateStatus = useUpdateAttendanceStatus();
   const autoAbsent = useAutoAbsent();
+  // `PATCH /v1/events/:eventId/attendance/:userId` and the auto-absent POST
+  // carry no `@FreeTier`, so both are paid-ops and mirror the gate (#841).
+  // Reading attendance stays live — `enforceSubscription` returns early for
+  // GET, so a lapsed chapter can still see who showed up.
+  const gate = useSubscriptionGate();
 
   const [statusFilter, setStatusFilter] =
     useState<"ALL" | AttendanceStatus | "UNRECORDED">("ALL");
@@ -287,6 +296,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
+          {/* Not gated: filtering is a read, and §5 gates writes only. */}
           <Select
             value={statusFilter}
             onValueChange={(value) =>
@@ -312,7 +322,7 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
             <Button
               variant="outline"
               size="sm"
-              disabled={autoAbsent.isPending}
+              {...gate.controlProps(autoAbsent.isPending)}
               onClick={runAutoAbsent}
             >
               {autoAbsent.isPending ? (
@@ -326,6 +336,12 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/*
+          Disable, don't hide (§5 rule 4): the roster, the counts, and the
+          filter keep working for a lapsed chapter — only recording attendance
+          stops, and this says why.
+        */}
+        <SubscriptionNotice gate={gate} feature="managing events" />
         {filteredRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No members match that filter.
@@ -384,9 +400,18 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
                         );
                       }}
                     >
+                      {/*
+                        The per-row status write hits the same guard as
+                        auto-absent, so gating only the header button would
+                        have the panel claim writes are blocked while still
+                        offering one per member. The props go on the trigger
+                        rather than the Radix root — the root is not a DOM
+                        node, so `aria-describedby` would be dropped there.
+                      */}
                       <SelectTrigger
                         className="w-[150px]"
                         aria-label={`Update attendance for ${row.displayName}`}
+                        {...gate.controlProps()}
                       >
                         <SelectValue placeholder="Set status" />
                       </SelectTrigger>

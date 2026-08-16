@@ -41,6 +41,10 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -120,6 +124,10 @@ function getCurrentPosition(): Promise<GeolocationPosition> {
 
 export function StudyPage() {
   const { toast } = useToast();
+  // `StudySessionController` carries no `@FreeTier`, so every one of its five
+  // writes is paid-ops and the member-facing controls have to mirror the guard
+  // (#841). The heartbeat is the exception below — see `sendHeartbeat`.
+  const gate = useSubscriptionGate();
   const geofencesQuery = useGeofences();
   const sessionsQuery = useStudySessions();
   const startSession = useStartStudySession();
@@ -233,6 +241,10 @@ export function StudyPage() {
     };
   });
 
+  // Not subscription-gated: the heartbeat is a background timer with no
+  // affordance, so there is nothing to disable and no effort to protect. If the
+  // subscription lapses mid-session the server rejects it and the session
+  // expires on staleness, which is the same outcome as the tab being closed.
   const sendHeartbeat = useCallback(async () => {
     try {
       const pos = await getCurrentPosition();
@@ -342,9 +354,11 @@ export function StudyPage() {
   useEffect(() => {
     if (!activeSession) return undefined;
     function handleUnload() {
-      // Best-effort. sendBeacon would be better but the API auth flow
-      // expects a bearer token on a real fetch; using the mutation here
-      // works for most browsers that keep pending fetches during pagehide.
+      // Best-effort, and ungated for the same reason as the heartbeat: closing
+      // a tab is not an affordance this page can disable.
+      // sendBeacon would be better but the API auth flow expects a bearer token
+      // on a real fetch; using the mutation here works for most browsers that
+      // keep pending fetches during pagehide.
       void stopSession.mutateAsync().catch(() => undefined);
     }
     window.addEventListener("pagehide", handleUnload);
@@ -450,6 +464,13 @@ export function StudyPage() {
         </p>
       </header>
 
+      {/*
+        Disable, don't hide (§5 rule 4): session history is a read and stays
+        visible, so the notice sits above both the live-session card and the
+        starter to explain why its controls went dead.
+      */}
+      <SubscriptionNotice gate={gate} feature="study sessions" />
+
       {activeSession ? (
         <Card
           className={pageHidden ? "border-amber-500/40 bg-amber-500/5" : ""}
@@ -501,9 +522,15 @@ export function StudyPage() {
             ) : null}
           </CardContent>
           <CardFooter className="flex flex-wrap gap-2">
+            {/*
+              Toggling this fires POST /study-sessions/pause or /resume through
+              the effect above, so it is a write like any other and gates with
+              the rest (§5 "gate every write on the surface").
+            */}
             <Button
               variant="outline"
               onClick={() => setIsPaused((prev) => !prev)}
+              {...gate.controlProps()}
             >
               {isPaused ? (
                 <Play className="h-4 w-4" />
@@ -515,7 +542,7 @@ export function StudyPage() {
             <Button
               variant="destructive"
               onClick={() => void handleStop()}
-              disabled={stopSession.isPending}
+              {...gate.controlProps(stopSession.isPending)}
             >
               {stopSession.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -550,6 +577,10 @@ export function StudyPage() {
                   >
                     Study zone
                   </label>
+                  {/*
+                    Left live: picking a zone is local state, not a write, and
+                    the Start button next to it is what the gate stops.
+                  */}
                   <Select
                     value={selectedGeofenceId || geofences[0]?.id || ""}
                     onValueChange={setSelectedGeofenceId}
@@ -568,7 +599,7 @@ export function StudyPage() {
                 </div>
                 <Button
                   onClick={() => void handleStart()}
-                  disabled={startSession.isPending}
+                  {...gate.controlProps(startSession.isPending)}
                 >
                   {startSession.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

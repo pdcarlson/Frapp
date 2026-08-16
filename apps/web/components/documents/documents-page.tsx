@@ -35,6 +35,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -86,6 +91,9 @@ function extensionOf(name: string): string {
   return name.slice(dot + 1).toLowerCase();
 }
 
+// Deliberately ungated: the signed link comes from `GET /v1/documents/:id`, and
+// `enforceSubscription` returns early for GET — a lapsed chapter can still read
+// everything it owns (§5 "writes only").
 function DownloadButton({ id }: { id: string }) {
   const { toast } = useToast();
   const query = useDocument(id);
@@ -134,6 +142,10 @@ function DownloadButton({ id }: { id: string }) {
 
 export function DocumentsPage() {
   const { toast } = useToast();
+  // Every write route on `ChapterDocumentController` (upload URL, confirm,
+  // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
+  // subscription guard — one gate covers the surface (#841).
+  const gate = useSubscriptionGate();
   const documentsQuery = useDocuments();
   const requestUpload = useRequestDocumentUploadUrl();
   const confirmUpload = useConfirmDocumentUpload();
@@ -168,7 +180,7 @@ export function DocumentsPage() {
     );
   }, [activeFolder, documents]);
 
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const uploadDialog = useGatedDialog(gate);
   const [uploadDraft, setUploadDraft] = useState<{
     title: string;
     description: string;
@@ -241,7 +253,7 @@ export function DocumentsPage() {
         title: "Document uploaded",
         description: `${file.name} is now in the chapter library.`,
       });
-      setUploadOpen(false);
+      uploadDialog.setOpen(false);
       setUploadDraft({ title: "", description: "", folder: "", file: null });
     } catch (error) {
       toast({
@@ -306,13 +318,16 @@ export function DocumentsPage() {
           </p>
         </div>
         <Can permission="chapter_docs:upload">
-          <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <Dialog {...uploadDialog.dialogProps}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" {...gate.controlProps()}>
                 <Upload className="h-4 w-4" /> Upload document
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent
+              className="sm:max-w-lg"
+              {...uploadDialog.contentProps}
+            >
               <DialogHeader>
                 <DialogTitle>Upload a chapter document</DialogTitle>
                 <DialogDescription>
@@ -383,9 +398,11 @@ export function DocumentsPage() {
                 </div>
               </form>
               <DialogFooter>
+                {/* Cancel only closes the dialog — gating the way out of a
+                    surface the gate just blocked would be a trap. */}
                 <Button
                   variant="outline"
-                  onClick={() => setUploadOpen(false)}
+                  onClick={() => uploadDialog.setOpen(false)}
                   disabled={uploading}
                 >
                   Cancel
@@ -393,7 +410,7 @@ export function DocumentsPage() {
                 <Button
                   form="doc-upload-form"
                   type="submit"
-                  disabled={uploading || !uploadDraft.file}
+                  {...gate.controlProps(uploading || !uploadDraft.file)}
                 >
                   {uploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -406,6 +423,13 @@ export function DocumentsPage() {
         </Can>
       </header>
 
+      {/*
+        Disable, don't hide (§5 rule 4): browsing and downloading stay live for
+        a lapsed chapter, so the library keeps working — only the writes stop,
+        and this says why.
+      */}
+      <SubscriptionNotice gate={gate} feature="managing documents" />
+
       <div className="grid gap-4 md:grid-cols-[240px_1fr]">
         <Card>
           <CardHeader className="pb-3">
@@ -415,6 +439,12 @@ export function DocumentsPage() {
               name during upload.
             </CardDescription>
           </CardHeader>
+          {/*
+            Ungated on purpose: these are client-side filters over the already
+            loaded list, not folder writes — the API's folder create/rename/
+            delete routes have no control on this page, and the one way to make
+            a folder here is the gated upload dialog's Folder field.
+          */}
           <CardContent className="space-y-1 p-2">
             <button
               type="button"
@@ -496,11 +526,18 @@ export function DocumentsPage() {
                     <div className="flex items-center gap-2">
                       <DownloadButton id={doc.id} />
                       <Can permission="chapter_docs:manage">
+                        {/*
+                          `DELETE /v1/documents/:id` sits behind the same guard
+                          as upload, so gating only the upload trigger would
+                          have the page claim writes are blocked while still
+                          offering one per row.
+                        */}
                         <Button
                           variant="ghost"
                           size="icon"
                           aria-label={`Delete ${doc.title}`}
                           onClick={() => void handleDelete(doc)}
+                          {...gate.controlProps()}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

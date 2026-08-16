@@ -18,6 +18,10 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
 
 type EventRecord = Record<string, unknown>;
@@ -62,6 +66,9 @@ export function EventEditorDialog({
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
+  // `POST /v1/events` and `PATCH /v1/events/:id` carry no `@FreeTier`, so both
+  // are paid-ops and this dialog has to mirror the subscription gate (#841).
+  const gate = useSubscriptionGate();
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -263,6 +270,15 @@ export function EventEditorDialog({
           </div>
         ) : null}
 
+        {/*
+          §5 rule 1 wants the gate on the trigger, but "New Event" / "Edit"
+          live in the parents that own `open` (events-page, event-detail-sheet),
+          so the earliest point this component controls is the top of the form.
+          The notice therefore states the blocker before anything is typed,
+          rather than leaving the save button disabled with no reason.
+        */}
+        <SubscriptionNotice gate={gate} feature="managing events" />
+
         <div className="grid gap-3">
           <label className="space-y-1 text-sm">
             <span className="text-muted-foreground">Event name</span>
@@ -409,10 +425,15 @@ export function EventEditorDialog({
         </div>
 
         <DialogFooter>
+          {/* Cancel only closes the dialog — gating the way out of a surface the
+              gate just blocked would be a trap. */}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={usingPreviewData || isSubmitting}>
+          <Button
+            onClick={handleSubmit}
+            {...gate.controlProps(usingPreviewData || isSubmitting)}
+          >
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {submitLabel}
           </Button>

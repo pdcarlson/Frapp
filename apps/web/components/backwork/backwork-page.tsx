@@ -43,6 +43,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -177,6 +182,11 @@ function InlineDownloadCell({ id }: { id: string }) {
 
 export function BackworkPage() {
   const { toast } = useToast();
+  // `POST /v1/backwork/upload-url` and `POST /v1/backwork` carry no `@FreeTier`,
+  // so the upload flow is paid-ops and its trigger has to mirror the
+  // subscription gate (#841). Browsing, filtering, and the signed download link
+  // are reads — `enforceSubscription` returns early for GET, so they stay live.
+  const gate = useSubscriptionGate();
   const [filters, setFilters] = useState<{
     search: string;
     department_id: string;
@@ -193,7 +203,7 @@ export function BackworkPage() {
     document_variant: "",
   });
   const [appliedFilters, setAppliedFilters] = useState(filters);
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const uploadDialog = useGatedDialog(gate);
   const [uploadDraft, setUploadDraft] = useState<{
     title: string;
     department_code: string;
@@ -359,7 +369,7 @@ export function BackworkPage() {
         title: "Upload complete",
         description: `${file.name} is now in the backwork library.`,
       });
-      setUploadOpen(false);
+      uploadDialog.setOpen(false);
       setUploadDraft({
         title: "",
         department_code: "",
@@ -421,13 +431,16 @@ export function BackworkPage() {
           </p>
         </div>
         <Can permission="backwork:upload">
-          <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+          <Dialog {...uploadDialog.dialogProps}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" {...gate.controlProps()}>
                 <Upload className="h-4 w-4" /> Upload
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-xl">
+            <DialogContent
+              className="max-h-[80vh] overflow-y-auto sm:max-w-xl"
+              {...uploadDialog.contentProps}
+            >
               <DialogHeader>
                 <DialogTitle>Upload backwork</DialogTitle>
                 <DialogDescription>
@@ -631,9 +644,13 @@ export function BackworkPage() {
                 </div>
               </form>
               <DialogFooter>
+                {/*
+                  Cancel is not gated: it closes the dialog rather than writing,
+                  and a revoked subscription must still leave a way out.
+                */}
                 <Button
                   variant="outline"
-                  onClick={() => setUploadOpen(false)}
+                  onClick={() => uploadDialog.setOpen(false)}
                   disabled={uploading}
                 >
                   Cancel
@@ -641,7 +658,7 @@ export function BackworkPage() {
                 <Button
                   form="backwork-upload-form"
                   type="submit"
-                  disabled={uploading || !uploadDraft.file}
+                  {...gate.controlProps(uploading || !uploadDraft.file)}
                 >
                   {uploading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -653,6 +670,17 @@ export function BackworkPage() {
           </Dialog>
         </Can>
       </header>
+
+      {/*
+        Disable, don't hide (§5 rule 4): the library stays browsable and
+        downloadable on a lapsed chapter, so only the upload flow goes dark and
+        it explains itself here. Scoped to the same permission as the controls
+        it describes — a member who never sees an Upload button has nothing to
+        restore, and the sentence would just be noise on their screen.
+      */}
+      <Can permission="backwork:upload">
+        <SubscriptionNotice gate={gate} feature="uploading backwork" />
+      </Can>
 
       <Card>
         <CardHeader>
