@@ -19,12 +19,18 @@ const mockState = vi.hoisted(() => ({
   claims: null as Record<string, unknown> | null,
   claimsError: null as { message: string } | null,
   /**
-   * When set, `getClaims` blocks until the test releases it. Without this the
+   * When closed, `getClaims` parks until the test releases it. Without this the
    * mocked read settles inside the same `act()` that triggered it, so the
    * in-flight window — the only place a gate-blocking regression is visible —
    * cannot be observed at all.
+   *
+   * Waiters are a list rather than a single resolver because more than one read
+   * can be parked at once: a token change re-runs the claim effect while the
+   * mount read is still behind the gate. Holding one resolver overwrote the
+   * earlier one, stranding a promise that could then never settle.
    */
-  claimsGate: null as (() => void) | null,
+  claimsGateClosed: false,
+  claimsGateWaiters: [] as Array<() => void>,
   authChangeHandlers: [] as AuthChangeHandler[],
   signInWithPasswordResult: { error: null as { message: string } | null },
   signInWithOtpResult: { error: null as { message: string } | null },
@@ -78,9 +84,9 @@ vi.mock("./supabase", async () => {
         };
       }),
       getClaims: vi.fn(async () => {
-        if (mockState.claimsGate) {
+        if (mockState.claimsGateClosed) {
           await new Promise<void>((release) => {
-            mockState.claimsGate = release;
+            mockState.claimsGateWaiters.push(release);
           });
         }
         return {
@@ -133,6 +139,26 @@ function emitAuthChange(
   }
 }
 
+/** Hold every claim read issued from here on until `releaseClaimsGate()`. */
+function closeClaimsGate() {
+  mockState.claimsGateClosed = true;
+}
+
+/**
+ * Let every parked claim read finish, and settle the resulting renders here.
+ *
+ * Releasing after the test body returns lands those state updates in whatever
+ * test runs next, which is a genuine cross-test leak — hence the `act`.
+ */
+async function releaseClaimsGate() {
+  mockState.claimsGateClosed = false;
+  const waiters = mockState.claimsGateWaiters;
+  mockState.claimsGateWaiters = [];
+  await act(async () => {
+    for (const release of waiters) release();
+  });
+}
+
 const SESSION = {
   access_token: "access-token-1",
   user: { email: "officer@university.edu" },
@@ -161,7 +187,8 @@ beforeEach(async () => {
   mockState.initialSession = null;
   mockState.claims = null;
   mockState.claimsError = null;
-  mockState.claimsGate = null;
+  mockState.claimsGateClosed = false;
+  mockState.claimsGateWaiters = [];
   mockState.authChangeHandlers = [];
   mockState.signInWithPasswordResult = { error: null };
   mockState.signInWithOtpResult = { error: null };
@@ -343,27 +370,47 @@ describe("AuthSessionProvider — chapter context", () => {
     mockState.claims = { sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
-    await waitFor(() => expect(result.current.isChapterResolving).toBe(false));
+    // Wait for the authenticated state, not just for the flag to read false.
+    // The flag is `status === "authenticated" && !hasReadChapterClaim`, so it
+    // also reads false throughout `hydrating` — before `getSession()` has
+    // resolved and before the first claim read has even been issued. Waiting on
+    // the flag alone let this test proceed with the mount read still ahead of
+    // it; that read then parked behind the gate closed below and never marked
+    // the claim read, so the assertion after it saw `true`. That is what made
+    // the suite fail roughly one run in six, and it is why the run only failed
+    // as part of the full suite: cross-file scheduling decides whether
+    // `getSession()`'s microtasks drain before `waitFor` first samples.
+    await waitFor(() => {
+      expect(result.current.status).toBe("authenticated");
+      expect(result.current.isChapterResolving).toBe(false);
+    });
 
     // Hold the next read open so the in-flight window is observable. If the
     // flag tracked "a read is in flight" rather than "the first read is done",
     // it would be true right here — and the gate would be rendering nothing.
-    mockState.claimsGate = () => {};
+    closeClaimsGate();
     await act(async () => {
       emitAuthChange({ ...SESSION, access_token: "access-token-2" });
     });
 
     expect(result.current.isChapterResolving).toBe(false);
 
-    // Release inside `act` and let it settle here. Releasing after the test body
-    // returns lands the resulting state update in whatever test runs next,
-    // which is a genuine cross-test leak — it made the suite fail roughly one
-    // run in six.
-    await act(async () => {
-      const release = mockState.claimsGate;
-      mockState.claimsGate = null;
-      release?.();
-    });
+    // Pin that the re-read actually happened and is still in flight, or the
+    // assertion above passes just as well when the effect stops re-reading at
+    // all: the gate then holds nothing, and the flag is trivially false because
+    // no read is outstanding. `lib/select-chapter.ts` is what depends on the
+    // re-read — activating a chapter writes no local state and relies entirely
+    // on the refreshed token re-running the claim effect — so that regression
+    // would leave the chapter picker doing nothing until a cold start, with the
+    // suite green.
+    //
+    // Exactly one read is parked, never two: the mount read has already
+    // finished, which is precisely what the two-part wait above guarantees.
+    // A second waiter here would mean that wait had gone back to returning
+    // early.
+    expect(mockState.claimsGateWaiters).toHaveLength(1);
+
+    await releaseClaimsGate();
   });
 
   it("drops the chapter when a different account signs in", async () => {
