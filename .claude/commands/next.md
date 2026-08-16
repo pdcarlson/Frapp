@@ -142,7 +142,8 @@ issue, since a named issue may already be held. Several numbers claim as one bat
 the coherence test still apply, and if the named set doesn't honestly batch, say so in your reply and
 ask rather than silently splitting or silently shipping an incoherent PR. Backlog issues are
 claimable as usual; **`triage`-labeled issues never are, in any mode** (sole exception: the
-record-keeping claim in "Nothing discovered is dropped"). If you lose the race on a named issue,
+record-keeping claim in "Nothing discovered is dropped"). **§0.2 condition 5 applies in named mode
+too** — a human naming a `[human]` item does not make it doable by an agent. If you lose the race on a named issue,
 **report who holds it** — do not fall back to ranking, because the human picked the issues, not a
 category. Losing one member of a named batch does not abandon the rest: proceed with what you won —
 subject to §0.5's coherence escape when the lost member was the batch's point — and report the loss.
@@ -179,7 +180,9 @@ housekeeping (§0.7) waits until after you hold the claim.
 **0.1 — Generate `CLAIM_ID`.** One `openssl rand -hex 4`, reused all run.
 
 **0.2 — Build the candidate set.** `list_issues(owner:"pdcarlson", repo:"frapp", state:OPEN)` —
-request the `labels` field and page as needed. An issue is a candidate when **all** hold:
+request the **`labels` and `title`** fields and page as needed (condition 5 reads `title`; omitting
+it silently makes that condition unevaluable, which fails **open**). An issue is a candidate when
+**all** hold:
 
 1. It carries **no state label** (`triage`, `in-progress`, `in-review` all disqualify — `triage`
    needs a human-accepted promotion and a priority first; `in-review` means a PR is already
@@ -194,6 +197,24 @@ request the `labels` field and page as needed. An issue is a candidate when **al
    nothing. A **closed, unmerged** PR does not disqualify: claim it and record
    `Prior art: PR #NNN (closed, unmerged)` in the claim comment. Treat a PR as authoritative only
    when it names the issue number.
+5. **No `[human]` tag in the title's leading bracket run**, matched **case-insensitively**. A
+   `[human]` item is by definition something no agent session can do — that is the whole of this
+   condition's job.
+
+   Match the **whole leading run of `[...]` tags**, not just the first one — `[pr-followup][human]
+   Enable the custom_access_token_hook` (#805) does not *begin* with `[human]`, and neither do
+   #806/#811/#812/#813/#826. `GITHUB_PM.md`'s hold rule already names both spellings
+   (`[human]`/`[pr-followup][human]`). Also honour its third form: the body opener
+   `**Human action required — hold in triage`, for the older items that predate the prefix
+   (see #908, and #765/#689 which carry no bracket at all). The convention is load-bearing
+   elsewhere — the curator and triage skills read it; `/next` was the one place that never did.
+
+**Epics are candidates like anything else.** A parent issue is not disqualified, is not
+deprioritised, and is not announced differently — if it ranks first, take it. The real hazard is
+not *claiming* an epic, it is **closing** one: a single-slice PR carrying `Fixes #<epic>` closes
+the parent on merge with its remaining slices unwritten. That is a Phase 4 problem and it is
+solved there (see "Never `Fixes` a parent with open children"), so nothing about it belongs in
+candidacy. Do not re-add an epic filter here.
 
 Read the body with `issue_read get` where the list is thin. Surface each candidate's **`Estimate:`**
 line and its **Agent brief** line (`depth:` / `model:` / `ultracode:`, when present) as sizing
@@ -273,7 +294,9 @@ it never runs ahead of your claim. Over **`in-progress`** only — **`in-review`
 - **Live claim** → leave it alone.
 - **Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`**
   (`git ls-remote --heads origin` — a push counts as a heartbeat) → reclaimable. It enters §0.3 at the
-  top of the ranking and must still clear §0.2's blocker and PR criteria. Taking it needs an
+  top of the ranking and must still clear §0.2's blocker and PR criteria **and condition 5** — a
+  `[human]` item claimed by a since-dead session is the one case where a stale `in-progress` label
+  would otherwise launder it straight past the filter that exists to stop it. Taking it needs an
   `AGENT-RECLAIM`; then wait a full read cycle *and re-read* before mutating anything.
 - **No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`** → post
   `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Do **not** pick it up
@@ -442,6 +465,28 @@ named issue closes as `completed` when the PR merges. Body: what changed, why, w
 acceptance criteria **each member** satisfies, and the *Flagged for review* list. Doc-sync is per
 member too: the gate is PR-level and binary, so nothing mechanical catches a batch that documents
 only one of its issues — each member's §1.2 drift items get their docs touch.
+
+**Never `Fixes` a parent with open children.** Before writing the line, `issue_read get` each
+member. When it reports `has_children: true` and any child is still open, write **`Part of #N`**
+instead — a prose reference GitHub does not treat as a closing keyword — and say in the body which
+slice this PR actually delivers. `Fixes #<parent>` would close the whole epic on merge with its
+remaining slices unwritten, and the merge is irreversible in a way the claim never was.
+
+This is the *only* place epics need special handling. Claiming one is fine and §0.2 deliberately
+does not filter them; the damage is closing one early, and it is this line that does that. Two
+refinements worth knowing:
+
+- **`completed >= total` in `sub_issues_summary` means `Fixes` is correct again** — every slice has
+  landed, so closing the parent is exactly right.
+- **A parent+sub-issue batch keeps `Fixes` on both.** If every open child is a member of this same
+  PR, they all close together and nothing is stranded — that is the inseparable unit the invariant
+  above sanctions.
+
+Gate on `has_children`, not on `sub_issues_summary` alone: verified 2026-08-16, `issue_read get`
+returns `has_parent`/`has_children` on every issue but returns `sub_issues_summary` **only when
+children exist** (#426 → both; #718, #947 → neither). A check written as `total > completed` reads
+`undefined > undefined` → false when the summary is missing, and fails **open** into the exact
+irreversible case it exists to prevent.
 
 Move **every member** to **In Review**: swap its `in-progress` label for **`in-review`**
 (read-modify-write) and `add_issue_comment` the PR link on each. Do **not** post an

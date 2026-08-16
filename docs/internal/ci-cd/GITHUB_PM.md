@@ -108,6 +108,41 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 issue body's meta block. `/next` §1.1 verifies blockers against the repo, not the tracker, before
 honoring them; the triage routine adds/corrects the lines.
 
+**`[human]` items are held by their title, not by `triage`.** The hold rule below keys on the
+`[human]` prefix, but until 2026-08-16 the only thing that actually kept `/next` off them was the
+`triage` label — so any routine or human that promoted one exposed it (#709 was already through).
+`/next` §0.2 now reads the title directly; the label is a convenience. Match the **whole leading
+bracket run**, case-insensitively: `[pr-followup][human] …` (#805, #806, #811–#813, #826) does not
+begin with `[human]`. The `**Human action required — hold in triage` body opener is the third
+recognised form, for items predating the prefix (#908, and #765/#689 which carry no bracket at
+all).
+
+**Epics ARE claimable, deliberately.** `/next` exists to always find an agent useful work, so its
+candidacy filter stays permissive: it excludes only what an agent genuinely cannot do. A parent
+issue is ordinary work — an agent picking up an epic and shipping a slice of it is a good outcome,
+not a failure mode, and there is **no epic filter in §0.2**. Do not add one, and do not add an
+`epic` label expecting it to gate anything.
+
+**What is guarded is closing an epic, not claiming one.** The real hazard is a single-slice PR
+carrying `Fixes #<epic>`: the merge closes the parent with its remaining slices unwritten, and
+unlike a claim, a merge is not reversible. So the rule lives at PR-authoring time (`/next` Phase 4):
+
+> `issue_read get` each issue the PR names. When `has_children: true` and any child is still open,
+> write **`Part of #N`** instead of `Fixes #N`. `Fixes` is correct again once
+> `sub_issues_summary` shows `completed >= total`, or when every open child is a member of the
+> same PR.
+
+Gate that on `has_children`, **not** `sub_issues_summary` alone — the summary is documented as
+*optional* and is returned only when children exist (verified 2026-08-16: #426 carries both, #718
+and #947 carry neither), so `total > completed` reads `undefined > undefined` → false when it is
+missing and fails open into the irreversible case.
+
+**Attach an epic's slices as native sub-issues when you file them.** That is what makes the Phase 4
+guard able to see them at all. #718 and #720 are both `[Epic]` with `has_children: false` because
+nobody ever attached their slices — a PR could close either with `Fixes` today and nothing would
+notice. `Blocked by #N` lines remain worth adding on such an epic; §1.1 re-verifies them against
+the repo, so they degrade honestly as slices land.
+
 **Estimates** are an optional **`Estimate: <fibonacci>`** line in the body meta block (0,1,2,3,5,
 8,13,21) — sizing context for `/next`'s batching caps, never a filter or gate.
 
