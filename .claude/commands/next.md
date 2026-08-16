@@ -194,6 +194,32 @@ request the `labels` field and page as needed. An issue is a candidate when **al
    nothing. A **closed, unmerged** PR does not disqualify: claim it and record
    `Prior art: PR #NNN (closed, unmerged)` in the claim comment. Treat a PR as authoritative only
    when it names the issue number.
+5. **No `[Epic]` or `[human]` tag in the title's leading bracket run** (request the `title` field
+   alongside `labels` — it costs nothing). An epic is a container for slices, not a unit of work:
+   shipping one slice under `Fixes #<epic>` closes the whole thing with its siblings unwritten. A
+   `[human]` item is by definition something no agent session can do.
+
+   Match the **whole leading run of `[...]` tags**, not just the first one — `[pr-followup][human]
+   Enable the custom_access_token_hook` (#805) does not *begin* with `[human]`, and neither do
+   #806/#811/#812/#813/#826. `GITHUB_PM.md`'s hold rule already names both spellings
+   (`[human]`/`[pr-followup][human]`). Also honour its third form: the body opener
+   `**Human action required — hold in triage`, for the older items that predate the prefix
+   (see #908). Both conventions are load-bearing elsewhere — the curator and triage skills read
+   them; `/next` was the one place that never did.
+6. It is **not a parent with children** — `has_children: true` disqualifies. `Blocked by #N` body
+   lines are the *only* dependency mechanism the rest of this filter understands, and epics do not
+   carry them: they express the same relationship as native sub-issue links, which nothing here
+   would otherwise read. Checking this needs `issue_read get`, so it is evaluated **lazily in
+   §0.5** against the candidate you are about to claim rather than across the whole list.
+
+   Key on **`has_children`**, not on `sub_issues_summary`. Verified 2026-08-16 against this repo:
+   `issue_read get` returns `has_parent`/`has_children` on every issue, but returns
+   `sub_issues_summary` *only when children exist* (#426 → `has_children: true` plus
+   `{total: 21, completed: 6}`; #718 and #947 → neither field). The MCP tool's own description
+   calls the summary an **optional** relationship summary, so a condition written against it alone
+   fails **open** — silently claiming the epic — exactly where it matters most. Where the summary
+   is present, quote it in the skip line. A parent whose children are *all* closed is still not
+   work: that is a bookkeeping close, so report it under §0.7 housekeeping instead of claiming it.
 
 Read the body with `issue_read get` where the list is thin. Surface each candidate's **`Estimate:`**
 line and its **Agent brief** line (`depth:` / `model:` / `ultracode:`, when present) as sizing
@@ -224,10 +250,14 @@ claim is the comment; the `in-progress` label is a projection of it.** For each 
 order:
 
 1. `issue_read get_comments` — skip if a live claim exists.
-2. **Post the claim comment first** (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM`
+2. `issue_read get` — skip when `has_children` is true (§0.2 condition 6). This is the one filter
+   that cannot run off the list, and it runs **here**, before the first write, precisely because
+   "claim before you think" means a bad candidate is otherwise announced to the tracker before
+   anyone reads it. One extra call per claim attempt, not per candidate.
+3. **Post the claim comment first** (`add_issue_comment` with `AGENT-CLAIM`, or `AGENT-RECLAIM`
    for a §0.7 takeover).
-3. Then add the **`in-progress`** label (read-modify-write the full label set).
-4. **VERIFY (§0.6).** Lost → yield and take the next candidate.
+4. Then add the **`in-progress`** label (read-modify-write the full label set).
+5. **VERIFY (§0.6).** Lost → yield and take the next candidate.
 
 Comment before label, always: if the session dies between the two writes, the issue keeps a live
 claim and the §0.2 filter still honours it. Walk until you win or the list is exhausted (cap 8). If
@@ -273,8 +303,11 @@ it never runs ahead of your claim. Over **`in-progress`** only — **`in-review`
 - **Live claim** → leave it alone.
 - **Expired lease, no linked PR in any state but closed-unmerged, and no branch pushed within `LEASE`**
   (`git ls-remote --heads origin` — a push counts as a heartbeat) → reclaimable. It enters §0.3 at the
-  top of the ranking and must still clear §0.2's blocker and PR criteria. Taking it needs an
-  `AGENT-RECLAIM`; then wait a full read cycle *and re-read* before mutating anything.
+  top of the ranking and must still clear §0.2's blocker and PR criteria **and conditions 5–6
+  (title prefix, `has_children`)** — an epic claimed by a since-dead session is the one case where
+  a stale `in-progress` label would otherwise launder it straight past the filter that exists to
+  stop it. Taking it needs an `AGENT-RECLAIM`; then wait a full read cycle *and re-read* before
+  mutating anything.
 - **No claim comment at all, no linked PR, `updated_at` older than `ORPHAN_AGE`** → post
   `AGENT-STALE-FLAG` and remove the `in-progress` label (back to Backlog). Do **not** pick it up
   this run.

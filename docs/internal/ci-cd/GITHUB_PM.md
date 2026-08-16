@@ -108,6 +108,32 @@ explicit prioritization" rule. Remove `triage` and add exactly one `P1`–`P4` i
 issue body's meta block. `/next` §1.1 verifies blockers against the repo, not the tracker, before
 honoring them; the triage routine adds/corrects the lines.
 
+**Epics and `[human]` items are never `/next` candidates, and labels are not what protects them.**
+Two structural rules, both enforced in `/next` §0.2:
+
+- **A parent with children is not work.** `issue_read get` → `has_children: true` disqualifies.
+  This exists because the two ways this repo expresses dependency never met: slices hang off an
+  epic as **native sub-issues**, while `/next` understood only **`Blocked by #N` body lines** —
+  and an epic does not carry `Blocked by` lines pointing at its own children, because that is
+  backwards from how epics decompose. The failure mode is specific and expensive: an agent claims
+  the epic, ships one coherent slice under `Fixes #<epic>`, and the merge closes it with the
+  remaining slices unwritten. **Key on `has_children`, not `sub_issues_summary`** — the latter is
+  documented as an *optional* summary and is returned only when children exist (verified
+  2026-08-16: #426 carries both, #718 and #947 carry neither), so a check written against it alone
+  fails open.
+- **`[human]` items are held by their title, not by `triage`.** The hold rule below keys on the
+  `[human]` prefix, but until 2026-08-16 the only thing that actually kept `/next` off them was
+  the `triage` label — so any routine or human that promoted one exposed it (#709 was already
+  through). The title check is now the guard; the label is a convenience. Match the **whole
+  leading bracket run**: `[pr-followup][human] …` (#805, #806, #811–#813, #826) does not begin
+  with `[human]`. The `**Human action required — hold in triage` body opener is the third
+  recognised form, for items predating the prefix (#908).
+
+Neither rule needs a new label, and **do not add an `epic` label** expecting it to help: the check
+reads the native sub-issue graph, which is the thing that is actually true. Adding `Blocked by #N`
+lines to an epic is still a valid *belt-and-braces* move and degrades honestly as slices land, but
+it is no longer required to keep the epic unclaimable.
+
 **Estimates** are an optional **`Estimate: <fibonacci>`** line in the body meta block (0,1,2,3,5,
 8,13,21) — sizing context for `/next`'s batching caps, never a filter or gate.
 
