@@ -168,13 +168,16 @@ CI runs as domain-specific parallel jobs on every PR to `main` or `production`. 
 | `dependency-audit`   | npm audit gate — non-allowlisted high/critical advisories fail (`scripts/check-npm-audit.mjs`, #618) | Yes (after one-time rollout: admin re-runs `npm run configure:branch-protection` once the job is green on the target branch) |
 | `branch-policy`      | PRs to `production` must come from `main`                                                            | Yes        |
 
-### Additional Required Checks
+### Additional Docs Checks
 
-These checks are also required for merge:
+Both run in `.github/workflows/docs.yml`. Only `docs-spec-sync` is merge-blocking today — see
+[`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md) for why `doc-paths` reports first and how it
+gets promoted:
 
-| Check            | Provider       | What it validates                               |
-| ---------------- | -------------- | ----------------------------------------------- |
-| `docs-spec-sync` | GitHub Actions | Docs/spec sync on PRs (`check-docs-impact.mjs`) |
+| Check            | Provider       | What it validates                               | Required?  |
+| ---------------- | -------------- | ----------------------------------------------- | ---------- |
+| `docs-spec-sync` | GitHub Actions | Docs/spec sync **and** structure on PRs (`check-docs-impact.mjs` + `check-docs-structure.mjs`) | Yes |
+| `doc-paths`      | GitHub Actions | Backticked repo-path citations in docs resolve (`check-doc-paths.mjs`, whole-tree) | Not yet — reports only; whole-tree scope makes it blocking beyond the PR's own diff, so promotion is a deliberate step ([`DOCS_CI.md`](../../docs/internal/ci-cd/DOCS_CI.md)) |
 
 **Code review is a local pre-push gate, not a CI check** (ADR-14 2026-06-04 amendment). The
 `.claude/hooks/pre-push-review-gate.sh` hook blocks the first `git push` of each branch HEAD and requires

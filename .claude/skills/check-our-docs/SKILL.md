@@ -69,6 +69,15 @@ That last row matters as much as the others. An ADR's rationale is not a claim a
 is the record. Don't rewrite history because the code moved on — add an amendment, which is what
 [`spec/architecture/README.md`](../../../spec/architecture/README.md) already does.
 
+**When a doc names its own source, read that source whole.** A grep tells you whether your pattern
+matched, not whether the fact is there — and the answer is often in a second declaration a few lines
+away. Concretely: this skill's own PR claimed `docs-spec-sync` might not be a required check,
+because `CI_CHECKS` in `scripts/configure-branch-protection.mjs` does not contain it. The same file
+declares a **separate `DOCS_CHECKS` array** that does, and merges both into `ALL_REQUIRED_CHECKS`.
+The docs were right and the verification was wrong — one topic, two locations, conclusion drawn from
+the first. That is the same failure shape as the `ENV_REFERENCE.md` story above, which is the point:
+it catches careful readers, and grep makes it easier, not harder.
+
 **3. Verify before you act, cheapest first.** A path check is seconds; don't skip it because the
 doc reads well. Escalate to a provider call only when the claim is genuinely about provider state.
 
