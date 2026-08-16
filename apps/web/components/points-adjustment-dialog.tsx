@@ -30,6 +30,15 @@ type PointsAdjustmentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdjusted: () => Promise<void> | void;
+  /**
+   * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
+   * contract across `dialogProps` and `contentProps`, and a parent that owns
+   * `open` while this component owns the content cannot reach the second half
+   * on its own — so the revoke-path focus redirect would silently degrade to
+   * Radix's default, which refocuses a trigger that just went `disabled` and
+   * therefore drops focus to `<body>`. Pass `contentProps.onCloseAutoFocus`.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -43,6 +52,7 @@ export function PointsAdjustmentDialog({
   open,
   onOpenChange,
   onAdjusted,
+  onCloseAutoFocus,
 }: PointsAdjustmentDialogProps) {
   // `POST /v1/points/adjust` carries no `@FreeTier`, so it is paid-ops and this
   // dialog has to mirror the subscription gate (#841). No `useGatedDialog`
@@ -162,7 +172,10 @@ export function PointsAdjustmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-4 w-4" />

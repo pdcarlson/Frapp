@@ -26,11 +26,11 @@ import { useChapterSubscription } from "@/lib/hooks/use-subscription-write-state
 import { isStripeConfigured } from "@/lib/stripe";
 import { formatCurrency } from "@/lib/currency";
 
-// Mirrors what `BillingService.getChapterBillingStatus` actually returns, minus
-// `subscription_status` — that one field now comes from `useChapterSubscription`
-// so the badge and the gates beneath it cannot disagree (#841). The Stripe
-// identifiers have no other source, so the query stays for them.
+// Mirrors what `BillingService.getChapterBillingStatus` actually returns. The
+// Stripe identifiers have no other source; `subscription_status` is kept as a
+// display fallback only — see the badge below (#841).
 type BillingStatusPreview = {
+  subscription_status?: string;
   stripe_customer_id?: string | null;
   subscription_id?: string | null;
 };
@@ -179,8 +179,22 @@ export default function BillingPage() {
           <div className="rounded-lg border border-border p-4">
             <p className="text-xs text-muted-foreground">Status</p>
             <div className="mt-2 flex items-center gap-2">
+              {/*
+                The chapter record is the single source the *gates* read, so it
+                wins here too and the badge can never contradict the invoice
+                card below it. But it can be unresolved — the persisted
+                `activeChapterId` rehydrates asynchronously, and the chapter
+                query can fail on its own — while `GET /v1/billing/status` has
+                already answered. Falling back to that answer keeps a paying
+                chapter from being told "unknown" next to its own live Stripe
+                ids, with no error banner (this page's `usingPreviewData` watches
+                only the billing and invoice queries) and no way to recover.
+                The fallback is display-only: no gate reads it.
+              */}
               <Badge className="capitalize">
-                {subscriptionStatus ?? "unknown"}
+                {subscriptionStatus ??
+                  billingStatus?.subscription_status ??
+                  "unknown"}
               </Badge>
             </div>
           </div>

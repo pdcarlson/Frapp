@@ -24,6 +24,13 @@ vi.mock("@repo/hooks", () => ({
   // subscription (#841). Default every existing case to an active chapter so
   // they assert the same behaviour they always did.
   useCurrentChapter: () => mockCurrentChapter(),
+  // Driven by the same `canManage` flag as the <Can> stub below, so the notice's
+  // visibility and the buttons' visibility can never disagree in a test.
+  useMyPermissions: () => ({
+    data: { permissions: canManage ? ["tasks:manage"] : [] },
+    isPending: false,
+    isError: false,
+  }),
 }));
 
 vi.mock("@/lib/stores/chapter-store", () => ({

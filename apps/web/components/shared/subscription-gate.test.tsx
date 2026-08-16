@@ -260,6 +260,47 @@ describe("useGatedDialog", () => {
     );
   });
 
+  it("does NOT close an open dialog when the chapter merely re-enters pending", async () => {
+    // The defect this guards: `allowed` folds in `isPending`, so keying the
+    // close effect on it would treat "verdict not yet known" as a revocation.
+    // `activeChapterId` is empty on first paint and cleared on every chapter
+    // switch, and the chapter query re-enters pending each time — so a user who
+    // opened a dialog in that window (the gate fails open, so the trigger was
+    // live) would have their half-filled form discarded and be handed a notice
+    // reading "Checking this chapter's subscription…" as the reason.
+    chapter.active();
+    const { rerender } = render(<Harness />);
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    chapter.loading();
+    rerender(<Harness />);
+
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("does not hijack an ordinary close after a block has lifted", async () => {
+    // `revokedRef` is normally consumed by `onCloseAutoFocus`, which needs a
+    // mounted DialogContent. A surface can unmount its dialog subtree while
+    // `open` is still true, stranding the flag — and a stale flag suppresses
+    // Radix's focus restore on the next, perfectly ordinary close while the
+    // notice it wants to focus is no longer rendered.
+    chapter.incomplete();
+    const { rerender } = render(<Harness />);
+
+    chapter.active();
+    rerender(<Harness />);
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // Focus went back to the trigger, not to a notice that is not on screen.
+    expect(uploadTrigger()).toHaveFocus();
+  });
+
   it("moves focus to the notice when the dialog is yanked away", async () => {
     // Radix restores focus to the trigger, but the trigger goes disabled in the
     // same commit, so focus would land on <body> and restart keyboard

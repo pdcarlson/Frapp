@@ -146,16 +146,20 @@ describe("StudyPage subscription gating", () => {
     );
   });
 
-  it("gates pause and stop too, not just Start", async () => {
-    // Pause / resume / stop are three more paid-ops writes; leaving them live
-    // would have the page state that writes are blocked while offering them.
+  it("leaves the exits from a running session live when the chapter lapses", async () => {
+    // Deliberately NOT gated, unlike Start. `handleStop`'s `finally` is the only
+    // thing that clears `activeSession` locally, and it runs even when the
+    // server rejects — so gating Stop would pin the member to a live timer they
+    // cannot end, while the ungated heartbeat keeps firing. The only remaining
+    // exit would be closing the tab, which fires the same stop write from
+    // `pagehide`. Never gate the way out.
     const { rerender } = await renderWithLiveSession();
 
     chapter.incomplete();
     rerender(<StudyPage />);
 
-    expect(pauseButton()).toBeDisabled();
-    expect(stopButton()).toBeDisabled();
+    expect(pauseButton()).toBeEnabled();
+    expect(stopButton()).toBeEnabled();
   });
 
   it("leaves pause and stop live while the chapter is paying", async () => {

@@ -124,21 +124,25 @@ Rollout is complete across `apps/web`. Any new subscription-gated flow adopts th
 
 A controller is subscription-gated only if `ChapterGuard` is in its guard chain **and** it carries no `@FreeTier` / `@SubscriptionExempt`. Client and server can be diffed by grepping one string — the guard's structured codes.
 
-| Paid-ops controller | Writes | Web surface |
+**A controller maps to as many surfaces as reach it — never assume one.** Two of the misses this inventory was written to prevent were exactly that shape: the chat task card and the chat event card call paid-ops routes from a surface whose *own* controller (`chat`) is `@FreeTier`, and the event editor's triggers live in two files that are not the editor. The route decides the gate, not the screen hosting it.
+
+| Paid-ops controller | Writes | Web surfaces (all of them) |
 | --- | --- | --- |
-| `attendance` | 3 | `components/events/attendance-panel.tsx` |
+| `attendance` | 3 | `components/events/attendance-panel.tsx` · `components/chat/renderers/event-card.tsx` (check-in) |
 | `backwork` | 4 | `components/backwork/backwork-page.tsx` |
 | `chapter-document` | 6 | `components/documents/documents-page.tsx` |
-| `event` | 3 | `components/events/event-editor-dialog.tsx` |
+| `event` | 3 | `components/events/events-page.tsx` (both create triggers) · `components/events/event-editor-dialog.tsx` · `components/events/event-detail-sheet.tsx` (edit + delete) |
 | `financial-invoice` | 3 (+1 exempt) | `components/billing/invoice-admin-card.tsx` |
-| `points` | 1 | `components/points-adjustment-dialog.tsx` |
+| `points` | 1 | `app/(dashboard)/points/page.tsx` (trigger) · `components/points-adjustment-dialog.tsx` |
 | `poll` | 3 | `components/polls/polls-page.tsx` |
 | `report` | 4 | `components/reports/reports-page.tsx` |
 | `semester-rollover` | 1 | `components/settings/settings-page.tsx` (rollover only) |
 | `service-entry` | 4 | `components/service/service-page.tsx` |
 | `study` → `StudyGeofenceController` | 3 | `components/geofences/geofences-admin-page.tsx` |
 | `study` → `StudySessionController` | 5 | `components/study/study-page.tsx` |
-| `task` | 5 | `components/tasks/tasks-board.tsx` |
+| `task` | 5 | `components/tasks/tasks-board.tsx` · `components/chat/renderers/task-card.tsx` |
+
+Where a dialog's `open` state lives in a parent, the **parent** carries the gate — rule 1 is about the control that starts the flow, and a dialog cannot refuse to open on its own behalf. `useGatedDialog` returns `contentProps` as well as `dialogProps`; a parent that owns `open` but not the `DialogContent` has to forward `onCloseAutoFocus` through, or the revoke path drops focus to `<body>`.
 
 **12 files / 13 controller classes / 45 gated writes** (46 non-GET routes, less the one `@SubscriptionExempt` payment-intent). `study.controller.ts` holds two controller classes behind different modules. `alumni` carries the guard but has no non-GET route, so it contributes no write surface.
 

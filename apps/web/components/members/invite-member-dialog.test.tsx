@@ -94,7 +94,12 @@ describe("InviteMemberDialog subscription gating", () => {
     await openDialog();
 
     expect(generate()).toBeDisabled();
-    expect(screen.getByText(/write actions are blocked/i)).toBeInTheDocument();
+    // Revoke locks here too — `@FreeTier` survives grace, not past it — so both
+    // notices render the same sentence.
+    expect(revoke()).toBeDisabled();
+    expect(
+      screen.getAllByText(/write actions are blocked/i).length,
+    ).toBeGreaterThan(0);
   });
 
   it("blocks invites on a canceled chapter", async () => {
@@ -104,7 +109,9 @@ describe("InviteMemberDialog subscription gating", () => {
     await openDialog();
 
     expect(generate()).toBeDisabled();
-    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+    // `canceled` is checked above the free-tier carve-out, so revoke goes too.
+    expect(revoke()).toBeDisabled();
+    expect(screen.getAllByText(/read-only/i).length).toBeGreaterThan(0);
   });
 
   it("leaves everything alone on an active chapter", async () => {

@@ -523,14 +523,19 @@ export function StudyPage() {
           </CardContent>
           <CardFooter className="flex flex-wrap gap-2">
             {/*
-              Toggling this fires POST /study-sessions/pause or /resume through
-              the effect above, so it is a write like any other and gates with
-              the rest (§5 "gate every write on the surface").
+              Pause/Resume and Stop are deliberately NOT gated, unlike Start.
+              They act on a session that is already running, and Stop is the only
+              thing that clears `activeSession` locally — its `finally` block
+              runs even when the server rejects. Disabling them on a mid-session
+              lapse would pin the member to a live timer they cannot end from the
+              UI, while the ungated 5-minute heartbeat keeps firing; the only way
+              out would be closing the tab, which fires the very same stop write
+              from the `pagehide` handler. Every dialog on this surface leaves
+              Cancel ungated for the same reason: never gate the way out.
             */}
             <Button
               variant="outline"
               onClick={() => setIsPaused((prev) => !prev)}
-              {...gate.controlProps()}
             >
               {isPaused ? (
                 <Play className="h-4 w-4" />
@@ -542,7 +547,7 @@ export function StudyPage() {
             <Button
               variant="destructive"
               onClick={() => void handleStop()}
-              {...gate.controlProps(stopSession.isPending)}
+              disabled={stopSession.isPending}
             >
               {stopSession.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

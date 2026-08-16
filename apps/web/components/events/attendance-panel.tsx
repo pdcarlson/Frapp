@@ -341,7 +341,16 @@ export function AttendancePanel({ eventId }: { eventId: string }) {
           filter keep working for a lapsed chapter — only recording attendance
           stops, and this says why.
         */}
-        <SubscriptionNotice gate={gate} feature="managing events" />
+        {/*
+          Scoped to the same permission as the controls it describes. A member
+          with attendance read access but not `events:update` sees the "View
+          only" fallback on every row and no auto-absent button — an explanation
+          for restoring writes they could never perform is pure noise, and its
+          `aria-describedby` id would have nothing pointing at it.
+        */}
+        <Can permission="events:update">
+          <SubscriptionNotice gate={gate} feature="managing events" />
+        </Can>
         {filteredRows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No members match that filter.

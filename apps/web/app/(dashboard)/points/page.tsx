@@ -411,6 +411,7 @@ export default function PointsPage() {
       <PointsAdjustmentDialog
         open={adjustDialog.open}
         onOpenChange={adjustDialog.setOpen}
+        onCloseAutoFocus={adjustDialog.contentProps.onCloseAutoFocus}
         onAdjusted={async () => {
           await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
         }}

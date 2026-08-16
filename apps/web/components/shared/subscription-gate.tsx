@@ -144,11 +144,34 @@ export function useGatedDialog(gate: SubscriptionGate): GatedDialog {
   const { allowed, noticeRef } = gate;
   const revokedRef = useRef(false);
 
+  // Closing keys on the *verdict*, not on `allowed` — the two differ by
+  // `isPending`, and conflating them destroys the user's work.
+  //
+  // `activeChapterId` starts empty on first paint and is cleared again on every
+  // chapter switch, and the chapter query re-enters `pending` each time. With
+  // `allowed` here, a user who opened a dialog during that window (the gate
+  // fails open, so the trigger was enabled) would have the dialog slammed shut
+  // and their draft discarded the moment the query started resolving — and be
+  // handed a notice reading "Checking this chapter's subscription…" as the
+  // reason. Only a definite `allowed: false` is a revocation.
+  const blocked = !gate.state.allowed;
+
   useEffect(() => {
-    if (!open || allowed) return;
+    if (!open || !blocked) return;
     revokedRef.current = true;
     setOpenState(false);
-  }, [open, allowed]);
+  }, [open, blocked]);
+
+  // Clear the flag once the block lifts. It is normally consumed by
+  // `onCloseAutoFocus`, but that needs a mounted `DialogContent` — and a
+  // surface can unmount its dialog subtree (an error state, a permission
+  // refetch) while `open` is still true. Without this reset the flag survives
+  // into a later, ordinary close and steals focus to a notice that is no longer
+  // rendered, dropping focus to `<body>`: the exact failure this hook exists to
+  // prevent, on the happy path.
+  useEffect(() => {
+    if (!blocked) revokedRef.current = false;
+  }, [blocked]);
 
   const setOpen = useCallback(
     (next: boolean) => {

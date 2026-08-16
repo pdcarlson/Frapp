@@ -118,6 +118,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   // is plain `@FreeTier` and must stay live during grace. Blocking the dialog
   // from opening would take those away to gate one button inside it.
   const gate = useSubscriptionGate("grace-blocked");
+  // Revoke is `DELETE /invites/:id` — the class-level `@FreeTier` WITHOUT
+  // `@GraceBlocked`. That is not "always allowed": free-tier survives
+  // `incomplete` and the grace window, then hits `write_locked` past it, and
+  // `canceled` is checked above the carve-out entirely. So it needs its own
+  // verdict rather than being left ungated.
+  const revokeGate = useSubscriptionGate("free-tier");
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
@@ -324,6 +330,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
         <div className="space-y-2">
           <p className="text-sm font-medium">Active invite tokens</p>
+          {/*
+            Revoke's verdict differs from Generate's — free-tier vs
+            grace-blocked diverge exactly inside the grace window — so it needs
+            its own notice for its own `aria-describedby` target.
+          */}
+          <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
           {activeInviteRows.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
               No active invite tokens.
@@ -352,7 +364,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                     size="sm"
                     variant="outline"
                     onClick={() => handleRevokeInvite(invite.id)}
-                    disabled={revokeInviteMutation.isPending || hasLiveDataError}
+                    {...revokeGate.controlProps(
+                      revokeInviteMutation.isPending || hasLiveDataError,
+                    )}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Revoke

@@ -445,6 +445,7 @@ export function EventsPage() {
       <EventEditorDialog
         open={editorDialog.open}
         onOpenChange={editorDialog.setOpen}
+        onCloseAutoFocus={editorDialog.contentProps.onCloseAutoFocus}
         mode={editorMode}
         event={activeEvent}
         usingPreviewData={false}

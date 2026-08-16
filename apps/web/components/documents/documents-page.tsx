@@ -428,7 +428,14 @@ export function DocumentsPage() {
         a lapsed chapter, so the library keeps working — only the writes stop,
         and this says why.
       */}
-      <SubscriptionNotice gate={gate} feature="managing documents" />
+      {/*
+        Scoped to the union of the two permissions that own the gated controls.
+        A plain member browsing a fully readable library holds neither, so the
+        notice would describe controls they cannot see.
+      */}
+      <Can anyOf={["chapter_docs:upload", "chapter_docs:manage"]}>
+        <SubscriptionNotice gate={gate} feature="managing documents" />
+      </Can>
 
       <div className="grid gap-4 md:grid-cols-[240px_1fr]">
         <Card>

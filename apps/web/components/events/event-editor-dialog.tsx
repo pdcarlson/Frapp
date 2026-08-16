@@ -50,6 +50,14 @@ function localInputToIso(value: string): string {
 type EventEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
+   * contract across `dialogProps` and `contentProps`; `events-page.tsx` owns
+   * `open` while this component owns the content, so without this the revoke
+   * path falls back to Radix's default and refocuses a "New Event" trigger that
+   * just went `disabled` — dropping focus to `<body>`.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   mode: "create" | "edit";
   event: EventRecord | null;
   usingPreviewData: boolean;
@@ -59,6 +67,7 @@ type EventEditorDialogProps = {
 export function EventEditorDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   mode,
   event,
   usingPreviewData,
@@ -252,7 +261,10 @@ export function EventEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 className="h-4 w-4" />
