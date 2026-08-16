@@ -47,6 +47,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -106,6 +111,12 @@ function formatDate(value: string | null | undefined): string {
 
 export function TasksBoard() {
   const { toast } = useToast();
+  // Every write on this board (create, status, confirm, reject, delete) hits
+  // `TaskController`, which carries no `@FreeTier`, so all five mirror one
+  // paid-ops gate (#841). Reads stay ungated — the server guard returns early
+  // for GET, and it remains the enforcement either way.
+  const gate = useSubscriptionGate();
+  const createDialog = useGatedDialog(gate);
   const tasksQuery = useTasks();
   const membersQuery = useMembers();
   const currentUser = useCurrentUser();
@@ -128,7 +139,6 @@ export function TasksBoard() {
     return map;
   }, [members]);
 
-  const [createOpen, setCreateOpen] = useState(false);
   const [draft, setDraft] = useState({
     title: "",
     description: "",
@@ -172,7 +182,7 @@ export function TasksBoard() {
         title: "Task created",
         description: `${draft.title} is now assigned.`,
       });
-      setCreateOpen(false);
+      createDialog.setOpen(false);
       setDraft({
         title: "",
         description: "",
@@ -311,13 +321,16 @@ export function TasksBoard() {
           </p>
         </div>
         <Can permission="tasks:manage">
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <Dialog {...createDialog.dialogProps}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" {...gate.controlProps()}>
                 <Plus className="h-4 w-4" /> New task
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent
+              className="sm:max-w-lg"
+              {...createDialog.contentProps}
+            >
               <DialogHeader>
                 <DialogTitle>Create a task</DialogTitle>
                 <DialogDescription>
@@ -415,9 +428,13 @@ export function TasksBoard() {
                 </div>
               </form>
               <DialogFooter>
+                {/*
+                  Cancel is not gated: it only closes the dialog, and a lapsed
+                  chapter still needs a way out of a form it can't submit.
+                */}
                 <Button
                   variant="outline"
-                  onClick={() => setCreateOpen(false)}
+                  onClick={() => createDialog.setOpen(false)}
                   disabled={createTask.isPending}
                 >
                   Cancel
@@ -425,7 +442,7 @@ export function TasksBoard() {
                 <Button
                   form="tasks-create-form"
                   type="submit"
-                  disabled={createTask.isPending}
+                  {...gate.controlProps(createTask.isPending)}
                 >
                   {createTask.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -437,6 +454,13 @@ export function TasksBoard() {
           </Dialog>
         </Can>
       </header>
+
+      {/*
+        Outside the `tasks:manage` <Can>: the assignee-facing Start / Mark
+        complete controls are gated too, so a member with no manage permission
+        still needs the explanation for why their own board went read-only.
+      */}
+      <SubscriptionNotice gate={gate} feature="managing tasks" />
 
       {tasks.length === 0 ? (
         <EmptyState
@@ -496,10 +520,18 @@ export function TasksBoard() {
                             ) : null}
                           </div>
                           <div className="mt-3 flex flex-wrap gap-2">
+                            {/*
+                              The inline status controls are writes too
+                              (`PATCH /v1/tasks/:id/status`), so they mirror the
+                              same gate as Create — gating only the header
+                              trigger would claim writes are blocked while
+                              still offering four of them.
+                            */}
                             {isMine && task.status === "TODO" ? (
                               <Button
                                 size="sm"
                                 variant="outline"
+                                {...gate.controlProps()}
                                 onClick={() =>
                                   void changeStatus(task, "IN_PROGRESS")
                                 }
@@ -511,6 +543,7 @@ export function TasksBoard() {
                               <Button
                                 size="sm"
                                 variant="outline"
+                                {...gate.controlProps()}
                                 onClick={() =>
                                   void changeStatus(task, "COMPLETED")
                                 }
@@ -524,7 +557,7 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     onClick={() => void confirmCompletion(task)}
-                                    disabled={task.points_awarded}
+                                    {...gate.controlProps(task.points_awarded)}
                                   >
                                     <CheckCircle2 className="h-4 w-4" />
                                     {task.points_awarded
@@ -534,6 +567,7 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     variant="outline"
+                                    {...gate.controlProps()}
                                     onClick={() => void rejectCompletion(task)}
                                   >
                                     <Undo2 className="h-4 w-4" />
@@ -544,6 +578,7 @@ export function TasksBoard() {
                               <Button
                                 size="sm"
                                 variant="ghost"
+                                {...gate.controlProps()}
                                 onClick={() => void removeTask(task)}
                               >
                                 Delete

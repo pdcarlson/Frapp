@@ -31,6 +31,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+  type SubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
@@ -71,7 +76,17 @@ function formatDate(value: string | null | undefined): string {
   return parsed.toLocaleString();
 }
 
-function Poll({ poll, channelName }: { poll: PollRow; channelName: string }) {
+function Poll({
+  poll,
+  channelName,
+  gate,
+}: {
+  poll: PollRow;
+  channelName: string;
+  // The gate is owned by `PollsPage` rather than created per card: one verdict,
+  // one notice, and every card's `aria-describedby` points at it.
+  gate: SubscriptionGate;
+}) {
   const { toast } = useToast();
   const vote = useVoteOnPoll();
   const unvote = useRemoveVote();
@@ -172,6 +187,10 @@ function Poll({ poll, channelName }: { poll: PollRow; channelName: string }) {
               : 0;
           const isSelected = selection.has(result.optionIndex);
           return (
+            // Not gated: this row is the results display (a read, and §5 gates
+            // writes only) and its click only moves local selection state. The
+            // write it feeds — Save vote, one control below — carries the gate
+            // and states the reason there.
             <button
               key={result.optionIndex}
               type="button"
@@ -209,11 +228,18 @@ function Poll({ poll, channelName }: { poll: PollRow; channelName: string }) {
           {totalVotes} total vote{totalVotes === 1 ? "" : "s"}
         </span>
         <div className="flex gap-2">
+          {/*
+            `DELETE /v1/polls/:messageId/vote` is paid-ops like the vote POST,
+            so gating only Save would have the card claim writes are blocked
+            while still offering one.
+          */}
           {!poll.isExpired ? (
             <Button
               size="sm"
               variant="outline"
-              disabled={!poll.userVotes?.length || unvote.isPending}
+              {...gate.controlProps(
+                !poll.userVotes?.length || unvote.isPending,
+              )}
               onClick={() => void withdrawVote()}
             >
               Withdraw vote
@@ -222,11 +248,11 @@ function Poll({ poll, channelName }: { poll: PollRow; channelName: string }) {
           {!poll.isExpired ? (
             <Button
               size="sm"
-              disabled={
+              {...gate.controlProps(
                 selection.size === 0 ||
-                vote.isPending ||
-                (!isMultiChoice && selection.size !== 1)
-              }
+                  vote.isPending ||
+                  (!isMultiChoice && selection.size !== 1),
+              )}
               onClick={() => void submitVote()}
             >
               {vote.isPending ? (
@@ -244,6 +270,10 @@ function Poll({ poll, channelName }: { poll: PollRow; channelName: string }) {
 }
 
 export function PollsPage() {
+  // `POST /v1/polls/:messageId/vote` and its DELETE carry no `@FreeTier`, so
+  // both are paid-ops and mirror the gate (#841). The list, the filters, and
+  // the tallies stay live — `enforceSubscription` returns early for GET.
+  const gate = useSubscriptionGate();
   const [channelFilter, setChannelFilter] = useState<string>(ANY_CHANNEL);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "CLOSED">(
     "ALL",
@@ -351,6 +381,13 @@ export function PollsPage() {
           </div>
         </header>
 
+        {/*
+          Disable, don't hide (§5 rule 4): the poll list and its tallies keep
+          working for a lapsed chapter — only casting and withdrawing votes
+          stops, and this says why.
+        */}
+        <SubscriptionNotice gate={gate} feature="voting on polls" />
+
         {pollsQuery.isPending ? (
           <LoadingState message="Loading chapter polls..." />
         ) : pollsQuery.isError ? (
@@ -370,6 +407,7 @@ export function PollsPage() {
               <Poll
                 key={poll.id}
                 poll={poll}
+                gate={gate}
                 channelName={
                   channelNameById.get(poll.channel_id) ?? "Unknown channel"
                 }

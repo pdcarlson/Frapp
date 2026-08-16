@@ -36,6 +36,10 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { can } from "@/lib/auth/can";
 import { useChapterStore } from "@/lib/stores/chapter-store";
@@ -145,6 +149,12 @@ function SettingsPageContent() {
   const pendingConfigKeys = usePendingConfigKeys();
   const rollover = useSemesterRollover();
   const createPortal = useCreatePortal();
+  // Scoped to the rollover card on purpose. `SemesterRolloverController` is the
+  // only paid-ops write on this screen (#841); `chapter-config`, `chapter`, and
+  // `user` are `@FreeTier` and `notification` is not chapter-guarded at all, so
+  // gating the rest would lock a lapsed chapter out of settings it is still
+  // entitled to change — over-gating is the worse defect here.
+  const rolloverGate = useSubscriptionGate();
 
   const canManage = can("chapter-config:manage", permissionsPayload?.permissions);
 
@@ -470,6 +480,17 @@ function SettingsPageContent() {
                 </CardHeader>
                 <form onSubmit={startRollover}>
                   <CardContent className="grid gap-3 md:grid-cols-3">
+                    {/*
+                      Disable, don't hide (§5 rule 4) — and the notice sits on
+                      the rollover card rather than the page header so it never
+                      reads as "all of settings is blocked". `mb-0` because the
+                      grid gap already spaces it.
+                    */}
+                    <SubscriptionNotice
+                      gate={rolloverGate}
+                      feature="semester rollover"
+                      className="mb-0 md:col-span-3"
+                    />
                     <div className="grid gap-1 md:col-span-1">
                       <Label htmlFor="semester-label">Label</Label>
                       <Input
@@ -502,7 +523,15 @@ function SettingsPageContent() {
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-end">
-                    <Button type="submit" disabled={rollover.isPending}>
+                    {/*
+                      No dialog to gate here, so the submit *is* the entry
+                      control — and a disabled default button also suppresses
+                      implicit Enter submission from the three fields above.
+                    */}
+                    <Button
+                      type="submit"
+                      {...rolloverGate.controlProps(rollover.isPending)}
+                    >
                       {rollover.isPending ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : null}

@@ -18,6 +18,10 @@ import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { normalizeRoleOptions } from "@/lib/roles";
 
 type EventRecord = Record<string, unknown>;
@@ -46,6 +50,14 @@ function localInputToIso(value: string): string {
 type EventEditorDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
+   * contract across `dialogProps` and `contentProps`; `events-page.tsx` owns
+   * `open` while this component owns the content, so without this the revoke
+   * path falls back to Radix's default and refocuses a "New Event" trigger that
+   * just went `disabled` — dropping focus to `<body>`.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
   mode: "create" | "edit";
   event: EventRecord | null;
   usingPreviewData: boolean;
@@ -55,6 +67,7 @@ type EventEditorDialogProps = {
 export function EventEditorDialog({
   open,
   onOpenChange,
+  onCloseAutoFocus,
   mode,
   event,
   usingPreviewData,
@@ -62,6 +75,9 @@ export function EventEditorDialog({
 }: EventEditorDialogProps) {
   const createEventMutation = useCreateEvent();
   const updateEventMutation = useUpdateEvent();
+  // `POST /v1/events` and `PATCH /v1/events/:id` carry no `@FreeTier`, so both
+  // are paid-ops and this dialog has to mirror the subscription gate (#841).
+  const gate = useSubscriptionGate();
   const { toast } = useToast();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -245,7 +261,10 @@ export function EventEditorDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <CalendarPlus2 className="h-4 w-4" />
@@ -262,6 +281,15 @@ export function EventEditorDialog({
             <div>Preview mode is active. Sign in to create and edit live events.</div>
           </div>
         ) : null}
+
+        {/*
+          §5 rule 1 wants the gate on the trigger, but "New Event" / "Edit"
+          live in the parents that own `open` (events-page, event-detail-sheet),
+          so the earliest point this component controls is the top of the form.
+          The notice therefore states the blocker before anything is typed,
+          rather than leaving the save button disabled with no reason.
+        */}
+        <SubscriptionNotice gate={gate} feature="managing events" />
 
         <div className="grid gap-3">
           <label className="space-y-1 text-sm">
@@ -409,10 +437,15 @@ export function EventEditorDialog({
         </div>
 
         <DialogFooter>
+          {/* Cancel only closes the dialog — gating the way out of a surface the
+              gate just blocked would be a trap. */}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={usingPreviewData || isSubmitting}>
+          <Button
+            onClick={handleSubmit}
+            {...gate.controlProps(usingPreviewData || isSubmitting)}
+          >
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {submitLabel}
           </Button>

@@ -15,6 +15,11 @@ import {
   OfflineState,
 } from "@/components/shared/async-states";
 import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import {
   dashboardFilterSelectClassName,
   dashboardTableCheckboxClassName,
 } from "@/components/shared/table-controls";
@@ -49,7 +54,13 @@ export function EventsPage() {
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | "recurring" | "one-time">("all");
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [detailSheetOpen, setDetailSheetOpen] = useState(false);
-  const [editorDialogOpen, setEditorDialogOpen] = useState(false);
+  // `POST /v1/events` and `PATCH /v1/events/:id` are paid-ops, so the editor's
+  // entry points mirror the gate (#841). Routing the dialog through
+  // `useGatedDialog` covers all three of them at once — the New Event button,
+  // the empty-state CTA, and the detail sheet's Edit — and closes the dialog if
+  // the subscription lapses while it is open.
+  const eventWriteGate = useSubscriptionGate();
+  const editorDialog = useGatedDialog(eventWriteGate);
   const [editorMode, setEditorMode] = useState<"create" | "edit">("create");
   const [activeEvent, setActiveEvent] = useState<EventRow | null>(null);
   const eventsQuery = useEvents();
@@ -192,10 +203,11 @@ export function EventsPage() {
           </div>
           <Button
             className="gap-2"
+            {...eventWriteGate.controlProps()}
             onClick={() => {
               setEditorMode("create");
               setActiveEvent(null);
-              setEditorDialogOpen(true);
+              editorDialog.setOpen(true);
             }}
           >
             <Plus className="h-4 w-4" />
@@ -203,6 +215,15 @@ export function EventsPage() {
           </Button>
         </CardHeader>
         <CardContent>
+          {/*
+            Above the filters so it sits with the New Event button it explains.
+            Search and the time/status filters below are reads and stay live —
+            a lapsed chapter keeps full visibility of its own calendar.
+          */}
+          <SubscriptionNotice
+            gate={eventWriteGate}
+            feature="creating and editing events"
+          />
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="relative max-w-md">
               <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -299,10 +320,11 @@ export function EventsPage() {
           title={stateMicrocopy.events.emptyTitle}
           description={stateMicrocopy.events.emptyDescription}
           actionLabel="Create first event"
+          actionProps={eventWriteGate.controlProps()}
           onAction={() => {
             setEditorMode("create");
             setActiveEvent(null);
-            setEditorDialogOpen(true);
+            editorDialog.setOpen(true);
           }}
         />
       ) : (
@@ -413,7 +435,7 @@ export function EventsPage() {
           setActiveEvent(event);
           setDetailSheetOpen(false);
           setEditorMode("edit");
-          setEditorDialogOpen(true);
+          editorDialog.setOpen(true);
         }}
         onEventDeleted={async () => {
           await eventsQuery.refetch();
@@ -421,8 +443,9 @@ export function EventsPage() {
       />
 
       <EventEditorDialog
-        open={editorDialogOpen}
-        onOpenChange={setEditorDialogOpen}
+        open={editorDialog.open}
+        onOpenChange={editorDialog.setOpen}
+        onCloseAutoFocus={editorDialog.contentProps.onCloseAutoFocus}
         mode={editorMode}
         event={activeEvent}
         usingPreviewData={false}

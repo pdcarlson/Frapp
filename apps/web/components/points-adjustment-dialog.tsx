@@ -16,6 +16,10 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { dashboardFilterSelectClassName } from "@/components/shared/table-controls";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 
 type MemberOption = {
   userId: string;
@@ -26,6 +30,15 @@ type PointsAdjustmentDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onAdjusted: () => Promise<void> | void;
+  /**
+   * Forwarded to the underlying `DialogContent`. `useGatedDialog` splits its
+   * contract across `dialogProps` and `contentProps`, and a parent that owns
+   * `open` while this component owns the content cannot reach the second half
+   * on its own — so the revoke-path focus redirect would silently degrade to
+   * Radix's default, which refocuses a trigger that just went `disabled` and
+   * therefore drops focus to `<body>`. Pass `contentProps.onCloseAutoFocus`.
+   */
+  onCloseAutoFocus?: (event: Event) => void;
 };
 
 function getErrorMessage(error: unknown): string {
@@ -39,7 +52,13 @@ export function PointsAdjustmentDialog({
   open,
   onOpenChange,
   onAdjusted,
+  onCloseAutoFocus,
 }: PointsAdjustmentDialogProps) {
+  // `POST /v1/points/adjust` carries no `@FreeTier`, so it is paid-ops and this
+  // dialog has to mirror the subscription gate (#841). No `useGatedDialog`
+  // here: `open` is owned by the points page, so the trigger — and the refusal
+  // to open onto a doomed form (§5 rule 1) — has to be gated there.
+  const gate = useSubscriptionGate();
   const adjustPointsMutation = useAdjustPoints();
   const membersQuery = useMembers();
   const { toast } = useToast();
@@ -153,7 +172,10 @@ export function PointsAdjustmentDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        className="sm:max-w-lg"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Scale className="h-4 w-4" />
@@ -164,13 +186,27 @@ export function PointsAdjustmentDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+          Disable, don't hide (§5 rule 4): the lapse is recoverable, so the form
+          stays visible with the reason stated above it. Until the page gates
+          its trigger a blocked chapter can still open this dialog, which makes
+          the notice the only thing explaining why nothing here accepts input.
+        */}
+        <SubscriptionNotice gate={gate} feature="adjusting points" />
+
         <div className="grid gap-3">
           <label className="space-y-1 text-sm">
             <span className="text-muted-foreground">Member</span>
+            {/*
+              The fields are gated alongside the submit, not just next to it:
+              this dialog can be opened while blocked, and an editable form
+              behind a dead Submit is the exact wasted-effort failure §5 names.
+            */}
             <select
               value={targetUserId}
               onChange={(event) => setTargetUserId(event.target.value)}
               className={dashboardFilterSelectClassName}
+              {...gate.controlProps()}
             >
               {memberOptions.map((option) => (
                 <option key={option.userId} value={option.userId}>
@@ -189,6 +225,7 @@ export function PointsAdjustmentDialog({
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder="10"
+                {...gate.controlProps()}
               />
             </label>
             <label className="space-y-1 text-sm">
@@ -197,6 +234,7 @@ export function PointsAdjustmentDialog({
                 value={category}
                 onChange={(event) => setCategory(event.target.value as "MANUAL" | "FINE")}
                 className={dashboardFilterSelectClassName}
+                {...gate.controlProps()}
               >
                 <option value="MANUAL">Manual adjustment</option>
                 <option value="FINE">Fine</option>
@@ -211,15 +249,24 @@ export function PointsAdjustmentDialog({
               value={reason}
               onChange={(event) => setReason(event.target.value)}
               placeholder="Explain why this adjustment is needed and what policy it references."
+              {...gate.controlProps()}
             />
           </label>
         </div>
 
         <DialogFooter>
+          {/*
+            Cancel stays live regardless: it closes the dialog rather than
+            writing anything, and gating the way out would trap a blocked
+            member in a form they cannot submit.
+          */}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={adjustPointsMutation.isPending}>
+          <Button
+            onClick={handleSubmit}
+            {...gate.controlProps(adjustPointsMutation.isPending)}
+          >
             {adjustPointsMutation.isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (

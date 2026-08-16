@@ -1,0 +1,222 @@
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { chapterSubscription } from "@/tests/chapter-subscription";
+
+const { mockCurrentChapter, mockRequestUpload, mockConfirmUpload } = vi.hoisted(
+  () => ({
+    mockCurrentChapter: vi.fn(),
+    mockRequestUpload: vi.fn().mockResolvedValue({}),
+    mockConfirmUpload: vi.fn().mockResolvedValue({}),
+  }),
+);
+
+// Only the chapter payload is stubbed — `useSubscriptionWriteState` and
+// `subscriptionWriteState` run for real, so this covers the whole path from the
+// wire format to the disabled trigger.
+const RESOURCE = {
+  id: "bw-1",
+  title: "CS 3320 Midterm",
+  department_id: null,
+  course_number: "3320",
+  professor_id: null,
+  year: 2026,
+  semester: "Fall",
+  assignment_type: "Midterm",
+  assignment_number: null,
+  document_variant: "Student Copy",
+  tags: null,
+  is_redacted: false,
+  created_at: "2026-08-01T00:00:00Z",
+};
+
+vi.mock("@repo/hooks", () => ({
+  useCurrentChapter: () => mockCurrentChapter(),
+  useBackworkResources: () => ({
+    data: [RESOURCE],
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useBackworkResource: () => ({ refetch: vi.fn() }),
+  useDepartments: () => ({ data: [] }),
+  useProfessors: () => ({ data: [] }),
+  useRequestBackworkUploadUrl: () => ({
+    mutateAsync: mockRequestUpload,
+    isPending: false,
+  }),
+  useConfirmBackworkUpload: () => ({
+    mutateAsync: mockConfirmUpload,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/lib/stores/chapter-store", () => ({
+  useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
+    selector({ activeChapterId: "chap-1" }),
+}));
+
+vi.mock("@/components/shared/can", () => ({
+  Can: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+vi.mock("@/hooks/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+
+const { BackworkPage } = await import("./backwork-page");
+
+const chapter = chapterSubscription(mockCurrentChapter);
+
+/** Closed-dialog state: the trigger is the only button named "Upload". */
+const uploadTrigger = () => screen.getByRole("button", { name: /^upload$/i });
+
+describe("BackworkPage subscription gating", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("leaves the upload flow alone on an active chapter", () => {
+    chapter.active();
+    render(<BackworkPage />);
+
+    expect(uploadTrigger()).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("disables the upload trigger and names blocker plus recovery when incomplete", () => {
+    chapter.incomplete();
+    render(<BackworkPage />);
+
+    // §5 rule 1: gate the trigger, never the submit.
+    expect(uploadTrigger()).toBeDisabled();
+    expect(screen.getByText(/subscription is not active/i)).toBeInTheDocument();
+    // §5 rule 2: name the next action, not just the blocker.
+    expect(
+      screen.getByRole("link", { name: /complete checkout/i }),
+    ).toHaveAttribute("href", "/billing");
+
+    // §5 rule 4: disabled, not hidden — the library itself is untouched.
+    expect(screen.getByText(/CS 3320 Midterm/)).toBeInTheDocument();
+  });
+
+  it("ties the disabled trigger to its explanation for screen readers", () => {
+    chapter.incomplete();
+    render(<BackworkPage />);
+
+    const describedBy = uploadTrigger().getAttribute("aria-describedby");
+    expect(describedBy).toBeTruthy();
+    expect(document.getElementById(describedBy!)).toHaveTextContent(
+      /subscription is not active/i,
+    );
+  });
+
+  it("leaves no other write on the surface reachable while blocked", () => {
+    // `requestUpload` and `confirmUpload` are the only writes here, and both sit
+    // behind the dialog's submit. §5 rule 1 makes that submit *unreachable*
+    // rather than merely disabled — the trigger refuses to open onto it — so the
+    // check is that the disabled trigger is the whole upload surface.
+    chapter.incomplete();
+    render(<BackworkPage />);
+
+    const uploadButtons = screen.getAllByRole("button", { name: /^upload$/i });
+    expect(uploadButtons).toHaveLength(1);
+    expect(uploadButtons[0]).toBeDisabled();
+  });
+
+  it("refuses to open the upload form onto an action that cannot succeed", async () => {
+    chapter.incomplete();
+    render(<BackworkPage />);
+
+    await userEvent.click(uploadTrigger());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mockRequestUpload).not.toHaveBeenCalled();
+  });
+
+  it("closes an already-open upload form when the subscription lapses under it", async () => {
+    // Radix fires onOpenChange only on an open/close request, so a background
+    // refetch that revokes the write cannot be caught there. Without this the
+    // member finishes a metadata form that is guaranteed to 403.
+    chapter.active();
+    const { rerender } = render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    chapter.pastDue();
+    rerender(<BackworkPage />);
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    // Focus lands on the explanation rather than <body>: the trigger it would
+    // otherwise return to went disabled in the same commit.
+    await waitFor(() => expect(screen.getByRole("status")).toHaveFocus());
+  });
+
+  it("keeps the submit's own file guard on top of the gate", async () => {
+    // The submit is `controlProps(uploading || !file)`, not a bare `disabled`:
+    // spreading the gate and then writing `disabled` afterwards would drop it.
+    chapter.active();
+    render(<BackworkPage />);
+    await userEvent.click(uploadTrigger());
+
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("button", { name: /^upload$/i }),
+    ).toBeDisabled();
+    // Cancel is not a write, and a revoked subscription must still leave a way
+    // out of the form.
+    expect(
+      within(dialog).getByRole("button", { name: /cancel/i }),
+    ).toBeEnabled();
+  });
+
+  it("never gates the reads", () => {
+    // `enforceSubscription` returns early for GET, so a lapsed chapter keeps
+    // browsing, filtering, and its signed download links.
+    chapter.incomplete();
+    render(<BackworkPage />);
+
+    expect(screen.getByRole("button", { name: /apply filters/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^clear$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /download/i })).toBeEnabled();
+    expect(screen.getByLabelText(/^search$/i)).toBeEnabled();
+  });
+
+  it("holds the gate shut while the chapter is still loading", () => {
+    // The window between mount and the chapter resolving is the most common path
+    // to the very 403 this gate prevents: a trigger that paints enabled for that
+    // round trip still lets a fast click reach a doomed form.
+    chapter.loading();
+    render(<BackworkPage />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(screen.getByText(/checking this chapter/i)).toBeInTheDocument();
+  });
+
+  it("blocks paid-ops uploads immediately on past_due, grace or not", () => {
+    chapter.pastDue();
+    render(<BackworkPage />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(screen.getByText(/past due/i)).toBeInTheDocument();
+  });
+
+  it("points a canceled chapter at the portal rather than checkout", () => {
+    chapter.canceled();
+    render(<BackworkPage />);
+
+    expect(uploadTrigger()).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: /billing portal/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("fails open when the chapter record cannot be read", () => {
+    // Deliberately asymmetric with `<Can>`. An unresolved subscription most
+    // likely belongs to a paying chapter, and locking uploads over a failed
+    // fetch is worse than the late 403; the server guard is still the
+    // enforcement.
+    chapter.unreadable();
+    render(<BackworkPage />);
+
+    expect(uploadTrigger()).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});

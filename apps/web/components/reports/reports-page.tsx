@@ -31,6 +31,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 
 type ReportKind = "attendance" | "points" | "roster" | "service";
@@ -154,6 +158,12 @@ function downloadCsv(kind: ReportKind, csv: string) {
 
 export function ReportsPage() {
   const { toast } = useToast();
+  // All four report routes are POSTs on `ReportController`, which carries no
+  // `@FreeTier`, so generating one is a paid-op even though it reads like a
+  // read (#841). Both buttons that reach `invokeReport` mirror the gate; the
+  // filters and the local CSV serialization below do not (§5: never gate a
+  // read). The server guard is still the enforcement.
+  const gate = useSubscriptionGate();
   const attendance = useAttendanceReport();
   const points = usePointsReport();
   const roster = useRosterReport();
@@ -421,6 +431,13 @@ export function ReportsPage() {
           </p>
         </header>
 
+        {/*
+          Disable, don't hide (§5 rule 4): the filters and any preview already
+          on screen stay usable while the subscription is lapsed — only the two
+          buttons that POST are blocked.
+        */}
+        <SubscriptionNotice gate={gate} feature="generating reports" />
+
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Choose a report</CardTitle>
@@ -586,6 +603,12 @@ export function ReportsPage() {
               for one hour.
             </p>
             <div className="flex items-center gap-2">
+              {/*
+                Not subscription-gated: this serializes the preview already in
+                memory and never reaches the API, so it is a read of data the
+                chapter has already been served. The rows behind it came from a
+                generate that was itself gated.
+              */}
               <Button
                 variant="outline"
                 onClick={exportCsv}
@@ -600,7 +623,7 @@ export function ReportsPage() {
                 // Gate on pdfPending too: activeMutation swaps when the report
                 // kind changes, so keying only off it would re-enable this
                 // button mid-export and let a second render be queued.
-                disabled={pdfPending || activeMutation.isPending}
+                {...gate.controlProps(pdfPending || activeMutation.isPending)}
               >
                 {pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -611,7 +634,7 @@ export function ReportsPage() {
               </Button>
               <Button
                 onClick={runReport}
-                disabled={pdfPending || activeMutation.isPending}
+                {...gate.controlProps(pdfPending || activeMutation.isPending)}
               >
                 {activeMutation.isPending && !pdfPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />

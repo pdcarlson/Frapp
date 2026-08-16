@@ -8,6 +8,10 @@ import type { EventPayload } from "@repo/chat-integrations";
 import { can } from "@/lib/auth/can";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -113,6 +117,13 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
   const payload = readPayload(message);
   const { toast } = useToast();
   const checkIn = useCheckIn();
+  // `POST /v1/events/:eventId/attendance/check-in` sits on `AttendanceController`,
+  // which is `ChapterGuard`-guarded with no `@FreeTier` — so it is paid-ops even
+  // though this card is rendered inside chat, which is free-tier. The host
+  // surface does not decide the gate; the route does (#841).
+  //
+  // Above the malformed-payload early return below, like the other hooks here.
+  const gate = useSubscriptionGate();
 
   // The checked-in count comes from the attendance roster, which is admin-gated
   // (`events:update`). Members can still self-check-in (that endpoint is
@@ -225,12 +236,22 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
         <div className="mt-2 flex flex-wrap gap-2">
           <Button
             size="sm"
-            disabled={actionsDisabled}
+            {...gate.controlProps(actionsDisabled)}
             onClick={() => void handleCheckIn()}
           >
             <Check className="h-4 w-4" />
             Check in
           </Button>
+          {/*
+            Scoped to the open check-in window, like the button it explains — a
+            timeline of past events would otherwise repeat one chapter-wide
+            sentence under every event card.
+          */}
+          <SubscriptionNotice
+            gate={gate}
+            feature="event check-in"
+            className="mb-0 w-full"
+          />
         </div>
       ) : null}
     </div>

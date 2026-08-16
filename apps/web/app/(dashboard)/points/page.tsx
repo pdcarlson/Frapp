@@ -17,6 +17,11 @@ import { useToast } from "@/hooks/use-toast";
 import { stateMicrocopy } from "@/lib/state-microcopy";
 import { useNetwork } from "@/lib/providers/network-provider";
 import { PointsAdjustmentDialog } from "@/components/points-adjustment-dialog";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { PointsAuditCard } from "@/components/points/points-audit-card";
 
 const windows = [
@@ -53,7 +58,11 @@ export default function PointsPage() {
   const [amountFilter, setAmountFilter] = useState<"all" | "positive" | "negative">("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<string[]>([]);
-  const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  // `POST /v1/points/adjust` is paid-ops. The dialog gates its own fields, but
+  // `open` is owned here, so §5 rule 1 — refuse to open onto a doomed form —
+  // has to be enforced at this trigger (#841).
+  const adjustGate = useSubscriptionGate();
+  const adjustDialog = useGatedDialog(adjustGate);
   const leaderboardQuery = useLeaderboard(window);
   const summaryQuery = useMyPoints(window);
 
@@ -187,7 +196,12 @@ export default function PointsPage() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setAdjustDialogOpen(true)}>
+            <Button
+              size="sm"
+              variant="outline"
+              {...adjustGate.controlProps()}
+              onClick={() => adjustDialog.setOpen(true)}
+            >
               <Scale className="h-4 w-4" />
               Adjust points
             </Button>
@@ -203,11 +217,21 @@ export default function PointsPage() {
             ))}
           </div>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-3">
-          <Badge variant="secondary">My balance</Badge>
-          <p className="text-2xl font-semibold">
-            {typeof summary?.balance === "number" ? summary.balance : 0} points
-          </p>
+        <CardContent>
+          {/*
+            The all/semester/month window buttons beside the trigger are reads
+            and stay live — a lapsed chapter keeps its full ledger history.
+          */}
+          <SubscriptionNotice
+            gate={adjustGate}
+            feature="point adjustments"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge variant="secondary">My balance</Badge>
+            <p className="text-2xl font-semibold">
+              {typeof summary?.balance === "number" ? summary.balance : 0} points
+            </p>
+          </div>
         </CardContent>
       </Card>
 
@@ -385,8 +409,9 @@ export default function PointsPage() {
       <PointsAuditCard />
 
       <PointsAdjustmentDialog
-        open={adjustDialogOpen}
-        onOpenChange={setAdjustDialogOpen}
+        open={adjustDialog.open}
+        onOpenChange={adjustDialog.setOpen}
+        onCloseAutoFocus={adjustDialog.contentProps.onCloseAutoFocus}
         onAdjusted={async () => {
           await Promise.all([leaderboardQuery.refetch(), summaryQuery.refetch()]);
         }}

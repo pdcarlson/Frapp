@@ -17,11 +17,23 @@ export function EmptyState({
   description,
   actionLabel,
   onAction,
+  actionProps,
 }: {
   title: string;
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  /**
+   * Extra props for the action button — shaped to take `controlProps()` from
+   * `useSubscriptionGate` directly, so an empty-state CTA that starts a gated
+   * write can be disabled and described rather than hidden (§5 rule 4). An
+   * empty state is exactly where hiding reads worst: the screen already has
+   * nothing on it, so a vanished CTA looks like a broken page.
+   */
+  actionProps?: {
+    disabled?: boolean;
+    "aria-describedby"?: string;
+  };
 }) {
   return (
     <div className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-card p-6 text-center">
@@ -29,7 +41,7 @@ export function EmptyState({
       <h2 className="text-base font-semibold">{title}</h2>
       <p className="max-w-lg text-sm text-muted-foreground">{description}</p>
       {actionLabel && onAction ? (
-        <Button variant="outline" onClick={onAction}>
+        <Button variant="outline" onClick={onAction} {...actionProps}>
           {actionLabel}
         </Button>
       ) : null}

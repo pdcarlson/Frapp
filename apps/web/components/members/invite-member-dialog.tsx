@@ -13,6 +13,10 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -102,6 +106,24 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
   const createInviteMutation = useCreateInvite();
   const createBatchInvitesMutation = useBatchCreateInvites();
   const revokeInviteMutation = useRevokeInvite();
+  // `POST /invites` and `POST /invites/batch` are the repo's only two
+  // `@FreeTier` + `@GraceBlocked` routes (`invite.controller.ts:46,60`): they
+  // keep working while `incomplete`, and are blocked *by name* only inside the
+  // `past_due` grace window. That is the one gate class the rest of this sweep
+  // never exercises, so it gets the matching writeClass rather than the default.
+  //
+  // Deliberately gating the submit rather than the trigger, against §5 rule 1.
+  // Two reasons: the trigger is a caller-supplied node (`trigger` prop), and
+  // this dialog is mostly a read surface — the invite list — plus a revoke that
+  // is plain `@FreeTier` and must stay live during grace. Blocking the dialog
+  // from opening would take those away to gate one button inside it.
+  const gate = useSubscriptionGate("grace-blocked");
+  // Revoke is `DELETE /invites/:id` — the class-level `@FreeTier` WITHOUT
+  // `@GraceBlocked`. That is not "always allowed": free-tier survives
+  // `incomplete` and the grace window, then hits `write_locked` past it, and
+  // `canceled` is checked above the carve-out entirely. So it needs its own
+  // verdict rather than being left ungated.
+  const revokeGate = useSubscriptionGate("free-tier");
   const { toast } = useToast();
   const hasLiveDataError = rolesQuery.isError || invitesQuery.isError;
 
@@ -268,7 +290,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
           <div className="flex items-end">
             <Button
               onClick={handleGenerateInvites}
-              disabled={hasLiveDataError || isSubmitting || roleOptions.length === 0}
+              {...gate.controlProps(
+                hasLiveDataError || isSubmitting || roleOptions.length === 0,
+              )}
               className="w-full"
             >
               {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
@@ -276,6 +300,8 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
             </Button>
           </div>
         </div>
+
+        <SubscriptionNotice gate={gate} feature="issuing invites" />
 
         {generatedInvites.length > 0 ? (
           <div className="space-y-2 rounded-md border border-primary/30 bg-primary-50/70 p-3 dark:bg-primary/10">
@@ -304,6 +330,12 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
 
         <div className="space-y-2">
           <p className="text-sm font-medium">Active invite tokens</p>
+          {/*
+            Revoke's verdict differs from Generate's — free-tier vs
+            grace-blocked diverge exactly inside the grace window — so it needs
+            its own notice for its own `aria-describedby` target.
+          */}
+          <SubscriptionNotice gate={revokeGate} feature="revoking invites" />
           {activeInviteRows.length === 0 ? (
             <div className="rounded-md border border-dashed border-border p-4 text-sm text-muted-foreground">
               No active invite tokens.
@@ -332,7 +364,9 @@ export function InviteMemberDialog({ trigger }: InviteMemberDialogProps) {
                     size="sm"
                     variant="outline"
                     onClick={() => handleRevokeInvite(invite.id)}
-                    disabled={revokeInviteMutation.isPending || hasLiveDataError}
+                    {...revokeGate.controlProps(
+                      revokeInviteMutation.isPending || hasLiveDataError,
+                    )}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     Revoke

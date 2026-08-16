@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Loader2, Plus, XCircle } from "lucide-react";
 import {
   useCreateServiceEntry,
@@ -39,6 +39,11 @@ import {
   LoadingState,
 } from "@/components/shared/async-states";
 import { Can } from "@/components/shared/can";
+import {
+  SubscriptionNotice,
+  useGatedDialog,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
 import { asArray, getErrorMessage } from "@/lib/utils";
@@ -106,6 +111,11 @@ function statusBadgeVariant(
 
 export function ServiceHoursPage() {
   const { toast } = useToast();
+  // Every write on `ServiceEntryController` (proof-upload-url, create, review,
+  // delete) carries no `@FreeTier`, so they are all paid-ops behind the same
+  // subscription guard — one gate covers the surface (#841). `GET
+  // /service-entries/:id/proof-url` is a read and stays ungated.
+  const gate = useSubscriptionGate();
   const entriesQuery = useServiceEntries();
   const membersQuery = useMembers();
   const createEntry = useCreateServiceEntry();
@@ -159,7 +169,7 @@ export function ServiceHoursPage() {
     [entries],
   );
 
-  const [logOpen, setLogOpen] = useState(false);
+  const logDialog = useGatedDialog(gate);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [draft, setDraft] = useState({
     date: new Date().toISOString().slice(0, 10),
@@ -174,12 +184,14 @@ export function ServiceHoursPage() {
   // mid-upload and a second click creates a duplicate entry.
   const [submitting, setSubmitting] = useState(false);
 
-  function setLogDialogOpen(open: boolean) {
-    setLogOpen(open);
-    // The file input unmounts (and so renders empty) on close, so a kept
-    // proofFile would silently attach a stale file to the next entry.
-    if (!open) setProofFile(null);
-  }
+  // The file input unmounts (and so renders empty) on close, so a kept
+  // proofFile would silently attach a stale file to the next entry. Keyed off
+  // the dialog's open flag rather than a close handler: `useGatedDialog` also
+  // closes the dialog when the subscription is revoked mid-flight, and that
+  // path never runs through `setOpen`.
+  useEffect(() => {
+    if (!logDialog.open) setProofFile(null);
+  }, [logDialog.open]);
 
   async function submitDraft(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -252,7 +264,7 @@ export function ServiceHoursPage() {
         title: "Service entry submitted",
         description: "An admin will review and approve it for points.",
       });
-      setLogDialogOpen(false);
+      logDialog.setOpen(false);
       setDraft({
         date: new Date().toISOString().slice(0, 10),
         hours: "1",
@@ -392,13 +404,13 @@ export function ServiceHoursPage() {
           </p>
         </div>
         <Can permission="service:log">
-          <Dialog open={logOpen} onOpenChange={setLogDialogOpen}>
+          <Dialog {...logDialog.dialogProps}>
             <DialogTrigger asChild>
-              <Button className="gap-2">
+              <Button className="gap-2" {...gate.controlProps()}>
                 <Plus className="h-4 w-4" /> Log service
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-lg">
+            <DialogContent className="sm:max-w-lg" {...logDialog.contentProps}>
               <DialogHeader>
                 <DialogTitle>Log service hours</DialogTitle>
                 <DialogDescription>
@@ -491,9 +503,11 @@ export function ServiceHoursPage() {
                 </div>
               </form>
               <DialogFooter>
+                {/* Cancel only closes the dialog — gating the way out of a
+                    surface the gate just blocked would be a trap. */}
                 <Button
                   variant="outline"
-                  onClick={() => setLogDialogOpen(false)}
+                  onClick={() => logDialog.setOpen(false)}
                   disabled={submitting}
                 >
                   Cancel
@@ -501,7 +515,7 @@ export function ServiceHoursPage() {
                 <Button
                   form="service-log-form"
                   type="submit"
-                  disabled={submitting}
+                  {...gate.controlProps(submitting)}
                 >
                   {submitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -513,6 +527,13 @@ export function ServiceHoursPage() {
           </Dialog>
         </Can>
       </header>
+
+      {/*
+        Disable, don't hide (§5 rule 4): the review queue, history, and proof
+        links stay readable for a lapsed chapter — only logging and reviewing
+        stop, and this says why.
+      */}
+      <SubscriptionNotice gate={gate} feature="logging service hours" />
 
       <Can permission="service:approve">
         <Card>
@@ -544,6 +565,10 @@ export function ServiceHoursPage() {
                           {entry.date} · {formatDuration(entry.duration_minutes)}
                         </p>
                         <p className="mt-1 text-sm">{entry.description}</p>
+                        {/* Deliberately ungated: the signed link comes from
+                            `GET /v1/service-entries/:id/proof-url`, and
+                            `enforceSubscription` returns early for GET — a
+                            lapsed chapter can still read its own proof. */}
                         {entry.proof_path ? (
                           <Button
                             size="sm"
@@ -557,10 +582,17 @@ export function ServiceHoursPage() {
                         ) : null}
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        {/*
+                          `PATCH /v1/service-entries/:id/review` is paid-ops
+                          too, so review mirrors the same gate as the log
+                          trigger. Gating only the member's submit would leave
+                          the page claiming writes are blocked while still
+                          offering two per row.
+                        */}
                         <Button
                           size="sm"
                           onClick={() => void approve(entry)}
-                          disabled={reviewEntry.isPending}
+                          {...gate.controlProps(reviewEntry.isPending)}
                         >
                           <CheckCircle2 className="h-4 w-4" />
                           Approve
@@ -569,7 +601,7 @@ export function ServiceHoursPage() {
                           size="sm"
                           variant="outline"
                           onClick={() => void reject(entry)}
-                          disabled={reviewEntry.isPending}
+                          {...gate.controlProps(reviewEntry.isPending)}
                         >
                           <XCircle className="h-4 w-4" />
                           Reject
@@ -663,10 +695,13 @@ export function ServiceHoursPage() {
                     {entry.date} · {formatDuration(entry.duration_minutes)} ·{" "}
                     {entry.description}
                   </span>
+                  {/* DELETE /v1/service-entries/:id sits behind the same
+                      guard as the submit that created the entry. */}
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => void withdraw(entry)}
+                    {...gate.controlProps()}
                   >
                     Withdraw
                   </Button>

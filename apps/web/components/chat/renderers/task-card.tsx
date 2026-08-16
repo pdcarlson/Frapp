@@ -3,6 +3,7 @@
 import { CheckCircle2, ClipboardList, Undo2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useMyPermissions,
   useTask,
   useUpdateTaskStatus,
   useConfirmTask,
@@ -13,6 +14,11 @@ import type { TaskPayload } from "@repo/chat-integrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
+import { can } from "@/lib/auth/can";
+import {
+  SubscriptionNotice,
+  useSubscriptionGate,
+} from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -137,6 +143,15 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // Hooks must run before any early return; `useTask` no-ops on an empty id.
   const taskId = payload?.task_id ?? "";
   const { data: liveRaw } = useTask(taskId);
+  // Same constraint — this one is a hook too, so it cannot sit down with the
+  // derived values below the malformed-payload return.
+  //
+  // Every button on this card hits `task.controller.ts` — PATCH /tasks/:id/status,
+  // POST /tasks/:id/confirm, POST /tasks/:id/reject — which is paid-ops. The chat
+  // surface itself is `@FreeTier`, so it is easy to assume a card rendered inside
+  // chat inherits that; it does not. The route decides, not the host (#841).
+  const gate = useSubscriptionGate();
+  const { data: permissionsPayload } = useMyPermissions();
 
   if (!payload) {
     return (
@@ -155,6 +170,18 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     updateStatus.isPending ||
     confirmTask.isPending ||
     rejectTask.isPending;
+  // The notice belongs to the action row, not the card: a timeline of task
+  // cards would otherwise repeat the same chapter-wide sentence under every
+  // one, including cards this viewer could never act on anyway.
+  // Mirrors the render conditions of the four buttons below, INCLUDING the
+  // `tasks:manage` gate on the COMPLETED branch. Without that last term a
+  // rank-and-file member scrolling a channel full of completed cards gets one
+  // orphaned notice per card, explaining a control they cannot see — which is
+  // the exact repetition this variable exists to prevent.
+  const canManageTasks = can("tasks:manage", permissionsPayload?.permissions);
+  const showsAnyAction =
+    (isAssignee && (status === "TODO" || status === "IN_PROGRESS")) ||
+    (status === "COMPLETED" && canManageTasks);
 
   const taskKey = ["tasks", payload.task_id];
 
@@ -205,7 +232,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={actionsDisabled}
+            {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               void runOptimistic(
                 { status: "IN_PROGRESS" },
@@ -226,7 +253,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Button
             size="sm"
             variant="outline"
-            disabled={actionsDisabled}
+            {...gate.controlProps(actionsDisabled)}
             onClick={() =>
               void runOptimistic(
                 { status: "COMPLETED" },
@@ -247,7 +274,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
           <Can permission="tasks:manage">
             <Button
               size="sm"
-              disabled={actionsDisabled || pointsAwarded}
+              {...gate.controlProps(actionsDisabled || pointsAwarded)}
               onClick={() =>
                 void runOptimistic(
                   { points_awarded: true },
@@ -264,7 +291,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={actionsDisabled}
+                {...gate.controlProps(actionsDisabled)}
                 onClick={() =>
                   void runOptimistic(
                     { status: "IN_PROGRESS" },
@@ -279,6 +306,13 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               </Button>
             )}
           </Can>
+        ) : null}
+        {showsAnyAction ? (
+          <SubscriptionNotice
+            gate={gate}
+            feature="task actions"
+            className="mb-0 w-full"
+          />
         ) : null}
       </div>
     </div>
