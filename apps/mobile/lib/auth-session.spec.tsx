@@ -125,7 +125,7 @@ vi.mock("./supabase", async () => {
 import { AuthSessionProvider, useAuthSession } from "./auth-session";
 import { AUTH_TOKEN_STORAGE_KEY } from "./auth-token";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
-import { sessionStorageAdapter } from "./supabase";
+import { sessionStorageAdapter, getSupabaseClient } from "./supabase";
 
 function wrapper({ children }: { children: React.ReactNode }) {
   return <AuthSessionProvider>{children}</AuthSessionProvider>;
@@ -148,7 +148,10 @@ function closeClaimsGate() {
  * Let every parked claim read finish, and settle the resulting renders here.
  *
  * Releasing after the test body returns lands those state updates in whatever
- * test runs next, which is a genuine cross-test leak — hence the `act`.
+ * test runs next, where it lands on a provider Testing Library has already
+ * unmounted — so it exercises nothing and this test's last third silently stops
+ * asserting. Not a state leak across tests; the `act` is here to keep the
+ * release and its renders inside the test that asked for them.
  */
 async function releaseClaimsGate() {
   mockState.claimsGateClosed = false;
@@ -156,6 +159,80 @@ async function releaseClaimsGate() {
   mockState.claimsGateWaiters = [];
   await act(async () => {
     for (const release of waiters) release();
+  });
+}
+
+/** The `getClaims` mock, for asserting on or awaiting the reads it recorded. */
+function claimsMock() {
+  const client = getSupabaseClient();
+  if (!client) {
+    throw new Error(
+      "claimsMock() needs a configured client; mockState.configured is false",
+    );
+  }
+  return vi.mocked(client.auth.getClaims).mock;
+}
+
+/** How many chapter-claim reads have been issued so far. */
+function claimReadCount(): number {
+  return claimsMock().results.length;
+}
+
+/**
+ * Wait for the *first* chapter-claim read to have actually landed.
+ *
+ * Waiting on `isChapterResolving` alone does not do this. It is
+ * `status === "authenticated" && !hasReadChapterClaim`
+ * ([`auth-session.tsx`](./auth-session.tsx)), so it also reads false for the
+ * whole `hydrating` window — before `getSession()` resolves and before any read
+ * is issued. Pairing it with the authenticated state is what rules that window
+ * out, and the pair is exactly equivalent to `hasReadChapterClaim === true`.
+ *
+ * Before shortening a product constant, note the other producer of that flag:
+ * the bounded bail-out timer in the claim effect. What keeps it out of reach
+ * here is `waitFor`'s own `asyncUtilTimeout` — 1000ms, Testing Library's
+ * default, which nothing in `apps/mobile` overrides — not vitest's 5s
+ * `testTimeout`. So the invariant is `CLAIM_READ_TIMEOUT_MS > 1000`, and it is
+ * comfortably met at 8s. Drop it under a second, or raise `asyncUtilTimeout`
+ * past it, and this helper goes back to proving nothing.
+ */
+async function waitForFirstClaimRead(result: {
+  current: ReturnType<typeof useAuthSession>;
+}) {
+  await waitFor(() => {
+    expect(result.current.status).toBe("authenticated");
+    expect(result.current.isChapterResolving).toBe(false);
+  });
+}
+
+/**
+ * Let every claim read issued so far settle, along with the renders it causes.
+ *
+ * Needed wherever a *later* read is the thing under test: after the first read
+ * lands, `hasReadChapterClaim` stays true by design, so a re-read changes no
+ * flag and there is nothing for `waitFor` to observe.
+ *
+ * The `act` is what makes this correct, not the `allSettled`. `allSettled`
+ * registers on the mock's promise *after* the provider's own `.then`, and the
+ * `.finally` that sets the flag is two links further down — so awaiting the
+ * source promise alone can return before the chain and its renders have landed.
+ * React's async `act` hops macrotasks until its queue drains, which flushes all
+ * of it. Do not "simplify" this by dropping the `act`.
+ *
+ * Pair this with an open gate. A read parked by `closeClaimsGate()` is resolved
+ * only by `releaseClaimsGate()`, so awaiting it here would hang until the test
+ * timeout with nothing to point at the cause — hence the explicit guard.
+ */
+async function settleClaimReads() {
+  if (mockState.claimsGateClosed) {
+    throw new Error(
+      "settleClaimReads() would hang: the claims gate is closed and parked " +
+        "reads can only be resolved by releaseClaimsGate().",
+    );
+  }
+  const pending = claimsMock().results.map((r) => r.value);
+  await act(async () => {
+    await Promise.allSettled(pending);
   });
 }
 
@@ -317,7 +394,7 @@ describe("AuthSessionProvider — chapter context", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    await waitForFirstClaimRead(result);
     expect(result.current.chapterId).toBeNull();
   });
 
@@ -328,7 +405,7 @@ describe("AuthSessionProvider — chapter context", () => {
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
 
-    await waitFor(() => expect(result.current.status).toBe("authenticated"));
+    await waitForFirstClaimRead(result);
     // Nothing to fall back to, so null — but note this is "retain what we had",
     // not "null on error"; the next test is the half that distinguishes them.
     expect(result.current.chapterId).toBeNull();
@@ -352,7 +429,15 @@ describe("AuthSessionProvider — chapter context", () => {
       emitAuthChange({ ...SESSION, access_token: "access-token-2" });
     });
 
-    await waitFor(() => expect(result.current.isChapterResolving).toBe(false));
+    // Not `waitFor(isChapterResolving === false)`: the flag is already false
+    // here and stays that way by design, so that wait returns on its first
+    // synchronous sample without the failing re-read having gone anywhere.
+    //
+    // Pin the re-read itself. `settleClaimReads()` alone would not — it is
+    // satisfied by the already-settled mount read, so it stays green even if
+    // the token change stops triggering a read at all.
+    expect(claimReadCount()).toBe(2);
+    await settleClaimReads();
     expect(result.current.chapterId).toBe("chapter-uuid-1");
   });
 
@@ -370,20 +455,22 @@ describe("AuthSessionProvider — chapter context", () => {
     mockState.claims = { sub: "user-1" };
 
     const { result } = renderHook(() => useAuthSession(), { wrapper });
-    // Wait for the authenticated state, not just for the flag to read false.
-    // The flag is `status === "authenticated" && !hasReadChapterClaim`, so it
-    // also reads false throughout `hydrating` — before `getSession()` has
-    // resolved and before the first claim read has even been issued. Waiting on
-    // the flag alone let this test proceed with the mount read still ahead of
-    // it; that read then parked behind the gate closed below and never marked
-    // the claim read, so the assertion after it saw `true`. That is what made
-    // the suite fail roughly one run in six, and it is why the run only failed
-    // as part of the full suite: cross-file scheduling decides whether
-    // `getSession()`'s microtasks drain before `waitFor` first samples.
-    await waitFor(() => {
-      expect(result.current.status).toBe("authenticated");
-      expect(result.current.isChapterResolving).toBe(false);
-    });
+    // Waiting on `isChapterResolving` alone used to be enough to let this test
+    // start with the mount read still ahead of it — see the helper for why the
+    // flag is false during `hydrating` too. The mount read then either parked
+    // behind the gate closed below, or was already in flight and got cancelled
+    // by the token change; either way it never marked the claim read, and the
+    // assertion after the gate saw `true`. That was #976's flake.
+    //
+    // The race is inside this one test, not across the suite. `waitFor` samples
+    // synchronously in its own executor, so the first sample always lands in
+    // `hydrating` and always returns immediately; what varies is whether the
+    // mount read lands during the post-resolve drain Testing Library runs
+    // afterwards (an awaited `setTimeout(0)` racing React's scheduler). Load
+    // shifts the odds, which is why #976 reported it as suite-only — but the
+    // pre-fix test reproduces on its own too, measured 4 failures in 30
+    // file-alone runs against 1 in 15 for the full suite on the same box.
+    await waitForFirstClaimRead(result);
 
     // Hold the next read open so the in-flight window is observable. If the
     // flag tracked "a read is in flight" rather than "the first read is done",

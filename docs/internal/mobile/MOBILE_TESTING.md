@@ -155,26 +155,51 @@ the root next to the new one, vulnerabilities included. Use
 ([`lib/auth-session.tsx`](../../../apps/mobile/lib/auth-session.tsx)), so it reads
 `false` during `hydrating` just as it does once the first claim read has landed.
 `await waitFor(() => expect(result.current.isChapterResolving).toBe(false))`
-therefore returns before `getSession()` has resolved and before any claim read has
-been issued — the wait passes for a reason the test did not intend, and whatever it
-was meant to sequence is still ahead of it. Assert `status === "authenticated"` in
-the same `waitFor` so the pre-authentication state cannot satisfy it.
+therefore *can* return before `getSession()` has resolved and before any claim read
+has been issued — the wait passes for a reason the test did not intend, and
+whatever it was meant to sequence is still ahead of it. It does not fail every
+time; see the drain below for what decides it. Assert `status === "authenticated"`
+in the same `waitFor` so the pre-authentication state cannot satisfy it.
 
-The bare form is still fine where an earlier wait has already pinned the state it
-would otherwise pass on — the test above it waits for `chapterId` to reach a real
-value first, which cannot happen before authentication *and* a completed read. The
-rule is that something must rule out the early state, not that the flag may never
-be waited on alone.
+The test for whether a wait is specified enough is simply this: **could its first
+synchronous sample already pass?** `waitFor` evaluates its callback immediately
+inside its own promise executor, before anything has had a chance to happen, so a
+condition that is already true when the wait begins returns at once and sequences
+nothing. That is independent of how many suites are running.
 
-This was the whole of #976, a ~1-in-6 `mobile-validate` failure that only ever
-reproduced in the full nine-file run — `lib/auth-session.spec.tsx` alone passes
-27/27, because whether `getSession()`'s microtasks drain before `waitFor` first
-samples depends on scheduling pressure from the other suites. The rate scales with
-machine load: on an otherwise idle box the pre-fix test failed about 1 run in 12,
-and on a busy 4-core one it failed 10 in 14. So treat "passes in isolation, fails in
-the suite" as a symptom of an under-specified wait, not as proof of cross-test
-leakage — #976 was originally diagnosed as a leaked claim gate, and the `act()`
-containment added for that theory never moved the rate.
+Apply that test to what the wait is *for*, not mechanically. A wait placed after an
+`await act(...)` that already did the sequencing will often pass on its first
+sample, and that is fine — about ten of this spec's own waits are in exactly that
+position. The question is whether anything *other than the wait itself* rules out
+the state you are trying to skip past. When the answer is the `act` above it, the
+wait is a readable assertion; when the answer is nothing, it is a bug.
+
+The corollary is that waiting on an *already-settled* flag is a pure no-op. Where a
+later async operation is the thing under test and it changes no flag — a claim
+re-read, which deliberately leaves `hasReadChapterClaim` true — wait on the
+operation instead: await the mock's recorded promises inside `act`, and assert the
+call count so the wait cannot be satisfied by an earlier, unrelated call.
+
+This was the whole of #976. Two things about it are worth not repeating:
+
+- **It was not a cross-test leak.** It was originally diagnosed as a released claim
+  gate leaking into the next test, and an `act()` containment was added for that
+  theory. The rate never moved, because nothing ever crossed a test boundary.
+- **It was not suite-only**, though #976 says it was. To check either claim you
+  have to run the *pre-fix* spec, which since #981 means an explicit checkout —
+  `git show 1632e72:apps/mobile/lib/auth-session.spec.tsx`, the last commit before
+  the fix. Against that revision the test reproduces run on its own: 4 failures in
+  30 file-alone runs, versus 1 in 15 for the full nine-file suite, on one 4-core
+  box. Run it against `main` instead and you get a clean 70/70, which says nothing
+  about the flake. So do not treat "passes in isolation" as evidence that a
+  documented mechanism does not apply — and when you do measure a rate, say which
+  revision you measured.
+
+What actually varies run to run is the drain Testing Library performs *after*
+`waitFor` resolves: `asyncWrapper` awaits a `setTimeout(0)` that races React's
+scheduler macrotasks, and that decides whether the pending work has landed by the
+time the test continues. Machine load shifts those odds, which is why the rate is
+noisy and why a handful of green runs proves very little.
 
 **A test double that parks a call needs one resolver per parked call.** The same
 spec holds `getClaims` open to make the in-flight window observable. Storing a
