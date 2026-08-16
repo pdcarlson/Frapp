@@ -150,7 +150,7 @@ All five history findings are accepted into `/.gitleaks-baseline.json`:
 2. `generic-api-key` — `apps/api/README.md` @ `6a2d71c`. The stock `nest new` scaffold README. The
    match is the scaffold's literal dummy badge-URL token (`abc123…`), shipped identically in every
    NestJS scaffold — not a credential belonging to Frapp or to anyone. Replaced by a real README.
-3–5. `jwt` ×2 and `stripe-access-token` — `docs/internal/ENV_REFERENCE.md` @ `9d43093`, a commit
+3–5. `jwt` ×2 and `stripe-access-token` — `docs/internal/environment/ENV_REFERENCE.md` @ `9d43093`, a commit
    reachable **only from PR refs**, never from `main`. The two JWTs decode to `iss: supabase-demo`,
    roles `service_role` and `anon`: the deterministic **local** Supabase keys that ship with
    `supabase start`, published in Supabase's own docs and byte-identical for every developer on

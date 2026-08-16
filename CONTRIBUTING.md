@@ -48,7 +48,7 @@ Every PR must pass these checks before merging. Branch protection enforces this 
 | `lint-and-typecheck` | ESLint + TypeScript across all workspaces, **`nest build` for `apps/api`** (matches Render compile), landing + `@repo/validation` unit tests |
 | `api-docker-build`   | `docker build -f apps/api/Dockerfile .` (API image compile path)                                   |
 | `api-tests`          | API Jest unit tests                                                                                |
-| `api-contract-check` | `openapi.json` + `api-sdk/types.ts` freshness                                                      |
+| `api-contract-check` | `openapi.json` + `packages/api-sdk/src/types.ts` freshness                                                      |
 | `migration-safety`   | Migration filename validation + promotion docs                                                     |
 | `mobile-validate`    | Mobile app lint + typecheck + unit tests (Vitest)                                                  |
 | `ci-scripts-tests`   | `node --test` unit tests for the deploy-gate/CI scripts under `scripts/ci/`                        |
@@ -89,7 +89,7 @@ Vercel is configured to auto-deploy only on `main` and `production` via `git.dep
 
 ## PR Workflow
 
-For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
+For infrastructure-heavy work (CI/CD, branch protection, release automation), follow `docs/internal/quality/PR_REVIEW_PROCESS.md` and split into small, single-concern PRs.
 
 ### 1. Create a feature branch
 
@@ -164,7 +164,7 @@ When you change the database schema:
 2. Write the SQL in the generated file under `supabase/migrations/`.
 3. Apply locally: `npx supabase db push --local`
 4. Test locally.
-5. Update `docs/internal/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
+5. Update `docs/internal/ops/DB_ROLLBACK_PLAYBOOK.md` with the rollback strategy.
 6. Commit the migration file and docs update together.
 
 CI validates migration filenames and requires promotion docs to be updated. Migrations are applied automatically in the deploy pipeline.

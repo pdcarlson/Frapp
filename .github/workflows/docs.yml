@@ -41,3 +41,11 @@ jobs:
       - name: Enforce docs/spec structure (PR only)
         if: github.event_name == 'pull_request'
         run: node scripts/check-docs-structure.mjs --base "${{ github.event.pull_request.base.sha }}" --head "${{ github.sha }}"
+
+      # Unlike the two checks above, this one scans the whole tree rather than a
+      # diff: a citation breaks when the file it names moves, which is a change
+      # to the *other* side of the reference. Diffing would miss exactly the case
+      # it exists to catch. It runs on push as well so a break that lands on main
+      # is visible immediately.
+      - name: Enforce doc path citations
+        run: node scripts/check-doc-paths.mjs
