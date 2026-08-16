@@ -5,6 +5,7 @@ import {
   ChatMessageAction,
   MessageReaction,
   ChannelReadReceipt,
+  ChannelUnreadCount,
 } from '../entities/chat.entity';
 
 export const CHAT_CHANNEL_REPOSITORY = 'CHAT_CHANNEL_REPOSITORY';
@@ -169,4 +170,16 @@ export interface IChannelReadReceiptRepository {
     userId: string,
     lastReadAt: string,
   ): Promise<ChannelReadReceipt>;
+  /**
+   * Unread and mention tallies for every channel in a chapter, for one viewer.
+   *
+   * Returns a row per channel **including ones the viewer cannot access**, so
+   * the caller must filter. Kept that way deliberately: the access predicate
+   * lives in `ChannelAccessService` and a second copy inside the SQL would be
+   * free to drift from it.
+   */
+  getUnreadCounts(
+    chapterId: string,
+    userId: string,
+  ): Promise<ChannelUnreadCount[]>;
 }

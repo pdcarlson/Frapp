@@ -97,6 +97,30 @@ After any rollback event:
 * **Data caveat**: none. This migration stores no data. `realtime.messages` rows are ephemeral broadcast envelopes, partitioned by day and pruned by Realtime itself, and the pings carry only `{table, op}` — no row content — so there is nothing to snapshot before dropping and nothing to reconstruct after re-applying. Re-applying is fully idempotent: every block is guarded (`pg_publication_tables` membership, `pg_policies` existence, `create or replace` on the functions, `drop trigger if exists` before each `create trigger`).
 * **Partial rollback to avoid**: dropping `chat_messages_select` while leaving `chat_messages` in the publication. Realtime enforces RLS per subscriber, so the table stays replicated but every subscriber is denied — the WAL work is done and thrown away. If you want chat off, drop it from the publication too.
 
+## Rollback the chat unread/mention slice
+
+* **Migration**: `20260816190000_chat_unread_and_mentions.sql`
+* **Action**: everything it adds is separately droppable.
+  ```sql
+  -- 1. the read path (drop this AFTER the API is back on a pre-C1 revision)
+  DROP FUNCTION IF EXISTS public.get_channel_unread_counts(uuid, uuid);
+
+  -- 2. the index
+  DROP INDEX IF EXISTS public.idx_channel_read_receipts_user;
+
+  -- 3. the column — see the data caveat before running this one
+  ALTER TABLE public.chat_messages DROP COLUMN IF EXISTS mentions;
+  ```
+* **Order**: **redeploy the API first, then the database. Do not skip this.** This is the coordinated shape, not the additive one, and the column matters more than the function:
+  * **`chat_messages.mentions` is written on every send.** `ChatService.sendMessage` includes `mentions` in every insert unconditionally, and `editMessage` in every update. Dropping the column under a running C1 API therefore fails **every chat message in the product, chapter-wide**, with PostgREST `42703 column "mentions" does not exist` — not a degraded badge, a dead send button.
+  * `GET /v1/channels/unread` calls the function directly, so dropping that turns the route into a 500 on every request. This is the smaller half: as of this migration the endpoint exists but no client consumes it yet (the mobile channel list and the web badge land later in C1).
+
+  Roll the API back to a pre-C1 revision first and both disappear with it; then the DB drop is unobserved. If you only remember one thing here: the "no client consumes it yet" note applies to the *endpoint*, never to the column.
+* **Note**: the `mentions` half degrades gracefully in *both* directions, which is worth knowing before you panic. The push worker reads `row.mentions ?? []`, so a missing column simply means no message is ever treated as a mention — the same behavior the product had before this migration, since the worker was previously casting over a column that never existed and always resolving to empty. Dropping the column cannot therefore break push; it only returns the `mentions` tier to never firing.
+* **Data caveat**: **dropping the column is not recoverable by re-applying.** `mentions` is resolved at send time against chapter membership as it stood at that moment, so re-adding the column gives every historical message an empty array. The raw `@`-text survives in `content`, so a backfill is *possible*, but it would resolve against today's membership — a member who has since left, been renamed, or whose display name now collides with another's would resolve differently or not at all. If you only need to stop a bad mention resolution rather than remove the feature, `UPDATE chat_messages SET mentions = '{}'` on the affected rows and leave the schema alone.
+* **Lighter option**: to stop the badges without touching the schema, revert the client. The counts are read-only and computed on demand — no writes, no background job, nothing accruing — so an unused function and an unread column cost essentially nothing to leave in place. There is no index on `chat_messages` to pay for — see below.
+* **Do not "restore" an index on `chat_messages.mentions`.** An earlier draft of this migration created a GIN index there and it was removed deliberately, so its absence is not an oversight to correct during a rollback. The mention tally is computed inside an aggregate `filter (where ...)`, which is not a row-selection predicate, so the planner cannot consult an index for it at all — the plan is a seq scan with the index present and without it. Adding one back buys nothing and costs write amplification on the product's hottest insert path. If a future *row-predicate* query needs it (a "my mentions" inbox), it must be spelled `mentions @> array[$1]`, which GIN can serve; the equivalent-looking `$1 = any (mentions)` cannot and seq-scans regardless.
+
 ## Rollback the activation funnel table
 
 * **Migration**: `20260809001500_chapter_activation_milestones.sql`

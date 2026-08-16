@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiOkResponse,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -42,6 +43,7 @@ import {
   ReactionDto,
   ChatMessageActionDto,
   RequestChatUploadUrlDto,
+  ChannelUnreadCountDto,
 } from '../dtos/chat.dto';
 import type { ChannelType } from '../../domain/entities/chat.entity';
 
@@ -63,6 +65,21 @@ export class ChatController {
   @ApiOperation({ summary: 'List chapter channels' })
   async listChannels(@CurrentChapterId() chapterId: string) {
     return this.chatService.getChannels(chapterId);
+  }
+
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getChannel('unread')` and answering 404 for a route that exists.
+  @Get('unread')
+  @ApiOperation({
+    summary: 'Unread and mention counts for every channel the caller can read',
+  })
+  @ApiOkResponse({ type: ChannelUnreadCountDto, isArray: true })
+  async getUnreadCounts(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ): Promise<ChannelUnreadCountDto[]> {
+    return this.chatService.getUnreadCounts(chapterId, userId);
   }
 
   @Get(':id')

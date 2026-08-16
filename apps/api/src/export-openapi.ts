@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { VersioningType, Logger } from '@nestjs/common';
+import { VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
@@ -26,7 +26,19 @@ if (missingVars.length > 0) {
 }
 
 async function exportOpenApi() {
-  const app = await NestFactory.create(AppModule, { logger: false });
+  // `abortOnError: false` is what makes a bootstrap failure *visible*, and it
+  // is not optional here. With the default `true`, Nest logs the reason through
+  // the logger this call just disabled and then calls `process.exit(1)` itself
+  // — the promise never rejects, so the `.catch` below never runs and the
+  // script dies with exit 1 and zero output. Since `NestFactory.create` is the
+  // only place the real DI container is built (unit tests supply their own
+  // providers), that silence hides exactly the class of error this script is
+  // best placed to catch: a service injecting something its module does not
+  // provide, which would fail to boot in production.
+  const app = await NestFactory.create(AppModule, {
+    logger: false,
+    abortOnError: false,
+  });
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   const config = new DocumentBuilder()
@@ -43,11 +55,20 @@ async function exportOpenApi() {
   const document = SwaggerModule.createDocument(app, config);
   const outPath = join(__dirname, '..', 'openapi.json');
   writeFileSync(outPath, JSON.stringify(document, null, 2), 'utf-8');
-  Logger.log(`Wrote ${outPath}`, 'OpenAPIExport');
+  console.log(`[OpenAPIExport] wrote ${outPath}`);
   await app.close();
 }
 
 exportOpenApi().catch((err) => {
-  Logger.error(err, 'OpenAPIExport');
+  // `console`, not `Logger`: the app is created with `logger: false`, which
+  // disables Nest's logger process-wide — so the previous `Logger.error` here
+  // printed nothing and this script failed with exit 1 and no output at all.
+  // The failure it hides is the expensive kind: `NestFactory.create` bootstraps
+  // the real container, so a missing provider surfaces here and nowhere else
+  // (unit tests supply their own), and a silent exit 1 gives no clue which.
+  console.error(
+    '[OpenAPIExport] failed:',
+    err instanceof Error ? err.stack : err,
+  );
   process.exit(1);
 });

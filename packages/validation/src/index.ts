@@ -739,6 +739,18 @@ export type { AnalyticsEvent, AnalyticsProperties } from "./analytics";
 export { ACTIVATION_MILESTONES, activationMilestoneStep } from "./analytics";
 export type { ActivationMilestone } from "./analytics";
 
+// ── `@`-mention resolution (C1 of #937) ──────────────────────────────────────
+// Shared because the API's authoritative pass and any client-side preview must
+// not disagree about who `@jane` is — but only the API's result is persisted,
+// since mentions override a per-channel mute in the push rules and a
+// client-supplied list would be forgeable.
+export {
+  extractMentionTokens,
+  matchMentionCandidate,
+  resolveMentions,
+} from "./mentions";
+export type { MentionCandidate } from "./mentions";
+
 // ── Sentry PII scrubbing (issues #481, #896, #865) ───────────────────────────
 // Shared rather than API-local because a browser bundle holds strictly more PII
 // than the server does, so `apps/web` must scrub to the *same* rules rather than

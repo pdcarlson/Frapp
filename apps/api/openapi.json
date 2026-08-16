@@ -1826,6 +1826,36 @@
         ]
       }
     },
+    "/v1/channels/unread": {
+      "get": {
+        "operationId": "ChatController_getUnreadCounts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelUnreadCountDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Unread and mention counts for every channel the caller can read",
+        "tags": [
+          "Chat"
+        ]
+      }
+    },
     "/v1/channels/{id}": {
       "get": {
         "operationId": "ChatController_getChannel_v1",
@@ -6218,6 +6248,28 @@
             "type": "string"
           }
         }
+      },
+      "ChannelUnreadCountDto": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unread_count": {
+            "type": "number",
+            "description": "Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them."
+          },
+          "mention_count": {
+            "type": "number",
+            "description": "Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time."
+          }
+        },
+        "required": [
+          "channel_id",
+          "unread_count",
+          "mention_count"
+        ]
       },
       "CreateChannelDto": {
         "type": "object",

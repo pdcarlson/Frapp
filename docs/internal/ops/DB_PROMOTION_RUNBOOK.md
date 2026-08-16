@@ -78,6 +78,63 @@ Post-apply production checks:
   delete-and-reload would silently detach every chapter already linked to a directory
   entry. Updates are scoped to `source = 'seed'`, so hand-curated rows survive.
 
+## 2026-08-16: Chat unread + mention counts (C1 of #937)
+
+### 20260816190000_chat_unread_and_mentions.sql
+
+* **Purpose**: Give the server the ability to answer "how many unread, how many mentions" per
+  channel, which it has never had. The read cursor already exists and is written on every channel
+  open (`POST /v1/channels/{id}/read` → `channel_read_receipts.last_read_at`), but nothing read it
+  back: `findByChannelAndUser` has zero production call sites and `GET /v1/channels` returns raw
+  rows with no aggregation. Mentions did not exist as data at all — the push worker has been
+  reading a `mentions` field off the message row through a structural cast over a column that never
+  existed, so the `mentions` push tier has never fired for anyone. Mobile's channel list needs both
+  badges, and web's #315 badge is intended to read the same function rather than
+  grow a second definition of "unread" — neither client is wired to it yet as of
+  this migration.
+* **Shape**: additive only. One column (`chat_messages.mentions uuid[] not null default '{}'`), one
+  index, one `security definer` function. No table created, no column dropped, no data rewritten.
+  Every statement is guarded (`if not exists` / `create or replace`), so the file is re-runnable.
+* **Locks — the part worth reading before scheduling.** The `add column` is cheap: it takes an
+  `ACCESS EXCLUSIVE` lock but does not rewrite the heap, because Postgres stores a non-volatile
+  default as catalog metadata rather than materialising it per row (confirmed on PG 17.6 against a
+  50k-row table: `pg_relation_filenode` unchanged, `atthasmissing = t`). So it is O(1) in
+  `chat_messages` size and the exclusive lock is held only momentarily.
+  The index is the one to think about, because a plain `create index` (not `concurrently`) holds a
+  `SHARE` lock for the whole build, blocking every INSERT/UPDATE/DELETE on that table meanwhile.
+  Here it is on `channel_read_receipts`, which holds at most one row per member per channel, so the
+  build is short. **There is deliberately no index on `chat_messages`** — see the migration's own
+  comment for why a GIN index there would have been unusable *and* would have blocked chat sends
+  for the length of its build. If a future migration does index `chat_messages`, size the window
+  against that table's row count rather than assuming this entry's profile.
+* **Why `security definer`**: `chat_channels` and `channel_read_receipts` both have RLS enabled with
+  **zero policies** (`00000000000000_initial_schema.sql:468,471`), which denies everything to
+  non-service roles. The function is granted to `service_role` only — `public`, `anon` and
+  `authenticated` are explicitly revoked — and `search_path` is pinned to `public, pg_temp` — with `pg_temp`
+  **last**, which is the part that matters: named implicitly it is searched *first*, so a session that can
+  `create temp table chat_messages (...)` would have the definer function read its forged rows. Verify with
+  `select proconfig from pg_proc where proname='get_channel_unread_counts';` — expect `{"search_path=public, pg_temp"}`.
+  Per-channel access is filtered in the service against the same predicate the rest of chat uses,
+  rather than duplicated in SQL where it would drift.
+* **Not yet applied.** This lands as a file only; promotion follows the order at the top of this
+  runbook. Nothing was run against a hosted project as part of the change that introduced it. It was
+  applied and exercised against the local stack only.
+* **Checks** (after promotion):
+  - Objects exist — expect one row each:
+    `select 1 from information_schema.columns where table_name='chat_messages' and column_name='mentions';`
+    `select 1 from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='get_channel_unread_counts';`
+  - Grants are service-role only — expect no `anon`/`authenticated` rows:
+    `select grantee from information_schema.role_routine_grants where routine_name='get_channel_unread_counts';`
+  - Function answers for a real member (substitute ids) — expect one row per channel in the chapter,
+    including channels with zero unread:
+    `select * from public.get_channel_unread_counts('<chapter_id>','<users.id>');`
+  - Sanity: no member sees their own messages as unread — pick a chapter's most recent sender and
+    confirm the channel they just posted in does not count that message.
+* **Rollback**: see **Rollback the chat unread/mention slice** in
+  [`DB_ROLLBACK_PLAYBOOK.md`](DB_ROLLBACK_PLAYBOOK.md). Note it is a **coordinated** rollback — the
+  API must be redeployed to a pre-C1 revision *before* the function is dropped, or
+  `GET /v1/channels/unread` 500s on every poll.
+
 ## 2026-08-14: Backfill `chapters.accent_color` from branding (#795)
 
 ### 20260814120000_backfill_chapter_accent_color_from_branding.sql

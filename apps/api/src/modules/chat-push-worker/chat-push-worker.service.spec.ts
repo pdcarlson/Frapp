@@ -8,18 +8,23 @@ import {
   ChatNotificationPreferenceRepository,
   type ChatNotificationPreferenceRow,
 } from './chat-notification-preference.repository';
+import { RbacService } from '../../application/services/rbac.service';
 
 describe('ChatPushWorkerService', () => {
   let service: ChatPushWorkerService;
   let notifyUser: jest.Mock;
   let findByChapter: jest.Mock;
   let findForUser: jest.Mock;
+  let getEffectivePermissions: jest.Mock;
 
   const CHANNEL = {
     id: 'ch-1',
     chapter_id: 'chap-1',
     name: 'general',
     is_read_only: false,
+    type: 'PUBLIC',
+    member_ids: null,
+    required_permissions: null,
   };
 
   const ANNOUNCEMENT_CHANNEL = {
@@ -33,6 +38,7 @@ describe('ChatPushWorkerService', () => {
     notifyUser = jest.fn().mockResolvedValue(undefined);
     findByChapter = jest.fn();
     findForUser = jest.fn().mockResolvedValue([]);
+    getEffectivePermissions = jest.fn().mockResolvedValue([]);
 
     const mod = await Test.createTestingModule({
       providers: [
@@ -52,6 +58,10 @@ describe('ChatPushWorkerService', () => {
         {
           provide: ChatNotificationPreferenceRepository,
           useValue: { findForUser },
+        },
+        {
+          provide: RbacService,
+          useValue: { getEffectivePermissions },
         },
       ],
     }).compile();
@@ -151,8 +161,13 @@ describe('ChatPushWorkerService', () => {
       level: 'off',
     };
     findForUser.mockResolvedValue([pref]);
-    // `mentions` rides on the message row (the composer writes it); the worker
-    // reads it via a `MentionsCarrier` cast, so attach it and cast here too.
+    // `mentions` is a `users.id[]` column on `chat_messages`, resolved by the
+    // API at send time (C1 of #937).
+    //
+    // This test used to build `{ a: true }` and pass, because the worker read
+    // the field through a structural cast typed as a map — but no row has ever
+    // carried it, since the column did not exist. So the mute override was
+    // green here and had never fired once in production. Use the real shape.
     const row = {
       id: 'm1',
       channel_id: CHANNEL.id,
@@ -160,7 +175,7 @@ describe('ChatPushWorkerService', () => {
       content: 'hey @a can you cover tonight?',
       kind: 'text',
       created_at: '',
-      mentions: { a: true },
+      mentions: ['a'],
     };
     await service.handleMessage(row);
     expect(notifyUser).toHaveBeenCalledTimes(1);
@@ -208,5 +223,90 @@ describe('ChatPushWorkerService', () => {
         data: expect.objectContaining({ bundled: true, count: 3 }),
       }),
     );
+  });
+  it('does not push a private channel to a chapter member who is not in it', async () => {
+    // The recipient list starts as the whole chapter roster, and `decidePush`
+    // returns 'send' on a mention *before* the level check — so without a read
+    // filter, mentioning a non-member in a DM would hand them a 200-character
+    // preview of its body plus a persisted notification row, overriding even an
+    // explicit `off`. This was inert until mentions resolved for real (C1).
+    service.__setChannelForTest({
+      id: 'dm-1',
+      chapter_id: 'chap-1',
+      name: 'alice-bob',
+      is_read_only: false,
+      type: 'DM',
+      member_ids: ['alice', 'bob'],
+      required_permissions: null,
+    });
+    setMembers(['alice', 'bob', 'carol']);
+    findForUser.mockResolvedValue([]);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: 'dm-1',
+      sender_id: 'alice',
+      content: 'do not tell @carol we are cutting her',
+      kind: 'text',
+      created_at: '',
+      mentions: ['carol'],
+    });
+
+    const notified = notifyUser.mock.calls.map((c) => c[0]);
+    expect(notified).not.toContain('carol');
+  });
+
+  it('still pushes a DM to the other participant', async () => {
+    // The filter must not silence the channel it is protecting.
+    service.__setChannelForTest({
+      id: 'dm-1',
+      chapter_id: 'chap-1',
+      name: 'alice-bob',
+      is_read_only: false,
+      type: 'DM',
+      member_ids: ['alice', 'bob'],
+      required_permissions: null,
+    });
+    setMembers(['alice', 'bob', 'carol']);
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: 'dm-1',
+      sender_id: 'alice',
+      content: 'hey @bob',
+      kind: 'text',
+      created_at: '',
+      mentions: ['bob'],
+    });
+
+    expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['bob']);
+  });
+
+  it('gates a ROLE_GATED channel on the recipient holding the permission', async () => {
+    service.__setChannelForTest({
+      id: 'ch-exec',
+      chapter_id: 'chap-1',
+      name: 'exec',
+      is_read_only: false,
+      type: 'ROLE_GATED',
+      member_ids: null,
+      required_permissions: ['exec:view'],
+    });
+    setMembers(['sender', 'officer', 'pledge']);
+    getEffectivePermissions.mockImplementation(async (_chap, uid) =>
+      uid === 'officer' ? ['exec:view'] : [],
+    );
+
+    await service.handleMessage({
+      id: 'm1',
+      channel_id: 'ch-exec',
+      sender_id: 'sender',
+      content: 'heads up @pledge @officer',
+      kind: 'text',
+      created_at: '',
+      mentions: ['pledge', 'officer'],
+    });
+
+    expect(notifyUser.mock.calls.map((c) => c[0])).toEqual(['officer']);
   });
 });

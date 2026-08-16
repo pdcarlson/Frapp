@@ -74,7 +74,16 @@ function runLocalGate() {
     ["npm run check-types", "Run monorepo type-check"],
     ["npm run test -w apps/api", "Run API unit tests"],
     ["npm run check:api-contract", "Run API contract freshness check"],
-    ["npm run check:migration-safety", "Run migration safety check"],
+    // Thread the SHAs, as the docs-sync and secret-scan calls above already do.
+    // Bare, `getChangedFiles` sees no range and returns `[]`, so
+    // `validatePromotionDocs` early-returns and the "a migration needs a
+    // promotion/rollback doc" half of the check never runs — the local gate goes
+    // green on exactly the change CI fails. Filename validation still runs
+    // either way, which is why the gap was easy to miss (#980).
+    [
+      `npm run check:migration-safety -- --base ${baseSha} --head ${headSha}`,
+      "Run migration safety check",
+    ],
     // --soft-network keeps an offline dev unblocked (registry unreachable →
     // warn, not fail); the CI dependency-audit job is the hard gate.
     ["npm run check:npm-audit -- --soft-network", "Run npm audit gate (high/critical)"],

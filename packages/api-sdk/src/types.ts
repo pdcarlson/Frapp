@@ -744,6 +744,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/channels/unread": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Unread and mention counts for every channel the caller can read */
+        get: operations["ChatController_getUnreadCounts_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/channels/{id}": {
         parameters: {
             query?: never;
@@ -2412,6 +2429,14 @@ export interface components {
             required_role_ids?: string[];
             notes?: string;
         };
+        ChannelUnreadCountDto: {
+            /** Format: uuid */
+            channel_id: string;
+            /** @description Messages in this channel newer than the caller’s read cursor, excluding their own and deleted ones. A channel never opened counts all of them. */
+            unread_count: number;
+            /** @description Subset of unread_count that mentions the caller. Mentions are resolved server-side at send time. */
+            mention_count: number;
+        };
         CreateChannelDto: {
             name: string;
             description?: string;
@@ -4060,6 +4085,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    ChatController_getUnreadCounts_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChannelUnreadCountDto"][];
+                };
             };
         };
     };

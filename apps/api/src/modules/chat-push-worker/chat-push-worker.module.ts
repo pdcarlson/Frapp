@@ -3,6 +3,7 @@ import { ChatPushWorkerService } from './chat-push-worker.service';
 import { ChatNotificationPreferenceRepository } from './chat-notification-preference.repository';
 import { NotificationModule } from '../notification/notification.module';
 import { ChapterModule } from '../chapter/chapter.module';
+import { RbacModule } from '../rbac/rbac.module';
 
 /**
  * Push worker (ADR-09). Runs in-process on the API; the
@@ -15,7 +16,9 @@ import { ChapterModule } from '../chapter/chapter.module';
  * `MEMBER_REPOSITORY` for chapter membership enumeration.
  */
 @Module({
-  imports: [NotificationModule, ChapterModule],
+  // `RbacModule` → `RbacService`, used to resolve effective permissions when
+  // deciding whether a ROLE_GATED channel's message may be pushed to a member.
+  imports: [NotificationModule, ChapterModule, RbacModule],
   providers: [ChatPushWorkerService, ChatNotificationPreferenceRepository],
 })
 export class ChatPushWorkerModule {}
