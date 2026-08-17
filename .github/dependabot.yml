@@ -92,3 +92,35 @@ updates:
       - dependency-name: "expo-splash-screen"
       - dependency-name: "expo-status-bar"
       - dependency-name: "expo-web-browser"
+
+      # ── The vendored-generator pins ──────────────────────────────────────
+      # `packages/chapter-theme/src/vendor/generate-radix-colors.ts` is upstream
+      # Radix code held byte-for-byte (see that directory's README). Its runtime
+      # deps are pinned to match upstream's own package.json exactly, because
+      # the generator is written and tested against those versions and the
+      # colour math is the whole point — `spec/ui/design-system/accent-engine.md`
+      # §8 guarantees accent contrast *by construction*, and the construction
+      # has to be the one the guarantee was written against.
+      #
+      # `colorjs.io` is the pin that Dependabot kept trying to move: 0.5.2 ->
+      # 0.7.1 arrives as a *minor* under 0.x semver, so it landed in the
+      # grouped PR, and it changed `Coords` to `[number | null, ...]` for CSS
+      # Color 4 `none` components. That broke `@repo/chapter-theme`'s build with
+      # 24 type errors and took `packages-build`, `clean-checkout-typecheck` and
+      # `api-docker-build` down with it (PR #1003).
+      #
+      # That failure is the gate working, not a gate to route around: the
+      # `noUncheckedIndexedAccess: false` note in that package's tsconfig.json
+      # says in as many words that typechecking the vendored file is what
+      # surfaces "a breaking change in colorjs.io's API, found on resync".
+      # Moving this pin means re-vendoring the generator from upstream at a
+      # commit that itself moved, then re-running `signet.spec.ts` — a resync,
+      # not a bump. Ignoring it here keeps that decision a human one.
+      #
+      # Only `colorjs.io` is listed. The generator's two other pins are left
+      # under Dependabot on purpose: `@radix-ui/colors` is exact-pinned but its
+      # scales are exactly what `signet.spec.ts` checks, so a bad bump fails
+      # loudly, and `bezier-easing` is a caret range upstream chose itself
+      # (`^2.1.0`) — only its 3.x is unusable here, and a major arrives as its
+      # own reviewable PR rather than inside the group.
+      - dependency-name: "colorjs.io"

@@ -249,11 +249,51 @@ export class ChatService {
 
   // ── Channels ─────────────────────────────────────────────────────────
 
-  async getChannels(chapterId: string): Promise<ChatChannel[]> {
-    return this.channelRepo.findByChapter(chapterId);
+  /**
+   * The chapter's channels, reduced to the ones this caller may read.
+   *
+   * The filter is load-bearing, not defensive. A channel row carries `name`,
+   * `description`, `required_permissions` and `member_ids`, and a DM is
+   * server-named `dm-<userA>-<userB>` — so the pair in a direct message is
+   * disclosed twice over by a single unfiltered row. Returning the chapter's
+   * full list to everyone holding `members:view` would publish the chapter's
+   * entire private and direct-message graph, which is a strictly larger leak
+   * than the unread counts already filter for.
+   */
+  async getChannels(chapterId: string, userId: string): Promise<ChatChannel[]> {
+    const channels = await this.channelRepo.findByChapter(chapterId);
+
+    return this.channelAccess.filterAccessibleChannels(
+      chapterId,
+      userId,
+      channels,
+    );
   }
 
-  async getChannel(id: string, chapterId: string): Promise<ChatChannel> {
+  /**
+   * Route-facing single-channel read: 404 outside the caller's chapter, 403 for
+   * one inside it they cannot see. Mutations use
+   * {@link requireChannelInChapter} instead — see the note there.
+   */
+  async getChannel(
+    id: string,
+    chapterId: string,
+    userId: string,
+  ): Promise<ChatChannel> {
+    return this.assertChannelAccess(id, chapterId, userId);
+  }
+
+  /**
+   * Chapter-scoped resolve with no per-user ACL, for the `channels:manage`
+   * mutations. An officer editing or deleting a channel is authorized by that
+   * permission, not by membership of the channel itself, so this deliberately
+   * does not run `canAccessChannel` — otherwise managing a PRIVATE channel you
+   * are not in would start 403ing.
+   */
+  private async requireChannelInChapter(
+    id: string,
+    chapterId: string,
+  ): Promise<ChatChannel> {
     const channel = await this.channelRepo.findById(id, chapterId);
     if (!channel) throw new NotFoundException('Channel not found');
     return channel;
@@ -298,7 +338,7 @@ export class ChatService {
       >
     >,
   ): Promise<ChatChannel> {
-    const existing = await this.getChannel(id, chapterId);
+    const existing = await this.requireChannelInChapter(id, chapterId);
 
     // `type` is not updatable, so the existing row decides whether the gate
     // applies. Only guard when the caller actually sends the field — omitting it
@@ -315,7 +355,7 @@ export class ChatService {
   }
 
   async deleteChannel(id: string, chapterId: string): Promise<void> {
-    await this.getChannel(id, chapterId);
+    await this.requireChannelInChapter(id, chapterId);
     await this.channelRepo.delete(id, chapterId);
   }
 

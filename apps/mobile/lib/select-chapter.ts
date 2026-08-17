@@ -54,7 +54,10 @@ export function useSelectChapter() {
       // `_refreshSession`'s own try and so is never converted. Left unhandled
       // that escapes to an unhandled rejection, and the tap looks like it did
       // nothing at all.
-      let error: { message: string } | null = null;
+      // Declared without an initializer on purpose: both the `try` and the
+      // `catch` assign it, so a `= null` here would be dead — which is what
+      // ESLint 10's `no-useless-assignment` reports, under `--max-warnings 0`.
+      let error: { message: string } | null;
       try {
         ({ error } = await supabase.auth.refreshSession());
       } catch (thrown) {
