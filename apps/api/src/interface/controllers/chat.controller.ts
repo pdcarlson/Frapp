@@ -63,8 +63,11 @@ export class ChatController {
 
   @Get()
   @ApiOperation({ summary: 'List chapter channels' })
-  async listChannels(@CurrentChapterId() chapterId: string) {
-    return this.chatService.getChannels(chapterId);
+  async listChannels(
+    @CurrentChapterId() chapterId: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.chatService.getChannels(chapterId, userId);
   }
 
   // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
@@ -87,8 +90,9 @@ export class ChatController {
   async getChannel(
     @CurrentChapterId() chapterId: string,
     @Param('id') id: string,
+    @CurrentUser('id') userId: string,
   ) {
-    return this.chatService.getChannel(id, chapterId);
+    return this.chatService.getChannel(id, chapterId, userId);
   }
 
   @Post()

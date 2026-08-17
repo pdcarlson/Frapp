@@ -426,4 +426,91 @@ describe('ChannelAccessService', () => {
       expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
     });
   });
+
+  // The array-taking half, for callers that already hold the rows. Its whole
+  // reason to exist is that it must not re-read the chapter's channels.
+  describe('filterAccessibleChannels', () => {
+    it('returns nothing for an empty array without hitting repos', async () => {
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [],
+      );
+
+      expect(result).toEqual([]);
+      expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('returns nothing when the caller is not a chapter member', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+      const result = await service.filterAccessibleChannels('chap-1', 'ghost', [
+        publicChannel,
+      ]);
+
+      expect(result).toEqual([]);
+    });
+
+    it('keeps only readable channels from the array it was given', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [publicChannel, privateChannel],
+      );
+
+      expect(result.map((channel) => channel.id)).toEqual(['ch-public']);
+      // The point of the method: the rows came from the caller, so the
+      // chapter's channel list is never re-read.
+      expect(mockChannelRepo.findByChapter).not.toHaveBeenCalled();
+    });
+
+    it('drops rows belonging to another chapter', async () => {
+      // The caller's membership proves the *caller* is in `chap-1`; it says
+      // nothing about the rows. Without the re-scope a foreign PUBLIC channel
+      // would satisfy the predicate on `isChapterMember: true`.
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [
+          publicChannel,
+          { ...publicChannel, id: 'ch-foreign', chapter_id: 'chap-2' },
+        ],
+      );
+
+      expect(result.map((channel) => channel.id)).toEqual(['ch-public']);
+    });
+
+    it('returns nothing without a membership lookup when every row is foreign', async () => {
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [{ ...publicChannel, id: 'ch-foreign', chapter_id: 'chap-2' }],
+      );
+
+      expect(result).toEqual([]);
+      expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+    });
+
+    it('resolves permissions once for a ROLE_GATED candidate', async () => {
+      mockMemberRepo.findByUserAndChapter.mockResolvedValue(member);
+      mockRbac.getEffectivePermissions.mockResolvedValue(['secret:view']);
+
+      const result = await service.filterAccessibleChannels(
+        'chap-1',
+        'user-1',
+        [publicChannel, roleGatedChannel],
+      );
+
+      expect(result.map((channel) => channel.id).sort()).toEqual([
+        'ch-public',
+        'ch-role',
+      ]);
+      expect(mockRbac.getEffectivePermissions).toHaveBeenCalledTimes(1);
+    });
+  });
 });

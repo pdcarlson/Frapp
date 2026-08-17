@@ -312,3 +312,44 @@ Two gaps remain, both promotion-time checks rather than CI ones (see `DB_PROMOTI
 
 ### Prevention
 For any table a browser/mobile Supabase client reads **directly** — especially over a Realtime subscription, where RLS is the sole gate — the RLS `SELECT` policy must encode the full tenant + channel-visibility rule; do not rely on "the app layer filters it." When such a policy must read default-deny tables, wrap the lookup in a `SECURITY DEFINER` helper with a pinned `search_path` and least-privilege `execute` grants, and mirror the single shared access predicate (`canAccessChannel`) rather than duplicating ad-hoc logic.
+
+## Security Fix: Unfiltered chapter channel list (#1001)
+
+### Overview
+`GET /v1/channels` returned **every** channel in the caller's chapter, unfiltered, to anyone holding `members:view` — including `PRIVATE`, `ROLE_GATED`, `DM` and `GROUP_DM` channels the caller was not in. `GET /v1/channels/{id}` had the same hole for a single channel. Message bodies were never exposed (`getMessages` has always asserted channel access), but channel *existence, names, descriptions, required permissions, and DM participant ids* were.
+
+Pre-existing; not introduced by the mobile chat work that surfaced it. Both clients were affected — the web sidebar and the mobile channel list rendered from the same endpoint, and the web polls page fed the same response into a "filter by channel" dropdown.
+
+### Details
+The route's handler never received a user id, so per-user filtering was structurally impossible below it: `listChannels` took only the chapter, and `getChannels(chapterId)` returned `channelRepo.findByChapter(chapterId)` verbatim. The repository issues `select('*')` on the **service-role** client, which bypasses RLS, and `chat_channels` has RLS enabled with **zero policies** (`supabase/migrations/00000000000000_initial_schema.sql`) — so the service layer was not merely the first line of defence, it was the only one.
+
+The disclosure is larger than a list of names. `member_ids uuid[]` ships in the row, and direct-message channels are server-named `dm-<sortedUuidA>-<sortedUuidB>`, so each DM pair leaked through two independent fields. Any member could reconstruct the chapter's complete direct-message social graph — who is in a private conversation with whom — plus the name, description and `required_permissions` of every private and role-gated channel.
+
+The inconsistency was internal to one file: `getUnreadCounts`, two methods away, already filtered its rows through the shared batch predicate, on the reasoning that an unread count alone reveals that a DM between two other members exists and is active. So the endpoint returning *counts* was access-checked while the endpoint returning *the channels themselves, by name* was not.
+
+The fix routes both reads through the existing `ChannelAccessService`: the list through a new array-taking `filterAccessibleChannels`, the single read through `assertChannelAccess`. The new method exists because the list endpoint already holds the rows — resolving its ids back through the id-taking `filterAccessibleChannelIds` would have re-read the chapter's channels a second time on every request. Both entry points share one predicate loop, so they cannot drift.
+
+The `channels:manage` mutations (`PATCH`/`DELETE`) deliberately keep resolving a channel chapter-scoped only, through a private `requireChannelInChapter`. An officer is authorized to edit or delete a channel by that permission, not by membership of it; running the per-user predicate there would have started 403ing officers on private channels they administer but do not belong to.
+
+That leaves a real asymmetry, and this change **introduces** it rather than merely exposing it: before, `getChannel` was chapter-scoped only, so a `channels:manage` holder could both list and GET any channel in their chapter. Now they can still PATCH and DELETE a `PRIVATE` or `ROLE_GATED` channel they are not in, but neither read surface will show it to them — `GET /v1/channels` filters it out and `GET /v1/channels/{id}` 403s. The mutations survive; the only two ways to discover the id do not. Nothing breaks today because `useChannel`, `useUpdateChannel` and `useDeleteChannel` have no consumers in either client, but the first channel-administration screen built on them will need a manage-scoped enumeration path rather than the member-scoped list. That is a product decision, not a filtering one, so it is left open here deliberately.
+
+### Verification
+Unit coverage was added at both layers, because the defect lived at both. At the service layer, tests assert a member sees public channels plus their own DM and private channel, and specifically that another pair's DM is absent **by id, by `name`, and by `member_ids`** — the pair leaks through two fields, so one assertion would not have proven it closed. Role-gated visibility is covered with and without the permission, along with the non-member and empty-chapter paths. At the controller layer, tests assert each handler threads the caller's id to the service; that is where the original bug actually was, since the handler had no id to pass.
+
+Two tests pin properties a future refactor could silently undo: that the chapter's channels are read **exactly once** per list request, and that `updateChannel`/`deleteChannel` still resolve a channel the caller is not a member of.
+
+The `getChannels` tests were confirmed to fail against the unfiltered implementation before the fix was restored — five of them, including the DM case. (That count is for reverting `getChannels` alone; reverting `getChannel` to its pre-fix body as well fails a sixth, the PRIVATE rejection.) An independent review pass separately mutated the filter to a pass-through and to an always-empty return, confirming the assertions are neither vacuous nor satisfied by over-filtering.
+
+### Residual, not closed by this fix
+`chat_channels` still has RLS enabled with no policy, so there is no database-layer backstop; the service filter remains the only control. Direct client reads are denied outright (default-deny with no policy), so this is a defence-in-depth gap rather than a live leak. Tracked as **#1009** — an RLS change is E2-class and not a drive-by.
+
+The repository's `select('*')` is likewise unchanged. For channels that survive the filter the caller is a member, so `member_ids` is legitimately theirs; the over-fetch only mattered in combination with the missing filter. Narrowing the projection is **#986**.
+
+**A `PRIVATE` channel created through `POST /v1/channels` is now invisible to everyone, including its creator.** `createChannel` never populates `member_ids`, and `canAccessChannel` resolves PRIVATE as `(member_ids ?? []).includes(userId)` with no wildcard bypass — so the filter denies every caller. The channel was already unreadable before this fix (`getMessages` has always used the same predicate); what changed is that it no longer appears in the list either, so the id cannot be recovered from any read surface. Pre-existing data-model gap, made consequential here. Tracked as **#1008**.
+
+The query cost of `GET /v1/channels` rises from 1 to roughly 5: the channel read, the filter's member lookup, and `getEffectivePermissions`' own member read plus two role lookups. The `needsPermissions` short-circuit reads like an optimization but effectively never fires, because `#alumni` is seeded `ROLE_GATED` into every chapter by `DEFAULT_CHANNELS` — the permission path is the common case, not the exception. Cost is constant in chapter size and matches what `GET /v1/channels/unread` already pays on the same screen.
+
+Two of those reads are redundant rather than merely additive: `ChapterGuard` has already resolved and pinned the caller's member row at `request.member`, and `PermissionsGuard` has already flattened the same effective-permission set, both earlier in the same request. The reuse point is therefore the guard chain — an existing `@CurrentMember()` decorator already exposes the row — not `RbacService`'s signature. Left alone here to keep this change to the filter.
+
+### Prevention
+Any chapter-wide list endpoint over a per-user-visible resource must go through `ChannelAccessService`. A route-level permission gate scopes the **tenant**; it never scopes the **row**. When a handler cannot filter because it has no caller identity, that is the bug — thread the id rather than assuming the guard covered it. And treat metadata as content: names, membership arrays and server-generated identifiers can disclose a relationship as completely as the messages inside it.
