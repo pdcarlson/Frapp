@@ -13,16 +13,16 @@
   },
   "dependencies": {
     "@repo/api-sdk": "*",
-    "@tanstack/react-query": "^5.90.21",
+    "@tanstack/react-query": "^5.101.4",
     "react": "19.2.3"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.1",
+    "@testing-library/user-event": "^14.6.4",
     "jsdom": "^29.0.0",
     "typescript": "5.9.2",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.10"
   }
 }
