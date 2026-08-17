@@ -206,7 +206,10 @@ override is no longer doing its work.
 
 ### Dependabot PRs are exempt from the docs/spec sync gate
 
-`.github/workflows/docs.yml` skips `check-docs-impact.mjs` when the PR author is `dependabot[bot]`.
+`check-docs-impact.mjs` runs from **two** workflows, and both skip it when the PR author is
+`dependabot[bot]`: `.github/workflows/docs.yml` (the required `docs-spec-sync` check) and
+`.github/workflows/ci.yml` (the last step of the required `lint-and-typecheck` job).
+
 Without that exemption Dependabot would be unusable here, not merely noisy: its PRs change
 `package.json` / `package-lock.json` and nothing else, `check-docs-impact.mjs` fails any PR that
 touches non-`docs/` files without touching `docs/`, and **`docs-spec-sync` is a required status check**
@@ -223,6 +226,29 @@ Two things to preserve if you ever edit that condition:
 
 `check-docs-structure.mjs` needs no exemption — it only inspects newly *added* paths under `docs/`
 and `spec/`, of which a dependency bump has none, so it passes trivially.
+
+**Both copies have to carry the condition, and for a long time only one did.** `ci.yml` ran the gate
+unguarded, so every Dependabot PR went green on `docs-spec-sync` and red on `lint-and-typecheck` for
+the identical reason the exemption exists — the exemption was real but inert, and the PRs were just
+as unmergeable. `ci.yml` now carries the same condition. If you add a third caller of
+`check-docs-impact.mjs`, it needs the same `if:` or it re-breaks this the same way.
+
+### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
+
+`packages/chapter-theme/src/vendor/generate-radix-colors.ts` is upstream Radix source held
+byte-for-byte, and its runtime deps are pinned to match upstream's own `package.json`. `colorjs.io`
+sits at an exact `0.5.2`, so Dependabot read `0.7.1` as a *minor* under 0.x semver and swept it into
+the grouped PR — where its new `Coords` type (`[number | null, …]`, for CSS Color 4 `none`
+components) produced 24 type errors in a file that must not be hand-edited, taking `packages-build`,
+`clean-checkout-typecheck` and `api-docker-build` down with it (#1003).
+
+That is the gate doing its job: the `noUncheckedIndexedAccess: false` note in that package's
+`tsconfig.json` says outright that typechecking the vendored file is what surfaces "a breaking change
+in `colorjs.io`'s API, found on resync". Moving the pin means re-vendoring the generator from an
+upstream commit that also moved and re-running `signet.spec.ts` — a resync, not a bump. The ignore
+entry keeps that a human decision instead of a weekly red PR. The generator's other two pins stay
+under Dependabot; the reasoning for each is in
+[`packages/chapter-theme/src/vendor/README.md`](../../../packages/chapter-theme/src/vendor/README.md).
 
 ### Alerts and security updates are a repo Settings toggle
 
