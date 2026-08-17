@@ -64,6 +64,7 @@ describe('AccountDeletionService', () => {
     mockUserRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),

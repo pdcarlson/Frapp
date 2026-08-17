@@ -16,6 +16,27 @@ export function useCurrentUser() {
   });
 }
 
+/**
+ * The viewer's `users.id`, or `null` until it is known.
+ *
+ * Narrowed at runtime rather than read off the generated type: `/v1/users/me`
+ * carries no response schema, so `openapi-typescript` infers its body as
+ * `never` and a direct `user.id` does not compile on either client. Both apps
+ * had grown their own copy of this narrowing; this is the single one.
+ *
+ * `users.id` is the id chat is keyed on — `chat_messages.sender_id` and a DM
+ * channel's `member_ids` both reference it, *not* the Supabase auth uid.
+ */
+export function useViewerUserId(): string | null {
+  const query = useCurrentUser();
+  const data: unknown = query.data;
+  const raw =
+    data && typeof data === "object" && "id" in data
+      ? ((data as { id?: unknown }).id ?? null)
+      : null;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
+
 export function useUpdateUser() {
   const client = useFrappClient();
   const queryClient = useQueryClient();

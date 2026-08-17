@@ -15,6 +15,8 @@ const GROUPING_GAP_MS = 5 * 60 * 1000;
 export interface MessageTimelineProps {
   messages: ChatMessage[];
   viewerId: string | null;
+  /** Resolves `users.id` → display name; `null` when unresolvable. */
+  nameFor: (userId: string) => string | null;
   isLoading: boolean;
   loadError: Error | null;
   onRetryLoad?: () => void;
@@ -38,6 +40,7 @@ export interface MessageTimelineProps {
 export function MessageTimeline({
   messages,
   viewerId,
+  nameFor,
   isLoading,
   loadError,
   onRetryLoad,
@@ -95,6 +98,7 @@ export function MessageTimeline({
         initialTopMostItemIndex={Math.max(decorated.length - 1, 0)}
         itemContent={(_, entry) => (
           <MessageItem
+            nameFor={nameFor}
             message={entry.message}
             viewerId={viewerId}
             showHeader={entry.showHeader}

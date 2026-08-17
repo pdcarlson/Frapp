@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { ChatMessage } from "@repo/chat-core/types";
-import { useMarkChannelRead } from "@repo/hooks";
+import { useMarkChannelRead, useMemberDisplayNames } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
@@ -74,6 +74,12 @@ export default function ChatThreadScreen() {
     discard,
   } = useChatChannel(channelId);
 
+  // One cached roster fetch per chapter names every author in the thread.
+  // Resolving by `sender_id` is what makes it work for a message that arrived
+  // over the live `postgres_changes` echo as well as one from the REST page — a
+  // join on the message payload could only ever have covered the latter.
+  const { nameFor } = useMemberDisplayNames();
+
   // Opening a channel stamps the read cursor to server `now()`; there is no
   // mark-read-to-a-message API. Its invalidation of `["channels"]` refreshes the
   // s04 badges by prefix.
@@ -121,13 +127,17 @@ export default function ChatThreadScreen() {
       <MessageBubble
         message={item}
         viewerId={viewerId}
+        nameFor={nameFor}
         onRetry={(id) => void retry(id)}
         onDiscard={(id) => void discard(id)}
         onReact={(id, emoji) => void react(id, emoji)}
         onUnreact={(id, emoji) => void unreact(id, emoji)}
       />
     ),
-    [viewerId, retry, discard, react, unreact],
+    // `nameFor` belongs here: it changes identity when the roster resolves, and
+    // omitting it leaves a stale closure rendering truncated ids until some
+    // other dep happens to change.
+    [viewerId, nameFor, retry, discard, react, unreact],
   );
 
   const isOffline = connection === "offline";

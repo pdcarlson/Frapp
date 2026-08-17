@@ -55,6 +55,18 @@ export interface MemberProfile {
 
 export type MemberSummary = MemberProfile;
 
+/**
+ * One roster row: enough to render a name and an avatar, and nothing else.
+ * Keyed by `user_id` rather than the membership `id` because every consumer
+ * looks up by the id chat carries — `chat_messages.sender_id` and a DM
+ * channel's `member_ids` are both `users.id`.
+ */
+export interface MemberRosterEntry {
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+}
+
 @Injectable()
 export class MemberService {
   constructor(
@@ -87,6 +99,47 @@ export class MemberService {
 
   async findProfilesByChapter(chapterId: string): Promise<MemberProfile[]> {
     return this.findByChapter(chapterId);
+  }
+
+  /**
+   * The chapter roster projected to display fields only.
+   *
+   * Exists so a display surface can resolve a `users.id` to something human
+   * without pulling {@link MemberProfile}, which carries `email`, `bio`,
+   * `graduation_year`, `current_city` and `current_company`. Chat resolves
+   * author names and DM titles on the client, so the fat profile would put the
+   * whole chapter's contact details on every member's device to render a name
+   * (#1000, and the over-fetch #986 objects to).
+   *
+   * Costs the membership read plus one chunked user read per `ID_CHUNK_SIZE`
+   * ids — two round trips for a chapter up to 100 members, three up to 200 —
+   * and the chunks go out concurrently, so latency stays near one. Note the
+   * membership read is still `select('*')` and only `user_id` is used from it;
+   * narrowing that is separate work.
+   *
+   * Unlike {@link findByChapter} a member whose user row is missing is skipped
+   * rather than thrown on: one orphaned membership row must not 500 the entire
+   * chat surface.
+   */
+  async findRosterByChapter(chapterId: string): Promise<MemberRosterEntry[]> {
+    const members = await this.memberRepo.findByChapter(chapterId);
+    if (!members.length) return [];
+
+    const userIds = [...new Set(members.map((member) => member.user_id))];
+    const identities = await this.userRepo.findDisplayIdentitiesByIds(userIds);
+    const byId = new Map(identities.map((user) => [user.id, user]));
+
+    const roster: MemberRosterEntry[] = [];
+    for (const userId of userIds) {
+      const user = byId.get(userId);
+      if (!user) continue;
+      roster.push({
+        user_id: user.id,
+        display_name: user.display_name,
+        avatar_url: user.avatar_url,
+      });
+    }
+    return roster;
   }
 
   async findByUserAndChapter(

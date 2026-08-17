@@ -1,4 +1,5 @@
 export * from "./use-frapp-client";
+export * from "./display-names";
 export * from "./use-members";
 export * from "./use-events";
 export * from "./use-attendance";

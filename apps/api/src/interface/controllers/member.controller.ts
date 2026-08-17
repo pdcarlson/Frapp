@@ -27,7 +27,10 @@ import {
   CurrentUser,
 } from '../decorators/current-user.decorator';
 import { UpdateMemberRolesDto, UpdateOnboardingDto } from '../dtos/member.dto';
-import { MemberProfileDto } from '../dtos/member-profile.dto';
+import {
+  MemberProfileDto,
+  MemberRosterEntryDto,
+} from '../dtos/member-profile.dto';
 import { SystemPermissions } from '../../domain/constants/permissions';
 
 @ApiTags('Members')
@@ -55,6 +58,18 @@ export class MemberController {
     @Query('q') query: string,
   ) {
     return this.memberService.searchByChapterAndName(chapterId, query ?? '');
+  }
+
+  // MUST stay above `@Get(':id')`. Nest matches routes in declaration order and
+  // a single-segment `:id` would otherwise swallow this path, resolving it as
+  // `getOne('roster')` and answering 404 for a route that exists.
+  @Get('roster')
+  @ApiOperation({
+    summary: 'Display roster for the chapter — id, name and avatar only',
+  })
+  @ApiOkResponse({ type: MemberRosterEntryDto, isArray: true })
+  async roster(@CurrentChapterId() chapterId: string) {
+    return this.memberService.findRosterByChapter(chapterId);
   }
 
   @Get(':id')

@@ -12,11 +12,23 @@
  * generated SDK, so nothing upstream is type-checked against the real payload.
  */
 
+import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
+
 /** Minimal channel shape; the SDK response type is unusable. */
 export interface ChannelSummary {
   id: string;
   name: string;
   type: string;
+  /**
+   * `users.id` of each participant, for resolving a DM's title.
+   *
+   * Required and normalized: `selectChannels` emits `[]` for a null or absent
+   * column, so no consumer needs a `?? []`. Only DM and group-DM rows populate
+   * it server-side, and after the channel-list access filter landed a visible DM
+   * is one the caller is in — so their own participant ids are legitimately
+   * theirs to read.
+   */
+  member_ids: string[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -30,7 +42,19 @@ export function selectChannels(data: unknown): ChannelSummary[] {
     const name = row.name;
     const type = row.type;
     if (typeof id !== "string" || typeof name !== "string") return [];
-    return [{ id, name, type: typeof type === "string" ? type : "PUBLIC" }];
+    const memberIds = Array.isArray(row.member_ids)
+      ? row.member_ids.filter(
+          (value): value is string => typeof value === "string",
+        )
+      : [];
+    return [
+      {
+        id,
+        name,
+        type: typeof type === "string" ? type : "PUBLIC",
+        member_ids: memberIds,
+      },
+    ];
   });
 }
 
@@ -40,20 +64,21 @@ export function isDirectChannel(channel: ChannelSummary): boolean {
 
 /**
  * DM channels are named by the server, not by a human: `dm-<uuidA>-<uuidB>` for
- * a pair and `group-dm-<epoch>` for a group (`chat.service.ts`). Rendered raw,
- * every DM row reads as a wall of uuid.
+ * a pair and `group-dm-<epoch>` for a group (`chat.service.ts`). Those are
+ * storage keys — rendered raw, every DM row reads as a wall of uuid.
  *
- * Resolving the *other* participant's name needs a member lookup the chat
- * surface does not have — there is no display-name join anywhere on it, which is
- * why the thread also falls back to `Member <id-prefix>`. Until that lands
- * (#1000) this at least avoids showing the uuid: a generated name degrades to a
- * readable placeholder, and any DM a chapter actually titled keeps its title.
+ * The rule itself lives in `@repo/hooks` so web resolves DM titles identically
+ * rather than growing a second copy; this is the mobile-shaped entry point. Two
+ * behaviours it preserves deliberately: a group DM a chapter actually titled
+ * keeps its title, and a non-direct channel is never rewritten even if someone
+ * named it like a DM.
  */
-export function displayChannelName(channel: ChannelSummary): string {
-  if (!isDirectChannel(channel)) return channel.name;
-  if (/^dm-[0-9a-f-]{36,}$/i.test(channel.name)) return "Direct message";
-  if (/^group-dm-\d+$/.test(channel.name)) return "Group message";
-  return channel.name;
+export function displayChannelName(
+  channel: ChannelSummary,
+  viewerId: string | null,
+  names: DisplayNameMap,
+): string {
+  return directChannelDisplayName(channel, viewerId, names);
 }
 
 /** `channel_id` → counts, so a row lookup is O(1) rather than a scan per row. */

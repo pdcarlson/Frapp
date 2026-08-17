@@ -2,7 +2,12 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useMembers, useMemberSearch } from "./use-members";
+import {
+  useChapterRoster,
+  useMemberDisplayNames,
+  useMembers,
+  useMemberSearch,
+} from "./use-members";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 const MEMBERS_ENDPOINT = "/v1/members";
@@ -185,5 +190,96 @@ describe("useMemberSearch", () => {
     expect(result.current.fetchStatus).toBe("idle");
     expect(result.current.status).toBe("pending");
     expect(mockGet).not.toHaveBeenCalled();
+  });
+});
+
+// The roster projection is what the chat surface resolves names from. It exists
+// so a display concern never pulls MemberProfile, so the assertions here are
+// about which endpoint is called and how an unset name degrades.
+describe("useChapterRoster / useMemberDisplayNames", () => {
+  const ROSTER_ENDPOINT = "/v1/members/roster";
+  let queryClient: QueryClient;
+  const mockUseFrappClient = vi.mocked(useFrappClient);
+  const mockUseActiveChapterId = vi.mocked(useActiveChapterId);
+
+  const roster = [
+    { user_id: "user-1", display_name: "Marcus Reid", avatar_url: null },
+    { user_id: "user-blank", display_name: "", avatar_url: null },
+  ];
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.clearAllMocks();
+    mockUseActiveChapterId.mockReturnValue(CHAPTER_ID);
+  });
+
+  it("reads the narrow roster endpoint, not the member list", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useChapterRoster(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(mockGet).toHaveBeenCalledWith(ROSTER_ENDPOINT);
+    expect(mockGet).not.toHaveBeenCalledWith(MEMBERS_ENDPOINT);
+    expect(result.current.data).toEqual(roster);
+  });
+
+  it("does not fetch before a chapter is active", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: [], error: null });
+    mockUseActiveChapterId.mockReturnValue(null);
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useChapterRoster(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.fetchStatus).toBe("idle"));
+
+    expect(mockGet).not.toHaveBeenCalled();
+  });
+
+  it("resolves ids to names and treats an empty name as unresolved", async () => {
+    const mockGet = vi.fn().mockResolvedValue({ data: roster, error: null });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+
+    expect(result.current.nameFor("user-1")).toBe("Marcus Reid");
+    // display_name is NOT NULL DEFAULT '', so '' must not render as a name.
+    expect(result.current.nameFor("user-blank")).toBeNull();
+    expect(result.current.nameFor("user-unknown")).toBeNull();
+    expect(result.current.byId["user-1"]).toBe("Marcus Reid");
+  });
+
+  it("surfaces an API error and resolves nothing", async () => {
+    const mockError = { message: "boom" };
+    const mockGet = vi.fn().mockResolvedValue({ data: null, error: mockError });
+    mockUseFrappClient.mockReturnValue({
+      GET: mockGet,
+    } as unknown as ReturnType<typeof useFrappClient>);
+
+    const { result } = renderHook(() => useMemberDisplayNames(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(result.current.nameFor("user-1")).toBeNull();
   });
 });

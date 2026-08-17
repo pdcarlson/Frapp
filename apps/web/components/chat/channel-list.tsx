@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Hash, Lock, MessagesSquare, Search, ShieldAlert } from "lucide-react";
+import { directChannelDisplayName, type DisplayNameMap } from "@repo/hooks";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
@@ -15,6 +16,13 @@ export interface ChatChannel {
   /** Optional, populated by future unread tracking; treated as 0 when missing. */
   unread_count?: number | null;
   muted?: boolean | null;
+  /**
+   * `users.id` of each participant, on DM and group-DM rows. Optional because
+   * the shell builds these with an unchecked `asArray<ChatChannel>` cast and has
+   * no normalizing selector — declaring it required would be a claim the
+   * compiler cannot check.
+   */
+  member_ids?: string[] | null;
 }
 
 type Section = { key: string; label: string; channels: ChatChannel[] };
@@ -39,6 +47,10 @@ function channelIcon(channel: ChatChannel) {
 export interface ChannelListProps {
   channels: ChatChannel[];
   activeChannelId: string | null;
+  /** Viewer's `users.id`, subtracted when naming a DM by its other participant. */
+  viewerId: string | null;
+  /** `users.id` → display name, from `useMemberDisplayNames()`. */
+  memberNames: DisplayNameMap;
   onPick: (channel: ChatChannel) => void;
 }
 
@@ -50,16 +62,49 @@ export interface ChannelListProps {
 export function ChannelList({
   channels,
   activeChannelId,
+  viewerId,
+  memberNames,
   onPick,
 }: ChannelListProps) {
   const [query, setQuery] = useState("");
+
+  // Resolved once, then used for the row title, the search needle and the sort
+  // key alike. Those three must agree: filtering on the stored name meant typing
+  // a name the row visibly showed matched nothing, while a chunk of a DM's uuid
+  // matched a row displaying no such text.
+  const titles = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const channel of channels) {
+      map.set(
+        channel.id,
+        directChannelDisplayName(
+          {
+            name: channel.name,
+            type: channel.type,
+            member_ids: channel.member_ids ?? [],
+          },
+          viewerId,
+          memberNames,
+        ),
+      );
+    }
+    return map;
+  }, [channels, viewerId, memberNames]);
+
+  // `titles` is keyed from `channels` and every caller passes a member of that
+  // array, so the fallback below is a belt, not a path anything takes today.
+  const titleFor = useCallback(
+    (channel: ChatChannel) => titles.get(channel.id) ?? channel.name,
+    [titles],
+  );
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (needle.length === 0) return channels;
     return channels.filter((channel) =>
-      channel.name.toLowerCase().includes(needle),
+      titleFor(channel).toLowerCase().includes(needle),
     );
-  }, [channels, query]);
+  }, [channels, query, titleFor]);
 
   const sections = useMemo<Section[]>(() => {
     const groups: Record<string, ChatChannel[]> = {
@@ -73,14 +118,14 @@ export function ChannelList({
       else groups.channels!.push(channel);
     }
     for (const list of Object.values(groups)) {
-      list.sort((a, b) => a.name.localeCompare(b.name));
+      list.sort((a, b) => titleFor(a).localeCompare(titleFor(b)));
     }
     return [
       { key: "channels", label: "Channels", channels: groups.channels! },
       { key: "dms", label: "Direct messages", channels: groups.dms! },
       { key: "system", label: "System", channels: groups.system! },
     ];
-  }, [filtered]);
+  }, [filtered, titleFor]);
 
   if (channels.length === 0) {
     return (
@@ -131,7 +176,7 @@ export function ChannelList({
                       }`}
                     >
                       <Icon className="h-3.5 w-3.5" />
-                      <span className="truncate">{channel.name}</span>
+                      <span className="truncate">{titleFor(channel)}</span>
                       {channel.muted ? (
                         <span className="ml-auto text-[10px] text-muted-foreground">
                           muted

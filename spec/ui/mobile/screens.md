@@ -23,7 +23,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s01 | Sign-in | `(auth)/sign-in.tsx` | Live |
 | s02 | Join chapter | `(auth)/join.tsx` | Routed, stub — code entry + invite-link autofill not built |
 | s03 | First-run + notification primer | `(auth)/welcome.tsx` | Routed, stub — auto-joined channels + contextual push primer not built |
-| s04 | Chat — channels (landing) | `(tabs)/index.tsx` | Live — chat is home; real channel list on `GET /v1/channels`, with the UP NEXT strip, the ✦ Ask pill, and server unread/mention badges. No PINNED section: `ChatChannel` carries no pin field |
+| s04 | Chat — channels (landing) | `(tabs)/index.tsx` | Live — chat is home; real channel list on `GET /v1/channels`, with the UP NEXT strip, the ✦ Ask pill, and server unread/mention badges. DM rows resolve the other participant from `member_ids` against the roster projection, so no row shows a uuid. No PINNED section: `ChatChannel` carries no pin field |
 | s05 | Chat thread | `(tabs)/chat-thread.tsx` | Live — real messages on `@repo/chat-core`: realtime, optimistic send, outbox retry/discard, reactions, typing. No attachments, no scrollback pagination, no reply-quote |
 | s06 | Events list | `(tabs)/events.tsx` | Live |
 | s07 | Event detail | `(tabs)/event-details.tsx` | Live — **filename contract, never rename** |

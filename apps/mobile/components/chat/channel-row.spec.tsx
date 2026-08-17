@@ -5,12 +5,7 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { signetDarkTokens } from "@repo/theme/signet";
 import { FrappThemeProvider } from "@/lib/theme";
-import {
-  accessibilityLabelFor,
-  badgeLabel,
-  ChannelRow,
-  initialsFor,
-} from "./channel-row";
+import { accessibilityLabelFor, badgeLabel, ChannelRow } from "./channel-row";
 
 /**
  * The rules under test are the two `foundations.md:67-68` states this row
@@ -89,19 +84,8 @@ describe("badgeLabel", () => {
   });
 });
 
-describe("initialsFor", () => {
-  it("takes one initial from each of the first two words", () => {
-    expect(initialsFor("Marcus Reid")).toBe("MR");
-  });
-
-  it("falls back to the first two letters of a single word", () => {
-    expect(initialsFor("marcus")).toBe("MA");
-  });
-
-  it("survives an empty or whitespace-only name", () => {
-    expect(initialsFor("   ")).toBe("?");
-  });
-});
+// `initialsFor` moved to `lib/chat/display-name.ts` (shared with the message
+// bubble) and its cases moved with it — see `display-name.spec.ts`.
 
 describe("accessibilityLabelFor", () => {
   it("prefixes a channel with # and a DM with nothing", () => {

@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { initialsFor } from "@/lib/chat/display-name";
 
 /**
  * One row of the s04 channel list.
@@ -38,14 +39,6 @@ export interface ChannelRowProps {
   unreadCount: number;
   mentionCount: number;
   onPress: () => void;
-}
-
-/** Two-letter initials for a DM avatar, matching the drawn `MR`. */
-export function initialsFor(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
-  return `${words[0]![0]}${words[1]![0]}`.toUpperCase();
 }
 
 /**

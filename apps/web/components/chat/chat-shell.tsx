@@ -14,7 +14,13 @@ import {
   ErrorState,
   LoadingState,
 } from "@/components/shared/async-states";
-import { useChannels, useCategories, useMembers } from "@repo/hooks";
+import {
+  directChannelDisplayName,
+  useChannels,
+  useCategories,
+  useChapterRoster,
+  useMemberDisplayNames,
+} from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { useFrappUser } from "@/lib/auth/use-frapp-user";
 import { useOrgConfig } from "@/lib/hooks/use-org-config";
@@ -90,6 +96,9 @@ export function ChatShell() {
 
   const channelsQuery = useChannels();
   const categoriesQuery = useCategories();
+  // Names for message authors and DM titles. Shares its query key with the
+  // roster read below, so react-query serves both from one fetch.
+  const { byId: memberNames, nameFor } = useMemberDisplayNames();
   const channels = useMemo(
     () => asArray<ChatChannel>(channelsQuery.data),
     [channelsQuery.data],
@@ -114,13 +123,31 @@ export function ChatShell() {
     [channels, activeChannelId],
   );
 
+  // DM channels are stored as `dm-<uuidA>-<uuidB>`; the header, the composer
+  // placeholder and the sidebar must all show the resolved title instead.
+  const activeChannelName = useMemo(() => {
+    if (!activeChannel) return "";
+    return directChannelDisplayName(
+      {
+        name: activeChannel.name,
+        type: activeChannel.type,
+        member_ids: activeChannel.member_ids ?? [],
+      },
+      userId,
+      memberNames,
+    );
+  }, [activeChannel, userId, memberNames]);
+
   const announcementsChannelId = useMemo(
     () => channels.find((ch) => ch.name === "announcements")?.id ?? null,
     [channels],
   );
 
   // Backs `@member` resolution for member-targeted slash commands (/points).
-  const membersQuery = useMembers();
+  // Reads the roster projection rather than the full member list: `matchMember`
+  // only ever touches `user_id` and `display_name`, so the fat profile put every
+  // member's email, bio and city on the chat page to match a name (#986).
+  const membersQuery = useChapterRoster();
   const resolveMember = useMemo<ResolveMember>(() => {
     const list = asArray<DirectoryMember>(membersQuery.data);
     return (token: string) => matchMember(list, token);
@@ -212,6 +239,8 @@ export function ChatShell() {
         </CardHeader>
         <CardContent className="max-h-[70vh] overflow-y-auto">
           <ChannelList
+            viewerId={userId}
+            memberNames={memberNames}
             channels={channels}
             activeChannelId={activeChannelId}
             onPick={(ch) => {
@@ -230,7 +259,7 @@ export function ChatShell() {
                 {activeChannel ? (
                   <>
                     <HeaderIcon className="h-4 w-4" />
-                    <span className="truncate">{activeChannel.name}</span>
+                    <span className="truncate">{activeChannelName}</span>
                   </>
                 ) : (
                   "Pick a channel"
@@ -244,7 +273,7 @@ export function ChatShell() {
             </div>
             <div className="flex items-center gap-2">
               <ReconnectPill status={channel.connection} />
-              <PinsPopover messages={channel.messages} />
+              <PinsPopover messages={channel.messages} nameFor={nameFor} />
             </div>
           </div>
           {channel.typingUsers.length > 0 ? (
@@ -257,6 +286,7 @@ export function ChatShell() {
         </CardHeader>
         <div className="flex-1 overflow-hidden" aria-label="Chat timeline">
           <MessageTimeline
+            nameFor={nameFor}
             messages={channel.messages}
             viewerId={userId}
             isLoading={channel.isLoading}
@@ -274,7 +304,10 @@ export function ChatShell() {
         {activeChannel ? (
           <Composer
             channelId={activeChannel.id}
-            channelName={activeChannel.name}
+            channelName={activeChannelName}
+            isDirect={
+              activeChannel.type === "DM" || activeChannel.type === "GROUP_DM"
+            }
             isReadOnly={!!activeChannel.is_read_only}
             draft={channel.draft}
             onChangeDraft={channel.setDraft}
@@ -299,6 +332,7 @@ export function ChatShell() {
       <Card className="md:sticky md:top-20 md:self-start">
         {threadParent ? (
           <ThreadPanel
+            nameFor={nameFor}
             parent={threadParent}
             allMessages={channel.messages}
             viewerId={userId}

@@ -97,6 +97,7 @@ describe('PointsService', () => {
         { id: 'admin-1', display_name: 'Alex Admin' },
         { id: 'user-2', display_name: 'Bobby Member' },
       ]),
+      findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),

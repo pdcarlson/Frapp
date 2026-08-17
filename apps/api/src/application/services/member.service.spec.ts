@@ -38,6 +38,7 @@ describe('MemberService', () => {
     mockUserRepo = {
       findById: jest.fn(),
       findByIds: jest.fn(),
+      findDisplayIdentitiesByIds: jest.fn(),
       findBySupabaseAuthId: jest.fn(),
       findByEmail: jest.fn(),
       create: jest.fn(),
@@ -158,6 +159,122 @@ describe('MemberService', () => {
     await expect(
       service.findByUserAndChapter('user-1', 'chapter-1'),
     ).rejects.toThrow('Member not found');
+  });
+
+  // The roster projection exists so a display surface never has to pull
+  // MemberProfile. Its whole point is what it leaves out, so these assert the
+  // narrow lookup is the one used and the shape stays three fields wide.
+  describe('findRosterByChapter', () => {
+    const memberRow = (userId: string, id = `member-${userId}`) => ({
+      id,
+      user_id: userId,
+      chapter_id: 'chapter-1',
+      role_ids: ['role-1'],
+      custom_role_ids: [],
+      has_completed_onboarding: true,
+      created_at: '2024-01-01',
+      updated_at: '2024-01-01',
+    });
+
+    it('returns one display-only entry per member', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1'),
+        memberRow('user-2'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        {
+          id: 'user-2',
+          display_name: 'Dana Lowe',
+          avatar_url: 'https://example.test/a.png',
+        },
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([
+        { user_id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+        {
+          user_id: 'user-2',
+          display_name: 'Dana Lowe',
+          avatar_url: 'https://example.test/a.png',
+        },
+      ]);
+    });
+
+    it('reads through the narrow projection, never the full user row', async () => {
+      mockRepo.findByChapter.mockResolvedValue([memberRow('user-1')]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+
+      await service.findRosterByChapter('chapter-1');
+
+      expect(mockUserRepo.findDisplayIdentitiesByIds).toHaveBeenCalledWith([
+        'user-1',
+      ]);
+      // Guards the reason this method exists: `findByIds` selects '*'.
+      expect(mockUserRepo.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('de-duplicates user ids before the lookup', async () => {
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1', 'member-a'),
+        memberRow('user-1', 'member-b'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(mockUserRepo.findDisplayIdentitiesByIds).toHaveBeenCalledWith([
+        'user-1',
+      ]);
+      expect(result).toHaveLength(1);
+    });
+
+    it('skips a member whose user row is missing instead of throwing', async () => {
+      // findByChapter throws NotFoundException here; the roster must not, or one
+      // orphaned membership row takes the whole chat surface down.
+      mockRepo.findByChapter.mockResolvedValue([
+        memberRow('user-1'),
+        memberRow('user-ghost'),
+      ]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([
+        { user_id: 'user-1', display_name: 'Marcus Reid', avatar_url: null },
+      ]);
+    });
+
+    it('returns an empty roster without a user lookup for an empty chapter', async () => {
+      mockRepo.findByChapter.mockResolvedValue([]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([]);
+      expect(mockUserRepo.findDisplayIdentitiesByIds).not.toHaveBeenCalled();
+    });
+
+    it('passes an empty display_name through for the client to treat as unresolved', async () => {
+      // users.display_name is NOT NULL DEFAULT '', so '' is the real
+      // "no name set" case. The server does not invent a placeholder.
+      mockRepo.findByChapter.mockResolvedValue([memberRow('user-1')]);
+      mockUserRepo.findDisplayIdentitiesByIds.mockResolvedValue([
+        { id: 'user-1', display_name: '', avatar_url: null },
+      ]);
+
+      const result = await service.findRosterByChapter('chapter-1');
+
+      expect(result).toEqual([
+        { user_id: 'user-1', display_name: '', avatar_url: null },
+      ]);
+    });
   });
 
   describe('updateRoles', () => {

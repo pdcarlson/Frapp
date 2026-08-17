@@ -2,11 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "@repo/chat-core/types";
 import { reactionActionType } from "@repo/chat-core/types";
-import {
-  formatMessageTime,
-  groupReactions,
-  senderLabel,
-} from "./message-bubble";
+import { formatMessageTime, groupReactions } from "./message-bubble";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const OTHER = "22222222-2222-4222-8222-222222222222";
@@ -33,15 +29,9 @@ function message(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
-describe("senderLabel", () => {
-  it("says 'You' for the viewer's own message", () => {
-    expect(senderLabel(message({ sender_id: VIEWER }), true)).toBe("You");
-  });
-
-  it("falls back to a truncated id — there is no display-name join yet", () => {
-    expect(senderLabel(message(), false)).toBe("Member 222222");
-  });
-});
+// `senderLabel` moved to `lib/chat/display-name.ts` when the display-name
+// resolution landed, and its cases moved with it — see `display-name.spec.ts`.
+// It no longer takes a `ChatMessage`, so it needs none of this file's factory.
 
 describe("formatMessageTime", () => {
   it("renders a clock time", () => {

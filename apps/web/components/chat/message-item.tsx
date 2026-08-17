@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { ReactionChips, ReactionQuickPick } from "./reaction-bar";
 import { MessageRenderer } from "./renderers";
 import type { ChatMessage } from "@/lib/chat/types";
+import { initials } from "@/lib/utils";
 
 function formatClock(value: string | null | undefined): string {
   if (!value) return "";
@@ -31,6 +32,12 @@ export interface MessageItemProps {
   message: ChatMessage;
   viewerId: string | null;
   showHeader: boolean;
+  /**
+   * Resolves a `users.id` to a display name, or `null` when unresolvable.
+   * Required rather than optional so a caller cannot silently regress the row to
+   * a truncated uuid by forgetting it.
+   */
+  nameFor: (userId: string) => string | null;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
   onOpenThread?: (message: ChatMessage) => void;
@@ -56,6 +63,7 @@ export function MessageItem({
   message,
   viewerId,
   showHeader,
+  nameFor,
   onReact,
   onUnreact,
   onOpenThread,
@@ -65,6 +73,10 @@ export function MessageItem({
 }: MessageItemProps) {
   const [hovered, setHovered] = useState(false);
   const isMine = !!viewerId && message.sender_id === viewerId;
+  // Resolved for every sender including the viewer: the label says "You" for your
+  // own row, but the avatar still needs your initials — falling through to a uuid
+  // slice there would draw `11` next to "You" beside `AC` next to "Alice Chen".
+  const authorName = nameFor(message.sender_id);
   const isPending = message._status === "pending";
   const isFailed = message._status === "failed";
   // Reactions and threads operate on the *server* id (the chat actions
@@ -86,7 +98,9 @@ export function MessageItem({
             className="mt-1 flex h-7 w-7 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary"
             aria-hidden="true"
           >
-            {message.sender_id.slice(0, 2).toUpperCase()}
+            {authorName
+              ? initials(authorName)
+              : message.sender_id.slice(0, 2).toUpperCase()}
           </div>
         ) : null}
       </div>
@@ -94,7 +108,12 @@ export function MessageItem({
         {showHeader ? (
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-semibold">
-              {isMine ? "You" : `Member ${message.sender_id.slice(0, 6)}`}
+              {isMine
+                ? "You"
+                : // Truthy, not `??`: the resolver's contract is that an unset
+                  // name comes back null, but a stray "" must degrade to the id
+                  // rather than render a blank label next to uuid initials.
+                  authorName || `Member ${message.sender_id.slice(0, 6)}`}
             </span>
             <span className="text-[11px] text-muted-foreground">
               {formatClock(message.created_at)}

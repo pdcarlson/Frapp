@@ -23,19 +23,58 @@ import {
 
 const UUID_A = "11111111-1111-4111-8111-111111111111";
 const UUID_B = "22222222-2222-4222-8222-222222222222";
+const VIEWER = UUID_A;
+const OTHER = UUID_B;
+const DM_NAME = `dm-${UUID_A}-${UUID_B}`;
+
+/** Roster map as `useMemberDisplayNames().byId` hands it over. */
+const NAMES = { [VIEWER]: "Viewer Self", [OTHER]: "Alice Chen" };
 
 describe("selectChannels", () => {
-  it("keeps id, name and type", () => {
+  it("keeps id, name, type and participant ids", () => {
     expect(
       selectChannels([
-        { id: "c1", name: "general", type: "PUBLIC", extra: "ignored" },
+        {
+          id: "c1",
+          name: "general",
+          type: "PUBLIC",
+          member_ids: null,
+          extra: "ignored",
+        },
       ]),
-    ).toEqual([{ id: "c1", name: "general", type: "PUBLIC" }]);
+    ).toEqual([{ id: "c1", name: "general", type: "PUBLIC", member_ids: [] }]);
+  });
+
+  it("normalizes member_ids so no consumer needs a null check", () => {
+    // Only DM rows populate the column server-side; a null or absent value
+    // becomes [] here rather than leaking `undefined` into the name resolver.
+    expect(
+      selectChannels([
+        { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
+      ]),
+    ).toEqual([
+      { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
+    ]);
+  });
+
+  it("drops non-string entries from member_ids", () => {
+    expect(
+      selectChannels([
+        {
+          id: "c1",
+          name: "general",
+          type: "PUBLIC",
+          member_ids: [VIEWER, 7, null],
+        },
+      ]),
+    ).toEqual([
+      { id: "c1", name: "general", type: "PUBLIC", member_ids: [VIEWER] },
+    ]);
   });
 
   it("defaults a missing type to PUBLIC rather than dropping the row", () => {
     expect(selectChannels([{ id: "c1", name: "general" }])).toEqual([
-      { id: "c1", name: "general", type: "PUBLIC" },
+      { id: "c1", name: "general", type: "PUBLIC", member_ids: [] },
     ]);
   });
 
@@ -49,7 +88,7 @@ describe("selectChannels", () => {
         "not a row",
         { id: "ok", name: "kept", type: "PUBLIC" },
       ]),
-    ).toEqual([{ id: "ok", name: "kept", type: "PUBLIC" }]);
+    ).toEqual([{ id: "ok", name: "kept", type: "PUBLIC", member_ids: [] }]);
   });
 
   it("survives a non-array payload", () => {
@@ -65,38 +104,71 @@ describe("isDirectChannel", () => {
     const chapter = ["PUBLIC", "PRIVATE", "ROLE_GATED"];
 
     for (const type of direct) {
-      expect(isDirectChannel({ id: "x", name: "n", type })).toBe(true);
+      expect(
+        isDirectChannel({ id: "x", name: "n", type, member_ids: [] }),
+      ).toBe(true);
     }
     for (const type of chapter) {
-      expect(isDirectChannel({ id: "x", name: "n", type })).toBe(false);
+      expect(
+        isDirectChannel({ id: "x", name: "n", type, member_ids: [] }),
+      ).toBe(false);
     }
   });
 });
 
 describe("displayChannelName", () => {
-  it("replaces a server-generated DM name — the row must never show a uuid", () => {
+  it("resolves a 1:1 DM to the other participant's name", () => {
     expect(
-      displayChannelName({
-        id: "c1",
-        name: `dm-${UUID_A}-${UUID_B}`,
-        type: "DM",
-      }),
+      displayChannelName(
+        { id: "c1", name: DM_NAME, type: "DM", member_ids: [VIEWER, OTHER] },
+        VIEWER,
+        NAMES,
+      ),
+    ).toBe("Alice Chen");
+  });
+
+  it("falls back to a placeholder when the other participant is unresolvable — never a uuid", () => {
+    expect(
+      displayChannelName(
+        {
+          id: "c1",
+          name: DM_NAME,
+          type: "DM",
+          member_ids: [VIEWER, "unknown-user"],
+        },
+        VIEWER,
+        NAMES,
+      ),
     ).toBe("Direct message");
   });
 
   it("replaces a server-generated group DM name", () => {
     expect(
-      displayChannelName({
-        id: "c1",
-        name: "group-dm-1755300000000",
-        type: "GROUP_DM",
-      }),
+      displayChannelName(
+        {
+          id: "c1",
+          name: "group-dm-1755300000000",
+          type: "GROUP_DM",
+          member_ids: [VIEWER],
+        },
+        VIEWER,
+        NAMES,
+      ),
     ).toBe("Group message");
   });
 
   it("keeps a group DM the chapter actually titled", () => {
     expect(
-      displayChannelName({ id: "c1", name: "Exec board", type: "GROUP_DM" }),
+      displayChannelName(
+        {
+          id: "c1",
+          name: "Exec board",
+          type: "GROUP_DM",
+          member_ids: [VIEWER, OTHER],
+        },
+        VIEWER,
+        NAMES,
+      ),
     ).toBe("Exec board");
   });
 
@@ -104,12 +176,12 @@ describe("displayChannelName", () => {
     // The generated-name patterns must only ever apply to direct channels; a
     // public channel someone called `dm-something` keeps its name.
     expect(
-      displayChannelName({
-        id: "c1",
-        name: `dm-${UUID_A}-${UUID_B}`,
-        type: "PUBLIC",
-      }),
-    ).toBe(`dm-${UUID_A}-${UUID_B}`);
+      displayChannelName(
+        { id: "c1", name: DM_NAME, type: "PUBLIC", member_ids: [] },
+        VIEWER,
+        NAMES,
+      ),
+    ).toBe(DM_NAME);
   });
 });
 
