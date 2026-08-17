@@ -196,6 +196,61 @@ describe("useUpdateTaskStatus", () => {
     });
   });
 
+  /**
+   * Both surfaces decide which action to offer from `stored_status` (#1051), so
+   * an optimistic write that patches only `status` leaves the button unchanged
+   * after a successful write. The member taps again and collects a 400 for an
+   * action that already succeeded — which is exactly the failed-tap experience
+   * `deriveDisplayStatus` exists to prevent, arriving by the other door.
+   */
+  it("patches stored_status alongside the rendered status", async () => {
+    seedTask(queryClient, { status: "TODO", due_date: "2020-01-01" });
+    const { fn, succeed } = deferredCalls();
+    const { result } = renderHook(() => useUpdateTaskStatus(), {
+      wrapper: createWrapper({ PATCH: fn }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ id: TASK, body: { status: "IN_PROGRESS" } });
+    });
+
+    await waitFor(() => {
+      // Still renders as overdue...
+      expect(cachedDetail(queryClient).status).toBe("OVERDUE");
+      // ...but the action authority has moved on, so the button changes.
+      expect(cachedDetail(queryClient).stored_status).toBe("IN_PROGRESS");
+      expect(cachedListRow(queryClient).stored_status).toBe("IN_PROGRESS");
+    });
+
+    await act(async () => {
+      await succeed();
+    });
+  });
+
+  it("reverts stored_status too when the write fails", async () => {
+    seedTask(queryClient, { status: "TODO", stored_status: "TODO" });
+    const { fn, fail } = deferredCalls();
+    const { result } = renderHook(() => useUpdateTaskStatus(), {
+      wrapper: createWrapper({ PATCH: fn }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({ id: TASK, body: { status: "IN_PROGRESS" } });
+    });
+    await waitFor(() => {
+      expect(cachedDetail(queryClient).stored_status).toBe("IN_PROGRESS");
+    });
+
+    await act(async () => {
+      await fail();
+    });
+
+    await waitFor(() => {
+      expect(cachedDetail(queryClient).stored_status).toBe("TODO");
+      expect(cachedDetail(queryClient).status).toBe("TODO");
+    });
+  });
+
   it("stamps completed_at when completing, mirroring the server", async () => {
     seedTask(queryClient, { status: "IN_PROGRESS" });
     const { fn, succeed } = deferredCalls();
@@ -353,6 +408,9 @@ describe("useUpdateTaskStatus", () => {
       expect(cachedDetail(queryClient).status).toBe("IN_PROGRESS");
       expect(cachedDetail(queryClient).completed_at).toBeNull();
     });
+    // The seed carried no `stored_status`, so the revert removes the key rather
+    // than writing a value the row never held — the `delete` branch of `undo`.
+    expect(cachedDetail(queryClient).stored_status).toBeUndefined();
     // The list keeps what *it* held, not the detail's history.
     expect(cachedListRow(queryClient).status).toBe("COMPLETED");
     expect(cachedListRow(queryClient).completed_at).toBe(
@@ -481,6 +539,7 @@ describe("useRejectTask", () => {
 
     await waitFor(() => {
       expect(cachedDetail(queryClient).status).toBe("IN_PROGRESS");
+      expect(cachedDetail(queryClient).stored_status).toBe("IN_PROGRESS");
       expect(cachedDetail(queryClient).completed_at).toBeNull();
     });
 

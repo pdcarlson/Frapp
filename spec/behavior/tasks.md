@@ -6,7 +6,14 @@ A lightweight task management system for chapter operations.
 
 - Admins with `tasks:manage` permission create tasks with: title, description (optional), assignee (single member), due date, and optional point reward on completion.
 - Task statuses: TODO → IN_PROGRESS → COMPLETED. Tasks past their due date that are not COMPLETED are flagged as OVERDUE.
-- **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC). Two consequences clients must respect: an optimistic write has to predict the *rendered* status, or an overdue row visibly flips back on the next refetch; and because both stored statuses render identically, a client holding only the rendered value **cannot** know an overdue task's next legal transition. The transition table below is checked against the stored status, so the server is the only authority on it.
+- **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC). An optimistic write must therefore predict the *rendered* status, or an overdue row visibly flips back on the next refetch.
+- **Read paths carry `stored_status` alongside `status`.** Because TODO+past-due and IN_PROGRESS+past-due both render as OVERDUE with `completed_at: null`, the rendered value alone cannot tell a client which transition is legal — and the transition table below is checked against the *stored* status. So every read returns both: `status` (rendered, what to display and group by) and `stored_status` (persisted, what to compute the next action from). `POST /v1/tasks` returns the freshly created row and does **not** derive, so it carries no `stored_status`; the next read does. The field is additive — the server remains the only authority on whether a transition is accepted.
+
+  Three rules follow for clients, and all three are load-bearing:
+
+  1. **Badges and grouping read `status`; every action affordance reads `stored_status`.** Mixing the two on one row lets a task sit in the Overdue column offering an action its rendered status contradicts.
+  2. **An optimistic write must patch *both*.** Patching only `status` leaves the affordance keyed to a stale value, so after a successful write the control does not change, the member acts again, and the second attempt is rejected — a failure reported for something that already worked.
+  3. **A stored `OVERDUE` maps to the same affordance as `TODO`** (the table accepts `OVERDUE → IN_PROGRESS`), and an *absent* `stored_status` — a client talking to a pre-#1051 server — is ambiguous only when `status` is `OVERDUE`, since derivation can produce no other value. Offer nothing in that one case rather than guessing.
 
 ## Assignee Actions
 

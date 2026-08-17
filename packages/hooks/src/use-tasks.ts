@@ -40,6 +40,7 @@ export type TaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
 interface CachedTask {
   id?: string;
   status?: string;
+  stored_status?: string;
   due_date?: string;
   completed_at?: string | null;
   confirmed_at?: string | null;
@@ -47,7 +48,14 @@ interface CachedTask {
 }
 
 type TaskPatch = Partial<
-  Pick<CachedTask, "status" | "completed_at" | "confirmed_at" | "points_awarded">
+  Pick<
+    CachedTask,
+    | "status"
+    | "stored_status"
+    | "completed_at"
+    | "confirmed_at"
+    | "points_awarded"
+  >
 >;
 
 /**
@@ -412,8 +420,13 @@ export function useUpdateTaskStatus() {
     onMutate: async ({ id, body }) => {
       await cancelTaskQueries(queryClient, chapterId, id);
       const row = readCachedTask(queryClient, chapterId, id);
+      // Both halves, always. `status` is what the row renders; `stored_status`
+      // is what every action affordance keys off (#1051), and patching only the
+      // first leaves the button unchanged after a successful write — the member
+      // taps again and collects a 400 for an action that already succeeded.
       const patch: TaskPatch = {
         status: deriveDisplayStatus(body.status, row?.due_date, todayUtc()),
+        stored_status: body.status,
       };
       // Mirrors the server stamping `completed_at` on COMPLETED and leaving it
       // alone otherwise, so a "Done <weekday>" subtitle does not blank for a beat.
@@ -524,6 +537,7 @@ export function useRejectTask() {
       const row = readCachedTask(queryClient, chapterId, id);
       return applyTaskPatch(queryClient, chapterId, id, {
         status: deriveDisplayStatus("IN_PROGRESS", row?.due_date, todayUtc()),
+        stored_status: "IN_PROGRESS",
         completed_at: null,
       });
     },

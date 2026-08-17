@@ -42,6 +42,13 @@ describe('TaskService', () => {
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
+  /**
+   * A task as the read paths return it (#1051). `create` deliberately does not
+   * go through `toDisplayStatus`, which is why its assertions still compare
+   * against the bare entity.
+   */
+  const asView = (task: Task) => ({ ...task, stored_status: task.status });
+
   const baseMember: Member = {
     id: 'member-1',
     user_id: 'user-1',
@@ -567,7 +574,7 @@ describe('TaskService', () => {
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
       expect(mockTaskRepo.findByAssignee).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(baseTask);
+      expect(result[0]).toEqual(asView(baseTask));
     });
 
     it('should list tasks by assignee when not admin', async () => {
@@ -581,7 +588,7 @@ describe('TaskService', () => {
       );
       expect(mockTaskRepo.findByChapter).not.toHaveBeenCalled();
       expect(result).toHaveLength(1);
-      expect(result[0]).toEqual(baseTask);
+      expect(result[0]).toEqual(asView(baseTask));
     });
 
     it('should display OVERDUE status for past-due tasks', async () => {
@@ -598,6 +605,73 @@ describe('TaskService', () => {
 
       expect(result[0].status).toBe(TaskStatus.OVERDUE);
     });
+
+    /**
+     * The point of `stored_status` (#1051): `OVERDUE` collapses TODO and
+     * IN_PROGRESS into one indistinct rendered value, and the transition table
+     * is checked against the stored one. Without this field a client cannot
+     * tell which transition is legal, so it cannot offer the assignee any
+     * action on an overdue task at all.
+     */
+    it('carries the stored status alongside a derived OVERDUE', async () => {
+      const pastDue = new Date();
+      pastDue.setDate(pastDue.getDate() - 1);
+      const dueDate = pastDue.toISOString().slice(0, 10);
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        { ...baseTask, id: 'a', status: TaskStatus.TODO, due_date: dueDate },
+        {
+          ...baseTask,
+          id: 'b',
+          status: TaskStatus.IN_PROGRESS,
+          due_date: dueDate,
+        },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      // Both render identically...
+      expect(result.map((t) => t.status)).toEqual([
+        TaskStatus.OVERDUE,
+        TaskStatus.OVERDUE,
+      ]);
+      // ...and are told apart only by the stored value.
+      expect(result.map((t) => t.stored_status)).toEqual([
+        TaskStatus.TODO,
+        TaskStatus.IN_PROGRESS,
+      ]);
+    });
+
+    // The guard the ternary rewrite could silently lose. Without this, dropping
+    // the `TODO || IN_PROGRESS` term keeps every other test green, and a
+    // COMPLETED task past its due date would render OVERDUE — grouping into the
+    // wrong board column and hiding Confirm, so its points are never awarded.
+    it('never derives OVERDUE for a COMPLETED task past its due date', async () => {
+      const pastDue = new Date();
+      pastDue.setDate(pastDue.getDate() - 1);
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        {
+          ...baseTask,
+          status: TaskStatus.COMPLETED,
+          due_date: pastDue.toISOString().slice(0, 10),
+        },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result[0].status).toBe(TaskStatus.COMPLETED);
+      expect(result[0].stored_status).toBe(TaskStatus.COMPLETED);
+    });
+
+    it('reports stored_status unchanged when nothing is derived', async () => {
+      mockTaskRepo.findByChapter.mockResolvedValue([
+        { ...baseTask, status: TaskStatus.COMPLETED },
+      ]);
+
+      const result = await service.list('ch-1', 'user-1', true);
+
+      expect(result[0].status).toBe(TaskStatus.COMPLETED);
+      expect(result[0].stored_status).toBe(TaskStatus.COMPLETED);
+    });
   });
 
   describe('listByChapter', () => {
@@ -607,7 +681,7 @@ describe('TaskService', () => {
       const result = await service.listByChapter('ch-1');
 
       expect(mockTaskRepo.findByChapter).toHaveBeenCalledWith('ch-1');
-      expect(result).toEqual([baseTask]);
+      expect(result).toEqual([asView(baseTask)]);
     });
   });
 
@@ -621,7 +695,7 @@ describe('TaskService', () => {
         'ch-1',
         'user-1',
       );
-      expect(result).toEqual([baseTask]);
+      expect(result).toEqual([asView(baseTask)]);
     });
   });
 
@@ -632,7 +706,7 @@ describe('TaskService', () => {
       const result = await service.findById('task-1', 'ch-1');
 
       expect(mockTaskRepo.findById).toHaveBeenCalledWith('task-1', 'ch-1');
-      expect(result).toEqual(baseTask);
+      expect(result).toEqual(asView(baseTask));
     });
 
     it('should throw NotFoundException when task not found', async () => {

@@ -30,13 +30,22 @@ interface TaskCardProps {
 }
 
 
-/** Live task shape read back from `GET /v1/tasks/{id}` (display status). */
+/** Live task shape read back from `GET /v1/tasks/{id}`. */
 interface LiveTask {
   id: string;
   title: string;
   assignee_id: string;
   due_date: string;
+  /** Display status — `OVERDUE` when derived. Drives the badge. */
   status: TaskStatus;
+  /**
+   * The persisted status (#1051). Drives which action is offered, because
+   * `OVERDUE` renders identically for a stored `TODO` and a stored
+   * `IN_PROGRESS`, and the server checks its transition table against this.
+   * `undefined` from a pre-#1051 API — deliberately not defaulted, so the
+   * caller can tell "unknown" from a real value.
+   */
+  stored_status: TaskStatus | undefined;
   point_reward: number | null;
   points_awarded: boolean;
 }
@@ -95,10 +104,24 @@ function coerceLiveTask(data: unknown): LiveTask | null {
     assignee_id: typeof r.assignee_id === "string" ? r.assignee_id : "",
     due_date: typeof r.due_date === "string" ? r.due_date : "",
     status: r.status as TaskStatus,
+    stored_status:
+      typeof r.stored_status === "string"
+        ? (r.stored_status as TaskStatus)
+        : undefined,
     point_reward:
       typeof r.point_reward === "number" ? r.point_reward : null,
     points_awarded: r.points_awarded === true,
   };
+}
+
+/** Which status this row's *actions* are decided by — see the board's twin. */
+function actionStatusOf(live: LiveTask): TaskStatus | undefined {
+  if (live.stored_status === undefined) {
+    // Derivation only ever produces `OVERDUE`, so any other rendered value is
+    // also the stored one; `OVERDUE` alone is ambiguous and offers nothing.
+    return live.status === "OVERDUE" ? undefined : live.status;
+  }
+  return live.stored_status === "OVERDUE" ? "TODO" : live.stored_status;
 }
 
 function formatDate(value: string): string {
@@ -161,6 +184,19 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
 
   const live = coerceLiveTask(liveRaw);
   const status: TaskStatus = live?.status ?? payload.status;
+  // The badge shows `status` (so an overdue task reads as overdue), but the
+  // action row keys off `storedStatus`: the server's transition table is
+  // checked against the stored value, and `OVERDUE` hides whether that is
+  // `TODO` or `IN_PROGRESS`. Before #1051 exposed it, an overdue task offered
+  // the assignee no action at all — the task could never be moved.
+  //
+  // A row whose *persisted* status is `OVERDUE` maps to `TODO`, because
+  // `VALID_ASSIGNEE_TRANSITIONS[OVERDUE]` is `[IN_PROGRESS]` — the same move
+  // Start makes. `undefined` means a pre-#1051 API left the stored value
+  // ambiguous, and no branch below matches it, so no action is offered.
+  const storedStatus: TaskStatus | undefined = live
+    ? actionStatusOf(live)
+    : payload.status;
   const pointsAwarded = live?.points_awarded ?? false;
   const isAssignee = viewerId != null && viewerId === payload.assignee_user_id;
   const actionsDisabled =
@@ -178,8 +214,9 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   // the exact repetition this variable exists to prevent.
   const canManageTasks = can("tasks:manage", permissionsPayload?.permissions);
   const showsAnyAction =
-    (isAssignee && (status === "TODO" || status === "IN_PROGRESS")) ||
-    (status === "COMPLETED" && canManageTasks);
+    (isAssignee &&
+      (storedStatus === "TODO" || storedStatus === "IN_PROGRESS")) ||
+    (storedStatus === "COMPLETED" && canManageTasks);
 
   /**
    * Per-call failure copy. The optimistic write and its rollback moved into the
@@ -224,7 +261,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
         ) : null}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
-        {isAssignee && status === "TODO" ? (
+        {isAssignee && storedStatus === "TODO" ? (
           <Button
             size="sm"
             variant="outline"
@@ -242,7 +279,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             Start
           </Button>
         ) : null}
-        {isAssignee && status === "IN_PROGRESS" ? (
+        {isAssignee && storedStatus === "IN_PROGRESS" ? (
           <Button
             size="sm"
             variant="outline"
@@ -260,7 +297,7 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             Mark complete
           </Button>
         ) : null}
-        {status === "COMPLETED" ? (
+        {storedStatus === "COMPLETED" ? (
           <Can permission="tasks:manage">
             <Button
               size="sm"

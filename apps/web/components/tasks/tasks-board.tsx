@@ -65,7 +65,16 @@ type Task = {
   assignee_id: string;
   created_by: string;
   due_date: string;
+  /** Display status — `OVERDUE` when derived. Drives the column grouping. */
   status: TaskStatus;
+  /**
+   * The persisted status (#1051). Drives which action is offered: `OVERDUE`
+   * renders identically for a stored `TODO` and a stored `IN_PROGRESS`, and the
+   * server checks its transition table against this one. Optional because the
+   * pre-#1051 API did not send it; falling back to `status` reproduces the old
+   * behaviour, where an overdue task simply offered no action.
+   */
+  stored_status?: TaskStatus;
   point_reward: number | null;
   points_awarded: boolean;
   completed_at: string | null;
@@ -101,6 +110,31 @@ const COLUMNS: { status: TaskStatus; label: string; description: string }[] = [
     description: "Past due date and not yet complete.",
   },
 ];
+
+/**
+ * Which status a row's *actions* are decided by.
+ *
+ * Not `status`: that is the rendered value, and `OVERDUE` renders identically
+ * for a stored `TODO` and a stored `IN_PROGRESS` while the server checks its
+ * transition table against the stored one (#1051). Columns and badges keep
+ * using `status`; only affordances come through here, so the two authorities
+ * never get mixed on one row.
+ *
+ * A row whose *persisted* status is `OVERDUE` maps to `TODO`, because
+ * `VALID_ASSIGNEE_TRANSITIONS[OVERDUE]` is `[IN_PROGRESS]` — the same move
+ * Start makes. The fallback to `status` covers a pre-#1051 API, where an
+ * overdue row simply offers nothing rather than guessing.
+ */
+function actionStatus(task: Task): TaskStatus | undefined {
+  if (task.stored_status === undefined) {
+    // Pre-#1051 API. Derivation only ever *produces* `OVERDUE`, so any other
+    // rendered value is also the stored one and is safe to act on; `OVERDUE`
+    // alone is ambiguous, and returning `undefined` there offers no action —
+    // exactly what this board did before the field existed.
+    return task.status === "OVERDUE" ? undefined : task.status;
+  }
+  return task.stored_status === "OVERDUE" ? "TODO" : task.stored_status;
+}
 
 function formatDate(value: string | null | undefined): string {
   if (!value) return "—";
@@ -542,7 +576,7 @@ export function TasksBoard() {
                               trigger would claim writes are blocked while
                               still offering four of them.
                             */}
-                            {isMine && task.status === "TODO" ? (
+                            {isMine && actionStatus(task) === "TODO" ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -554,7 +588,7 @@ export function TasksBoard() {
                                 Start
                               </Button>
                             ) : null}
-                            {isMine && task.status === "IN_PROGRESS" ? (
+                            {isMine && actionStatus(task) === "IN_PROGRESS" ? (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -567,7 +601,7 @@ export function TasksBoard() {
                               </Button>
                             ) : null}
                             <Can permission="tasks:manage">
-                              {task.status === "COMPLETED" ? (
+                              {actionStatus(task) === "COMPLETED" ? (
                                 <>
                                   <Button
                                     size="sm"
