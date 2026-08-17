@@ -45,6 +45,7 @@ import {
   type OutboxRow,
   type OutboxStore,
 } from "./adapters";
+import { randomClientId } from "./random-id";
 
 export interface ToastFn {
   (input: {
@@ -195,7 +196,7 @@ export async function sendMessage(
     });
     return;
   }
-  const clientId = args.clientMessageId ?? crypto.randomUUID();
+  const clientId = args.clientMessageId ?? randomClientId();
   const optimistic = optimisticMessage({
     clientMessageId: clientId,
     channelId: args.channelId,

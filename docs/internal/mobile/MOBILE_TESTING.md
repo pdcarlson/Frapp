@@ -77,7 +77,7 @@ vehicle anyone has, and no one has yet run it.
 
 S2 (#957) moved every route at once and could not be device-verified either. The
 bundle builds and `lib/routes.spec.ts` proves every route literal resolves
-against the file tree, but neither proves the app *navigates*. On the first
+against the file tree, but neither proves the app _navigates_. On the first
 device run, check:
 
 - [ ] The app opens on **Chat** — chat is home, and there is no Home tab.
@@ -128,9 +128,27 @@ npm run test -w apps/mobile
 
 ## Gotchas
 
+**Never put a `*.spec.*` file under `app/`.** Expo Router discovers routes with
+`requireContext` over the whole `app/` tree, so a spec placed next to the screen
+it tests is bundled _into the app_. That drags `vitest` — and through it Vite's
+module runner — into the Metro graph, and `expo export` dies with
+`SyntaxError: Invalid call at line 1018: import(filepath)`. Every local check
+stays green while this is true: `npm run test`, `npm run lint`, and
+`npm run check-types` all pass, because none of them bundles.
+
+Put screen-adjacent logic that wants a test in `lib/` and import it from the
+screen — `lib/chat/channel-list.ts` and its spec are the pattern. Note that
+`lib/routes.spec.ts` skips `.spec.` files in its own route walk, so it will _not_
+warn you about this; the only thing that catches it is bundling.
+
+```bash
+# The one check that catches route-tree and Metro-resolution breakage.
+npx expo export --platform ios
+```
+
 **Do not widen the React version range.** React is pinned to an exact `19.2.3` in
 every workspace and in the root `overrides`. React Native 0.86.2 bundles
-`react-native-renderer` 19.2.3, which asserts *exact* equality with `react` at
+`react-native-renderer` 19.2.3, which asserts _exact_ equality with `react` at
 runtime, but declares its peer range as `^19.2.0` — so npm will happily resolve a
 newer React, hoist it to the repo root, and leave the mobile app dead on first
 render with "Invalid hook call" followed by "Incompatible React versions". Unit
@@ -143,7 +161,7 @@ the root `overrides` in one commit. A root `overrides` entry is global, so mobil
 cannot take a newer React while the override holds the old one.
 
 **Upgrading the SDK requires regenerating the lockfile.** `@expo/vector-icons`
-declares `expo-font: ">=14.0.4"` as a *peer*, which the previous SDK's `expo-font`
+declares `expo-font: ">=14.0.4"` as a _peer_, which the previous SDK's `expo-font`
 still satisfies — so a plain `npm install` keeps the whole old SDK chain hoisted at
 the root next to the new one, vulnerabilities included. Use
 `rm -rf node_modules package-lock.json && npm install`, then verify a single
@@ -155,7 +173,7 @@ the root next to the new one, vulnerabilities included. Use
 ([`lib/auth-session.tsx`](../../../apps/mobile/lib/auth-session.tsx)), so it reads
 `false` during `hydrating` just as it does once the first claim read has landed.
 `await waitFor(() => expect(result.current.isChapterResolving).toBe(false))`
-therefore *can* return before `getSession()` has resolved and before any claim read
+therefore _can_ return before `getSession()` has resolved and before any claim read
 has been issued — the wait passes for a reason the test did not intend, and
 whatever it was meant to sequence is still ahead of it. It does not fail every
 time; see the drain below for what decides it. Assert `status === "authenticated"`
@@ -167,14 +185,14 @@ inside its own promise executor, before anything has had a chance to happen, so 
 condition that is already true when the wait begins returns at once and sequences
 nothing. That is independent of how many suites are running.
 
-Apply that test to what the wait is *for*, not mechanically. A wait placed after an
+Apply that test to what the wait is _for_, not mechanically. A wait placed after an
 `await act(...)` that already did the sequencing will often pass on its first
 sample, and that is fine — about ten of this spec's own waits are in exactly that
-position. The question is whether anything *other than the wait itself* rules out
+position. The question is whether anything _other than the wait itself_ rules out
 the state you are trying to skip past. When the answer is the `act` above it, the
 wait is a readable assertion; when the answer is nothing, it is a bug.
 
-The corollary is that waiting on an *already-settled* flag is a pure no-op. Where a
+The corollary is that waiting on an _already-settled_ flag is a pure no-op. Where a
 later async operation is the thing under test and it changes no flag — a claim
 re-read, which deliberately leaves `hasReadChapterClaim` true — wait on the
 operation instead: await the mock's recorded promises inside `act`, and assert the
@@ -186,7 +204,7 @@ This was the whole of #976. Two things about it are worth not repeating:
   gate leaking into the next test, and an `act()` containment was added for that
   theory. The rate never moved, because nothing ever crossed a test boundary.
 - **It was not suite-only**, though #976 says it was. To check either claim you
-  have to run the *pre-fix* spec, which since #981 means an explicit checkout —
+  have to run the _pre-fix_ spec, which since #981 means an explicit checkout —
   `git show 1632e72:apps/mobile/lib/auth-session.spec.tsx`, the last commit before
   the fix. Against that revision the test reproduces run on its own: 4 failures in
   30 file-alone runs, versus 1 in 15 for the full nine-file suite, on one 4-core
@@ -195,7 +213,7 @@ This was the whole of #976. Two things about it are worth not repeating:
   documented mechanism does not apply — and when you do measure a rate, say which
   revision you measured.
 
-What actually varies run to run is the drain Testing Library performs *after*
+What actually varies run to run is the drain Testing Library performs _after_
 `waitFor` resolves: `asyncWrapper` awaits a `setTimeout(0)` that races React's
 scheduler macrotasks, and that decides whether the pending work has landed by the
 time the test continues. Machine load shifts those odds, which is why the rate is

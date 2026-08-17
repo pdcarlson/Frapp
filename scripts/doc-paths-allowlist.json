@@ -185,11 +185,6 @@
     },
     {
       "file": "spec/ui/mobile/screens.md",
-      "path": "chat.tsx",
-      "reason": "Rename note in the s04 row: 'the rename from chat.tsx has landed'."
-    },
-    {
-      "file": "spec/ui/mobile/screens.md",
       "path": "(tabs)/task-center.tsx",
       "reason": "Removals/renames table — task-center.tsx became tasks.tsx."
     },
