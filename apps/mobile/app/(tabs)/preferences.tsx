@@ -1,28 +1,66 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   StyleSheet,
   Switch,
   Text,
   TextInput,
   View,
 } from "react-native";
-import { ScreenShell } from "@/components/screen-shell";
-import { TaskLoopCard } from "@/components/task-loop-card";
+import { useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import { useCurrentChapter, useDeleteAccount, useGeofences, useMyPermissions } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
-import { isSupportedTimeZone, MAX_TIME_ZONE_LENGTH } from "@repo/validation";
+import {
+  can,
+  isModuleEnabled,
+  isSupportedTimeZone,
+  MAX_TIME_ZONE_LENGTH,
+  NOTIFICATION_CATEGORIES,
+} from "@repo/validation";
+import { ScreenShell } from "@/components/screen-shell";
+import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
+import { LEGAL_LINKS } from "@/lib/more/legal";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import {
-  type PreferenceState,
   type QuietHoursWindow,
   useNotificationPreferencesSync,
 } from "@/lib/use-notification-preferences-sync";
 
-type PreferenceRow = {
-  key: keyof PreferenceState;
-  title: string;
-  description: string;
-};
+/**
+ * s16 — Settings (`canvas-screens.dc.html:527`). The route file keeps the name
+ * `preferences.tsx`; the drawn title is "Settings" (`spec/ui/mobile/screens.md`).
+ *
+ * Three sections, as drawn: NOTIFICATIONS, CHAPTER · ADMIN, ACCOUNT.
+ *
+ * ## Deviations from the drawing, each deliberate
+ *
+ * - **Quiet hours is here and is not drawn.** `spec/ui/README.md` gives visuals
+ *   to the reference and *logic* to `spec/behavior/*`, and quiet hours is
+ *   server-enforced logic with a shipped, tested client. Deleting working
+ *   functionality because a mock omitted it would be a regression, so it lives
+ *   under the drawn NOTIFICATIONS heading rather than in a section of its own.
+ * - **No "Join code" row.** Canvas draws `Join code · TN7-4KQ` under CHAPTER ·
+ *   ADMIN. There is no `join_code` anywhere on chapters; joining runs through
+ *   invites, whose rows carry an opaque, single-use, role-scoped, expiring
+ *   token (`apps/api/src/domain/entities/invite.entity.ts`). Rendering one of
+ *   those as a stable "join code" would tell members something false about how
+ *   it behaves. Filed instead.
+ * - **`announcements` is not a switch.** The delivery flow checks the member's
+ *   preference *before* it checks priority, so the row would let someone
+ *   silence URGENT chapter announcements — and the in-app record of them — from
+ *   here. See the catalog's docblock in `@repo/validation`.
+ * - **Appearance is static text.** The app is dark-only by design
+ *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
+ * - **The two drawn NOTIFICATIONS switches are not built as drawn.** "Push
+ *   notifications" is a device permission, which C7 owns along with the rest of
+ *   remote push; "Mandatory events only" has no backing field on `events` and
+ *   no preference key. The per-category switches below are what the API
+ *   actually enforces.
+ */
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -45,58 +83,6 @@ function formatTimeOfDay(value: string): string {
   const suffix = hours < 12 ? "AM" : "PM";
   const displayHours = hours % 12 === 0 ? 12 : hours % 12;
   return `${displayHours}:${rawMinutes} ${suffix}`;
-}
-
-const PREFERENCE_ROWS: PreferenceRow[] = [
-  {
-    key: "dmAlertsEnabled",
-    title: "Direct message alerts",
-    description:
-      "Allow immediate push notifications for chapter direct messages.",
-  },
-  {
-    key: "eventRemindersEnabled",
-    title: "Event reminders",
-    description: "Receive pre-check-in reminders for upcoming chapter events.",
-  },
-];
-
-type PreferenceToggleRowProps = {
-  title: string;
-  description: string;
-  value: boolean;
-  onValueChange: (value: boolean) => void;
-  tokens: SignetTokens;
-  accent: string;
-  styles: ReturnType<typeof createStyles>;
-};
-
-function PreferenceToggleRow({
-  title,
-  description,
-  value,
-  onValueChange,
-  tokens,
-  accent,
-  styles,
-}: PreferenceToggleRowProps) {
-  return (
-    <View style={styles.toggleCard}>
-      <View style={styles.toggleTextStack}>
-        <Text style={styles.toggleTitle}>{title}</Text>
-        <Text style={styles.toggleDescription}>{description}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{
-          false: tokens.color.border.input,
-          true: tint(tokens.color.semantic.info, 0.3),
-        }}
-        thumbColor={value ? accent : tokens.color.surface.card}
-      />
-    </View>
-  );
 }
 
 type QuietHoursCardProps = {
@@ -254,67 +240,132 @@ function QuietHoursCard({
 }
 
 export default function PreferencesScreen() {
+  const router = useRouter();
   const { tokens } = useFrappTheme();
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
+  const { signOut } = useAuthSession();
+  const queryClient = useQueryClient();
+  const [linkFailed, setLinkFailed] = useState<string | null>(null);
+  const deleteAccount = useDeleteAccount();
+
   const {
-    preferences,
-    setPreference,
+    quietHoursEnabled,
+    setQuietHoursEnabled,
+    categories,
+    setCategory,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,
     hydrationRecovered,
     persistenceFailed,
     isAuthenticated,
+    chapterId,
     quietHoursSync,
     categorySync,
   } = useNotificationPreferencesSync();
 
-  const enabledCount = useMemo(
-    () => Object.values(preferences).filter(Boolean).length,
-    [preferences],
-  );
+  // `can`, never a bare `includes` — an owner's grant is the wildcard `*`, so a
+  // membership test would lock out exactly the people this section is for.
+  const { data: permData } = useMyPermissions();
+  const permissions = useMemo(() => {
+    const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
+    return Array.isArray(raw) ? (raw as string[]) : [];
+  }, [permData]);
+  const canSeeChapterAdmin = can("chapter-config:view", permissions);
 
-  const summaryMeta = !isHydrated
-    ? "Hydrating local preferences..."
+  const chapterQuery = useCurrentChapter();
+  const enabledModules = (
+    chapterQuery.data as { enabled_modules?: Record<string, boolean> } | undefined
+  )?.enabled_modules;
+  const geofencesEnabled =
+    canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
+  // Gated, not just hidden: the route requires `members:view` **and** the
+  // `geofences` module, so firing it for a member who will not see the row
+  // spends a request to collect a 403.
+  //
+  // `GET /v1/geofences` has no response schema, so the SDK types the body
+  // `never` — narrowed through `unknown` the way every other read in this
+  // cluster is (`lib/more/narrow.ts`).
+  const geofencesQuery = useGeofences({ enabled: geofencesEnabled });
+  const zones = geofencesQuery.data as unknown;
+  const zoneCount = Array.isArray(zones) ? zones.length : null;
+
+  const notificationsMeta = !isHydrated
+    ? "Loading your saved preferences…"
     : hydrationRecovered
-      ? "Malformed saved preferences were reset to safe defaults."
-      : isAuthenticated
-        ? "Synced with your account and cached on this device."
-        : "Saved on this device. Will sync when you sign in.";
+      ? "Saved preferences were unreadable and have been reset to defaults."
+      : !isAuthenticated
+        ? "Saved on this device only. Sign in to change the settings on your account."
+        : !chapterId
+          ? "Category switches sync once you choose a chapter."
+          : categorySync === "retry" || quietHoursSync === "retry"
+            ? "Couldn't reach the server. Change a setting again to retry."
+            : categorySync === "pending" || quietHoursSync === "pending"
+              ? "Saving…"
+              : "Synced with your account.";
 
-  const quietHoursMeta =
-    quietHoursSync === "synced"
-      ? "Server quiet-hour window enforces push delivery."
-      : quietHoursSync === "retry"
-        ? "Couldn't reach the server. Toggle again to retry."
-        : quietHoursSync === "pending"
-          ? "Saving quiet-hour window..."
-          : "Saved locally. Server sync needs a signed-in session.";
+  async function handleSignOut() {
+    await signOut();
+    // Drop every cached query on the way out. Mobile's `QueryClient` is a
+    // module singleton and `signOut` clears only SecureStore and React state,
+    // so without this the next member to sign in on the same device is served
+    // the previous one's rows until each entry goes stale — and several keys
+    // are not account-scoped at all (`["settings"]`, `["user","me"]`). Web's
+    // provider already does this on chapter switch
+    // (`spec/behavior/multi-tenancy.md`); the same argument applies to accounts.
+    queryClient.clear();
+    router.replace("/(auth)/sign-in");
+  }
 
-  const categoryMeta =
-    categorySync === "synced"
-      ? "Category toggles are saved to your account."
-      : categorySync === "retry"
-        ? "Couldn't reach the server. Toggle again to retry."
-        : categorySync === "pending"
-          ? "Sending category change..."
-          : "Saved locally. Server sync needs a signed-in chapter session.";
+  function confirmDeleteAccount() {
+    // Native `Alert.alert` with a destructive button, per the native-feel table
+    // in `spec/ui/mobile/README.md`. `window.confirm` is banned everywhere.
+    Alert.alert(
+      "Delete account?",
+      "This cannot be undone. Your profile and contact details are erased; " +
+        "chapter history you took part in stays, anonymized as “Deleted User”. " +
+        "See the Privacy Policy for what is kept and for how long.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            deleteAccount.mutate(undefined, {
+              onSuccess: () => {
+                void handleSignOut();
+              },
+              onError: () => {
+                // The endpoint documents a 502 as "did not finish", and every
+                // step is idempotent — so the instruction is retry. It must not
+                // also say the account is intact: media is purged and PII is
+                // scrubbed *before* the auth record is deleted, so a failure
+                // after that point has already destroyed the profile. Telling
+                // someone "nothing is lost" there would talk them out of the
+                // retry that finishes the job.
+                Alert.alert(
+                  "Deletion didn't finish",
+                  "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
+                );
+              },
+            });
+          },
+        },
+      ],
+    );
+  }
 
   return (
     <ScreenShell
-      title="Preferences"
-      subtitle="Control communication defaults and see how each preference is synced."
+      title="Settings"
+      subtitle="Notifications, chapter details, and your account."
     >
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Saved preferences</Text>
-        <Text style={styles.summaryValue}>{enabledCount} enabled</Text>
-        <Text style={styles.summaryMeta}>{summaryMeta}</Text>
-      </View>
+      <SectionHeader>Notifications</SectionHeader>
 
       <QuietHoursCard
-        enabled={preferences.quietHoursEnabled}
-        onEnabledChange={(value) => setPreference("quietHoursEnabled", value)}
+        enabled={quietHoursEnabled}
+        onEnabledChange={setQuietHoursEnabled}
         quietHoursWindow={quietHoursWindow}
         onWindowChange={setQuietHoursWindow}
         tokens={tokens}
@@ -322,126 +373,129 @@ export default function PreferencesScreen() {
         styles={styles}
       />
 
-      {PREFERENCE_ROWS.map((row) => (
-        <PreferenceToggleRow
-          key={row.key}
-          title={row.title}
-          description={row.description}
-          value={preferences[row.key]}
-          onValueChange={(value) => setPreference(row.key, value)}
-          tokens={tokens}
-          accent={accent}
-          styles={styles}
-        />
-      ))}
+      <ListSection>
+        {NOTIFICATION_CATEGORIES.map((category) => (
+          <ListRow
+            key={category.key}
+            label={category.label}
+            description={category.description}
+            trailing={
+              <Switch
+                value={categories[category.key]}
+                onValueChange={(value) => setCategory(category.key, value)}
+                accessibilityLabel={category.label}
+                trackColor={{
+                  false: tokens.color.border.input,
+                  true: tint(tokens.color.semantic.info, 0.3),
+                }}
+                thumbColor={
+                  categories[category.key] ? accent : tokens.color.surface.card
+                }
+              />
+            }
+          />
+        ))}
+      </ListSection>
 
-      <TaskLoopCard
-        category="Quiet hours"
-        state={quietHoursSync}
-        title={
-          preferences.quietHoursEnabled
-            ? `${formatTimeOfDay(quietHoursWindow.start)} → ${formatTimeOfDay(
-                quietHoursWindow.end,
-              )}`
-            : "Disabled"
-        }
-        body={
-          quietHoursSync === "synced"
-            ? "Quiet-hour preference is synced to your account."
-            : "Quiet-hour preference is saved on this device."
-        }
-        meta={quietHoursMeta}
-      />
-      <TaskLoopCard
-        category="Category controls"
-        state={hydrationRecovered ? "retry" : categorySync}
-        title={
-          hydrationRecovered
-            ? "Recovered from invalid saved preferences"
-            : categorySync === "synced"
-              ? "Category preferences in sync"
-              : categorySync === "pending"
-                ? "Sending category change..."
-                : categorySync === "retry"
-                  ? "Server sync failed — toggle again to retry"
-                  : "Saved locally — no server sync yet"
-        }
-        body={
-          hydrationRecovered
-            ? "Corrupt local JSON was cleared and defaults were restored."
-            : "DM alerts map to the chat category; event reminders map to the events category."
-        }
-        meta={categoryMeta}
-      />
-      <TaskLoopCard
-        category="Integrity"
-        state={persistenceFailed ? "retry" : "cached"}
-        title={
-          persistenceFailed
-            ? "Local persistence failed"
-            : "Local preference cache healthy"
-        }
-        body={
-          persistenceFailed
-            ? "Preference writes failed. Toggle a preference again to re-attempt."
-            : "AsyncStorage cache mirrors the latest toggle state for offline reads."
-        }
-        meta={
-          persistenceFailed
-            ? "Local storage write failed"
-            : "Last verified just now"
-        }
-      />
+      <Text style={styles.footnote}>
+        Chapter announcements always arrive — they can carry emergencies, so
+        they are not switchable here.
+      </Text>
+      <Text style={styles.footnote}>{notificationsMeta}</Text>
+      {persistenceFailed ? (
+        <Text style={styles.footnoteError}>
+          This device couldn&apos;t save a local copy, so these may not show
+          while you&apos;re offline. Your account is unaffected.
+        </Text>
+      ) : null}
+
+      {canSeeChapterAdmin ? (
+        <>
+          <SectionHeader>Chapter · Admin</SectionHeader>
+          <ListSection>
+            <ListRow
+              label="Chapter accent"
+              description="One hex → a full safe scale. The raw color never paints."
+              trailing={
+                <View
+                  accessibilityLabel="Current chapter accent"
+                  style={[styles.swatch, { backgroundColor: accent }]}
+                />
+              }
+            />
+            {geofencesEnabled ? (
+              <ListRow
+                label="Study zones"
+                value={
+                  zoneCount === null
+                    ? "—"
+                    : `${zoneCount} ${zoneCount === 1 ? "zone" : "zones"}`
+                }
+              />
+            ) : null}
+          </ListSection>
+          <Text style={styles.footnote}>
+            Chapter settings are edited on the web dashboard.
+          </Text>
+        </>
+      ) : null}
+
+      <SectionHeader>Account</SectionHeader>
+      <ListSection>
+        {/* Static, not a control: Signet is dark-only by design (lib/theme.tsx),
+            and Canvas draws this row as a value too. */}
+        <ListRow label="Appearance" value="Dark" />
+        {LEGAL_LINKS.map((link) => (
+          <ListRow
+            key={link.url}
+            label={link.label}
+            accessibilityHint="Opens in your browser."
+            onPress={() => {
+              // A rejection here is real — iOS rejects a second presentation
+              // while one is already showing — so it is surfaced rather than
+              // left as an unhandled promise.
+              WebBrowser.openBrowserAsync(link.url).catch(() =>
+                setLinkFailed(link.label),
+              );
+            }}
+          />
+        ))}
+        <ListRow
+          label="Sign out"
+          destructive
+          onPress={() => {
+            void handleSignOut();
+          }}
+        />
+        <ListRow
+          label={deleteAccount.isPending ? "Deleting account…" : "Delete account"}
+          destructive
+          disabled={deleteAccount.isPending}
+          accessibilityHint="Permanently deletes your account. You'll be asked to confirm."
+          onPress={confirmDeleteAccount}
+        />
+      </ListSection>
+      {linkFailed ? (
+        <Text style={styles.footnoteError}>
+          {linkFailed} couldn&apos;t be opened. Try again in a moment.
+        </Text>
+      ) : null}
     </ScreenShell>
   );
 }
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    summaryCard: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tint(tokens.color.semantic.info, 0.3),
-      backgroundColor: tint(tokens.color.semantic.info),
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.xs,
-    },
-    summaryLabel: {
-      ...typeRole(tokens.typography.role.label),
-      letterSpacing: 0.3,
-      textTransform: "uppercase",
-      color: tokens.color.semantic.info,
-    },
-    summaryValue: {
-      ...typeRole(tokens.typography.role.headline),
-      color: tokens.color.text.foreground,
-      letterSpacing: -0.3,
-    },
-    summaryMeta: {
-      ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.info,
-    },
-    toggleCard: {
-      borderRadius: tokens.radius.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      padding: tokens.spacing.lg,
-      gap: tokens.spacing.sm,
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "space-between",
-    },
     toggleTextStack: {
       flex: 1,
       gap: tokens.spacing.xs,
       paddingRight: tokens.spacing.md,
     },
     quietHoursCard: {
-      borderRadius: tokens.radius.card,
+      borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
       borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
+      backgroundColor: tokens.color.surface.surface1,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.md,
     },
@@ -468,7 +522,7 @@ function createStyles(tokens: SignetTokens) {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
       borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
+      backgroundColor: tokens.color.surface.card,
       paddingHorizontal: tokens.spacing.md,
       paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
@@ -490,6 +544,23 @@ function createStyles(tokens: SignetTokens) {
     toggleDescription: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
+    },
+    footnote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingHorizontal: tokens.spacing.xs,
+    },
+    footnoteError: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+      paddingHorizontal: tokens.spacing.xs,
+    },
+    swatch: {
+      width: tokens.spacing.xl,
+      height: tokens.spacing.xl,
+      borderRadius: tokens.radius.chipLarge,
+      borderWidth: 1,
+      borderColor: tokens.color.border.input,
     },
   });
 }

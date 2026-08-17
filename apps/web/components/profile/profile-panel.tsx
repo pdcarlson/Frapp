@@ -71,6 +71,16 @@ export function ProfilePanel() {
   }, [userQuery.data]);
 
   useEffect(() => {
+    // Hold the draft while a save is in flight or has failed.
+    //
+    // `useUpdateUserSettings` writes optimistically and rolls back on error
+    // (#312), so `settingsQuery.data` now changes twice per save instead of
+    // once on success. Without this guard the rollback re-runs this effect and
+    // overwrites the draft with the stored settings — silently discarding the
+    // edits the member just failed to save, next to a toast telling them to try
+    // again. `isError` stays true until the next `mutate`, so the retry path
+    // resyncs normally once it succeeds.
+    if (updateSettings.isPending || updateSettings.isError) return;
     if (settingsQuery.data) {
       setSettingsDraft(settingsQuery.data as UserSettings);
       // The draft is being replaced wholesale — a refetch on window focus can do
@@ -79,7 +89,7 @@ export function ProfilePanel() {
       // while still flagged invalid.
       setTimeZoneError(null);
     }
-  }, [settingsQuery.data]);
+  }, [settingsQuery.data, updateSettings.isPending, updateSettings.isError]);
 
   if (userQuery.isPending) {
     return <LoadingState message="Loading your profile..." />;

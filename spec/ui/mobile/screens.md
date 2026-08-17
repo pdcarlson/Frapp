@@ -31,18 +31,18 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s09 | More hub | `(tabs)/more.tsx` | Live |
 | s10 | Study hours | `(tabs)/study.tsx` | Routed, stub — study-session timer, geofenced ([`patterns.md`](patterns.md)) |
 | s11 | Dues | `(tabs)/dues.tsx` | Routed, stub — balance, pay, history ([`patterns.md`](patterns.md)) |
-| s12 | Documents | `(tabs)/documents.tsx` | Routed, stub — replaced the documents half of the deleted `documents-reports.tsx` |
-| s13 | Directory | `(tabs)/directory.tsx` | Routed, stub — actives + alumni ([`../../behavior/members.md`](../../behavior/members.md)) |
-| s14 | Notifications | `(tabs)/notifications.tsx` | Live |
-| s15 | Profile | `(tabs)/profile.tsx` | Live |
-| s16 | Settings | `(tabs)/preferences.tsx` | Live — drawn title is "Settings"; route filename stays `preferences.tsx` (settled, see notes) |
+| s12 | Documents | `(tabs)/documents.tsx` | Live — real folders and documents, title search, opens the signed `downloadUrl` in the system browser. No PINNED section (no pin field exists) and no upload affordance: the s21 sheet needs a file picker, which is not a dependency |
+| s13 | Directory | `(tabs)/directory.tsx` | Live — actives + alumni chips and name search ([`../../behavior/members.md`](../../behavior/members.md)). Opts out of `ScreenShell` for a `FlatList`, because nothing here paginates. Rows do not navigate: member detail would need a new route file and the tab layout is frozen |
+| s14 | Notifications | `(tabs)/notifications.tsx` | Live — real in-app history grouped TODAY/EARLIER, unread dot, tap-to-read, and a Mark-all-read fan-out (no bulk endpoint exists). The per-row category label is derived from `data.target.screen`: notification rows do **not** store their category. No deep-link on tap — that lands with the push handler in C7 |
+| s15 | Profile | `(tabs)/profile.tsx` | Live — identity, two real stat cards (points, approved service hours), and the backed profile fields. **Read-only**: no Edit action, because an avatar picker is not a dependency. The drawn "96% attendance" stat and the Phone / Pledge class / Big brother rows are omitted — no member-readable source exists for any of them |
+| s16 | Settings | `(tabs)/preferences.tsx` | Live — drawn title is "Settings"; route filename stays `preferences.tsx` (settled, see notes). Three sections as drawn: NOTIFICATIONS (quiet hours plus a switch per shared category), CHAPTER · ADMIN (`chapter-config:view`-gated, read-only), ACCOUNT (Appearance as static text, the Terms/Privacy/FERPA links from #275, sign out, and delete account from #713). The drawn "Join code" row is omitted: no such field exists |
 | s17 | Ask sheet | `(tabs)/ask.tsx` | Routed, stub — global ✦ Ask entry, presented as a sheet; answers per [`../../behavior/ai.md`](../../behavior/ai.md) |
 | s18 | QR check-in scanner | `(tabs)/check-in.tsx` | Live — member scanner, latched reads + manual code ([`patterns.md`](patterns.md)) |
 | s19 | New task sheet | *sheet* on `tasks.tsx` | Sheet |
-| s20 | Log service hours sheet | *sheet* on `service-hours.tsx` | Sheet — host route exists today ([`../../behavior/service-hours.md`](../../behavior/service-hours.md)) |
-| s21 | Upload document sheet | *sheet* on `documents.tsx` | Sheet |
-| s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated; **not yet linked from More** (C4 owns the row) |
-| s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — reason required, audit-logged ([`../../behavior/points.md`](../../behavior/points.md)) |
+| s20 | Log service hours sheet | *sheet* on `service-hours.tsx` | Live — gorhom v5 sheet on the host route ([`../../behavior/service-hours.md`](../../behavior/service-hours.md)). Description and duration only; **no proof attachment**, which needs an image picker |
+| s21 | Upload document sheet | *sheet* on `documents.tsx` | Sheet — **blocked**: uploading needs a file picker, and adding one touches the frozen `package.json` (integrator PR per [`navigation.md`](navigation.md)) |
+| s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated. Reached from the More hub's admin section, which resolves the next hostable event and passes its `eventId` |
+| s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — **not built**: the More hub's Adjust points row renders disabled, because the sheet needs a member picker plus amount/category/reason. Server rules (reason required, audit-logged) stand: [`../../behavior/points.md`](../../behavior/points.md) |
 
 Supporting route with no drawn screen: `(auth)/chapter-picker.tsx` — chapter selection when an account resolves to more than one chapter during join/sign-in. It reuses s02's visual language.
 
@@ -72,5 +72,6 @@ All renames and removals above shipped in one PR, as the typed-routes rule requi
 
 ## Notes
 
-- Every screen implements the skeleton/empty/error states family — rule stated once in [`README.md`](README.md), not per row.
+- Every screen implements the skeleton/empty/error states family — rule stated once in [`README.md`](README.md), not per row. The shared implementation is `apps/mobile/components/state-block.tsx`, built to [`../design-system/components.md`](../design-system/components.md) §10. It adds a fourth member: a **"no chapter selected"** state, because no production token carries an `active_chapter_id` claim while #805 is open, so every chapter-scoped query stays disabled and that is what a member actually sees. The screens predating it still carry their own inline loading/error blocks.
+- **Elements drawn in Canvas that have no backing data are omitted, not faked.** Four in this cluster: s16's "Join code" (chapters have no join code — joining runs through single-use, expiring invite tokens), s15's "96% attendance" and its Phone / Pledge class / Big brother rows, and s12's PINNED section. Each carries a `TODO-DESIGN:` at its site and a filed issue.
 - s16's drawn title is "Settings" while the route file is `preferences.tsx`. The filename is not part of any external contract. **Settled: it stays `preferences.tsx`** — it did not join the rename PR, and the registration carries the drawn title instead. Cite `preferences.tsx` for the route and "Settings" for anything a member reads.

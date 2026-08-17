@@ -45,7 +45,14 @@ Two rows above are not drawn in Canvas and exist for reachability:
 - **Service hours** — `service-hours.tsx` is a live route hosting the s20 sheet, and without a row it would be unreachable.
 - **Chapter** — the only entry to `(auth)/chapter-picker.tsx`. The picker is deliberately *not* forced on members whose token lacks an `active_chapter_id` claim (`apps/mobile/lib/auth-gate.ts` explains why that would be an outage while #805 is open), so it needs a door.
 
-**Implementation status.** Every row above is routed except the **admin section**, which is deliberately not wired: its links are role-gated and the gate lands with the cluster that owns those screens, and shipping ungated admin entries to every member is worse than shipping them late. Rows marked "Routed, stub" in [`screens.md`](screens.md) open a placeholder — the navigation is real, the screen is not.
+**Implementation status.** Every row above is routed, the admin section included — its gate landed with C4 of #937. The gate is `useMyPermissions()` plus `can` / `canAny` from `@repo/validation`, never a bare `permissions.includes(…)`: an owner's grant is the wildcard `*`, so a membership test would hide these rows from exactly the people they exist for.
+
+Two things about that section are worth knowing before reading a device:
+
+- **It renders for nobody in the current production configuration.** `useMyPermissions` is `enabled: !!chapterId`, and no production token carries an `active_chapter_id` claim while #805 is open (`apps/mobile/lib/auth-session.tsx`), so the permission set is empty and both rows stay hidden — Presidents included. It fails closed, which is the right direction, but it means the section only appears on a local stack (where `supabase/config.toml` enables the hook) until #805 lands.
+- **Host check-in resolves an event.** s22 reads an `eventId` param, so the row cannot be a bare link: it picks the next upcoming-or-still-checkable-in event and passes its id, and renders inert when there is none. **Adjust points renders disabled** — the s23 sheet needs a member picker plus amount/category/reason and is tracked separately.
+
+The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter-config:view` and read-only; its "Join code" row is omitted because chapters have no join code (joining runs through single-use, expiring invite tokens — see [`screens.md`](screens.md)).
 
 ## Global entries outside the tab bar
 

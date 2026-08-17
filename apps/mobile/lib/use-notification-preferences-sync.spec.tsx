@@ -105,6 +105,56 @@ function createStatefulClient(initial: ServerQuietHours) {
   return { client, patch, settings };
 }
 
+/**
+ * A client whose preference rows reflect prior PATCHes, so a toggle round-trips
+ * the way it does in production. Without this the refetch that `onSettled`
+ * triggers answers with the *original* rows and the toggle appears to revert
+ * even on success — a mock artifact, but one that looks exactly like a bug.
+ */
+function createStatefulPreferencesClient(
+  initial: { category: string; is_enabled: boolean }[] = [],
+) {
+  const rows = [...initial];
+  const patch = vi.fn(
+    async (path: string, options: { body: Record<string, unknown> }) => {
+      if (path === "/v1/notifications/preferences") {
+        const { category, is_enabled: isEnabled } = options.body as {
+          category: string;
+          is_enabled: boolean;
+        };
+        const existing = rows.find((row) => row.category === category);
+        if (existing) existing.is_enabled = isEnabled;
+        else rows.push({ category, is_enabled: isEnabled });
+      }
+      return { data: { ok: true }, error: null };
+    },
+  );
+  const client: MockClient = {
+    GET: vi.fn(async (path: string) => {
+      if (path === "/v1/notifications/preferences")
+        return { data: rows.map((row) => ({ ...row })), error: null };
+      return { data: null, error: null };
+    }),
+    PATCH: patch,
+  };
+  return { client, patch, rows };
+}
+
+/** A PATCH held open until the test releases it, so the optimistic window is stable. */
+function deferredPatch(outcome: "success" | "failure") {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const patch = vi.fn(async () => {
+    await gate;
+    return outcome === "success"
+      ? { data: { ok: true }, error: null }
+      : { data: null, error: new Error("Network down") };
+  });
+  return { patch, release: () => release() };
+}
+
 function lastSettingsPatchBody(patch: ReturnType<typeof vi.fn>) {
   const calls = patch.mock.calls.filter((call) => call[0] === "/v1/settings");
   return calls[calls.length - 1]?.[1]?.body;
@@ -117,6 +167,12 @@ function makeQueryClient() {
       mutations: { retry: false },
     },
   });
+}
+
+/** The persisted blob, parsed. */
+function persistedPreferences() {
+  const raw = mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY);
+  return raw ? JSON.parse(raw) : undefined;
 }
 
 describe("useNotificationPreferencesSync", () => {
@@ -134,8 +190,7 @@ describe("useNotificationPreferencesSync", () => {
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
-        dmAlertsEnabled: false,
-        eventRemindersEnabled: true,
+        categories: { chat: false, events: true },
       }),
     );
 
@@ -148,11 +203,9 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.isHydrated).toBe(true);
     });
 
-    expect(result.current.preferences).toEqual({
-      quietHoursEnabled: false,
-      dmAlertsEnabled: false,
-      eventRemindersEnabled: true,
-    });
+    expect(result.current.quietHoursEnabled).toBe(false);
+    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.events).toBe(true);
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.quietHoursSync).toBe("cached");
     expect(result.current.categorySync).toBe("cached");
@@ -164,8 +217,7 @@ describe("useNotificationPreferencesSync", () => {
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
         quietHoursEnabled: false,
-        dmAlertsEnabled: true,
-        eventRemindersEnabled: true,
+        categories: { chat: true, events: true },
       }),
     );
 
@@ -199,22 +251,53 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.preferences.quietHoursEnabled).toBe(true);
-      expect(result.current.preferences.dmAlertsEnabled).toBe(false);
+      expect(result.current.quietHoursEnabled).toBe(true);
+      expect(result.current.categories.chat).toBe(false);
     });
 
-    expect(result.current.preferences.eventRemindersEnabled).toBe(true);
+    expect(result.current.categories.events).toBe(true);
     expect(result.current.quietHoursSync).toBe("synced");
     expect(result.current.categorySync).toBe("synced");
+  });
+
+  // The server only stores rows for categories a member has changed, and it
+  // treats an absent row as enabled — so its answer has to be read as complete,
+  // not as a patch over whatever this device last cached.
+  it("reads an absent server row as enabled, overriding a stale cached false", async () => {
+    mockState.secureStoreToken = "test-token";
+    mockState.asyncStorageMap.set(
+      PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        quietHoursEnabled: true,
+        categories: { billing: false },
+      }),
+    );
+
+    const client = createMockClient({
+      GET: vi.fn(async (path: string) => {
+        if (path === "/v1/notifications/preferences") {
+          return { data: [{ category: "chat", is_enabled: false }], error: null };
+        }
+        return { data: null, error: null };
+      }),
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.categorySync).toBe("synced");
+    });
+
+    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.billing).toBe(true);
   });
 
   it("PATCHes category 'chat' when toggling DM alerts with auth + chapter", async () => {
     mockState.secureStoreToken = "test-token";
 
-    const patch = vi
-      .fn()
-      .mockResolvedValue({ data: { ok: true }, error: null });
-    const client = createMockClient({ PATCH: patch });
+    const { client, patch } = createStatefulPreferencesClient();
 
     const { result } = renderHook(() => useNotificationPreferencesSync(), {
       wrapper: createWrapper(client, "chapter-42", makeQueryClient()),
@@ -223,13 +306,12 @@ describe("useNotificationPreferencesSync", () => {
     await waitFor(() => {
       expect(result.current.isHydrated).toBe(true);
       expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.categorySync).toBe("synced");
     });
 
     act(() => {
-      result.current.setPreference("dmAlertsEnabled", false);
+      result.current.setCategory("chat", false);
     });
-
-    expect(result.current.preferences.dmAlertsEnabled).toBe(false);
 
     await waitFor(() => {
       expect(patch).toHaveBeenCalledWith("/v1/notifications/preferences", {
@@ -241,10 +323,14 @@ describe("useNotificationPreferencesSync", () => {
       });
     });
 
+    // Still false once the settled refetch has confirmed it — the round trip,
+    // not just the optimistic flash.
     await waitFor(() => {
-      expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
-        '"dmAlertsEnabled":false',
-      );
+      expect(result.current.categories.chat).toBe(false);
+    });
+
+    await waitFor(() => {
+      expect(persistedPreferences()?.categories?.chat).toBe(false);
     });
   });
 
@@ -258,11 +344,7 @@ describe("useNotificationPreferencesSync", () => {
 
     mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
-      JSON.stringify({
-        quietHoursEnabled: false,
-        dmAlertsEnabled: true,
-        eventRemindersEnabled: true,
-      }),
+      JSON.stringify({ quietHoursEnabled: false, categories: {} }),
     );
 
     const { result } = renderHook(() => useNotificationPreferencesSync(), {
@@ -272,11 +354,11 @@ describe("useNotificationPreferencesSync", () => {
     await waitFor(() => {
       expect(result.current.isHydrated).toBe(true);
       expect(result.current.isAuthenticated).toBe(true);
-      expect(result.current.preferences.quietHoursEnabled).toBe(false);
+      expect(result.current.quietHoursEnabled).toBe(false);
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", true);
+      result.current.setQuietHoursEnabled(true);
     });
 
     await waitFor(() => {
@@ -308,7 +390,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+      expect(result.current.quietHoursEnabled).toBe(true);
       expect(result.current.quietHoursWindow).toEqual({
         start: "21:00",
         end: "07:00",
@@ -317,7 +399,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", false);
+      result.current.setQuietHoursEnabled(false);
     });
 
     await waitFor(() => {
@@ -325,7 +407,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", true);
+      result.current.setQuietHoursEnabled(true);
     });
 
     await waitFor(() => {
@@ -368,21 +450,21 @@ describe("useNotificationPreferencesSync", () => {
 
     await waitFor(() => {
       expect(result.current.isHydrated).toBe(true);
-      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+      expect(result.current.quietHoursEnabled).toBe(true);
       expect(result.current.quietHoursWindow.start).toBe("21:00");
     });
 
     expect(result.current.quietHoursWindow.tz).toBe("Mars/Olympus");
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", false);
+      result.current.setQuietHoursEnabled(false);
     });
     await waitFor(() => {
       expect(settings.quiet_hours_start).toBeNull();
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", true);
+      result.current.setQuietHoursEnabled(true);
     });
     await waitFor(() => {
       expect(settings.quiet_hours_start).toBe("21:00");
@@ -469,7 +551,7 @@ describe("useNotificationPreferencesSync", () => {
       });
     });
 
-    expect(result.current.preferences.quietHoursEnabled).toBe(true);
+    expect(result.current.quietHoursEnabled).toBe(true);
   });
 
   it("treats an out-of-range stored time as no window", async () => {
@@ -491,7 +573,7 @@ describe("useNotificationPreferencesSync", () => {
 
     // The server cannot enforce hour 24, so reporting it as "on" would be a lie.
     await waitFor(() => {
-      expect(result.current.preferences.quietHoursEnabled).toBe(false);
+      expect(result.current.quietHoursEnabled).toBe(false);
     });
     expect(result.current.quietHoursWindow).toEqual({
       start: "22:00",
@@ -504,11 +586,7 @@ describe("useNotificationPreferencesSync", () => {
     mockState.secureStoreToken = "test-token";
     mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
-      JSON.stringify({
-        quietHoursEnabled: false,
-        dmAlertsEnabled: true,
-        eventRemindersEnabled: true,
-      }),
+      JSON.stringify({ quietHoursEnabled: false, categories: {} }),
     );
     mockState.asyncStorageMap.set(
       QUIET_HOURS_WINDOW_STORAGE_KEY,
@@ -534,7 +612,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", true);
+      result.current.setQuietHoursEnabled(true);
     });
 
     await waitFor(() => {
@@ -571,7 +649,7 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", false);
+      result.current.setQuietHoursEnabled(false);
     });
 
     await waitFor(() => {
@@ -586,7 +664,9 @@ describe("useNotificationPreferencesSync", () => {
       });
     });
 
-    expect(result.current.preferences.quietHoursEnabled).toBe(false);
+    await waitFor(() => {
+      expect(result.current.quietHoursEnabled).toBe(false);
+    });
     expect(result.current.quietHoursWindow.start).toBe("21:00");
   });
 
@@ -605,7 +685,7 @@ describe("useNotificationPreferencesSync", () => {
 
     await waitFor(() => {
       expect(result.current.quietHoursSync).toBe("synced");
-      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+      expect(result.current.quietHoursEnabled).toBe(true);
     });
 
     act(() => {
@@ -635,11 +715,7 @@ describe("useNotificationPreferencesSync", () => {
     mockState.secureStoreToken = "test-token";
     mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
-      JSON.stringify({
-        quietHoursEnabled: false,
-        dmAlertsEnabled: true,
-        eventRemindersEnabled: true,
-      }),
+      JSON.stringify({ quietHoursEnabled: false, categories: {} }),
     );
 
     const { client, patch } = createStatefulClient({
@@ -654,7 +730,7 @@ describe("useNotificationPreferencesSync", () => {
 
     await waitFor(() => {
       expect(result.current.isHydrated).toBe(true);
-      expect(result.current.preferences.quietHoursEnabled).toBe(false);
+      expect(result.current.quietHoursEnabled).toBe(false);
     });
 
     act(() => {
@@ -673,7 +749,7 @@ describe("useNotificationPreferencesSync", () => {
     expect(
       patch.mock.calls.filter((call) => call[0] === "/v1/settings"),
     ).toHaveLength(0);
-    expect(result.current.preferences.quietHoursEnabled).toBe(false);
+    expect(result.current.quietHoursEnabled).toBe(false);
   });
 
   it("ignores an invalid window edit", async () => {
@@ -727,16 +803,12 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("eventRemindersEnabled", false);
+      result.current.setCategory("events", false);
     });
 
     await waitFor(() => {
       expect(result.current.categorySync).toBe("retry");
     });
-
-    expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
-      '"eventRemindersEnabled":false',
-    );
   });
 
   it("does not call the server when toggling without auth", async () => {
@@ -754,16 +826,14 @@ describe("useNotificationPreferencesSync", () => {
     });
 
     act(() => {
-      result.current.setPreference("dmAlertsEnabled", false);
+      result.current.setCategory("chat", false);
     });
 
-    expect(result.current.preferences.dmAlertsEnabled).toBe(false);
+    expect(result.current.categories.chat).toBe(false);
     expect(patch).not.toHaveBeenCalled();
 
     await waitFor(() => {
-      expect(mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY)).toContain(
-        '"dmAlertsEnabled":false',
-      );
+      expect(persistedPreferences()?.categories?.chat).toBe(false);
     });
   });
 
@@ -777,11 +847,7 @@ describe("useNotificationPreferencesSync", () => {
 
     mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
-      JSON.stringify({
-        quietHoursEnabled: true,
-        dmAlertsEnabled: true,
-        eventRemindersEnabled: true,
-      }),
+      JSON.stringify({ quietHoursEnabled: true, categories: {} }),
     );
 
     const { result } = renderHook(() => useNotificationPreferencesSync(), {
@@ -791,11 +857,11 @@ describe("useNotificationPreferencesSync", () => {
     await waitFor(() => {
       expect(result.current.isHydrated).toBe(true);
       expect(result.current.isAuthenticated).toBe(true);
-      expect(result.current.preferences.quietHoursEnabled).toBe(true);
+      expect(result.current.quietHoursEnabled).toBe(true);
     });
 
     act(() => {
-      result.current.setPreference("quietHoursEnabled", false);
+      result.current.setQuietHoursEnabled(false);
     });
 
     await waitFor(() => {
@@ -807,11 +873,14 @@ describe("useNotificationPreferencesSync", () => {
         },
       });
     });
-
-    expect(result.current.preferences.quietHoursEnabled).toBe(false);
   });
 
-  it("strips legacy keys (e.g. digestEmailsEnabled) from hydrated state and persisted blob", async () => {
+  // The successor to the `digestEmailsEnabled` case from #266: the blob is
+  // rewritten on every change, so a key nothing reads would live on that device
+  // forever. The two pre-catalog toggles are the exception — they carry a real
+  // choice a member made offline, so they migrate to their categories instead
+  // of being dropped with the rest.
+  it("migrates the legacy blob's toggles and strips keys nothing reads", async () => {
     mockState.asyncStorageMap.set(
       PREFERENCE_STORAGE_KEY,
       JSON.stringify({
@@ -831,25 +900,200 @@ describe("useNotificationPreferencesSync", () => {
       expect(result.current.isHydrated).toBe(true);
     });
 
-    expect(Object.keys(result.current.preferences).sort()).toEqual([
-      "dmAlertsEnabled",
-      "eventRemindersEnabled",
-      "quietHoursEnabled",
-    ]);
-    expect(
-      (result.current.preferences as Record<string, unknown>)
-        .digestEmailsEnabled,
-    ).toBeUndefined();
+    expect(result.current.categories.chat).toBe(false);
+    expect(result.current.categories.events).toBe(true);
 
     await waitFor(() => {
-      const persisted = mockState.asyncStorageMap.get(PREFERENCE_STORAGE_KEY);
-      expect(persisted).toBeDefined();
-      const parsed = JSON.parse(persisted ?? "{}");
+      const parsed = persistedPreferences();
+      expect(parsed).toBeDefined();
       expect(Object.keys(parsed).sort()).toEqual([
-        "dmAlertsEnabled",
-        "eventRemindersEnabled",
+        "categories",
         "quietHoursEnabled",
       ]);
+      expect(parsed.categories.digestEmailsEnabled).toBeUndefined();
+      expect(parsed.categories.dmAlertsEnabled).toBeUndefined();
+    });
+  });
+
+  // The category column is unconstrained server-side, so a blob (or a server
+  // row) can name a category this build has no switch for. Widening state to
+  // match would render nothing and persist forever.
+  it("ignores a cached category the catalog does not expose", async () => {
+    mockState.asyncStorageMap.set(
+      PREFERENCE_STORAGE_KEY,
+      JSON.stringify({
+        quietHoursEnabled: true,
+        categories: { chat: false, announcements: false, whatever: true },
+      }),
+    );
+
+    const client = createMockClient();
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, null, makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isHydrated).toBe(true);
+    });
+
+    expect(result.current.categories.chat).toBe(false);
+    expect(
+      (result.current.categories as Record<string, unknown>).announcements,
+    ).toBeUndefined();
+    expect(
+      (result.current.categories as Record<string, unknown>).whatever,
+    ).toBeUndefined();
+  });
+});
+
+/**
+ * The three cases #312 asks for by name. Each one is a failure mode the old
+ * applied-ref latch produced and no existing test could catch, because the
+ * latch made every one of them invisible until a cold remount.
+ */
+describe("useNotificationPreferencesSync — server reconciliation (#312)", () => {
+  beforeEach(() => {
+    mockState.asyncStorageMap.clear();
+    mockState.secureStoreToken = "test-token";
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("follows the server when a refetch normalizes what we sent", async () => {
+    // The server's answer disagrees with the toggle — an admin override, a
+    // chapter-level default, anything. Its value is the real one. The PATCH is
+    // held open so the optimistic window is observable rather than a race.
+    const { patch, release } = deferredPatch("success");
+    const client = createMockClient({
+      GET: vi.fn(async (path: string) => {
+        if (path === "/v1/notifications/preferences") {
+          return { data: [{ category: "chat", is_enabled: true }], error: null };
+        }
+        return { data: null, error: null };
+      }),
+      PATCH: patch,
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.categorySync).toBe("synced");
+    });
+
+    act(() => {
+      result.current.setCategory("chat", false);
+    });
+
+    // Optimistic first…
+    await waitFor(() => {
+      expect(result.current.categories.chat).toBe(false);
+    });
+
+    // …then the settled refetch corrects it. Under the applied-ref latch this
+    // payload was dropped and the screen showed `false` for the rest of the
+    // session.
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => {
+      expect(result.current.categories.chat).toBe(true);
+    });
+  });
+
+  it("follows a quiet-hours window changed on another device", async () => {
+    let serverSettings: ServerQuietHours = {
+      quiet_hours_start: "22:00:00",
+      quiet_hours_end: "08:00:00",
+      quiet_hours_tz: "America/New_York",
+    };
+    const queryClient = makeQueryClient();
+    const client = createMockClient({
+      GET: vi.fn(async (path: string) => {
+        if (path === "/v1/settings") return { data: serverSettings, error: null };
+        if (path === "/v1/notifications/preferences")
+          return { data: [], error: null };
+        return { data: null, error: null };
+      }),
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", queryClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.quietHoursWindow.start).toBe("22:00");
+    });
+
+    // Changed on web, then this device refetches — on focus, on foreground, or
+    // after any mutation settles.
+    serverSettings = {
+      quiet_hours_start: "23:00:00",
+      quiet_hours_end: "07:00:00",
+      quiet_hours_tz: "America/Chicago",
+    };
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: ["settings"] });
+    });
+
+    await waitFor(() => {
+      expect(result.current.quietHoursWindow).toEqual({
+        start: "23:00",
+        end: "07:00",
+        tz: "America/Chicago",
+      });
+    });
+  });
+
+  it("reverts an optimistic toggle when the PATCH fails", async () => {
+    const { patch, release } = deferredPatch("failure");
+    const client = createMockClient({
+      GET: vi.fn(async (path: string) => {
+        if (path === "/v1/notifications/preferences") {
+          return { data: [{ category: "chat", is_enabled: true }], error: null };
+        }
+        return { data: null, error: null };
+      }),
+      PATCH: patch,
+    });
+
+    const { result } = renderHook(() => useNotificationPreferencesSync(), {
+      wrapper: createWrapper(client, "chapter-1", makeQueryClient()),
+    });
+
+    // Wait for the *server's* answer, not the catalog default — `chat` is
+    // enabled by default, so asserting `true` alone would pass at first render
+    // and the toggle below would fire before auth resolved.
+    await waitFor(() => {
+      expect(result.current.isAuthenticated).toBe(true);
+      expect(result.current.categorySync).toBe("synced");
+    });
+
+    act(() => {
+      result.current.setCategory("chat", false);
+    });
+
+    await waitFor(() => {
+      expect(result.current.categories.chat).toBe(false);
+    });
+
+    await act(async () => {
+      release();
+    });
+
+    await waitFor(() => {
+      expect(result.current.categorySync).toBe("retry");
+    });
+
+    // The switch springs back rather than sitting on a value the server never
+    // accepted. This is a deliberate change from the pre-#312 behaviour, where
+    // the failed value stuck for the rest of the session.
+    await waitFor(() => {
+      expect(result.current.categories.chat).toBe(true);
     });
   });
 });
