@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { StudyService, pointInPolygon } from './study.service';
+import { StudyService } from './study.service';
 import { RbacService } from './rbac.service';
 import { STUDY_GEOFENCE_REPOSITORY } from '../../domain/repositories/study.repository.interface';
 import type { IStudyGeofenceRepository } from '../../domain/repositories/study.repository.interface';
@@ -17,43 +17,8 @@ import type { StudyGeofence } from '../../domain/entities/study.entity';
 import type { StudySession } from '../../domain/entities/study.entity';
 import type { PointTransaction } from '../../domain/entities/point-transaction.entity';
 
-describe('pointInPolygon', () => {
-  const square: { lat: number; lng: number }[] = [
-    { lat: 0, lng: 0 },
-    { lat: 0, lng: 10 },
-    { lat: 10, lng: 10 },
-    { lat: 10, lng: 0 },
-  ];
-
-  it('returns true for point inside polygon', () => {
-    expect(pointInPolygon(5, 5, square)).toBe(true);
-  });
-
-  it('returns false for point outside polygon', () => {
-    expect(pointInPolygon(15, 15, square)).toBe(false);
-  });
-
-  it('returns false for empty or insufficient polygon', () => {
-    expect(pointInPolygon(5, 5, [])).toBe(false);
-    expect(pointInPolygon(5, 5, [{ lat: 0, lng: 0 }])).toBe(false);
-    expect(
-      pointInPolygon(5, 5, [
-        { lat: 0, lng: 0 },
-        { lat: 1, lng: 1 },
-      ]),
-    ).toBe(false);
-  });
-
-  it('handles complex polygon', () => {
-    const triangle = [
-      { lat: 0, lng: 0 },
-      { lat: 10, lng: 0 },
-      { lat: 5, lng: 10 },
-    ];
-    expect(pointInPolygon(5, 3, triangle)).toBe(true);
-    expect(pointInPolygon(0, 0, triangle)).toBe(false);
-  });
-});
+// `pointInPolygon` moved to `domain/utils/geofence.ts` with #994, when event
+// check-in became its second consumer. Its cases live in `geofence.spec.ts`.
 
 describe('StudyService', () => {
   let service: StudyService;

@@ -71,7 +71,11 @@ These are the real values you enter into Infisical. **Every cell tells you exact
 | `SENTRY_TRACES_SAMPLE_RATE` | `0.1` | `0.1` | `0.1` |
 | `SUPABASE_JWT_SECRET` | The `JWT secret` field from `npx supabase status -o env` for your local stack | Copy from Supabase staging dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) | Copy from Supabase production dashboard → Settings → API → JWT Settings → `JWT Secret` (⚠️ secret!) |
 
+| `EVENT_CHECK_IN_TOKEN_SECRET` | Any high-entropy random string, e.g. `openssl rand -base64 48`. It only has to be stable within an environment — nothing else derives from it. | Generate a **distinct** value and store it in Infisical | Generate a **distinct** value and store it in Infisical |
+
 > `SUPABASE_JWT_SECRET` is **optional**. It lets the API verify access-token signatures locally so the rate limiter can key buckets per authenticated user (see `spec/architecture/README.md`, Security). When it is absent the limiter safely falls back to per-IP keying — set it in every environment to enable per-user limiting.
+
+> `EVENT_CHECK_IN_TOKEN_SECRET` is **optional** and signs the rotating event check-in codes (`spec/behavior/events.md` § Check-In). Unset, `POST /v1/events/:eventId/attendance/check-in-token` returns 503 and the mobile host screen (s22) says the feature is not configured; a supplied token is rejected rather than accepted. Plain self check-in and the check-in geofence are unaffected, so local dev, tests, and CI run without it. **Use a different value per environment** — sharing one would make a staging code redeemable in production.
 
 ### Analytics (Pseudonymous — API-only)
 
@@ -147,6 +151,7 @@ Reads these directly (no prefix needed):
 | `SENTRY_DSN` | `main.ts` (optional; unset → Sentry no-ops entirely. When set, pair it with `ANALYTICS_HMAC_SALT`) | ❌ |
 | `SENTRY_TRACES_SAMPLE_RATE` | `infrastructure/observability/sentry-options.ts` (default: `0.1`; a malformed value yields `NaN` — #904) | ❌ |
 | `SUPABASE_JWT_SECRET` | `custom-throttler.guard.ts` (per-user rate-limit keying; falls back to per-IP when unset) | ❌ |
+| `EVENT_CHECK_IN_TOKEN_SECRET` | `application/services/attendance.service.ts` (signs/verifies rotating event check-in codes; mint 503s and tokens are rejected when unset) | ❌ |
 | `ANALYTICS_HMAC_SALT` | `analytics.service.ts` (analytics keying) · `infrastructure/observability/pseudonyms.ts` (Sentry user/chapter hashes + security-event `originHash`); analytics disabled and pseudonyms omitted when unset | ❌ |
 | `POSTHOG_API_KEY` | `analytics.module.ts` (selects PostHog vs no-op provider) | ❌ |
 | `POSTHOG_HOST` | `analytics.module.ts` (provider host override; default PostHog US) | ❌ |

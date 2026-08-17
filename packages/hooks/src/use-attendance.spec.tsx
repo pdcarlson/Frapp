@@ -152,7 +152,9 @@ describe("useCheckIn", () => {
       wrapper: createWrapper(mockClient),
     });
 
-    await expect(result.current.mutateAsync("event-123")).resolves.toBeDefined();
+    await expect(
+      result.current.mutateAsync({ eventId: "event-123" }),
+    ).resolves.toBeDefined();
 
     expect(mockPost).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/check-in", {
       params: { path: { eventId: "event-123" } },
@@ -179,7 +181,9 @@ describe("useCheckIn", () => {
       wrapper: createWrapper(mockClient),
     });
 
-    await expect(result.current.mutateAsync("event-999")).rejects.toThrowError(mockError);
+    await expect(
+      result.current.mutateAsync({ eventId: "event-999" }),
+    ).rejects.toThrowError(mockError);
   });
 
   it("ensures queryClient.invalidateQueries is called on success", async () => {
@@ -198,10 +202,39 @@ describe("useCheckIn", () => {
       wrapper: createWrapper(mockClient),
     });
 
-    await expect(result.current.mutateAsync("event-123")).resolves.toBeDefined();
+    await expect(
+      result.current.mutateAsync({ eventId: "event-123" }),
+    ).resolves.toBeDefined();
 
     expect(invalidateQueriesSpy).toHaveBeenCalledWith({
       queryKey: ["attendance", "event-123"],
+    });
+  });
+
+  // The scanner path (s18): the token and the fix travel in the body, and the
+  // event id stays in the path. Pinning the split because a payload that
+  // silently dropped `token` would still check members in — just without the
+  // code ever having been verified.
+  it("sends the scanner token and coordinates as the request body", async () => {
+    const mockPost = vi.fn().mockResolvedValue({
+      data: { success: true },
+      error: null,
+    });
+
+    const { result } = renderHook(() => useCheckIn(), {
+      wrapper: createWrapper({ POST: mockPost }),
+    });
+
+    await result.current.mutateAsync({
+      eventId: "event-123",
+      token: "signed-token",
+      lat: 42.7298,
+      lng: -73.678,
+    });
+
+    expect(mockPost).toHaveBeenCalledWith("/v1/events/{eventId}/attendance/check-in", {
+      params: { path: { eventId: "event-123" } },
+      body: { token: "signed-token", lat: 42.7298, lng: -73.678 },
     });
   });
 

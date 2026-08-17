@@ -118,8 +118,80 @@ describe('EventService', () => {
       parent_event_id: null,
       required_role_ids: null,
       notes: null,
+      check_in_zone: null,
+      check_in_zone_name: null,
     });
     expect(result).toEqual(baseEvent);
+  });
+
+  // The check-in geofence is opt-in per event (#994), and these cases pin the
+  // wire semantics documented in `spec/behavior/events.md`.
+  describe('check-in zone', () => {
+    const triangle = [
+      { lat: 0, lng: 0 },
+      { lat: 1, lng: 0 },
+      { lat: 0, lng: 1 },
+    ];
+
+    it('stores a polygon supplied on create', async () => {
+      mockEventRepo.create.mockResolvedValue(baseEvent);
+
+      await service.create({
+        chapter_id: 'ch-1',
+        name: 'Chapter Meeting',
+        start_time: baseEvent.start_time,
+        end_time: baseEvent.end_time,
+        check_in_zone: triangle,
+        check_in_zone_name: 'Great Hall',
+      });
+
+      expect(mockEventRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          check_in_zone: triangle,
+          check_in_zone_name: 'Great Hall',
+        }),
+      );
+    });
+
+    it('rejects a polygon that cannot enclose anything', async () => {
+      // 400 from the service rather than a 500 surfacing from the table's
+      // shape CHECK constraint.
+      await expect(
+        service.create({
+          chapter_id: 'ch-1',
+          name: 'Chapter Meeting',
+          start_time: baseEvent.start_time,
+          end_time: baseEvent.end_time,
+          check_in_zone: [{ lat: 0, lng: 0 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockEventRepo.create).not.toHaveBeenCalled();
+    });
+
+    it('clears the zone when update sends an empty array', async () => {
+      // Same "empty array clears" rule `required_role_ids` already documents.
+      mockEventRepo.update.mockResolvedValue(baseEvent);
+
+      await service.update('evt-1', 'ch-1', { check_in_zone: [] });
+
+      expect(mockEventRepo.update).toHaveBeenCalledWith(
+        'evt-1',
+        'ch-1',
+        expect.objectContaining({ check_in_zone: null }),
+      );
+    });
+
+    it('leaves an existing zone untouched when update omits it', async () => {
+      mockEventRepo.update.mockResolvedValue(baseEvent);
+
+      await service.update('evt-1', 'ch-1', { name: 'Renamed' });
+
+      const patch = mockEventRepo.update.mock.calls[0][2] as Record<
+        string,
+        unknown
+      >;
+      expect('check_in_zone' in patch).toBe(false);
+    });
   });
 
   it('should reject invalid date range on create', async () => {

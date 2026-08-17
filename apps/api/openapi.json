@@ -2573,6 +2573,7 @@
     },
     "/v1/events/{eventId}/attendance/check-in": {
       "post": {
+        "description": "Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.",
         "operationId": "AttendanceController_checkIn_v1",
         "parameters": [
           {
@@ -2605,6 +2606,36 @@
           }
         ],
         "summary": "Self check-in to an event",
+        "tags": [
+          "Attendance"
+        ]
+      }
+    },
+    "/v1/events/{eventId}/attendance/check-in-token": {
+      "get": {
+        "description": "Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.",
+        "operationId": "AttendanceController_mintCheckInToken_v1",
+        "parameters": [
+          {
+            "name": "eventId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mint the rotating check-in code for the host display (s22)",
         "tags": [
           "Attendance"
         ]
@@ -6208,6 +6239,21 @@
           }
         }
       },
+      "GeofenceCoordinateDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number"
+          },
+          "lng": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
       "CreateEventDto": {
         "type": "object",
         "properties": {
@@ -6246,6 +6292,17 @@
           },
           "notes": {
             "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           },
           "channel_id": {
             "type": "string",
@@ -6298,6 +6355,17 @@
           },
           "notes": {
             "type": "string"
+          },
+          "check_in_zone": {
+            "description": "Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GeofenceCoordinateDto"
+            }
+          },
+          "check_in_zone_name": {
+            "type": "string",
+            "description": "Human-readable name for `check_in_zone`, shown on the mobile scanner (\"Inside the Great Hall zone\")."
           }
         }
       },
@@ -6538,7 +6606,25 @@
       },
       "CheckInDto": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it."
+          },
+          "manualCode": {
+            "type": "string",
+            "description": "Short rotating code typed off the host screen when the camera fails (e.g. \"4KQ-88\").",
+            "example": "4KQ-88"
+          },
+          "lat": {
+            "type": "number",
+            "description": "Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+          },
+          "lng": {
+            "type": "number",
+            "description": "Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't."
+          }
+        }
       },
       "UpdateAttendanceDto": {
         "type": "object",
@@ -6937,21 +7023,6 @@
             "description": "Optional comment for rejection"
           }
         }
-      },
-      "GeofenceCoordinateDto": {
-        "type": "object",
-        "properties": {
-          "lat": {
-            "type": "number"
-          },
-          "lng": {
-            "type": "number"
-          }
-        },
-        "required": [
-          "lat",
-          "lng"
-        ]
       },
       "CreateGeofenceDto": {
         "type": "object",

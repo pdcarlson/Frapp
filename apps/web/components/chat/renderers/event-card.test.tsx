@@ -119,7 +119,9 @@ describe("EventCard", () => {
     );
     const button = screen.getByRole("button", { name: /check in/i });
     fireEvent.click(button);
-    expect(checkIn).toHaveBeenCalledWith("evt-1");
+    // Object payload since #994 — the card sends no token and no coordinates,
+    // which is what makes it the *plain* self check-in surface.
+    expect(checkIn).toHaveBeenCalledWith({ eventId: "evt-1" });
   });
 
   it("hides Check in outside the event window", () => {

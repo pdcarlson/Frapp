@@ -4,8 +4,13 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
+import {
+  CHECK_IN_TOKEN_WINDOW_MS,
+  mintCheckInToken,
+} from '../../domain/utils/check-in-token';
 import { RbacService } from './rbac.service';
 import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
@@ -38,6 +43,8 @@ describe('AttendanceService', () => {
     parent_event_id: null,
     required_role_ids: null,
     notes: null,
+    check_in_zone: null,
+    check_in_zone_name: null,
     created_at: '2026-02-26T00:00:00.000Z',
   };
 
@@ -638,6 +645,244 @@ describe('AttendanceService', () => {
       expect(result.marked).toBe(0);
       expect(mockMemberRepo.findByChapter).not.toHaveBeenCalled();
       expect(mockAttendanceRepo.createMany).not.toHaveBeenCalled();
+    });
+  });
+  // ── Rotating check-in token (C2 of #937) ────────────────────────────
+  //
+  // The signing secret is an optional env var, so every test here sets and
+  // restores it explicitly rather than relying on the ambient environment —
+  // CI runs without it, and a test that silently depended on it would pass
+  // locally and fail there.
+  describe('Rotating check-in token', () => {
+    const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+    const SECRET = 'spec-check-in-secret';
+    let previousSecret: string | undefined;
+
+    beforeEach(() => {
+      previousSecret = process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+      process.env.EVENT_CHECK_IN_TOKEN_SECRET = SECRET;
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockRbac.isAlumni.mockResolvedValue(false);
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+      if (previousSecret === undefined) {
+        delete process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+      } else {
+        process.env.EVENT_CHECK_IN_TOKEN_SECRET = previousSecret;
+      }
+    });
+
+    it('accepts a token minted for this event in the current window', async () => {
+      const { token } = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime(),
+      );
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token }),
+      ).resolves.toEqual(baseAttendance);
+      expect(mockAttendanceRepo.checkInAtomic).toHaveBeenCalled();
+    });
+
+    it('accepts the typed manual code', async () => {
+      const { manualCode } = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime(),
+      );
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { manualCode }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    it('rejects a token minted for a different event, before any write', async () => {
+      const { token } = mintCheckInToken(
+        'evt-OTHER',
+        SECRET,
+        duringEvent.getTime(),
+      );
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('rejects a token from two windows ago', async () => {
+      const { token } = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime() - 2 * CHECK_IN_TOKEN_WINDOW_MS,
+      );
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects garbage in the token field rather than ignoring it', async () => {
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token: 'nonsense' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    // The documented design: `patterns.md` says the code raises effort while the
+    // geofence enforces presence, and `events.md` keeps the chat event card as a
+    // token-less check-in surface. This test pins that deliberate behavior so a
+    // future change to it is a visible decision, not a silent regression.
+    it('still allows a check-in that supplies no token at all', async () => {
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).resolves.toEqual(
+        baseAttendance,
+      );
+    });
+
+    it('503s the mint route when no signing secret is configured', async () => {
+      delete process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+
+      await expect(service.mintCheckInToken('evt-1', 'ch-1')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('rejects a supplied token when no signing secret is configured', async () => {
+      // Must not degrade to "accept anything": an unconfigured environment
+      // makes the feature unavailable, not permissive.
+      const { token } = mintCheckInToken(
+        'evt-1',
+        SECRET,
+        duringEvent.getTime(),
+      );
+      delete process.env.EVENT_CHECK_IN_TOKEN_SECRET;
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { token }),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('404s the mint route for an event outside the caller chapter', async () => {
+      mockEventRepo.findById.mockResolvedValue(null);
+
+      await expect(service.mintCheckInToken('evt-1', 'ch-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ── Check-in geofence (C2 of #937) ──────────────────────────────────
+  //
+  // `spec/ui/mobile/patterns.md`: "the check that defeats proxy check-ins is the
+  // server's zone check on the scanner's location". These tests are that claim.
+  describe('Check-in geofence', () => {
+    const duringEvent = new Date('2026-02-26T18:30:00.000Z');
+
+    // ~80m box around a plausible chapter house.
+    const zonedEvent: Event = {
+      ...baseEvent,
+      check_in_zone: [
+        { lat: 42.7295, lng: -73.6785 },
+        { lat: 42.7295, lng: -73.6775 },
+        { lat: 42.7302, lng: -73.6775 },
+        { lat: 42.7302, lng: -73.6785 },
+      ],
+      check_in_zone_name: 'Great Hall',
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(duringEvent);
+
+      mockRbac.isAlumni.mockResolvedValue(false);
+      mockAttendanceRepo.findByEventAndUser.mockResolvedValue(null);
+      mockAttendanceRepo.checkInAtomic.mockResolvedValue(baseAttendance);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('accepts a check-in from inside the zone', async () => {
+      mockEventRepo.findById.mockResolvedValue(zonedEvent);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          lat: 42.7298,
+          lng: -73.678,
+        }),
+      ).resolves.toEqual(baseAttendance);
+    });
+
+    it('rejects a check-in from outside the zone, before any write', async () => {
+      mockEventRepo.findById.mockResolvedValue(zonedEvent);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          lat: 42.731,
+          lng: -73.678,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    // The bypass that would make the whole feature theatre: omit the
+    // coordinates and hope the check is skipped.
+    it('rejects a zoned check-in that supplies no coordinates', async () => {
+      mockEventRepo.findById.mockResolvedValue(zonedEvent);
+
+      await expect(service.checkIn('evt-1', 'user-1', 'ch-1')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('rejects a zoned check-in with a partial or non-finite fix', async () => {
+      mockEventRepo.findById.mockResolvedValue(zonedEvent);
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { lat: 42.7298 }),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          lat: Number.NaN,
+          lng: -73.678,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    // A corrupted zone must fail closed. Treating it as "no zone" would let a
+    // bad write silently switch off the control for that event.
+    it('fails closed on a malformed zone rather than skipping the check', async () => {
+      mockEventRepo.findById.mockResolvedValue({
+        ...zonedEvent,
+        check_in_zone: [{ lat: 1, lng: 1 }] as Event['check_in_zone'],
+      });
+
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', {
+          lat: 42.7298,
+          lng: -73.678,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockAttendanceRepo.checkInAtomic).not.toHaveBeenCalled();
+    });
+
+    it('ignores coordinates entirely for an event with no zone', async () => {
+      mockEventRepo.findById.mockResolvedValue(baseEvent);
+
+      // Nowhere near anything — an unzoned event has no location rule to break.
+      await expect(
+        service.checkIn('evt-1', 'user-1', 'ch-1', { lat: 0, lng: 0 }),
+      ).resolves.toEqual(baseAttendance);
     });
   });
 });

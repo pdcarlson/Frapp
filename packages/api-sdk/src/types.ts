@@ -1032,8 +1032,31 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Self check-in to an event */
+        /**
+         * Self check-in to an event
+         * @description Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.
+         */
         post: operations["AttendanceController_checkIn_v1"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/events/{eventId}/attendance/check-in-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mint the rotating check-in code for the host display (s22)
+         * @description Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.
+         */
+        get: operations["AttendanceController_mintCheckInToken_v1"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2421,6 +2444,10 @@ export interface components {
              */
             theme?: "light" | "dark" | "system";
         };
+        GeofenceCoordinateDto: {
+            lat: number;
+            lng: number;
+        };
         CreateEventDto: {
             name: string;
             description?: string;
@@ -2435,6 +2462,10 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
             /** @description When set with `client_message_id`, posts an interactive event card to this chat channel after the event is created (the `/event` slash command). Omit for dashboard creates. */
             channel_id?: string;
             /** @description Client-generated idempotency key for the chat card, reconciling the optimistic loading placeholder. Required alongside `channel_id`. */
@@ -2452,6 +2483,10 @@ export interface components {
             recurrence_rule?: string;
             required_role_ids?: string[];
             notes?: string;
+            /** @description Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence. Send an empty array to clear an existing zone. */
+            check_in_zone?: components["schemas"]["GeofenceCoordinateDto"][];
+            /** @description Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone"). */
+            check_in_zone_name?: string;
         };
         ChannelUnreadCountDto: {
             /** Format: uuid */
@@ -2523,7 +2558,19 @@ export interface components {
             /** @description MIME content type (e.g. image/png) */
             content_type: string;
         };
-        CheckInDto: Record<string, never>;
+        CheckInDto: {
+            /** @description Rotating token read from the host QR code (s22). Valid for its 30s window and the one immediately before it. */
+            token?: string;
+            /**
+             * @description Short rotating code typed off the host screen when the camera fails (e.g. "4KQ-88").
+             * @example 4KQ-88
+             */
+            manualCode?: string;
+            /** @description Scanner latitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            lat?: number;
+            /** @description Scanner longitude. Required when the event defines a check-in geofence; ignored when it doesn't. */
+            lng?: number;
+        };
         UpdateAttendanceDto: {
             /** @enum {string} */
             status: "PRESENT" | "EXCUSED" | "ABSENT" | "LATE";
@@ -2658,10 +2705,6 @@ export interface components {
         RejectTaskCompletionDto: {
             /** @description Optional comment for rejection */
             comment?: string;
-        };
-        GeofenceCoordinateDto: {
-            lat: number;
-            lng: number;
         };
         CreateGeofenceDto: {
             name: string;
@@ -4603,6 +4646,25 @@ export interface operations {
         };
         responses: {
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AttendanceController_mintCheckInToken_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                eventId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

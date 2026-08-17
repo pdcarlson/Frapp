@@ -18,6 +18,7 @@ import type {
   StudySession,
   GeofenceCoordinate,
 } from '../../domain/entities/study.entity';
+import { pointInPolygon } from '../../domain/utils/geofence';
 
 const HEARTBEAT_STALE_MINUTES = 10;
 const MS_PER_MINUTE = 60 * 1000;
@@ -28,35 +29,6 @@ const MS_PER_MINUTE = 60 * 1000;
  * and `spec/behavior/study-sessions.md`.
  */
 const DEFAULT_PAUSE_GRACE_MINUTES = 5;
-
-/**
- * Ray-casting point-in-polygon algorithm.
- * Coordinates are array of {lat, lng} forming a closed polygon.
- */
-export function pointInPolygon(
-  lat: number,
-  lng: number,
-  polygon: GeofenceCoordinate[],
-): boolean {
-  if (!polygon || polygon.length < 3) return false;
-
-  let inside = false;
-  const n = polygon.length;
-
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = polygon[i].lng;
-    const yi = polygon[i].lat;
-    const xj = polygon[j].lng;
-    const yj = polygon[j].lat;
-
-    const intersect =
-      yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
-
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
-}
 
 @Injectable()
 export class StudyService {

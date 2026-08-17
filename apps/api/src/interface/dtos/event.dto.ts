@@ -1,4 +1,5 @@
 import {
+  ArrayMinSize,
   IsArray,
   IsBoolean,
   IsISO8601,
@@ -9,9 +10,20 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { POINTS_ADJUSTMENT_MAX } from '../../domain/constants/field-limits';
+import { GeofenceCoordinateDto } from './study.dto';
+
+/**
+ * Swagger/validation description shared by the create and update zone fields.
+ * The polygon shape is identical to `study_geofences.coordinates` so one
+ * `pointInPolygon` (`domain/utils/geofence.ts`) serves both features.
+ */
+const CHECK_IN_ZONE_DESCRIPTION =
+  'Optional check-in geofence: polygon vertices a member must stand inside to check in. At least 3 points; the closing edge is implicit. Omit for an event with no geofence.';
 
 export class CreateEventDto {
   @ApiProperty()
@@ -68,6 +80,26 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [GeofenceCoordinateDto],
+    description: CHECK_IN_ZONE_DESCRIPTION,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => GeofenceCoordinateDto)
+  check_in_zone?: GeofenceCoordinateDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone").',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  check_in_zone_name?: string;
 
   @ApiPropertyOptional({
     description:
@@ -144,4 +176,23 @@ export class UpdateEventDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  @ApiPropertyOptional({
+    type: [GeofenceCoordinateDto],
+    description: `${CHECK_IN_ZONE_DESCRIPTION} Send an empty array to clear an existing zone.`,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => GeofenceCoordinateDto)
+  check_in_zone?: GeofenceCoordinateDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Human-readable name for `check_in_zone`, shown on the mobile scanner ("Inside the Great Hall zone").',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  check_in_zone_name?: string;
 }

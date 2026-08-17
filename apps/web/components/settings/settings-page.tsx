@@ -41,7 +41,7 @@ import {
   useSubscriptionGate,
 } from "@/components/shared/subscription-gate";
 import { useToast } from "@/hooks/use-toast";
-import { can } from "@/lib/auth/can";
+import { can } from "@repo/validation";
 import { useChapterStore } from "@/lib/stores/chapter-store";
 import { asArray, getErrorMessage } from "@/lib/utils";
 import {

@@ -5,7 +5,7 @@ import { CalendarDays, Check, MapPin } from "lucide-react";
 import { useAttendance, useCheckIn, useMyPermissions } from "@repo/hooks";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { EventPayload } from "@repo/chat-integrations";
-import { can } from "@/lib/auth/can";
+import { can } from "@repo/validation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -181,7 +181,10 @@ export function EventCard({ message, isConfirmed }: EventCardProps) {
 
   const handleCheckIn = async (): Promise<void> => {
     try {
-      await checkIn.mutateAsync(payload.event_id);
+      // No token and no coordinates: this is the plain self check-in surface.
+      // For an event that defines a check-in geofence the server rejects that
+      // with a message naming the mobile app, which the catch below renders.
+      await checkIn.mutateAsync({ eventId: payload.event_id });
       toast({
         title: "Checked in",
         description: payload.point_value

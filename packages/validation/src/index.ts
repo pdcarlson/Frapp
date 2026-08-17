@@ -864,3 +864,7 @@ export function validateCardPollVote(input: {
     choiceMode: input.choiceMode,
   });
 }
+
+// Client-side RBAC gates, shared by apps/web and apps/mobile. Moved out of
+// `apps/web/lib/auth/can.ts` with #994 so the wildcard rule has one definition.
+export { can, canAll, canAny, WILDCARD_PERMISSION } from "./permissions";

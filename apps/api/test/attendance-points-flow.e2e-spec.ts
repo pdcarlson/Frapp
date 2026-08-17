@@ -98,10 +98,42 @@ describe('Attendance + points flow (e2e)', () => {
       .send({})
       .expect(201);
 
+    // The fourth argument is the scanner payload added with #994. An empty body
+    // is the plain self check-in surface (the web chat event card), so every
+    // field arrives undefined and the service applies no token or zone check.
     expect(attendanceServiceMock.checkIn).toHaveBeenCalledWith(
       'evt-1',
       'user-1',
       'chapter-1',
+      {
+        token: undefined,
+        manualCode: undefined,
+        lat: undefined,
+        lng: undefined,
+      },
+    );
+  });
+
+  it('forwards a scanned token and location through to the service', async () => {
+    attendanceServiceMock.checkIn.mockClear();
+
+    await request(app.getHttpServer())
+      .post(`${V1}/events/evt-1/attendance/check-in`)
+      .set('authorization', 'Bearer token')
+      .set('x-chapter-id', 'chapter-1')
+      .send({ token: 'scanned-token', lat: 42.7298, lng: -73.678 })
+      .expect(201);
+
+    expect(attendanceServiceMock.checkIn).toHaveBeenCalledWith(
+      'evt-1',
+      'user-1',
+      'chapter-1',
+      {
+        token: 'scanned-token',
+        manualCode: undefined,
+        lat: 42.7298,
+        lng: -73.678,
+      },
     );
   });
 

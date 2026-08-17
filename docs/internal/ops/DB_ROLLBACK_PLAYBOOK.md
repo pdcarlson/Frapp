@@ -537,3 +537,42 @@ from. If either matters, snapshot before dropping:
 ```sql
 SELECT chapter_id, name, sort_order FROM chapter_document_folders ORDER BY 1, 3, 2;
 ```
+
+## Rollback event check-in geofence (20260817170000)
+
+Additive DDL: two nullable columns on `events` plus one CHECK constraint, no
+changes to any existing column (#994).
+
+```sql
+ALTER TABLE events DROP CONSTRAINT IF EXISTS events_check_in_zone_shape;
+ALTER TABLE events DROP COLUMN IF EXISTS check_in_zone;
+ALTER TABLE events DROP COLUMN IF EXISTS check_in_zone_name;
+```
+
+**Order matters, but less than usual.** `AttendanceService.checkIn` reads
+`event.check_in_zone` on every check-in, and `EventService.create` writes both
+columns on every event create — so with the columns gone, the current build
+returns errors on *event creation* as well as check-in. Drop them only alongside
+or after deploying a build without #994.
+
+**Dropping is a security regression, not just a feature rollback.** The zone is
+the anti-proxy control for check-in (`spec/ui/mobile/patterns.md` § QR check-in):
+without it, a member who receives a forwarded code can check in from anywhere.
+The rotating token still applies where a client sends one, but it is explicitly
+not an access control. Prefer clearing zones over dropping the columns:
+
+```sql
+UPDATE events SET check_in_zone = NULL, check_in_zone_name = NULL;
+```
+
+**Snapshot before dropping** — a polygon is hand-drawn per event and cannot be
+re-derived from anything else in the schema:
+
+```sql
+SELECT id, chapter_id, name, check_in_zone, check_in_zone_name
+  FROM events WHERE check_in_zone IS NOT NULL ORDER BY start_time DESC;
+```
+
+**Re-applying is safe.** Both `ADD COLUMN` statements are `IF NOT EXISTS`, so the
+migration is idempotent; the CHECK constraint is not, so re-running against a
+table that still carries it needs the `DROP CONSTRAINT` above first.

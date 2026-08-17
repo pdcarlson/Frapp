@@ -14,6 +14,12 @@ const REQUIRED_ENV_VARS = [
 //   - ANALYTICS_HMAC_SALT  per-environment salt for hmac_sha256(salt, user_id)
 //   - POSTHOG_API_KEY      enables the PostHog transport
 //   - POSTHOG_HOST         optional provider host override (default PostHog US)
+//
+// Also optional, same reasoning (#994): the rotating event check-in code.
+// Unset, `POST /v1/events/:id/attendance/check-in-token` returns 503 and a
+// supplied token is rejected; plain self check-in and the geofence are
+// unaffected, so no test or local flow depends on it being present.
+//   - EVENT_CHECK_IN_TOKEN_SECRET  per-environment HMAC key for check-in codes
 
 type EnvVar = (typeof REQUIRED_ENV_VARS)[number];
 
