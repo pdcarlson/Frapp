@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => {
     updateSettings: {
       mutateAsync: () => Promise.resolve({}) as Promise<unknown>,
       isPending: false,
+      // Read by the panel's hydrate effect since #312 made the settings
+      // mutation optimistic — see the rollback test at the bottom of this file.
+      isError: false,
     },
   };
 });
@@ -61,6 +64,8 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     mocks.settingsQuery.data = undefined;
     mocks.updateSettingsMutateAsync.mockResolvedValue({});
     mocks.updateSettings.mutateAsync = mocks.updateSettingsMutateAsync;
+    mocks.updateSettings.isPending = false;
+    mocks.updateSettings.isError = false;
   });
 
   // The headline regression of this change. The Preferences card renders before
@@ -190,5 +195,69 @@ describe("ProfilePanel — quiet-hours timezone save (#687)", () => {
     ).toBeTruthy();
     expect(mocks.updateSettingsMutateAsync).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-invalid")).toBe("true");
+  });
+});
+
+// #312 made `useUpdateUserSettings` optimistic, which changed how often this
+// panel's hydrate effect fires: `settingsQuery.data` is now written on mutate
+// and written again on rollback, where before it only changed once, on the
+// success refetch. That extra write lands on a form the member is still
+// looking at.
+describe("ProfilePanel — draft survives an optimistic rollback (#312)", () => {
+  const STORED = {
+    quiet_hours_start: "22:00",
+    quiet_hours_end: "08:00",
+    quiet_hours_tz: "America/New_York",
+    theme: "system",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.settingsQuery.data = { ...STORED };
+    mocks.updateSettingsMutateAsync.mockResolvedValue({});
+    mocks.updateSettings.mutateAsync = mocks.updateSettingsMutateAsync;
+    mocks.updateSettings.isPending = false;
+    mocks.updateSettings.isError = false;
+  });
+
+  it("keeps the member's edits when a failed save rolls the cache back", async () => {
+    mocks.updateSettingsMutateAsync.mockRejectedValue(new Error("Network down"));
+    const { rerender } = render(<ProfilePanel />);
+
+    const start = await screen.findByDisplayValue("22:00");
+    await userEvent.clear(start);
+    await userEvent.type(start, "21:00");
+    await savePreferences();
+
+    await waitFor(() => {
+      expect(mocks.updateSettingsMutateAsync).toHaveBeenCalled();
+    });
+
+    // What the rollback actually does: restores the snapshot, which is a
+    // different object than the one the panel last hydrated from. The identity
+    // change is what re-runs the effect — the values being unchanged is
+    // exactly why the bug was invisible without a test.
+    mocks.updateSettings.isError = true;
+    mocks.settingsQuery.data = { ...STORED };
+    rerender(<ProfilePanel />);
+
+    expect(screen.getByDisplayValue("21:00")).toBeTruthy();
+    expect(screen.queryByDisplayValue("22:00")).toBeNull();
+  });
+
+  it("resyncs from the server once a save succeeds", async () => {
+    const { rerender } = render(<ProfilePanel />);
+
+    const start = await screen.findByDisplayValue("22:00");
+    await userEvent.clear(start);
+    await userEvent.type(start, "21:00");
+    await savePreferences();
+
+    // The success path is unchanged: `onSettled` invalidates, the refetch
+    // lands, and the server's value — normalized or not — wins.
+    mocks.settingsQuery.data = { ...STORED, quiet_hours_start: "21:00" };
+    rerender(<ProfilePanel />);
+
+    expect(screen.getByDisplayValue("21:00")).toBeTruthy();
   });
 });

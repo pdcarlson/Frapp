@@ -3,13 +3,27 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useFrappClient } from "./use-frapp-client";
 
-export function useServiceEntries(userId?: string) {
+export function useServiceEntries(
+  userId?: string,
+  filters?: {
+    status?: "PENDING" | "APPROVED" | "REJECTED";
+    start_date?: string;
+    end_date?: string;
+  },
+) {
   const client = useFrappClient();
   return useQuery({
-    queryKey: ["service-entries", userId],
+    queryKey: ["service-entries", userId, filters],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/service-entries", {
-        params: { query: { userId } },
+        params: {
+          query: {
+            userId,
+            status: filters?.status,
+            start_date: filters?.start_date,
+            end_date: filters?.end_date,
+          },
+        },
       });
       if (error) throw error;
       return data;

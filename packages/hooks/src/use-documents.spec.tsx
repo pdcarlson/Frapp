@@ -49,7 +49,7 @@ describe("useDocuments", () => {
     });
     const mockClient = { GET: mockGet };
 
-    const { result } = renderHook(() => useDocuments("finance"), {
+    const { result } = renderHook(() => useDocuments({ folder: "finance" }), {
       wrapper: createWrapper(queryClient, mockClient),
     });
 
@@ -58,7 +58,27 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
-      params: { query: { folder: "finance" } },
+      params: { query: { folder: "finance", search: undefined } },
+    });
+  });
+
+  it("passes search in query params when provided", async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      data: [{ id: "doc-1" }],
+      error: null,
+    });
+    const mockClient = { GET: mockGet };
+
+    const { result } = renderHook(() => useDocuments({ search: "bylaws" }), {
+      wrapper: createWrapper(queryClient, mockClient),
+    });
+
+    await waitFor(() => {
+      expect(result.current.isSuccess).toBe(true);
+    });
+
+    expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
+      params: { query: { folder: undefined, search: "bylaws" } },
     });
   });
 
@@ -78,7 +98,7 @@ describe("useDocuments", () => {
     });
 
     expect(mockGet).toHaveBeenCalledWith("/v1/documents", {
-      params: { query: { folder: undefined } },
+      params: { query: { folder: undefined, search: undefined } },
     });
   });
 });

@@ -59,6 +59,31 @@ export function useUpdateUser() {
   });
 }
 
+/**
+ * Delete the caller's account — irreversible (#713).
+ *
+ * Self-service: bearer token only, no chapter header. The endpoint's own
+ * contract makes the failure path unusual and callers must honor it: a **502
+ * means the flow did not finish**, and because every step is idempotent the
+ * right response is to retry, not to treat it as fatal. Depending on which step
+ * failed the account may already be anonymized while sign-in still works, so a
+ * surface must not claim the account survived either.
+ *
+ * Deliberately invalidates nothing: on success every cached query belongs to an
+ * account that no longer exists, and the caller signs out, which tears the cache
+ * down anyway.
+ */
+export function useDeleteAccount() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await client.DELETE("/v1/users/me");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useRequestAvatarUploadUrl() {
   const client = useFrappClient();
   return useMutation({

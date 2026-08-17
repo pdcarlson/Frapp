@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   useActiveChapterId,
   useNotificationPreferences,
@@ -7,9 +7,39 @@ import {
   useUpdateUserSettings,
   useUserSettings,
 } from "@repo/hooks";
-import { MAX_TIME_ZONE_LENGTH } from "@repo/validation";
+import {
+  defaultNotificationCategoryState,
+  isNotificationCategoryKey,
+  MAX_TIME_ZONE_LENGTH,
+  type NotificationCategoryKey,
+} from "@repo/validation";
 import { useIsApiAuthenticated } from "./use-is-api-authenticated";
 
+/**
+ * Notification preferences for s16, reconciled against the server.
+ *
+ * ## The query is the source of truth (#312)
+ *
+ * This hook used to hold its own `preferences` state and latch it to the first
+ * successful server payload with a pair of one-shot refs. Every payload after
+ * that was dropped: a post-PATCH refetch that normalized the value, a window
+ * edited on web, a chapter switch. The state only recovered on a cold remount.
+ *
+ * The refs existed to defend a real invariant — "do not clobber the toggle the
+ * member just flipped with a refetch that has not observed it yet" — so
+ * removing them naively would have flickered every toggle. That defence now
+ * lives one layer down, in `useUpdateNotificationPreference` /
+ * `useUpdateUserSettings`, which write optimistically, roll back on error and
+ * invalidate once settled. With the cache holding the optimistic value there is
+ * nothing left for a local copy to protect, so everything below is derived.
+ *
+ * ## AsyncStorage is still here, and is a different concern
+ *
+ * The cache is the *server's* answer. AsyncStorage is what the screen shows
+ * before there is one — offline, or signed out, when the toggles are local-only
+ * and `SyncIndicator` says `"cached"` rather than claiming enforcement. It is
+ * only ever a fallback: once a query succeeds, the server wins.
+ */
 export const PREFERENCE_STORAGE_KEY = "frapp.mobile.notification-preferences";
 export const QUIET_HOURS_WINDOW_STORAGE_KEY = "frapp.mobile.quiet-hours-window";
 
@@ -21,6 +51,10 @@ const FALLBACK_QUIET_HOURS_TZ = "America/New_York";
  * Mirrors the API contract in `UpdateUserSettingsDto` (HH:mm or HH:mm:ss), and
  * additionally tolerates the fractional seconds a Postgres `time` column can hold —
  * reading those as "no window" would wrongly report quiet hours as off.
+ *
+ * Note the API's own regex does **not** accept fractional seconds. That is safe
+ * only because every value leaving this module is normalized to `HH:mm` first;
+ * forwarding a raw server value into a PATCH would 400.
  */
 const TIME_OF_DAY_PATTERN = /^(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
@@ -79,16 +113,8 @@ function normalizeTimeZone(value: unknown): string {
   return trimmed;
 }
 
-const NOTIFICATION_CATEGORY = {
-  dmAlerts: "chat",
-  eventReminders: "events",
-} as const;
-
-export type PreferenceState = {
-  quietHoursEnabled: boolean;
-  dmAlertsEnabled: boolean;
-  eventRemindersEnabled: boolean;
-};
+/** Which categories are on. Keys come from the shared catalog, never from here. */
+export type CategoryState = Record<NotificationCategoryKey, boolean>;
 
 /** A concrete quiet-hour window. Times are `HH:mm`; `tz` is an IANA zone name. */
 export type QuietHoursWindow = {
@@ -105,27 +131,62 @@ type ServerSettings = {
   quiet_hours_tz?: string | null;
 };
 
-type ServerPreferenceRow = {
-  category?: string;
-  is_enabled?: boolean;
+/** What lives under {@link PREFERENCE_STORAGE_KEY}. */
+type CachedPreferences = {
+  quietHoursEnabled: boolean;
+  categories: Partial<CategoryState>;
 };
 
-export const DEFAULT_PREFERENCES: PreferenceState = {
+const DEFAULT_CACHED: CachedPreferences = {
   quietHoursEnabled: true,
-  dmAlertsEnabled: true,
-  eventRemindersEnabled: true,
+  categories: {},
 };
 
-export function isPreferenceState(value: unknown): value is PreferenceState {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
+/**
+ * The pre-catalog blob's two toggles, and the categories they stood for.
+ *
+ * A member upgrading has a blob in this shape sitting on their device. Dropping
+ * it would silently re-enable a category they turned off, offline, with no
+ * server round trip to correct it — so it migrates rather than being discarded
+ * with the other unknown keys.
+ */
+const LEGACY_CATEGORY_KEYS: Record<string, NotificationCategoryKey> = {
+  dmAlertsEnabled: "chat",
+  eventRemindersEnabled: "events",
+};
+
+/**
+ * Coerce whatever is in AsyncStorage into the current shape.
+ *
+ * Unknown keys are dropped rather than carried: the blob is written back on
+ * every change, and a key nothing reads would otherwise live on that device
+ * forever (this is what #266 found with `digestEmailsEnabled`).
+ */
+export function parseCachedPreferences(value: unknown): CachedPreferences | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.quietHoursEnabled === "boolean" &&
-    typeof candidate.dmAlertsEnabled === "boolean" &&
-    typeof candidate.eventRemindersEnabled === "boolean"
-  );
+  if (typeof candidate.quietHoursEnabled !== "boolean") return null;
+
+  const categories: Partial<CategoryState> = {};
+
+  for (const [legacyKey, category] of Object.entries(LEGACY_CATEGORY_KEYS)) {
+    const legacyValue = candidate[legacyKey];
+    if (typeof legacyValue === "boolean") categories[category] = legacyValue;
+  }
+
+  const stored = candidate.categories;
+  if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+    for (const [key, entry] of Object.entries(stored)) {
+      // Server-side the category column is unconstrained, so a blob can name a
+      // category this build has no switch for. Widening state to match would
+      // render nothing and persist forever.
+      if (isNotificationCategoryKey(key) && typeof entry === "boolean") {
+        categories[key] = entry;
+      }
+    }
+  }
+
+  return { quietHoursEnabled: candidate.quietHoursEnabled, categories };
 }
 
 export function defaultQuietHoursWindow(): QuietHoursWindow {
@@ -176,26 +237,32 @@ function settingsToQuietHoursEnabled(
   return settingsToQuietHoursWindow(settings) !== null;
 }
 
-function preferencesToFlags(
-  rows: ServerPreferenceRow[] | undefined | null,
-): Partial<PreferenceState> {
-  if (!Array.isArray(rows)) return {};
-  const result: Partial<PreferenceState> = {};
+/**
+ * Fold the server's preference rows over the catalog defaults.
+ *
+ * A category with no row is enabled, because that is what the server does with
+ * an absent row (`notification.service.ts` only suppresses on an explicit
+ * `is_enabled: false`) — so this returns a complete state, not a patch, and a
+ * category the member has never touched reads the same here as it behaves in
+ * delivery.
+ */
+function rowsToCategoryState(rows: unknown): CategoryState {
+  const state = defaultNotificationCategoryState();
+  if (!Array.isArray(rows)) return state;
   for (const row of rows) {
-    if (typeof row?.category !== "string") continue;
-    if (typeof row?.is_enabled !== "boolean") continue;
-    if (row.category === NOTIFICATION_CATEGORY.dmAlerts) {
-      result.dmAlertsEnabled = row.is_enabled;
-    } else if (row.category === NOTIFICATION_CATEGORY.eventReminders) {
-      result.eventRemindersEnabled = row.is_enabled;
-    }
+    if (!row || typeof row !== "object") continue;
+    const { category, is_enabled: isEnabled } = row as Record<string, unknown>;
+    if (typeof isEnabled !== "boolean") continue;
+    if (isNotificationCategoryKey(category)) state[category] = isEnabled;
   }
-  return result;
+  return state;
 }
 
 export type NotificationPreferencesSync = {
-  preferences: PreferenceState;
-  setPreference: (key: keyof PreferenceState, value: boolean) => void;
+  quietHoursEnabled: boolean;
+  setQuietHoursEnabled: (value: boolean) => void;
+  categories: CategoryState;
+  setCategory: (key: NotificationCategoryKey, value: boolean) => void;
   /** The window that is in force (or that re-enabling would restore). */
   quietHoursWindow: QuietHoursWindow;
   /** Edit start/end/tz. Invalid times are ignored. */
@@ -217,14 +284,12 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   const updateSettings = useUpdateUserSettings();
   const updatePreference = useUpdateNotificationPreference();
 
-  const [preferences, setPreferences] =
-    useState<PreferenceState>(DEFAULT_PREFERENCES);
+  // The offline/pre-auth view. Never the answer when a query has one.
+  const [cached, setCached] = useState<CachedPreferences>(DEFAULT_CACHED);
   const [isHydrated, setIsHydrated] = useState(false);
   const [hydrationRecovered, setHydrationRecovered] = useState(false);
   const [persistenceFailed, setPersistenceFailed] = useState(false);
   const [windowPersistenceFailed, setWindowPersistenceFailed] = useState(false);
-  const [quietHoursFailed, setQuietHoursFailed] = useState(false);
-  const [categoryFailed, setCategoryFailed] = useState(false);
 
   // Disabling quiet hours nulls the window out server-side, so the member's custom
   // times only survive an off -> on cycle if we remember them here. `null` means we
@@ -234,11 +299,6 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
   const fallbackWindow = useMemo(defaultQuietHoursWindow, []);
   const quietHoursWindow = rememberedWindow ?? fallbackWindow;
 
-  const appliedSettingsRef = useRef(false);
-  const appliedPrefsRef = useRef(false);
-  const quietHoursGenRef = useRef(0);
-  const categoryGenRef = useRef(0);
-
   useEffect(() => {
     let isMounted = true;
 
@@ -246,13 +306,9 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
       try {
         const persisted = await AsyncStorage.getItem(PREFERENCE_STORAGE_KEY);
         if (!persisted || !isMounted) return;
-        const parsed = JSON.parse(persisted) as unknown;
-        if (!isPreferenceState(parsed)) return;
-        setPreferences({
-          quietHoursEnabled: parsed.quietHoursEnabled,
-          dmAlertsEnabled: parsed.dmAlertsEnabled,
-          eventRemindersEnabled: parsed.eventRemindersEnabled,
-        });
+        const parsed = parseCachedPreferences(JSON.parse(persisted) as unknown);
+        if (!parsed) return;
+        setCached(parsed);
       } catch {
         if (isMounted) setHydrationRecovered(true);
         try {
@@ -291,8 +347,8 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     };
   }, []);
 
-  // Track the newest non-empty window the server reports. Unlike the enabled flag
-  // this is not one-shot: a window edited on web must reach this device on refetch.
+  // Track the newest non-empty window the server reports. Not one-shot: a window
+  // edited on web must reach this device on refetch.
   useEffect(() => {
     if (!settingsQuery.isSuccess) return;
     const serverWindow = settingsToQuietHoursWindow(
@@ -304,36 +360,36 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     );
   }, [settingsQuery.isSuccess, settingsQuery.data]);
 
-  useEffect(() => {
-    if (!isHydrated || appliedSettingsRef.current) return;
-    if (!settingsQuery.isSuccess) return;
-    const quietEnabled = settingsToQuietHoursEnabled(
-      settingsQuery.data as unknown as ServerSettings | undefined,
-    );
-    if (quietEnabled === null) return;
-    appliedSettingsRef.current = true;
-    setPreferences((current) =>
-      current.quietHoursEnabled === quietEnabled
-        ? current
-        : { ...current, quietHoursEnabled: quietEnabled },
-    );
-  }, [isHydrated, settingsQuery.isSuccess, settingsQuery.data]);
+  // ── Derived state ─────────────────────────────────────────────────────────
+  // Both of these read the server first and fall back to the cache, which is
+  // what makes a refetch — from any source — land on screen instead of being
+  // latched out.
 
-  useEffect(() => {
-    if (!isHydrated || appliedPrefsRef.current) return;
-    if (!notifPrefsQuery.isSuccess) return;
-    const flags = preferencesToFlags(
-      notifPrefsQuery.data as unknown as ServerPreferenceRow[] | undefined,
-    );
-    if (Object.keys(flags).length === 0) return;
-    appliedPrefsRef.current = true;
-    setPreferences((current) => ({ ...current, ...flags }));
-  }, [isHydrated, notifPrefsQuery.isSuccess, notifPrefsQuery.data]);
+  const serverQuietHoursEnabled = settingsQuery.isSuccess
+    ? settingsToQuietHoursEnabled(
+        settingsQuery.data as unknown as ServerSettings | undefined,
+      )
+    : null;
+  const quietHoursEnabled =
+    serverQuietHoursEnabled ?? cached.quietHoursEnabled;
 
+  const categories = useMemo<CategoryState>(() => {
+    // Success means the server has spoken for *every* category, including the
+    // ones it returned no row for — so its answer replaces the cache wholesale
+    // rather than merging with it.
+    if (notifPrefsQuery.isSuccess) {
+      return rowsToCategoryState(notifPrefsQuery.data);
+    }
+    return { ...defaultNotificationCategoryState(), ...cached.categories };
+  }, [notifPrefsQuery.isSuccess, notifPrefsQuery.data, cached.categories]);
+
+  // Mirror the effective state for the next cold start. Written from the derived
+  // value, so the cache follows the server rather than competing with it.
   useEffect(() => {
     if (!isHydrated) return;
     let cancelled = false;
-    AsyncStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(preferences))
+    const blob: CachedPreferences = { quietHoursEnabled, categories };
+    AsyncStorage.setItem(PREFERENCE_STORAGE_KEY, JSON.stringify(blob))
       .then(() => {
         if (!cancelled) setPersistenceFailed(false);
       })
@@ -343,7 +399,7 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     return () => {
       cancelled = true;
     };
-  }, [isHydrated, preferences]);
+  }, [isHydrated, quietHoursEnabled, categories]);
 
   useEffect(() => {
     if (!isHydrated || !rememberedWindow) return;
@@ -375,86 +431,58 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
     return serverWindow ?? rememberedWindow ?? fallbackWindow;
   }, [fallbackWindow, rememberedWindow, settingsQuery.data]);
 
-  const setPreference = useCallback(
-    (key: keyof PreferenceState, value: boolean) => {
-      setPreferences((current) =>
-        current[key] === value ? current : { ...current, [key]: value },
-      );
+  const setQuietHoursEnabled = useCallback(
+    (value: boolean) => {
+      // Signed out there is no cache to write through, so the local mirror is
+      // the only place this can live until a session exists.
+      if (!isAuthenticated) {
+        setCached((current) => ({ ...current, quietHoursEnabled: value }));
+        return;
+      }
 
-      if (!isAuthenticated) return;
-
-      if (key === "quietHoursEnabled") {
-        setQuietHoursFailed(false);
-        const generation = ++quietHoursGenRef.current;
-        let body: {
-          quiet_hours_start: string | null;
-          quiet_hours_end: string | null;
-          quiet_hours_tz: string | null;
-        };
-        if (value) {
-          const window = resolveWindowForEnable();
-          setRememberedWindow((current) =>
-            sameQuietHoursWindow(current, window) ? current : window,
-          );
-          body = {
-            quiet_hours_start: window.start,
-            quiet_hours_end: window.end,
-            quiet_hours_tz: window.tz,
-          };
-        } else {
-          // Clear the window server-side but keep remembering it, so turning quiet
-          // hours back on restores the member's times instead of the defaults.
-          body = {
-            quiet_hours_start: null,
-            quiet_hours_end: null,
-            quiet_hours_tz: null,
-          };
-        }
-        updateSettings.mutate(body, {
-          onSuccess: () => {
-            if (generation === quietHoursGenRef.current) {
-              setQuietHoursFailed(false);
-            }
-          },
-          onError: () => {
-            if (generation === quietHoursGenRef.current) {
-              setQuietHoursFailed(true);
-            }
-          },
+      if (value) {
+        const window = resolveWindowForEnable();
+        setRememberedWindow((current) =>
+          sameQuietHoursWindow(current, window) ? current : window,
+        );
+        updateSettings.mutate({
+          quiet_hours_start: window.start,
+          quiet_hours_end: window.end,
+          quiet_hours_tz: window.tz,
         });
         return;
       }
 
-      if (!chapterId) return;
-      const category =
-        key === "dmAlertsEnabled"
-          ? NOTIFICATION_CATEGORY.dmAlerts
-          : NOTIFICATION_CATEGORY.eventReminders;
-      setCategoryFailed(false);
-      const generation = ++categoryGenRef.current;
-      updatePreference.mutate(
-        { chapter_id: chapterId, category, is_enabled: value },
-        {
-          onSuccess: () => {
-            if (generation === categoryGenRef.current) {
-              setCategoryFailed(false);
-            }
-          },
-          onError: () => {
-            if (generation === categoryGenRef.current) {
-              setCategoryFailed(true);
-            }
-          },
-        },
-      );
+      // Clear the window server-side but keep remembering it, so turning quiet
+      // hours back on restores the member's times instead of the defaults.
+      updateSettings.mutate({
+        quiet_hours_start: null,
+        quiet_hours_end: null,
+        quiet_hours_tz: null,
+      });
     },
-    [
-      chapterId,
-      isAuthenticated,
-      resolveWindowForEnable,
-      updatePreference,
-      updateSettings,
-    ],
+    [isAuthenticated, resolveWindowForEnable, updateSettings],
+  );
+
+  const setCategory = useCallback(
+    (key: NotificationCategoryKey, value: boolean) => {
+      // Preferences are chapter-scoped; without a chapter there is nothing to
+      // PATCH against, so this stays local exactly as it does signed out.
+      if (!isAuthenticated || !chapterId) {
+        setCached((current) => ({
+          ...current,
+          categories: { ...current.categories, [key]: value },
+        }));
+        return;
+      }
+
+      updatePreference.mutate({
+        chapter_id: chapterId,
+        category: key,
+        is_enabled: value,
+      });
+    },
+    [chapterId, isAuthenticated, updatePreference],
   );
 
   const setQuietHoursWindow = useCallback(
@@ -469,65 +497,53 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
       // While quiet hours are off the server window is intentionally null; PATCHing
       // times now would silently switch enforcement back on. Remember them instead
       // and apply on re-enable.
-      if (!preferences.quietHoursEnabled) return;
+      if (!quietHoursEnabled) return;
 
-      setQuietHoursFailed(false);
-      const generation = ++quietHoursGenRef.current;
-      updateSettings.mutate(
-        {
-          quiet_hours_start: window.start,
-          quiet_hours_end: window.end,
-          quiet_hours_tz: window.tz,
-        },
-        {
-          onSuccess: () => {
-            if (generation === quietHoursGenRef.current) {
-              setQuietHoursFailed(false);
-            }
-          },
-          onError: () => {
-            if (generation === quietHoursGenRef.current) {
-              setQuietHoursFailed(true);
-            }
-          },
-        },
-      );
+      updateSettings.mutate({
+        quiet_hours_start: window.start,
+        quiet_hours_end: window.end,
+        quiet_hours_tz: window.tz,
+      });
     },
-    [isAuthenticated, preferences.quietHoursEnabled, updateSettings],
+    [isAuthenticated, quietHoursEnabled, updateSettings],
   );
 
+  // The mutations own failure now — `isError` clears on the next `mutate`, which
+  // is exactly the "toggle again to retry" affordance the copy promises.
   const quietHoursSync = useMemo<SyncIndicator>(() => {
     if (!isAuthenticated) return "cached";
-    if (quietHoursFailed || settingsQuery.isError) return "retry";
+    if (updateSettings.isError || settingsQuery.isError) return "retry";
     if (updateSettings.isPending) return "pending";
     if (settingsQuery.isSuccess) return "synced";
     return "pending";
   }, [
     isAuthenticated,
-    quietHoursFailed,
     settingsQuery.isError,
     settingsQuery.isSuccess,
+    updateSettings.isError,
     updateSettings.isPending,
   ]);
 
   const categorySync = useMemo<SyncIndicator>(() => {
     if (!isAuthenticated || !chapterId) return "cached";
-    if (categoryFailed || notifPrefsQuery.isError) return "retry";
+    if (updatePreference.isError || notifPrefsQuery.isError) return "retry";
     if (updatePreference.isPending) return "pending";
     if (notifPrefsQuery.isSuccess) return "synced";
     return "pending";
   }, [
-    categoryFailed,
     chapterId,
     isAuthenticated,
     notifPrefsQuery.isError,
     notifPrefsQuery.isSuccess,
+    updatePreference.isError,
     updatePreference.isPending,
   ]);
 
   return {
-    preferences,
-    setPreference,
+    quietHoursEnabled,
+    setQuietHoursEnabled,
+    categories,
+    setCategory,
     quietHoursWindow,
     setQuietHoursWindow,
     isHydrated,

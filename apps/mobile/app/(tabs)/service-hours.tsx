@@ -1,105 +1,382 @@
-import { Link } from "expo-router";
-import { asRoute } from "@/lib/href";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { ScreenShell } from "@/components/screen-shell";
-import { TaskLoopCard } from "@/components/task-loop-card";
+import {
+  BottomSheetModal,
+  BottomSheetTextInput,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
+import { useCreateServiceEntry, useServiceEntries } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
+import { ScreenShell } from "@/components/screen-shell";
+import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
+import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
+import { useChapterBranding } from "@/lib/chapter-branding";
+import {
+  parseDurationInput,
+  selectServiceEntryRows,
+  summarizeServiceEntries,
+  todayIsoDate,
+} from "@/lib/more/service-hours";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
+/**
+ * Service hours, hosting the s20 "Log service hours" sheet
+ * (`canvas-screens.dc.html:648`).
+ *
+ * The list is the member's own history: `GET /v1/service-entries` pins a
+ * non-admin's read to their own id server-side, so no client-side filter makes
+ * that true and none pretends to.
+ *
+ * ## No proof attachment
+ *
+ * Canvas draws a proof upload in the sheet, and the API supports it
+ * (`proof_path` plus a signed-upload endpoint). Attaching one needs an image or
+ * file picker, and none is a dependency of this app — `package.json` is frozen
+ * under #937's hotspot protocol. The field is omitted rather than rendered
+ * dead; entries submitted here are reviewed on their description. Filed.
+ *
+ * ## Sheet mechanics
+ *
+ * `@gorhom/bottom-sheet` v5 with `BottomSheetTextInput` and
+ * `keyboardBehavior="interactive"`, both required by
+ * `spec/ui/mobile/patterns.md` — a plain `TextInput` breaks the sheet's
+ * keyboard coordination. The submit CTA is 50px as drawn, which wins over
+ * `components.md`'s 48px under the reference-first precedence rule.
+ */
 export default function ServiceHoursScreen() {
   const { tokens } = useFrappTheme();
-  const styles = createStyles(tokens);
+  const { accent } = useChapterBranding();
+  const styles = createStyles(tokens, accent);
+  const sheetRef = useRef<BottomSheetModal>(null);
+
+  const entriesQuery = useServiceEntries();
+  const createEntry = useCreateServiceEntry();
+
+  const rows = useMemo(
+    () => selectServiceEntryRows(entriesQuery.data),
+    [entriesQuery.data],
+  );
+  const summary = useMemo(() => summarizeServiceEntries(rows), [rows]);
+
+  const [description, setDescription] = useState("");
+  const [duration, setDuration] = useState("");
+  const [submitFailed, setSubmitFailed] = useState(false);
+
+  const durationMinutes = parseDurationInput(duration);
+  const canSubmit =
+    description.trim().length > 0 &&
+    durationMinutes !== null &&
+    !createEntry.isPending;
+
+  const openSheet = useCallback(() => {
+    setSubmitFailed(false);
+    sheetRef.current?.present();
+  }, []);
+
+  const closeSheet = useCallback(() => {
+    sheetRef.current?.dismiss();
+  }, []);
+
+  function submit() {
+    if (!canSubmit || durationMinutes === null) return;
+    createEntry.mutate(
+      {
+        date: todayIsoDate(new Date()),
+        duration_minutes: durationMinutes,
+        description: description.trim(),
+      },
+      {
+        onSuccess: () => {
+          setDescription("");
+          setDuration("");
+          setSubmitFailed(false);
+          closeSheet();
+        },
+        onError: () => setSubmitFailed(true),
+      },
+    );
+  }
+
+  function renderList() {
+    if (entriesQuery.isPending) return <SkeletonLines lines={3} />;
+    if (entriesQuery.isError) {
+      return (
+        <ErrorState
+          title="Couldn't load your service hours"
+          body="Your entries couldn't reach the server."
+          onRetry={() => void entriesQuery.refetch()}
+          isRetrying={entriesQuery.isFetching}
+        />
+      );
+    }
+    if (rows.length === 0) {
+      return (
+        <EmptyState
+          glyph="+"
+          title="No service hours yet"
+          body="Log a shift and it goes to an officer for approval."
+        />
+      );
+    }
+    return (
+      <ListSection>
+        {rows.map((row) => (
+          <ListRow
+            key={row.id}
+            label={row.description}
+            description={row.meta}
+            trailing={
+              <Text style={statusStyle(row.status, styles)}>
+                {STATUS_LABELS[row.status]}
+              </Text>
+            }
+          />
+        ))}
+      </ListSection>
+    );
+  }
 
   return (
     <ScreenShell
-      title="Service Hours"
-      subtitle="Log philanthropy work, monitor approval outcomes, and track awarded points."
+      title="Service hours"
+      subtitle="Philanthropy work you've logged, and where it stands."
+      headerAction={
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log service hours"
+          hitSlop={tokens.spacing.sm}
+          onPress={openSheet}
+        >
+          <Text style={styles.headerAction}>Log</Text>
+        </Pressable>
+      }
     >
       <View style={styles.summaryCard}>
-        <Text style={styles.summaryLabel}>Approved this semester</Text>
-        <Text style={styles.summaryValue}>18.5 hrs</Text>
+        <Text style={styles.summaryLabel}>Approved</Text>
+        <Text style={styles.summaryValue}>{summary.approvedHours} hrs</Text>
         <Text style={styles.summaryMeta}>
-          Chapter rank #6 • 2 entries pending review
+          {summary.pendingCount === 0
+            ? "Nothing waiting on review."
+            : `${summary.pendingCount} ${
+                summary.pendingCount === 1 ? "entry" : "entries"
+              } awaiting review.`}
         </Text>
       </View>
 
-      <TaskLoopCard
-        category="Pending review"
-        state="pending"
-        title="Food bank volunteer shift"
-        body="2h 30m submission is awaiting admin approval with proof attachment."
-        meta="Submitted today at 4:12 PM"
-      />
-      <TaskLoopCard
-        category="Approved"
-        state="synced"
-        title="Campus cleanup day"
-        body="Entry approved and points awarded at chapter service rate."
-        meta="Awarded: +3 points"
-      />
-      <TaskLoopCard
-        category="Upload"
-        state="retry"
-        title="Proof upload failed on weak signal"
-        body="Receipt photo is queued for retry and your draft entry is still intact."
-        meta="Retry 1 of 3"
-        actionHint="Keep app in foreground until upload completes."
-      />
-      <TaskLoopCard
-        category="History"
-        state="cached"
-        title="Service log available offline"
-        body="Recent entries remain visible while you are away from connectivity."
-        meta="Last sync: 5:28 PM"
-      />
+      <SectionHeader>History</SectionHeader>
+      {renderList()}
 
-      <Link href={asRoute("/more")} asChild>
-        <Pressable style={styles.backButton}>
-          <Text style={styles.backButtonText}>Back to more</Text>
-        </Pressable>
-      </Link>
+      <BottomSheetModal
+        ref={sheetRef}
+        enableDynamicSizing
+        keyboardBehavior="interactive"
+        backgroundStyle={styles.sheetBackground}
+        handleComponent={() => (
+          <View style={styles.grabberZone}>
+            <View style={styles.grabber} />
+          </View>
+        )}
+      >
+        <BottomSheetView style={styles.sheetBody}>
+          <View style={styles.sheetHeaderRow}>
+            <Text style={styles.sheetTitle}>Log service hours</Text>
+            {/* hitSlop meets the ≥44px floor while keeping §9's compact visual
+                (the #939 ruling pattern). */}
+            <Pressable
+              accessibilityRole="button"
+              onPress={closeSheet}
+              hitSlop={{ top: 14, bottom: 14, left: 12, right: 12 }}
+            >
+              <Text style={styles.sheetCancel}>Cancel</Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.fieldLabel}>What did you do?</Text>
+          <BottomSheetTextInput
+            value={description}
+            onChangeText={setDescription}
+            placeholder="Food bank volunteer shift"
+            placeholderTextColor={tokens.color.text.muted}
+            accessibilityLabel="Service description"
+            style={styles.sheetInput}
+          />
+
+          <Text style={styles.fieldLabel}>How long?</Text>
+          <BottomSheetTextInput
+            value={duration}
+            onChangeText={setDuration}
+            placeholder="2:30 or 2.5"
+            placeholderTextColor={tokens.color.text.muted}
+            accessibilityLabel="Duration in hours"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
+            style={styles.sheetInput}
+          />
+          <Text style={styles.fieldHint}>
+            {duration.trim().length > 0 && durationMinutes === null
+              ? "Enter a duration like 2:30 or 2.5."
+              : "Hours and minutes, or a decimal. Dated today."}
+          </Text>
+
+          {submitFailed ? (
+            <Text style={styles.sheetError}>
+              That didn&apos;t save. Your entry is still here — try again.
+            </Text>
+          ) : null}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !canSubmit }}
+            disabled={!canSubmit}
+            onPress={submit}
+            style={[
+              styles.sheetPrimaryButton,
+              canSubmit ? null : styles.sheetPrimaryButtonDisabled,
+            ]}
+          >
+            <Text style={styles.sheetPrimaryButtonText}>
+              {createEntry.isPending ? "Submitting…" : "Submit for approval"}
+            </Text>
+          </Pressable>
+        </BottomSheetView>
+      </BottomSheetModal>
     </ScreenShell>
   );
 }
 
-function createStyles(tokens: SignetTokens) {
+const STATUS_LABELS = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+} as const;
+
+function statusStyle(
+  status: keyof typeof STATUS_LABELS,
+  styles: ReturnType<typeof createStyles>,
+) {
+  if (status === "APPROVED") return styles.statusApproved;
+  if (status === "REJECTED") return styles.statusRejected;
+  return styles.statusPending;
+}
+
+function createStyles(tokens: SignetTokens, accent: string) {
   return StyleSheet.create({
+    headerAction: {
+      ...typeRole(tokens.typography.role.label),
+      color: accent,
+    },
     summaryCard: {
-      borderRadius: tokens.radius.card,
+      borderRadius: tokens.radius.cardLarge,
       borderWidth: 1,
-      borderColor: tint(tokens.color.semantic.info, 0.3),
-      backgroundColor: tint(tokens.color.semantic.info),
+      borderColor: tokens.color.border.hairline,
+      backgroundColor: tokens.color.surface.card,
       padding: tokens.spacing.lg,
       gap: tokens.spacing.xs,
     },
     summaryLabel: {
-      ...typeRole(tokens.typography.role.label),
+      ...typeRole(tokens.typography.role.caption),
       textTransform: "uppercase",
-      letterSpacing: 0.3,
-      color: tokens.color.semantic.info,
+      letterSpacing: 0.6,
+      color: tokens.color.text.muted,
     },
     summaryValue: {
       ...typeRole(tokens.typography.role.headline),
-      letterSpacing: -0.3,
       color: tokens.color.text.foreground,
+      letterSpacing: -0.3,
     },
     summaryMeta: {
       ...typeRole(tokens.typography.role.caption),
-      color: tokens.color.semantic.info,
+      color: tokens.color.text.mutedForeground,
     },
-    backButton: {
+    statusPending: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.warning,
+    },
+    statusApproved: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.success,
+    },
+    statusRejected: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    sheetBackground: {
+      backgroundColor: tokens.color.surface.popover,
+      borderTopLeftRadius: tokens.radius.sheet,
+      borderTopRightRadius: tokens.radius.sheet,
+    },
+    grabberZone: {
+      paddingTop: tokens.spacing.sm,
+      paddingBottom: tokens.spacing.md,
+      alignItems: "center",
+    },
+    grabber: {
+      width: 40,
+      height: 4.5,
+      borderRadius: tokens.radius.chip,
+      backgroundColor: tint(tokens.color.text.foreground, 0.18),
+    },
+    sheetBody: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingBottom: tokens.spacing.xl,
+      gap: tokens.spacing.sm,
+    },
+    sheetHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: tokens.spacing.sm,
+    },
+    sheetTitle: {
+      ...typeRole(tokens.typography.role.title),
+      color: tokens.color.text.foreground,
+    },
+    sheetCancel: {
+      ...typeRole(tokens.typography.role.label),
+      color: tokens.color.text.muted,
+    },
+    fieldLabel: {
+      ...typeRole(tokens.typography.role.caption),
+      textTransform: "uppercase",
+      letterSpacing: 0.3,
+      color: tokens.color.text.mutedForeground,
+    },
+    sheetInput: {
       borderRadius: tokens.radius.control,
       borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-      backgroundColor: tokens.color.surface.card,
-      paddingVertical: tokens.spacing.md,
+      borderColor: tokens.color.border.input,
+      backgroundColor: tokens.color.surface.surface1,
+      paddingHorizontal: tokens.spacing.md,
+      paddingVertical: tokens.spacing.sm,
       minHeight: tokens.touch.minimum,
+      ...typeRole(tokens.typography.role.body),
+      color: tokens.color.text.foreground,
+    },
+    fieldHint: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
+    sheetError: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.destructive,
+    },
+    sheetPrimaryButton: {
+      marginTop: tokens.spacing.sm,
+      // 50px as drawn (canvas-screens.dc.html:663); the reference wins over
+      // components.md §9's 48px per spec/ui/README.md's precedence rule.
+      height: 50,
+      borderRadius: tokens.radius.control,
+      backgroundColor: accent,
       alignItems: "center",
       justifyContent: "center",
     },
-    backButtonText: {
+    sheetPrimaryButtonDisabled: {
+      opacity: 0.5,
+    },
+    sheetPrimaryButtonText: {
       ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.foreground,
+      color: tokens.color.gold.onHouse,
     },
   });
 }

@@ -769,6 +769,22 @@ export {
   MAX_TIME_ZONE_LENGTH,
 } from "./time-zone";
 
+// ── Notification categories (issue #564, mobile half in C4 of #937) ──────────
+// Shared because each `key` is written verbatim into
+// `notification_preferences.category` and nothing validates it — the column is
+// unconstrained `text` and the DTO only length-limits the string — so a
+// per-surface copy drifts into preference rows the server never reads. Web's
+// Profile grid adopting this is the other half of #564.
+export {
+  NOTIFICATION_CATEGORIES,
+  isNotificationCategoryKey,
+  defaultNotificationCategoryState,
+} from "./notification-categories";
+export type {
+  NotificationCategory,
+  NotificationCategoryKey,
+} from "./notification-categories";
+
 // ── Poll vote rules ──────────────────────────────────────────────────────────
 // Shared by the two paths that accept a vote, which are NOT the same code path
 // and cannot be merged into one: `PollService.vote` writes `poll_votes` keyed by
