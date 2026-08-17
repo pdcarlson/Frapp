@@ -1,18 +1,32 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
-export function useGeofences() {
+/**
+ * The chapter's study zones.
+ *
+ * `options.enabled` exists because the route is guarded twice over —
+ * `members:view` plus `@RequireModule('geofences')` — so a surface that only
+ * shows zones to some members should not fire a request the rest will get a
+ * 403 for. Same shape as `usePolls`, and the same reasoning
+ * `host-check-in.tsx` records for its officer-gated reads.
+ */
+export function useGeofences(options?: { enabled?: boolean }) {
   const client = useFrappClient();
+  // Chapter-scoped despite taking no chapter argument: the route resolves it
+  // from the request header, so a bare `["geofences"]` key serves one chapter's
+  // zones under another after a switch.
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["geofences"],
+    queryKey: ["geofences", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/geofences");
       if (error) throw error;
       return data;
     },
     staleTime: 60_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

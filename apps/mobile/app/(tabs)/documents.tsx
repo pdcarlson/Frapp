@@ -1,22 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useDeferredValue, useMemo, useState } from "react";
+import { StyleSheet, Text } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import {
-  useActiveChapterId,
-  useDocument,
+  useDocumentDownloadUrl,
   useDocumentFolders,
   useDocuments,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { FilterChips, SearchField } from "@/components/filter-chips";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import {
-  EmptyState,
-  ErrorState,
-  NoChapterState,
-  SkeletonLines,
-} from "@/components/state-block";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
 import {
   selectDocumentFolders,
   selectDocumentRows,
@@ -26,6 +20,17 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s12 — Documents (`canvas-screens.dc.html:427`).
+ *
+ * ## No `NoChapterState` here, unlike its siblings
+ *
+ * `useDocuments` and `useDocumentFolders` are deliberately not gated on a
+ * resolved `chapterId`: the route resolves the chapter from the request header,
+ * and `ChapterGuard` auto-resolves a single-membership member server-side. So a
+ * member with one chapter gets their real library even though the mobile client
+ * has no `active_chapter_id` claim to read (#805). Rendering "no chapter
+ * selected" over that would contradict the folder chips sitting above it, and
+ * point at a picker that would not change the outcome. A member who genuinely
+ * has no resolvable chapter gets a `400` instead, which the error state covers.
  *
  * ## No PINNED section
  *
@@ -43,30 +48,34 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * ## Opening a document
  *
  * There is no separate download endpoint: `GET /v1/documents/{id}` returns the
- * document with a freshly signed `downloadUrl`. So a tap selects an id, that
- * single-document query runs, and the effect below opens the URL it comes back
- * with. Note the key is **`downloadUrl`** — web reads `download_url` at two
- * call sites and there is no case-transforming interceptor anywhere, so those
- * are broken; `selectDownloadUrl` accepts both and is the only place that
- * spelling appears.
+ * document with a freshly signed `downloadUrl`. That read runs through a
+ * *mutation* (`useDocumentDownloadUrl`) rather than a query, so a tap that
+ * failed once reaches the network again on the next tap instead of replaying a
+ * cached error — and the expiring URL never enters the cache. Note the key is
+ * **`downloadUrl`**: web reads `download_url` at two call sites and there is no
+ * case-transforming interceptor, so those are broken; `selectDownloadUrl`
+ * accepts both and is the only place that spelling appears.
  */
 export default function DocumentsScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
-  const chapterId = useActiveChapterId();
 
   const [folder, setFolder] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [openFailed, setOpenFailed] = useState(false);
 
+  // Deferred, like s13's: `search` is in the query key, so feeding raw
+  // keystrokes would mint a cache entry and fire a request per character, and
+  // blank the list to a skeleton each time.
+  const deferredSearch = useDeferredValue(search.trim());
+
   const foldersQuery = useDocumentFolders();
   const documentsQuery = useDocuments({
     folder: folder ?? undefined,
-    search: search.trim() || undefined,
+    search: deferredSearch || undefined,
   });
-  const openingQuery = useDocument(openingId ?? "");
+  const openDocument = useDocumentDownloadUrl();
 
   const folders = useMemo(
     () => selectDocumentFolders(foldersQuery.data),
@@ -77,36 +86,33 @@ export default function DocumentsScreen() {
     [documentsQuery.data],
   );
 
-  // The signed URL arrives with the single-document read, so opening is a
-  // two-step: select an id, then follow what comes back for it. Keyed on the id
-  // so a slow response for a document the member has moved on from cannot open
-  // the wrong file.
-  useEffect(() => {
-    if (!openingId) return;
-    if (openingQuery.isError) {
-      setOpeningId(null);
-      setOpenFailed(true);
-      return;
-    }
-    if (!openingQuery.isSuccess) return;
-    const url = selectDownloadUrl(openingQuery.data);
-    setOpeningId(null);
-    if (!url) {
-      setOpenFailed(true);
-      return;
-    }
+  async function open(id: string) {
+    // One at a time: iOS rejects a second presentation while one is showing,
+    // which is a rejection worth not provoking rather than reporting.
+    if (openingId) return;
     setOpenFailed(false);
-    void WebBrowser.openBrowserAsync(url);
-  }, [openingId, openingQuery.isSuccess, openingQuery.isError, openingQuery.data]);
+    setOpeningId(id);
+    try {
+      const url = selectDownloadUrl(await openDocument.mutateAsync(id));
+      if (!url) {
+        setOpenFailed(true);
+        return;
+      }
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      setOpenFailed(true);
+    } finally {
+      setOpeningId(null);
+    }
+  }
 
   function renderList() {
-    if (!chapterId) return <NoChapterState noun="chapter documents" />;
     if (documentsQuery.isPending) return <SkeletonLines lines={4} />;
     if (documentsQuery.isError) {
       return (
         <ErrorState
           title="Couldn't load documents"
-          body="The chapter library couldn't reach the server."
+          body="If you belong to more than one chapter, pick one from More → Chapter first."
           onRetry={() => void documentsQuery.refetch()}
           isRetrying={documentsQuery.isFetching}
         />
@@ -116,10 +122,10 @@ export default function DocumentsScreen() {
       return (
         <EmptyState
           glyph="⌸"
-          title={search.trim() ? "No matches" : "Nothing filed here yet"}
+          title={deferredSearch ? "No matches" : "Nothing filed here yet"}
           body={
-            search.trim()
-              ? `No document title matches “${search.trim()}”.`
+            deferredSearch
+              ? `No document title matches “${deferredSearch}”.`
               : "Documents uploaded on the web dashboard show up here."
           }
         />
@@ -133,11 +139,8 @@ export default function DocumentsScreen() {
             label={row.title}
             description={row.meta}
             accessibilityHint="Opens in your browser."
-            disabled={openingId === row.id}
-            onPress={() => {
-              setOpenFailed(false);
-              setOpeningId(row.id);
-            }}
+            disabled={openingId !== null}
+            onPress={() => void open(row.id)}
           />
         ))}
       </ListSection>
@@ -146,45 +149,26 @@ export default function DocumentsScreen() {
 
   return (
     <ScreenShell title="Documents" subtitle="The chapter's document library.">
-      <TextInput
+      <SearchField
         value={search}
         onChangeText={setSearch}
         placeholder="Search documents"
-        placeholderTextColor={tokens.color.text.muted}
         accessibilityLabel="Search documents by title"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.search}
       />
 
       {folders.length > 0 ? (
-        <View style={styles.chipRow}>
-          {[{ id: "__all", name: "All" }, ...folders].map((entry) => {
-            const value = entry.id === "__all" ? null : entry.name;
-            const selected = folder === value;
-            return (
-              <Pressable
-                key={entry.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setFolder(value)}
-                style={[
-                  styles.chip,
-                  selected ? { backgroundColor: accent } : styles.chipIdle,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selected ? styles.chipTextSelected : null,
-                  ]}
-                >
-                  {entry.name}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <FilterChips
+          accessibilityLabel="Filter by folder"
+          selected={folder}
+          onSelect={setFolder}
+          chips={[
+            { value: null, label: "All" },
+            ...folders.map((entry) => ({
+              value: entry.name,
+              label: entry.name,
+            })),
+          ]}
+        />
       ) : null}
 
       {openFailed ? (
@@ -201,39 +185,6 @@ export default function DocumentsScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
-    search: {
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    chipRow: {
-      flexDirection: "row",
-      flexWrap: "wrap",
-      gap: tokens.spacing.sm,
-    },
-    chip: {
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
-      borderRadius: tokens.radius.chipLarge,
-    },
-    chipIdle: {
-      backgroundColor: tokens.color.surface.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
-    chipText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    chipTextSelected: {
-      color: tokens.color.gold.onHouse,
-    },
     errorNote: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.semantic.destructive,

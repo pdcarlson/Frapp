@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useFrappClient } from "./use-frapp-client";
+import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
 export function useServiceEntries(
   userId?: string,
@@ -12,8 +12,13 @@ export function useServiceEntries(
   },
 ) {
   const client = useFrappClient();
+  // The chapter id is in the key because the endpoint resolves the chapter from
+  // the request header, not from anything in this call — so without it two
+  // chapters' histories share one cache entry and a member who switches sees
+  // the previous chapter's hours under the new one.
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["service-entries", userId, filters],
+    queryKey: ["service-entries", chapterId, userId, filters],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/service-entries", {
         params: {

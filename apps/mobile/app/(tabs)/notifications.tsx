@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   useActiveChapterId,
@@ -34,11 +34,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * provider for delivery telemetry. What the row does carry is the deep-link
  * target, so the label comes from `data.target.screen` — see `lib/more/notifications.ts`.
  *
- * ## "Mark all read" is a fan-out
+ * ## "Mark all read" is a capped fan-out
  *
- * There is no bulk endpoint; `PATCH /v1/notifications/{id}/read` is per row. It
- * fans out over the unread rows currently loaded, which the query caps at 50.
- * Filed for a bulk endpoint.
+ * There is no bulk endpoint; `PATCH /v1/notifications/{id}/read` is per row, and
+ * the API's write budget is a 60-second **count** — `{ttl: 60_000, limit: 30}`
+ * per caller — not a concurrency limit, so serializing the calls would buy
+ * nothing. They go out together, capped below that budget, and whatever is left
+ * over is reported rather than silently dropped. Filed for a bulk endpoint.
  *
  * ## Tapping does not deep-link yet
  *
@@ -47,6 +49,12 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * tap (C7). Until then a tap marks the row read, which is the part that works
  * without push. TODO-DESIGN: deep-link on tap.
  */
+/**
+ * Kept under the API's 30-writes-per-60s budget, with headroom for the reads
+ * the same member is making elsewhere in the app.
+ */
+const MARK_ALL_BATCH = 25;
+
 export default function NotificationsScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
@@ -55,10 +63,22 @@ export default function NotificationsScreen() {
   const notificationsQuery = useNotifications();
   const markRead = useMarkNotificationRead();
   const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [markAllNote, setMarkAllNote] = useState<string | null>(null);
+
+  // `now` is state, not a value captured inside the memo. React Query's
+  // structural sharing keeps the data reference stable when a refetch returns
+  // identical rows, so a `new Date()` read inside the memo would freeze the
+  // TODAY/EARLIER split at mount — a row from 11:47 PM would still sit under
+  // TODAY at 12:10 AM on a tab screen that never unmounts.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   const groups = useMemo(
-    () => selectNotificationGroups(notificationsQuery.data, new Date()),
-    [notificationsQuery.data],
+    () => selectNotificationGroups(notificationsQuery.data, now),
+    [notificationsQuery.data, now],
   );
   const unreadIds = useMemo(
     () => selectUnreadIds(notificationsQuery.data),
@@ -68,12 +88,22 @@ export default function NotificationsScreen() {
   async function markAllRead() {
     if (unreadIds.length === 0 || isMarkingAll) return;
     setIsMarkingAll(true);
+    setMarkAllNote(null);
+    const batch = unreadIds.slice(0, MARK_ALL_BATCH);
     try {
-      // Sequential rather than concurrent: this is a convenience action over at
-      // most a screenful of rows, and firing 50 writes at once would trip the
-      // API's throttle guard for no benefit the member can perceive.
-      for (const id of unreadIds) {
-        await markRead.mutateAsync(id).catch(() => undefined);
+      // Concurrent, capped, and reported. Concurrency is free here — the budget
+      // is a per-minute count, so pacing the calls would not raise the ceiling —
+      // and it lets the per-write cache invalidations coalesce into a couple of
+      // list refetches instead of one per row.
+      const results = await Promise.allSettled(
+        batch.map((id) => markRead.mutateAsync(id)),
+      );
+      const failed = results.filter((r) => r.status === "rejected").length;
+      const skipped = unreadIds.length - batch.length;
+      if (failed + skipped > 0) {
+        setMarkAllNote(
+          `Marked ${batch.length - failed} of ${unreadIds.length}. Try again in a minute for the rest.`,
+        );
       }
     } finally {
       setIsMarkingAll(false);
@@ -140,6 +170,9 @@ export default function NotificationsScreen() {
         ) : null
       }
     >
+      {markAllNote ? (
+        <Text style={styles.markAllNote}>{markAllNote}</Text>
+      ) : null}
       {renderBody()}
     </ScreenShell>
   );
@@ -188,6 +221,11 @@ function createStyles(tokens: SignetTokens) {
     },
     group: {
       gap: tokens.spacing.xs,
+    },
+    markAllNote: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.semantic.warning,
+      paddingHorizontal: tokens.spacing.xs,
     },
     row: {
       flexDirection: "row",

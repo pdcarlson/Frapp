@@ -45,11 +45,13 @@ describe("selectViewerProfile", () => {
     expect(profile?.initials).toBe("?");
   });
 
-  it("takes the first and last initial of a multi-part name", () => {
+  // Delegates to `lib/chat/display-name.ts` so one person's avatar cannot read
+  // differently in the directory than it does in chat.
+  it("uses the same initials rule as the chat avatar", () => {
     expect(selectViewerProfile({ display_name: "Ada B. Lovelace" })?.initials).toBe(
-      "AL",
+      "AB",
     );
-    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe("P");
+    expect(selectViewerProfile({ display_name: "Prince" })?.initials).toBe("PR");
   });
 });
 
@@ -85,9 +87,12 @@ describe("sumApprovedServiceMinutes", () => {
     ).toBe(1110);
   });
 
-  it("returns zero for an absent or empty payload", () => {
-    expect(sumApprovedServiceMinutes(undefined)).toBe(0);
+  // Same distinction `selectPointsBalance` makes: a member with no entries has
+  // zero minutes, but "not loaded" is not zero and must not render as it.
+  it("distinguishes an empty history from an absent payload", () => {
     expect(sumApprovedServiceMinutes([])).toBe(0);
+    expect(sumApprovedServiceMinutes(undefined)).toBeNull();
+    expect(sumApprovedServiceMinutes(null)).toBeNull();
   });
 
   it("skips a row whose duration is missing rather than adding NaN", () => {

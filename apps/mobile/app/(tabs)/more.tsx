@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
 import { useEvents, useMyPermissions, useNotifications } from "@repo/hooks";
@@ -65,10 +65,20 @@ export default function MoreScreen() {
   // nowhere. `selectEventRows` already returns upcoming-plus-still-checkable-in,
   // soonest first, so the head of that list is the event an officer would host.
   const eventsQuery = useEvents();
+  // `now` is state rather than a value read inside the memo: React Query's
+  // structural sharing keeps `data` referentially stable across a refetch that
+  // returns identical rows, so a captured `new Date()` would keep targeting an
+  // event whose check-in window has since closed.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
   const nextEvent = useMemo(() => {
     if (!canHost) return null;
-    return selectEventRows(eventsQuery.data, new Date())[0] ?? null;
-  }, [canHost, eventsQuery.data]);
+    return selectEventRows(eventsQuery.data, now)[0] ?? null;
+  }, [canHost, eventsQuery.data, now]);
 
   return (
     <ScreenShell

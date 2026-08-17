@@ -67,6 +67,30 @@ export function useDocument(id: string) {
   });
 }
 
+/**
+ * Fetch a document's freshly signed `downloadUrl` on demand.
+ *
+ * A mutation rather than a query even though it is a `GET`, matching
+ * `useGetServiceProofUrl`. Opening a document is an action taken once, not
+ * state a screen observes, and expressing it as a query means the *cached*
+ * result answers the next attempt: a tap that failed on a dropped connection
+ * would keep failing instantly from the cached error for the rest of the
+ * `gcTime` window, never reaching the network again. It also keeps the signed
+ * URL — which expires — out of the cache.
+ */
+export function useDocumentDownloadUrl() {
+  const client = useFrappClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await client.GET("/v1/documents/{id}", {
+        params: { path: { id } },
+      });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
 export function useRequestDocumentUploadUrl() {
   const client = useFrappClient();
   return useMutation({

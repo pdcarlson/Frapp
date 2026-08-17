@@ -42,7 +42,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s20 | Log service hours sheet | *sheet* on `service-hours.tsx` | Live — gorhom v5 sheet on the host route ([`../../behavior/service-hours.md`](../../behavior/service-hours.md)). Description and duration only; **no proof attachment**, which needs an image picker |
 | s21 | Upload document sheet | *sheet* on `documents.tsx` | Sheet — **blocked**: uploading needs a file picker, and adding one touches the frozen `package.json` (integrator PR per [`navigation.md`](navigation.md)) |
 | s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated. Reached from the More hub's admin section, which resolves the next hostable event and passes its `eventId` |
-| s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — reason required, audit-logged ([`../../behavior/points.md`](../../behavior/points.md)) |
+| s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — **not built**: the More hub's Adjust points row renders disabled, because the sheet needs a member picker plus amount/category/reason. Server rules (reason required, audit-logged) stand: [`../../behavior/points.md`](../../behavior/points.md) |
 
 Supporting route with no drawn screen: `(auth)/chapter-picker.tsx` — chapter selection when an account resolves to more than one chapter during join/sign-in. It reuses s02's visual language.
 

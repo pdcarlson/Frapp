@@ -113,11 +113,24 @@ describe("parseDurationInput", () => {
     expect(parseDurationInput(" 3 ")).toBe(180);
   });
 
+  it("accepts a bare decimal point, which a numeric keypad invites", () => {
+    expect(parseDurationInput(".5")).toBe(30);
+  });
+
   it("rejects anything that is not a duration", () => {
     expect(parseDurationInput("")).toBeNull();
     expect(parseDurationInput("an hour")).toBeNull();
     expect(parseDurationInput("1:60")).toBeNull();
     expect(parseDurationInput("-1")).toBeNull();
+  });
+
+  // A bare number reads as hours, so "45" — a plausible way to mean 45 minutes
+  // — would otherwise log 45 hours against a member with no way to correct it.
+  it("rejects a shift longer than a day", () => {
+    expect(parseDurationInput("45")).toBeNull();
+    expect(parseDurationInput("25:00")).toBeNull();
+    expect(parseDurationInput("24")).toBe(1440);
+    expect(parseDurationInput("23:59")).toBe(1439);
   });
 
   // A zero-minute entry is not a submission — the sheet should stay blocked

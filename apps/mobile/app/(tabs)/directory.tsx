@@ -1,12 +1,5 @@
 import { useDeferredValue, useMemo, useState } from "react";
-import {
-  FlatList,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { FlatList, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useActiveChapterId,
@@ -21,8 +14,9 @@ import {
   NoChapterState,
   SkeletonLines,
 } from "@/components/state-block";
-import { useChapterBranding } from "@/lib/chapter-branding";
+import { FilterChips, SearchField } from "@/components/filter-chips";
 import { type DirectoryRow, selectDirectoryRows } from "@/lib/more/directory";
+import { records, str } from "@/lib/more/narrow";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -57,7 +51,6 @@ type Tab = "actives" | "alumni";
 
 export default function DirectoryScreen() {
   const { tokens } = useFrappTheme();
-  const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
 
@@ -82,57 +75,41 @@ export default function DirectoryScreen() {
     () => selectDirectoryRows(activeQuery.data),
     [activeQuery.data],
   );
-  const activesCount = selectDirectoryRows(membersQuery.data).length;
-  const alumniCount = selectDirectoryRows(alumniQuery.data).length;
+  // Counted, not selected: `selectDirectoryRows` maps and sorts, and sorting to
+  // read a `.length` would run a full `localeCompare` sort over both lists on
+  // every keystroke. `null` until the query succeeds, so a populated tab never
+  // advertises "· 0" while it loads.
+  const activesCount = useMemo(
+    () => (membersQuery.isSuccess ? countMembers(membersQuery.data) : null),
+    [membersQuery.isSuccess, membersQuery.data],
+  );
+  const alumniCount = useMemo(
+    () => (alumniQuery.isSuccess ? countMembers(alumniQuery.data) : null),
+    [alumniQuery.isSuccess, alumniQuery.data],
+  );
 
   const header = (
     <View style={styles.header}>
       <Text style={styles.title}>Directory</Text>
       <Text style={styles.subtitle}>Actives and alumni.</Text>
 
-      <TextInput
+      <SearchField
         value={query}
         onChangeText={setQuery}
         placeholder="Search by name"
-        placeholderTextColor={tokens.color.text.muted}
         accessibilityLabel="Search the directory"
-        autoCapitalize="none"
-        autoCorrect={false}
-        style={styles.search}
       />
 
       {isSearching ? null : (
-        <View style={styles.chipRow}>
-          {(
-            [
-              { key: "actives" as const, label: "Actives", count: activesCount },
-              { key: "alumni" as const, label: "Alumni", count: alumniCount },
-            ]
-          ).map((chip) => {
-            const selected = tab === chip.key;
-            return (
-              <Pressable
-                key={chip.key}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() => setTab(chip.key)}
-                style={[
-                  styles.chip,
-                  selected ? { backgroundColor: accent } : styles.chipIdle,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    selected ? styles.chipTextSelected : null,
-                  ]}
-                >
-                  {chip.label} · {chip.count}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <FilterChips
+          accessibilityLabel="Actives or alumni"
+          selected={tab}
+          onSelect={(value) => setTab((value as Tab) ?? "actives")}
+          chips={[
+            { value: "actives", label: "Actives", count: activesCount },
+            { value: "alumni", label: "Alumni", count: alumniCount },
+          ]}
+        />
       )}
     </View>
   );
@@ -204,6 +181,11 @@ export function MemberRow({ row }: { row: DirectoryRow }) {
   );
 }
 
+/** Rows the directory would draw, without the map-and-sort of a full select. */
+function countMembers(data: unknown): number {
+  return records(data).filter((row) => str(row, "user_id")).length;
+}
+
 function createStyles(tokens: SignetTokens) {
   const avatarSize = 40;
   return StyleSheet.create({
@@ -231,40 +213,6 @@ function createStyles(tokens: SignetTokens) {
     subtitle: {
       ...typeRole(tokens.typography.role.body),
       color: tokens.color.text.mutedForeground,
-    },
-    search: {
-      marginTop: tokens.spacing.sm,
-      borderRadius: tokens.radius.control,
-      borderWidth: 1,
-      borderColor: tokens.color.border.input,
-      backgroundColor: tokens.color.surface.surface1,
-      paddingHorizontal: tokens.spacing.md,
-      minHeight: tokens.touch.minimum,
-      ...typeRole(tokens.typography.role.body),
-      color: tokens.color.text.foreground,
-    },
-    chipRow: {
-      flexDirection: "row",
-      gap: tokens.spacing.sm,
-      marginTop: tokens.spacing.xs,
-    },
-    chip: {
-      minHeight: tokens.touch.minimum,
-      justifyContent: "center",
-      paddingHorizontal: tokens.spacing.lg,
-      borderRadius: tokens.radius.chipLarge,
-    },
-    chipIdle: {
-      backgroundColor: tokens.color.surface.card,
-      borderWidth: 1,
-      borderColor: tokens.color.border.hairline,
-    },
-    chipText: {
-      ...typeRole(tokens.typography.role.label),
-      color: tokens.color.text.mutedForeground,
-    },
-    chipTextSelected: {
-      color: tokens.color.gold.onHouse,
     },
     row: {
       flexDirection: "row",

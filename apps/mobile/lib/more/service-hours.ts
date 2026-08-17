@@ -34,6 +34,9 @@ const STATUSES: ReadonlySet<string> = new Set([
   "REJECTED",
 ]);
 
+/** A single logged shift longer than a day is a typo, not a shift. */
+export const MAX_DURATION_MINUTES = 24 * 60;
+
 /** `150` → `"2h 30m"`, `45` → `"45m"`, `120` → `"2h"`. */
 export function formatDuration(minutes: number): string {
   const whole = Math.max(0, Math.round(minutes));
@@ -104,22 +107,27 @@ export function summarizeServiceEntries(rows: ServiceEntryRow[]): ServiceSummary
  * Both forms are accepted because members write both — "1:30" and "1.5" are the
  * same shift — and rejecting one of them would be a validation error over
  * nothing. Zero is rejected: a zero-minute entry is not a submission.
+ *
+ * **A bare number is hours**, so `45` means 45 hours, not 45 minutes. That
+ * reading is unavoidable if `2` is to mean two hours, and it is a plausible
+ * mistake in a field labelled "How long?" — so the sheet echoes the parsed
+ * duration back before submit, and anything over a day is rejected here. The
+ * history has no edit or delete affordance, so a wrong entry would otherwise
+ * need an officer to reject it.
  */
 export function parseDurationInput(value: string): number | null {
   const trimmed = value.trim();
   if (trimmed.length === 0) return null;
 
-  const clock = /^(\d{1,3}):([0-5]\d)$/.exec(trimmed);
-  if (clock) {
-    const minutes = Number(clock[1]) * 60 + Number(clock[2]);
-    return minutes > 0 ? minutes : null;
-  }
+  const inRange = (minutes: number) =>
+    minutes > 0 && minutes <= MAX_DURATION_MINUTES ? minutes : null;
 
-  const decimal = /^\d{1,3}(\.\d{1,2})?$/.exec(trimmed);
-  if (decimal) {
-    const minutes = Math.round(Number(trimmed) * 60);
-    return minutes > 0 ? minutes : null;
-  }
+  const clock = /^(\d{1,3}):([0-5]\d)$/.exec(trimmed);
+  if (clock) return inRange(Number(clock[1]) * 60 + Number(clock[2]));
+
+  // A leading `.` is allowed — `.5` is what a numeric keypad invites.
+  const decimal = /^(?:\d{1,3}(?:\.\d{1,2})?|\.\d{1,2})$/.exec(trimmed);
+  if (decimal) return inRange(Math.round(Number(trimmed) * 60));
 
   return null;
 }

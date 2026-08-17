@@ -15,6 +15,8 @@
  * dropped here instead of downstream.
  */
 
+import { initialsFor as chatInitialsFor } from "../chat/display-name";
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -37,17 +39,23 @@ export function num(row: Record<string, unknown>, key: string): number | null {
 }
 
 /**
- * Up to two initials for an avatar placeholder.
+ * Avatar initials, delegating to the chat helper rather than defining a second
+ * rule.
  *
- * `users.display_name` is `NOT NULL DEFAULT ''`, so an empty string is the real
- * "no name set" case and has to fall back rather than render a blank circle.
+ * Both draw the same person's avatar in the same app, so a divergence is
+ * visible: an earlier version of this module took the first and *last* words
+ * and one letter for a single-word name, which rendered "Ada B. Lovelace" as
+ * `AL` in the directory and `AB` in chat, and "Prince" as `P` against `PR`.
+ * `lib/chat/display-name.ts` documents why its rule differs from web's; there is
+ * no third rule to justify.
+ *
+ * The only thing added here is the `null` tolerance these selectors need:
+ * `users.display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the
+ * same "no name set" case and both fall back rather than rendering a blank
+ * circle.
  */
 export function initialsFor(name: string | null): string {
-  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  const first = parts[0]?.[0] ?? "";
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
-  return `${first}${last}`.toUpperCase();
+  return chatInitialsFor(name ?? "");
 }
 
 /** `"· "`-joined, skipping absent parts so no separator ever dangles. */

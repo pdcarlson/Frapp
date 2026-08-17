@@ -63,7 +63,10 @@ export default function ProfileScreen() {
     [userQuery.data],
   );
   const pointsBalance = selectPointsBalance(pointsQuery.data);
-  const serviceHours = formatHours(sumApprovedServiceMinutes(serviceQuery.data));
+  // `null` until the entries land, so the card shows an em dash rather than a
+  // confident "0 service hrs" beside a correct name and points balance.
+  const serviceMinutes = sumApprovedServiceMinutes(serviceQuery.data);
+  const serviceHours = serviceMinutes === null ? null : formatHours(serviceMinutes);
 
   // The session's email is the one value available before `/v1/users/me`
   // resolves, and it is the same address — so the row never sits blank while
@@ -117,7 +120,7 @@ export default function ProfileScreen() {
           <Text style={styles.statLabel}>points</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={styles.statValue}>{serviceHours}</Text>
+          <Text style={styles.statValue}>{serviceHours ?? "—"}</Text>
           <Text style={styles.statLabel}>service hrs</Text>
         </View>
       </View>
@@ -130,9 +133,13 @@ export default function ProfileScreen() {
         <Text style={styles.statNote}>
           Choose a chapter from More → Chapter to see your points.
         </Text>
-      ) : pointsQuery.isError ? (
+      ) : pointsQuery.isError || serviceQuery.isError ? (
         <Text style={styles.statNote}>
-          Points couldn&apos;t load just now. Everything else is up to date.
+          {pointsQuery.isError && serviceQuery.isError
+            ? "Points and service hours couldn't load just now."
+            : pointsQuery.isError
+              ? "Points couldn't load just now."
+              : "Service hours couldn't load just now."}
         </Text>
       ) : null}
 

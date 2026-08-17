@@ -56,8 +56,14 @@ export function selectPointsBalance(data: unknown): number | null {
  * credited, and showing it here would overstate what the member has banked.
  * Minutes are the stored unit; hours are derived at the edge so no precision is
  * lost server-side.
+ *
+ * `null` when there is no payload, for the same reason `selectPointsBalance`
+ * returns it: a member with no entries really has zero minutes, and drawing
+ * that same zero while the request is still in flight — or after it failed —
+ * states a fact the screen does not have.
  */
-export function sumApprovedServiceMinutes(data: unknown): number {
+export function sumApprovedServiceMinutes(data: unknown): number | null {
+  if (!Array.isArray(data)) return null;
   return records(data)
     .filter((row) => str(row, "status") === "APPROVED")
     .reduce((total, row) => total + (num(row, "duration_minutes") ?? 0), 0);

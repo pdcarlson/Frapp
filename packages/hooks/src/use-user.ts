@@ -69,9 +69,13 @@ export function useUpdateUser() {
  * failed the account may already be anonymized while sign-in still works, so a
  * surface must not claim the account survived either.
  *
- * Deliberately invalidates nothing: on success every cached query belongs to an
- * account that no longer exists, and the caller signs out, which tears the cache
- * down anyway.
+ * **The caller must clear the query cache on success.** Every cached entry now
+ * belongs to an account that no longer exists, and several keys are not
+ * user-scoped — `["settings"]` least of all — so a second member signing in on
+ * the same device would be served the deleted member's rows until each entry
+ * went stale. On mobile that is not hypothetical: the `QueryClient` is a module
+ * singleton and `signOut` does not clear it. Invalidating from here would be
+ * worse than useless, since a refetch on a deleted account cannot succeed.
  */
 export function useDeleteAccount() {
   const client = useFrappClient();

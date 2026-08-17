@@ -229,6 +229,94 @@ describe("useUpdateNotificationPreference", () => {
     });
   });
 
+  // The write is skipped when the query has never resolved, because there is no
+  // server answer to predict against — and because it would be unrollbackable:
+  // query-core ignores a `setQueryData` of `undefined`, so `onError` could not
+  // put an unfetched entry back. Seeding one row would also flip the entry to
+  // `success`, and a consumer folding rows over catalog defaults would show
+  // every *other* category snapping to its default.
+  it("writes nothing when the query has never resolved", async () => {
+    const key = notificationKeys.preferences("chapter-1");
+
+    const { patch, fail } = deferredPatch();
+    const { result } = renderHook(() => useUpdateNotificationPreference(), {
+      wrapper: createWrapper({ PATCH: patch }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({
+        chapter_id: "chapter-1",
+        category: "chat",
+        is_enabled: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalled();
+    });
+    expect(queryClient.getQueryData(key)).toBeUndefined();
+
+    await act(async () => {
+      fail();
+    });
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+    expect(queryClient.getQueryData(key)).toBeUndefined();
+  });
+
+  // Mutation-level callbacks always fire, unlike the per-`mutate()` options they
+  // replaced, so a slow failure can land after a fast success. Restoring the
+  // whole snapshot would undo the *newer* toggle — the race the mobile hook's
+  // deleted generation counters used to guard.
+  it("reverts only its own category when a newer toggle has since succeeded", async () => {
+    const key = notificationKeys.preferences("chapter-1");
+    queryClient.setQueryData(key, [
+      { category: "chat", is_enabled: true },
+      { category: "events", is_enabled: true },
+    ]);
+
+    const slow = deferredPatch();
+    const { result } = renderHook(() => useUpdateNotificationPreference(), {
+      wrapper: createWrapper({ PATCH: slow.patch }, queryClient),
+    });
+
+    act(() => {
+      result.current.mutate({
+        chapter_id: "chapter-1",
+        category: "chat",
+        is_enabled: false,
+      });
+    });
+    await waitFor(() => {
+      expect(queryClient.getQueryData(key)).toEqual([
+        { category: "chat", is_enabled: false },
+        { category: "events", is_enabled: true },
+      ]);
+    });
+
+    // A second toggle lands and sticks while the first is still in flight.
+    act(() => {
+      queryClient.setQueryData(key, [
+        { category: "chat", is_enabled: false },
+        { category: "events", is_enabled: false },
+      ]);
+    });
+
+    await act(async () => {
+      slow.fail();
+    });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+    // `chat` goes back; `events` keeps the value the member just set.
+    expect(queryClient.getQueryData(key)).toEqual([
+      { category: "chat", is_enabled: true },
+      { category: "events", is_enabled: false },
+    ]);
+  });
+
   it("invalidates the preferences cache once settled, on success and on failure", async () => {
     const invalidate = vi.spyOn(queryClient, "invalidateQueries");
 

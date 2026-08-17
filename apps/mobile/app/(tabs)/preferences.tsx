@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCurrentChapter, useDeleteAccount, useGeofences, useMyPermissions } from "@repo/hooks";
@@ -244,6 +245,8 @@ export default function PreferencesScreen() {
   const { accent } = useChapterBranding();
   const styles = createStyles(tokens);
   const { signOut } = useAuthSession();
+  const queryClient = useQueryClient();
+  const [linkFailed, setLinkFailed] = useState<string | null>(null);
   const deleteAccount = useDeleteAccount();
 
   const {
@@ -277,10 +280,14 @@ export default function PreferencesScreen() {
   )?.enabled_modules;
   const geofencesEnabled =
     canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
+  // Gated, not just hidden: the route requires `members:view` **and** the
+  // `geofences` module, so firing it for a member who will not see the row
+  // spends a request to collect a 403.
+  //
   // `GET /v1/geofences` has no response schema, so the SDK types the body
   // `never` — narrowed through `unknown` the way every other read in this
   // cluster is (`lib/more/narrow.ts`).
-  const geofencesQuery = useGeofences();
+  const geofencesQuery = useGeofences({ enabled: geofencesEnabled });
   const zones = geofencesQuery.data as unknown;
   const zoneCount = Array.isArray(zones) ? zones.length : null;
 
@@ -289,7 +296,7 @@ export default function PreferencesScreen() {
     : hydrationRecovered
       ? "Saved preferences were unreadable and have been reset to defaults."
       : !isAuthenticated
-        ? "Saved on this device. These will sync when you sign in."
+        ? "Saved on this device only. Sign in to change the settings on your account."
         : !chapterId
           ? "Category switches sync once you choose a chapter."
           : categorySync === "retry" || quietHoursSync === "retry"
@@ -300,6 +307,14 @@ export default function PreferencesScreen() {
 
   async function handleSignOut() {
     await signOut();
+    // Drop every cached query on the way out. Mobile's `QueryClient` is a
+    // module singleton and `signOut` clears only SecureStore and React state,
+    // so without this the next member to sign in on the same device is served
+    // the previous one's rows until each entry goes stale — and several keys
+    // are not account-scoped at all (`["settings"]`, `["user","me"]`). Web's
+    // provider already does this on chapter switch
+    // (`spec/behavior/multi-tenancy.md`); the same argument applies to accounts.
+    queryClient.clear();
     router.replace("/(auth)/sign-in");
   }
 
@@ -323,12 +338,15 @@ export default function PreferencesScreen() {
               },
               onError: () => {
                 // The endpoint documents a 502 as "did not finish", and every
-                // step is idempotent — so the honest instruction is retry, not
-                // "something went wrong". The account may already be partly
-                // anonymized, which is exactly why re-running is safe.
+                // step is idempotent — so the instruction is retry. It must not
+                // also say the account is intact: media is purged and PII is
+                // scrubbed *before* the auth record is deleted, so a failure
+                // after that point has already destroyed the profile. Telling
+                // someone "nothing is lost" there would talk them out of the
+                // retry that finishes the job.
                 Alert.alert(
                   "Deletion didn't finish",
-                  "Nothing is lost — the deletion is safe to run again. Try once more in a moment.",
+                  "Part of it may already have gone through, and running it again is safe. Try once more in a moment.",
                 );
               },
             });
@@ -433,7 +451,12 @@ export default function PreferencesScreen() {
             label={link.label}
             accessibilityHint="Opens in your browser."
             onPress={() => {
-              void WebBrowser.openBrowserAsync(link.url);
+              // A rejection here is real — iOS rejects a second presentation
+              // while one is already showing — so it is surfaced rather than
+              // left as an unhandled promise.
+              WebBrowser.openBrowserAsync(link.url).catch(() =>
+                setLinkFailed(link.label),
+              );
             }}
           />
         ))}
@@ -452,6 +475,11 @@ export default function PreferencesScreen() {
           onPress={confirmDeleteAccount}
         />
       </ListSection>
+      {linkFailed ? (
+        <Text style={styles.footnoteError}>
+          {linkFailed} couldn&apos;t be opened. Try again in a moment.
+        </Text>
+      ) : null}
     </ScreenShell>
   );
 }

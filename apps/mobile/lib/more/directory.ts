@@ -15,6 +15,7 @@
  * meta line the reference specifies.
  */
 import { initialsFor, metaLine, num, records, str } from "./narrow";
+import { formatGraduationYear } from "./profile";
 
 export interface DirectoryRow {
   /** `users.id` — the id every other surface keys members on. */
@@ -33,8 +34,6 @@ function toRow(row: Record<string, unknown>): DirectoryRow | null {
   // `display_name` is `NOT NULL DEFAULT ''`, so absent and empty are the same
   // case and both fall back rather than rendering a blank row.
   const displayName = str(row, "display_name") ?? "Unnamed member";
-  const gradYear = num(row, "graduation_year");
-
   return {
     userId,
     displayName,
@@ -42,7 +41,7 @@ function toRow(row: Record<string, unknown>): DirectoryRow | null {
     meta: metaLine([
       str(row, "current_company"),
       str(row, "current_city"),
-      gradYear === null ? null : `'${String(gradYear).slice(-2)}`,
+      formatGraduationYear(num(row, "graduation_year")),
     ]),
     avatarUrl: str(row, "avatar_url"),
   };

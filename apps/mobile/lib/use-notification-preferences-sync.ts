@@ -433,12 +433,13 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
 
   const setQuietHoursEnabled = useCallback(
     (value: boolean) => {
-      // Signed out there is no cache to write through, so the local mirror is
-      // the only place this can live until a session exists.
-      if (!isAuthenticated) {
-        setCached((current) => ({ ...current, quietHoursEnabled: value }));
-        return;
-      }
+      // Always record it locally, not just when signed out. The optimistic
+      // write in `useUpdateUserSettings` only fires when `GET /v1/settings` has
+      // produced data, so on a cold start or after a failed load the switch
+      // would otherwise not move at all — the state it derives from is the
+      // fallback below, and nothing else would have updated it.
+      setCached((current) => ({ ...current, quietHoursEnabled: value }));
+      if (!isAuthenticated) return;
 
       if (value) {
         const window = resolveWindowForEnable();
@@ -466,15 +467,16 @@ export function useNotificationPreferencesSync(): NotificationPreferencesSync {
 
   const setCategory = useCallback(
     (key: NotificationCategoryKey, value: boolean) => {
-      // Preferences are chapter-scoped; without a chapter there is nothing to
-      // PATCH against, so this stays local exactly as it does signed out.
-      if (!isAuthenticated || !chapterId) {
-        setCached((current) => ({
-          ...current,
-          categories: { ...current.categories, [key]: value },
-        }));
-        return;
-      }
+      // Same reasoning as the quiet-hours switch: the local mirror is the
+      // fallback the derived state reads when no server answer exists, so it is
+      // written on every toggle. Preferences are also chapter-scoped, so
+      // without a chapter there is nothing to PATCH against and this is all
+      // that happens.
+      setCached((current) => ({
+        ...current,
+        categories: { ...current.categories, [key]: value },
+      }));
+      if (!isAuthenticated || !chapterId) return;
 
       updatePreference.mutate({
         chapter_id: chapterId,

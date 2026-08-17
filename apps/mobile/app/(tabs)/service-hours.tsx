@@ -12,6 +12,7 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
+  formatDuration,
   parseDurationInput,
   selectServiceEntryRows,
   summarizeServiceEntries,
@@ -57,6 +58,7 @@ export default function ServiceHoursScreen() {
     [entriesQuery.data],
   );
   const summary = useMemo(() => summarizeServiceEntries(rows), [rows]);
+  const hasEntries = entriesQuery.isSuccess;
 
   const [description, setDescription] = useState("");
   const [duration, setDuration] = useState("");
@@ -103,7 +105,7 @@ export default function ServiceHoursScreen() {
       return (
         <ErrorState
           title="Couldn't load your service hours"
-          body="Your entries couldn't reach the server."
+          body="If you belong to more than one chapter, pick one from More → Chapter first."
           onRetry={() => void entriesQuery.refetch()}
           isRetrying={entriesQuery.isFetching}
         />
@@ -151,15 +153,23 @@ export default function ServiceHoursScreen() {
         </Pressable>
       }
     >
+      {/* Only stated once the entries are actually in hand. `summary` derives
+          from `rows`, which is empty while the query is pending or errored — so
+          rendering it unconditionally would headline "0 hrs / nothing pending"
+          to a member with hours banked. */}
       <View style={styles.summaryCard}>
         <Text style={styles.summaryLabel}>Approved</Text>
-        <Text style={styles.summaryValue}>{summary.approvedHours} hrs</Text>
+        <Text style={styles.summaryValue}>
+          {hasEntries ? `${summary.approvedHours} hrs` : "—"}
+        </Text>
         <Text style={styles.summaryMeta}>
-          {summary.pendingCount === 0
-            ? "Nothing waiting on review."
-            : `${summary.pendingCount} ${
-                summary.pendingCount === 1 ? "entry" : "entries"
-              } awaiting review.`}
+          {!hasEntries
+            ? "Waiting on your service history."
+            : summary.pendingCount === 0
+              ? "Nothing waiting on review."
+              : `${summary.pendingCount} ${
+                  summary.pendingCount === 1 ? "entry" : "entries"
+                } awaiting review.`}
         </Text>
       </View>
 
@@ -214,9 +224,13 @@ export default function ServiceHoursScreen() {
             style={styles.sheetInput}
           />
           <Text style={styles.fieldHint}>
-            {duration.trim().length > 0 && durationMinutes === null
-              ? "Enter a duration like 2:30 or 2.5."
-              : "Hours and minutes, or a decimal. Dated today."}
+            {duration.trim().length === 0
+              ? "Hours and minutes, or a decimal. Dated today."
+              : durationMinutes === null
+                ? "Enter a duration like 2:30 or 2.5, up to 24 hours."
+                : // Echoed back because a bare number reads as hours: "45"
+                  // means 45 hours, and the history has no way to correct it.
+                  `Logging ${formatDuration(durationMinutes)}, dated today.`}
           </Text>
 
           {submitFailed ? (
