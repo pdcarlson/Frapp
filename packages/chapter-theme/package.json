@@ -22,7 +22,7 @@
     "@radix-ui/colors": "3.0.0",
     "@repo/color": "*",
     "bezier-easing": "^2.1.0",
-    "colorjs.io": "0.7.1"
+    "colorjs.io": "0.5.2"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

@@ -304,8 +304,7 @@ export class AnalyticsService {
 
     const optedOut =
       ((data as Record<string, unknown> | null)?.['analytics_opt_out'] as
-        | boolean
-        | null) ?? false;
+        boolean | null) ?? false;
     return !optedOut;
   }
 }

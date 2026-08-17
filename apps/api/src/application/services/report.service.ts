@@ -249,7 +249,7 @@ async function fetchAllPages<T>(
   const readLimit = limit + 1;
   const rows: T[] = [];
 
-  for (let from = 0; from < readLimit; ) {
+  for (let from = 0; from < readLimit;) {
     const to = Math.min(from + REPORT_PAGE_SIZE, readLimit) - 1;
     const { data, error } = await page(from, to);
     throwIfError(error);

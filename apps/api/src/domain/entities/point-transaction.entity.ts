@@ -1,10 +1,5 @@
 export type PointCategory =
-  | 'ATTENDANCE'
-  | 'ACADEMIC'
-  | 'SERVICE'
-  | 'FINE'
-  | 'MANUAL'
-  | 'STUDY';
+  'ATTENDANCE' | 'ACADEMIC' | 'SERVICE' | 'FINE' | 'MANUAL' | 'STUDY';
 
 export interface PointTransaction {
   id: string;
