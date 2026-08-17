@@ -9,9 +9,7 @@ export const STRIPE_WEBHOOK_EVENT_REPOSITORY =
  * - `in_flight` — another worker holds a fresh claim; skip and let it finish.
  */
 export type StripeWebhookClaimOutcome =
-  | 'claimed'
-  | 'already_processed'
-  | 'in_flight';
+  'claimed' | 'already_processed' | 'in_flight';
 
 export interface StripeWebhookClaim {
   outcome: StripeWebhookClaimOutcome;

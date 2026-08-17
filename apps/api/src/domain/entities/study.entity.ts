@@ -18,11 +18,7 @@ export interface StudyGeofence {
 }
 
 export type StudySessionStatus =
-  | 'ACTIVE'
-  | 'COMPLETED'
-  | 'EXPIRED'
-  | 'PAUSED_EXPIRED'
-  | 'LOCATION_INVALID';
+  'ACTIVE' | 'COMPLETED' | 'EXPIRED' | 'PAUSED_EXPIRED' | 'LOCATION_INVALID';
 
 export interface StudySession {
   id: string;

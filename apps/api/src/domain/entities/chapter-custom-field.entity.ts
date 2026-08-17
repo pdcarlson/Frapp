@@ -5,12 +5,7 @@
  * the member directory renders the field values (Chunk 09, tracked separately).
  */
 export type CustomFieldType =
-  | 'text'
-  | 'number'
-  | 'decimal'
-  | 'phone'
-  | 'select'
-  | 'boolean';
+  'text' | 'number' | 'decimal' | 'phone' | 'select' | 'boolean';
 
 export type CustomFieldVisibility = 'self' | 'chapter' | 'exec' | 'president';
 

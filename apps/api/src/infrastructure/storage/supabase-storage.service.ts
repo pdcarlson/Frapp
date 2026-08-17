@@ -208,7 +208,7 @@ export class SupabaseStorageService implements IStorageProvider {
     assertSafePrefix(prefix);
     const pageSize = 1000;
     const all: StorageListEntry[] = [];
-    for (let offset = 0; ; ) {
+    for (let offset = 0; ;) {
       // Terminating on an empty page means a backend that ignored `offset`
       // would hand back a full page forever, so the loop is bounded too. This
       // runs inside an hourly cron and inside account deletion; failing loudly
