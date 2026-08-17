@@ -11,9 +11,7 @@
 export const SECURITY_EVENT = 'security_event' as const;
 
 export type SecurityEventKind =
-  | 'auth_failure'
-  | 'authorization_denied'
-  | 'rate_limit_rejected';
+  'auth_failure' | 'authorization_denied' | 'rate_limit_rejected';
 
 /**
  * The status codes that produce a security event, and what each one means.

@@ -33,10 +33,11 @@
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
-    "@electric-sql/pglite": "^0.4.6",
+    "@electric-sql/pglite": "^0.5.5",
+    "@electric-sql/pglite-pgvector": "^0.0.6",
     "@infisical/cli": "0.43.121",
-    "prettier": "^3.7.4",
-    "turbo": "^2.8.7",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.9",
     "typescript": "5.9.2"
   },
   "overrides": {

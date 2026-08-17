@@ -61,10 +61,7 @@ export interface CorpusDocument {
   /** Owning chapter. Cross-chapter leakage is judged against the caller's chapter. */
   chapterId: string;
   sourceType:
-    | 'chapter_document'
-    | 'meeting_minutes'
-    | 'announcement'
-    | 'chat_message';
+    'chapter_document' | 'meeting_minutes' | 'announcement' | 'chat_message';
   title: string;
   body: string;
   /** When the content took effect. Distinct from upload time — see spec §13 Prerequisites. */

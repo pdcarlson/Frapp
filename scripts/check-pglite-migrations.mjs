@@ -18,12 +18,21 @@
 // Extensions: a migration may only use what is registered on the PGlite
 // constructor below — `pgcrypto` and `vector` (pgvector) today. An unregistered
 // extension fails with `extension "X" is not available`, which reads like a
-// PGlite limitation but is a one-line fix here. Adding a bundled extension is
-// the preferred answer; carving migrations out of this gate is not.
+// PGlite limitation but is a one-line fix here. Registering the extension is
+// the preferred answer; carving migrations out of this gate is not. Since
+// PGlite 0.5 that can also mean adding a dependency: only `contrib/*` still
+// ships inside the main package, and everything else lives in its own
+// `@electric-sql/pglite-*` package.
 
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
-import { vector } from "@electric-sql/pglite/vector";
+// PGlite 0.5 unbundled the non-contrib extensions into their own packages —
+// `./vector`, `./age`, `./pg_uuidv7` and friends all disappeared from the
+// `exports` map, so this import is `@electric-sql/pglite-pgvector` now. The
+// registration below is unchanged: same `vector` export, same constructor
+// slot. That package peer-depends on an exact `@electric-sql/pglite`, so the
+// two versions move together or `npm ci` says so.
+import { vector } from "@electric-sql/pglite-pgvector";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
