@@ -28,9 +28,12 @@ function formatClock(value: string | null | undefined): string {
  */
 export function PinsPopover({
   messages,
+  nameFor,
   onJump,
 }: {
   messages: ChatMessage[];
+  /** Resolves `users.id` → display name; `null` when unresolvable. */
+  nameFor: (userId: string) => string | null;
   onJump?: (messageId: string) => void;
 }) {
   const pins = messages.filter((message) => message.is_pinned);
@@ -64,7 +67,8 @@ export function PinsPopover({
                   className="block w-full text-left"
                 >
                   <p className="font-semibold">
-                    Member {message.sender_id.slice(0, 6)}
+                    {nameFor(message.sender_id) ||
+                      `Member ${message.sender_id.slice(0, 6)}`}
                   </p>
                   <p className="text-muted-foreground">
                     {formatClock(message.pinned_at ?? message.created_at)}

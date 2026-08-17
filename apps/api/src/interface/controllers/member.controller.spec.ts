@@ -13,6 +13,7 @@ describe('MemberController', () => {
   beforeEach(async () => {
     memberService = {
       findProfilesByChapter: jest.fn(),
+      findRosterByChapter: jest.fn(),
       findByUserAndChapter: jest.fn(),
       findProfileById: jest.fn(),
       searchByChapterAndName: jest.fn(),
@@ -39,6 +40,31 @@ describe('MemberController', () => {
 
   it('should be defined', () => {
     expect(controller).toBeDefined();
+  });
+
+  describe('roster', () => {
+    it('returns the display roster for the active chapter', async () => {
+      const roster = [
+        {
+          user_id: 'user-1',
+          display_name: 'Marcus Reid',
+          avatar_url: null,
+        },
+      ];
+      memberService.findRosterByChapter.mockResolvedValue(roster);
+
+      await expect(controller.roster('chapter-1')).resolves.toEqual(roster);
+      expect(memberService.findRosterByChapter).toHaveBeenCalledWith(
+        'chapter-1',
+      );
+    });
+
+    // NOTE: the declaration-order requirement (`roster` above `@Get(':id')`, or
+    // Nest resolves it as `getOne('roster')`) is deliberately NOT asserted here.
+    // A unit test calls the handler directly and bypasses the router, so any such
+    // assertion passes regardless of the order and would be worse than none.
+    // Today the guard is the comment on the route plus the boot-time route map;
+    // a real one needs an e2e request through the router.
   });
 
   describe('list', () => {

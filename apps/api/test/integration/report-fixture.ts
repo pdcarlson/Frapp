@@ -24,7 +24,7 @@ export const PAGED_SERVICE_ENTRY_COUNT = 1_100;
 /**
  * Extra members seeded into the primary chapter beyond the three named ones.
  *
- * Must exceed `ID_CHUNK_SIZE` (100) in `report.service.ts` so the roster's user
+ * Must exceed `ID_CHUNK_SIZE` (100) in `domain/utils/chunk-ids.ts` so the roster's user
  * lookup spans more than one `in (...)` request. That chunking exists because
  * passing every member id in a single filter produced a `414 URI Too Long`, and
  * the unit mock's `.in()` discards its argument entirely — so a regression that

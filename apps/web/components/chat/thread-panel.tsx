@@ -11,6 +11,8 @@ interface ThreadPanelProps {
   /** All messages in the channel — the panel filters by `reply_to_id`. */
   allMessages: ChatMessage[];
   viewerId: string | null;
+  /** Resolves `users.id` → display name; `null` when unresolvable. */
+  nameFor: (userId: string) => string | null;
   onClose: () => void;
   onReact: (messageId: string, emoji: string) => void;
   onUnreact: (messageId: string, emoji: string) => void;
@@ -26,6 +28,7 @@ export function ThreadPanel({
   parent,
   allMessages,
   viewerId,
+  nameFor,
   onClose,
   onReact,
   onUnreact,
@@ -60,6 +63,7 @@ export function ThreadPanel({
       <div className="flex-1 overflow-y-auto">
         <ul className="divide-y divide-border/70">
           <MessageItem
+            nameFor={nameFor}
             message={parent}
             viewerId={viewerId}
             showHeader
@@ -73,6 +77,7 @@ export function ThreadPanel({
           ) : (
             replies.map((message) => (
               <MessageItem
+                nameFor={nameFor}
                 key={message.client_message_id}
                 message={message}
                 viewerId={viewerId}

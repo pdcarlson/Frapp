@@ -430,6 +430,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/members/roster": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Display roster for the chapter — id, name and avatar only */
+        get: operations["MemberController_roster_v1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/members/{id}": {
         parameters: {
             query?: never;
@@ -2349,6 +2366,13 @@ export interface components {
             /** @description Custom-field values, present only on single-member reads and already filtered to the fields the requesting viewer may see. */
             custom_fields?: components["schemas"]["MemberCustomFieldValueDto"][];
         };
+        MemberRosterEntryDto: {
+            /** @description users.id — the id chat carries as sender_id */
+            user_id: string;
+            /** @description May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name. */
+            display_name: string;
+            avatar_url: string | null;
+        };
         UpdateMemberRolesDto: {
             role_ids: string[];
             /** @description Assigned chapter_custom_roles ids. Omit to leave custom-role assignment unchanged; an empty array clears it. */
@@ -3565,6 +3589,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberProfileDto"][];
+                };
+            };
+        };
+    };
+    MemberController_roster_v1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberRosterEntryDto"][];
                 };
             };
         };

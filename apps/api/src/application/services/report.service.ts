@@ -7,6 +7,7 @@ import {
   resolveWindowSince,
   type PointsWindow,
 } from '../../domain/utils/points-window';
+import { chunkIds } from '../../domain/utils/chunk-ids';
 
 export interface AttendanceReportRow {
   member_name: string;
@@ -125,21 +126,9 @@ export const REPORT_MAX_ROWS = 5_000;
  */
 export const REPORT_AGGREGATE_MAX_ROWS = 50_000;
 
-/**
- * How many IDs one `in (...)` filter may carry.
- *
- * Bounded by measurement, not arithmetic: against the local Supabase stack,
- * 200 UUIDs (~7.5 KB of URL) succeeded and 250 (~9.3 KB) returned `414 URI Too
- * Long`. Those two probes bracket the true limit somewhere in 201–249 — they
- * do not establish 200 as the maximum — and how much of the request line is
- * left over depends on the `select`, `order`, and column filters sharing it.
- * 100 sits at well under half the smaller probe, which is the point.
- *
- * This limit is why the roster's member lookup is chunked at all: it passed
- * every member ID in a single `in (...)`, so a large chapter failed the whole
- * report with a 414 — observed here before the chunking was added.
- */
-const ID_CHUNK_SIZE = 100;
+// `ID_CHUNK_SIZE` and `chunkIds` moved to `domain/utils/chunk-ids` so the
+// narrow user-display lookup can share the same measured bound (#1000). The
+// rationale for the number lives with them.
 
 /**
  * A report's rows plus whether {@link REPORT_MAX_ROWS} cut them short.
@@ -278,19 +267,6 @@ async function fetchAllPages<T>(
     truncated,
     limit,
   };
-}
-
-/**
- * Split IDs into batches small enough that the resulting `in` list cannot
- * overflow a query string. Paging raised how many IDs a lookup can carry, and
- * a URL is the one part of this that fails without an error worth reading.
- */
-function chunkIds(ids: string[], size = ID_CHUNK_SIZE): string[][] {
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += size) {
-    chunks.push(ids.slice(i, i + size));
-  }
-  return chunks;
 }
 
 @Injectable()

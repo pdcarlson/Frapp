@@ -2,7 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { SUPABASE_CLIENT } from '../supabase.provider';
 import type { FrappSupabaseClient } from '../database.types';
 import { IUserRepository } from '../../../domain/repositories/user.repository.interface';
-import { User } from '../../../domain/entities/user.entity';
+import {
+  User,
+  UserDisplayIdentity,
+} from '../../../domain/entities/user.entity';
+import { chunkIds } from '../../../domain/utils/chunk-ids';
 
 @Injectable()
 export class SupabaseUserRepository implements IUserRepository {
@@ -29,6 +33,29 @@ export class SupabaseUserRepository implements IUserRepository {
       .in('id', ids);
     if (error) throw error;
     return data ?? [];
+  }
+
+  async findDisplayIdentitiesByIds(
+    ids: string[],
+  ): Promise<UserDisplayIdentity[]> {
+    if (!ids.length) return [];
+    // Chunked, unlike `findByIds` above: a chapter-sized id list in one
+    // `in (...)` overflows the request line and returns 414 with nothing worth
+    // reading (see the measurement in `domain/utils/chunk-ids`).
+    const pages = await Promise.all(
+      chunkIds(ids).map((chunk) =>
+        this.supabase
+          .from('users')
+          .select('id, display_name, avatar_url')
+          .in('id', chunk),
+      ),
+    );
+    const rows: UserDisplayIdentity[] = [];
+    for (const { data, error } of pages) {
+      if (error) throw error;
+      rows.push(...(data ?? []));
+    }
+    return rows;
   }
 
   async findBySupabaseAuthId(authId: string): Promise<User | null> {

@@ -11,7 +11,9 @@ import {
   useChannelUnreadCounts,
   useChannels,
   useEvents,
+  useMemberDisplayNames,
   useTasks,
+  useViewerUserId,
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
@@ -56,6 +58,11 @@ export default function ChatHomeScreen() {
   const unreadQuery = useChannelUnreadCounts();
   const eventsQuery = useEvents();
   const tasksQuery = useTasks();
+  // A DM row's title is the *other* participant, so the list needs the viewer's
+  // `users.id` to subtract. Deliberately not `useChatRuntime()`, which would
+  // reconfigure the realtime manager and boot the outbox flush from this screen.
+  const viewerId = useViewerUserId();
+  const { byId: memberNames } = useMemberDisplayNames();
 
   const channels = useMemo(
     () => selectChannels(channelsQuery.data),
@@ -81,7 +88,7 @@ export default function ChatHomeScreen() {
     return (
       <ChannelRow
         key={channel.id}
-        name={displayChannelName(channel)}
+        name={displayChannelName(channel, viewerId, memberNames)}
         isDirect={isDirectChannel(channel)}
         unreadCount={counts?.unread ?? 0}
         mentionCount={counts?.mentions ?? 0}

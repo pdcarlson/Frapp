@@ -1,10 +1,20 @@
-import { User } from '../entities/user.entity';
+import { User, UserDisplayIdentity } from '../entities/user.entity';
 
 export const USER_REPOSITORY = 'USER_REPOSITORY';
 
 export interface IUserRepository {
   findById(id: string): Promise<User | null>;
   findByIds(ids: string[]): Promise<User[]>;
+  /**
+   * Narrow display projection — `id, display_name, avatar_url` only, chunked at
+   * `ID_CHUNK_SIZE` so a large chapter cannot 414 the request line.
+   *
+   * Kept separate from {@link findByIds} on purpose rather than narrowing it:
+   * that one selects `'*'` and six services depend on the full row, while the
+   * chat display path must not marshal `email`/`bio`/`graduation_year` toward a
+   * client (#1000). Two methods, two intents.
+   */
+  findDisplayIdentitiesByIds(ids: string[]): Promise<UserDisplayIdentity[]>;
   findBySupabaseAuthId(authId: string): Promise<User | null>;
   findByEmail(email: string): Promise<User | null>;
   create(data: Partial<User>): Promise<User>;

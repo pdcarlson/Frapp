@@ -24,7 +24,7 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCurrentUser, useFrappClient } from "@repo/hooks";
+import { useFrappClient, useViewerUserId } from "@repo/hooks";
 import type { ChatActionContext } from "@repo/chat-core/chat-client";
 import { flushOutbox } from "@repo/chat-core/chat-client";
 import { chatRealtime } from "@repo/chat-core/realtime-manager";
@@ -73,7 +73,6 @@ export interface ChatRuntime {
 export function useChatRuntime(): ChatRuntime {
   const queryClient = useQueryClient();
   const apiClient = useFrappClient();
-  const { data: user } = useCurrentUser();
   const supabase = useMemo(() => getSupabaseClient(), []);
 
   /**
@@ -82,17 +81,11 @@ export function useChatRuntime(): ChatRuntime {
    * auth uid renders and sends without error but breaks own-message styling and
    * the RLS-scoped delete behind `unreact`.
    *
-   * Narrowed at runtime rather than read off the generated type, mirroring
-   * `apps/web/lib/auth/use-frapp-user.ts`: `/v1/users/me`'s response schema
-   * infers as `never`, so a direct `user.id` does not compile on either client.
+   * The runtime narrowing lives in `useViewerUserId` (`@repo/hooks`) because
+   * `/v1/users/me` carries no response schema and infers as `never`, so a direct
+   * `user.id` compiles on neither client.
    */
-  const viewerId = useMemo(() => {
-    const raw =
-      user && typeof user === "object" && "id" in user
-        ? ((user as { id?: string }).id ?? null)
-        : null;
-    return typeof raw === "string" && raw.length > 0 ? raw : null;
-  }, [user]);
+  const viewerId = useViewerUserId();
 
   useEffect(() => {
     if (!supabase) return;

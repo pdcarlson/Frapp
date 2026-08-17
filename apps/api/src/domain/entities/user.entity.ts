@@ -1,3 +1,22 @@
+/**
+ * The only user columns a display surface needs: who this is, what to call
+ * them, and what to draw. Deliberately excludes every PII column on {@link
+ * User} — `email`, `bio`, `graduation_year`, `current_city`,
+ * `current_company` — because the chat surface resolves author and DM names on
+ * the client, and a display concern must not be the reason a member's contact
+ * details reach another member's device (#1000, #986).
+ *
+ * `display_name` is `NOT NULL DEFAULT ''` in the schema, so an empty string is
+ * the real "no name set" case; consumers treat it as unresolved. A deleted
+ * account already reads `'Deleted User'` (the `anonymize_user` RPC writes it),
+ * so it needs no special handling here.
+ */
+export interface UserDisplayIdentity {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+}
+
 export interface User {
   id: string;
   supabase_auth_id: string;

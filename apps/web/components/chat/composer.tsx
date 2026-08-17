@@ -32,6 +32,11 @@ import {
 interface ComposerProps {
   channelId: string;
   channelName: string;
+  /**
+   * Direct/group DM, in which case `channelName` is a person's name rather than
+   * a channel and must not take the `#` sigil.
+   */
+  isDirect?: boolean;
   isReadOnly: boolean;
   draft: string;
   onChangeDraft: (body: string) => void;
@@ -109,6 +114,7 @@ function buildDocFromPlainText(text: string): JSONContent {
 export function Composer({
   channelId,
   channelName,
+  isDirect,
   isReadOnly,
   draft,
   onChangeDraft,
@@ -135,7 +141,10 @@ export function Composer({
         // Hard break stays on Shift+Enter via StarterKit defaults.
       }),
       Placeholder.configure({
-        placeholder: `Message #${channelName}`,
+        // `#` only for an actual channel — a DM's name is a person's.
+        placeholder: isDirect
+          ? `Message ${channelName}`
+          : `Message #${channelName}`,
       }),
       createSubmitKeymap(() => sendRef.current()),
     ],

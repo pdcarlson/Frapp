@@ -3,6 +3,7 @@ import type { ChatMessage } from "@repo/chat-core/types";
 import { emojiFromActionType } from "@repo/chat-core/types";
 import { SignetTokens } from "@repo/theme/signet";
 import { avatarRadius, typeRole, useFrappTheme } from "@/lib/theme";
+import { initialsFor, senderLabel } from "@/lib/chat/display-name";
 
 /**
  * One message row in the s05 thread.
@@ -32,6 +33,13 @@ export interface MessageBubbleProps {
   message: ChatMessage;
   /** `users.id` of the viewer — never the Supabase auth uid. */
   viewerId: string | null;
+  /**
+   * Resolves a `users.id` to a display name, or `null` when it cannot be
+   * resolved. Required rather than optional: an optional resolver would let a
+   * screen forget it and silently regress every row to a truncated uuid, which
+   * is the state this replaced.
+   */
+  nameFor: (userId: string) => string | null;
   onRetry: (clientMessageId: string) => void;
   onDiscard: (clientMessageId: string) => void;
   onReact: (messageId: string, emoji: string) => void;
@@ -48,11 +56,6 @@ export function formatMessageTime(createdAt: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-/** Sender label. There is no display-name join on the chat surface yet. */
-export function senderLabel(message: ChatMessage, isMine: boolean): string {
-  return isMine ? "You" : `Member ${message.sender_id.slice(0, 6)}`;
 }
 
 interface ReactionGroup {
@@ -86,6 +89,7 @@ export function groupReactions(
 export function MessageBubble({
   message,
   viewerId,
+  nameFor,
   onRetry,
   onDiscard,
   onReact,
@@ -95,6 +99,9 @@ export function MessageBubble({
   const styles = createStyles(tokens);
 
   const isMine = !!viewerId && message.sender_id === viewerId;
+  // Resolved once and used for both the meta line and the avatar initials — two
+  // lookups would be two chances for them to drift apart.
+  const authorName = nameFor(message.sender_id);
   // Reactions address a server id, so a message still in flight has nothing to
   // address. Web gates the same affordance on the same condition.
   const isConfirmed = message._status === "confirmed";
@@ -164,13 +171,15 @@ export function MessageBubble({
     <View style={styles.rowTheirs}>
       <View style={styles.avatar}>
         <Text style={styles.avatarText}>
-          {message.sender_id.slice(0, 2).toUpperCase()}
+          {authorName
+            ? initialsFor(authorName)
+            : message.sender_id.slice(0, 2).toUpperCase()}
         </Text>
       </View>
 
       <View style={styles.theirsColumn}>
         <Text style={styles.metaText}>
-          {`${senderLabel(message, isMine)} · ${time}`}
+          {`${senderLabel(message.sender_id, isMine, authorName)} · ${time}`}
         </Text>
         <View style={styles.bubbleTheirs}>{body}</View>
 

@@ -1069,6 +1069,36 @@
         ]
       }
     },
+    "/v1/members/roster": {
+      "get": {
+        "operationId": "MemberController_roster_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MemberRosterEntryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Display roster for the chapter — id, name and avatar only",
+        "tags": [
+          "Members"
+        ]
+      }
+    },
     "/v1/members/{id}": {
       "get": {
         "operationId": "MemberController_getOne_v1",
@@ -6015,6 +6045,28 @@
           "current_city",
           "current_company",
           "email"
+        ]
+      },
+      "MemberRosterEntryDto": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "users.id — the id chat carries as sender_id"
+          },
+          "display_name": {
+            "type": "string",
+            "description": "May be an empty string: the column is NOT NULL DEFAULT '', so clients treat empty as unresolved rather than rendering a blank name."
+          },
+          "avatar_url": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "user_id",
+          "display_name",
+          "avatar_url"
         ]
       },
       "UpdateMemberRolesDto": {
