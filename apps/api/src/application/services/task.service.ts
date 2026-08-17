@@ -12,7 +12,7 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
-import type { Task } from '../../domain/entities/task.entity';
+import type { Task, TaskView } from '../../domain/entities/task.entity';
 import { TaskStatus } from '../../domain/entities/task.entity';
 import { NotificationService } from './notification.service';
 import type { NotifyPayload } from './notification.service';
@@ -25,19 +25,27 @@ const VALID_ASSIGNEE_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   [TaskStatus.OVERDUE]: [TaskStatus.IN_PROGRESS],
 };
 
-function toDisplayStatus(task: Task): Task {
+/**
+ * Rewrite a task's status to the value clients should render.
+ *
+ * `stored_status` travels alongside it and always carries the persisted value.
+ * It is not cosmetic: the transition table above is checked against the stored
+ * status, and `OVERDUE` collapses `TODO` and `IN_PROGRESS` into one indistinct
+ * value, so a client holding only `status` cannot tell which transition is
+ * legal — and therefore cannot offer the assignee any action at all (#1051).
+ */
+function toDisplayStatus(task: Task): TaskView {
   const today = new Date().toISOString().slice(0, 10);
-  if (
+  const displayStatus =
     (task.status === TaskStatus.TODO ||
       task.status === TaskStatus.IN_PROGRESS) &&
     task.due_date < today
-  ) {
-    return { ...task, status: TaskStatus.OVERDUE };
-  }
-  return task;
+      ? TaskStatus.OVERDUE
+      : task.status;
+  return { ...task, status: displayStatus, stored_status: task.status };
 }
 
-function toDisplayStatusList(tasks: Task[]): Task[] {
+function toDisplayStatusList(tasks: Task[]): TaskView[] {
   return tasks.map(toDisplayStatus);
 }
 
@@ -74,7 +82,7 @@ export class TaskService {
     private readonly chatService: ChatService,
   ) {}
 
-  async findById(id: string, chapterId: string): Promise<Task> {
+  async findById(id: string, chapterId: string): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -86,19 +94,22 @@ export class TaskService {
     chapterId: string,
     userId: string,
     isAdmin: boolean,
-  ): Promise<Task[]> {
+  ): Promise<TaskView[]> {
     const tasks = isAdmin
       ? await this.taskRepo.findByChapter(chapterId)
       : await this.taskRepo.findByAssignee(chapterId, userId);
     return toDisplayStatusList(tasks);
   }
 
-  async listByChapter(chapterId: string): Promise<Task[]> {
+  async listByChapter(chapterId: string): Promise<TaskView[]> {
     const tasks = await this.taskRepo.findByChapter(chapterId);
     return toDisplayStatusList(tasks);
   }
 
-  async listByAssignee(chapterId: string, assigneeId: string): Promise<Task[]> {
+  async listByAssignee(
+    chapterId: string,
+    assigneeId: string,
+  ): Promise<TaskView[]> {
     const tasks = await this.taskRepo.findByAssignee(chapterId, assigneeId);
     return toDisplayStatusList(tasks);
   }
@@ -221,7 +232,7 @@ export class TaskService {
     userId: string,
     isAdmin: boolean,
     newStatus: TaskStatus,
-  ): Promise<Task> {
+  ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -259,7 +270,7 @@ export class TaskService {
     return toDisplayStatus(updated);
   }
 
-  async confirmCompletion(id: string, chapterId: string): Promise<Task> {
+  async confirmCompletion(id: string, chapterId: string): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');
@@ -313,7 +324,7 @@ export class TaskService {
     id: string,
     chapterId: string,
     comment?: string | null,
-  ): Promise<Task> {
+  ): Promise<TaskView> {
     const task = await this.taskRepo.findById(id, chapterId);
     if (!task) {
       throw new NotFoundException('Task not found');

@@ -142,19 +142,81 @@ describe("TaskCard", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers no Start on a displayed-OVERDUE task (avoids an invalid transition)", () => {
-    // A stored IN_PROGRESS task past its due date renders as OVERDUE; Start
-    // would send IN_PROGRESS→IN_PROGRESS, which the backend rejects. Mirror the
-    // dashboard: no assignee action on an overdue display.
+  // Both of these render the Overdue badge; only `stored_status` says which
+  // transition is legal, which is the whole point of #1051. Before it, neither
+  // offered any action and the task could never be moved.
+  it("offers Start on an overdue task whose stored status is TODO", () => {
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "OVERDUE",
+        stored_status: "TODO",
+        points_awarded: false,
+      },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Overdue")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /mark complete/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Mark complete on an overdue task whose stored status is IN_PROGRESS", () => {
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "OVERDUE",
+        stored_status: "IN_PROGRESS",
+        points_awarded: false,
+      },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByText("Overdue")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /mark complete/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /start/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers no action on an overdue task from an API that sends no stored_status", () => {
+    // Back-compat: without the field the card falls back to `status`, which
+    // matches no branch — the pre-#1051 behaviour, and better than guessing a
+    // transition the server would reject.
     mockUseTask.mockReturnValue({
       data: { id: "task-1", status: "OVERDUE", points_awarded: false },
     });
     render(
       <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
     );
-    expect(
-      screen.queryByRole("button", { name: /start/i }),
-    ).not.toBeInTheDocument();
+    // No action at all, not merely no Start — asserting only the latter would
+    // still pass if the fallback guessed "IN_PROGRESS" and offered Mark
+    // complete, which the server would reject.
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("offers Start on a task whose stored status is literally OVERDUE", () => {
+    // `tasks.status` permits OVERDUE and the scheduled-jobs sweep queries for
+    // it, so persisted-OVERDUE rows exist. The server accepts
+    // OVERDUE → IN_PROGRESS, which is the move Start makes.
+    mockUseTask.mockReturnValue({
+      data: {
+        id: "task-1",
+        status: "OVERDUE",
+        stored_status: "OVERDUE",
+        points_awarded: false,
+      },
+    });
+    render(
+      <TaskCard message={makeMessage()} viewerId={ASSIGNEE} isConfirmed />,
+    );
+    expect(screen.getByRole("button", { name: /start/i })).toBeInTheDocument();
   });
 
   it("offers Confirm/Reject to an admin on a COMPLETED task", () => {

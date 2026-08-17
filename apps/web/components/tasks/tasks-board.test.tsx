@@ -3,8 +3,10 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { chapterSubscription } from "@/tests/chapter-subscription";
 
-const { mockCurrentChapter } = vi.hoisted(() => ({
+const { mockCurrentChapter, tasksRef } = vi.hoisted(() => ({
   mockCurrentChapter: vi.fn(),
+  // Mutable so a test can swap the rows the board renders.
+  tasksRef: { current: [] as unknown[] },
 }));
 
 // Only the chapter payload is stubbed — `useSubscriptionWriteState` and
@@ -63,7 +65,7 @@ const TASKS = [
 vi.mock("@repo/hooks", () => ({
   useCurrentChapter: () => mockCurrentChapter(),
   useTasks: () => ({
-    data: TASKS,
+    data: tasksRef.current,
     isPending: false,
     isError: false,
     refetch: vi.fn(),
@@ -102,7 +104,10 @@ const deleteButtons = () =>
   screen.getAllByRole("button", { name: /^delete$/i });
 
 describe("TasksBoard subscription gating", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tasksRef.current = TASKS;
+  });
 
   it("leaves every task write alone on an active chapter", () => {
     chapter.active();
@@ -255,5 +260,81 @@ describe("TasksBoard subscription gating", () => {
     render(<TasksBoard />);
 
     expect(confirmButton()).toBeEnabled();
+  });
+});
+
+/**
+ * The board half of #1051. `OVERDUE` is derived and collapses a stored `TODO`
+ * and a stored `IN_PROGRESS` into one rendered value, so affordances key off
+ * `stored_status` while columns and badges keep using `status`.
+ */
+describe("TasksBoard overdue affordances", () => {
+  function overdueTask(overrides: Record<string, unknown>) {
+    return {
+      id: "task-overdue",
+      chapter_id: "chap-1",
+      title: "Submit the ride-share list",
+      description: null,
+      assignee_id: ME,
+      created_by: "u-admin",
+      due_date: "2020-01-01",
+      status: "OVERDUE" as const,
+      point_reward: 5,
+      points_awarded: false,
+      completed_at: null,
+      confirmed_at: null,
+      created_at: "2019-12-01T00:00:00Z",
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    chapter.active();
+  });
+
+  it("offers Start when the stored status is TODO", () => {
+    tasksRef.current = [overdueTask({ stored_status: "TODO" })];
+    render(<TasksBoard />);
+
+    expect(startButton()).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: /mark complete/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Mark complete when the stored status is IN_PROGRESS", () => {
+    tasksRef.current = [overdueTask({ stored_status: "IN_PROGRESS" })];
+    render(<TasksBoard />);
+
+    expect(completeButton()).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: /^start$/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers Start when the stored status is literally OVERDUE", () => {
+    // The transition table accepts OVERDUE → IN_PROGRESS, which Start makes.
+    tasksRef.current = [overdueTask({ stored_status: "OVERDUE" })];
+    render(<TasksBoard />);
+
+    expect(startButton()).toBeEnabled();
+  });
+
+  it("offers no lifecycle action when a pre-#1051 API sends no stored_status", () => {
+    tasksRef.current = [overdueTask({})];
+    render(<TasksBoard />);
+
+    expect(
+      screen.queryByRole("button", { name: /^start$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /mark complete/i }),
+    ).not.toBeInTheDocument();
+    // Still readable, and Delete still offered — only the ambiguous
+    // lifecycle transition is withheld.
+    expect(
+      screen.getByText(/submit the ride-share list/i),
+    ).toBeInTheDocument();
   });
 });
