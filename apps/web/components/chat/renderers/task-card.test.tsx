@@ -11,15 +11,18 @@ import { chapterSubscription } from "@/tests/chapter-subscription";
 
 const mockUseTask = vi.fn();
 const mockCurrentChapter = vi.fn();
-const updateStatus = vi.fn().mockResolvedValue(undefined);
-const confirmTask = vi.fn().mockResolvedValue(undefined);
-const rejectTask = vi.fn().mockResolvedValue(undefined);
+// `mutate`, not `mutateAsync`: the card no longer awaits these. The optimistic
+// write and its rollback live in the shared hooks (#560), so the card fires and
+// forgets, passing only its per-call error copy as the second argument.
+const updateStatus = vi.fn();
+const confirmTask = vi.fn();
+const rejectTask = vi.fn();
 
 vi.mock("@repo/hooks", () => ({
   useTask: (id: string) => mockUseTask(id),
-  useUpdateTaskStatus: () => ({ mutateAsync: updateStatus, isPending: false }),
-  useConfirmTask: () => ({ mutateAsync: confirmTask, isPending: false }),
-  useRejectTask: () => ({ mutateAsync: rejectTask, isPending: false }),
+  useUpdateTaskStatus: () => ({ mutate: updateStatus, isPending: false }),
+  useConfirmTask: () => ({ mutate: confirmTask, isPending: false }),
+  useRejectTask: () => ({ mutate: rejectTask, isPending: false }),
   // The card's task routes are paid-ops, so it now reads the chapter's
   // subscription (#841). Default every existing case to an active chapter so
   // they assert the same behaviour they always did.
@@ -36,13 +39,6 @@ vi.mock("@repo/hooks", () => ({
 vi.mock("@/lib/stores/chapter-store", () => ({
   useChapterStore: (selector: (s: { activeChapterId: string }) => unknown) =>
     selector({ activeChapterId: "chap-1" }),
-}));
-
-vi.mock("@tanstack/react-query", () => ({
-  useQueryClient: () => ({
-    getQueryData: vi.fn(),
-    setQueryData: vi.fn(),
-  }),
 }));
 
 vi.mock("@/hooks/use-toast", () => ({
@@ -116,10 +112,10 @@ describe("TaskCard", () => {
     );
     const start = screen.getByRole("button", { name: /start/i });
     fireEvent.click(start);
-    expect(updateStatus).toHaveBeenCalledWith({
-      id: "task-1",
-      body: { status: "IN_PROGRESS" },
-    });
+    expect(updateStatus).toHaveBeenCalledWith(
+      { id: "task-1", body: { status: "IN_PROGRESS" } },
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
   });
 
   it("hides assignee actions from a non-assignee", () => {
@@ -168,7 +164,10 @@ describe("TaskCard", () => {
     });
     render(<TaskCard message={makeMessage()} viewerId="other" isConfirmed />);
     fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
-    expect(confirmTask).toHaveBeenCalledWith("task-1");
+    expect(confirmTask).toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({ onError: expect.any(Function) }),
+    );
     expect(
       screen.getByRole("button", { name: /reject/i }),
     ).toBeInTheDocument();

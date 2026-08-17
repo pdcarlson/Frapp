@@ -31,9 +31,12 @@ export function FrappProvider({ children }: { children: React.ReactNode }) {
    * Drop every cached query when the active chapter changes.
    *
    * Only about half the chapter-scoped query keys carry the chapter id —
-   * ["members", chapterId] does, ["channels"], ["documents", folder] and
-   * ["tasks", assigneeId] do not — so without this the unscoped ones keep
-   * serving the outgoing chapter's rows under the incoming chapter's context.
+   * ["members", chapterId] does, ["channels"] and ["documents", folder] do not
+   * — so without this the unscoped ones keep serving the outgoing chapter's
+   * rows under the incoming chapter's context. (Tasks used to be on that list;
+   * #560 moved them onto the chapter-scoped `taskKeys` factory in
+   * `packages/hooks/src/use-tasks.ts`, because mobile has no equivalent clear
+   * and the bleed was real there.)
    * Dropping wholesale rather than enumerating keys is deliberate: that
    * enumeration is exactly the list that is already incomplete, and a chapter
    * switch invalidates the whole view of the app anyway.

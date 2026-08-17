@@ -12,6 +12,7 @@ import {
   useTasks,
   useUpdateTaskStatus,
 } from "@repo/hooks";
+import type { TaskStatus } from "@repo/hooks";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -55,7 +56,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { asArray, getErrorMessage } from "@/lib/utils";
 
-type TaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
 
 type Task = {
   id: string;
@@ -138,6 +138,15 @@ export function TasksBoard() {
     }
     return map;
   }, [members]);
+
+  // Since #560 the status mutations write the list entry in `onMutate`, so a
+  // row re-renders into its next status immediately — "Mark complete" can now
+  // appear under the cursor while the Start PATCH is still in flight, and a
+  // fast second tap sends a transition the server will reject (the table in
+  // `task.service.ts` is checked against the *stored* status). The chat card
+  // already folds these in; the board did not.
+  const lifecycleWritePending =
+    updateStatus.isPending || confirmTask.isPending || rejectTask.isPending;
 
   const [draft, setDraft] = useState({
     title: "",
@@ -298,7 +307,13 @@ export function TasksBoard() {
     return <LoadingState message="Loading chapter tasks..." />;
   }
 
-  if (tasksQuery.isError) {
+  // Only swap the whole board out when there is nothing to show. v5 keeps the
+  // last good payload alongside `isError`, and since the optimistic rework
+  // (#560) a *failed* mutation reconciles through `onSettled` too — so an
+  // action that fails offline triggers a refetch that also fails, and gating
+  // on `isError` alone would replace a fully populated, readable board with an
+  // error page every time.
+  if (tasksQuery.isError && !tasksQuery.data) {
     return (
       <ErrorState
         title="Couldn't load tasks"
@@ -531,7 +546,7 @@ export function TasksBoard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                {...gate.controlProps()}
+                                {...gate.controlProps(lifecycleWritePending)}
                                 onClick={() =>
                                   void changeStatus(task, "IN_PROGRESS")
                                 }
@@ -543,7 +558,7 @@ export function TasksBoard() {
                               <Button
                                 size="sm"
                                 variant="outline"
-                                {...gate.controlProps()}
+                                {...gate.controlProps(lifecycleWritePending)}
                                 onClick={() =>
                                   void changeStatus(task, "COMPLETED")
                                 }
@@ -557,7 +572,7 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     onClick={() => void confirmCompletion(task)}
-                                    {...gate.controlProps(task.points_awarded)}
+                                    {...gate.controlProps(task.points_awarded || lifecycleWritePending)}
                                   >
                                     <CheckCircle2 className="h-4 w-4" />
                                     {task.points_awarded
@@ -567,7 +582,7 @@ export function TasksBoard() {
                                   <Button
                                     size="sm"
                                     variant="outline"
-                                    {...gate.controlProps()}
+                                    {...gate.controlProps(lifecycleWritePending)}
                                     onClick={() => void rejectCompletion(task)}
                                   >
                                     <Undo2 className="h-4 w-4" />
