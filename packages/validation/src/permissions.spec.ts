@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { can, canAll, canAny, WILDCARD_PERMISSION } from "./can";
+
+/**
+ * Moved here from `apps/web/lib/auth/can.test.ts` with #994, travelling with the
+ * implementation when it became shared with apps/mobile. Unchanged otherwise —
+ * an unmodified suite passing against the moved code is the no-regression proof
+ * for the move.
+ */
+import { can, canAll, canAny, WILDCARD_PERMISSION } from "./permissions";
 
 describe("can", () => {
   test("returns false for undefined, null, or empty permission sets", () => {

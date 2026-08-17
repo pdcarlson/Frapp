@@ -10,6 +10,7 @@ import type { IEventRepository } from '../../domain/repositories/event.repositor
 import { USER_REPOSITORY } from '../../domain/repositories/user.repository.interface';
 import type { IUserRepository } from '../../domain/repositories/user.repository.interface';
 import { Event } from '../../domain/entities/event.entity';
+import type { GeofenceCoordinate } from '../../domain/entities/study.entity';
 import { NotificationService } from './notification.service';
 import { ChatService } from './chat.service';
 
@@ -25,6 +26,8 @@ export interface CreateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  check_in_zone?: GeofenceCoordinate[] | null;
+  check_in_zone_name?: string | null;
   /** Creator user id — used as the chat card sender when posting via `/event`. */
   created_by?: string;
   /**
@@ -47,6 +50,30 @@ export interface UpdateEventInput {
   recurrence_rule?: string | null;
   required_role_ids?: string[] | null;
   notes?: string | null;
+  check_in_zone?: GeofenceCoordinate[] | null;
+  check_in_zone_name?: string | null;
+}
+
+/**
+ * Normalize an inbound check-in zone to what the column stores.
+ *
+ * An empty array **clears** the zone, mirroring the `required_role_ids` wire
+ * semantics already documented in `spec/behavior/events.md` — one rule for
+ * "unset this optional collection" across the whole event payload rather than
+ * two. A 1- or 2-point array is rejected here so the caller gets a 400 naming
+ * the problem instead of a 500 surfacing from the table's shape CHECK.
+ */
+function normalizeCheckInZone(
+  zone: GeofenceCoordinate[] | null | undefined,
+): GeofenceCoordinate[] | null | undefined {
+  if (zone === undefined) return undefined;
+  if (zone === null || zone.length === 0) return null;
+  if (zone.length < 3) {
+    throw new BadRequestException(
+      'check_in_zone must have at least 3 points, or be empty to clear it',
+    );
+  }
+  return zone;
 }
 
 @Injectable()
@@ -99,6 +126,8 @@ export class EventService {
       parent_event_id: null,
       required_role_ids: input.required_role_ids ?? null,
       notes: input.notes ?? null,
+      check_in_zone: normalizeCheckInZone(input.check_in_zone) ?? null,
+      check_in_zone_name: input.check_in_zone_name ?? null,
     });
 
     if (parent.recurrence_rule) {
@@ -299,6 +328,12 @@ export class EventService {
 
     const updated = await this.eventRepo.update(id, chapterId, {
       ...input,
+      // Spread first, then overwrite: `normalizeCheckInZone` returns `undefined`
+      // for an absent key, which the repository's partial update ignores, so an
+      // update that never mentions the zone leaves it untouched.
+      ...(input.check_in_zone !== undefined
+        ? { check_in_zone: normalizeCheckInZone(input.check_in_zone) }
+        : {}),
     });
 
     if (input.start_time || input.end_time || input.location !== undefined) {

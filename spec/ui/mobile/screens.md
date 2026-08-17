@@ -25,8 +25,8 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s03 | First-run + notification primer | `(auth)/welcome.tsx` | Routed, stub — auto-joined channels + contextual push primer not built |
 | s04 | Chat — channels (landing) | `(tabs)/index.tsx` | Live — chat is home; real channel list on `GET /v1/channels`, with the UP NEXT strip, the ✦ Ask pill, and server unread/mention badges. DM rows resolve the other participant from `member_ids` against the roster projection, so no row shows a uuid. No PINNED section: `ChatChannel` carries no pin field |
 | s05 | Chat thread | `(tabs)/chat-thread.tsx` | Live — real messages on `@repo/chat-core`: realtime, optimistic send, outbox retry/discard, reactions, typing. No attachments, no scrollback pagination, no reply-quote |
-| s06 | Events list | `(tabs)/events.tsx` | Live |
-| s07 | Event detail | `(tabs)/event-details.tsx` | Live — **filename contract, never rename** |
+| s06 | Events list | `(tabs)/events.tsx` | Live — real `useEvents()` data, upcoming + still-checkable-in |
+| s07 | Event detail | `(tabs)/event-details.tsx` | Live — reads an `id` param; **filename contract, never rename**. RSVP row renders disabled: no RSVP model exists server-side ([`../../behavior/events.md`](../../behavior/events.md)) |
 | s08 | Tasks + points | `(tabs)/tasks.tsx` | Live — renamed from `task-center.tsx`; still to absorb the points balance/rank (see removals) |
 | s09 | More hub | `(tabs)/more.tsx` | Live |
 | s10 | Study hours | `(tabs)/study.tsx` | Routed, stub — study-session timer, geofenced ([`patterns.md`](patterns.md)) |
@@ -37,11 +37,11 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s15 | Profile | `(tabs)/profile.tsx` | Live |
 | s16 | Settings | `(tabs)/preferences.tsx` | Live — drawn title is "Settings"; route filename stays `preferences.tsx` (settled, see notes) |
 | s17 | Ask sheet | `(tabs)/ask.tsx` | Routed, stub — global ✦ Ask entry, presented as a sheet; answers per [`../../behavior/ai.md`](../../behavior/ai.md) |
-| s18 | QR check-in scanner | `(tabs)/check-in.tsx` | Routed, stub — member scanner ([`patterns.md`](patterns.md)) |
+| s18 | QR check-in scanner | `(tabs)/check-in.tsx` | Live — member scanner, latched reads + manual code ([`patterns.md`](patterns.md)) |
 | s19 | New task sheet | *sheet* on `tasks.tsx` | Sheet |
 | s20 | Log service hours sheet | *sheet* on `service-hours.tsx` | Sheet — host route exists today ([`../../behavior/service-hours.md`](../../behavior/service-hours.md)) |
 | s21 | Upload document sheet | *sheet* on `documents.tsx` | Sheet |
-| s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Routed, stub — rotating QR display, role-gated; not yet linked from More |
+| s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated; **not yet linked from More** (C4 owns the row) |
 | s23 | Adjust points sheet (admin) | *sheet* on `more.tsx` | Sheet — reason required, audit-logged ([`../../behavior/points.md`](../../behavior/points.md)) |
 
 Supporting route with no drawn screen: `(auth)/chapter-picker.tsx` — chapter selection when an account resolves to more than one chapter during join/sign-in. It reuses s02's visual language.

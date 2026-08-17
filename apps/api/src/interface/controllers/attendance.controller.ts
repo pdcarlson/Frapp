@@ -30,15 +30,43 @@ export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 
   @Post('check-in')
-  @ApiOperation({ summary: 'Self check-in to an event' })
+  @ApiOperation({
+    summary: 'Self check-in to an event',
+    description:
+      'Accepts a bare body (plain self check-in, e.g. the chat event card), a rotating `token` scanned from the host QR, or a typed `manualCode`. `lat`/`lng` are required when the event defines a check-in geofence.',
+  })
   async checkIn(
     @Param('eventId') eventId: string,
     @CurrentUser('id') userId: string,
     @CurrentChapterId() chapterId: string,
     @Body() dto: CheckInDto,
   ) {
-    void dto;
-    return this.attendanceService.checkIn(eventId, userId, chapterId);
+    return this.attendanceService.checkIn(eventId, userId, chapterId, {
+      token: dto.token,
+      manualCode: dto.manualCode,
+      lat: dto.lat,
+      lng: dto.lng,
+    });
+  }
+
+  // GET, not POST: minting writes nothing — the code is derived from the event
+  // id, the clock, and the signing secret. Beyond being the honest verb, it
+  // keeps the host screen's ~6 requests/minute of polling on the read throttle
+  // bucket (100/60s) instead of the write bucket (30/60s), which an officer
+  // running check-in also needs for everything else they are doing.
+  @Get('check-in-token')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions(SystemPermissions.EVENTS_UPDATE)
+  @ApiOperation({
+    summary: 'Mint the rotating check-in code for the host display (s22)',
+    description:
+      'Returns the current 30-second token, its QR payload, and the short manual code. Officer-only: the code is what admits members to the attendance record. Returns 503 when the environment has no signing secret configured.',
+  })
+  async mintCheckInToken(
+    @Param('eventId') eventId: string,
+    @CurrentChapterId() chapterId: string,
+  ) {
+    return this.attendanceService.mintCheckInToken(eventId, chapterId);
   }
 
   @Get()

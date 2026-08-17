@@ -182,7 +182,16 @@ export function UpNextStrip({ events, tasks, now }: UpNextStripProps) {
           accessibilityRole="button"
           accessibilityLabel={`${event.name}, ${formatEventTime(event.start_time, at)}`}
           accessibilityHint="Open event details."
-          onPress={() => router.push("/event-details")}
+          // Carries the id since C2 (#994). C1 pushed the bare literal because
+          // s07 was a hardcoded screen that could not consume one — an honest
+          // seam at the time, and this is the slice that closes it. The
+          // `pathname:` object form is covered by `lib/routes.spec.ts`.
+          onPress={() =>
+            router.push({
+              pathname: "/event-details",
+              params: { id: event.id },
+            })
+          }
           style={({ pressed }) => [styles.row, pressed ? styles.pressed : null]}
         >
           <View style={styles.eventGlyph} />

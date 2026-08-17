@@ -10,7 +10,7 @@ import {
   useUpdateMemberRoles,
 } from "@repo/hooks";
 import { useCustomRoles } from "@/lib/hooks/use-custom-roles";
-import { can } from "@/lib/auth/can";
+import { can } from "@repo/validation";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { can, canAny } from "@/lib/auth/can";
+import { can, canAny } from "@repo/validation";
 import { cn } from "@/lib/utils";
 import type { NavItem } from "@/components/layout/nav-config";
 

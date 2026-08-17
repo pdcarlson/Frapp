@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useMyPermissions } from "@repo/hooks";
 import { useChapterStore } from "@/lib/stores/chapter-store";
-import { can, canAll, canAny } from "@/lib/auth/can";
+import { can, canAll, canAny } from "@repo/validation";
 
 type BaseProps = {
   children: ReactNode;

@@ -4,9 +4,10 @@ import {
   ThrottlerLimitDetail,
   ThrottlerRequest,
 } from '@nestjs/throttler';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import type { Response } from 'express';
 import { getHeaderValue } from '../types/request-context.types';
+import { constantTimeEquals } from '../../domain/utils/constant-time';
 
 /**
  * Methods counted against the `read` bucket; everything else is a `write`.
@@ -119,7 +120,7 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
       const expected = createHmac('sha256', secret)
         .update(`${headerSeg}.${payloadSeg}`)
         .digest('base64url');
-      if (!this.constantTimeEquals(signatureSeg, expected)) {
+      if (!constantTimeEquals(signatureSeg, expected)) {
         return null;
       }
 
@@ -142,14 +143,5 @@ export class CustomThrottlerGuard extends ThrottlerGuard {
     } catch {
       return null;
     }
-  }
-
-  private constantTimeEquals(a: string, b: string): boolean {
-    const aBuf = Buffer.from(a);
-    const bBuf = Buffer.from(b);
-    if (aBuf.length !== bBuf.length) {
-      return false;
-    }
-    return timingSafeEqual(aBuf, bBuf);
   }
 }

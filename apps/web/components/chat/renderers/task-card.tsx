@@ -14,7 +14,7 @@ import type { TaskPayload } from "@repo/chat-integrations";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Can } from "@/components/shared/can";
-import { can } from "@/lib/auth/can";
+import { can } from "@repo/validation";
 import {
   SubscriptionNotice,
   useSubscriptionGate,

@@ -21,7 +21,11 @@ shell hides items the caller cannot access and disables roadmap items with a
 via `GET /v1/users/me/permissions` (backed by
 `RbacService.getEffectivePermissions`), cached with TanStack Query, and reused
 by any component that wraps controls in `<Can>` or calls `can()` /
-`canAny()` / `canAll()` from `apps/web/lib/auth/can.ts`.
+`canAny()` / `canAll()` from `@repo/validation`
+(`packages/validation/src/permissions.ts`). Those helpers moved out of
+`apps/web` when `apps/mobile` needed the same gate for its host check-in screen
+— the wildcard `*` rule has to match the server's `PermissionsGuard`, and a
+per-app copy is how that drifts.
 
 A dedicated `/no-access` route explains the next steps for signed-in users who
 have no chapter role assigned; individual screens can direct users there

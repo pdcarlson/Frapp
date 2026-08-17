@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { ATTENDANCE_REPOSITORY } from '../../domain/repositories/attendance.repository.interface';
 import type { IAttendanceRepository } from '../../domain/repositories/attendance.repository.interface';
@@ -14,6 +15,13 @@ import { MEMBER_REPOSITORY } from '../../domain/repositories/member.repository.i
 import type { IMemberRepository } from '../../domain/repositories/member.repository.interface';
 import type { EventAttendance } from '../../domain/entities/event-attendance.entity';
 import { RbacService } from './rbac.service';
+import { isValidZone, pointInPolygon } from '../../domain/utils/geofence';
+import {
+  mintCheckInToken,
+  verifyCheckInToken,
+  verifyManualCode,
+  type MintedCheckInToken,
+} from '../../domain/utils/check-in-token';
 
 /**
  * Grace period after `end_time` during which check-in stays open and before
@@ -22,6 +30,22 @@ import { RbacService } from './rbac.service';
  * rather than keeping a second copy that could drift.
  */
 export const CHECK_IN_GRACE_PERIOD_MINUTES = 15;
+
+/**
+ * Optional, like `ANALYTICS_HMAC_SALT`: absent, the rotating-token feature is
+ * simply unavailable (mint returns 503, a supplied token is rejected) and plain
+ * self check-in is unaffected — so local dev, tests and CI boot without it.
+ * Provisioned per environment in Infisical; see `ENV_REFERENCE.md`.
+ */
+const CHECK_IN_TOKEN_SECRET_VAR = 'EVENT_CHECK_IN_TOKEN_SECRET';
+
+/** What the scanner (s18) may send alongside a self check-in. */
+export interface CheckInOptions {
+  token?: string;
+  manualCode?: string;
+  lat?: number;
+  lng?: number;
+}
 
 @Injectable()
 export class AttendanceService {
@@ -35,10 +59,45 @@ export class AttendanceService {
     private readonly rbac: RbacService,
   ) {}
 
+  /**
+   * Mint the rotating code the host screen (s22) displays.
+   *
+   * Officer-gated at the controller (`events:update`), matching the attendance
+   * roster read on the same controller — the code is what lets people into the
+   * attendance record, so minting it is an officer capability.
+   */
+  async mintCheckInToken(
+    eventId: string,
+    chapterId: string,
+  ): Promise<MintedCheckInToken> {
+    const event = await this.eventRepo.findById(eventId, chapterId);
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return mintCheckInToken(eventId, this.requireTokenSecret(), Date.now());
+  }
+
+  /**
+   * A 503 rather than a silent fallback: with no secret there is no way to mint
+   * a code, and pretending otherwise would put an un-scannable screen in front
+   * of an officer with no explanation.
+   */
+  private requireTokenSecret(): string {
+    const secret = process.env[CHECK_IN_TOKEN_SECRET_VAR];
+    if (!secret) {
+      throw new ServiceUnavailableException(
+        'Rotating check-in codes are not configured for this environment',
+      );
+    }
+    return secret;
+  }
+
   async checkIn(
     eventId: string,
     userId: string,
     chapterId: string,
+    options: CheckInOptions = {},
   ): Promise<EventAttendance> {
     const event = await this.eventRepo.findById(eventId, chapterId);
     if (!event) {
@@ -60,6 +119,84 @@ export class AttendanceService {
       throw new BadRequestException(
         'Check-in is only allowed during the event time window',
       );
+    }
+
+    // Window first, deliberately. Ordering only changes *which* error a caller
+    // sees when more than one check fails, and "check-in has closed" is the
+    // actionable answer for the common case (a member scanning after the grace
+    // period). Nothing writes before `checkInAtomic` below, so no ordering here
+    // risks partial work. The window is not secret either — every member can
+    // read event times from `GET /v1/events` — so leading with it leaks nothing.
+
+    // ── Rotating token ──────────────────────────────────────────────────
+    //
+    // Verified when supplied; never required. That is the spec's design, not an
+    // oversight: `spec/ui/mobile/patterns.md` is explicit that "the rotating
+    // code raises effort; the geofence enforces presence", and
+    // `spec/behavior/events.md` keeps the chat event card as an additional
+    // self-service check-in surface, which posts no token at all.
+    //
+    // The consequence is worth stating plainly: a caller who simply omits
+    // `token` skips this check, so the token is an assurance signal (it catches
+    // a forwarded screenshot or a stale code), not an access control. The
+    // geofence below is the control. Making the token mandatory needs a
+    // per-event opt-in flag — filed as follow-up work rather than invented here.
+    if (options.token !== undefined || options.manualCode !== undefined) {
+      const secret = this.requireTokenSecret();
+      const accepted =
+        (options.token !== undefined &&
+          verifyCheckInToken(options.token, eventId, secret, now.getTime())) ||
+        (options.manualCode !== undefined &&
+          verifyManualCode(options.manualCode, eventId, secret, now.getTime()));
+
+      if (!accepted) {
+        throw new ForbiddenException(
+          'That check-in code is not valid for this event, or it has expired',
+        );
+      }
+    }
+
+    // ── Geofence ────────────────────────────────────────────────────────
+    //
+    // The anti-proxy control (`patterns.md`): any displayed code can be
+    // screenshotted and forwarded, so presence is what the server actually
+    // verifies. Enforced on every surface, regardless of whether a token came
+    // with the request.
+    if (event.check_in_zone !== null && event.check_in_zone !== undefined) {
+      // A malformed zone is a hard failure, never "no zone". Falling through
+      // would silently disable the check the row exists to encode — the exact
+      // failure mode a geofence must not have.
+      if (!isValidZone(event.check_in_zone)) {
+        throw new BadRequestException(
+          'This event has an invalid check-in area; an officer needs to redraw it',
+        );
+      }
+
+      // Destructured and checked with `typeof`, which genuinely narrows to
+      // `number` — `Number.isFinite` returns a plain boolean, so testing it
+      // alone would leave the values `number | undefined` and force casts at
+      // the call below. Both checks are needed: `typeof` rejects a missing
+      // coordinate, `isFinite` rejects NaN and Infinity.
+      const { lat, lng } = options;
+      if (
+        typeof lat !== 'number' ||
+        typeof lng !== 'number' ||
+        !Number.isFinite(lat) ||
+        !Number.isFinite(lng)
+      ) {
+        // Names the surface, because the caller that hits this is usually the
+        // web chat event card, which structurally cannot send a location. The
+        // card renders the server's message verbatim through `getErrorMessage`,
+        // so putting the guidance here is what makes that path honest — and it
+        // costs no per-card fetch of the event just to learn it has a zone.
+        throw new BadRequestException(
+          'This event checks you in by location — use the Frapp mobile app to check in.',
+        );
+      }
+
+      if (!pointInPolygon(lat, lng, event.check_in_zone)) {
+        throw new ForbiddenException('You need to be at the event to check in');
+      }
     }
 
     // If the event targets specific roles, only members with matching roles can check in.
