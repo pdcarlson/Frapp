@@ -124,3 +124,27 @@ updates:
       # (`^2.1.0`) — only its 3.x is unusable here, and a major arrives as its
       # own reviewable PR rather than inside the group.
       - dependency-name: "colorjs.io"
+
+      # ── The ESLint 10 hold ───────────────────────────────────────────────
+      # Majors only. ESLint 10 is blocked on a plugin, not on our own code:
+      # `eslint-plugin-react` has no v10-compatible release — 7.37.5 is the
+      # newest published version and its peer range still ends at `^9.7`. Under
+      # v10 it throws `contextOrFilename.getFilename is not a function` from its
+      # React-version *detection* path, because v10 removed the deprecated
+      # `context` methods it calls.
+      #
+      # Measured, so the re-evaluation is cheap when the plugin ships v10:
+      # pinning `settings.react.version` in `packages/eslint-config` skips the
+      # detection path and the whole monorepo lints clean on v10. That was
+      # rejected for now — it runs a core plugin outside its declared peer range
+      # and hardcodes a React version that then has to be hand-synced — but it
+      # means the upgrade is a small change, not an unknown.
+      #
+      # The two move as a set: `@eslint/js@10` peer-requires `eslint@^10`, so
+      # bumping either alone fails `npm ci` with ERESOLVE. Ignoring only the
+      # major keeps 9.x minors and patches flowing. Reopen #943/#944's work when
+      # `eslint-plugin-react` declares v10.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
