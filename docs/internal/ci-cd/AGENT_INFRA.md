@@ -230,7 +230,7 @@ and `spec/`, of which a dependency bump has none, so it passes trivially.
 **Both copies have to carry the condition, and for a long time only one did.** `ci.yml` ran the gate
 unguarded, so every Dependabot PR went green on `docs-spec-sync` and red on `lint-and-typecheck` for
 the identical reason the exemption exists — the exemption was real but inert, and the PRs were just
-as unmergeable. `ci.yml` now carries the same condition. If you add a third caller of
+as unmergeable. `ci.yml` now carries the same condition (#1011). If you add a third caller of
 `check-docs-impact.mjs`, it needs the same `if:` or it re-breaks this the same way.
 
 ### `colorjs.io` is ignored: it is a vendored-generator pin, not a dependency
