@@ -200,11 +200,6 @@
     },
     {
       "file": "spec/ui/mobile/screens.md",
-      "path": "documents-reports.tsx",
-      "reason": "Removal note in the s12 row."
-    },
-    {
-      "file": "spec/ui/mobile/screens.md",
       "path": "(tabs)/points.tsx",
       "reason": "Removals table — points was absorbed into Tasks (s08)."
     },
