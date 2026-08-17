@@ -6,6 +6,7 @@ A lightweight task management system for chapter operations.
 
 - Admins with `tasks:manage` permission create tasks with: title, description (optional), assignee (single member), due date, and optional point reward on completion.
 - Task statuses: TODO → IN_PROGRESS → COMPLETED. Tasks past their due date that are not COMPLETED are flagged as OVERDUE.
+- **OVERDUE is derived, not stored.** `toDisplayStatus` synthesizes it on every read for a task whose stored status is TODO or IN_PROGRESS and whose `due_date` is before today (UTC). Two consequences clients must respect: an optimistic write has to predict the *rendered* status, or an overdue row visibly flips back on the next refetch; and because both stored statuses render identically, a client holding only the rendered value **cannot** know an overdue task's next legal transition. The transition table below is checked against the stored status, so the server is the only authority on it.
 
 ## Assignee Actions
 
@@ -59,7 +60,9 @@ rich renderer + server-originated card).
   same lifecycle controls as the dashboard: the assignee can mark IN_PROGRESS / COMPLETED and a
   `tasks:manage` admin can Confirm / Reject. Actions call the existing task REST endpoints
   (`PATCH /v1/tasks/:id/status`, `POST /v1/tasks/:id/confirm`, `POST /v1/tasks/:id/reject`) with
-  optimistic cache updates; the server stays the trust boundary.
+  optimistic cache updates; the server stays the trust boundary. The optimism itself lives in the
+  shared hooks (`packages/hooks/src/use-tasks.ts`), not in the card — so the card, the dashboard
+  board, and any later surface get one behaviour rather than a copy each.
 
 Status changes are not broadcast on the chat channel, so a non-acting viewer sees a card's status
 update on their next task-query refetch rather than instantly.

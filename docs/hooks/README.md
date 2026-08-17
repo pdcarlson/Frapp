@@ -11,6 +11,56 @@ chapter id in the TanStack Query cache key (see `useActiveChapterId` in
 `["search", chapterId, query]` so the command palette and chat search cannot
 show results cached from another chapter after a switch.
 
+Tasks use the `taskKeys` factory in `use-tasks.ts` — `taskKeys.lists(chapterId)`
+and `taskKeys.detail(chapterId, id)`. Two things it fixes are worth knowing
+before adding a family of your own:
+
+- The old keys were `["tasks", assigneeId]` and `["tasks", id]`, neither
+  chapter-scoped. On web the bleed was masked by the wholesale
+  `queryClient.clear()` in `apps/web/lib/providers/frapp-client-provider.tsx`;
+  **mobile has no such clear**, so an unscoped key there really does serve the
+  outgoing chapter's rows after a switch. Do not rely on the web clear.
+- `["tasks", undefined]` (the list) and `["tasks", "<uuid>"]` (a detail) are
+  structurally indistinguishable, so no prefix could mean "every list" without
+  also matching every detail. The explicit `"list"` / `"detail"` segment is what
+  lets a mutation invalidate precisely.
+
+## Optimistic mutations
+
+`useUpdateNotificationPreference` (`use-notifications.ts`) and the three task
+lifecycle mutations (`use-tasks.ts`) are the reference implementations. A new
+one should follow this shape:
+
+- `onMutate` — `cancelQueries` first (an in-flight GET that started before the
+  write has not observed it, and letting it land looks like the write was lost),
+  then snapshot, then write.
+- **Never write into an entry that is `undefined`.** That means the query has
+  never resolved, so there is no server answer to predict against — and it is
+  unrollbackable, because query-core ignores a `setQueryData` of `undefined`.
+  Leave shapes you do not recognise byte-identical for the same reason.
+- `onError` — revert **surgically**, field by field or row by row, and only
+  while the cache still holds what this mutation wrote. Mutation-level callbacks
+  always fire in v5, so a slow failure can land after a fast success on the same
+  record; restoring a whole snapshot there silently undoes the newer write.
+- `onSettled`, not `onSuccess` — a failed write must reconcile too, or the
+  rolled-back value stays unverified against the server.
+- Keep the user-facing failure message at the call site, passed as a
+  per-`mutate()` `onError`. This package has no toast and React Native has none
+  at all. v5 drops the per-call callback for a superseded mutation, which is
+  right for a toast and wrong for a rollback — hence the split.
+- **Set `retry: false` on a non-idempotent mutation.** `apps/web` defaults every
+  mutation to `retry: 2` (`apps/web/lib/providers/query-provider.tsx`). For a
+  compare-and-set transition — the task status/confirm/reject routes — a first
+  attempt whose response is merely lost leaves the retry to be answered with a
+  guaranteed 400, so the rollback undoes a write that actually landed and
+  reports a failure for an action that succeeded.
+
+Two existing optimistic mutations do **not** follow the surgical-revert rule and
+should not be copied as templates: `useUpdateUserSettings` (`use-notifications.ts`)
+and `usePatchOrgConfig` (`apps/web/lib/hooks/use-org-config.ts`) both restore a
+whole snapshot. Each writes a single object edited from one form, so the race is
+narrower there — but it is the same race, and neither is the shape to imitate.
+
 ## Testing strategy
 
 Hooks in `packages/hooks/src` are tested with Vitest, React Testing Library, and a

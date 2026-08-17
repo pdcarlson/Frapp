@@ -1,7 +1,6 @@
 "use client";
 
 import { CheckCircle2, ClipboardList, Undo2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   useMyPermissions,
   useTask,
@@ -9,6 +8,7 @@ import {
   useConfirmTask,
   useRejectTask,
 } from "@repo/hooks";
+import type { TaskStatus } from "@repo/hooks";
 import type { ChatMessage } from "@/lib/chat/types";
 import type { TaskPayload } from "@repo/chat-integrations";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +29,6 @@ interface TaskCardProps {
   isConfirmed: boolean;
 }
 
-type TaskStatus = "TODO" | "IN_PROGRESS" | "COMPLETED" | "OVERDUE";
 
 /** Live task shape read back from `GET /v1/tasks/{id}` (display status). */
 interface LiveTask {
@@ -135,7 +134,6 @@ const STATUS_BADGE: Record<TaskStatus, "default" | "outline" | "destructive"> = 
 export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
   const payload = readPayload(message);
   const { toast } = useToast();
-  const queryClient = useQueryClient();
   const updateStatus = useUpdateTaskStatus();
   const confirmTask = useConfirmTask();
   const rejectTask = useRejectTask();
@@ -183,29 +181,27 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
     (isAssignee && (status === "TODO" || status === "IN_PROGRESS")) ||
     (status === "COMPLETED" && canManageTasks);
 
-  const taskKey = ["tasks", payload.task_id];
-
-  async function runOptimistic(
-    next: Partial<LiveTask>,
-    action: () => Promise<unknown>,
-    errorTitle: string,
-    errorFallback: string,
-  ): Promise<void> {
-    const prev = queryClient.getQueryData<unknown>(taskKey);
-    const prevTask = coerceLiveTask(prev);
-    if (prevTask) {
-      queryClient.setQueryData(taskKey, { ...prevTask, ...next });
-    }
-    try {
-      await action();
-    } catch (error) {
-      if (prev !== undefined) queryClient.setQueryData(taskKey, prev);
-      toast({
-        title: errorTitle,
-        description: getErrorMessage(error, errorFallback),
-        variant: "destructive",
-      });
-    }
+  /**
+   * Per-call failure copy. The optimistic write and its rollback moved into the
+   * shared hooks (#560), leaving only the message here — `@repo/hooks` has no
+   * toast, and mobile has none at all.
+   *
+   * Note which callback each half sits on, because the asymmetry is deliberate:
+   * the **rollback** is a mutation-level callback, which always fires; this
+   * **toast** is a per-`mutate()` option, which react-query v5 drops for a
+   * superseded mutation. That is the behavior we want — a superseded action's
+   * toast is noise, while its rollback is not optional. Putting the rollback
+   * here instead would silently leave a wrong value in the cache.
+   */
+  function onFailure(title: string, fallback: string) {
+    return {
+      onError: (error: unknown) =>
+        toast({
+          title,
+          description: getErrorMessage(error, fallback),
+          variant: "destructive",
+        }),
+    };
   }
 
   return (
@@ -234,15 +230,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             variant="outline"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
-              void runOptimistic(
-                { status: "IN_PROGRESS" },
-                () =>
-                  updateStatus.mutateAsync({
-                    id: payload.task_id,
-                    body: { status: "IN_PROGRESS" },
-                  }),
-                "Couldn't start task",
-                "Only the assignee can start this task.",
+              updateStatus.mutate(
+                { id: payload.task_id, body: { status: "IN_PROGRESS" } },
+                onFailure(
+                  "Couldn't start task",
+                  "Only the assignee can start this task.",
+                ),
               )
             }
           >
@@ -255,15 +248,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
             variant="outline"
             {...gate.controlProps(actionsDisabled)}
             onClick={() =>
-              void runOptimistic(
-                { status: "COMPLETED" },
-                () =>
-                  updateStatus.mutateAsync({
-                    id: payload.task_id,
-                    body: { status: "COMPLETED" },
-                  }),
-                "Couldn't complete task",
-                "The API rejected the transition.",
+              updateStatus.mutate(
+                { id: payload.task_id, body: { status: "COMPLETED" } },
+                onFailure(
+                  "Couldn't complete task",
+                  "The API rejected the transition.",
+                ),
               )
             }
           >
@@ -276,11 +266,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
               size="sm"
               {...gate.controlProps(actionsDisabled || pointsAwarded)}
               onClick={() =>
-                void runOptimistic(
-                  { points_awarded: true },
-                  () => confirmTask.mutateAsync(payload.task_id),
-                  "Couldn't confirm task",
-                  "Only admins with tasks:manage can confirm completions.",
+                confirmTask.mutate(
+                  payload.task_id,
+                  onFailure(
+                    "Couldn't confirm task",
+                    "Only admins with tasks:manage can confirm completions.",
+                  ),
                 )
               }
             >
@@ -293,11 +284,12 @@ export function TaskCard({ message, viewerId, isConfirmed }: TaskCardProps) {
                 variant="outline"
                 {...gate.controlProps(actionsDisabled)}
                 onClick={() =>
-                  void runOptimistic(
-                    { status: "IN_PROGRESS" },
-                    () => rejectTask.mutateAsync({ id: payload.task_id }),
-                    "Couldn't reject task",
-                    "Only admins with tasks:manage can reject completions.",
+                  rejectTask.mutate(
+                    { id: payload.task_id },
+                    onFailure(
+                      "Couldn't reject task",
+                      "Only admins with tasks:manage can reject completions.",
+                    ),
                   )
                 }
               >
