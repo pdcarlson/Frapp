@@ -250,6 +250,25 @@ entry keeps that a human decision instead of a weekly red PR. The generator's ot
 under Dependabot; the reasoning for each is in
 [`packages/chapter-theme/src/vendor/README.md`](../../../packages/chapter-theme/src/vendor/README.md).
 
+### The ESLint 10 major is held on a plugin, not on our code
+
+`eslint` and `@eslint/js` ignore **major** updates only; 9.x minors and patches still flow. The
+blocker is `eslint-plugin-react`: 7.37.5 is its newest published release and its peer range still
+ends at `^9.7`. ESLint 10 removed the deprecated `context` methods the plugin calls, so it throws
+`contextOrFilename.getFilename is not a function` out of its React-version detection path and takes
+`@repo/ui`'s lint down with it.
+
+The two packages move as a set — `@eslint/js@10` peer-requires `eslint@^10`, so bumping either alone
+fails `npm ci` with `ERESOLVE`. That is why both carry the ignore rather than just one.
+
+What makes this a *hold* rather than an open question: it was measured. Pinning
+`settings.react.version` in `packages/eslint-config/{next,react-internal}.js` skips the detection
+path entirely, and the whole monorepo then lints clean under ESLint 10 — the plugin has no other
+v10 incompatibility we trip. That workaround was rejected for now because it runs a core plugin
+outside its declared peer range and hardcodes a React version that has to be hand-synced with the
+real pin. When `eslint-plugin-react` declares v10 support, drop these two ignore entries and the
+upgrade should be close to a no-op. Original PRs: #943 (`eslint`), #944 (`@eslint/js`).
+
 ### Alerts and security updates are a repo Settings toggle
 
 Dependabot **alerts** and **security updates** live in repo Settings → Advanced Security, not in this
