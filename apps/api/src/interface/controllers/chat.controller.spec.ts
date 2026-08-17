@@ -21,6 +21,8 @@ describe('ChatController', () => {
       unpinMessage: jest.fn(),
       updateCategory: jest.fn(),
       deleteCategory: jest.fn(),
+      getChannels: jest.fn(),
+      getChannel: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -73,6 +75,27 @@ describe('ChatController', () => {
         'ch-1',
         'user-1',
         false,
+      );
+    });
+  });
+
+  // The channel-list leak (#1001) was structural: the handler took no user id,
+  // so the service had nothing to filter on no matter what it did. These assert
+  // at the layer where that defect actually lived.
+  describe('channel reads carry the caller', () => {
+    it('passes the caller’s user id to getChannels', async () => {
+      await controller.listChannels('ch-1', 'user-1');
+
+      expect(service.getChannels).toHaveBeenCalledWith('ch-1', 'user-1');
+    });
+
+    it('passes the caller’s user id to getChannel', async () => {
+      await controller.getChannel('ch-1', 'chan-1', 'user-1');
+
+      expect(service.getChannel).toHaveBeenCalledWith(
+        'chan-1',
+        'ch-1',
+        'user-1',
       );
     });
   });
