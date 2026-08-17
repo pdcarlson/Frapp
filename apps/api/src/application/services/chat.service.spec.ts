@@ -360,6 +360,207 @@ describe('ChatService', () => {
     });
   });
 
+  // A channel row is not neutral metadata. `name` + `member_ids` +
+  // the server's `dm-<a>-<b>` naming means one unfiltered row discloses a DM
+  // pair twice over, so these assert on the payload, not on what a UI draws.
+  describe('channel reads are access-filtered', () => {
+    const dmMine: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm-mine',
+      name: 'dm-user-1-user-2',
+      type: 'DM',
+      member_ids: ['user-1', 'user-2'],
+    };
+    const dmTheirs: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-dm-theirs',
+      name: 'dm-user-2-user-3',
+      type: 'DM',
+      member_ids: ['user-2', 'user-3'],
+    };
+    const privMine: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-mine',
+      name: 'my-committee',
+      type: 'PRIVATE',
+      member_ids: ['user-1'],
+    };
+    const privTheirs: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-priv-theirs',
+      name: 'exec-secrets',
+      description: 'exec only',
+      type: 'PRIVATE',
+      member_ids: ['user-2'],
+    };
+    const roleGated: ChatChannel = {
+      ...baseChannel,
+      id: 'ch-exec',
+      name: 'exec',
+      type: 'ROLE_GATED',
+      required_permissions: ['roles:manage'],
+    };
+    const everything = [
+      baseChannel,
+      dmMine,
+      dmTheirs,
+      privMine,
+      privTheirs,
+      roleGated,
+    ];
+
+    describe('getChannels', () => {
+      it('returns PUBLIC channels, the caller’s own DM, and their own PRIVATE channel', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual([
+          'ch-chan-1',
+          'ch-dm-mine',
+          'ch-priv-mine',
+        ]);
+      });
+
+      it('does not return a DM between two other members', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        // The pair leaks through two independent fields, so assert both: the
+        // uuid pair is in `name` as well as in `member_ids`.
+        expect(result.map((channel) => channel.id)).not.toContain(
+          'ch-dm-theirs',
+        );
+        expect(result.some((channel) => channel.name.includes('user-3'))).toBe(
+          false,
+        );
+        expect(
+          result.some((channel) =>
+            (channel.member_ids ?? []).includes('user-3'),
+          ),
+        ).toBe(false);
+      });
+
+      it('does not return another member’s PRIVATE channel', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([
+          baseChannel,
+          privTheirs,
+        ]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual(['ch-chan-1']);
+        expect(
+          result.some((channel) => channel.description === 'exec only'),
+        ).toBe(false);
+      });
+
+      it('hides a ROLE_GATED channel the caller lacks the permission for', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result).toEqual([]);
+      });
+
+      it('returns a ROLE_GATED channel once the caller holds a required permission', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([roleGated]);
+        mockRbac.getEffectivePermissions.mockResolvedValue(['roles:manage']);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result.map((channel) => channel.id)).toEqual(['ch-exec']);
+      });
+
+      it('returns nothing for a caller who is not a chapter member', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+        mockMemberRepo.findByUserAndChapter.mockResolvedValue(null);
+
+        const result = await service.getChannels('ch-1', 'ghost');
+
+        expect(result).toEqual([]);
+      });
+
+      it('returns an empty list without a membership lookup when the chapter has no channels', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([]);
+
+        const result = await service.getChannels('ch-1', 'user-1');
+
+        expect(result).toEqual([]);
+        expect(mockMemberRepo.findByUserAndChapter).not.toHaveBeenCalled();
+      });
+
+      it('does not resolve permissions when no ROLE_GATED channel is present', async () => {
+        mockChannelRepo.findByChapter.mockResolvedValue([baseChannel, dmMine]);
+
+        await service.getChannels('ch-1', 'user-1');
+
+        expect(mockRbac.getEffectivePermissions).not.toHaveBeenCalled();
+      });
+
+      it('reads the chapter’s channels exactly once', async () => {
+        // Pins the array-taking filter. Routing this list back through
+        // `filterAccessibleChannelIds` would re-read every channel in the
+        // chapter on a request that already holds the rows.
+        mockChannelRepo.findByChapter.mockResolvedValue(everything);
+
+        await service.getChannels('ch-1', 'user-1');
+
+        expect(mockChannelRepo.findByChapter).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe('getChannel', () => {
+      it('returns a channel the caller can read', async () => {
+        mockChannelRepo.findById.mockResolvedValue(baseChannel);
+
+        await expect(
+          service.getChannel('ch-chan-1', 'ch-1', 'user-1'),
+        ).resolves.toEqual(baseChannel);
+      });
+
+      it('rejects a PRIVATE channel the caller is not in', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+
+        await expect(
+          service.getChannel('ch-priv-theirs', 'ch-1', 'user-1'),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('404s a channel that does not resolve within the chapter', async () => {
+        mockChannelRepo.findById.mockResolvedValue(null);
+
+        await expect(
+          service.getChannel('ch-nope', 'ch-1', 'user-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+
+      it('still resolves the channel for updateChannel without a per-user check', async () => {
+        // `channels:manage` authorizes the mutation; membership of the channel
+        // does not. An officer editing a PRIVATE channel they are not in must
+        // keep working even though they can no longer GET it.
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+        mockChannelRepo.update.mockResolvedValue(privTheirs);
+
+        await expect(
+          service.updateChannel('ch-priv-theirs', 'ch-1', { name: 'renamed' }),
+        ).resolves.toEqual(privTheirs);
+        expect(mockChannelRepo.update).toHaveBeenCalled();
+      });
+
+      it('still resolves the channel for deleteChannel without a per-user check', async () => {
+        mockChannelRepo.findById.mockResolvedValue(privTheirs);
+        mockChannelRepo.delete.mockResolvedValue(undefined);
+
+        await expect(
+          service.deleteChannel('ch-priv-theirs', 'ch-1'),
+        ).resolves.toBeUndefined();
+        expect(mockChannelRepo.delete).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('getOrCreateDm', () => {
     it('should return existing DM if found', async () => {
       const dmChannel = {
