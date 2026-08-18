@@ -22,7 +22,7 @@
     "@repo/hooks": "*",
     "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
-    "@stripe/stripe-react-native": "0.64.0",
+    "@stripe/stripe-react-native": "0.74.0",
     "@supabase/supabase-js": "^2.112.3",
     "@tanstack/react-query": "^5.101.4",
     "expo": "~57.0.13",
@@ -56,7 +56,7 @@
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@types/react": "~19.2.0",
-    "eslint": "^9.39.1",
+    "eslint": "^9.39.5",
     "react-test-renderer": "19.2.3",
     "typescript": "~5.9.2",
     "vitest": "^4.1.10"
