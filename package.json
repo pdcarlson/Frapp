@@ -37,7 +37,7 @@
     "@electric-sql/pglite-pgvector": "^0.0.6",
     "@infisical/cli": "0.43.121",
     "prettier": "^3.9.6",
-    "turbo": "^2.10.9",
+    "turbo": "^2.10.10",
     "typescript": "5.9.2"
   },
   "overrides": {
