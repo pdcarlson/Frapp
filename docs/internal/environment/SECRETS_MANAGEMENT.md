@@ -104,6 +104,7 @@ In **all three environments**, add these references (they're the same in every e
 | `EXPO_PUBLIC_SUPABASE_URL`      | `${SUPABASE_URL}`                  |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}`             |
 | `EXPO_PUBLIC_API_URL`           | `${API_URL}`                       |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}`   |
 
 ### 5. Configure Secret Syncs
 

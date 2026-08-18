@@ -1,14 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "expo-router";
 import { StyleSheet, Text } from "react-native";
-import { useEvents, useMyPermissions, useNotifications } from "@repo/hooks";
+import {
+  useEvents,
+  useInvoices,
+  useMyPermissions,
+  useNotifications,
+  useStudySessions,
+  useViewerUserId,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { can, canAny } from "@repo/validation";
 import { ScreenShell } from "@/components/screen-shell";
 import { CountBadge, NavTile } from "@/components/nav-tile";
 import { selectEventRows } from "@/lib/events/select";
 import { selectUnreadIds } from "@/lib/more/notifications";
+import {
+  dueChip,
+  selectInvoiceRows,
+  selectNextDueInvoice,
+} from "@/lib/dues/invoices";
+import { formatHoursLabel, startOfWeek } from "@/lib/study/format";
+import { selectSessionHistory } from "@/lib/study/session";
 import { typeRole, useFrappTheme } from "@/lib/theme";
+import { StatusChip } from "@/components/status-chip";
 
 /**
  * s09 — More hub.
@@ -36,10 +51,16 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  *
  * Canvas draws a profile card, leading duotone glyphs, a grouped-list
  * container, and trailing status on Study hours and Dues. This screen keeps the
- * `NavTile` structure it shipped with and adds only the admin section, the real
- * unread badge, and honest copy. TODO-DESIGN: the full drawn anatomy
- * (`canvas-screens.dc.html:326`) is filed separately — the trailing statuses it
- * calls for read from study and dues data that C5/C6 own.
+ * `NavTile` structure it shipped with. TODO-DESIGN: the full drawn anatomy
+ * (`canvas-screens.dc.html:326`) is filed separately.
+ *
+ * The **trailing statuses** C4 deferred to "study and dues data that C5/C6 own"
+ * land here with C5/C6. Both are honest about what exists: Canvas draws
+ * "4.0 / 6.0" on Study, but no weekly requirement is modelled anywhere, so the
+ * row shows the week's real total with no denominator (see
+ * `components/study/week-summary.tsx`). Neither renders a placeholder while its
+ * query is in flight — a row that says "0.0 hrs" for a beat at a member who
+ * studied all week is worse than one that says nothing yet.
  */
 export default function MoreScreen() {
   const router = useRouter();
@@ -80,6 +101,37 @@ export default function MoreScreen() {
     return selectEventRows(eventsQuery.data, now)[0] ?? null;
   }, [canHost, eventsQuery.data, now]);
 
+  // The two drawn trailing statuses. Both reads are already cached by the
+  // screens they belong to (30s stale windows), so opening More warms them
+  // rather than duplicating work.
+  const viewerUserId = useViewerUserId();
+  const sessionsQuery = useStudySessions();
+  // Viewer-filtered server-side, for the reason `dues.tsx` records: unfiltered,
+  // this row would pull the whole chapter's ledger onto an officer's device.
+  const invoicesQuery = useInvoices(viewerUserId ?? undefined, {
+    enabled: !!viewerUserId,
+  });
+
+  // Keyed on the week boundary rather than the minute-ticking `now`: this
+  // narrows and sorts the whole session list, and the answer only changes once a
+  // week.
+  const weekStart = startOfWeek(now).getTime();
+  const studyThisWeek = useMemo(() => {
+    if (!sessionsQuery.data) return null;
+    const minutes = selectSessionHistory(sessionsQuery.data)
+      .filter((row) => Date.parse(row.startTime) >= weekStart)
+      .reduce((sum, row) => sum + row.totalForegroundMinutes, 0);
+    return formatHoursLabel(minutes);
+  }, [sessionsQuery.data, weekStart]);
+
+  const duesDue = useMemo(() => {
+    if (!invoicesQuery.data || !viewerUserId) return null;
+    const next = selectNextDueInvoice(
+      selectInvoiceRows(invoicesQuery.data, viewerUserId),
+    );
+    return next ? dueChip(next, now) : null;
+  }, [invoicesQuery.data, viewerUserId, now]);
+
   return (
     <ScreenShell
       title="More"
@@ -96,12 +148,32 @@ export default function MoreScreen() {
         title="Study hours"
         description="Track study sessions and weekly progress."
         accessibilityHint="Open study hours and session tracking."
+        trailing={
+          studyThisWeek ? (
+            <Text style={styles.trailingMeta}>{studyThisWeek}</Text>
+          ) : undefined
+        }
       />
       <NavTile
         href="/dues"
         title="Dues"
         description="Balance, payment, and history."
         accessibilityHint="Open chapter dues and payment history."
+        trailing={
+          duesDue ? (
+            <StatusChip
+              label={duesDue.label}
+              // foundations.md §5 assigns "overdue" to the destructive role. A
+              // late bill reading the same as an upcoming one is the confusion
+              // the semantic palette exists to prevent.
+              hue={
+                duesDue.state === "past-due"
+                  ? tokens.color.semantic.destructive
+                  : tokens.color.semantic.warning
+              }
+            />
+          ) : undefined
+        }
       />
       <NavTile
         href="/documents"
@@ -192,6 +264,10 @@ export default function MoreScreen() {
 
 function createStyles(tokens: SignetTokens) {
   return StyleSheet.create({
+    trailingMeta: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+    },
     sectionHeader: {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.muted,

@@ -27,18 +27,30 @@ The pause is **server-owned**: a client that only stops its local heartbeat is n
 | Surface | Backgrounding signal |
 | --- | --- |
 | Web dashboard | Page Visibility (`visibilitychange`) and the manual pause button both call `/pause`; returning calls `/resume`. Closing the tab stops the session outright. |
-| Mobile | **Not yet built** — there is no study screen in `apps/mobile`. The local pause notification above and OS foreground enforcement land with it. |
+| Mobile | `AppState` drives it: leaving the foreground calls `/pause`, returning calls `/resume` with fresh coordinates. The mirror tracks the last state *reported to the server* and rolls back on a failed call, so a dropped `/pause` is retried rather than leaving the client believing the server knows. Backgrounding never calls `/stop` — that is the web tab-close behaviour and it would make the grace window pointless. Built in C5 of #937 (`apps/mobile/app/(tabs)/study.tsx`). **The local pause notification above is not built** — `expo-notifications` is not a dependency and local notifications land with the push cluster (C7 of #937); the in-app card states the paused state instead. |
 
 ## Study Mode Screen
 
-While a study session is active, the app displays a dedicated study mode screen:
+While a study session is active, the app displays a dedicated study mode screen.
 
-- Large timer showing elapsed study time.
-- Current geofence name and location status (inside/outside).
-- Progress toward the next point award (e.g. "12 of 30 minutes toward next point").
-- Motivational streak indicator (e.g. "3rd session this week").
-- Minimal UI — no feeds, no chat, no distractions. Just the timer and status.
-- A "Stop Studying" button to end the session.
+**This list is intent; the locked Canvas artboard is the visual truth** (s10 in
+[`../ui/design-system/reference/canvas-screens.dc.html`](../ui/design-system/reference/canvas-screens.dc.html),
+and [`../ui/README.md`](../ui/README.md) for the precedence rule). Where the two
+disagreed, what shipped is recorded here so the next reader is not working from
+a screen that does not exist:
+
+- Large timer showing study time. **Shipped as credited time**, re-derived from
+  the session's `last_heartbeat_at` watermark — not elapsed wall time, which
+  would include paused gaps the member is not paid for.
+- Current geofence name and location status (inside/outside). Shipped, paired
+  with a status label rather than colour alone.
+- A button to end the session. Shipped as the drawn **"End session"**, behind a
+  native destructive confirm ([`../ui/mobile/README.md`](../ui/mobile/README.md)).
+- Progress toward the next point award, and a motivational streak indicator.
+  **Not shipped** — Canvas draws neither, and the reference wins on visuals.
+  Both are derivable from data the client already holds if they are wanted.
+- Minimal UI. **Not shipped as specified**: Canvas draws the week summary and a
+  recent-session list below the timer card, and that is what the screen renders.
 
 ## Points Award
 

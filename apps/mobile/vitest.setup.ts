@@ -34,6 +34,14 @@ vi.mock("react-native", () => ({
     removeEventListener: vi.fn(),
     currentState: "active",
   },
+  // s10 confirms "End session" through the native dialog, because
+  // `spec/ui/mobile/README.md` names ending a session early as an action that
+  // needs one and bans `window.confirm` outright. A spec that drives that path
+  // reads the buttons off this mock rather than tapping an in-product dialog
+  // that does not exist.
+  Alert: {
+    alert: vi.fn(),
+  },
   // Enough of the styling/layout surface for Signet token factories and
   // component tests; string stand-ins render fine under react-test-renderer.
   StyleSheet: {

@@ -46,6 +46,15 @@ in the S2 nav restructure (#957) — see
 | Chat thread | Retry failed upload | Requeues retry state + feedback |
 | Chat thread | Queue message | Queues message + feedback |
 | Chapter picker | Chapter row (multi-chapter account only) | Activates, refreshes the session, lands in the tabs |
+| Study hours | Study zone row (2+ zones) | Opens the zone picker sheet; picking one closes it and updates the card |
+| Study hours | Start session (location not yet granted) | Opens the **primer sheet first**, never the OS prompt — "Not now" dismisses quietly |
+| Study hours | Start session (location granted) | Session card replaces the start card; the timer ticks |
+| Study hours | Background the app for under the grace window, then return | Card shows paused on leave, resumes on return, and credited time does not jump |
+| Study hours | Background the app for longer than the grace window | Returning surfaces the closed-session notice; the row lands in RECENT SESSIONS |
+| Study hours | End session | Native destructive `Alert` confirm; cancelling leaves the session running |
+| Dues | Pay now (Expo Go) | CTA is **disabled with the reason stated**; balance and history still render |
+| Dues | Pay now (installed build, key configured) | Stripe PaymentSheet opens; dismissing it says nothing |
+| Dues | Complete a payment | Shows "payment received, confirmation pending", then flips to Paid only once the webhook lands |
 
 ## 4) Interaction quality assertions
 
