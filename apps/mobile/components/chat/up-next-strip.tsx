@@ -140,9 +140,27 @@ export function formatEventTime(startTime: string, now: Date): string {
   });
 }
 
+/**
+ * A task due date as an instant.
+ *
+ * `tasks.due_date` is a bare `YYYY-MM-DD`, which `new Date()` reads as UTC
+ * **midnight** — the previous local day for everyone west of Greenwich. Fed to
+ * the local-calendar `dayDelta` below, that made every due date land one day
+ * early: a task due Saturday painted `destructive` on Thursday for every US
+ * user. UTC noon is the fix `lib/more/service-hours.ts` already documents.
+ *
+ * A full timestamp is passed through untouched, because the chat `kind:"task"`
+ * card can carry one and forcing `T12:00:00Z` onto it would produce `NaN`.
+ */
+function parseDueInstant(value: string): Date | null {
+  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(bare ? `${value}T12:00:00Z` : value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function formatDueDate(dueDate: string, now: Date): string {
-  const due = new Date(dueDate);
-  if (Number.isNaN(due.getTime())) return "";
+  const due = parseDueInstant(dueDate);
+  if (!due) return "";
   const days = dayDelta(now, due);
   if (days < 0) return "overdue";
   if (days === 0) return "due today";
@@ -155,8 +173,8 @@ export function formatDueDate(dueDate: string, now: Date): string {
 
 /** Due today, tomorrow, or already past — the states drawn in red. */
 export function isDueUrgent(dueDate: string, now: Date): boolean {
-  const due = new Date(dueDate);
-  if (Number.isNaN(due.getTime())) return false;
+  const due = parseDueInstant(dueDate);
+  if (!due) return false;
   return dayDelta(now, due) <= 1;
 }
 

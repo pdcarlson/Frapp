@@ -129,6 +129,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   BottomSheetModal: "BottomSheetModal",
   BottomSheetView: "BottomSheetView",
   BottomSheetTextInput: "BottomSheetTextInput",
+  // Like `FlatList` above, this is a string stand-in that renders its props but
+  // never invokes `renderItem` — a spec needing a row should render that row's
+  // component directly.
+  BottomSheetFlatList: "BottomSheetFlatList",
 }));
 
 vi.mock("expo-font", () => ({
@@ -150,4 +154,25 @@ vi.mock("expo-splash-screen", () => ({
 
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardProvider: "KeyboardProvider",
+}));
+
+// `react-native-svg` ships untranspiled source, so importing any component that
+// draws a glyph — the tab bar (#937 S2) or the task checkbox (C3) — fails to
+// parse under vitest with `SyntaxError: Unexpected token 'typeof'`. Mocked
+// suite-wide for the same reason `expo-router` is: a spec should be able to
+// import a component without pulling a native module graph in.
+//
+// The stand-ins keep their props, so a spec can still assert on a glyph's
+// resolved `stroke`/`fill` — which is the whole point of the token reads in
+// `components/tab-glyphs.tsx` and `components/tasks/task-glyphs.tsx`.
+vi.mock("react-native-svg", () => ({
+  default: "Svg",
+  Svg: "Svg",
+  Path: "Path",
+  Rect: "Rect",
+  Circle: "Circle",
+  G: "G",
+  Defs: "Defs",
+  LinearGradient: "LinearGradient",
+  Stop: "Stop",
 }));

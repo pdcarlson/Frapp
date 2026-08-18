@@ -13,6 +13,8 @@ Creation flows are sheets (s19 new task, s20 log service hours, s21 upload docum
 - Text fields inside a sheet MUST use `BottomSheetTextInput` (plain `TextInput` breaks the sheet's keyboard coordination), with `keyboardBehavior="interactive"` on the sheet.
 - `react-native-keyboard-controller` does not run in Expo Go. It lives behind an execution-environment check (isolation module per [`README.md`](README.md)); Expo Go falls back to `KeyboardAvoidingView`.
 - Sheet chrome is styled with typed `StyleSheet` token factories. **NativeWind on sheet chrome is a hard ban** (research-derived; the full ban list is §2 "De-Google guardrails" in [`../design-system/README.md`](../design-system/README.md)).
+- **The shared chrome implementation is `apps/mobile/components/sheet-scaffold.tsx`** — `SheetGrabber`, `SheetHeader`, `SheetPrimaryButton`, `useSheetBackgroundStyle`. Reach for it rather than hand-rolling a grabber, title/Cancel row, or CTA; the sheets predating it (`service-hours.tsx`, `sheet-demo.tsx`) still carry their own copies, tracked separately. Same relationship `state-block.tsx` has to the state family.
+- A list inside a sheet MUST use the sheet-aware scrollables (`BottomSheetFlatList`, `BottomSheetScrollView`) **as a direct child of the sheet**, with fixed snap points. Nested inside a `BottomSheetView` under `enableDynamicSizing`, the view writes its frame height and the scrollable writes its content height to the same animated value, so a long list snaps the sheet to full screen and then jumps back. A roster-sized picker therefore gets its own stacked sheet rather than expanding inline (s19).
 
 ## QR check-in (s18 member scanner, s22 host display)
 
