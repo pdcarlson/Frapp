@@ -32,7 +32,7 @@
     "prepare": "node -e \"try{const fs=require('fs');if(fs.existsSync('scripts/setup-git-hooks.mjs'))require('child_process').execFileSync(process.execPath,['scripts/setup-git-hooks.mjs'],{stdio:'inherit'})}catch{}\""
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
+    "concurrently": "^10.0.5",
     "@electric-sql/pglite": "^0.5.5",
     "@electric-sql/pglite-pgvector": "^0.0.6",
     "@infisical/cli": "0.43.121",
