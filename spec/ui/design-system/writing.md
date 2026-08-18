@@ -223,6 +223,31 @@ The offline string MUST keep its closing clause — a member who edited or poste
 | Error | `Couldn't load study data` | `Confirm your chapter access and retry.` |
 | Paused (tab hidden) | `Paused (tab hidden)` (badge) | Surfaced live while the timer is paused by the Page Visibility API. |
 
+### Study session (mobile, s10)
+
+The dashboard rows above are officer-flavoured — "Ask a chapter admin with
+`geofences:manage`" and "Create your first invoice" are admin next steps, and a
+member reading their own study screen cannot act on either. Per §"Do not rewrite
+equivalent state text ad hoc per screen unless the workflow intent is materially
+different", the member surface gets its own rows rather than inline strings.
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
+| Module off | `Study hours are turned off` | `Your chapter isn't tracking study hours right now. An officer can turn the module back on.` The same sentence is what a failed Start renders when the server refuses with `chapter.module.disabled` — the empty state is unreachable while #805 keeps `useCurrentChapter` disabled, so the error path has to carry the member-facing wording rather than relaying the guard's officer instructions ("Re-enable it in Settings → Modules"). |
+| No zones | `No study zones yet` | `Sessions are tracked inside a zone. An officer with geofences:manage can add one.` |
+| Error (sessions) | `Couldn't load study hours` | `Your sessions are still recorded — this was a problem fetching them.` |
+| Error (zones) | `Couldn't load study zones` | `A session has to start inside a zone, so this has to load first.` |
+| Paused (backgrounded) | `<zone> · paused` (status row) | `Paused while Frapp was in the background. It resumes on its own — your credited time is safe until the grace window runs out.` |
+| Session closed by grace | — (notice) | `Session closed while the app was in the background. You kept the time you studied before it paused.` |
+| Session expired | — (notice) | `Session ended: you left the study zone, or the app stopped reporting for 10 minutes. No points were awarded.` |
+| Location primer | `Location check` | `Frapp confirms you're in the study zone when you start, and again every five minutes while you study. That check is what turns your time into chapter points.` Declining is `Not now`. |
+
+A close that **awards** points (`COMPLETED`, `PAUSED_EXPIRED`) must never read as
+a loss, and one that awards nothing (`EXPIRED`, `LOCATION_INVALID`) must say so —
+see [`../../behavior/study-sessions.md`](../../behavior/study-sessions.md)
+§ Points Award.
+
 ### Study zones (admin)
 
 | State | Title | Description |
@@ -260,6 +285,30 @@ Channel seeding happens at chapter onboarding and has no billing prerequisite; [
 | Loading | — | `Loading billing overview...` |
 | Empty | `No invoices yet` | `Create your first invoice to start chapter dues collection.` |
 | Preview/unauthenticated | `Showing preview billing data` | `Sign in to load live chapter subscription and invoice records.` |
+
+### Dues (mobile, s11)
+
+A member's dues screen, not the treasurer's billing overview — and **never the
+word "subscription"**, which is the chapter's own bill with a different payer
+([`../mobile/patterns.md`](../mobile/patterns.md) § Dues payment).
+
+| State | Title | Description |
+|---|---|---|
+| Loading | — | Skeleton (`components/state-block.tsx`); no loading copy. |
+| Empty | `No dues yet` | `Your chapter hasn't billed you. Anything they send will show up here.` |
+| Error | `Couldn't load your dues` | `Your invoices are still on record — this was a problem fetching them.` |
+| Nothing owed | `You're all paid up` (balance label) | — |
+| Payment captured, unsettled | — (notice) | `Payment received, confirmation pending. This updates as soon as your chapter's records catch up.` |
+| Payment settled | — (notice) | `Paid. Your chapter has it — thanks.` |
+| Stripe unavailable (Expo Go) | — (disabled CTA reason) | `Paying in the app needs the installed Frapp build — Expo Go can't open the payment sheet. Your treasurer can still take payment another way.` |
+| No publishable key | — (disabled CTA reason) | `Card payments aren't switched on for this build yet. Ask your treasurer how to pay this invoice.` |
+| Trust footer | — | `Payments run through your chapter's Stripe account.` |
+
+The due chip says **`Past due <date>`**, not `Overdue`: `OVERDUE` is the server's
+flagged state and includes the chapter's `wf_dues_grace` window, which a member's
+client cannot read (`GET /v1/invoices/overdue` is `billing:view`-only). §Status
+labels reserves the backend's own labels for states the client can actually
+confirm.
 
 ### Alumni (dashboard)
 

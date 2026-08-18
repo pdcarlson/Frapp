@@ -91,7 +91,15 @@ The tokens above are fixed; the accent family — `--primary`, `--primary-hover`
 
 Body text MUST NOT render below 16. Label and caption are for controls and metadata, never paragraphs — this is a consumer app read at arm's length, not a dense dashboard.
 
-**Monospace is a separate role with its own family, not a Figtree weight.** Reserve it for numeric, status, and code-like strings where fixed-width character alignment matters — invite tokens, permission keys, user ids, points-table cells, the study timer, and the Join-code row of the settings screen in the Canvas reference. Its family is the `--font-mono` system stack (`packages/theme/src/globals.css`, exposed as the Tailwind `mono` family by `packages/theme/src/tailwind.config.ts`); the family decision — a system stack, never a bundled webfont — is owned by [`../../architecture/README.md`](../../architecture/README.md) §15. Mono carries no size of its own: it takes the size of the role it sits in.
+**Monospace is a separate role with its own family, not a Figtree weight.** Reserve it for numeric, status, and code-like strings where fixed-width character alignment matters — invite tokens, permission keys, user ids, points-table cells, and the Join-code row of the settings screen in the Canvas reference. Its family is the `--font-mono` system stack (`packages/theme/src/globals.css`, exposed as the Tailwind `mono` family by `packages/theme/src/tailwind.config.ts`); the family decision — a system stack, never a bundled webfont — is owned by [`../../architecture/README.md`](../../architecture/README.md) §15. Mono carries no size of its own: it takes the size of the role it sits in.
+
+> **The mobile study timer is deliberately not on that list.** It used to be. Canvas draws s10's timer in Figtree 700 with
+> `font-variant-numeric: tabular-nums`, which solves the same problem mono was
+> reserved for — digits that do not jitter as they tick — while keeping the
+> brand face on the largest number on the screen. The reference wins on visuals
+> ([`../README.md`](../README.md)), so `apps/mobile/components/study/session-card.tsx`
+> ships tabular-nums Figtree and this list no longer claims otherwise. Prefer
+> the same treatment for any other live-counting numeral.
 
 Sizes MUST come from the scale above. Inventing an off-scale font size in screen code — including arithmetic on a role token, e.g. `tokens.type.section - 2` — is a defect, exactly as a raw hex value is ([`../mobile/README.md`](../mobile/README.md)).
 

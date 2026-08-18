@@ -127,6 +127,7 @@ Add these in **all three environments** in Infisical. The value is always the sa
 | `EXPO_PUBLIC_SUPABASE_URL` | `${SUPABASE_URL}` | apps/mobile |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `${SUPABASE_ANON_KEY}` | apps/mobile |
 | `EXPO_PUBLIC_API_URL` | `${API_URL}` | apps/mobile |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `${STRIPE_PUBLISHABLE_KEY}` | apps/mobile |
 
 **You type the literal string `${SUPABASE_URL}` as the value.** Infisical recognizes this as a reference and resolves it at sync/inject time.
 
@@ -217,11 +218,16 @@ Reads the `EXPO_PUBLIC_*` references:
 | `EXPO_PUBLIC_SUPABASE_URL` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_API_URL` | API client init + `eas.json` | ✅ |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/payments/stripe.ts` — the s11 dues payment sheet | ❌ — optional, and the mobile twin of `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` above (same `pk_…` value, same publishable-by-design reasoning; the secret key stays API-only). When unset, `isStripeAvailable()` is false and the Pay control renders **disabled with its reason stated** rather than hidden — balance and history still load. Expo Go cannot run Stripe's native module at all, so a Go session behaves the same way whether or not the key is set. |
 
 Both Supabase values are read at module scope and are **optional at boot**: when
 either is missing `getSupabaseClient()` returns `null` instead of throwing, so
 `npm run check-types` / `npm run test` and a bare `expo start` still work. Sign-in
 is unavailable in that state and the sign-in screen says so.
+
+`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
+CI, a local `expo start`, and every Expo Go session run without it, and none of
+them can take a payment anyway.
 
 ### Client-exposure audit
 
@@ -237,6 +243,7 @@ rather than summarised, so it can be diffed against a bundle without interpretat
 | `NEXT_PUBLIC_SUPABASE_URL` · `EXPO_PUBLIC_SUPABASE_URL` | project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` · `EXPO_PUBLIC_SUPABASE_ANON_KEY` | anon key — public by Supabase's design, gated by RLS and the API's own guards |
 | `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` · `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key — public by Stripe's design; the secret key stays API-only |
 | `NEXT_PUBLIC_APP_URL` | landing → app URL |
 | `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **The one entry with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key (`pk_…`) — the secret key stays API-only |
@@ -251,8 +258,10 @@ is not client-visible and must never gain a prefix.
 
 Audited **2026-08-15** (#851) against production builds of `apps/web` and `apps/landing` and the
 `apps/mobile` config: none of 15 server-only variable names appeared in the emitted client output,
-gitleaks found nothing in either client bundle, and mobile reads only the three `EXPO_PUBLIC_*`
-values listed here. **The name check is the load-bearing one** — the audit built with placeholder
+gitleaks found nothing in either client bundle, and mobile read only the three `EXPO_PUBLIC_*`
+values listed here at the time. **`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` was added afterwards** (C6 of
+#937): it is a publishable key by Stripe's own design, the same value the web bundle already carries,
+so it changes the count but not the finding. **The name check is the load-bearing one** — the audit built with placeholder
 env values, so it establishes which variables reach the browser, not which values do; a clean
 gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
 method, caveats, and re-run instructions:

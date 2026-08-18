@@ -32,8 +32,28 @@ export function useGeofences(options?: { enabled?: boolean }) {
 
 export function useStudySessions() {
   const client = useFrappClient();
+  // Chapter-scoped despite taking no chapter argument, for the same reason
+  // `useGeofences` above is: the route resolves the chapter from the request
+  // header, so a bare `["study-sessions"]` key serves one chapter's sessions
+  // under another after a switch. That matters more here than elsewhere,
+  // because `apps/mobile` has no cache clear on chapter switch the way
+  // `apps/web`'s provider does (#1042) — so on mobile the stale rows are what
+  // the member actually sees.
+  //
+  // Deliberately **not** `enabled: !!chapterId`: no production token carries an
+  // `active_chapter_id` claim while #805 is open, and `ChapterGuard` resolves a
+  // sole membership server-side, so gating on the claim would blank the screen
+  // for every member instead of scoping it.
+  //
+  // Which means the scoping above is **correct but currently inert**: with no
+  // claim the segment is always `null`, so it cannot separate two chapters
+  // today. It starts working the moment #805 lands, and it is the shape every
+  // sibling read already uses — but do not read this key as evidence that
+  // #1042's leak is handled. On mobile it is not, and the fix for that is a
+  // cache clear on chapter switch, not a key.
+  const chapterId = useActiveChapterId();
   return useQuery({
-    queryKey: ["study-sessions"],
+    queryKey: ["study-sessions", chapterId],
     queryFn: async () => {
       const { data, error } = await client.GET("/v1/study-sessions");
       if (error) throw error;

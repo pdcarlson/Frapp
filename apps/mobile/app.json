@@ -44,8 +44,8 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Frapp checks that you are at the event when you scan a check-in code.",
-          "locationWhenInUsePermission": "Frapp checks that you are at the event when you scan a check-in code.",
+          "locationAlwaysAndWhenInUsePermission": "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
+          "locationWhenInUsePermission": "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
