@@ -3,7 +3,25 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActiveChapterId, useFrappClient } from "./use-frapp-client";
 
-export function useInvoices(userId?: string) {
+/**
+ * Invoices for a chapter, or for one member.
+ *
+ * **Pass `userId` on a member-facing surface.** `GET /v1/invoices` returns the
+ * *whole chapter's* rows to a `billing:view` holder and only the caller's to
+ * everyone else, so an unfiltered read on a treasurer's device pulls every
+ * member's amounts and due dates into the cache to render one person's balance
+ * — under a key shared with the admin surfaces. The server short-circuits
+ * `user_id === self` before its RBAC check, so passing your own id always works
+ * and needs no permission.
+ *
+ * `options.enabled` exists because the viewer's id arrives asynchronously from
+ * `/v1/users/me`: without it the query fires once unfiltered and again filtered,
+ * which is the over-fetch this parameter is meant to avoid.
+ */
+export function useInvoices(
+  userId?: string,
+  options?: { enabled?: boolean },
+) {
   const client = useFrappClient();
   const chapterId = useActiveChapterId();
   return useQuery({
@@ -16,6 +34,7 @@ export function useInvoices(userId?: string) {
       return data;
     },
     staleTime: 30_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { useQueryClient } from "@tanstack/react-query";
 import { useListChapters } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useAuthSession } from "@/lib/auth-session";
@@ -37,6 +38,7 @@ export default function ChapterPicker() {
   const styles = createStyles(tokens);
   const router = useRouter();
   const { status, signOut } = useAuthSession();
+  const queryClient = useQueryClient();
   const selectChapter = useSelectChapter();
 
   const { data, isPending, isError, refetch } = useListChapters();
@@ -45,6 +47,14 @@ export default function ChapterPicker() {
 
   async function handleSignOut() {
     await signOut();
+    // The same cache drop `preferences.tsx` does on its sign-out, for the same
+    // reason: mobile's `QueryClient` is a module singleton and `signOut` clears
+    // only SecureStore and React state, so the next member to sign in on this
+    // device is served the previous one's rows until each entry goes stale.
+    // This is the *second* sign-out path in the app and it was missing the
+    // clear — which stopped being theoretical when s11 started caching invoice
+    // rows and a Pay affordance keyed off `/v1/users/me`.
+    queryClient.clear();
     // Navigate explicitly rather than waiting for the gate: the gate only ever
     // redirects *out* of this group, so signing out here would otherwise leave
     // the member staring at a chapter list whose every action now 401s.

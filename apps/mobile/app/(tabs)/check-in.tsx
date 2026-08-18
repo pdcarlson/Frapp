@@ -10,7 +10,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import * as Location from "expo-location";
 import { useCheckIn, useEvent } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { useChapterBranding } from "@/lib/chapter-branding";
@@ -19,6 +18,8 @@ import {
   parseCheckInCode,
 } from "@/lib/events/check-in-code";
 import { createScanLatch } from "@/lib/events/scan-latch";
+import { serverMessageOf, statusOf } from "@/lib/api-error";
+import { requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
@@ -47,15 +48,10 @@ type Status =
   | { kind: "error"; message: string };
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (!error || typeof error !== "object") return fallback;
-  const body = error as { statusCode?: unknown; message?: unknown };
-  if (body.statusCode === 409) {
+  if (statusOf(error) === 409) {
     return "You're already checked in for this event.";
   }
-  if (typeof body.message === "string" && body.message.length > 0) {
-    return body.message;
-  }
-  return fallback;
+  return serverMessageOf(error) ?? fallback;
 }
 
 export default function CheckInScreen() {
@@ -91,29 +87,18 @@ export default function CheckInScreen() {
   /**
    * Read the member's position, but only when the event actually has a zone.
    * Asking for location on an unzoned event would be a permission prompt with
-   * no purpose — and the "no background location" ban in `patterns.md` is why
-   * this is `requestForegroundPermissionsAsync`, never the Always variant.
+   * no purpose.
+   *
+   * The permission-and-accuracy rules moved to `lib/location.ts` when s10 grew
+   * a second caller for them — the "no background location" ban binds every
+   * surface, and one module asking is easier to keep honest than two.
    */
   const resolveLocation = useCallback(async () => {
     if (!needsLocation) return {};
 
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      throw new Error(
-        "This event checks you in by location. Allow location access to check in.",
-      );
-    }
-
-    const position = await Location.getCurrentPositionAsync({
-      // Building-scale polygon: Balanced is precise enough and materially
-      // cheaper than High, matching the study-session guidance in patterns.md.
-      accuracy: Location.Accuracy.Balanced,
-    });
-
-    return {
-      lat: position.coords.latitude,
-      lng: position.coords.longitude,
-    };
+    return requireForegroundFix(
+      "This event checks you in by location. Allow location access to check in.",
+    );
   }, [needsLocation]);
 
   const submit = useCallback(

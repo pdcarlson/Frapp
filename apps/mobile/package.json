@@ -22,6 +22,7 @@
     "@repo/hooks": "*",
     "@repo/theme": "^0.0.0",
     "@repo/validation": "*",
+    "@stripe/stripe-react-native": "0.64.0",
     "@supabase/supabase-js": "^2.112.3",
     "@tanstack/react-query": "^5.101.4",
     "expo": "~57.0.13",
