@@ -71,7 +71,9 @@ issue if anything looks off):
   triaged issue
 - **Ownership / lifecycle:** `suggestion` · `stale`
 - **Area:** `area:api` · `area:web` · `area:db` · `area:deps` · `area:security` · `area:ci` ·
-  `area:docs` · `area:product` · `area:ux` · `area:research`
+  `area:docs` · `area:product` · `area:ux` · `area:research` · `area:dx` (created in use rather
+  than declared — it carries no label description; see #1049 and #1059. Rostered 2026-08-18 so
+  routines stop reading it as a typo; its scope is the owner's to define)
 - **Scope:** `scope:production` — work that only becomes relevant once a production environment
   exists (owner decision 2026-08-10; see
   [`GITHUB_PM.md` → Labels and priority](GITHUB_PM.md#labels-and-priority-lean-taxonomy) and the
