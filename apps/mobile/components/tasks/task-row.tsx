@@ -124,7 +124,12 @@ export function TaskRow({ row, now, onToggle, isPending = false }: TaskRowProps)
       accessibilityRole="checkbox"
       accessibilityState={{ checked: row.isDone, busy: isPending }}
       accessibilityLabel={`${row.title}${subtitle ? `, ${subtitle}` : ""}`}
-      accessibilityHint={started ? "Mark this task done." : "Start this task."}
+      // One tap completes the task, whatever it currently reads as: a `TODO`
+      // row walks IN_PROGRESS then COMPLETED. Saying "Start this task" here
+      // told a screen-reader user the tap was reversible groundwork, when the
+      // server has no assignee transition out of COMPLETED and this app ships
+      // no reject affordance — only an officer could undo it.
+      accessibilityHint="Mark this task done."
       onPress={onToggle}
       style={({ pressed }) => [
         styles.row,

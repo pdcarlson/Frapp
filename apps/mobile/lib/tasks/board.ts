@@ -10,10 +10,18 @@
  */
 
 import { num, records, str } from "@/lib/more/narrow";
-import { dayDelta } from "./format";
+import { dayDelta, daysSinceCompletion, parseTaskDate } from "./format";
 import { isOpenTask } from "./transitions";
 
-/** Days past its due date that a finished task keeps its place on the board. */
+/**
+ * Days after **completion** that a finished task keeps its place on the board.
+ *
+ * Deliberately measured from `completed_at`, not from the due date. Keying it on
+ * the deadline retires a task by how old its *deadline* is, so completing a
+ * three-week-late task would drop the row in the same render as the tap that
+ * closed it — the checkbox never filling, the row simply vanishing under the
+ * member's finger, which reads as a delete rather than a completion.
+ */
 const COMPLETED_RETENTION_DAYS = 7;
 
 /** Days ahead that still counts as "this week" — a rolling window, not a calendar one. */
@@ -78,32 +86,32 @@ function toRow(row: Record<string, unknown>): TaskRowModel | null {
  */
 function dueInDays(row: TaskRowModel, now: Date): number | null {
   if (!row.dueDate) return null;
-  const due = new Date(`${row.dueDate}T12:00:00Z`);
-  return Number.isNaN(due.getTime()) ? null : dayDelta(now, due);
+  const due = parseTaskDate(row.dueDate);
+  return due ? dayDelta(now, due) : null;
+}
+
+/** A row paired with its due-day offset, computed once rather than per comparison. */
+interface RankedRow {
+  row: TaskRowModel;
+  days: number | null;
 }
 
 /**
  * Rank inside a section: overdue first (most overdue leading), then open rows by
  * due date, then finished rows, then anything undateable.
  */
-function compareRows(
-  a: TaskRowModel,
-  b: TaskRowModel,
-  now: Date,
-): number {
-  if (a.isDone !== b.isDone) return a.isDone ? 1 : -1;
+function compareRows(a: RankedRow, b: RankedRow): number {
+  if (a.row.isDone !== b.row.isDone) return a.row.isDone ? 1 : -1;
 
-  const aDays = dueInDays(a, now);
-  const bDays = dueInDays(b, now);
-  if (aDays === null || bDays === null) {
-    if (aDays !== bDays) return aDays === null ? 1 : -1;
-  } else if (aDays !== bDays) {
-    return aDays - bDays;
+  if (a.days === null || b.days === null) {
+    if (a.days !== b.days) return a.days === null ? 1 : -1;
+  } else if (a.days !== b.days) {
+    return a.days - b.days;
   }
 
   // Ties break on title so the board does not reshuffle between renders of the
   // same data — two tasks due the same day is the ordinary case, not an edge.
-  return a.title.localeCompare(b.title);
+  return a.row.title.localeCompare(b.row.title);
 }
 
 /**
@@ -132,8 +140,8 @@ export function selectTaskRows(
 ): TaskBoard {
   if (!viewerUserId) return EMPTY_BOARD;
 
-  const dueThisWeek: TaskRowModel[] = [];
-  const later: TaskRowModel[] = [];
+  const dueThisWeek: RankedRow[] = [];
+  const later: RankedRow[] = [];
 
   for (const raw of records(data)) {
     if (str(raw, "assignee_id") !== viewerUserId) continue;
@@ -147,8 +155,15 @@ export function selectTaskRows(
     // holds that history — the ledger in `spec/behavior/points.md` records the
     // award, not the task. Canvas draws one done row and specifies no policy;
     // this window is the PR's proposal.
-    if (row.isDone && days !== null && days < -COMPLETED_RETENTION_DAYS) {
-      continue;
+    //
+    // Age is measured from completion, and a row whose `completed_at` cannot be
+    // read is **kept**: the alternative is retiring a task on a timestamp this
+    // module never saw. The optimistic path always supplies one —
+    // `useUpdateTaskStatus` stamps `completed_at` alongside the status — so the
+    // just-completed row stays put and draws "Done today" as drawn.
+    if (row.isDone) {
+      const sinceDone = daysSinceCompletion(row.completedAt, now);
+      if (sinceDone !== null && sinceDone > COMPLETED_RETENTION_DAYS) continue;
     }
 
     // Overdue rows land in DUE THIS WEEK rather than a section of their own:
@@ -158,18 +173,18 @@ export function selectTaskRows(
     // from a weekday name to an absolute date at exactly `days < 7`, and the
     // drawing agrees (its LATER row reads "Due Aug 22").
     if (days !== null && days < THIS_WEEK_DAYS) {
-      dueThisWeek.push(row);
+      dueThisWeek.push({ row, days });
     } else {
-      later.push(row);
+      later.push({ row, days });
     }
   }
 
-  dueThisWeek.sort((a, b) => compareRows(a, b, now));
-  later.sort((a, b) => compareRows(a, b, now));
+  dueThisWeek.sort(compareRows);
+  later.sort(compareRows);
 
   return {
-    dueThisWeek,
-    later,
+    dueThisWeek: dueThisWeek.map((entry) => entry.row),
+    later: later.map((entry) => entry.row),
     total: dueThisWeek.length + later.length,
   };
 }

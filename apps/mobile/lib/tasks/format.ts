@@ -43,8 +43,11 @@ export function dayDelta(from: Date, to: Date): number {
  * task due the 22nd must not read "Due Aug 21". Same reasoning, same fix as
  * `formatDate` in `lib/more/service-hours.ts`.
  */
-function parseDueDate(value: string): Date | null {
-  const date = new Date(`${value}T12:00:00Z`);
+export function parseTaskDate(value: string): Date | null {
+  // A full timestamp passes through untouched: appending `T12:00:00Z` to one
+  // yields `NaN`, and the chat `kind:"task"` payload can carry either shape.
+  const bare = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(bare ? `${value}T12:00:00Z` : value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
@@ -52,6 +55,19 @@ function parseDueDate(value: string): Date | null {
 function parseInstant(value: string): Date | null {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
+ * Days since a task was finished, or `null` when it carries no readable
+ * `completed_at`. Positive means in the past.
+ */
+export function daysSinceCompletion(
+  completedAt: string | null,
+  now: Date,
+): number | null {
+  if (!completedAt) return null;
+  const at = parseInstant(completedAt);
+  return at ? dayDelta(at, now) : null;
 }
 
 /**
@@ -67,7 +83,7 @@ export function formatDueSubtitle(
   now: Date,
 ): string | null {
   if (!dueDate) return null;
-  const due = parseDueDate(dueDate);
+  const due = parseTaskDate(dueDate);
   if (!due) return null;
 
   const days = dayDelta(now, due);

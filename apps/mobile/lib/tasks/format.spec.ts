@@ -61,6 +61,17 @@ describe("isDueUrgent", () => {
   it("leaves anything further out calm", () => {
     expect(isDueUrgent("2026-08-19", NOW)).toBe(false);
   });
+
+  it("agrees with the subtitle west of Greenwich", () => {
+    // A bare `YYYY-MM-DD` is UTC midnight, which is the previous *local* day for
+    // every US zone. Against the local-calendar `dayDelta` that made a task due
+    // in two days report urgent — so every row two days out painted
+    // `destructive` while its own subtitle read "Due <weekday>". This assertion
+    // failed under TZ=America/New_York before the UTC-noon parse landed.
+    const twoDaysOut = "2026-08-19";
+    expect(formatDueSubtitle(twoDaysOut, NOW)).toBe("Due Wednesday");
+    expect(isDueUrgent(twoDaysOut, NOW)).toBe(false);
+  });
 });
 
 describe("formatDoneSubtitle", () => {

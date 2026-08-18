@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, useState } from "react";
+import { forwardRef, useCallback, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   BottomSheetFlatList,
@@ -10,7 +10,7 @@ import { SignetTokens } from "@repo/theme/signet";
 import { useChapterRoster, useCreateTask, useViewerUserId } from "@repo/hooks";
 import { avatarRadius, tint, typeRole, useFrappTheme } from "@/lib/theme";
 import { useChapterBranding } from "@/lib/chapter-branding";
-import { initialsFor, records, str } from "@/lib/more/narrow";
+import { initialsFor } from "@/lib/more/narrow";
 import { FilterChips } from "@/components/filter-chips";
 import {
   SheetGrabber,
@@ -23,10 +23,10 @@ import { TITLE_MAX_LENGTH } from "@/lib/tasks/limits";
 import {
   duePresets,
   formatDueFieldLabel,
-  localIsoDate,
   parsePointReward,
   validateNewTask,
 } from "@/lib/tasks/create-task";
+import { todayIsoDate } from "@/lib/more/service-hours";
 
 /**
  * s19 — the "New task" bottom sheet (`canvas-screens.dc.html`, `id="s19"`).
@@ -51,6 +51,9 @@ import {
  * exactly this and had no caller.
  */
 
+/** A list has no natural height, so the picker snaps rather than sizing to content. */
+const PICKER_SNAP_POINTS = ["70%"];
+
 export interface NewTaskSheetProps {
   /** Injected so the presets are deterministic under test. */
   now?: Date;
@@ -63,13 +66,25 @@ interface RosterMember {
   name: string | null;
 }
 
-function selectRoster(data: unknown): RosterMember[] {
-  return records(data)
-    .map((row) => {
-      const userId = str(row, "user_id");
-      return userId ? { userId, name: str(row, "display_name") } : null;
-    })
-    .filter((row): row is RosterMember => row !== null);
+/**
+ * The roster, read off the generated types rather than hand-narrowed.
+ *
+ * `GET /v1/members/roster` is one of the few reads that **does** declare a
+ * response schema, so the SDK gives its rows a real type — which is why
+ * `useMemberDisplayNames` says "No `unknown`-parsing here". Narrowing it by
+ * string key anyway would turn a future `display_name` rename from a compile
+ * error into a picker that silently renders every brother as "Member".
+ *
+ * `display_name` is `NOT NULL DEFAULT ''`, so empty is normalized to `null` —
+ * absent and empty are the same "no name set" case, as `narrow.ts` documents.
+ */
+function selectRoster(
+  data: readonly { user_id: string; display_name: string }[] | undefined,
+): RosterMember[] {
+  return (data ?? []).map((row) => ({
+    userId: row.user_id,
+    name: row.display_name.trim().length > 0 ? row.display_name : null,
+  }));
 }
 
 export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
@@ -78,6 +93,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const { accent } = useChapterBranding();
     const styles = createStyles(tokens);
     const backgroundStyle = useSheetBackgroundStyle();
+    const pickerRef = useRef<BottomSheetModal>(null);
 
     const viewerUserId = useViewerUserId();
     const rosterQuery = useChapterRoster();
@@ -90,11 +106,10 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
     const [title, setTitle] = useState("");
     const [pointsInput, setPointsInput] = useState("");
-    const [dueDate, setDueDate] = useState(() => localIsoDate(at));
+    const [dueDate, setDueDate] = useState(() => todayIsoDate(at));
     // Defaults to the viewer, so the common case needs no picker interaction.
     const [assigneeId, setAssigneeId] = useState<string | null>(null);
     const [titleFocused, setTitleFocused] = useState(false);
-    const [pickerOpen, setPickerOpen] = useState(false);
     const [search, setSearch] = useState("");
     const [submitFailed, setSubmitFailed] = useState(false);
 
@@ -106,6 +121,20 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const effectiveAssigneeId = assigneeId ?? viewerUserId;
     const assignee = roster.find((row) => row.userId === effectiveAssigneeId);
     const assigneeName = assignee?.name ?? null;
+    const assigneeIsViewer =
+      effectiveAssigneeId !== null && effectiveAssigneeId === viewerUserId;
+    /**
+     * What the collapsed row says.
+     *
+     * "You" is keyed on the *id*, never on a missing name: `display_name` is
+     * `NOT NULL DEFAULT ''` and normalizes to `null`, so falling back to "You"
+     * for an unnamed member would tell an officer they were assigning a pledge's
+     * task to themselves — and the post-create confirmation, which compares ids,
+     * would then contradict the field.
+     */
+    const assigneeLabel = assigneeIsViewer
+      ? (assigneeName ?? "You")
+      : (assigneeName ?? "Member");
 
     const draft = {
       title,
@@ -120,9 +149,8 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     const reset = useCallback(() => {
       setTitle("");
       setPointsInput("");
-      setDueDate(localIsoDate(at));
+      setDueDate(todayIsoDate(at));
       setAssigneeId(null);
-      setPickerOpen(false);
       setSearch("");
       setSubmitFailed(false);
       setTitleFocused(false);
@@ -169,6 +197,7 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
     }, [roster, search]);
 
     return (
+      <>
       <BottomSheetModal
         ref={ref}
         enableDynamicSizing
@@ -234,74 +263,22 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
 
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Assignee: ${assigneeName ?? "you"}`}
+            accessibilityLabel={`Assignee: ${assigneeLabel}`}
             accessibilityHint="Choose who this task is for."
-            accessibilityState={{ expanded: pickerOpen }}
-            onPress={() => setPickerOpen((open) => !open)}
+            onPress={() => {
+              setSearch("");
+              pickerRef.current?.present();
+            }}
             style={styles.assigneeRow}
           >
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {initialsFor(assigneeName)}
-              </Text>
+              <Text style={styles.avatarText}>{initialsFor(assigneeName)}</Text>
             </View>
             <Text style={styles.fieldValue} numberOfLines={1}>
-              {assigneeName ?? "You"}
+              {assigneeLabel}
             </Text>
             <Text style={styles.assigneeHint}>assignee</Text>
           </Pressable>
-
-          {pickerOpen ? (
-            <>
-              {/* Deliberately NOT `SearchField` from `components/filter-chips.tsx`:
-                  that renders a plain `TextInput`, and inside a gorhom sheet a
-                  plain input breaks the sheet's keyboard coordination —
-                  `patterns.md` makes `BottomSheetTextInput` mandatory here. The
-                  chrome matches the sheet's own fields rather than the
-                  directory's search box. */}
-              <BottomSheetTextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search members"
-                placeholderTextColor={tokens.color.text.muted}
-                accessibilityLabel="Search members"
-                autoCapitalize="none"
-                autoCorrect={false}
-                style={styles.field}
-              />
-              {/* A sheet-aware list: a plain FlatList nested in a gorhom sheet
-                  loses the sheet's pan gesture, the same class of rule as
-                  BottomSheetTextInput. */}
-              <BottomSheetFlatList
-                data={filteredRoster}
-                keyExtractor={(row: RosterMember) => row.userId}
-                style={styles.picker}
-                renderItem={({ item }: { item: RosterMember }) => (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      selected: item.userId === effectiveAssigneeId,
-                    }}
-                    onPress={() => {
-                      setAssigneeId(item.userId);
-                      setPickerOpen(false);
-                      setSearch("");
-                    }}
-                    style={styles.pickerRow}
-                  >
-                    <View style={styles.avatar}>
-                      <Text style={styles.avatarText}>
-                        {initialsFor(item.name)}
-                      </Text>
-                    </View>
-                    <Text style={styles.fieldValue} numberOfLines={1}>
-                      {item.name ?? "Member"}
-                    </Text>
-                  </Pressable>
-                )}
-              />
-            </>
-          ) : null}
 
           {pointsInvalid ? (
             <Text style={styles.error}>
@@ -324,6 +301,81 @@ export const NewTaskSheet = forwardRef<BottomSheetModal, NewTaskSheetProps>(
           />
         </BottomSheetView>
       </BottomSheetModal>
+
+      {/* A second, stacked sheet rather than an inline list.
+          `BottomSheetFlatList` must be a **direct** child of the sheet: nested
+          inside a `BottomSheetView` under `enableDynamicSizing`, the view writes
+          its frame height and the scrollable writes its content height to the
+          same animated `contentHeight`, so a 60-member roster snaps the sheet to
+          full screen and then jumps back on the next layout pass. Fixed
+          snap points here for the same reason — a list has no natural height to
+          size to. */}
+      <BottomSheetModal
+        ref={pickerRef}
+        snapPoints={PICKER_SNAP_POINTS}
+        keyboardBehavior="interactive"
+        backgroundStyle={backgroundStyle}
+        handleComponent={SheetGrabber}
+      >
+        <BottomSheetFlatList
+          data={filteredRoster}
+          keyExtractor={(row: RosterMember) => row.userId}
+          contentContainerStyle={styles.pickerContent}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <View style={styles.pickerHeader}>
+              <SheetHeader
+                title="Assign to"
+                onCancel={() => pickerRef.current?.dismiss()}
+                cancelLabel="Done"
+              />
+              {/* Not `SearchField` from `components/filter-chips.tsx`: that is a
+                  plain `TextInput`, and inside a gorhom sheet a plain input
+                  breaks the sheet's keyboard coordination — `patterns.md` makes
+                  `BottomSheetTextInput` mandatory here. */}
+              <BottomSheetTextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search members"
+                placeholderTextColor={tokens.color.text.muted}
+                accessibilityLabel="Search members"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.field}
+              />
+            </View>
+          }
+          ListEmptyComponent={
+            <Text style={styles.pickerEmpty}>
+              {rosterQuery.isPending
+                ? "Loading your chapter…"
+                : "No members match that search."}
+            </Text>
+          }
+          renderItem={({ item }: { item: RosterMember }) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{
+                selected: item.userId === effectiveAssigneeId,
+              }}
+              onPress={() => {
+                setAssigneeId(item.userId);
+                setSearch("");
+                pickerRef.current?.dismiss();
+              }}
+              style={styles.pickerRow}
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{initialsFor(item.name)}</Text>
+              </View>
+              <Text style={styles.fieldValue} numberOfLines={1}>
+                {item.name ?? "Member"}
+              </Text>
+            </Pressable>
+          )}
+        />
+      </BottomSheetModal>
+    </>
     );
   },
 );
@@ -409,8 +461,18 @@ function createStyles(tokens: SignetTokens) {
       ...typeRole(tokens.typography.role.caption),
       color: tokens.color.text.mutedForeground,
     },
-    picker: {
-      maxHeight: 220,
+    pickerContent: {
+      paddingHorizontal: tokens.spacing.lg,
+      paddingBottom: tokens.spacing.xl,
+    },
+    pickerHeader: {
+      gap: tokens.spacing.sm,
+      paddingBottom: tokens.spacing.sm,
+    },
+    pickerEmpty: {
+      ...typeRole(tokens.typography.role.caption),
+      color: tokens.color.text.muted,
+      paddingVertical: tokens.spacing.md,
     },
     pickerRow: {
       flexDirection: "row",

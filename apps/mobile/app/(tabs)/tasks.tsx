@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useActiveChapterId,
+  useCurrentUser,
   useLeaderboard,
   useMyPermissions,
   useMyPoints,
@@ -70,6 +72,10 @@ export default function TasksScreen() {
 
   const chapterId = useActiveChapterId();
   const viewerUserId = useViewerUserId();
+  // The query behind `useViewerUserId`, for its error state: that helper returns
+  // `null` for *failed* as well as *pending*, and the board needs to tell them
+  // apart or a dead `/v1/users/me` pins it on a skeleton with no way out.
+  const viewerQuery = useCurrentUser();
   const tasksQuery = useTasks();
   const pointsQuery = useMyPoints("semester");
   const leaderboardQuery = useLeaderboard("semester");
@@ -85,9 +91,18 @@ export default function TasksScreen() {
   }, [permData]);
   const canManageTasks = can("tasks:manage", permissions);
 
-  // Read once per render so the two sections cannot straddle a tick and
-  // disagree about what "today" means.
-  const now = useMemo(() => new Date(), []);
+  // One clock for the whole render, so the two sections cannot straddle a tick
+  // and disagree about what "today" means — but re-read whenever the screen is
+  // focused. A tab is never unmounted and the JS context survives days of
+  // backgrounding, so a mount-only clock would keep bucketing by the day the app
+  // was opened, and the sheet's "Today" chip would file a task already overdue.
+  const [now, setNow] = useState(() => new Date());
+  useFocusEffect(
+    useCallback(() => {
+      setNow(new Date());
+      return undefined;
+    }, []),
+  );
   const board = useMemo(
     () => selectTaskRows(tasksQuery.data, viewerUserId, now),
     [tasksQuery.data, viewerUserId, now],
@@ -103,12 +118,24 @@ export default function TasksScreen() {
 
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /**
+   * Ids with a sequence in flight.
+   *
+   * A ref rather than the `pendingId` state because two taps in one frame both
+   * observe the pre-render state value: the second would start its own sequence
+   * against an already-advanced row, collect a guaranteed 400 from the server's
+   * compare-and-set, and — worse — clear the busy flag while the first sequence
+   * was still mid-write.
+   */
+  const inFlight = useRef<Set<string>>(new Set());
 
   const toggle = useCallback(
     async (row: TaskRowModel) => {
       const sequence = nextTapSequence(row.storedStatus, row.displayStatus);
       if (sequence.length === 0) return;
+      if (inFlight.current.has(row.id)) return;
 
+      inFlight.current.add(row.id);
       setPendingId(row.id);
       try {
         for (const status of sequence) {
@@ -119,6 +146,7 @@ export default function TasksScreen() {
         // rejection here is the ordinary failure path rather than a crash. The
         // row simply redraws at whatever the server actually holds.
       } finally {
+        inFlight.current.delete(row.id);
         setPendingId(null);
       }
     },
@@ -128,16 +156,18 @@ export default function TasksScreen() {
   const renderRows = useCallback(
     (rows: TaskRowModel[]) =>
       rows.map((row) => {
-        const pressable = nextTapSequence(
-          row.storedStatus,
-          row.displayStatus,
-        ).length > 0;
+        const busy = pendingId === row.id;
+        const pressable =
+          !busy &&
+          nextTapSequence(row.storedStatus, row.displayStatus).length > 0;
         return (
           <TaskRow
             key={row.id}
             row={row}
             now={now}
-            isPending={pendingId === row.id}
+            isPending={busy}
+            // Dropped, not disabled-in-place, while the sequence runs: the row
+            // is mid-ladder, so a second tap would race the compare-and-set.
             onToggle={pressable ? () => void toggle(row) : undefined}
           />
         );
@@ -151,8 +181,25 @@ export default function TasksScreen() {
     // where "pick a chapter" is the honest answer.
     if (!chapterId) return <NoChapterState noun="your tasks" />;
 
-    // `viewerUserId === null` is "/v1/users/me has not answered", not "no
-    // tasks". Treating it as empty flashes "You're all clear" on every cold
+    // Checked before the pending gate below, because `useViewerUserId` reports a
+    // failed `/v1/users/me` as `null` too. Without this branch a 500 there
+    // leaves the board shimmering forever with no retry — the exact "blip at
+    // launch leaves a screen dead until a force-quit" case `state-block.tsx`
+    // says `onRetry` exists to prevent, and `ScreenShell` is frozen so there is
+    // no pull-to-refresh escape.
+    if (viewerQuery.isError) {
+      return (
+        <ErrorState
+          title="Couldn't load your account"
+          body="Your tasks are filtered to you, so this has to load first."
+          onRetry={() => void viewerQuery.refetch()}
+          isRetrying={viewerQuery.isFetching}
+        />
+      );
+    }
+
+    // `viewerUserId === null` here is "/v1/users/me has not answered yet", not
+    // "no tasks". Treating it as empty flashes "You're all clear" on every cold
     // start, a beat before the real rows land.
     if (tasksQuery.isPending || viewerUserId === null) {
       return <SkeletonLines lines={3} />;
@@ -255,7 +302,7 @@ function createStyles(tokens: SignetTokens, accent: string) {
       width: 38,
       height: 38,
       // TODO-DESIGN: Canvas draws radius 11; `navItem` is 10 and is the nearest
-      // role. Off-scale radii are not derivable by arithmetic per foundations.md §7.
+      // role in the locked radius map (foundations.md § Radius).
       borderRadius: tokens.radius.navItem,
       backgroundColor: accent,
       alignItems: "center",

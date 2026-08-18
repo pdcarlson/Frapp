@@ -27,8 +27,14 @@
 import type { TaskStatus } from "@repo/hooks";
 
 /**
- * The statuses the server will accept a transition *from*, keyed by the stored
- * value. `OVERDUE` is deliberately absent: it is never persisted
+ * The full write sequence one tap should send, keyed by the stored status.
+ *
+ * **Not** a copy of the server's table — `TODO` maps to two writes because the
+ * server accepts only `IN_PROGRESS` from `TODO`, and a drawn checkbox means
+ * "done". This is the ladder that reaches the drawn outcome through transitions
+ * the server will actually take.
+ *
+ * `OVERDUE` is deliberately absent: it is never persisted
  * (`toDisplayStatus` synthesizes it and `task.entity.ts` never stores it), so
  * the API's own `OVERDUE` row is unreachable and reproducing it here would
  * imply a state this module can observe.

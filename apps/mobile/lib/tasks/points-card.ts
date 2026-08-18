@@ -42,7 +42,7 @@ export interface HouseRank {
  * `null` and `0` are different answers and the card draws them differently: a
  * real zero renders "0", while `null` renders an em dash. Headlining a "0" at a
  * member who has 1,240 points is the failure the `hasEntries` discipline in
- * `lib/more/service-hours.ts` exists to prevent.
+ * `app/(tabs)/service-hours.tsx` exists to prevent.
  */
 export function selectPointsSummary(data: unknown): PointsSummary | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;

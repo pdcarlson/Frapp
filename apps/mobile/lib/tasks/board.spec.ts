@@ -164,7 +164,12 @@ describe("selectTaskRows — completed rows", () => {
   it("keeps a recently finished task and sorts it below open work", () => {
     const board = selectTaskRows(
       [
-        done({ id: "a", title: "Paid dues", due_date: "2026-08-14" }),
+        done({
+          id: "a",
+          title: "Paid dues",
+          due_date: "2026-08-14",
+          completed_at: at(2026, 8, 15).toISOString(),
+        }),
         task({ id: "b", title: "Open", due_date: "2026-08-18" }),
       ],
       ME,
@@ -174,18 +179,61 @@ describe("selectTaskRows — completed rows", () => {
     expect(board.dueThisWeek[1]?.isDone).toBe(true);
   });
 
-  it("retires a task finished more than a week past its due date", () => {
+  it("retires a task finished more than a week ago", () => {
     const board = selectTaskRows(
-      [done({ id: "a", title: "Ancient", due_date: "2026-08-01" })],
+      [
+        done({
+          id: "a",
+          title: "Ancient",
+          due_date: "2026-08-01",
+          completed_at: at(2026, 8, 2).toISOString(),
+        }),
+      ],
       ME,
       NOW,
     );
     expect(board.total).toBe(0);
   });
 
+  it("keeps a long-overdue task that was only just completed", () => {
+    // Retention is measured from completion, not the deadline. Keying it on the
+    // due date drops the row in the same render as the tap that closed it — the
+    // checkbox never fills and the row vanishes, reading as a delete.
+    const board = selectTaskRows(
+      [
+        done({
+          id: "a",
+          title: "Finally done",
+          due_date: "2026-08-01",
+          completed_at: NOW.toISOString(),
+        }),
+      ],
+      ME,
+      NOW,
+    );
+    expect(board.total).toBe(1);
+  });
+
+  it("keeps a finished task whose completion time cannot be read", () => {
+    // Retiring on a timestamp this module never saw is the worse failure.
+    const board = selectTaskRows(
+      [done({ id: "a", title: "Undated", due_date: "2026-07-01", completed_at: null })],
+      ME,
+      NOW,
+    );
+    expect(board.total).toBe(1);
+  });
+
   it("keeps a completed task that is still within the window", () => {
     const board = selectTaskRows(
-      [done({ id: "a", title: "Edge", due_date: "2026-08-10" })],
+      [
+        done({
+          id: "a",
+          title: "Edge",
+          due_date: "2026-08-10",
+          completed_at: at(2026, 8, 12).toISOString(),
+        }),
+      ],
       ME,
       NOW,
     );
