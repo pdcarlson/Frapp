@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -7,9 +7,12 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { useEvents } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { AskSheet } from "@/components/ask/ask-sheet";
+import { AskPill } from "@/components/chat/ask-pill";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { formatEventRowTime, resolveCheckInWindow } from "@/lib/events/format";
 import { selectEventRows, type EventRow } from "@/lib/events/select";
@@ -23,6 +26,12 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  * window is still open. Finished events deliberately fall off — attendance
  * history is a reports surface, and a list that grows forever buries tonight's
  * meeting under last semester's.
+ *
+ * The ✦ Ask pill in the header is the s06 half of the global Ask entry.
+ * `spec/ui/mobile/navigation.md:60` puts it "in the top bar of Chat home **and
+ * Events**"; only the s04 half was built, so this screen carried no
+ * `headerAction` at all until C7. The sheet it opens is hosted here rather than
+ * routed to, per `spec/ui/mobile/patterns.md` § Bottom sheets.
  */
 
 export default function EventsScreen() {
@@ -31,6 +40,7 @@ export default function EventsScreen() {
   const styles = createStyles(tokens, accent);
   const router = useRouter();
   const eventsQuery = useEvents();
+  const askSheetRef = useRef<BottomSheetModal>(null);
 
   // Read once per render so every row agrees on what "today" and "open" mean.
   const now = useMemo(() => new Date(), []);
@@ -49,6 +59,7 @@ export default function EventsScreen() {
     <ScreenShell
       title="Events"
       subtitle="What's coming up, and what you can check in to right now."
+      headerAction={<AskPill onPress={() => askSheetRef.current?.present()} />}
     >
       {eventsQuery.isPending ? (
         <View style={styles.stateBlock}>
@@ -63,9 +74,9 @@ export default function EventsScreen() {
           </Text>
           {/*
             Explicit retry for the same reason Chat home carries one: this is a
-            tab that stays mounted, the shell's ScrollView has no
-            RefreshControl, and nothing wires `onlineManager` — so without this
-            a blip at launch leaves the screen dead until a force-quit.
+            tab that stays mounted and the shell's ScrollView has no
+            RefreshControl. C8 (#998) wired `onlineManager`, so a connectivity
+            blip now recovers on its own; a server error still needs this.
           */}
           <Pressable
             accessibilityRole="button"
@@ -99,6 +110,8 @@ export default function EventsScreen() {
           />
         ))
       )}
+
+      <AskSheet ref={askSheetRef} />
     </ScreenShell>
   );
 }

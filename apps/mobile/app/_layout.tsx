@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { useNetworkState } from "expo-network";
 import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -13,6 +12,7 @@ import {
   useFonts,
 } from "@expo-google-fonts/figtree";
 import * as SplashScreen from "expo-splash-screen";
+import { AppRuntime } from "@/components/app-runtime";
 import { NetworkBanner } from "@/components/network-banner";
 import { FrappProvider } from "@/lib/frapp-client";
 import { AnalyticsProvider } from "@/lib/analytics-provider";
@@ -27,14 +27,20 @@ void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
   const { tokens } = useFrappTheme();
-  const networkState = useNetworkState();
 
   return (
     <View style={{ flex: 1, backgroundColor: tokens.color.surface.background }}>
-      <NetworkBanner
-        isOnline={networkState.isConnected ?? null}
-        isInternetReachable={networkState.isInternetReachable ?? null}
-      />
+      {/*
+        Renders nothing — it starts the app-wide runtimes that have no screen to
+        live on (push and connectivity). Both must sit above the auth gate: push
+        reads the notification that launched the app before anyone is routed,
+        and tab screens mount lazily, so a runtime on a screen would miss it.
+        See `components/app-runtime.tsx`.
+      */}
+      <AppRuntime />
+      {/* Reads the connection monitor directly now, rather than being handed a
+          second, independent reading of `expo-network` from here. */}
+      <NetworkBanner />
       {/* Signet is dark-only, so the status bar is statically light-on-dark. */}
       <StatusBar style="light" />
       <Stack>

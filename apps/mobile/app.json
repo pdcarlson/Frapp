@@ -42,6 +42,13 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#EFB63B",
+          "defaultChannel": "default"
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Frapp confirms you are inside a chapter study zone while you track study hours, and that you are at the event when you scan a check-in code.",

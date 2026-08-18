@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import { useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import {
   useChannelUnreadCounts,
   useChannels,
@@ -17,6 +18,7 @@ import {
 } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
+import { AskSheet } from "@/components/ask/ask-sheet";
 import { AskPill } from "@/components/chat/ask-pill";
 import { ChannelRow } from "@/components/chat/channel-row";
 import { UpNextStrip } from "@/components/chat/up-next-strip";
@@ -53,6 +55,11 @@ export default function ChatHomeScreen() {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const router = useRouter();
+  // s17 is a sheet hosted by its parent screen, not a route
+  // (`spec/ui/mobile/patterns.md` § Bottom sheets), so this screen owns the
+  // modal and the ✦ pill only presents it — the arrangement `tasks.tsx` uses
+  // for s19.
+  const askSheetRef = useRef<BottomSheetModal>(null);
 
   const channelsQuery = useChannels();
   const unreadQuery = useChannelUnreadCounts();
@@ -101,7 +108,7 @@ export default function ChatHomeScreen() {
     <ScreenShell
       title="Chat"
       subtitle="Your chapter's channels and direct messages."
-      headerAction={<AskPill />}
+      headerAction={<AskPill onPress={() => askSheetRef.current?.present()} />}
     >
       <UpNextStrip events={eventsQuery.data} tasks={tasksQuery.data} />
 
@@ -131,11 +138,13 @@ export default function ChatHomeScreen() {
           {/*
             An explicit control, because nothing else here would recover: this
             screen is a tab that stays mounted for the session, `ScreenShell`'s
-            ScrollView has no RefreshControl to pull, `refetchOnWindowFocus` is
-            off, and nothing wires `onlineManager`, so `refetchOnReconnect` never
-            fires either. Without this the first blip at launch would leave Chat
-            home dead until a force-quit — and the copy would have named a
-            pull-to-refresh that does not exist.
+            ScrollView has no RefreshControl to pull, and the copy would
+            otherwise have named a pull-to-refresh that does not exist.
+
+            C8 (#998) has since wired `onlineManager` and `focusManager`
+            (`lib/connection/query-connectivity.ts`), so a *connectivity* blip
+            now recovers on its own and this is no longer the only way back.
+            It stays because a server error still has no other recovery.
           */}
           <Pressable
             accessibilityRole="button"
@@ -183,6 +192,8 @@ export default function ChatHomeScreen() {
           ) : null}
         </>
       )}
+
+      <AskSheet ref={askSheetRef} />
     </ScreenShell>
   );
 }

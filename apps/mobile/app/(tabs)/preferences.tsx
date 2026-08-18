@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  AppState,
+  Linking,
   StyleSheet,
   Switch,
   Text,
@@ -10,7 +12,12 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCurrentChapter, useDeleteAccount, useGeofences, useMyPermissions } from "@repo/hooks";
+import {
+  useCurrentChapter,
+  useDeleteAccount,
+  useGeofences,
+  useMyPermissions,
+} from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import {
   can,
@@ -24,6 +31,10 @@ import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
 import { useAuthSession } from "@/lib/auth-session";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import { LEGAL_LINKS } from "@/lib/more/legal";
+import {
+  getPushPermission,
+  pushUnavailableReason,
+} from "@/lib/notifications/push";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 import {
   type QuietHoursWindow,
@@ -55,11 +66,15 @@ import {
  *   here. See the catalog's docblock in `@repo/validation`.
  * - **Appearance is static text.** The app is dark-only by design
  *   (`lib/theme.tsx`), and Canvas draws this row as a value, not a control.
- * - **The two drawn NOTIFICATIONS switches are not built as drawn.** "Push
- *   notifications" is a device permission, which C7 owns along with the rest of
- *   remote push; "Mandatory events only" has no backing field on `events` and
- *   no preference key. The per-category switches below are what the API
- *   actually enforces.
+ * - **"Push notifications" is a status row, not a switch.** Canvas draws a
+ *   toggle, but it is a *device* permission: an app cannot turn one off on the
+ *   member's behalf, and iOS never re-prompts once asked. So C7 (#998) renders
+ *   what is true — granted, off, or unavailable in this build — and sends the
+ *   member to the OS settings, which is the only place it can actually change.
+ *   TODO-DESIGN: the drawn control is a switch.
+ * - **"Mandatory events only" is still not built.** It has no backing field on
+ *   `events` and no preference key. The per-category switches below are what the
+ *   API actually enforces.
  */
 
 const TIME_INPUT_PATTERN = /^\d{2}:\d{2}$/;
@@ -249,6 +264,62 @@ export default function PreferencesScreen() {
   const [linkFailed, setLinkFailed] = useState<string | null>(null);
   const deleteAccount = useDeleteAccount();
 
+  /**
+   * OS notification permission, read once on mount and again on every
+   * foreground.
+   *
+   * The re-read is the whole point: the only place this setting can actually be
+   * changed is the OS settings app, so the member leaves, changes it, and comes
+   * back — and a row still reporting the old answer would be worse than no row.
+   * `null` while unread, so the row never flashes "Off" at a member who has
+   * granted it.
+   */
+  const [pushGranted, setPushGranted] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const read = () => {
+      void getPushPermission()
+        .then((status) => {
+          if (!cancelled) setPushGranted(status?.granted ?? null);
+        })
+        .catch(() => {
+          // An unreadable permission is unknown, not "off" — the row says so
+          // below rather than telling someone who has granted push to go turn
+          // it on. Swallowed rather than surfaced: there is nothing a member
+          // can do about it, and an unhandled rejection would be worse.
+          if (!cancelled) setPushGranted(null);
+        });
+    };
+    read();
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "active") read();
+    });
+    return () => {
+      cancelled = true;
+      subscription.remove();
+    };
+  }, []);
+
+  const pushReason = pushUnavailableReason();
+  const pushStatusValue = pushReason
+    ? "Unavailable"
+    : pushGranted === null
+      ? "—"
+      : pushGranted
+        ? "On"
+        : "Off";
+  const pushStatusDescription =
+    pushReason ??
+    (pushGranted === null
+      ? // Unread, not "off". The read is a round trip, so the old truthiness
+        // test told every member who had *already* granted push to go and turn
+        // it on, for as long as it took to resolve — and permanently if it
+        // rejected.
+        "Checking…"
+      : pushGranted
+        ? "Turn off in iOS or Android settings."
+        : "Turn on in iOS or Android settings to get chapter alerts.");
+
   const {
     quietHoursEnabled,
     setQuietHoursEnabled,
@@ -269,14 +340,16 @@ export default function PreferencesScreen() {
   // membership test would lock out exactly the people this section is for.
   const { data: permData } = useMyPermissions();
   const permissions = useMemo(() => {
-    const raw = (permData as { permissions?: unknown } | undefined)?.permissions;
+    const raw = (permData as { permissions?: unknown } | undefined)
+      ?.permissions;
     return Array.isArray(raw) ? (raw as string[]) : [];
   }, [permData]);
   const canSeeChapterAdmin = can("chapter-config:view", permissions);
 
   const chapterQuery = useCurrentChapter();
   const enabledModules = (
-    chapterQuery.data as { enabled_modules?: Record<string, boolean> } | undefined
+    chapterQuery.data as
+      { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
   const geofencesEnabled =
     canSeeChapterAdmin && isModuleEnabled(enabledModules, "geofences");
@@ -362,6 +435,16 @@ export default function PreferencesScreen() {
       subtitle="Notifications, chapter details, and your account."
     >
       <SectionHeader>Notifications</SectionHeader>
+
+      <ListSection>
+        <ListRow
+          label="Push notifications"
+          value={pushStatusValue}
+          description={pushStatusDescription}
+          accessibilityHint="Opens this app's settings, where notifications can be turned on or off."
+          onPress={() => void Linking.openSettings()}
+        />
+      </ListSection>
 
       <QuietHoursCard
         enabled={quietHoursEnabled}
@@ -468,7 +551,9 @@ export default function PreferencesScreen() {
           }}
         />
         <ListRow
-          label={deleteAccount.isPending ? "Deleting account…" : "Delete account"}
+          label={
+            deleteAccount.isPending ? "Deleting account…" : "Delete account"
+          }
           destructive
           disabled={deleteAccount.isPending}
           accessibilityHint="Permanently deletes your account. You'll be asked to confirm."

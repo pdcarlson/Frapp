@@ -26,15 +26,32 @@ Every notification payload includes a `target` object with screen and parameters
 
 ```json
 {
-  "target": {
-    "screen": "chat",
-    "channelId": "uuid",
-    "messageId": "uuid"
-  }
+  "target": { "screen": "chat", "channelId": "uuid" },
+  "notificationId": "uuid"
 }
 ```
 
+**That is the payload as sent, not an illustration.** `notifyUser` stamps
+`notificationId` — the id of the `notifications` row it has just written — onto every
+push (`apps/api/src/application/services/notification.service.ts`), which is what lets
+a tap mark the row read without a lookup. The `target` itself carries **only** the keys
+its emitter sets: `chat` sends `channelId`, `events` sends `eventId`, `tasks` sends
+`taskId`, and `billing` / `points` / `service` / `members` send a bare `screen`. A
+bundled chat burst adds `bundled: true` and `count`
+(`chat-push-worker.service.ts` `buildPayload`). This example previously showed a
+`messageId` the chat push worker has never emitted; clients MUST NOT read one.
+
 Tapping the notification opens the app directly to the relevant content. If the user is not authenticated, the app shows the login screen first, then navigates to the target after authentication.
+
+On mobile both halves of that live in `apps/mobile/lib/notifications/`: `targets.ts`
+resolves a payload to a route — and is the same resolver the in-app history (s14) uses
+for its rows, so an in-app tap and a push tap cannot name different screens — while
+`use-push-runtime.ts` **holds** a cold-start target until the member is authenticated
+*with a chapter*, and drops it if they sign out first (navigating a signed-out member
+into a chapter-scoped screen only produces a 400). An unrecognized screen, or one
+missing its required param, falls back to the notification list rather than guessing.
+Client-side mechanics: [`../ui/mobile/patterns.md`](../ui/mobile/patterns.md) § Push
+notifications.
 
 ## Priority Levels
 
@@ -74,12 +91,23 @@ Tapping the notification opens the app directly to the relevant content. If the 
 
 ## Notification Grouping
 
-Multiple notifications from the same source are collapsed on the device:
+Multiple notifications from the same source are collapsed before they reach the device:
 
-- Chat: "3 new messages in #general" (instead of 3 separate notifications).
+- Chat: "3 new messages in #general" (instead of 3 separate notifications). As shipped the
+  bundled push reads title `New messages in #<channel>` / body `<N> new messages`.
 - Events: "2 upcoming events today."
 
-Grouping is handled client-side using notification category/thread identifiers provided in the payload.
+**Grouping happens server-side, in the push worker — not on the device.** The
+`BurstBundler` (`apps/api/src/modules/chat-push-worker/burst-bundler.ts`) collapses
+3+ messages from the same sender to the same recipient inside a 60s window into a
+single "N new messages" push, and that decision reaches the client only as
+`data.bundled` / `data.count`. No category, thread, collapse or channel identifier is
+sent: `ExpoPushProvider` builds each message from `to`, `title`, `body`, `data`,
+`sound` and `priority` alone, so a client cannot group on identifiers it never
+receives. The Android **notification channel** is a separate thing and is not a
+grouping key — the app defines exactly one (`"default"`, set as the plugin's
+`defaultChannel` in `apps/mobile/app.json`). The "2 upcoming events today" example
+above is aspirational: only chat is bundled today.
 
 ## Badge Count
 

@@ -51,19 +51,113 @@ type ConnectionState = 'ONLINE' | 'DEGRADED' | 'OFFLINE';
 // - 'OFFLINE': !navigator.onLine OR health check to /health fails 3 times
 ```
 
+> **`navigator.onLine` is the web half of that rule; mobile has no such property.**
+> React Native defines `navigator` but never sets `onLine`, so `!navigator.onLine`
+> evaluates `undefined === false` → `false` and a naive port reports *permanently
+> online*. The mobile equivalent of the clause is an `expo-network` read, and the
+> banner takes only the **link** half of it (`isConnected === false`). Everything
+> else in this section reads the same on both surfaces: one link signal, one
+> `/health` poll (30s, 5s timeout), three consecutive failures.
+>
+> **`isInternetReachable === false` is suspicion, not proof.** `lib/chat/network-state.ts`'s
+> `isOfflineFromExpoState` ORs it with the link, and that is right *for the outbox*,
+> where a false "offline" only means "queue instead of send" and costs nothing. It is
+> wrong for this banner, because this value gates writes: a chapter house whose
+> captive-portal validation probe is blocked reports `isInternetReachable: false`
+> while the API is perfectly reachable, and folding that into OFFLINE would disable
+> check-in at the door with no route back — a down link also suppresses the `/health`
+> probe that would have proved otherwise. So it counts as one probe failure and
+> `/health` settles it, which is also what § 2 literally says: `!navigator.onLine`
+> is the OFFLINE clause, "intermittently failing" is DEGRADED.
+
+**Two inputs, not one.** A device link is not reachability, which is why `DEGRADED`
+exists at all: an API that is up, routable and failing leaves the member connected
+while the app does not work, and "you're offline" is a lie they can disprove by
+opening a browser.
+
 ### UI Indicators
 
 | State | Banner | Write Actions | Read Actions |
 |-------|--------|--------------|--------------|
 | ONLINE | None | Enabled | Enabled (live data) |
-| DEGRADED | "⚡ Slow connection. Some features may be delayed." (amber) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
-| OFFLINE | "📡 You're offline. Showing cached data." (red/amber) | Disabled with tooltip: "Reconnect to make changes" | Enabled (from cache) |
+| DEGRADED | "Slow connection. Some features may be delayed." (amber) | Enabled (with extended timeouts) | Enabled (from cache + refetch) |
+| OFFLINE | "You're offline. Showing cached data." (red/amber) | **Labeled where a queue exists; disabled with "Reconnect to make changes." where none does** — see below | Enabled (from cache) |
+
+**The copy above lost its leading ⚡ / 📡.** Those predate Signet's iconography
+rule, which governs glyphs on these surfaces and does not admit emoji
+([`design-system/iconography.md`](design-system/iconography.md)), and the semantic
+tint already carries the severity they stood in for. The strings are otherwise
+verbatim and mobile ships them exactly. `apps/web` still ships a **third** variant —
+`"You're offline. Showing cached data. Changes will sync when you reconnect."` with
+lucide `WifiOff` / `Zap` icons (`apps/web/components/shared/offline-banner.tsx`) —
+left alone for the web reskin rather than changed from a mobile slice.
+
+**Write gating is "labeled, never blocked, wherever an outbox exists."** The
+disabled-with-tooltip rule holds only where a failed write is *lost*. It must not be
+applied to a surface with a queue: the chat composer's `sendMessage` enqueues to the
+outbox and returns before touching the network, so gating it would defeat the queue
+built to make composing-while-offline work — it stays enabled and gains the label
+"You're offline — messages send when you reconnect." Queueless surfaces disable and
+say why: service hours (s20) and check-in (s18) both take
+`writeBlockedReason` and wire it to the control's `accessibilityHint`, not merely to
+a sentence beside it. Dues is already gated by its own Stripe guard. The rule lives
+in `apps/mobile/lib/connection/state.ts` (`writeBlockedReason`) so the split is one
+decision rather than a per-screen judgement call.
 
 Banner behavior:
-- Appears at the top of the content area (below header bar)
-- 200ms slide-down animation
+- Appears at the top of the content area (below header bar). **Mobile deviates,
+  deliberately:** the banner is mounted above the navigator in `app/_layout.tsx`, not
+  below each screen's header. "Below the header bar" is a web-shaped rule written for
+  a dashboard chrome; a global banner belongs above every screen, and moving it under
+  each header would mean editing the frozen `apps/mobile/components/screen-shell.tsx`
+  ([`mobile/navigation.md`](mobile/navigation.md) § Hotspot freeze). It does take the
+  safe-area inset, which it previously did not — it rendered outside every
+  `SafeAreaView` and painted under the status bar on a notched device.
+- 200ms slide-down animation. **Mobile ships the 200ms as an opacity transition, not a
+  translate** — the duration is the spec's, the motion is not. It runs on the JS driver
+  (opacity here animates alongside a non-transform property), which is the right trade for
+  something that fires once per connectivity change rather than once per frame of a
+  gesture. Recorded as drift rather than smuggled: nothing about the placement forces a
+  fade, so a later pass may make it a real slide.
 - Auto-dismisses when state improves
-- User can manually dismiss (it reappears if state hasn't changed after 30s)
+- User can manually dismiss (it reappears if state hasn't changed after 30s). On mobile a
+  dismissed bar fades to transparent but **stays laid out**, so its space is not reclaimed
+  until the state changes or the 30s timer fires — also known drift
+- Announced, not merely drawn: `accessibilityRole="alert"` +
+  `accessibilityLiveRegion="polite"` on mobile, `role="alert"` + `aria-live="polite"`
+  on web. A member using a screen reader needs to know a write is about to fail as
+  much as a sighted one does.
+
+### Implementation
+
+**Mobile has one connection model for the UI.** `apps/mobile/lib/connection/`:
+`state.ts` holds the pure rules (`deriveConnectionState`, `connectionBannerCopy`,
+`writeBlockedReason`), `monitor.ts` is the process singleton that feeds them
+(`expo-network` link state plus the `/health` poll), `use-connection.ts` is how a
+component reads it through `useSyncExternalStore`, and `components/app-runtime.tsx`
+starts it once above the auth gate. `components/network-banner.tsx` takes **no
+props** — it used to be handed two raw `expo-network` booleans and derive its own
+flags inline, which made it a third opinion about connectivity, and the readings
+could and did disagree on screen.
+
+**`@repo/chat-core` keeps its own, deliberately.** `chatNetworkState`
+(`lib/chat/use-chat-runtime.ts`) still holds a separate `expo-network` subscription
+behind the `NetworkState` port, and it is *more* conservative than this model: it
+counts `isInternetReachable === false` as offline so a doubtful network queues
+rather than sends. That asymmetry is correct — the outbox's failure mode is a lost
+message, the banner's is a disabled control — but it has a consequence worth naming:
+when the link is up and the **API** is dead, this model reaches OFFLINE after three
+failed probes while the outbox still believes it is online, so a send is attempted
+and lands as a failed bubble rather than being queued, and no link event fires to
+flush it on recovery. Unifying the two (the monitor already satisfies the port's
+shape) is tracked separately.
+
+**Known divergence, web vs. mobile — do not "fix" the spec to match web.**
+`apps/web/lib/providers/network-provider.tsx` maps three consecutive health failures
+to `DEGRADED` and never reaches `OFFLINE` from probing at all; the detection rule
+above says three failures is `OFFLINE`, with `DEGRADED` reserved for slow or
+intermittent. Mobile follows the spec. The web provider is recorded here as drift to
+be reconciled in its own pass.
 
 ---
 
@@ -166,6 +260,15 @@ Polling reuses that same gap-recovery fetch on a timer rather than a second
 code path, so a message delivered by both a poll and the reconnect backfill
 merges to one entry. Implementation: `packages/chat-core/src/realtime-manager.ts`
 (`POLL_DEGRADE_AFTER_MS`, `POLL_INTERVAL_MS`, `ConnectionStatus === "polling"`).
+
+**The in-thread pill is reconciled with §2's banner, not removed.** They answer
+different questions — the pill reports the *realtime transport*, the banner reports
+whether the API is reachable at all — but when both are saying "offline" they are one
+fact told twice, stacked on one screen in two different sentences. So the mobile pill
+**yields only its offline branch** while the global banner is already saying so, and
+keeps the two states it alone can report: `"Real-time updates paused. Polling for new
+messages."` (normative, above — polling is a working degraded mode, and calling it
+"reconnecting" would report a live surface as broken) and `"Reconnecting…"`.
 
 ### 3.3 Message Ordering
 
@@ -497,6 +600,18 @@ For files > 5MB, consider chunked upload for resumability. Not in v1 scope, but 
 | Supabase Realtime event | Relevant query key (auto-updated) |
 | Window focus (tab switch) | All stale queries (TanStack built-in) |
 | Network reconnect | All queries (forced refetch) |
+
+**Those last two rows are delivered on mobile, not merely specified.** They depend on
+TanStack's `onlineManager` and `focusManager`, which nothing wired until
+`apps/mobile/lib/connection/query-connectivity.ts` bound both to the connection
+monitor — so `refetchOnReconnect` (a TanStack default) now actually fires. Two mobile
+specifics: `DEGRADED` is published as **online**, because requests there are slow or
+intermittent rather than impossible and telling TanStack otherwise would pause every
+retry exactly when a retry is what recovers; and there is no window, so `focusManager`
+is driven by `AppState` — `"active"` only, since iOS `inactive` is Control Center and
+the app switcher, not a background. The explicit retry controls on s04/s06 stay
+regardless: they are still the only recovery from a *server* error, which no amount of
+connectivity signalling fixes.
 
 ---
 

@@ -19,9 +19,9 @@ export default [
     // downgrades everything process-wide — enforcement still holds: the lint
     // script runs `--max-warnings 0`, so any hit fails lint and CI.
     files: ["**/*.{js,jsx,ts,tsx}"],
-    // `lib/payments/*` is deliberately NOT ignored: after the platform split the
-    // Stripe package is reached only through a `require()` in
-    // `lib/payments/stripe-module.native.ts`, which this rule does not cover
+    // `lib/payments/*` and `lib/notifications/*` are deliberately NOT ignored:
+    // after the platform split each package is reached only through a `require()`
+    // in its `*-module.native.ts`, which this rule does not cover
     // (`@typescript-eslint/no-require-imports` does, disabled inline there). So
     // the guard still fires if anyone adds a real `import` back to any of them.
     ignores: ["lib/keyboard.tsx"],
@@ -35,9 +35,9 @@ export default [
         "error",
         {
           selector:
-            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller)($|\\/)/]",
+            "ImportExpression > Literal[value=/^(@stripe\\/stripe-react-native|react-native-keyboard-controller|expo-notifications)($|\\/)/]",
           message:
-            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard).",
+            "Dynamic import() of a non-Expo-Go native module is still an import. Go through the isolation module (@/lib/payments/stripe, @/lib/keyboard, @/lib/notifications/push).",
         },
       ],
       "no-restricted-imports": [
@@ -59,6 +59,11 @@ export default [
               ],
               message:
                 "Import via @/lib/payments/stripe — a direct import crashes Expo Go at launch.",
+            },
+            {
+              group: ["expo-notifications", "expo-notifications/*"],
+              message:
+                "Import via @/lib/notifications/push — remote push does not run in Expo Go and the package links native modules at import.",
             },
           ],
         },

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
 import {
   useActiveChapterId,
   useMarkNotificationRead,
@@ -19,13 +20,18 @@ import {
   selectNotificationGroups,
   selectUnreadIds,
 } from "@/lib/more/notifications";
+import { NOTIFICATION_FALLBACK_PATHNAME } from "@/lib/notifications/targets";
+import { asRoute } from "@/lib/href";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * s14 — Notifications (`canvas-screens.dc.html:474`).
  *
- * In-app history only. Remote push — permissions, tokens, tap handling — is C7
- * and does not run in Expo Go at all, so nothing here depends on it.
+ * In-app history, and the surface a push tap ultimately lands on. The push
+ * runtime itself (permissions, tokens, cold-start taps) is
+ * `lib/notifications/use-push-runtime.ts` and does not run in Expo Go at all —
+ * nothing on this screen depends on it, which is why the history renders
+ * identically with push switched off.
  *
  * ## The category label under each row is derived
  *
@@ -42,12 +48,13 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * nothing. They go out together, capped below that budget, and whatever is left
  * over is reported rather than silently dropped. Filed for a bulk endpoint.
  *
- * ## Tapping does not deep-link yet
+ * ## Tapping deep-links
  *
- * The payload's `target` names a screen and its params, but resolving one into
- * a route belongs with the push handler that also has to resolve a cold-start
- * tap (C7). Until then a tap marks the row read, which is the part that works
- * without push. TODO-DESIGN: deep-link on tap.
+ * The row's destination is resolved by `lib/notifications/targets.ts` — the
+ * same module the push handler uses for a tapped notification, so an in-app tap
+ * and a push tap cannot disagree about where a payload points. A row whose
+ * target this build does not recognize resolves to this screen, so it marks
+ * itself read and stays put rather than navigating somewhere wrong.
  */
 /**
  * Kept under the API's 30-writes-per-60s budget, with headroom for the reads
@@ -56,6 +63,7 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
 const MARK_ALL_BATCH = 25;
 
 export default function NotificationsScreen() {
+  const router = useRouter();
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
   const chapterId = useActiveChapterId();
@@ -140,8 +148,13 @@ export default function NotificationsScreen() {
             key={row.id}
             row={row}
             onPress={() => {
-              if (!row.isUnread) return;
-              markRead.mutate(row.id);
+              if (row.isUnread) markRead.mutate(row.id);
+              // Resolves to this screen when the target is unrecognized, so
+              // the tap marks the row read and stays put rather than pushing
+              // the notification list on top of itself.
+              if (row.href !== NOTIFICATION_FALLBACK_PATHNAME) {
+                router.push(asRoute(row.href));
+              }
             }}
           />
         ))}

@@ -1,12 +1,11 @@
 import { Pressable, StyleSheet, Text } from "react-native";
-import { useRouter } from "expo-router";
 import { SignetTokens } from "@repo/theme/signet";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
  * The global ✦ Ask entry (s04, s06).
  *
- * `spec/ui/mobile/navigation.md:53` — "Ask is a global entry, not a tab, and it
+ * `spec/ui/mobile/navigation.md:60` — "Ask is a global entry, not a tab, and it
  * MUST NOT become a fifth tab." It rides `ScreenShell`'s `headerAction` slot,
  * which S2 added ahead of the hotspot freeze for exactly this control, so
  * rendering it needs no change to any frozen file.
@@ -25,14 +24,19 @@ import { typeRole, useFrappTheme } from "@/lib/theme";
  * below the 44pt minimum touch target, so the hit area is expanded rather than
  * the box, keeping the drawing honest and the target legal.
  *
- * Destination: the s17 Ask sheet is C7 work behind its feature flag, so this
- * opens the pre-registered `ask.tsx` route today. The entry point is real; the
- * screen behind it is still the S2 stub.
+ * Destination: the s17 Ask sheet, which C7 built. The pill takes `onPress`
+ * rather than navigating itself, because s17 is a **sheet hosted by its parent
+ * screen**, not a route (`spec/ui/mobile/patterns.md` § Bottom sheets) — the
+ * host owns the `BottomSheetModal` ref and presents it, exactly as `tasks.tsx`
+ * hosts the s19 sheet behind its `+`.
+ *
+ * The pill presses through even when Ask is switched off for the build. The
+ * sheet states the reason; a control that silently does nothing is the dead end
+ * `components.md` §5 bans.
  */
-export function AskPill() {
+export function AskPill({ onPress }: { onPress: () => void }) {
   const { tokens } = useFrappTheme();
   const styles = createStyles(tokens);
-  const router = useRouter();
 
   return (
     <Pressable
@@ -42,7 +46,7 @@ export function AskPill() {
       // 36pt drawn against a 44pt minimum: 4pt a side closes the gap without
       // moving the pill or disturbing the header row's alignment.
       hitSlop={4}
-      onPress={() => router.push("/ask")}
+      onPress={onPress}
       style={({ pressed }) => [styles.pill, pressed ? styles.pressed : null]}
     >
       <Text style={styles.glyph}>✦</Text>

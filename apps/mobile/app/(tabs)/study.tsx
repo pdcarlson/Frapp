@@ -34,6 +34,10 @@ import {
 } from "@/lib/location";
 import { statusOf } from "@/lib/api-error";
 import {
+  clearStudyPausedNotification,
+  notifyStudyPaused,
+} from "@/lib/notifications/study-pause";
+import {
   isActiveSessionConflict,
   sessionErrorCopy,
   startErrorCopy,
@@ -143,8 +147,8 @@ export default function StudyScreen() {
   const [isEnding, setIsEnding] = useState(false);
   const [canAskForLocation, setCanAskForLocation] = useState(true);
   const [now, setNow] = useState(() => new Date());
-  const [appState, setAppState] = useState<AppStateStatus>(() =>
-    AppState.currentState ?? "active",
+  const [appState, setAppState] = useState<AppStateStatus>(
+    () => AppState.currentState ?? "active",
   );
 
   /**
@@ -252,6 +256,10 @@ export default function StudyScreen() {
       setSession(null);
       sessionIdRef.current = null;
       setNotice(settled.notice);
+      // A session that ended while paused would otherwise leave its "return to
+      // Frapp to resume" notice in the tray, inviting the member back to a
+      // session that no longer exists (#1065).
+      void clearStudyPausedNotification();
       // The closed session belongs in the history list below, which is served
       // by the same query.
       void apiRef.current.refetchSessions();
@@ -270,6 +278,7 @@ export default function StudyScreen() {
     setSession(null);
     sessionIdRef.current = null;
     setNotice(notice);
+    void clearStudyPausedNotification();
     void apiRef.current.refetchSessions();
   }, []);
 
@@ -307,7 +316,10 @@ export default function StudyScreen() {
 
   useEffect(() => {
     if (!running || !isForeground) return undefined;
-    const interval = setInterval(() => void sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
+    const interval = setInterval(
+      () => void sendHeartbeat(),
+      HEARTBEAT_INTERVAL_MS,
+    );
     return () => clearInterval(interval);
   }, [running, isForeground, sendHeartbeat]);
 
@@ -350,6 +362,12 @@ export default function StudyScreen() {
         let response: unknown;
         if (!target) {
           response = await apiRef.current.pause();
+          // Only after the server has agreed. Posting the notice optimistically
+          // would tell a member their session paused when the request is about
+          // to fail and be retried (#1065, `spec/behavior/study-sessions.md`
+          // § Anti-Distraction). Fire-and-forget: a notification that cannot be
+          // posted must never fail the pause.
+          if (!cancelled) void notifyStudyPaused();
         } else {
           // Coordinates are re-checked on resume: the member may have left the
           // zone while away, and the next heartbeat is up to five minutes out
@@ -362,6 +380,9 @@ export default function StudyScreen() {
           // accrual the pause exists to prevent.
           if (cancelled || appStateRef.current === "background") return;
           response = await apiRef.current.resume(fix);
+          // Cleared on the way back in, so a member who returns inside the
+          // grace window does not find a stale "paused" notice waiting.
+          void clearStudyPausedNotification();
         }
         if (cancelled) return;
         // Marked only once the server has actually been told. The old code
@@ -370,7 +391,15 @@ export default function StudyScreen() {
         applyResponse(response, seq);
       } catch (error) {
         if (cancelled) return;
-        if (target) setFailure(sessionErrorCopy(error));
+        if (target) {
+          setFailure(sessionErrorCopy(error));
+          // A resume that keeps failing leaves the paused card on screen and
+          // the retry loop running — but the tray notice invites the member
+          // back to a session that may already be gone (an officer stopping it
+          // from the dashboard 404s every retry). Withdraw it: the in-app card
+          // is still there and is the honest surface for a failed resume.
+          void clearStudyPausedNotification();
+        }
         retryTimer = setTimeout(
           () => setMirrorRetry((count) => count + 1),
           MIRROR_RETRY_MS,
@@ -440,7 +469,9 @@ export default function StudyScreen() {
           sessionIdRef.current = live.id;
           setSession(live);
           lastReportedForegroundRef.current = true;
-          setNotice("You already had a session running, so this picked it back up.");
+          setNotice(
+            "You already had a session running, so this picked it back up.",
+          );
         } else {
           setFailure(startErrorCopy(error));
         }
@@ -544,7 +575,8 @@ export default function StudyScreen() {
   }, [endSession]);
 
   const enabledModules = (
-    chapterQuery.data as { enabled_modules?: Record<string, boolean> } | undefined
+    chapterQuery.data as
+      { enabled_modules?: Record<string, boolean> } | undefined
   )?.enabled_modules;
   // Fails open, and deliberately: `useCurrentChapter` is `enabled: !!chapterId`
   // and no production token carries the claim while #805 is open, so a strict

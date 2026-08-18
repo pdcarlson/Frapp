@@ -137,6 +137,10 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   BottomSheetModal: "BottomSheetModal",
   BottomSheetView: "BottomSheetView",
   BottomSheetTextInput: "BottomSheetTextInput",
+  BottomSheetScrollView: "BottomSheetScrollView",
+  // The Ask sheet (s17, C7) is the first sheet in the app to draw the scrim the
+  // reference has always shown, so this stand-in arrives with it.
+  BottomSheetBackdrop: "BottomSheetBackdrop",
   // Like `FlatList` above, this is a string stand-in that renders its props but
   // never invokes `renderItem` — a spec needing a row should render that row's
   // component directly.
@@ -162,6 +166,31 @@ vi.mock("expo-splash-screen", () => ({
 
 vi.mock("react-native-keyboard-controller", () => ({
   KeyboardProvider: "KeyboardProvider",
+}));
+
+// `expo-notifications` is reached only through `lib/notifications/push.ts`,
+// whose loader seam (`setPushLoaderForTests`) is how specs inject a fake. This
+// suite-wide mock exists for the *other* direction: a screen that imports the
+// runtime hook must not drag the real package into the node env. Keeping it
+// here mirrors `react-native-keyboard-controller` above — and note
+// `lib/notifications/push.spec.ts` pins the source shape precisely because a
+// mock like this one would otherwise hide a static import that crashes Expo Go.
+vi.mock("expo-notifications", () => ({
+  setNotificationChannelAsync: vi.fn().mockResolvedValue(null),
+  getPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: false, canAskAgain: true, status: "undetermined" }),
+  requestPermissionsAsync: vi
+    .fn()
+    .mockResolvedValue({ granted: true, canAskAgain: false, status: "granted" }),
+  getExpoPushTokenAsync: vi.fn().mockResolvedValue({ type: "expo", data: "" }),
+  getLastNotificationResponse: vi.fn(() => null),
+  clearLastNotificationResponse: vi.fn(),
+  addNotificationResponseReceivedListener: vi.fn(() => ({ remove: vi.fn() })),
+  scheduleNotificationAsync: vi.fn().mockResolvedValue("local-1"),
+  cancelScheduledNotificationAsync: vi.fn().mockResolvedValue(undefined),
+  dismissNotificationAsync: vi.fn().mockResolvedValue(undefined),
+  setNotificationHandler: vi.fn(),
 }));
 
 // `react-native-svg` ships untranspiled source, so importing any component that

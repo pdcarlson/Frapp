@@ -15,6 +15,10 @@
  * a guessed one.
  */
 import { isRecord, records, str } from "./narrow";
+import {
+  notificationHref,
+  resolveNotificationTarget,
+} from "../notifications/targets";
 
 export interface NotificationRow {
   id: string;
@@ -22,6 +26,16 @@ export interface NotificationRow {
   body: string | null;
   /** `null` when the row carries no recognizable target. */
   categoryLabel: string | null;
+  /**
+   * Where tapping the row goes.
+   *
+   * Resolved by `lib/notifications/targets.ts`, the same module the push
+   * handler uses — an in-app tap and a notification tap name the same
+   * destination, so they must not grow two rules. Never `null`: an
+   * unrecognized target resolves to the notification list, which is where the
+   * member already is, so the row simply does not navigate away.
+   */
+  href: string;
   /** Local clock time, e.g. `"4:00 PM"`. */
   time: string;
   createdAt: string;
@@ -37,9 +51,20 @@ export interface NotificationGroup {
 /**
  * `data.target.screen` → the label drawn under a row.
  *
- * Keyed on the screen names the API actually emits — grepping `target: {` across
- * `apps/api/src` yields `chat`, `service`, and the event/task/points/billing
- * destinations. Anything unmapped gets no label.
+ * Keyed on the screen names the API actually emits. Grepping `target: {` across
+ * `apps/api/src` yields exactly seven: `chat`, `events`, `tasks`, `billing`,
+ * `points`, `service`, `members`. All seven are here — `members` was missing
+ * until C7 (#998) noticed that an invite notification
+ * (`invite.service.ts` sends `screen: 'members'`) navigated correctly to the
+ * directory while rendering with no category label at all, which is the one
+ * thing this map exists to produce.
+ *
+ * The extra keys below (`event`, `event-details`, `task`, `dues`, `study`) are
+ * not emitted by anything today. They are kept because a label that is merely
+ * absent costs a member nothing, whereas guessing a *route* would send them
+ * somewhere wrong — which is why `lib/notifications/targets.ts` maps only the
+ * seven and falls back rather than tolerating spelling variants. Anything
+ * unmapped here gets no label.
  */
 const SCREEN_LABELS: Record<string, string> = {
   chat: "Chat",
@@ -53,6 +78,7 @@ const SCREEN_LABELS: Record<string, string> = {
   dues: "Billing",
   service: "Service hours",
   study: "Study hours",
+  members: "Directory",
 };
 
 function targetScreen(data: unknown): string | null {
@@ -111,6 +137,7 @@ function toRow(
     title,
     body: str(row, "body"),
     categoryLabel: categoryLabelFor(row.data),
+    href: notificationHref(resolveNotificationTarget(row.data)),
     time: (isToday ? formatTime(createdAt) : formatDay(createdAt, now)) ?? "",
     createdAt,
     // `read_at` is nullable and set on read; absent means unread.

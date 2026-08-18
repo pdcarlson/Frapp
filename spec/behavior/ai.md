@@ -33,6 +33,17 @@ permissions for free rather than reimplementing them at the index layer.
 It also follows directly from the non-goal below: structured data already *is* canon, so the AI
 should query canon rather than keep a stale copy of it.
 
+> **The mobile s17 mock flattens this split, deliberately and mock-only.**
+> `apps/mobile/lib/ask/corpus.ts` answers from a single keyword table that mixes events,
+> dues amounts and rosters in with the indexed prose, because there is no `ai` module in
+> the API to route a tool call through. It exists so the *screen* — citation chips, the
+> refusal path, the in-flight state — is real and reviewable against the drawing, and it
+> is unreachable in any shipped build: `EXPO_PUBLIC_ASK_ENABLED` is off by default and no
+> build sets it ([`../ui/mobile/screens.md`](../ui/mobile/screens.md) s17). **A real
+> implementation MUST NOT copy that shape.** The two access paths above are the contract;
+> the flattened table is scaffolding to be deleted, not extended, the moment Ask can be
+> turned on for a real chapter.
+
 ## Explicit non-goals (v1)
 
 - **Casual chat is excluded.** General channels, committee channels, role-gated channels, and topic channels are not indexed for AI retrieval. Trading off cross-conversation search to keep every answer grounded in authoritative content is the explicit v1 product call.
