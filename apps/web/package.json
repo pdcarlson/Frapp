@@ -54,7 +54,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dexie": "^4.4.4",
+    "dexie": "^4.4.5",
     "framer-motion": "^13.1.0",
     "frimousse": "^0.3.0",
     "geist": "^1.7.2",
@@ -79,7 +79,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@vitejs/plugin-react": "^6.0.5",
-    "eslint": "^9.39.1",
+    "eslint": "^9.39.5",
     "jsdom": "^29.0.1",
     "typescript": "5.9.2",
     "vitest": "^4.1.10"
