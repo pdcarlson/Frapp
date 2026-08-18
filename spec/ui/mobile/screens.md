@@ -27,7 +27,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s05 | Chat thread | `(tabs)/chat-thread.tsx` | Live — real messages on `@repo/chat-core`: realtime, optimistic send, outbox retry/discard, reactions, typing. No attachments, no scrollback pagination, no reply-quote |
 | s06 | Events list | `(tabs)/events.tsx` | Live — real `useEvents()` data, upcoming + still-checkable-in |
 | s07 | Event detail | `(tabs)/event-details.tsx` | Live — reads an `id` param; **filename contract, never rename**. RSVP row renders disabled: no RSVP model exists server-side ([`../../behavior/events.md`](../../behavior/events.md)) |
-| s08 | Tasks + points | `(tabs)/tasks.tsx` | Live — renamed from `task-center.tsx`; still to absorb the points balance/rank (see removals) |
+| s08 | Tasks + points | `(tabs)/tasks.tsx` | Live — real `useTasks()` rows filtered to the viewer, grouped DUE THIS WEEK / LATER, with the absorbed points balance + house rank card. Hosts s19. Completing a `TODO` is two writes: the server has no `TODO → COMPLETED` transition |
 | s09 | More hub | `(tabs)/more.tsx` | Live |
 | s10 | Study hours | `(tabs)/study.tsx` | Routed, stub — study-session timer, geofenced ([`patterns.md`](patterns.md)) |
 | s11 | Dues | `(tabs)/dues.tsx` | Routed, stub — balance, pay, history ([`patterns.md`](patterns.md)) |
@@ -38,7 +38,7 @@ Status legend — **Live**: route exists and carries real content. **Routed, stu
 | s16 | Settings | `(tabs)/preferences.tsx` | Live — drawn title is "Settings"; route filename stays `preferences.tsx` (settled, see notes). Three sections as drawn: NOTIFICATIONS (quiet hours plus a switch per shared category), CHAPTER · ADMIN (`chapter-config:view`-gated, read-only), ACCOUNT (Appearance as static text, the Terms/Privacy/FERPA links from #275, sign out, and delete account from #713). The drawn "Join code" row is omitted: no such field exists |
 | s17 | Ask sheet | `(tabs)/ask.tsx` | Routed, stub — global ✦ Ask entry, presented as a sheet; answers per [`../../behavior/ai.md`](../../behavior/ai.md) |
 | s18 | QR check-in scanner | `(tabs)/check-in.tsx` | Live — member scanner, latched reads + manual code ([`patterns.md`](patterns.md)) |
-| s19 | New task sheet | *sheet* on `tasks.tsx` | Sheet |
+| s19 | New task sheet | *sheet* on `tasks.tsx` | Live — gorhom v5 sheet on the host route, `tasks:manage`-gated. Title, points and a roster assignee picker as drawn; the due date is **preset chips, not the drawn free field**, because no date picker is a dependency and `package.json` is frozen (same constraint as s21) |
 | s20 | Log service hours sheet | *sheet* on `service-hours.tsx` | Live — gorhom v5 sheet on the host route ([`../../behavior/service-hours.md`](../../behavior/service-hours.md)). Description and duration only; **no proof attachment**, which needs an image picker |
 | s21 | Upload document sheet | *sheet* on `documents.tsx` | Sheet — **blocked**: uploading needs a file picker, and adding one touches the frozen `package.json` (integrator PR per [`navigation.md`](navigation.md)) |
 | s22 | Host check-in (admin) | `(tabs)/host-check-in.tsx` | Live — rotating QR, `events:update`-gated. Reached from the More hub's admin section, which resolves the next hostable event and passes its `eventId` |
@@ -53,8 +53,8 @@ These pre-Signet screens had no Canvas counterpart and have been **deleted**:
 | Removed route | Why removed |
 | ------------- | ----------- |
 | `(tabs)/index.tsx` (old Home) | There is no Home tab — chat is home (s04). The `index.tsx` path is reused by the chat list. |
-| `(tabs)/points.tsx` | Absorbed into Tasks (s08): points balance + house rank render at the top of the task board. |
-| `(tabs)/points-details.tsx` | Absorbed into Tasks (s08) and Profile (s15) stat cards; the ledger stays authoritative in [`../../behavior/points.md`](../../behavior/points.md). **Its leaderboard UI has no landed replacement yet** — it was deleted with the route and re-lands as those stat cards. |
+| `(tabs)/points.tsx` | Absorbed into Tasks (s08): points balance + house rank render at the top of the task board. **Landed.** The rank denominator counts members with points in the window, not chapter members — `getLeaderboard` groups transactions. |
+| `(tabs)/points-details.tsx` | Absorbed into Tasks (s08) and Profile (s15) stat cards; the ledger stays authoritative in [`../../behavior/points.md`](../../behavior/points.md). The s08 half has landed as the balance + house-rank card; no standalone leaderboard list replaced the deleted one, by design. |
 | `(tabs)/notification-targets.tsx` | Notification preferences live in Settings (s16); opt-in happens via the contextual primer (s03 and [`patterns.md`](patterns.md)). |
 | `(tabs)/onboarding-tour.tsx` | Replaced by the first-run screen (s03) — join flow behavior in [`../../behavior/onboarding.md`](../../behavior/onboarding.md). |
 | `(tabs)/documents-reports.tsx` | Split: documents become s12; reports remain web-only and do not return to mobile. |
