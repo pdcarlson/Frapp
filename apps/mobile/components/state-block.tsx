@@ -24,8 +24,14 @@ import { tint, typeRole, useFrappTheme } from "@/lib/theme";
  *
  * `ErrorState` takes an explicit `onRetry` because `ScreenShell` owns the
  * `ScrollView` and is frozen under #937's hotspot protocol, so no screen can
- * attach a `RefreshControl`, and nothing wires `onlineManager`. Without a retry
- * control a blip at launch leaves a screen dead until a force-quit.
+ * attach a `RefreshControl`.
+ *
+ * The second half of that reasoning — "and nothing wires `onlineManager`" — was
+ * true until C8 (#998), which binds both `onlineManager` and `focusManager` in
+ * `lib/connection/query-connectivity.ts`, so `refetchOnReconnect` now fires and
+ * a connectivity blip recovers on its own. The retry control stays regardless:
+ * it is still the only recovery from a *server* error, which no amount of
+ * connectivity signalling fixes.
  */
 
 type StateBlockProps = {

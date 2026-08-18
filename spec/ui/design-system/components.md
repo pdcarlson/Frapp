@@ -39,7 +39,7 @@ Colors below are given by **token role** (`accent-N` per [accent-engine.md](acce
 | Ghost | transparent | none | `accent-11` | 600 |
 | Destructive | danger @ 14% alpha | none | `#f85149` | 700 |
 
-Tinted is the accent-soft variant: empty-state CTAs (§10) and the Ask entry (§7). Destructive is tint-style, never a solid red fill.
+Tinted is the accent-soft variant: empty-state CTAs (§10). The Ask entry (§7) borrows its *geometry* only — it is painted in the pinned house-gold tints, never the chapter accent (§11). Destructive is tint-style, never a solid red fill.
 
 ### States
 
@@ -125,7 +125,7 @@ Container: height 58px, surface `#171512`, 1px hairline, radius 14. Contents:
 | ------- | ---- |
 | Mark | 30px "S" rounded square (radius 9), house gold — never retints ([brand-identity.md](../brand-identity.md)) |
 | Search | compact input, height 38, radius 12, fill bg `#0E0D0B` |
-| Ask entry | compact Tinted button, height 38, ✦ glyph + "Ask", 700 — rounded rect, not a capsule |
+| Ask entry | Tinted **geometry**, house-gold **paint**: height 38, radius 11, ✦ glyph + "Ask", 700 — rounded rect, not a capsule. Fill `gold.askFill`, 1px `gold.askBorder`, text `gold.askText` (§11), never `accent-3/7/11` — the design-system reference's TOP NAV panel draws it gold, and so does the mobile pill |
 | Avatar | 32px circle, elevated `#26221C` fill, initials 12.5px / 700 `#A9A399` |
 
 Where Search (or any chip) opens the command menu, its `aria-label` MUST spell the shortcut out in words — "Command K" — rather than leaning on the visible ⌘K glyph, which assistive tech does not announce.
@@ -143,7 +143,8 @@ Where Search (or any chip) opens the command menu, its `aria-label` MUST spell t
 
 - Fill elevated `#26221C`; top corners radius 20, bottom square; 1px hairline on top/sides, no bottom border.
 - Grabber: 40×4.5px, full-round, `rgba(255,255,255,.18)`, centered, 10px from the top edge, 14px above the header.
-- Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned.
+- Header row: title 19px / 700 `#EDEAE3`, "Cancel" text control 14.5px `#78716A` right-aligned — **where the reference draws one**. s19, s20, s21 and s23 do; **s17 does not**: its header is the ✦ glyph + "Ask Signet" in gold with a trailing caption where Cancel would sit, and the grabber plus the scrim are the dismissal. Reference wins, so a Cancel MUST NOT be added there.
+- Scrim: `rgba(0,0,0,.55)` behind a presented sheet, fading in at the first detent and gone at dismissal. Mobile mechanics (`BottomSheetBackdrop`, snap points, sheet-aware scrollables): [patterns.md](../mobile/patterns.md).
 - Body: standard controls (§3–§4) at default sizes, padding-x 18.
 - Primary action: full-width Primary button, 48px, pinned last.
 - **Sheet chrome MUST NOT be styled through NativeWind** (locked ban) — grabber, container, and header use the platform styling path. Mobile usage patterns: [patterns.md](../mobile/patterns.md).
@@ -233,6 +234,6 @@ The one deliberately distinct surface in the system, and the only one that **nev
 - **Source chips are the citation UI.** Each cited source renders as one tappable chip (document, minutes, or channel), opening the source in-app; hit area ≥ 44px (§2). The citation contract itself — every answer cites, citations arrive as structured spans the UI renders as links, low confidence refuses rather than fabricates — is owned by [ai.md](../../behavior/ai.md) and MUST NOT be restated in UI specs. Header and footer copy: [writing.md](writing.md).
 - **Nested variant.** Presented inside the Ask sheet (s17), the answer block steps down to card `#1E1B17` at radius 16 — one ladder step below the sheet it sits in — and the ✦ header moves up to the sheet header. Sheet chrome, grabber, and dismissal are §9.
 - **✦ Ask mark (claimed here).** The four-pointed sparkle ✦ is the mark of the Ask/AI affordance: a text glyph, not a duotone icon, so it is exempt from the [iconography.md](iconography.md) recipe. It renders in house gold `#F4CB63` at 15–16px in the card and Ask-sheet headers, and leads the Ask entry (§7) and the mobile Ask pill ([navigation.md](../mobile/navigation.md)). It MUST NOT mark anything that is not an Ask/AI entry point or answer.
-- The gold is scoped to the answer surface. The Ask **entry control** is an accent Tinted button (§7) — the chapter's chrome opens the door, Signet's own gold answers.
+- **The entry control is gold too — this line used to say otherwise and was wrong.** The reference draws the ✦ Ask pill on s04 and s06 in the same pinned house-gold tints as the answer card (`#251E0E` fill, `#6B5619` border, `#F4CB63` text at 36px height, radius 10 — see `canvas-screens.dc.html` s04/s06), not as an accent Tinted button, and `apps/mobile/components/chat/ask-pill.tsx` ships those tokens. The web top-nav entry is drawn the same way (`signet-design-system.dc.html`, TOP NAV panel), so §7 has been corrected too: the Ask entry takes the Tinted *geometry* and the house-gold paint. The reference wins on visuals ([`../README.md`](../README.md)); the whole Ask affordance, entry and answer alike, speaks in Signet's voice rather than the chapter's.
 - **The pinned house-gold tints are named tokens.** They are the house-gold instance of the accent tint family, but this card holds them regardless of the chapter seed, so they cannot be spelled `accent-3/7/11`. They live in the `gold` group of `packages/theme/src/signet.ts`, named for the surface that owns them rather than for scale steps: `gold.askFill` (`#251E0E`), `gold.askBorder` (`#6B5619`), `gold.askText` (`#F4CB63`), alongside `gold.house` (`#EFB63B`) and `gold.onHouse` (`#2C2000`). The literal hexes in the table above are those tokens' values; implementations MUST use the token names.
 - **TODO-DESIGN:** the in-flight (answer pending) state is not drawn; [README.md](README.md) §4 requires one. Nearest pattern used: the content-shaped skeleton (§10) inside the card chrome above — never a spinner-in-a-box.

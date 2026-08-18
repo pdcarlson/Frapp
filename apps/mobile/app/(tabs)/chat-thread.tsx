@@ -18,6 +18,7 @@ import { ChatComposer } from "@/components/chat/chat-composer";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { useChatChannel } from "@/lib/chat/use-chat-channel";
 import { getKeyboardPath } from "@/lib/keyboard";
+import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -141,6 +142,29 @@ export default function ChatThreadScreen() {
   );
 
   const isOffline = connection === "offline";
+  const { isOffline: appOffline } = useConnection();
+
+  /**
+   * What the in-thread pill says, or `null` when it has nothing to add.
+   *
+   * `null` when the transport is live, and also when the transport is offline
+   * while the global banner is already saying so — see the comment at the
+   * render site.
+   */
+  const pillMessage =
+    connection === "live"
+      ? null
+      : isOffline
+        ? appOffline
+          ? null
+          : "Offline — messages will send when you reconnect"
+        : connection === "polling"
+          ? // Verbatim from spec/ui/resilience.md § 3.2, which declares this
+            // string normative; `apps/web`'s reconnect pill carries the same
+            // one. Polling is a working degraded mode, so calling it
+            // "reconnecting" would report a live surface as broken.
+            "Real-time updates paused. Polling for new messages."
+          : "Reconnecting…";
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
@@ -174,20 +198,19 @@ export default function ChatThreadScreen() {
           </Text>
         </View>
 
-        {connection !== "live" ? (
+        {/*
+          Reconciled with the global banner rather than duplicating it (#998).
+          The two answer different questions — this pill is the *realtime
+          transport*, the banner is whether the API is reachable at all — but
+          when both are saying "offline" they are one fact told twice, stacked
+          on the same screen in two different sentences. So the pill yields its
+          offline branch to the banner and keeps the two it alone can report.
+          `polling` in particular must survive: it is a working degraded mode,
+          and `spec/ui/resilience.md` § 3.2 declares its string normative.
+        */}
+        {pillMessage ? (
           <View style={styles.connectionPill}>
-            <Text style={styles.connectionText}>
-              {isOffline
-                ? "Offline — messages will send when you reconnect"
-                : connection === "polling"
-                  ? // Verbatim from spec/ui/resilience.md § 3.2, which declares
-                    // this string normative; `apps/web`'s reconnect pill carries
-                    // the same one. Polling is a working degraded mode, so
-                    // calling it "reconnecting" would report a live surface as
-                    // broken.
-                    "Real-time updates paused. Polling for new messages."
-                  : "Reconnecting…"}
-            </Text>
+            <Text style={styles.connectionText}>{pillMessage}</Text>
           </View>
         ) : null}
 
@@ -253,7 +276,23 @@ export default function ChatThreadScreen() {
           placeholder="Message"
           // A send that never reached the outbox has no failed bubble to show
           // (nothing was queued), so this line is the only report of it.
-          disabledHint={sendError ?? (canSend ? null : "Connecting to chat…")}
+          //
+          // The offline label is #501's "blocked **or clearly labeled**" half:
+          // this surface has a queue, so it labels. `lib/connection/state.ts`
+          // holds the rule for the surfaces that have to block instead.
+          disabledHint={
+            sendError ??
+            // `canSend` first. It is false until `ctx` resolves, and
+            // `ChatComposer` keys `editable` on it — so leading with the
+            // offline branch promised "messages send when you reconnect" over
+            // an input the member cannot type into, which is the one state
+            // where nothing will be queued and nothing will send.
+            (!canSend
+              ? "Connecting to chat…"
+              : appOffline
+                ? "You're offline — messages send when you reconnect."
+                : null)
+          }
           hintTone={sendError ? "error" : "muted"}
         />
       </KeyboardAvoidingView>

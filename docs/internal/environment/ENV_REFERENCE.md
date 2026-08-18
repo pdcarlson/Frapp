@@ -219,6 +219,7 @@ Reads the `EXPO_PUBLIC_*` references:
 | `EXPO_PUBLIC_SUPABASE_ANON_KEY` | `lib/supabase.ts` — Supabase client init | ✅ |
 | `EXPO_PUBLIC_API_URL` | API client init + `eas.json` | ✅ |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `lib/payments/stripe.ts` — the s11 dues payment sheet | ❌ — optional, and the mobile twin of `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` above (same `pk_…` value, same publishable-by-design reasoning; the secret key stays API-only). When unset, `isStripeAvailable()` is false and the Pay control renders **disabled with its reason stated** rather than hidden — balance and history still load. Expo Go cannot run Stripe's native module at all, so a Go session behaves the same way whether or not the key is set. |
+| `EXPO_PUBLIC_ASK_ENABLED` | `lib/ask/flag.ts` — the s17 Ask sheet | ❌ — optional, **default off**, and **not a secret**: it is a build-time on/off switch, not a credential, and it has no canonical variable behind it (set it directly per build, not as an Infisical `${…}` reference). Only the exact strings `"1"` and `"true"` switch Ask on; unset, empty, `"0"`, `"yes"` and `"TRUE"` all leave it off, because the corpus behind Ask is synthetic and a loose truthiness check would put invented figures in front of a real member. With it off the ✦ pill still opens the sheet and the sheet states why it cannot answer. `EXPO_PUBLIC_` is inlined at build time, so this is fixed for a given build — it is **not** a per-chapter or per-member switch and must never be described to a member as one. |
 
 Both Supabase values are read at module scope and are **optional at boot**: when
 either is missing `getSupabaseClient()` returns `null` instead of throwing, so
@@ -227,7 +228,9 @@ is unavailable in that state and the sign-in screen says so.
 
 `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` is optional for the same class of reason:
 CI, a local `expo start`, and every Expo Go session run without it, and none of
-them can take a payment anyway.
+them can take a payment anyway. `EXPO_PUBLIC_ASK_ENABLED` is optional in a
+stronger sense — nothing sets it anywhere today, which is what keeps the mocked
+Ask corpus off every shipped build (`spec/ui/mobile/screens.md` s17).
 
 ### Client-exposure audit
 
@@ -235,7 +238,7 @@ them can take a payment anyway.
 `NEXT_PUBLIC_`/`EXPO_PUBLIC_` prefix means the value is inlined into a bundle any user can read — so
 the prefix is the decision, and it is irreversible once shipped.
 
-The prefixed set is deliberately small. It is **exactly these nine variables** — enumerated by name
+The prefixed set is deliberately small. It is **exactly these eleven variables** — enumerated by name
 rather than summarised, so it can be diffed against a bundle without interpretation:
 
 | | |
@@ -245,10 +248,10 @@ rather than summarised, so it can be diffed against a bundle without interpretat
 | `NEXT_PUBLIC_API_URL` · `EXPO_PUBLIC_API_URL` | API base URL |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` · `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key — public by Stripe's design; the secret key stays API-only |
 | `NEXT_PUBLIC_APP_URL` | landing → app URL |
-| `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **The one entry with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
-| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe **publishable** key (`pk_…`) — the secret key stays API-only |
+| `NEXT_PUBLIC_LANDING_URL` | app → landing URL. **One of two entries with no canonical variable behind it** — there is no `LANDING_URL` in the grid and it is absent from the references table, so it is optional and set directly where set at all. `chapter-wizard.tsx` defaults it to `https://frapp.live`, and because that default is `??` (nullish), an **empty** value does not trigger it — leave it unset rather than blank |
+| `EXPO_PUBLIC_ASK_ENABLED` | s17 Ask on/off for a build. **The other entry with no canonical variable behind it** — a feature switch, not a value, so it is set directly where set at all (nothing sets it today) and carries nothing worth reading out of a bundle |
 
-Nine variables over **five** canonical values plus that one direct-set URL; each
+Eleven variables over **five** canonical values plus two direct-set entries; each
 `NEXT_PUBLIC_`/`EXPO_PUBLIC_` pair is an Infisical reference to the same canonical value. No secret
 belongs in this set; `ANALYTICS_HMAC_SALT` is the worked example of why, above.
 
@@ -261,7 +264,9 @@ Audited **2026-08-15** (#851) against production builds of `apps/web` and `apps/
 gitleaks found nothing in either client bundle, and mobile read only the three `EXPO_PUBLIC_*`
 values listed here at the time. **`EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` was added afterwards** (C6 of
 #937): it is a publishable key by Stripe's own design, the same value the web bundle already carries,
-so it changes the count but not the finding. **The name check is the load-bearing one** — the audit built with placeholder
+so it changes the count but not the finding. **`EXPO_PUBLIC_ASK_ENABLED` was added later still** (C7
+of #937): it is a boolean feature switch with no credential behind it, so it likewise changes the
+count and not the finding. **The name check is the load-bearing one** — the audit built with placeholder
 env values, so it establishes which variables reach the browser, not which values do; a clean
 gitleaks pass over a placeholder build is not by itself evidence that no real credential ships. Full
 method, caveats, and re-run instructions:

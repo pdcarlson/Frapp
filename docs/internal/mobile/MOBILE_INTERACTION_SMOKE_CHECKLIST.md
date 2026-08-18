@@ -1,6 +1,6 @@
 # Mobile Interaction Smoke Checklist
 
-> Last updated: 2026-08-08  
+> Last updated: 2026-08-18  
 > Scope: `apps/mobile` Expo workflows
 
 This checklist prevents dead-end controls in mobile UX.  
@@ -55,8 +55,57 @@ in the S2 nav restructure (#957) — see
 | Dues | Pay now (Expo Go) | CTA is **disabled with the reason stated**; balance and history still render |
 | Dues | Pay now (installed build, key configured) | Stripe PaymentSheet opens; dismissing it says nothing |
 | Dues | Complete a payment | Shows "payment received, confirmation pending", then flips to Paid only once the webhook lands |
+| Chat home (`/(tabs)`) | ✦ Ask pill | Presents the s17 Ask sheet over the screen, with the scrim behind it; the grabber or a tap on the scrim dismisses it (there is **no** Cancel control, by design) |
+| Events (`/(tabs)/events`) | ✦ Ask pill | Same sheet, same behavior — the s06 pill is new in C7 |
+| Ask sheet | Send a question, flag **off** (the default) | Sheet states why Ask is unavailable, the composer and send are disabled with that reason wired to the control, and the suggestion chips are omitted rather than dimmed. **This is the shipped state**: nothing sets `EXPO_PUBLIC_ASK_ENABLED` |
+| Ask sheet | Send a question, flag **on** (`EXPO_PUBLIC_ASK_ENABLED=1` in a local build) | Question echoes, a content-shaped skeleton holds briefly, then an answer card with source chips — or the refusal / "I don't know" path. Answers come from a **mock corpus**; do not read them as real chapter data |
+| Ask sheet | Tap a source chip | Says the citation is a sample with nothing behind it to open. A chip that swallowed the tap would be the dead end this checklist exists to catch |
+| Notifications (`/(tabs)/notifications`) | Tap a row with a recognizable target | Marks it read **and** routes to the target (chat thread, event detail, tasks, dues, service hours, directory) |
+| Notifications (`/(tabs)/notifications`) | Tap a row whose target this build does not recognize | Marks it read and stays put — never a navigation to a wrong or dead screen |
+| Settings (`/(tabs)/preferences`) | Push notifications row | Reads On / Off / Unavailable and opens the OS settings app. Changing the permission there and returning updates the row on the next foreground — it does **not** need a relaunch |
 
-## 4) Interaction quality assertions
+## 4) Connection states and write gating
+
+Force these with airplane mode, or by pointing `EXPO_PUBLIC_API_URL` at a dead
+host for the DEGRADED/OFFLINE-from-health path (three consecutive failed
+`/health` polls, 30s apart).
+
+| Screen | Control | Expected outcome |
+|---|---|---|
+| Any tab | Enter airplane mode | The banner appears at the top over ~200ms (an opacity transition, not a slide — see [`spec/ui/resilience.md`](../../../spec/ui/resilience.md) § 2), below the status bar and never under it, reading "You're offline. Showing cached data." Cached content stays on screen |
+| Any tab | Dismiss the banner | It fades out and returns after 30s if the connection has not recovered; a change of state clears the dismissal on its own. Expect the bar's **space** to remain while dismissed — known drift, recorded in § 2 |
+| Any tab | Leave airplane mode | The banner leaves without a tap, and stale queries refetch on their own — `onlineManager` is wired, so no force-quit is needed |
+| Chat thread | Compose and send while offline | The composer stays **enabled** and labels itself "You're offline — messages send when you reconnect."; the message queues and sends on reconnect. A disabled composer here is a regression — the outbox is the point |
+| Chat thread | Offline with the global banner up | The in-thread pill does **not** repeat "Offline"; it stays silent unless it has something the banner cannot say ("Real-time updates paused. Polling for new messages." or "Reconnecting…") |
+| Service hours (s20 sheet) | Submit while offline | Submit is disabled, "Reconnect to make changes." is shown **and** read out as the button's hint. There is no queue here — a lost submit would be silent |
+| Check-in (s18) | Manual code submit while offline | Same: disabled with the reason stated. The camera keeps scanning — reading a QR code is local, and a latched read the member can retry beats a dead viewfinder |
+
+## 5) Push notifications — **not verifiable in Expo Go**
+
+Remote push cannot be exercised from any build that currently exists, and no row
+here should be checked off from a Go session:
+
+- Expo Go dropped remote push in SDK 53, so `expo-notifications` is not even
+  loaded there.
+- `getExpoPushTokenAsync` needs an EAS `projectId` and **no EAS project exists**
+  (#938, open and `[human]`). `isPushAvailable()` is therefore false in an
+  installed build too.
+
+What *can* be checked today:
+
+| Screen | Control | Expected outcome |
+|---|---|---|
+| Settings (`/(tabs)/preferences`) | Push notifications row, Expo Go | Reads "Unavailable" with the Expo Go sentence — not "Off", which would imply a switch the member could flip |
+| Study hours | Background the app mid-session (installed build) | A local "Study session paused" notification appears; returning clears it. **Local** notifications need the native module but no project id, so this is the one push-shaped path that works without #938 — and it does nothing in Expo Go |
+| Study hours | End a session while paused | The paused notification is cleared rather than left inviting the member back to a session that no longer exists |
+
+Once #938 lands and a dev build exists, add rows for: the s03 primer card
+(built, currently hosted nowhere — see `spec/ui/mobile/screens.md` s03), the OS
+prompt firing **only** after the primer's "Turn on", token register on sign-in /
+deregister on sign-out, a tap deep-linking from a cold start, and a foregrounded
+notification actually presenting.
+
+## 6) Interaction quality assertions
 
 Run these assertions during manual walkthrough:
 
@@ -67,7 +116,7 @@ Run these assertions during manual walkthrough:
    - unauthenticated users cannot access tab routes,
    - authenticated users are redirected away from auth routes.
 
-## 5) PR evidence requirements
+## 7) PR evidence requirements
 
 For UI-touching mobile changes, include:
 

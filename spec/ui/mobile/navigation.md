@@ -57,7 +57,7 @@ The drawn s16 also carries an inline `CHAPTER · ADMIN` group, gated on `chapter
 ## Global entries outside the tab bar
 
 - **UP NEXT strip** (s04): the top of Chat home carries an UP NEXT section — the next event and the nearest due task as compact rows, each tapping through to its detail (event detail s07, task board s08). It is a pulse affordance: chat is home, so the one glanceable "what's next" surface rides above the channel list rather than living in a Home tab.
-- **✦ Ask pill** (s04, s06): a sparkle pill in the top bar of Chat home and Events opens the Ask sheet (s17). Ask is a global entry, not a tab — it MUST NOT become a fifth tab. Answer behavior and corpus rules: [`../../behavior/ai.md`](../../behavior/ai.md).
+- **✦ Ask pill** (s04, s06): a sparkle pill in the top bar of Chat home and Events opens the Ask sheet (s17). Ask is a global entry, not a tab — it MUST NOT become a fifth tab. Answer behavior and corpus rules: [`../../behavior/ai.md`](../../behavior/ai.md). Both halves now exist: the s06 pill landed with C7 (#998), which is also when the pill stopped navigating and started **presenting** — s17 is a sheet its host screen owns, so the pill takes an `onPress` and the host holds the `BottomSheetModal` ref ([`patterns.md`](patterns.md) § Bottom sheets). It presses through even when Ask is switched off for the build (`EXPO_PUBLIC_ASK_ENABLED`, default off): the sheet states the reason, because a control that silently does nothing is the dead end [`../design-system/components.md`](../design-system/components.md) §5 bans.
 
 ## Deep links
 
@@ -86,3 +86,15 @@ Seven files are **frozen** now that the nav restructure has landed:
 - **"A new dependency" includes internal `@repo/*` workspace packages**, not just external npm ones. npm workspace hoisting means an undeclared `@repo/*` import usually resolves anyway, so the missing entry produces no error and is easy to skip — but the dependency is real, and it breaks under isolated installs or a hoisting change. Declare it in `package.json` through the integrator like any other. `@repo/chat-core` reached `apps/mobile` this way for C1 (#937); `apps/web/package.json` had declared the same package from the start.
 
 The point is contention: these files are the ones every parallel slice would otherwise edit at once, and a rename or a prop added in two branches at the same time is a merge conflict in the one place that breaks the whole app.
+
+**Three of the seven were touched by C7/C8 (#998), recorded rather than glossed:**
+`package.json` gained `expo-notifications`, `app.json` gained its config plugin, and
+`app/_layout.tsx` swapped `<NetworkBanner isOnline… isInternetReachable… />` for a
+props-less `<NetworkBanner />` beside a new one-line `<AppRuntime />`. The first two
+are the integrator carve-out above working as intended (a dependency and its config
+plugin cannot be added any other way). The third is a real edit to a frozen file, and
+the smallest one available: the banner's props *were* the second, independent reading
+of `expo-network` that [`../resilience.md`](../resilience.md) § 2 now forbids, so they
+had to go, and every future app-wide runtime hangs off `components/app-runtime.tsx`
+instead of adding another hook call here — which is the whole reason that component
+exists.

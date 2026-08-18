@@ -9,7 +9,11 @@ import { useCreateServiceEntry, useServiceEntries } from "@repo/hooks";
 import { SignetTokens } from "@repo/theme/signet";
 import { ScreenShell } from "@/components/screen-shell";
 import { ListRow, ListSection, SectionHeader } from "@/components/list-section";
-import { EmptyState, ErrorState, SkeletonLines } from "@/components/state-block";
+import {
+  EmptyState,
+  ErrorState,
+  SkeletonLines,
+} from "@/components/state-block";
 import { useChapterBranding } from "@/lib/chapter-branding";
 import {
   formatDuration,
@@ -18,6 +22,7 @@ import {
   summarizeServiceEntries,
   todayIsoDate,
 } from "@/lib/more/service-hours";
+import { useConnection } from "@/lib/connection/use-connection";
 import { tint, typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -64,10 +69,20 @@ export default function ServiceHoursScreen() {
   const [duration, setDuration] = useState("");
   const [submitFailed, setSubmitFailed] = useState(false);
 
+  /**
+   * s20 has **no outbox**. A submit posted with no network is simply lost, so
+   * this is one of the surfaces `spec/ui/resilience.md` § 2 means when it says
+   * write actions are "Disabled with tooltip: 'Reconnect to make changes'"
+   * (#501). The chat composer deliberately does the opposite, because it has a
+   * queue — `lib/connection/state.ts` holds the split.
+   */
+  const { writeBlockedReason } = useConnection();
+
   const durationMinutes = parseDurationInput(duration);
   const canSubmit =
     description.trim().length > 0 &&
     durationMinutes !== null &&
+    writeBlockedReason === null &&
     !createEntry.isPending;
 
   const openSheet = useCallback(() => {
@@ -239,9 +254,16 @@ export default function ServiceHoursScreen() {
             </Text>
           ) : null}
 
+          {writeBlockedReason ? (
+            <Text style={styles.sheetError}>{writeBlockedReason}</Text>
+          ) : null}
+
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ disabled: !canSubmit }}
+            // Wired to the control, not merely printed above it: a screen
+            // reader lands on the disabled button, not on the sentence before.
+            accessibilityHint={writeBlockedReason ?? undefined}
             disabled={!canSubmit}
             onPress={submit}
             style={[

@@ -21,6 +21,7 @@ import { createScanLatch } from "@/lib/events/scan-latch";
 import { serverMessageOf, statusOf } from "@/lib/api-error";
 import { requireForegroundFix } from "@/lib/location";
 import { selectEventDetail } from "@/lib/events/select";
+import { useConnection } from "@/lib/connection/use-connection";
 import { typeRole, useFrappTheme } from "@/lib/theme";
 
 /**
@@ -83,6 +84,21 @@ export default function CheckInScreen() {
   const latchRef = useRef(createScanLatch());
   // Last foreign-event code already reported — see `handleBarcode`.
   const reportedForeignRef = useRef<string | null>(null);
+
+  /**
+   * Check-in has **no outbox** — a submit with no network is lost, and a member
+   * standing at the door would believe they had checked in. That is why
+   * `spec/ui/resilience.md` § 2's "Disabled with tooltip: 'Reconnect to make
+   * changes'" applies here (#501) while the chat composer does the opposite:
+   * chat has a queue, this does not.
+   *
+   * Read through a ref as well, because `handleBarcode` is a `useCallback` the
+   * camera holds for the life of the screen — reading the value directly there
+   * would close over whatever it was when the callback was built.
+   */
+  const { writeBlockedReason } = useConnection();
+  const writeBlockedReasonRef = useRef(writeBlockedReason);
+  writeBlockedReasonRef.current = writeBlockedReason;
 
   /**
    * Read the member's position, but only when the event actually has a zone.
@@ -154,6 +170,11 @@ export default function CheckInScreen() {
       }
 
       if (!latchRef.current.accept(raw)) return;
+      // The manual field is gated a few lines below; the scan has to be too.
+      // A scan submits immediately rather than latching, so without this a
+      // member at the door with no signal gets a spinner that never resolves
+      // and a decoder that has already been switched off.
+      if (writeBlockedReasonRef.current !== null) return;
       void submit({ token: parsed.token });
     },
     [eventId, submit],
@@ -166,19 +187,27 @@ export default function CheckInScreen() {
   }, [cameraPermission, requestCameraPermission]);
 
   const scanning = status.kind !== "submitting" && status.kind !== "success";
+
   const manualSubmitDisabled =
     !isPlausibleManualCode(manualCode) ||
+    writeBlockedReason !== null ||
     status.kind === "submitting" ||
     checkIn.isPending;
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["top", "left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["top", "left", "right", "bottom"]}
+    >
       <View style={styles.header}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Close check-in"
           onPress={() => router.back()}
-          style={({ pressed }) => [styles.close, pressed ? styles.pressed : null]}
+          style={({ pressed }) => [
+            styles.close,
+            pressed ? styles.pressed : null,
+          ]}
         >
           <Text style={styles.closeText}>✕</Text>
         </Pressable>
@@ -248,6 +277,11 @@ export default function CheckInScreen() {
             <Text style={styles.error}>{status.message}</Text>
           ) : null}
 
+          {/* Stated, not just implied by a greyed button (components.md §5). */}
+          {writeBlockedReason ? (
+            <Text style={styles.error}>{writeBlockedReason}</Text>
+          ) : null}
+
           <View style={styles.manualBlock}>
             <Text style={styles.manualLabel}>Enter code manually</Text>
             <View style={styles.manualRow}>
@@ -269,6 +303,7 @@ export default function CheckInScreen() {
                 // before the re-render disables the control. The mutation's own
                 // pending flag closes that window.
                 disabled={manualSubmitDisabled}
+                accessibilityHint={writeBlockedReason ?? undefined}
                 onPress={() => void submit({ manualCode })}
                 style={({ pressed }) => [
                   styles.manualButton,
