@@ -41,7 +41,7 @@
     "@infisical/cli": "0.43.121",
     "@vitest/coverage-v8": "4.1.10",
     "concurrently": "^10.0.5",
-    "dependency-cruiser": "^18.2.0",
+    "dependency-cruiser": "^17.4.3",
     "jscpd": "^5.0.16",
     "prettier": "^3.9.6",
     "turbo": "^2.10.10",

@@ -89,6 +89,18 @@ Two consequences follow, and both are easy to trip over when editing
   whose `from` lies outside the current workspace — otherwise one violation is reported once per
   consuming app. Nothing is lost: every workspace gets its own cruise.
 
+### Pinned to 17.x — check `engines` before bumping
+
+CI runs **Node 20**. dependency-cruiser **18.x** raised its floor to `^22||^24||>=26`, so it fails
+there with `ERROR: Your node version (20.20.2) is not supported`. 17.4.3 accepts
+`^20.12||^22||>=24`, which covers CI and a typical dev machine both.
+
+**This one does not reproduce locally**, which is what makes it worth writing down: 18.x installs and
+runs perfectly on a modern Node and only fails on the runner. Before bumping the major, compare its
+`engines` against `node-version:` in [`ci.yml`](../../../.github/workflows/ci.yml) — or bump CI's
+Node first, which is a separate decision with its own constraints (`apps/api` pins Node 20
+deliberately; see the WebSocket note in `apps/api/src/infrastructure/supabase/supabase.provider.ts`).
+
 ### Why the baseline is ours rather than `--ignore-known`
 
 depcruise's native `--ignore-known` matches the paths a run reports, which here are
