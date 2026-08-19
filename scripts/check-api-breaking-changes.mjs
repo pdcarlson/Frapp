@@ -111,27 +111,41 @@ function main() {
   let output = "";
   let breaking = false;
   try {
+    // `--fail-on ERR` is required, not optional polish. Plain `oasdiff breaking`
+    // exits **0** even when it reports breaking changes (measured against 1.11.7:
+    // removing an endpoint prints "1 changes: 1 error" and exits 0), so keying off
+    // the exit status without it means never detecting anything, and keying off
+    // "is stdout non-empty" instead conflates a WARN-level note with a real break.
+    // With the flag: 0 = no ERR-level breaking change, 1 = at least one, anything
+    // else = oasdiff itself failed (102 for an unloadable spec).
     output = execFileSync(
       OASDIFF_BIN,
-      ["breaking", basePath, headPath, "--format", "text"],
+      ["breaking", basePath, headPath, "--format", "text", "--fail-on", "ERR"],
       { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
     );
   } catch (error) {
-    // oasdiff exits 1 when it finds breaking changes; anything else is a real
-    // failure. Distinguishing them matters — treating a crashed oasdiff as
-    // "breaking changes found" would make the report meaningless.
     if (error.status === 1) {
       breaking = true;
       output = error.stdout ?? "";
     } else {
       console.error("check-api-breaking-changes: oasdiff failed to run.");
+      console.error(`  exit status: ${error.status ?? "unknown"}`);
       console.error((error.stderr || error.message || "").toString().trim());
       return 2;
     }
   }
 
   const trimmed = output.trim();
-  if (!breaking && (trimmed === "" || /^No breaking changes/i.test(trimmed))) {
+
+  if (!breaking) {
+    // Exit 0 with output means WARN-level findings only — worth printing, but
+    // not the thing this check exists to flag.
+    if (trimmed !== "" && !/^No breaking changes/i.test(trimmed)) {
+      console.log(`No ERR-level breaking changes against ${base}. Lower-severity notes:`);
+      console.log("");
+      console.log(trimmed);
+      return 0;
+    }
     console.log(`No breaking API changes against ${base}.`);
     return 0;
   }

@@ -51,6 +51,32 @@ test("bare specifiers are left alone, never rewritten into paths", () => {
   );
 });
 
+test("a bare specifier WITH a subpath is still a specifier, not a path", () => {
+  // The case a "does it contain a slash?" rule gets wrong. `fs/promises`,
+  // `stream/web` and friends are core modules dependency-cruiser reports
+  // unprefixed, and turning them into apps/api/fs/promises would write a
+  // fabricated path straight into a baseline key.
+  assert.equal(toRepoRelative("apps/api", "fs/promises"), "fs/promises");
+  assert.equal(toRepoRelative("apps/api", "stream/web"), "stream/web");
+  assert.equal(toRepoRelative("apps/api", "timers/promises"), "timers/promises");
+  assert.equal(toRepoRelative("apps/api", "lodash/debounce"), "lodash/debounce");
+});
+
+test("an unresolved alias is passed through rather than turned into a path", () => {
+  // `@/…` cannot resolve outside its own app, and there is no file to name.
+  assert.equal(toRepoRelative("apps/api", "@/lib/theme"), "@/lib/theme");
+  assert.equal(toRepoRelative("apps/api", "@scope/pkg/sub/path.js"), "@scope/pkg/sub/path.js");
+});
+
+test("normalisation does not depend on the filesystem", () => {
+  // A path that does not exist must still normalise, so the result cannot vary
+  // with what happens to be checked out when the gate runs.
+  assert.equal(
+    toRepoRelative("apps/api", "src/does/not/exist.ts"),
+    "apps/api/src/does/not/exist.ts",
+  );
+});
+
 test("normalisation is stable on an already-normalised path", () => {
   const once = toRepoRelative("apps/web", "../../packages/hooks/src/x.ts");
   assert.equal(toRepoRelative("packages/hooks", "src/x.ts"), once);
