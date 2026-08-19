@@ -19,7 +19,31 @@ array in [`scripts/configure-branch-protection.mjs`](../../../scripts/configure-
 **Sync** is intentionally simple: if the PR modifies **any** path **not** under `docs/` or `spec/`,
 it must **also** modify **at least one** path under **either** prefix. So a single edit under
 `docs/guides/`, `docs/internal/`, or `spec/` satisfies it for a product-code change. It does **not**
-require a specific subtree (e.g. it does not yet require `spec/` for API-only changes).
+require a specific subtree (e.g. it does not yet require `spec/` for API-only changes). Two narrow
+exemptions cut through that, below.
+
+Pure helpers (`classifyChanges`, `NON_CODE_PREFIXES`) are exported for
+`scripts/ci/__tests__/check-docs-impact.test.mjs`, run by the `ci-scripts-tests` job.
+
+### Exemptions
+
+`docs-spec-sync` is **required** under `enforce_admins: true`, so a category of PR that can never
+satisfy it is not merely red — it is permanently unmergeable, with no override. Both exemptions exist
+for that reason, and each is deliberately narrow.
+
+| Exempt | Where | Why |
+|---|---|---|
+| Dependabot PRs | Workflow condition on the *step*, in both [`docs.yml`](../../../.github/workflows/docs.yml) and [`ci.yml`](../../../.github/workflows/ci.yml) | A bump touches `package.json` / `package-lock.json` and nothing else. Skipping the **step**, never the job, keeps the required check reporting — a skipped job never reports, leaving the PR blocked on a check that never arrives. |
+| `.buildpad/**` | `NON_CODE_PREFIXES` in [`check-docs-impact.mjs`](../../../scripts/check-docs-impact.mjs) | The canvas export is neither code nor documentation, so it has no docs impact to sync. Every periodic sync would otherwise land as "N non-doc files changed, no docs updated". |
+
+The `.buildpad/` exemption **ignores** those paths; it does not treat them as documentation. A PR that
+edits code *and* `.buildpad/` still owes a `docs/` or `spec/` edit, and the failure output names only
+the real code changes. What the directory is, and why it is not a doc home:
+[`DOCUMENTATION_CONVENTIONS.md`](../DOCUMENTATION_CONVENTIONS.md#buildpad-is-background-not-documentation).
+
+`.claude/` is **not** exempt — a `SKILL.md`-only PR still fails the gate and must be paired with a
+`docs/` file. [#810](https://github.com/pdcarlson/Frapp/issues/810) tracks teaching the gate about it;
+[`ROUTINES.md`](ROUTINES.md#maintenance) records the workaround until then.
 
 **Structure** only ever looks at paths a PR *adds* or renames — existing files are never flagged —
 so it stops the sync gate from being satisfied by dropping a stray file. Placement rules live in

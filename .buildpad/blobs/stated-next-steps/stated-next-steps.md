@@ -1,0 +1,3 @@
+# Stated next steps
+
+Target: beta live with own chapter in 2 weeks, pushing up to 10 hrs/day with Claude Code. Beta scope: chat, events, points, study hours, dues (already built) plus UI/brand overhaul, plus a data import tool (e.g. Discord bot) so the chapter doesn't lose existing data migrating over — Paul considers this a requirement for his chapter to actually adopt it, not optional. AI/RAG search is a fast-follow after beta, but architecture must be built now with RAG in mind to avoid rework later. Also needed before/at beta launch: Sentry (or similar) error monitoring set up.
