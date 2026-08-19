@@ -256,6 +256,14 @@ There is **no coverage threshold and no coverage gate.** Coverage is a measureme
 target — the point is to be able to see the refactor's real impact. Adding a threshold is a separate
 decision.
 
+`coverage/**` is ignored by the shared ESLint config
+([`packages/eslint-config/base.js`](../../../packages/eslint-config/base.js)), and that line is
+load-bearing rather than tidiness: istanbul's HTML report assets carry an `/* eslint-disable */`
+header that suppresses nothing under the `react-internal` preset, so ESLint flags it as an unused
+directive — a warning, which `--max-warnings 0` turns into a failure. Without the ignore, running
+`npm run test:cov` in a workspace permanently breaks `npm run lint` there, pointing at a gitignored
+file `git status` never shows.
+
 ---
 
 ## `.buildpad/` is excluded from all of this
