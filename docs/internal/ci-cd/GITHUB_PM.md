@@ -232,6 +232,20 @@ Everything an agent files (follow-ups from `/next`, curator suggestions, PR-foll
   [Reading a body you intend to rewrite](#reading-a-body-you-intend-to-rewrite-mcp-read-fidelity)
   below; it is the canonical statement of that rule and the routines defer to it.
 
+### Clearing human-action items (the owner's side)
+
+Filing and publishing are only half the loop: a `[human]` item is done when the owner acts, and
+until then everything queued behind it waits. [`/needs-me`](../../../.claude/skills/needs-me/SKILL.md)
+is the consumer of that output — it sweeps the Human Action List, open `fp=human/` and `[human]`
+`fp=pr-followup/` issues, the `triage` inbox, and open PRs, ranks the candidates by what clearing
+each one releases, and walks **exactly one** to done, closing it on proof.
+
+It is a reader, not a fourth routine: it files nothing (the one exception being a newly proven
+blocker, per the hard rule above), asks before closing anything outside the `suggestion` label's
+[ownership boundary](#ownership-boundary-organize-broadly-destroy-narrowly), and never rewrites
+the Human Action List — that body is rebuilt from live issue state by the PR Follow-ups routine on
+every run, so a hand-edit there is both overwritten and capable of destroying its state marker.
+
 ## Reading a body you intend to rewrite (MCP read fidelity)
 
 **Only `search_issues` returns an issue body faithfully. `issue_read` and `list_issues` both
