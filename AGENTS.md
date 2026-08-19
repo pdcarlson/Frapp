@@ -170,6 +170,12 @@ See [`docs/internal/ci-cd/AGENT_INFRA.md`](docs/internal/ci-cd/AGENT_INFRA.md). 
 | API image    | `docker build -f apps/api/Dockerfile .` (also runs in CI as `api-docker-build`) |
 | API contract | `npm run check:api-contract`        |
 | Migrations   | `npm run check:migration-safety`    |
+| Boundaries   | `npm run check:dep-cruiser` — required gate; existing violations grandfathered in `.dependency-cruiser-known-violations.json`, which exists to shrink |
+| Duplication  | `npm run check:duplication` — advisory; repo-wide threshold that only ratchets down |
+| API breaking changes | `npm run check:api-breaking -- --base origin/main` — advisory; needs `bash scripts/install-oasdiff.sh` first |
+| Coverage     | `npm run test:cov` — no threshold; a measurement, not a gate |
+
+Gate postures and why each one is hard, advisory, or `warn`: [`docs/internal/ci-cd/QUALITY_GATES.md`](docs/internal/ci-cd/QUALITY_GATES.md).
 
 CI parity and testing detail: [`.claude/skills/testing/SKILL.md`](.claude/skills/testing/SKILL.md).
 

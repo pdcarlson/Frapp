@@ -362,6 +362,130 @@ jobs:
         if: github.event_name == 'push'
         run: npm run check:api-contract
 
+      # Breaking-change detection lives HERE, in the existing contract job,
+      # rather than in a job of its own — because a separate "SDK-drift" gate
+      # would have been entirely redundant. `check:api-contract` above already
+      # regenerates BOTH openapi.json and packages/api-sdk/src/types.ts and
+      # fails on any diff, and it is already a required check. What was missing
+      # is not drift detection but compatibility: deleting an endpoint or
+      # removing a response field regenerates perfectly cleanly and breaks every
+      # client.
+      #
+      # ADVISORY (no --fail-on-breaking): every consumer (apps/web, apps/mobile)
+      # regenerates from this repo and ships with the change, and the project is
+      # mid-rebuild where removing endpoints is the intended work. It annotates
+      # the run rather than blocking it. Revisit if an independently deployed
+      # consumer ever appears.
+      #
+      # `continue-on-error` on BOTH steps, and it is load-bearing: this job is a
+      # REQUIRED check, and these steps fetch a binary from the GitHub releases
+      # CDN at run time. Without it, a rate limit or a 5xx on that download turns
+      # an advisory signal into a merge block on every PR — a required gate whose
+      # availability depends on a third-party download.
+      - name: Install oasdiff
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: bash scripts/install-oasdiff.sh
+
+      - name: Detect breaking API changes (advisory)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: npm run check:api-breaking -- --base "${{ github.event.pull_request.base.sha }}"
+
+  # ── Architectural boundary linting (dependency-cruiser) ─────────────────
+  # HARD GATE from day one, made survivable by a committed baseline:
+  # `.dependency-cruiser-known-violations.json` grandfathers the 7 violations
+  # that existed when this landed, and any NEW violation fails.
+  #
+  # Needs the shared packages built — the cruise resolves workspace imports
+  # through the node_modules symlinks npm workspaces creates.
+  dependency-cruiser:
+    needs: packages-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore turbo build outputs
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo
+          key: turbo-pkgbuild-${{ runner.os }}-${{ hashFiles('package-lock.json', 'turbo.json', 'packages/**/src/**', 'packages/**/package.json', 'packages/**/tsconfig.json') }}
+          restore-keys: |
+            turbo-pkgbuild-${{ runner.os }}-
+
+      - name: Build shared packages
+        run: npx turbo run build --filter='./packages/*'
+
+      - name: Check architectural boundaries
+        run: npm run check:dep-cruiser
+
+  # ── Duplicate detection (jscpd) ─────────────────────────────────────────
+  # ADVISORY on purpose — deliberately NOT in configure-branch-protection.mjs.
+  #
+  # jscpd has no clone-level baseline the way dependency-cruiser does, so the
+  # only lever is a repo-wide duplication percentage. `.jscpd.json` pins it at
+  # 4.5%, just above the 4.37% measured when this landed, which catches net-new
+  # duplication but cannot distinguish "one bad copy-paste" from "the number
+  # drifted". That is too coarse to block a merge on, and the ratchet only ever
+  # moves down as the consolidation work lands.
+  #
+  # The job is simply allowed to FAIL when the threshold is breached. That is
+  # what "advisory" means here: `duplicate-detection` is deliberately absent
+  # from CI_CHECKS, so a red X reports loudly and blocks nothing, exactly like
+  # `web-visual-regression`.
+  #
+  # It must NOT be `continue-on-error`. That key rewrites the step's conclusion
+  # to success, so the job goes green and a breached threshold is invisible —
+  # an advisory gate nobody can see is not advisory, it is off.
+  duplicate-detection:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check duplication against the repo-wide threshold
+        run: npm run check:duplication
+
+      # The console reporter prints the summary table only; the clone-by-clone
+      # detail lives in the JSON report, which is the thing you actually need to
+      # act on a threshold breach — so `always()`, or the artifact is missing in
+      # precisely the run that needed it.
+      - name: Upload duplication report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jscpd-report
+          path: .jscpd/
+          if-no-files-found: ignore
+          retention-days: 14
+
   # ── Migration safety ────────────────────────────────────────────────────
   migration-safety:
     runs-on: ubuntu-latest

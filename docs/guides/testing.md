@@ -104,6 +104,23 @@ The **`lint-and-typecheck`** job in the **GitHub Actions** workflow `.github/wor
 
 The docs/spec sync gate runs **elsewhere** — the `docs-spec-sync` job in `.github/workflows/docs.yml` is its only home, so a non-doc change that skipped its `docs/` or `spec/` update fails *there*, not here. `lint-and-typecheck` used to run a second copy; it was removed so the gate has one home and one exemption list. Contract, exemptions, and the `no-doc-change-needed` waiver: [`docs/internal/ci-cd/DOCS_CI.md`](../internal/ci-cd/DOCS_CI.md).
 
+`lint` also surfaces the `nestjs-typed` response-schema rule as **warnings** (142 today). Warnings do not fail ESLint, so this job stays green while the backlog stays visible; it flips to `error` once the route-DTO backfill lands. See [`docs/internal/ci-cd/QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md).
+
+## 5a. Coverage
+
+Coverage runs on demand, not in CI, and has **no threshold** — it is a measurement, not a gate.
+
+```bash
+npm run test:cov                  # every workspace, via turbo
+npm run test:cov -w apps/api      # Jest, v8 provider
+npm run test:cov -w packages/hooks # Vitest, @vitest/coverage-v8
+```
+
+Both runners report through the V8 engine. `apps/api` uses `coverageProvider: "v8"` rather than the
+Jest default specifically to route around a `minimatch`/`test-exclude` collision that made
+`test:cov` throw; the details are in [`QUALITY_GATES.md`](../internal/ci-cd/QUALITY_GATES.md) and
+matter before anyone touches the root `overrides` block.
+
 The **`api-tests`** job runs **three** suites after building shared packages: the unit suite (`npm run test -w apps/api`), the E2E suite (`npm run test:e2e -w apps/api`), and the adversarial AI evals (`npm run test:ai-evals -w apps/api`). Because the E2E specs mock Supabase (§6) and the evals are pure fixtures, the job stays deterministic in GitHub Actions and requires no external services.
 
 The evals run unconditionally rather than path-gated. Spec §13 requires them on any change to prompts, retrieval or the tool registry; running them always is a superset, and costs ~1.5s against the minutes a separate job's checkout and install would burn (ADR-15). Their behavioural half currently **skips** — no agent exists yet — so a green `api-tests` is not evidence any agent was graded; see [`docs/internal/security/ai-prompt-injection.md`](../internal/security/ai-prompt-injection.md) and `apps/api/test/ai-evals/README.md`.

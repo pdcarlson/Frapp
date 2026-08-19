@@ -27,6 +27,14 @@ export const config = [
     },
   },
   {
-    ignores: ["dist/**"],
+    // `coverage/**` is generated, and leaving it lintable makes running the
+    // tests break the lint gate. Istanbul's HTML report assets carry an
+    // `/* eslint-disable */` header; under the react-internal preset
+    // `globals.browser` means `no-undef` never fires on `document`, so the
+    // directive suppresses nothing and ESLint reports it as unused — a warning,
+    // which `--max-warnings 0` turns into a failure. Running `npm run test:cov`
+    // in a workspace would then fail `npm run lint` there forever, pointing at a
+    // gitignored file that `git status` does not show.
+    ignores: ["dist/**", "coverage/**"],
   },
 ];

@@ -97,6 +97,19 @@ const CI_CHECKS = [
   // Safe to require: `changes` has no job-level `if:` (the condition is on its filter
   // STEP), so the job always runs and always reports, on both pull_request and push.
   "changes",
+  // Architectural boundary linting (dependency-cruiser): the API's layer direction
+  // and the monorepo's app/package separation. HARD GATE from day one, which is only
+  // survivable because `.dependency-cruiser-known-violations.json` grandfathers the
+  // violations that existed when it landed — a baseline is what lets a gate be strict
+  // immediately instead of "advisory until someone gets around to it".
+  //
+  // ROLLOUT: same caveat as secret-scan — required only once the dependency-cruiser
+  // job exists on the target branch and has run green.
+  "dependency-cruiser",
+  // NOT here on purpose: `duplicate-detection` (jscpd). jscpd has no clone-level
+  // baseline, so the only lever is a repo-wide duplication percentage — too coarse
+  // to block a merge on, since it cannot tell one bad copy-paste from ordinary
+  // drift. It runs and reports; the threshold ratchets down as consolidations land.
 ];
 
 const DOCS_CHECKS = [
